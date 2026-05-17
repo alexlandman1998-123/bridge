@@ -495,6 +495,7 @@ async function withPacketRetries(task, {
 }
 
 const PACKET_GENERATION_TIMEOUT_MS = 10000
+const FINAL_SIGNED_GENERATION_TIMEOUT_MS = 45000
 
 function withPacketTimeout(task, message, timeoutMs = PACKET_GENERATION_TIMEOUT_MS) {
   let timeoutId = null
@@ -2142,12 +2143,16 @@ export async function generateFinalSignedPacketDocument({
     throw createPacketError('MISSING_SIGNATURE_ASSETS', 'Required signature assets are missing for one or more fields.')
   }
 
-  const result = await generateFinalSignedDocumentRecord({
-    packetId: resolvedPacketId,
-    packetVersionId: targetVersion.id,
-    organisationId,
-    outputBucket,
-  })
+  const result = await withPacketTimeout(
+    generateFinalSignedDocumentRecord({
+      packetId: resolvedPacketId,
+      packetVersionId: targetVersion.id,
+      organisationId,
+      outputBucket,
+    }),
+    'Final signed document generation is taking too long.',
+    FINAL_SIGNED_GENERATION_TIMEOUT_MS,
+  )
 
   await addPacketEvent({
     packetId: resolvedPacketId,

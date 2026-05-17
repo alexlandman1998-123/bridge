@@ -342,6 +342,119 @@ async function buildOverlayPdf({
   return PDFDocument.load(sourcePdfBytes);
 }
 
+function getPlaceholderValue(placeholders: Record<string, unknown>, key: unknown) {
+  const normalizedKey = normalizeText(key);
+  if (!normalizedKey) return "";
+  if (Object.prototype.hasOwnProperty.call(placeholders, normalizedKey)) {
+    return normalizeText(placeholders[normalizedKey]);
+  }
+  const underscoreKey = normalizedKey.replace(/\./g, "_");
+  if (Object.prototype.hasOwnProperty.call(placeholders, underscoreKey)) {
+    return normalizeText(placeholders[underscoreKey]);
+  }
+  return "";
+}
+
+function wrapText(text: string, maxChars = 86) {
+  const words = normalizeText(text).replace(/\s+/g, " ").split(" ").filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > maxChars && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = next;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.length ? lines : [""];
+}
+
+async function buildFallbackMandatePdfBytes({
+  packet,
+  version,
+  fields,
+}: {
+  packet: Record<string, unknown>;
+  version: Record<string, unknown>;
+  fields: Record<string, unknown>[];
+}) {
+  const pdf = await PDFDocument.create();
+  const regularFont = await pdf.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const pageWidth = 612;
+  const pageHeight = 792;
+  const margin = 48;
+  const lineHeight = 14;
+  const maxFieldPage = Math.max(1, ...fields.map((field) => Math.max(1, safeNumber(field.page_number, 1))));
+  const placeholders = version?.placeholders_resolved_json && typeof version.placeholders_resolved_json === "object"
+    ? version.placeholders_resolved_json as Record<string, unknown>
+    : {};
+  const sectionManifest = Array.isArray(version?.section_manifest_json) ? version.section_manifest_json as Record<string, unknown>[] : [];
+  const pages = Array.from({ length: Math.max(3, maxFieldPage) }, () => pdf.addPage([pageWidth, pageHeight]));
+  let pageIndex = 0;
+  let page = pages[pageIndex];
+  let y = pageHeight - margin;
+
+  const drawLine = (text: string, options: { bold?: boolean; size?: number; color?: ReturnType<typeof rgb> } = {}) => {
+    const size = options.size || 10;
+    if (y < margin + lineHeight) {
+      pageIndex += 1;
+      page = pages[pageIndex] || pdf.addPage([pageWidth, pageHeight]);
+      y = pageHeight - margin;
+    }
+    page.drawText(text.slice(0, 110), {
+      x: margin,
+      y,
+      size,
+      font: options.bold ? boldFont : regularFont,
+      color: options.color || rgb(0.12, 0.18, 0.25),
+    });
+    y -= lineHeight;
+  };
+
+  drawLine(normalizeText(packet.title) || "Mandate Agreement", { bold: true, size: 18 });
+  drawLine(`Packet: ${normalizeText(packet.id)} | Version: ${normalizeText(version.version_number) || "1"}`, { size: 8, color: rgb(0.38, 0.46, 0.55) });
+  y -= 10;
+
+  if (sectionManifest.length) {
+    for (const section of sectionManifest) {
+      const label = normalizeText(section.sectionLabel || section.label || section.section_key || section.key || "Section");
+      drawLine(label, { bold: true, size: 12 });
+      const rows = Array.isArray(section.placeholders) ? section.placeholders : [];
+      for (const row of rows) {
+        const [key, rawLabel] = Array.isArray(row) ? row : [row?.key || row?.placeholderKey, row?.label || row?.placeholderLabel];
+        const fieldLabel = normalizeText(rawLabel || key);
+        const value = getPlaceholderValue(placeholders, key) || "Not provided";
+        for (const line of wrapText(`${fieldLabel}: ${value}`, 92)) {
+          drawLine(line, { size: 9 });
+        }
+      }
+      y -= 8;
+    }
+  } else {
+    const entries = Object.entries(placeholders).slice(0, 160);
+    for (const [key, value] of entries) {
+      for (const line of wrapText(`${key}: ${normalizeText(value) || "Not provided"}`, 92)) {
+        drawLine(line, { size: 9 });
+      }
+    }
+  }
+
+  const signaturePage = pages[Math.min(pages.length - 1, Math.max(0, maxFieldPage - 1))];
+  signaturePage.drawText("Signature record", {
+    x: margin,
+    y: pageHeight - margin,
+    size: 13,
+    font: boldFont,
+    color: rgb(0.12, 0.18, 0.25),
+  });
+
+  return pdf.save();
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { status: 200, headers: corsHeaders });
@@ -395,7 +508,7 @@ Deno.serve(async (req: Request) => {
     let versionQuery = supabase
       .from("document_packet_versions")
       .select(
-        "id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, final_signed_file_path, final_signed_file_url, final_signed_file_bucket, final_signed_document_id, final_signed_file_name, finalised_at",
+        "id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, final_signed_file_path, final_signed_file_url, final_signed_file_bucket, final_signed_document_id, final_signed_file_name, finalised_at, placeholders_resolved_json, section_manifest_json, validation_summary_json",
       )
       .eq("packet_id", packetId)
       .eq("render_status", "generated")
@@ -406,7 +519,7 @@ Deno.serve(async (req: Request) => {
       versionQuery = supabase
         .from("document_packet_versions")
         .select(
-          "id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, final_signed_file_path, final_signed_file_url, final_signed_file_bucket, final_signed_document_id, final_signed_file_name, finalised_at",
+          "id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, final_signed_file_path, final_signed_file_url, final_signed_file_bucket, final_signed_document_id, final_signed_file_name, finalised_at, placeholders_resolved_json, section_manifest_json, validation_summary_json",
         )
         .eq("id", requestedVersionId)
         .eq("packet_id", packetId)
@@ -425,11 +538,44 @@ Deno.serve(async (req: Request) => {
     }
 
     const renderedFilePath = normalizeText(version.rendered_file_path);
-    if (!renderedFilePath) {
-      return jsonResponse(400, {
-        success: false,
-        error: "No generated document artifact exists for this packet version.",
-        errorCode: "MISSING_RENDERED_ARTIFACT",
+    const existingFinalPath = normalizeText(version.final_signed_file_path);
+    if (existingFinalPath) {
+      const existingBucketCandidates = parseBucketCandidates(
+        normalizeText(version.final_signed_file_bucket),
+        Deno.env.get("SIGNED_DOCUMENTS_BUCKET"),
+        Deno.env.get("SUPABASE_SIGNED_DOCUMENTS_BUCKET"),
+        Deno.env.get("SUPABASE_DOCUMENTS_BUCKET"),
+        Deno.env.get("SUPABASE_DOCUMENT_BUCKET"),
+        Deno.env.get("DOCUMENTS_BUCKET"),
+        Deno.env.get("SUPABASE_STORAGE_BUCKET"),
+        "documents",
+      );
+      let existingUrl: string | null = null;
+      let existingBucket = normalizeText(version.final_signed_file_bucket);
+      for (const bucket of [...new Set(existingBucketCandidates.filter(Boolean))]) {
+        const signedUrlResult = await supabase.storage.from(bucket).createSignedUrl(existingFinalPath, 60 * 60);
+        if (!signedUrlResult.error && signedUrlResult.data?.signedUrl) {
+          existingUrl = signedUrlResult.data.signedUrl;
+          existingBucket = bucket;
+          break;
+        }
+      }
+      return jsonResponse(200, {
+        success: true,
+        packetId,
+        packetVersionId: version.id,
+        finalArtifact: {
+          bucket: existingBucket || null,
+          path: existingFinalPath,
+          url: existingUrl || normalizeText(version.final_signed_file_url) || null,
+          fileName: normalizeText(version.final_signed_file_name) || buildSignedFileName(normalizeText(packet.packet_type), safeNumber(version.version_number, 1)),
+          documentId: normalizeText(version.final_signed_document_id) || null,
+          finalisedAt: normalizeText(version.finalised_at) || null,
+          finalisedBy: null,
+        },
+        version,
+        sourceFormat: renderedFilePath ? (isPdfPath(renderedFilePath) ? "pdf" : "docx") : "existing_final",
+        note: "Final signed document already exists for this packet version.",
       });
     }
 
@@ -504,12 +650,6 @@ Deno.serve(async (req: Request) => {
       "documents",
     );
 
-    const sourceDownload = await downloadFirstAvailable({
-      supabase,
-      path: renderedFilePath,
-      buckets: sourceBucketCandidates,
-    });
-
     const signatureBucketCandidates = parseBucketCandidates(
       Deno.env.get("SIGNATURES_BUCKET"),
       Deno.env.get("SUPABASE_SIGNATURES_BUCKET"),
@@ -518,11 +658,31 @@ Deno.serve(async (req: Request) => {
       "documents",
     );
 
-    let sourcePdfBytes = sourceDownload.bytes;
+    let sourcePdfBytes: Uint8Array;
     const sourceIsPdf = isPdfPath(renderedFilePath);
-    if (!sourceIsPdf) {
+    let sourceFormat = sourceIsPdf ? "pdf" : "docx";
+    let fallbackSourceUsed = false;
+
+    if (renderedFilePath) {
+      const sourceDownload = await downloadFirstAvailable({
+        supabase,
+        path: renderedFilePath,
+        buckets: sourceBucketCandidates,
+      });
+      sourcePdfBytes = sourceDownload.bytes;
+    } else {
+      fallbackSourceUsed = true;
+      sourceFormat = "fallback_pdf";
+      sourcePdfBytes = await buildFallbackMandatePdfBytes({
+        packet,
+        version,
+        fields,
+      });
+    }
+
+    if (!fallbackSourceUsed && !sourceIsPdf) {
       const conversion = await convertDocxToPdfBytes({
-        docxBytes: sourceDownload.bytes,
+        docxBytes: sourcePdfBytes,
         sourcePath: renderedFilePath,
       });
       if (!conversion.success) {
@@ -723,8 +883,10 @@ Deno.serve(async (req: Request) => {
         finalisedBy,
       },
       version: updateVersion.data,
-      sourceFormat: isPdfPath(renderedFilePath) ? "pdf" : "docx",
-      note: sourceIsPdf
+      sourceFormat,
+      note: fallbackSourceUsed
+        ? "Source packet had no rendered artifact, so a fallback mandate PDF was generated from stored packet data before overlaying signatures."
+        : sourceIsPdf
         ? null
         : "Source packet was DOCX and converted through the configured DOCX→PDF converter before overlaying signatures.",
     });
