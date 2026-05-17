@@ -411,14 +411,217 @@ function normalizeSectionRows(section: Record<string, unknown>) {
     .filter(([key]) => normalizeText(key));
 }
 
+function firstPdfText(...values: unknown[]) {
+  return values.map((value) => pdfSafeText(value)).find(Boolean) || "";
+}
+
+function isBridgeAssetUrl(value: unknown) {
+  const text = normalizeText(value).toLowerCase();
+  return text.includes("/brand/bridge") || text.includes("bridge_9") || text.includes("bridge9");
+}
+
+function assignBrandingValue(target: Record<string, unknown>, key: string, value: unknown) {
+  const normalized = normalizeText(value);
+  if (!normalized) return;
+  if (key === "organisationName" && normalized.toLowerCase() === "bridge workspace") return;
+  target[key] = normalized;
+}
+
+function mergeBrandingPayload(target: Record<string, unknown>, source: unknown) {
+  const payload = source && typeof source === "object" && !Array.isArray(source) ? source as Record<string, unknown> : {};
+  assignBrandingValue(target, "organisationId", payload.organisationId || payload.organisation_id);
+  assignBrandingValue(target, "organisationName", payload.organisationName || payload.organisation_display_name || payload.displayName || payload.name);
+  assignBrandingValue(target, "logoLightUrl", payload.logoLightUrl || payload.logo_light_url);
+  assignBrandingValue(target, "logoDarkUrl", payload.logoDarkUrl || payload.logo_dark_url);
+  assignBrandingValue(target, "logoHighContrastUrl", payload.logoHighContrastUrl || payload.logo_high_contrast_url);
+  assignBrandingValue(target, "organisationLogoUrl", payload.organisationLogoUrl || payload.organisation_logo_url);
+  assignBrandingValue(target, "organisationLogoDarkUrl", payload.organisationLogoDarkUrl || payload.organisation_logo_dark_url);
+  assignBrandingValue(target, "organisationLogoHighContrastUrl", payload.organisationLogoHighContrastUrl || payload.organisation_logo_high_contrast_url);
+  assignBrandingValue(target, "bridgeLogoLightUrl", payload.bridgeLogoLightUrl || payload.bridge_logo_light_url);
+  assignBrandingValue(target, "bridgeLogoDarkUrl", payload.bridgeLogoDarkUrl || payload.bridge_logo_dark_url);
+  assignBrandingValue(target, "bridgeLogoLabel", payload.bridgeLogoLabel || payload.bridge_logo_label);
+  return target;
+}
+
+async function createDocumentSignedUrl(supabase: any, path: string) {
+  const normalizedPath = normalizeText(path);
+  if (!normalizedPath || /^(https?:|data:|\/)/i.test(normalizedPath)) return normalizedPath;
+  const bucketCandidates = parseBucketCandidates(
+    Deno.env.get("SUPABASE_DOCUMENTS_BUCKET"),
+    Deno.env.get("SUPABASE_DOCUMENT_BUCKET"),
+    Deno.env.get("DOCUMENTS_BUCKET"),
+    Deno.env.get("SUPABASE_STORAGE_BUCKET"),
+    "documents",
+  );
+  for (const bucket of [...new Set(bucketCandidates.filter(Boolean))]) {
+    const result = await supabase.storage.from(bucket).createSignedUrl(normalizedPath, 60 * 60);
+    if (!result.error && result.data?.signedUrl) return result.data.signedUrl;
+  }
+  return normalizedPath;
+}
+
+async function fetchOrganisationBranding(supabase: any, organisationId: string) {
+  const resolvedOrganisationId = normalizeText(organisationId);
+  if (!resolvedOrganisationId) return {};
+
+  const branding: Record<string, unknown> = {};
+  const orgResult = await supabase
+    .from("organisations")
+    .select("id, name, display_name")
+    .eq("id", resolvedOrganisationId)
+    .maybeSingle();
+  if (!orgResult.error && orgResult.data) {
+    mergeBrandingPayload(branding, {
+      organisationId: orgResult.data.id,
+      organisationName: orgResult.data.display_name || orgResult.data.name,
+    });
+  }
+
+  const brandingResult = await supabase
+    .from("organisation_branding")
+    .select("organisation_id, organisation_display_name, logo_light_url, logo_dark_url, logo_high_contrast_url, primary_brand_color, secondary_brand_color, accent_brand_color")
+    .eq("organisation_id", resolvedOrganisationId)
+    .maybeSingle();
+  if (!brandingResult.error && brandingResult.data) {
+    const data = { ...brandingResult.data } as Record<string, unknown>;
+    data.logo_light_url = await createDocumentSignedUrl(supabase, normalizeText(data.logo_light_url));
+    data.logo_dark_url = await createDocumentSignedUrl(supabase, normalizeText(data.logo_dark_url));
+    data.logo_high_contrast_url = await createDocumentSignedUrl(supabase, normalizeText(data.logo_high_contrast_url));
+    mergeBrandingPayload(branding, data);
+  }
+
+  return branding;
+}
+
+function resolveAssetUrl(value: unknown) {
+  const raw = normalizeText(value);
+  if (!raw) return "";
+  if (/^(https?:|data:)/i.test(raw)) return raw;
+  const base = normalizeText(Deno.env.get("PUBLIC_APP_URL") || Deno.env.get("VITE_PUBLIC_APP_URL") || Deno.env.get("VITE_SITE_URL")) || "https://app.bridgenine.co.za";
+  const path = raw.startsWith("/") ? raw : `/${raw}`;
+  return `${base.replace(/\/+$/, "")}${path}`;
+}
+
+function decodeDataUrlBytes(dataUrl: string) {
+  const match = dataUrl.match(/^data:([^;,]+)?(;base64)?,(.*)$/i);
+  if (!match) return null;
+  const mimeType = normalizeText(match[1]).toLowerCase();
+  const isBase64 = Boolean(match[2]);
+  const payload = match[3] || "";
+  if (mimeType.includes("svg")) return null;
+  const binary = isBase64 ? atob(payload) : decodeURIComponent(payload);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return { bytes, mimeType };
+}
+
+async function fetchImageAsset(source: string) {
+  const resolved = resolveAssetUrl(source);
+  if (!resolved) return null;
+  if (resolved.startsWith("data:")) return decodeDataUrlBytes(resolved);
+
+  try {
+    const response = await fetch(resolved);
+    if (!response.ok) return null;
+    const contentType = normalizeText(response.headers.get("content-type")).toLowerCase();
+    if (contentType.includes("svg")) return null;
+    return {
+      bytes: new Uint8Array(await response.arrayBuffer()),
+      mimeType: contentType,
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function embedImageAsset(pdf: PDFDocument, source: string) {
+  const asset = await fetchImageAsset(source);
+  if (!asset?.bytes?.length) return null;
+  const mimeType = asset.mimeType;
+  try {
+    if (mimeType.includes("jpeg") || mimeType.includes("jpg") || source.toLowerCase().match(/\.jpe?g(\?|$)/)) {
+      return await pdf.embedJpg(asset.bytes);
+    }
+    return await pdf.embedPng(asset.bytes);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function drawContainedImage({
+  page,
+  image,
+  x,
+  y,
+  maxWidth,
+  maxHeight,
+}: {
+  page: any;
+  image: any;
+  x: number;
+  y: number;
+  maxWidth: number;
+  maxHeight: number;
+}) {
+  if (!image) return false;
+  const scale = Math.min(maxWidth / image.width, maxHeight / image.height);
+  const width = image.width * scale;
+  const height = image.height * scale;
+  page.drawImage(image, {
+    x,
+    y: y + (maxHeight - height) / 2,
+    width,
+    height,
+  });
+  return true;
+}
+
+function resolveStructuredFallbackSignatureSlot({
+  field,
+  index,
+  pageWidth,
+  pageHeight,
+}: {
+  field: Record<string, unknown>;
+  index: number;
+  pageWidth: number;
+  pageHeight: number;
+}) {
+  const marginX = 90;
+  const columnGap = 52;
+  const slotWidth = (pageWidth - marginX * 2 - columnGap) / 2;
+  const rowHeight = 138;
+  const row = Math.floor(index / 2);
+  const column = index % 2;
+  const x = marginX + column * (slotWidth + columnGap);
+  const lineY = pageHeight - 705 - row * rowHeight;
+  const width = slotWidth;
+  const height = 58;
+  const y = lineY + 12;
+  const role = lower(field.signer_role);
+  const roleLabel = role === "agent" ? "Agent / Agency Representative" : role === "seller" ? "Seller" : pdfSafeText(role.replace(/_/g, " "));
+  return {
+    x,
+    y,
+    width,
+    height,
+    lineY,
+    roleLabel,
+  };
+}
+
 async function buildFallbackMandatePdfBytes({
   packet,
   version,
   fields,
+  branding = {},
 }: {
   packet: Record<string, unknown>;
   version: Record<string, unknown>;
   fields: Record<string, unknown>[];
+  branding?: Record<string, unknown>;
 }) {
   const pdf = await PDFDocument.create();
   const regularFont = await pdf.embedFont(StandardFonts.Helvetica);
@@ -427,30 +630,57 @@ async function buildFallbackMandatePdfBytes({
   const pageHeight = 1191;
   const marginX = 90;
   const marginBottom = 82;
-  const maxFieldPage = Math.max(1, ...fields.map((field) => Math.max(1, safeNumber(field.page_number, 1))));
   const placeholders = version?.placeholders_resolved_json && typeof version.placeholders_resolved_json === "object"
     ? version.placeholders_resolved_json as Record<string, unknown>
     : {};
   const sectionManifest = Array.isArray(version?.section_manifest_json) ? version.section_manifest_json as Record<string, unknown>[] : [];
-  const pages = Array.from({ length: Math.max(3, maxFieldPage) }, () => pdf.addPage([pageWidth, pageHeight]));
-  const signaturePageIndex = Math.min(pages.length - 1, Math.max(0, maxFieldPage - 1));
-  const contentLastPageIndex = Math.max(0, signaturePageIndex - 1);
+  const pages: any[] = [];
   const navy = rgb(0.07, 0.13, 0.22);
   const muted = rgb(0.35, 0.42, 0.50);
   const rule = rgb(0.82, 0.84, 0.86);
-  const orgName = pdfSafeText(
+  const orgName = firstPdfText(
+    branding.organisationName,
+    branding.organisation_name,
     placeholders.organisation_display_name ||
       placeholders.organisation_name ||
       placeholders.agency_name ||
       placeholders.agency ||
       "Agency",
   );
+  const agencyLogoCandidates = [
+    { value: branding.logoHighContrastUrl, needsDarkPlate: false },
+    { value: branding.logoDarkUrl, needsDarkPlate: false },
+    { value: branding.organisationLogoHighContrastUrl, needsDarkPlate: false },
+    { value: branding.organisationLogoDarkUrl, needsDarkPlate: false },
+    { value: placeholders.agency_logo_url, needsDarkPlate: true },
+    { value: placeholders["agency.logo_url"], needsDarkPlate: true },
+    { value: branding.logoLightUrl, needsDarkPlate: true },
+    { value: branding.organisationLogoUrl, needsDarkPlate: true },
+    { value: placeholders.organisation_logo_url, needsDarkPlate: true },
+    { value: placeholders["organisation.logo_url"], needsDarkPlate: true },
+    { value: placeholders.logoLightUrl, needsDarkPlate: true },
+    { value: placeholders.organisationLogoUrl, needsDarkPlate: true },
+  ];
+  const agencyLogoChoice = agencyLogoCandidates
+    .map((candidate) => ({ ...candidate, value: normalizeText(candidate.value) }))
+    .find((candidate) => candidate.value && !isBridgeAssetUrl(candidate.value)) || { value: "", needsDarkPlate: false };
+  const agencyLogoUrl = agencyLogoChoice.value;
+  const bridgeLogoUrl = firstPdfText(
+    branding.bridgeLogoLightUrl,
+    placeholders.bridgeLogoLightUrl,
+    placeholders["bridge.logo_light_url"],
+    placeholders.bridge_legal_logo_light_url,
+    placeholders["bridge_legal_logo_light_url"],
+    "/brand/bridge_9_white_background.png",
+  );
+  const agencyLogo = await embedImageAsset(pdf, agencyLogoUrl);
+  const bridgeLogo = await embedImageAsset(pdf, bridgeLogoUrl);
   const documentReference =
-    pdfSafeText(placeholders.document_reference || placeholders.transaction_reference) ||
-    pdfSafeText(packet.title) ||
+    firstPdfText(placeholders.document_reference, placeholders.transaction_reference) ||
+    firstPdfText(packet.title) ||
     "Mandate Agreement";
 
-  const drawBrandHeader = (page: any, pageNumber: number) => {
+  const drawBrandHeader = (page: any) => {
     page.drawRectangle({
       x: 0,
       y: 0,
@@ -458,42 +688,80 @@ async function buildFallbackMandatePdfBytes({
       height: pageHeight,
       color: rgb(1, 1, 1),
     });
-    page.drawText(orgName.toLowerCase().includes("samlin") ? "SAMLIN" : orgName.toUpperCase(), {
+    const agencyLogoBox = {
       x: marginX,
-      y: pageHeight - 95,
-      size: orgName.length > 18 ? 22 : 30,
-      font: boldFont,
-      color: navy,
-    });
-    if (orgName.toLowerCase().includes("samlin")) {
-      page.drawText("REAL ESTATE", {
-        x: marginX + 2,
-        y: pageHeight - 123,
-        size: 13,
-        font: boldFont,
+      y: pageHeight - 136,
+      width: agencyLogoChoice.needsDarkPlate ? 174 : 150,
+      height: agencyLogoChoice.needsDarkPlate ? 74 : 62,
+    };
+    if (agencyLogo && agencyLogoChoice.needsDarkPlate) {
+      page.drawRectangle({
+        x: agencyLogoBox.x - 10,
+        y: agencyLogoBox.y - 7,
+        width: agencyLogoBox.width,
+        height: agencyLogoBox.height,
         color: navy,
       });
     }
-    page.drawText("bridge", {
-      x: pageWidth - marginX - 118,
-      y: pageHeight - 105,
-      size: 30,
-      font: boldFont,
-      color: rgb(0.10, 0.22, 0.30),
+    const drewAgencyLogo = drawContainedImage({
+      page,
+      image: agencyLogo,
+      x: agencyLogoChoice.needsDarkPlate ? agencyLogoBox.x : marginX,
+      y: agencyLogoChoice.needsDarkPlate ? agencyLogoBox.y : pageHeight - 130,
+      maxWidth: agencyLogoChoice.needsDarkPlate ? 154 : 150,
+      maxHeight: agencyLogoChoice.needsDarkPlate ? 60 : 62,
     });
-    page.drawText("9", {
-      x: pageWidth - marginX - 22,
-      y: pageHeight - 105,
-      size: 30,
-      font: boldFont,
-      color: rgb(0.20, 0.78, 0.52),
+    if (!drewAgencyLogo) {
+      page.drawText(orgName.toLowerCase().includes("samlin") ? "SAMLIN" : orgName.toUpperCase(), {
+        x: marginX,
+        y: pageHeight - 95,
+        size: orgName.length > 18 ? 22 : 30,
+        font: boldFont,
+        color: navy,
+      });
+      if (orgName.toLowerCase().includes("samlin")) {
+        page.drawText("REAL ESTATE", {
+          x: marginX + 2,
+          y: pageHeight - 123,
+          size: 13,
+          font: boldFont,
+          color: navy,
+        });
+      }
+    }
+    const drewBridgeLogo = drawContainedImage({
+      page,
+      image: bridgeLogo,
+      x: pageWidth - marginX - 150,
+      y: pageHeight - 126,
+      maxWidth: 150,
+      maxHeight: 54,
     });
+    if (!drewBridgeLogo) {
+      page.drawText("bridge", {
+        x: pageWidth - marginX - 118,
+        y: pageHeight - 105,
+        size: 30,
+        font: boldFont,
+        color: rgb(0.10, 0.22, 0.30),
+      });
+      page.drawText("9", {
+        x: pageWidth - marginX - 22,
+        y: pageHeight - 105,
+        size: 30,
+        font: boldFont,
+        color: rgb(0.20, 0.78, 0.52),
+      });
+    }
     page.drawLine({
       start: { x: marginX, y: pageHeight - 155 },
       end: { x: pageWidth - marginX, y: pageHeight - 155 },
       thickness: 1,
       color: rule,
     });
+  };
+
+  const drawPageFooter = (page: any, pageNumber: number, pageCount: number) => {
     page.drawText(`Page ${pageNumber} of ${pages.length}`, {
       x: pageWidth / 2 - 32,
       y: 42,
@@ -503,9 +771,14 @@ async function buildFallbackMandatePdfBytes({
     });
   };
 
-  pages.forEach((page, index) => drawBrandHeader(page, index + 1));
+  const addPage = () => {
+    const nextPage = pdf.addPage([pageWidth, pageHeight]);
+    pages.push(nextPage);
+    drawBrandHeader(nextPage);
+    return nextPage;
+  };
 
-  const firstPage = pages[0];
+  const firstPage = addPage();
   firstPage.drawText("MANDATE AGREEMENT", {
     x: pageWidth / 2 - boldFont.widthOfTextAtSize("MANDATE AGREEMENT", 28) / 2,
     y: pageHeight - 225,
@@ -532,13 +805,10 @@ async function buildFallbackMandatePdfBytes({
   let y = pageHeight - 350;
 
   const moveToNextContentPage = () => {
-    if (pageIndex < contentLastPageIndex) {
-      pageIndex += 1;
-      page = pages[pageIndex];
-      y = pageHeight - 205;
-      return true;
-    }
-    return false;
+    pageIndex += 1;
+    page = pages[pageIndex] || addPage();
+    y = pageHeight - 205;
+    return true;
   };
 
   const ensureSpace = (height: number) => {
@@ -572,7 +842,7 @@ async function buildFallbackMandatePdfBytes({
   };
 
   const drawSectionHeading = (index: number, label: string) => {
-    ensureSpace(48);
+    ensureSpace(34);
     const heading = `${index}.  ${label.toUpperCase()}`;
     page.drawText(heading, { x: marginX, y, size: 15, font: boldFont, color: navy });
     y -= 18;
@@ -582,7 +852,7 @@ async function buildFallbackMandatePdfBytes({
       thickness: 1,
       color: rule,
     });
-    y -= 28;
+    y -= 18;
   };
 
   const nonSignatureSections = sectionManifest.filter((section) => lower(section.key || section.section_key) !== "signature_pages");
@@ -598,28 +868,29 @@ async function buildFallbackMandatePdfBytes({
         getPlaceholderValue(placeholders, "mandate_introduction_purpose") ||
         getPlaceholderValue(placeholders, "introduction_purpose") ||
         "";
-      drawWrapped({ text: intro || "Not provided", x: marginX, width: pageWidth - marginX * 2, size: 13, lineHeight: 21 });
-      y -= 18;
+      drawWrapped({ text: intro || "Not provided", x: marginX, width: pageWidth - marginX * 2, size: 12.5, lineHeight: 18 });
+      y -= 14;
       return;
     }
 
-    for (const [key, rawLabel] of normalizeSectionRows(section)) {
+    const rows = normalizeSectionRows(section);
+    for (const [rowIndex, [key, rawLabel]] of rows.entries()) {
       const label = pdfSafeText(rawLabel || key);
       const value = pdfSafeText(getPlaceholderValue(placeholders, key) || "Not provided");
-      const valueLines = wrapPdfText(value, 410, regularFont, 12);
-      const rowHeight = Math.max(28, valueLines.length * 18);
-      ensureSpace(rowHeight + 8);
-      page.drawText(`${index + 1}.${normalizeSectionRows(section).findIndex(([rowKey]) => rowKey === key) + 1}`, {
+      const valueLines = wrapPdfText(value, 400, regularFont, 11.5);
+      const rowHeight = Math.max(24, valueLines.length * 15);
+      ensureSpace(rowHeight + 5);
+      page.drawText(`${index + 1}.${rowIndex + 1}`, {
         x: marginX,
         y,
-        size: 12,
+        size: 10.5,
         font: boldFont,
         color: muted,
       });
       page.drawText(label, {
         x: marginX + 50,
         y,
-        size: 12,
+        size: 10.5,
         font: boldFont,
         color: rgb(0.24, 0.29, 0.34),
       });
@@ -628,65 +899,63 @@ async function buildFallbackMandatePdfBytes({
         page.drawText(line, {
           x: marginX + 270,
           y: rowY,
-          size: 12,
+          size: 11.5,
           font: regularFont,
           color: navy,
         });
-        rowY -= 18;
+        rowY -= 15;
       }
       y -= rowHeight;
     }
-    y -= 16;
+    y -= 10;
   });
 
-  const signaturePage = pages[signaturePageIndex];
+  if (y < 505) moveToNextContentPage();
+  const signaturePage = page;
+  const signaturePageNumber = pageIndex + 1;
   signaturePage.drawText(`${signatureSectionIndex}.  SIGNATURE PAGES`, {
     x: marginX,
-    y: pageHeight - 230,
+    y,
     size: 16,
     font: boldFont,
     color: navy,
   });
+  y -= 20;
   signaturePage.drawLine({
-    start: { x: marginX, y: pageHeight - 250 },
-    end: { x: pageWidth - marginX, y: pageHeight - 250 },
+    start: { x: marginX, y },
+    end: { x: pageWidth - marginX, y },
     thickness: 1,
     color: rule,
   });
 
   const signatureFields = fields.filter((field) => lower(field.field_type) === "signature");
-  for (const field of signatureFields) {
-    if (Math.max(1, safeNumber(field.page_number, 1)) !== signaturePageIndex + 1) continue;
-    const x = Math.max(marginX, Math.min(pageWidth - marginX - 168, safeNumber(field.x_position, marginX)));
-    const width = Math.max(120, Math.min(220, safeNumber(field.width, 168)));
-    const height = Math.max(36, safeNumber(field.height, 44));
-    const yFromTop = Math.max(0, safeNumber(field.y_position, 692));
-    const imageBottomY = Math.max(140, pageHeight - yFromTop - height);
-    const lineY = Math.max(120, imageBottomY - 8);
+  for (const [index, field] of signatureFields.entries()) {
+    const slot = resolveStructuredFallbackSignatureSlot({ field, index, pageWidth, pageHeight });
     const role = lower(field.signer_role);
-    const roleLabel = role === "agent" ? "Agent / Agency Representative" : role === "seller" ? "Seller" : role.replace(/_/g, " ");
-    const name = pdfSafeText(field.signer_name || getPlaceholderValue(placeholders, `${role}_full_name`) || getPlaceholderValue(placeholders, `${role}.display_name`) || roleLabel);
+    const name = pdfSafeText(field.signer_name || getPlaceholderValue(placeholders, `${role}_full_name`) || getPlaceholderValue(placeholders, `${role}.display_name`) || slot.roleLabel);
     signaturePage.drawLine({
-      start: { x, y: lineY },
-      end: { x: x + width, y: lineY },
+      start: { x: slot.x, y: slot.lineY },
+      end: { x: slot.x + slot.width, y: slot.lineY },
       thickness: 1,
       color: navy,
     });
-    signaturePage.drawText(roleLabel, {
-      x,
-      y: lineY - 25,
+    signaturePage.drawText(slot.roleLabel, {
+      x: slot.x,
+      y: slot.lineY - 25,
       size: 11,
       font: boldFont,
       color: navy,
     });
     signaturePage.drawText(name, {
-      x,
-      y: lineY - 47,
+      x: slot.x,
+      y: slot.lineY - 47,
       size: 10,
       font: regularFont,
       color: navy,
     });
   }
+
+  pages.forEach((footerPage, index) => drawPageFooter(footerPage, index + 1, pages.length));
 
   return pdf.save();
 }
@@ -729,7 +998,7 @@ Deno.serve(async (req: Request) => {
 
     const packetResult = await supabase
       .from("document_packets")
-      .select("id, organisation_id, packet_type, title, status, current_version_number, transaction_id, lead_id, source_context_json")
+      .select("id, organisation_id, packet_type, title, status, current_version_number, transaction_id, lead_id, source_context_json, branding_snapshot_json")
       .eq("id", packetId)
       .maybeSingle();
     if (packetResult.error) throw packetResult.error;
@@ -741,6 +1010,12 @@ Deno.serve(async (req: Request) => {
         errorCode: "PACKET_NOT_FOUND",
       });
     }
+    const packetSourceContext = packet.source_context_json && typeof packet.source_context_json === "object"
+      ? packet.source_context_json as Record<string, unknown>
+      : {};
+    const fallbackBranding = await fetchOrganisationBranding(supabase, String(packet.organisation_id || ""));
+    mergeBrandingPayload(fallbackBranding, packetSourceContext.brandingSnapshot || packetSourceContext.branding_snapshot_json || packetSourceContext.branding);
+    mergeBrandingPayload(fallbackBranding, packet.branding_snapshot_json);
 
     let versionQuery = supabase
       .from("document_packet_versions")
@@ -899,6 +1174,7 @@ Deno.serve(async (req: Request) => {
     const sourceIsPdf = isPdfPath(renderedFilePath);
     let sourceFormat = sourceIsPdf ? "pdf" : "docx";
     let fallbackSourceUsed = false;
+    let structuredFallbackSourceUsed = false;
 
     if (renderedFilePath) {
       const sourceDownload = await downloadFirstAvailable({
@@ -909,11 +1185,13 @@ Deno.serve(async (req: Request) => {
       sourcePdfBytes = sourceDownload.bytes;
     } else {
       fallbackSourceUsed = true;
+      structuredFallbackSourceUsed = true;
       sourceFormat = "structured_fallback_pdf";
       sourcePdfBytes = await buildFallbackMandatePdfBytes({
         packet,
         version,
         fields,
+        branding: fallbackBranding,
       });
     }
 
@@ -942,9 +1220,11 @@ Deno.serve(async (req: Request) => {
       return accumulator;
     }, {} as Record<string, string>);
 
-    for (const field of signatureFields) {
-      const pageNumber = Math.max(1, safeNumber(field.page_number, 1));
+    for (const [signatureIndex, field] of signatureFields.entries()) {
       const pages = pdf.getPages();
+      const pageNumber = structuredFallbackSourceUsed
+        ? pages.length
+        : Math.max(1, safeNumber(field.page_number, 1));
       if (pageNumber > pages.length) continue;
       const page = pages[pageNumber - 1];
 
@@ -970,11 +1250,21 @@ Deno.serve(async (req: Request) => {
         embedded = await pdf.embedPng(assetDownload.bytes);
       }
 
-      const width = Math.max(8, safeNumber(field.width, 120));
-      const height = Math.max(8, safeNumber(field.height, 36));
-      const x = Math.max(0, safeNumber(field.x_position, 0));
+      const fallbackSlot = structuredFallbackSourceUsed
+        ? resolveStructuredFallbackSignatureSlot({
+          field,
+          index: signatureIndex,
+          pageWidth: page.getWidth(),
+          pageHeight: page.getHeight(),
+        })
+        : null;
+      const width = Math.max(8, fallbackSlot?.width || safeNumber(field.width, 120));
+      const height = Math.max(8, fallbackSlot?.height || safeNumber(field.height, 36));
+      const x = Math.max(0, fallbackSlot?.x || safeNumber(field.x_position, 0));
       const yFromTop = Math.max(0, safeNumber(field.y_position, 0));
-      const y = Math.max(0, page.getHeight() - yFromTop - height);
+      const y = fallbackSlot
+        ? fallbackSlot.y
+        : Math.max(0, page.getHeight() - yFromTop - height);
 
       page.drawImage(embedded, {
         x,
@@ -993,7 +1283,7 @@ Deno.serve(async (req: Request) => {
         if (signedDateText) {
           page.drawText(signedDateText, {
             x,
-            y: Math.max(0, y - 12),
+            y: Math.max(0, fallbackSlot ? fallbackSlot.lineY - 64 : y - 12),
             size: 8,
             font: dateFont,
             color: rgb(0.18, 0.24, 0.32),
