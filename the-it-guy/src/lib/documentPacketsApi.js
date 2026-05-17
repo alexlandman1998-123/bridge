@@ -87,9 +87,12 @@ function valueIndicatesMarried(value = '') {
 }
 
 function hasMeaningfulSpouseValue(value = '') {
+  const text = normalizeText(value)
+  const lowered = text.toLowerCase()
+  if (lowered.startsWith('[missing:') || lowered.startsWith('missing:')) return false
   const normalized = normalizeText(value).toLowerCase().replace(/[\s._-]+/g, '_')
   if (!normalized) return false
-  return !['na', 'n_a', 'none', 'unknown', 'tbc', 'not_applicable', 'not_provided', 'no_spouse'].includes(normalized)
+  return !['na', 'n_a', 'n/a', 'none', 'unknown', 'tbc', 'missing', 'not_applicable', 'not_provided', 'no_spouse'].includes(normalized)
 }
 
 function mandateRequiresSpouseSignatureFromPacket(packet = {}) {
@@ -147,11 +150,13 @@ function mandateRequiresSpouseSignatureFromPacket(packet = {}) {
   ].some(valueIndicatesMarried)
 }
 
-function filterMandateSigningRows(packet = {}, rows = []) {
+function filterMandateSigningRows(packet = {}, rows = [], options = {}) {
   const list = Array.isArray(rows) ? rows : []
   if (normalizeText(packet?.packet_type).toLowerCase() !== 'mandate') return list
 
-  const requiresSpouse = mandateRequiresSpouseSignatureFromPacket(packet)
+  const requiresSpouse = options.requiresSpouse === undefined
+    ? mandateRequiresSpouseSignatureFromPacket(packet)
+    : Boolean(options.requiresSpouse)
   return list.filter((row) => {
     const role = normalizeText(row?.signer_role || row?.signerRole).toLowerCase()
     if (role === 'agent' || role === 'seller') return true
@@ -2162,8 +2167,16 @@ export async function getDocumentPacketSigningSummary({ packetId, packetVersionI
     }
   }
 
-  const fields = filterMandateSigningRows(packet, fieldsResult.data || [])
-  const signers = filterMandateSigningRows(packet, signersResult.data || [])
+  const rawFields = fieldsResult.data || []
+  const rawSigners = signersResult.data || []
+  const spouseFields = normalizeText(packet?.packet_type).toLowerCase() === 'mandate'
+    ? rawFields.filter((field) => normalizeText(field?.signer_role || field?.signerRole).toLowerCase() === 'purchaser_2')
+    : []
+  const requiresSpouse = spouseFields.length
+    ? spouseFields.some((field) => Boolean(field?.required))
+    : mandateRequiresSpouseSignatureFromPacket(packet)
+  const fields = filterMandateSigningRows(packet, rawFields, { requiresSpouse })
+  const signers = filterMandateSigningRows(packet, rawSigners, { requiresSpouse })
 
   const groupedBySigner = fields.reduce((accumulator, field) => {
     const role = normalizeText(field?.signer_role || 'other') || 'other'
@@ -2263,7 +2276,19 @@ export async function generateDocumentPacketSigningLinks({
     throw new Error('No signers found. Prepare signing fields first.')
   }
   const isMandatePacket = normalizeText(packet.packet_type).toLowerCase() === 'mandate'
-  const mandateSpouseRequired = isMandatePacket && mandateRequiresSpouseSignatureFromPacket(packet)
+  const signingFields = isMandatePacket
+    ? await listDocumentSigningFields({
+        packetId: packet.id,
+        packetVersionId: targetVersion.id,
+        organisationId: packet.organisation_id,
+      })
+    : []
+  const spouseFields = signingFields.filter((field) => normalizeText(field?.signer_role || field?.signerRole).toLowerCase() === 'purchaser_2')
+  const mandateSpouseRequired = isMandatePacket && (
+    spouseFields.length
+      ? spouseFields.some((field) => Boolean(field?.required))
+      : mandateRequiresSpouseSignatureFromPacket(packet)
+  )
   const relevantSigners = isMandatePacket
     ? signers.filter((signer) => {
         const role = normalizeText(signer?.signer_role).toLowerCase()

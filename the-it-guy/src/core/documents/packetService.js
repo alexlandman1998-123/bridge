@@ -593,8 +593,17 @@ function buildSyntheticEmail(role = 'other') {
   return `pending+${String(role || 'other').toLowerCase()}@bridge.local`
 }
 
+function isMissingPlaceholderText(value = '') {
+  const text = normalizeText(value)
+  const lowered = text.toLowerCase()
+  if (!lowered) return false
+  if (lowered.startsWith('[missing:') || lowered.startsWith('missing:')) return true
+  const normalized = lowered.replace(/[\s._-]+/g, '_')
+  return ['missing', 'na', 'n_a', 'n/a', 'none', 'unknown', 'tbc', 'not_applicable', 'not_provided', 'no_spouse'].includes(normalized)
+}
+
 function firstResolvedText(...values) {
-  return values.map((value) => normalizeText(value)).find(Boolean) || ''
+  return values.map((value) => normalizeText(value)).find((value) => value && !isMissingPlaceholderText(value)) || ''
 }
 
 function combinePersonName(firstName = '', surname = '') {
@@ -621,9 +630,10 @@ function valueIndicatesMarried(value = '') {
 }
 
 function hasMeaningfulSpouseValue(value = '') {
+  if (isMissingPlaceholderText(value)) return false
   const normalized = normalizeText(value).toLowerCase().replace(/[\s._-]+/g, '_')
   if (!normalized) return false
-  return !['na', 'n_a', 'none', 'unknown', 'tbc', 'not_applicable', 'not_provided', 'no_spouse'].includes(normalized)
+  return !['na', 'n_a', 'n/a', 'none', 'unknown', 'tbc', 'missing', 'not_applicable', 'not_provided', 'no_spouse'].includes(normalized)
 }
 
 function mandateRequiresSpouseSignatureFromPacket(packet = {}) {
@@ -2086,7 +2096,13 @@ export async function generateFinalSignedPacketDocument({
   }
 
   const mandateSpouseRequired = normalizeText(packet?.packet_type).toLowerCase() === 'mandate' &&
-    mandateRequiresSpouseSignatureFromPacket(packet)
+    (() => {
+      const spouseFields = (signingSummary.fields || []).filter((field) =>
+        normalizeText(field?.signer_role || field?.signerRole).toLowerCase() === 'purchaser_2'
+      )
+      if (spouseFields.length) return spouseFields.some((field) => Boolean(field?.required))
+      return mandateRequiresSpouseSignatureFromPacket(packet)
+    })()
   const relevantSigners = normalizeText(packet?.packet_type).toLowerCase() === 'mandate'
     ? (signingSummary.signers || []).filter((signer) => {
         const role = normalizeText(signer?.signer_role || signer?.signerRole).toLowerCase()

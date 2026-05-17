@@ -318,9 +318,12 @@ function valueIndicatesMarried(value = '') {
 }
 
 function hasMeaningfulSpouseValue(value = '') {
+  const text = normalizeText(value)
+  const lowered = text.toLowerCase()
+  if (lowered.startsWith('[missing:') || lowered.startsWith('missing:')) return false
   const normalized = normalizeKey(value)
   if (!normalized) return false
-  return !['na', 'n_a', 'none', 'unknown', 'tbc', 'not_applicable', 'not_provided', 'no_spouse'].includes(normalized)
+  return !['na', 'n_a', 'n/a', 'none', 'unknown', 'tbc', 'missing', 'not_applicable', 'not_provided', 'not provided', 'no_spouse'].includes(normalized)
 }
 
 function mandateRequiresSpouseSignature({ sourceContext = {}, latestVersion = null } = {}) {
@@ -378,6 +381,13 @@ function mandateRequiresSpouseSignature({ sourceContext = {}, latestVersion = nu
     onboardingFormData.marriageRegime,
     onboardingFormData.maritalRegime,
   ].some(valueIndicatesMarried)
+}
+
+function resolveMandateSpouseRequirementFromSigningSummary(signingSummary = null) {
+  const fields = Array.isArray(signingSummary?.fields) ? signingSummary.fields : []
+  const spouseFields = fields.filter((field) => normalizeKey(field?.signer_role || field?.signerRole) === 'purchaser_2')
+  if (!spouseFields.length) return null
+  return spouseFields.some((field) => Boolean(field?.required))
 }
 
 function resolveSignerStatusLabel(status = '', statusState = '') {
@@ -1943,8 +1953,13 @@ export default function LegalDocumentWorkspace({
       : {}
   ), [statusState?.packet?.source_context_json])
   const mandateSpouseRequired = useMemo(
-    () => isMandatePacket && mandateRequiresSpouseSignature({ sourceContext, latestVersion }),
-    [isMandatePacket, latestVersion, sourceContext],
+    () => {
+      if (!isMandatePacket) return false
+      const signingRequirement = resolveMandateSpouseRequirementFromSigningSummary(statusState?.signingSummary)
+      if (signingRequirement !== null) return signingRequirement
+      return mandateRequiresSpouseSignature({ sourceContext, latestVersion })
+    },
+    [isMandatePacket, latestVersion, sourceContext, statusState?.signingSummary],
   )
 
   const signerRoster = useMemo(() => {

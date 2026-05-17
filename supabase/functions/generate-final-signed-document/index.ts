@@ -57,9 +57,12 @@ function valueIndicatesMarried(value: unknown) {
 }
 
 function hasMeaningfulSpouseValue(value: unknown) {
+  const text = normalizeText(value);
+  const lowered = text.toLowerCase();
+  if (lowered.startsWith("[missing:") || lowered.startsWith("missing:")) return false;
   const normalized = normalizeText(value).toLowerCase().replace(/[\s._-]+/g, "_");
   if (!normalized) return false;
-  return !["na", "n_a", "none", "unknown", "tbc", "not_applicable", "not_provided", "no_spouse"].includes(normalized);
+  return !["na", "n_a", "n/a", "none", "unknown", "tbc", "missing", "not_applicable", "not_provided", "no_spouse"].includes(normalized);
 }
 
 function mandateRequiresSpouseSignature(packet: Record<string, unknown>) {
@@ -117,12 +120,19 @@ function mandateRequiresSpouseSignature(packet: Record<string, unknown>) {
   ].some(valueIndicatesMarried);
 }
 
-function mandateRoleIsRequired(packet: Record<string, unknown>, roleValue: unknown) {
+function mandateRoleIsRequired(packet: Record<string, unknown>, roleValue: unknown, spouseRequiredOverride: boolean | null = null) {
   if (lower(packet.packet_type) !== "mandate") return true;
   const role = lower(roleValue);
   if (role === "agent" || role === "seller") return true;
-  if (role === "purchaser_2") return mandateRequiresSpouseSignature(packet);
+  if (role === "purchaser_2") return spouseRequiredOverride === null ? mandateRequiresSpouseSignature(packet) : spouseRequiredOverride;
   return false;
+}
+
+function resolveMandateSpouseRequiredForFields(packet: Record<string, unknown>, fields: Record<string, unknown>[]) {
+  if (lower(packet.packet_type) !== "mandate") return null;
+  const spouseFields = fields.filter((field) => lower(field.signer_role) === "purchaser_2");
+  if (!spouseFields.length) return null;
+  return spouseFields.some((field) => Boolean(field.required));
 }
 
 function safeNumber(value: unknown, fallback = 0) {
@@ -423,6 +433,19 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    const fieldsResult = await supabase
+      .from("document_signing_fields")
+      .select(
+        "id, signer_role, signer_email, field_type, page_number, x_position, y_position, width, height, required, status, signature_asset_path, signature_asset_url",
+      )
+      .eq("packet_id", packetId)
+      .eq("packet_version_id", String(version.id || ""))
+      .order("page_number", { ascending: true })
+      .order("created_at", { ascending: true });
+    if (fieldsResult.error) throw fieldsResult.error;
+    const rawFields = (fieldsResult.data || []) as Record<string, unknown>[];
+    const spouseRequiredForVersion = resolveMandateSpouseRequiredForFields(packet, rawFields);
+
     const signersResult = await supabase
       .from("document_packet_signers")
       .select("id, signer_role, signer_email, signer_name, status, signed_at")
@@ -430,7 +453,7 @@ Deno.serve(async (req: Request) => {
       .eq("packet_version_id", String(version.id || ""));
     if (signersResult.error) throw signersResult.error;
     const signers = ((signersResult.data || []) as Record<string, unknown>[])
-      .filter((signer) => mandateRoleIsRequired(packet, signer.signer_role));
+      .filter((signer) => mandateRoleIsRequired(packet, signer.signer_role, spouseRequiredForVersion));
     if (!signers.length) {
       return jsonResponse(400, {
         success: false,
@@ -449,18 +472,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const fieldsResult = await supabase
-      .from("document_signing_fields")
-      .select(
-        "id, signer_role, signer_email, field_type, page_number, x_position, y_position, width, height, required, status, signature_asset_path, signature_asset_url",
-      )
-      .eq("packet_id", packetId)
-      .eq("packet_version_id", String(version.id || ""))
-      .order("page_number", { ascending: true })
-      .order("created_at", { ascending: true });
-    if (fieldsResult.error) throw fieldsResult.error;
-    const fields = ((fieldsResult.data || []) as Record<string, unknown>[])
-      .filter((field) => mandateRoleIsRequired(packet, field.signer_role));
+    const fields = rawFields.filter((field) => mandateRoleIsRequired(packet, field.signer_role, spouseRequiredForVersion));
 
     const requiredFields = fields.filter((field) => Boolean(field.required));
     const incompleteFields = requiredFields.filter((field) => lower(field.status) !== "completed");

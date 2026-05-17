@@ -34,9 +34,12 @@ function valueIndicatesMarried(value: unknown) {
 }
 
 function hasMeaningfulSpouseValue(value: unknown) {
+  const text = normalizeText(value);
+  const lowered = text.toLowerCase();
+  if (lowered.startsWith("[missing:") || lowered.startsWith("missing:")) return false;
   const normalized = normalizeText(value).toLowerCase().replace(/[\s._-]+/g, "_");
   if (!normalized) return false;
-  return !["na", "n_a", "none", "unknown", "tbc", "not_applicable", "not_provided", "no_spouse"].includes(normalized);
+  return !["na", "n_a", "n/a", "none", "unknown", "tbc", "missing", "not_applicable", "not_provided", "no_spouse"].includes(normalized);
 }
 
 function mandateRequiresSpouseSignature(packet: Record<string, unknown>) {
@@ -94,15 +97,43 @@ function mandateRequiresSpouseSignature(packet: Record<string, unknown>) {
   ].some(valueIndicatesMarried);
 }
 
-function filterMandateSignersForCompletion(signers: Record<string, unknown>[], packet: Record<string, unknown>) {
+function filterMandateSignersForCompletion(
+  signers: Record<string, unknown>[],
+  packet: Record<string, unknown>,
+  spouseRequiredOverride: boolean | null = null,
+) {
   if (normalizeText(packet.packet_type).toLowerCase() !== "mandate") return signers;
-  const requiresSpouse = mandateRequiresSpouseSignature(packet);
+  const requiresSpouse = spouseRequiredOverride === null ? mandateRequiresSpouseSignature(packet) : spouseRequiredOverride;
   return signers.filter((signer) => {
     const role = normalizeText(signer.signer_role).toLowerCase();
     if (role === "agent" || role === "seller") return true;
     if (role === "purchaser_2") return requiresSpouse;
     return false;
   });
+}
+
+async function resolveMandateSpouseRequiredForVersion({
+  supabase,
+  packet,
+  packetId,
+  packetVersionId,
+}: {
+  supabase: any;
+  packet: Record<string, unknown>;
+  packetId: string;
+  packetVersionId: string;
+}) {
+  if (normalizeText(packet.packet_type).toLowerCase() !== "mandate") return null;
+  const fieldsResult = await supabase
+    .from("document_signing_fields")
+    .select("signer_role, required")
+    .eq("packet_id", packetId)
+    .eq("packet_version_id", packetVersionId);
+  if (fieldsResult.error) throw fieldsResult.error;
+  const spouseFields = ((fieldsResult.data || []) as Record<string, unknown>[])
+    .filter((field) => normalizeText(field.signer_role).toLowerCase() === "purchaser_2");
+  if (!spouseFields.length) return null;
+  return spouseFields.some((field) => Boolean(field.required));
 }
 
 function parseBucketCandidates(...values: (string | undefined)[]) {
@@ -884,7 +915,13 @@ Deno.serve(async (req: Request) => {
           sellerInviteSent = inviteResult.sellerInviteSent;
         }
 
-        const completionSigners = filterMandateSignersForCompletion(allSigners, packet);
+        const spouseRequiredForVersion = await resolveMandateSpouseRequiredForVersion({
+          supabase,
+          packet,
+          packetId,
+          packetVersionId,
+        });
+        const completionSigners = filterMandateSignersForCompletion(allSigners, packet, spouseRequiredForVersion);
         const nextPacketStatus = choosePacketStatusFromSigners(completionSigners);
         const workflowSigningStatus = nextPacketStatus === "completed" ? "completed" : resolveSigningStatusFromSigners(completionSigners);
 
@@ -1009,7 +1046,13 @@ Deno.serve(async (req: Request) => {
         sellerInviteSent = inviteResult.sellerInviteSent;
       }
 
-      const completionSigners = filterMandateSignersForCompletion(allSigners, packet);
+      const spouseRequiredForVersion = await resolveMandateSpouseRequiredForVersion({
+        supabase,
+        packet,
+        packetId,
+        packetVersionId,
+      });
+      const completionSigners = filterMandateSignersForCompletion(allSigners, packet, spouseRequiredForVersion);
       const nextPacketStatus = choosePacketStatusFromSigners(completionSigners);
       const workflowSigningStatus = nextPacketStatus === "completed" ? "completed" : resolveSigningStatusFromSigners(completionSigners);
 
