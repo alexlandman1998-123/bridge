@@ -913,6 +913,11 @@ function Dashboard() {
   }, [role, profile?.id])
 
   const loadDashboard = useCallback(async () => {
+    if (isPrincipalAgentView) {
+      setLoading(false)
+      return
+    }
+
     if (!isSupabaseConfigured) {
       setLoading(false)
       return
@@ -1000,7 +1005,7 @@ function Dashboard() {
   }, [loadDashboard])
 
   useEffect(() => {
-    if (role !== 'agent' || !organisationIdForAppointments) return undefined
+    if (role !== 'agent' || isPrincipalAgentView || !organisationIdForAppointments) return undefined
 
     const resolvedAgentIdentity = String(profile?.id || profile?.email || '').trim()
     const refreshAppointments = async () => {
@@ -1033,7 +1038,7 @@ function Dashboard() {
   }, [isPrincipalAgentView, organisationIdForAppointments, profile?.email, profile?.id, role])
 
   useEffect(() => {
-    if (role !== 'agent' || !organisationIdForAppointments) return undefined
+    if (role !== 'agent' || isPrincipalAgentView || !organisationIdForAppointments) return undefined
     const refreshSnapshots = () => {
       const crm = getAgencyPipelineSnapshot(organisationIdForAppointments)
       const canvassing = getCanvassingStorageSnapshot(organisationIdForAppointments)
@@ -1049,7 +1054,7 @@ function Dashboard() {
     refreshSnapshots()
     window.addEventListener('itg:agency-crm-updated', refreshSnapshots)
     return () => window.removeEventListener('itg:agency-crm-updated', refreshSnapshots)
-  }, [organisationIdForAppointments, role])
+  }, [isPrincipalAgentView, organisationIdForAppointments, role])
 
   const rows = useMemo(() => overview.rows || [], [overview.rows])
 

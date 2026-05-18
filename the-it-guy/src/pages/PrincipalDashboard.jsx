@@ -218,12 +218,12 @@ function PrincipalKpiRow({ data }) {
 function PipelineStageChart({ stages }) {
   const maxValue = Math.max(1, ...stages.map((stage) => Number(stage.value || 0)))
   const points = stages.map((stage, index) => {
-    const x = 8 + index * (84 / Math.max(1, stages.length - 1))
+    const x = 2 + index * (96 / Math.max(1, stages.length - 1))
     const y = 78 - (Number(stage.value || 0) / maxValue) * 48
     return { ...stage, x, y }
   })
   const path = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
-  const area = `${path} L ${points.at(-1)?.x || 92} 84 L ${points[0]?.x || 8} 84 Z`
+  const area = `${path} L ${points.at(-1)?.x || 98} 84 L ${points[0]?.x || 2} 84 Z`
   return (
     <div className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
       <div>
@@ -231,7 +231,7 @@ function PipelineStageChart({ stages }) {
         <p className="mt-1 text-[1.45rem] font-semibold tracking-[-0.035em] text-[#101828]">{formatCurrency(stages.reduce((sum, stage) => sum + Number(stage.value || 0), 0))}</p>
       </div>
       <div className="flex min-h-[210px] items-center justify-center">
-        <svg viewBox="0 0 100 92" className="h-[190px] w-full overflow-visible" role="img" aria-label="Pipeline by stage">
+        <svg viewBox="0 0 100 92" preserveAspectRatio="none" className="h-[190px] w-full overflow-visible" role="img" aria-label="Pipeline by stage">
           <defs>
             <linearGradient id="pipelineArea" x1="0" x2="1" y1="0" y2="0">
               <stop offset="0%" stopColor="#dbeafe" />
@@ -241,9 +241,9 @@ function PipelineStageChart({ stages }) {
               <stop offset="100%" stopColor="#f1f5f9" />
             </linearGradient>
           </defs>
-          {[8, 26, 44, 62, 80].map((x) => <line key={x} x1={x} x2={x} y1="24" y2="84" stroke="#e8eef6" strokeWidth="0.6" />)}
+          {[2, 26, 50, 74, 98].map((x) => <line key={x} x1={x} x2={x} y1="24" y2="84" stroke="#e8eef6" strokeWidth="0.6" vectorEffect="non-scaling-stroke" />)}
           <path d={area} fill="url(#pipelineArea)" opacity="0.88" />
-          <path d={path} fill="none" stroke="#4f86e8" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={path} fill="none" stroke="#4f86e8" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
           {points.map((point) => <circle key={point.key} cx={point.x} cy={point.y} r="2.5" fill={STAGE_COLORS[point.key] || '#3b82f6'} />)}
         </svg>
       </div>

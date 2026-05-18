@@ -113,6 +113,25 @@ async function safeSelect(table, selectVariants, { agencyId = '', agencyColumn =
   return []
 }
 
+async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'transaction_id', order = 'updated_at', ascending = false, limit = 1000 } = {}) {
+  if (!isSupabaseConfigured || !supabase) return []
+  const normalizedIds = Array.from(new Set((Array.isArray(ids) ? ids : []).map(normalizeText).filter(Boolean)))
+  if (!normalizedIds.length) return []
+  const variants = Array.isArray(selectVariants) ? selectVariants : [selectVariants || '*']
+  let lastError = null
+  for (const fields of variants) {
+    let query = supabase.from(table).select(fields).in(idColumn, normalizedIds)
+    if (order) query = query.order(order, { ascending })
+    if (limit) query = query.limit(limit)
+    const { data, error } = await query
+    if (!error) return data || []
+    lastError = error
+    if (!isMissingSourceError(error)) throw error
+  }
+  console.debug('[PrincipalDashboard] Scoped source unavailable; using empty result.', { table, message: lastError?.message })
+  return []
+}
+
 function getDealValue(row = {}) {
   return toNumber(row.purchase_price || row.sales_price || row.sale_price || row.estimated_value || row.budget)
 }
@@ -302,26 +321,29 @@ export async function getPrincipalDashboardData({ agencyId = '', workspaceId = '
   const [
     transactions,
     leads,
-    documentRequests,
     documentPackets,
     packetEvents,
-    documents,
-    subprocesses,
     organisationUsers,
     transactionCommissions,
   ] = await Promise.all([
     safeSelect('transactions', transactionFields, { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
     safeSelect('leads', 'lead_id, organisation_id, assigned_agent_id, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id', { agencyId: resolvedAgencyId, order: 'created_at', limit: 1500 }),
-    safeSelect('document_requests', 'id, transaction_id, status, assigned_to_role, document_type, title, created_at, updated_at, completed_at', { agencyId: '', agencyColumn: '', order: 'updated_at', limit: 1500 }),
     safeSelect('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1000 }),
     safeSelect('document_packet_events', 'id, packet_id, organisation_id, event_type, event_payload_json, created_by, created_at', { agencyId: resolvedAgencyId, order: 'created_at', limit: 300 }),
-    safeSelect('documents', 'id, transaction_id, name, category, uploaded_by_email, uploaded_by_role, created_at', { agencyId: '', agencyColumn: '', order: 'created_at', limit: 300 }),
-    safeSelect('transaction_subprocesses', 'id, transaction_id, process_type, owner_type, status, created_at, updated_at', { agencyId: '', agencyColumn: '', order: 'updated_at', limit: 1200 }),
     safeSelect('organisation_users', 'id, organisation_id, user_id, first_name, last_name, email, role, status, last_active_at, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 500 }),
     safeSelect('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
   ])
 
   const transactionIds = new Set(transactions.map((row) => normalizeText(row.id)).filter(Boolean))
+  const [
+    documentRequests,
+    documents,
+    subprocesses,
+  ] = await Promise.all([
+    safeSelectByIds('document_requests', 'id, transaction_id, status, assigned_to_role, document_type, title, created_at, updated_at, completed_at', [...transactionIds], { order: 'updated_at', limit: 1500 }),
+    safeSelectByIds('documents', 'id, transaction_id, name, category, uploaded_by_email, uploaded_by_role, created_at', [...transactionIds], { order: 'created_at', limit: 300 }),
+    safeSelectByIds('transaction_subprocesses', 'id, transaction_id, process_type, owner_type, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200 }),
+  ])
   const scopedDocumentRequests = documentRequests.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
   const scopedDocuments = documents.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
   const scopedSubprocesses = subprocesses.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
