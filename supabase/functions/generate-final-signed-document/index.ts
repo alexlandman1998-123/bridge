@@ -612,6 +612,322 @@ function resolveStructuredFallbackSignatureSlot({
   };
 }
 
+function normalizeNullableUuid(value: unknown) {
+  const normalized = normalizeText(value);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)
+    ? normalized
+    : null;
+}
+
+function normalizeNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const cleaned = String(value)
+    .replace(/\u00a0/g, " ")
+    .replace(/[^0-9.,-]/g, "")
+    .replace(/\s+/g, "")
+    .replace(/,/g, ".");
+  const number = Number(cleaned);
+  return Number.isFinite(number) ? number : null;
+}
+
+function createListingReference() {
+  const day = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const suffix = crypto.randomUUID().slice(0, 8).toUpperCase();
+  return `PL-${day}-${suffix}`;
+}
+
+function firstValue(...values: unknown[]) {
+  return values.map((value) => normalizeText(value)).find(Boolean) || "";
+}
+
+function firstMissingText(current: unknown, ...fallbacks: unknown[]) {
+  return normalizeText(current) || firstValue(...fallbacks) || null;
+}
+
+function firstMissingNumber(current: unknown, fallback: unknown) {
+  const existing = normalizeNumber(current);
+  return existing === null ? normalizeNumber(fallback) : existing;
+}
+
+function resolveSignedMandateListingStatus(current: unknown) {
+  const status = lower(current);
+  if (["active", "under_offer", "transaction_created", "sold", "withdrawn"].includes(status)) return status;
+  return "mandate_signed";
+}
+
+async function updateLeadConversionLink({
+  supabase,
+  organisationId,
+  leadId,
+  listingId,
+  packetId,
+}: {
+  supabase: any;
+  organisationId: string;
+  leadId: string;
+  listingId: string;
+  packetId: string;
+}) {
+  if (!organisationId || !leadId || !listingId) return false;
+  const fullPayload = {
+    stage: "Converted To Listing",
+    status: "Converted To Listing",
+    listing_id: listingId,
+    mandate_packet_id: packetId || null,
+    updated_at: new Date().toISOString(),
+  };
+  let result = await supabase
+    .from("leads")
+    .update(fullPayload)
+    .eq("organisation_id", organisationId)
+    .eq("lead_id", leadId)
+    .select("lead_id")
+    .maybeSingle();
+  if (!result.error) return Boolean(result.data);
+
+  result = await supabase
+    .from("leads")
+    .update({
+      stage: "Converted To Listing",
+      status: "Converted To Listing",
+      updated_at: fullPayload.updated_at,
+    })
+    .eq("organisation_id", organisationId)
+    .eq("lead_id", leadId)
+    .select("lead_id")
+    .maybeSingle();
+  return !result.error && Boolean(result.data);
+}
+
+async function ensureListingFromSignedMandate({
+  supabase,
+  packet,
+  version,
+  finalArtifactPath,
+}: {
+  supabase: any;
+  packet: Record<string, unknown>;
+  version: Record<string, unknown>;
+  finalArtifactPath: string;
+}) {
+  if (lower(packet.packet_type) !== "mandate") return null;
+  const organisationId = normalizeText(packet.organisation_id);
+  if (!organisationId) return null;
+  const sourceContext = packet.source_context_json && typeof packet.source_context_json === "object"
+    ? packet.source_context_json as Record<string, unknown>
+    : {};
+  const validationSummary = version.validation_summary_json && typeof version.validation_summary_json === "object"
+    ? version.validation_summary_json as Record<string, unknown>
+    : {};
+  const versionGeneratedSnapshot = validationSummary.generatedDataSnapshot && typeof validationSummary.generatedDataSnapshot === "object"
+    ? validationSummary.generatedDataSnapshot as Record<string, unknown>
+    : {};
+  const generatedSnapshot = sourceContext.generatedDataSnapshot && typeof sourceContext.generatedDataSnapshot === "object"
+    ? sourceContext.generatedDataSnapshot as Record<string, unknown>
+    : versionGeneratedSnapshot;
+  const sourceSnapshot = generatedSnapshot.sourceSnapshot && typeof generatedSnapshot.sourceSnapshot === "object"
+    ? generatedSnapshot.sourceSnapshot as Record<string, unknown>
+    : {};
+  const sourceLead = sourceSnapshot.lead && typeof sourceSnapshot.lead === "object"
+    ? sourceSnapshot.lead as Record<string, unknown>
+    : {};
+  const placeholders = version?.placeholders_resolved_json && typeof version.placeholders_resolved_json === "object"
+    ? version.placeholders_resolved_json as Record<string, unknown>
+    : generatedSnapshot.placeholders && typeof generatedSnapshot.placeholders === "object"
+      ? generatedSnapshot.placeholders as Record<string, unknown>
+      : {};
+  const leadId = normalizeText(
+    packet.lead_id ||
+      sourceContext.leadId ||
+      sourceContext.lead_id ||
+      sourceLead.lead_id ||
+      sourceLead.id,
+  );
+  const existingListingId = normalizeText(sourceContext.privateListingId || sourceContext.private_listing_id || sourceContext.listingId || sourceContext.listing_id);
+
+  let lead: Record<string, unknown> | null = null;
+  if (leadId) {
+    const leadQuery = await supabase
+      .from("leads")
+      .select("lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, stage, status, budget, area_interest, property_interest, seller_property_address, estimated_value, seller_onboarding_token, seller_onboarding_status, listing_id")
+      .eq("organisation_id", organisationId)
+      .eq("lead_id", leadId)
+      .maybeSingle();
+    if (!leadQuery.error && leadQuery.data) {
+      lead = leadQuery.data as Record<string, unknown>;
+    }
+  }
+
+  const linkedListingId = normalizeText(existingListingId || lead?.listing_id);
+  let listing: Record<string, unknown> | null = null;
+  if (normalizeNullableUuid(linkedListingId)) {
+    const existingById = await supabase
+      .from("private_listings")
+      .select("id, assigned_agent_id, seller_lead_id, originating_crm_lead_id, listing_status, listing_visibility, mandate_status, seller_onboarding_status, title, address_line_1, property_type, suburb, city, province, asking_price, estimated_value")
+      .eq("organisation_id", organisationId)
+      .eq("id", linkedListingId)
+      .maybeSingle();
+    if (!existingById.error && existingById.data) listing = existingById.data as Record<string, unknown>;
+  }
+
+  if (!listing && leadId) {
+    const existingByLead = await supabase
+      .from("private_listings")
+      .select("id, assigned_agent_id, seller_lead_id, originating_crm_lead_id, listing_status, listing_visibility, mandate_status, seller_onboarding_status, title, address_line_1, property_type, suburb, city, province, asking_price, estimated_value")
+      .eq("organisation_id", organisationId)
+      .eq("originating_crm_lead_id", leadId)
+      .neq("listing_status", "withdrawn")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!existingByLead.error && existingByLead.data) listing = existingByLead.data as Record<string, unknown>;
+  }
+
+  const title = firstValue(
+    placeholders.property_address,
+    placeholders["property.address"],
+    lead?.property_interest,
+    lead?.seller_property_address,
+    packet.title,
+  );
+  const address = firstValue(
+    placeholders.property_address,
+    placeholders["property.address"],
+    lead?.seller_property_address,
+    title,
+  );
+  const askingPrice = normalizeNumber(
+    placeholders.property_asking_price ||
+      placeholders.asking_price ||
+      placeholders.listing_price ||
+      lead?.estimated_value ||
+      lead?.budget,
+  );
+  const sellerOnboardingStatus = normalizeText(lead?.seller_onboarding_status).toLowerCase() === "completed"
+    || normalizeText(sourceLead.sellerOnboardingStatus || sourceLead.seller_onboarding_status).toLowerCase() === "completed"
+    ? "completed"
+    : "not_started";
+  const existingListingFound = Boolean(listing?.id);
+
+  if (listing?.id) {
+    const existingSellerOnboardingStatus = lower(listing.seller_onboarding_status);
+    await supabase
+      .from("private_listings")
+      .update({
+        assigned_agent_id: normalizeNullableUuid(listing.assigned_agent_id || lead?.assigned_agent_id || sourceContext.assignedAgentId || sourceContext.assigned_agent_id || sourceLead.assignedAgentId || sourceLead.assigned_agent_id),
+        seller_lead_id: normalizeText(listing.seller_lead_id) || leadId || null,
+        originating_crm_lead_id: normalizeText(listing.originating_crm_lead_id) || leadId || null,
+        listing_status: resolveSignedMandateListingStatus(listing.listing_status),
+        listing_visibility: normalizeText(listing.listing_visibility) || "internal",
+        mandate_status: "signed",
+        seller_onboarding_status: sellerOnboardingStatus === "completed" || !existingSellerOnboardingStatus || existingSellerOnboardingStatus === "not_started"
+          ? sellerOnboardingStatus
+          : existingSellerOnboardingStatus,
+        title: firstMissingText(listing.title, title),
+        address_line_1: firstMissingText(listing.address_line_1, address),
+        property_type: firstMissingText(listing.property_type, placeholders.property_type, placeholders["property.property_type"]),
+        suburb: firstMissingText(listing.suburb, placeholders.property_suburb, placeholders["property.suburb"], lead?.area_interest),
+        city: firstMissingText(listing.city, placeholders.property_city, placeholders["property.city"]),
+        province: firstMissingText(listing.province, placeholders.property_province, placeholders["property.province"]),
+        asking_price: firstMissingNumber(listing.asking_price, askingPrice),
+        estimated_value: firstMissingNumber(listing.estimated_value, askingPrice),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", String(listing.id));
+  } else {
+    const insert = await supabase
+      .from("private_listings")
+      .insert({
+        organisation_id: organisationId,
+        assigned_agent_id: normalizeNullableUuid(lead?.assigned_agent_id || sourceContext.assignedAgentId || sourceContext.assigned_agent_id || sourceLead.assignedAgentId || sourceLead.assigned_agent_id),
+        seller_lead_id: leadId || null,
+        originating_crm_lead_id: leadId || null,
+        listing_reference: createListingReference(),
+        listing_status: "mandate_signed",
+        listing_visibility: "internal",
+        property_type: firstValue(placeholders.property_type, placeholders["property.property_type"]) || null,
+        listing_category: "private_sale",
+        title: title || null,
+        description: null,
+        asking_price: askingPrice,
+        estimated_value: askingPrice,
+        address_line_1: address || null,
+        suburb: firstValue(placeholders.property_suburb, placeholders["property.suburb"], lead?.area_interest) || null,
+        city: firstValue(placeholders.property_city, placeholders["property.city"]) || null,
+        province: firstValue(placeholders.property_province, placeholders["property.province"]) || null,
+        seller_type: firstValue(placeholders.seller_entity_type, placeholders["seller.entity_type"]) || null,
+        mandate_type: firstValue(placeholders.mandate_type, placeholders["mandate.type"]) || "sole",
+        mandate_status: "signed",
+        seller_onboarding_status: sellerOnboardingStatus,
+        is_active: false,
+        created_by: null,
+      })
+      .select("id, listing_status, mandate_status")
+      .single();
+    if (insert.error) throw insert.error;
+    listing = insert.data as Record<string, unknown>;
+  }
+
+  const listingId = normalizeText(listing?.id);
+  if (!listingId) return null;
+
+  await updateLeadConversionLink({
+    supabase,
+    organisationId,
+    leadId,
+    listingId,
+    packetId: normalizeText(packet.id),
+  }).catch((error) => {
+    console.error("[final-signed] lead conversion linkage failed", { packetId: packet.id, leadId, listingId, error: String(error) });
+  });
+
+  try {
+    await supabase.from("private_listing_activity").insert({
+      private_listing_id: listingId,
+      activity_type: "mandate_signed",
+      activity_title: "Mandate signed",
+      activity_description: "All required mandate signers completed. Listing shell is ready for agent completion.",
+      performed_by: null,
+      visibility: "internal",
+      metadata: {
+        source: "signed_mandate_auto_conversion",
+        leadId: leadId || null,
+        packetId: normalizeText(packet.id),
+        packetVersionId: normalizeText(version.id),
+        finalArtifactPath: finalArtifactPath || null,
+      },
+      created_at: new Date().toISOString(),
+    });
+  } catch (_error) {
+    // Activity logging is best-effort; the signed record and listing conversion are the source of truth.
+  }
+
+  try {
+    await supabase
+      .from("document_packets")
+      .update({
+        source_context_json: {
+          ...sourceContext,
+          listingId,
+          listing_id: listingId,
+          privateListingId: listingId,
+          private_listing_id: listingId,
+          leadConvertedToListingAt: new Date().toISOString(),
+        },
+      })
+      .eq("id", normalizeText(packet.id));
+  } catch (_error) {
+    // Conversion should never block access to the signed legal record.
+  }
+
+  return {
+    listingId,
+    leadId: leadId || null,
+    existing: existingListingFound,
+  };
+}
+
 async function buildFallbackMandatePdfBytes({
   packet,
   version,
@@ -1072,6 +1388,22 @@ Deno.serve(async (req: Request) => {
           break;
         }
       }
+      const listingConversion = await ensureListingFromSignedMandate({
+        supabase,
+        packet,
+        version,
+        finalArtifactPath: existingFinalPath,
+      }).catch((error) => {
+        console.error("[final-signed] listing conversion failed for existing artifact", {
+          packetId,
+          error: String(error),
+        });
+        return {
+          success: false,
+          error: String(error?.message || error),
+          errorCode: normalizeText(error?.code) || null,
+        };
+      });
       return jsonResponse(200, {
         success: true,
         packetId,
@@ -1086,6 +1418,7 @@ Deno.serve(async (req: Request) => {
           finalisedBy: null,
         },
         version,
+        listingConversion,
         sourceFormat: renderedFilePath ? (isPdfPath(renderedFilePath) ? "pdf" : "docx") : "existing_final",
         note: "Final signed document already exists for this packet version.",
       });
@@ -1396,6 +1729,26 @@ Deno.serve(async (req: Request) => {
       },
     });
 
+    const listingConversion = await ensureListingFromSignedMandate({
+      supabase,
+      packet,
+      version: {
+        ...version,
+        ...updateVersion.data,
+      },
+      finalArtifactPath: signedPath,
+    }).catch((error) => {
+      console.error("[final-signed] listing conversion failed", {
+        packetId,
+        error: String(error),
+      });
+      return {
+        success: false,
+        error: String(error?.message || error),
+        errorCode: normalizeText(error?.code) || null,
+      };
+    });
+
     return jsonResponse(200, {
       success: true,
       packetId,
@@ -1410,6 +1763,7 @@ Deno.serve(async (req: Request) => {
         finalisedBy,
       },
       version: updateVersion.data,
+      listingConversion,
       sourceFormat,
       note: fallbackSourceUsed
         ? "Source packet had no rendered artifact, so a structured mandate PDF was generated from stored packet data before overlaying signatures."
