@@ -21,11 +21,12 @@ import {
   Wallet,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { getRoleNavItems } from '../lib/roles'
 import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import { fetchAgencyOnboardingSettings, fetchOrganisationSettings } from '../lib/settingsApi'
+import WorkspaceSwitcher from './WorkspaceSwitcher'
 
 const ICON_BY_KEY = {
   dashboard: LayoutDashboard,
@@ -141,6 +142,7 @@ function resolveSidebarBranding(snapshot) {
 function Sidebar() {
   const { workspace, setWorkspace, allWorkspace, role, baseRole, profile } = useWorkspace()
   const location = useLocation()
+  const navigate = useNavigate()
   const [membershipRole, setMembershipRole] = useState('viewer')
   const roleNavItems = useMemo(
     () => getRoleNavItems(role, { baseRole, profile, membershipRole }),
@@ -223,28 +225,36 @@ function Sidebar() {
   }, [loadSidebarBranding])
 
   useEffect(() => {
-    setExpandedMenus((previous) => {
-      const next = {}
-      let changed = false
+    let active = true
+    window.queueMicrotask(() => {
+      if (!active) return
+      setExpandedMenus((previous) => {
+        const next = {}
+        let changed = false
 
-      for (const item of roleNavItems) {
-        if (!Array.isArray(item.children) || !item.children.length) continue
-        const isActive = isParentNavActive(item, location.pathname)
-        if (isActive) {
-          next[item.key] = true
+        for (const item of roleNavItems) {
+          if (!Array.isArray(item.children) || !item.children.length) continue
+          const isActive = isParentNavActive(item, location.pathname)
+          if (isActive) {
+            next[item.key] = true
+          }
+          if (Boolean(previous[item.key]) !== Boolean(next[item.key])) {
+            changed = true
+          }
         }
-        if (Boolean(previous[item.key]) !== Boolean(next[item.key])) {
+
+        const previousKeys = Object.keys(previous)
+        if (previousKeys.length !== Object.keys(next).length) {
           changed = true
         }
-      }
 
-      const previousKeys = Object.keys(previous)
-      if (previousKeys.length !== Object.keys(next).length) {
-        changed = true
-      }
-
-      return changed ? next : previous
+        return changed ? next : previous
+      })
     })
+
+    return () => {
+      active = false
+    }
   }, [location.pathname, roleNavItems])
 
   return (
@@ -272,6 +282,12 @@ function Sidebar() {
               <p className="ui-sidebar-brand-copy">{BRIDGE_BRAND_SUBTITLE}</p>
             </>
           )}
+        </div>
+        <div className="ui-sidebar-workspace">
+          <WorkspaceSwitcher
+            currentPath={`${location.pathname}${location.search || ''}`}
+            onSelectWorkspace={(path) => navigate(path)}
+          />
         </div>
       </div>
 

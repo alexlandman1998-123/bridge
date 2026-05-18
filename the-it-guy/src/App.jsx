@@ -78,6 +78,17 @@ const ClientProfile = lazy(() => import('./pages/ClientProfile'))
 const Clients = lazy(() => import('./pages/Clients'))
 const ConveyancerDevelopments = lazy(() => import('./pages/ConveyancerDevelopments'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
+const CommercialLayout = lazy(() => import('./modules/commercial/components/CommercialLayout'))
+const CommercialDashboard = lazy(() => import('./modules/commercial/pages/CommercialDashboard'))
+const CommercialDealsPipelinePage = lazy(() => import('./modules/commercial/pages/CommercialDealsPipelinePage'))
+const CommercialDealsPage = lazy(() => import('./modules/commercial/pages/CommercialDealsPage'))
+const CommercialLandlordsPage = lazy(() => import('./modules/commercial/pages/CommercialLandlordsPage'))
+const CommercialLeasesPage = lazy(() => import('./modules/commercial/pages/CommercialLeasesPage'))
+const CommercialPropertiesPage = lazy(() => import('./modules/commercial/pages/CommercialPropertiesPage'))
+const CommercialReportsPage = lazy(() => import('./modules/commercial/pages/CommercialReportsPage'))
+const CommercialRequirementsPipelinePage = lazy(() => import('./modules/commercial/pages/CommercialRequirementsPipelinePage'))
+const CommercialRequirementsPage = lazy(() => import('./modules/commercial/pages/CommercialRequirementsPage'))
+const CommercialTenantsPage = lazy(() => import('./modules/commercial/pages/CommercialTenantsPage'))
 const DeveloperIntelligenceDashboardPage = lazy(() => import('./pages/developer-intelligence/DashboardPage'))
 const DeveloperIntelligenceFeasibilityPage = lazy(() => import('./pages/developer-intelligence/FeasibilityPage'))
 const DeveloperIntelligenceGrowthNetworkPage = lazy(() => import('./pages/developer-intelligence/GrowthNetworkPage'))
@@ -210,7 +221,9 @@ function AppLayout({ onLogout, user }) {
     /^\/transactions\/[^/]+\/legal\/[^/]+/.test(location.pathname) ||
     /^\/legal-documents\/[^/]+/.test(location.pathname) ||
     /^\/pipeline\/leads\/[^/]+\/legal\/[^/]+/.test(location.pathname)
+  const isCommercialRoute = location.pathname.startsWith('/commercial')
   const hideSharedHeader = isLegalWorkspaceRoute || (role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/'))
+  const isDashboardRoute = location.pathname === '/dashboard' || location.pathname === '/'
   const defaultDevelopmentId = workspace.id === 'all' ? '' : workspace.id
 
   useEffect(() => {
@@ -305,6 +318,16 @@ function AppLayout({ onLogout, user }) {
     setWizardInitialDevelopmentId(defaultDevelopmentId)
   }
 
+  if (isCommercialRoute) {
+    return (
+      <div className="h-screen overflow-hidden bg-[#f6f8fb] text-textStrong">
+        <Suspense key={routeContentKey} fallback={<PageSkeleton />}>
+          <Outlet key={routeContentKey} />
+        </Suspense>
+      </div>
+    )
+  }
+
   return (
     <div className="h-screen overflow-hidden bg-app text-textStrong">
       <Suspense fallback={<SidebarSkeleton />}>
@@ -324,7 +347,7 @@ function AppLayout({ onLogout, user }) {
         ) : null}
 
         <main ref={mainScrollRef} className={`ui-main-content ui-page-scroll ${hideSharedHeader ? 'pt-6' : ''}`.trim()}>
-          <div key={routeContentKey} className="ui-content-container">
+          <div key={routeContentKey} className={`ui-content-container ${isDashboardRoute ? 'ui-content-container-dashboard' : ''}`.trim()}>
             <Suspense key={routeContentKey} fallback={<PageSkeleton />}>
               <Outlet key={routeContentKey} />
             </Suspense>
@@ -947,6 +970,20 @@ function AppRoutes() {
             <Route element={<ProtectedLayout onLogout={logout} session={session} />}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<AppErrorBoundary scope="dashboard-shell" title="Dashboard failed to render"><ClientAwareDashboard /></AppErrorBoundary>} />
+              <Route path="/commercial" element={<AppErrorBoundary scope="commercial-workspace" title="Commercial workspace failed to render"><CommercialLayout /></AppErrorBoundary>}>
+                <Route index element={<Navigate to="/commercial/dashboard" replace />} />
+                <Route path="dashboard" element={<CommercialDashboard />} />
+                <Route path="tenants" element={<CommercialTenantsPage />} />
+                <Route path="landlords" element={<CommercialLandlordsPage />} />
+                <Route path="properties" element={<CommercialPropertiesPage />} />
+                <Route path="requirements" element={<CommercialRequirementsPage />} />
+                <Route path="requirements/pipeline" element={<CommercialRequirementsPipelinePage />} />
+                <Route path="deals" element={<CommercialDealsPage />} />
+                <Route path="deals/pipeline" element={<CommercialDealsPipelinePage />} />
+                <Route path="leases" element={<CommercialLeasesPage />} />
+                <Route path="reports" element={<CommercialReportsPage />} />
+                <Route path="*" element={<Navigate to="/commercial/dashboard" replace />} />
+              </Route>
               <Route path="/setup" element={<PostDashboardSetup />} />
               <Route
                 path="/attorney/onboarding"

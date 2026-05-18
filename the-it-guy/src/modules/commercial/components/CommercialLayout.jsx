@@ -1,0 +1,57 @@
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import WorkspaceSwitcher from '../../../components/WorkspaceSwitcher'
+import { COMMERCIAL_NAV_ITEMS } from '../commercialNavigation'
+import CommercialSidebar from './CommercialSidebar'
+
+function CommercialLayout() {
+  const location = useLocation()
+  const navigate = useNavigate()
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-[#f6f8fb] text-[#102236]">
+      <CommercialSidebar />
+      <main className="min-w-0 flex-1 overflow-y-auto">
+        <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur lg:hidden">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-2xl font-bold leading-none tracking-[-0.055em] text-[#113a6b]">bridge.</p>
+              <p className="mt-1 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-slate-500">Commercial workspace</p>
+            </div>
+            <div className="w-[190px]">
+              <WorkspaceSwitcher
+                currentPath={`${location.pathname}${location.search || ''}`}
+                onSelectWorkspace={(path) => navigate(path)}
+              />
+            </div>
+          </div>
+          <nav className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Commercial mobile navigation">
+            {COMMERCIAL_NAV_ITEMS.map((item) => {
+              const Icon = item.icon
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === '/commercial/dashboard'}
+                  className={({ isActive }) =>
+                    [
+                      'inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold',
+                      isActive ? 'border-[#cfe0ef] bg-[#eef5fb] text-[#123b61]' : 'border-slate-200 bg-white text-slate-600',
+                    ].join(' ')
+                  }
+                >
+                  <Icon size={14} />
+                  {item.label}
+                </NavLink>
+              )
+            })}
+          </nav>
+        </div>
+        <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-5 px-4 py-5 sm:px-5 lg:px-6">
+          <Outlet />
+        </div>
+      </main>
+    </div>
+  )
+}
+
+export default CommercialLayout

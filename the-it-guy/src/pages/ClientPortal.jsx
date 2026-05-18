@@ -30,6 +30,7 @@ import { normalizeFinanceType } from '../core/transactions/financeType'
 import { LatestUpdatesCard, PurchaseJourneyCard } from '../components/client-portal/ClientJourneySection'
 import ClientDocumentCentre from '../components/client-portal/documents/ClientDocumentCentre'
 import ClientAppointmentsSection from '../components/client-portal/appointments/ClientAppointmentsSection'
+import SellerOffersPage from '../components/client-portal/offers/SellerOffersPage'
 import ProgressTimeline from '../components/ProgressTimeline'
 import AttorneyFirmRolePlayerCard from '../components/attorney/branding/AttorneyFirmRolePlayerCard'
 import {
@@ -1590,14 +1591,6 @@ function normalizeSellerOfferForDisplay(offer = {}, index = 0) {
     expiryDate,
     actionNeeded,
   }
-}
-
-function getSellerOfferStatusClasses(status = '') {
-  const normalized = normalizeSellerPortalKey(status)
-  if (['accepted', 'converted_to_transaction'].includes(normalized)) return 'border-[#cfe4d8] bg-[#eef9f2] text-[#2f7a51]'
-  if (['rejected', 'withdrawn', 'expired'].includes(normalized)) return 'border-[#e7d6d1] bg-[#f9f4f2] text-[#7a4b3a]'
-  if (['seller_review', 'submitted', 'countered'].includes(normalized)) return 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]'
-  return 'border-[#d8e4ef] bg-[#f4f8fc] text-[#3b5873]'
 }
 
 function enrichPortalWithContexts(portalData, portalContexts = null) {
@@ -4931,6 +4924,17 @@ function ClientPortal() {
     activeSellingContext?.agentPhone,
     activeSellingContext?.agent_phone,
   )
+  const sellerOfferAskingPrice = Number(
+    activeSellingContext?.askingPrice ||
+      activeSellingContext?.asking_price ||
+      activeSellingContext?.listPrice ||
+      activeSellingContext?.list_price ||
+      portal?.activeSellingContext?.askingPrice ||
+      portal?.activeSellingContext?.asking_price ||
+      portal?.unit?.price ||
+      purchasePriceValue ||
+      0,
+  )
   const sellerMandateStatus = getFriendlySellerStatusLabel(
     activeSellingContext?.mandatePacket?.state ||
       activeSellingContext?.mandateStatus ||
@@ -6403,50 +6407,17 @@ function ClientPortal() {
             ) : null}
 
             {isOffers && effectiveWorkspace === 'seller' ? (
-              <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-                {sellerOfferItems.length ? (
-                  <div className="grid gap-3 lg:grid-cols-2">
-                    {sellerOfferItems.map((offer) => (
-                      <article key={offer.id} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Offer amount</span>
-                            <h4 className="mt-1 text-[1.25rem] font-semibold tracking-[-0.03em] text-[#142132]">{offer.amountLabel}</h4>
-                            <p className="mt-1 text-sm text-[#5f7288]">Buyer: {offer.buyerName || 'Buyer details withheld'}</p>
-                          </div>
-                          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.1em] ${getSellerOfferStatusClasses(offer.status)}`}>
-                            {offer.statusLabel}
-                          </span>
-                        </div>
-                        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                          <div className="rounded-[12px] border border-[#e3ebf4] bg-white px-3 py-2.5">
-                            <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Date received</span>
-                            <strong className="mt-1 block text-xs font-semibold text-[#142132]">{formatShortPortalDate(offer.receivedAt, 'Awaiting date')}</strong>
-                          </div>
-                          <div className="rounded-[12px] border border-[#e3ebf4] bg-white px-3 py-2.5">
-                            <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Expiry</span>
-                            <strong className="mt-1 block text-xs font-semibold text-[#142132]">{formatShortPortalDate(offer.expiryDate, 'No expiry set')}</strong>
-                          </div>
-                          <div className="rounded-[12px] border border-[#e3ebf4] bg-white px-3 py-2.5">
-                            <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Action needed</span>
-                            <strong className="mt-1 block text-xs font-semibold text-[#142132]">{offer.actionNeeded}</strong>
-                          </div>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <article className="rounded-[20px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-7 text-center">
-                    <span className="mx-auto inline-flex h-11 w-11 items-center justify-center rounded-[14px] bg-[#eef4fb] text-[#35546c]">
-                      <Handshake size={20} />
-                    </span>
-                    <h4 className="mt-3 text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">No offers received yet</h4>
-                    <p className="mx-auto mt-2 max-w-[560px] text-sm leading-6 text-[#6b7d93]">
-                      No offers have been received yet. When an offer is submitted, it will appear here for review.
-                    </p>
-                  </article>
-                )}
-              </section>
+              <SellerOffersPage
+                offers={rawSellerOffers}
+                askingPrice={sellerOfferAskingPrice}
+                transactionId={portal?.transaction?.id || ''}
+                propertyId={sellerListingId || portal?.unit?.id || ''}
+                agent={{
+                  name: sellerAgentName,
+                  email: sellerAgentEmail,
+                  phone: sellerAgentPhone,
+                }}
+              />
             ) : null}
 
             {isDetails ? (

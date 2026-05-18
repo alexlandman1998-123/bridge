@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import ClientAppointmentCard from './ClientAppointmentCard'
 import ClientAppointmentDetailsModal from './ClientAppointmentDetailsModal'
 import { normalizeAppointmentStatus } from './ClientAppointmentStatusBadge'
+import SellerAppointmentsPage from './SellerAppointmentsPage'
 
 function toArray(value) {
   return Array.isArray(value) ? value : []
@@ -100,7 +101,7 @@ function ClientAppointmentsSection({
     return sortAppointments(normalized)
   }, [appointments, role, documentCenter])
 
-  const now = Date.now()
+  const [now] = useState(() => Date.now())
   const upcoming = visibleAppointments.filter((item) => {
     const status = item?.normalizedStatus
     if (status === 'completed' || status === 'cancelled' || status === 'declined') return false
@@ -146,6 +147,16 @@ function ClientAppointmentsSection({
 
   return (
     <>
+      {role === 'seller' ? (
+        <SellerAppointmentsPage
+          appointments={visibleAppointments}
+          pendingAction={pendingAction}
+          feedbackMessage={feedbackMessage}
+          calendarError={calendarError}
+          onConfirmAppointment={onConfirmAppointment}
+          onRescheduleAppointment={handleOpenRescheduleModal}
+        />
+      ) : (
       <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
         {!hideHeader ? (
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -241,12 +252,15 @@ function ClientAppointmentsSection({
           </section>
         ) : null}
       </section>
+      )}
 
-      <ClientAppointmentDetailsModal
+      {role === 'seller' ? null : (
+        <ClientAppointmentDetailsModal
         appointment={selectedAppointment}
         onClose={() => setSelectedAppointment(null)}
         onCalendarError={(error) => setCalendarError(error?.message || 'Calendar invite could not be generated.')}
-      />
+        />
+      )}
 
       {rescheduleTarget ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#0f1e2d]/45 p-4">

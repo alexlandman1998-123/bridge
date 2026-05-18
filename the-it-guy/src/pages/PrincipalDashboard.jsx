@@ -11,7 +11,6 @@ import {
   Clock3,
   FileSignature,
   FileText,
-  Gauge,
   LayoutGrid,
   LineChart,
   Loader2,
@@ -84,11 +83,6 @@ function formatPercent(value, empty = '0%') {
   return `${Math.round(Number(value))}%`
 }
 
-function formatDays(value) {
-  if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—'
-  return `${Math.round(Number(value))} Days`
-}
-
 function formatTimestamp(value) {
   if (!value) return ''
   const date = new Date(value)
@@ -121,14 +115,14 @@ function DashboardSkeleton() {
   return (
     <div className="space-y-5">
       <div className="h-11 animate-pulse rounded-2xl bg-white" />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        {Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[132px] animate-pulse rounded-2xl bg-white" />)}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-[132px] animate-pulse rounded-2xl bg-white" />)}
       </div>
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="h-[360px] animate-pulse rounded-2xl bg-white" />
         <div className="h-[360px] animate-pulse rounded-2xl bg-white" />
       </div>
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="h-[340px] animate-pulse rounded-2xl bg-white" />
         <div className="h-[340px] animate-pulse rounded-2xl bg-white" />
       </div>
@@ -285,12 +279,11 @@ function PrincipalKpiRow({ data }) {
   const kpis = data.kpis
   const dateLabel = data?.filters?.dateRange?.label || 'This Month'
   return (
-    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
       <PrincipalKpiCard icon={PieChart} label="Pipeline Value" value={formatCurrency(kpis.pipelineValue, { compact: true })} trend={kpis.trends.pipelineValue} />
       <PrincipalKpiCard icon={Users} label="Active Transactions" value={formatCount(kpis.activeTransactions)} trend={kpis.trends.activeTransactions} tone="green" />
       <PrincipalKpiCard icon={BriefcaseBusiness} label="Expected Commission" value={kpis.expectedCommission === null ? '—' : formatCurrency(kpis.expectedCommission, { compact: true })} trend={kpis.trends.expectedCommission} tone="orange" />
       <PrincipalKpiCard icon={CalendarDays} label={`Closing ${dateLabel}`} value={formatCount(kpis.closingThisMonth)} trend={kpis.trends.closingThisMonth} tone="purple" />
-      <PrincipalKpiCard icon={Gauge} label="Avg. Deal Cycle" value={formatDays(kpis.avgDealCycleDays)} trend={kpis.trends.avgDealCycleDays} inverse tone="indigo" />
       <PrincipalKpiCard icon={Target} label="Lead → Deal Conversion" value={formatPercent(kpis.leadToDealConversion)} trend={kpis.trends.leadToDealConversion} tone="green" />
     </section>
   )
@@ -517,7 +510,7 @@ function PipelineSalesOverview({ data, overviewMode, onOverviewModeChange }) {
       </div>
       {overviewMode === 'pipeline' ? (
         <>
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <PipelineStageChart stages={data.pipeline.stages} />
             <FinanceTypeDonut items={data.pipeline.financeTypes} totalValue={data.pipeline.totalValue} />
           </div>
@@ -532,13 +525,13 @@ function PipelineSalesOverview({ data, overviewMode, onOverviewModeChange }) {
         </>
       ) : null}
       {overviewMode === 'transactions' ? (
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           <TransactionsOverviewChart data={data.transactions} />
           <TransactionsSummaryCard data={data.transactions} />
         </div>
       ) : null}
       {overviewMode === 'revenue' ? (
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           <RevenueOverviewChart data={data.revenue} />
           <RevenueAgentCard data={data.revenue} />
         </div>
@@ -806,7 +799,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '' }) {
 
   return (
     <main className="principal-dashboard min-h-screen bg-[#f8fafc] text-[#101828]">
-      <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-none flex-col gap-5 px-2 py-5 sm:px-3 lg:px-4">
         <PrincipalDashboardHeader
           dateRange={dateRange}
           onDateRangeChange={setDateRange}
@@ -833,11 +826,11 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '' }) {
           <div className={`space-y-5 transition-opacity ${isRefreshing ? 'opacity-60' : 'opacity-100'}`} aria-busy={isRefreshing}>
             <PrincipalKpiRow data={data} />
             <PipelineSalesOverview data={data} overviewMode={overviewMode} onOverviewModeChange={setOverviewMode} />
-            <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+            <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
               <AgentPerformanceTable rows={data.agentPerformance} />
               <AttentionRequiredCard attention={data.attentionRequired} />
             </section>
-            <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+            <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
               <LeadIntelligenceTable rows={data.leadIntelligence} />
               <RecentActivityFeed rows={data.recentActivity} />
             </section>

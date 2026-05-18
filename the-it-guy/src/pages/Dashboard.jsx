@@ -3497,7 +3497,7 @@ function renderActiveTransactionsBlock({
                     </div>
                   ) : null
                 ) : (
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                     {agentTopKpiItems.map((item) => {
                       const Icon = item.icon
                       return (
