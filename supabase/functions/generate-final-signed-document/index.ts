@@ -641,6 +641,10 @@ function firstValue(...values: unknown[]) {
   return values.map((value) => normalizeText(value)).find(Boolean) || "";
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
 function firstMissingText(current: unknown, ...fallbacks: unknown[]) {
   return normalizeText(current) || firstValue(...fallbacks) || null;
 }
@@ -654,6 +658,130 @@ function resolveSignedMandateListingStatus(current: unknown) {
   const status = lower(current);
   if (["active", "under_offer", "transaction_created", "sold", "withdrawn"].includes(status)) return status;
   return "mandate_signed";
+}
+
+function resolveSellerOnboardingSnapshot({
+  sourceContext,
+  generatedSnapshot,
+  sourceLead,
+  lead,
+}: {
+  sourceContext: Record<string, unknown>;
+  generatedSnapshot: Record<string, unknown>;
+  sourceLead: Record<string, unknown>;
+  lead: Record<string, unknown> | null;
+}) {
+  const sourceContextSellerOnboarding = asRecord(sourceContext.sellerOnboarding || sourceContext.seller_onboarding);
+  const sourceLeadSellerOnboarding = asRecord(sourceLead.sellerOnboarding || sourceLead.seller_onboarding);
+  const generatedOnboarding = asRecord(generatedSnapshot.onboarding);
+  const sourceContextOnboardingFormData = asRecord(sourceContext.onboardingFormData || sourceContext.onboarding_form_data);
+  const sourceContextSellerFormData = asRecord(sourceContextSellerOnboarding.formData || sourceContextSellerOnboarding.form_data);
+  const sourceLeadSellerFormData = asRecord(sourceLeadSellerOnboarding.formData || sourceLeadSellerOnboarding.form_data);
+
+  const formData = {
+    ...sourceContextOnboardingFormData,
+    ...sourceContextSellerFormData,
+    ...generatedOnboarding,
+    ...sourceLeadSellerFormData,
+  };
+  const status = firstValue(
+    sourceLeadSellerOnboarding.status,
+    sourceLead.sellerOnboardingStatus,
+    sourceLead.seller_onboarding_status,
+    sourceContextSellerOnboarding.status,
+    lead?.seller_onboarding_status,
+  ) || (Object.keys(formData).length ? "completed" : "not_started");
+
+  return {
+    formData,
+    status,
+    token: firstValue(
+      sourceLeadSellerOnboarding.token,
+      sourceContextSellerOnboarding.token,
+      sourceContext.sellerOnboardingToken,
+      sourceContext.seller_onboarding_token,
+      lead?.seller_onboarding_token,
+    ),
+    submittedAt: firstValue(
+      sourceLeadSellerOnboarding.submittedAt,
+      sourceLeadSellerOnboarding.submitted_at,
+      sourceLeadSellerOnboarding.completedAt,
+      sourceLeadSellerOnboarding.completed_at,
+    ),
+    sellerType: firstValue(generatedOnboarding.ownershipType, generatedOnboarding.sellerType, formData.ownershipType, formData.sellerType),
+    ownershipStructure: firstValue(generatedOnboarding.ownershipType, formData.ownershipType),
+    maritalRegime: firstValue(generatedOnboarding.maritalRegime, generatedOnboarding.marriageRegime, formData.maritalRegime, formData.marriageRegime),
+  };
+}
+
+async function ensureSellerOnboardingSnapshotForListing({
+  supabase,
+  listingId,
+  snapshot,
+}: {
+  supabase: any;
+  listingId: string;
+  snapshot: ReturnType<typeof resolveSellerOnboardingSnapshot>;
+}) {
+  if (!listingId || !snapshot || (!Object.keys(snapshot.formData || {}).length && !snapshot.token)) return null;
+
+  const existing = await supabase
+    .from("private_listing_seller_onboarding")
+    .select("id, private_listing_id, token, status, seller_type, ownership_structure, marital_regime, form_data, submitted_at")
+    .eq("private_listing_id", listingId)
+    .maybeSingle();
+
+  if (existing.error) {
+    console.error("[final-signed] seller onboarding snapshot lookup failed", {
+      listingId,
+      error: String(existing.error?.message || existing.error),
+    });
+    return null;
+  }
+
+  const existingFormData = asRecord(existing.data?.form_data);
+  const nextFormData = {
+    ...(snapshot.formData || {}),
+    ...existingFormData,
+  };
+  const status = lower(snapshot.status) === "completed" || lower(existing.data?.status) === "completed"
+    ? "completed"
+    : firstValue(existing.data?.status, snapshot.status) || "not_started";
+  const token = firstValue(existing.data?.token, snapshot.token) || `seller-${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`;
+  const submittedAt = firstValue(existing.data?.submitted_at, snapshot.submittedAt) || (status === "completed" ? new Date().toISOString() : null);
+
+  const payload = {
+    private_listing_id: listingId,
+    token,
+    status,
+    seller_type: firstValue(existing.data?.seller_type, snapshot.sellerType) || null,
+    ownership_structure: firstValue(existing.data?.ownership_structure, snapshot.ownershipStructure) || null,
+    marital_regime: firstValue(existing.data?.marital_regime, snapshot.maritalRegime) || null,
+    form_data: nextFormData,
+    submitted_at: submittedAt,
+  };
+
+  const result = existing.data?.id
+    ? await supabase
+      .from("private_listing_seller_onboarding")
+      .update(payload)
+      .eq("id", existing.data.id)
+      .select("id, private_listing_id, token, status")
+      .maybeSingle()
+    : await supabase
+      .from("private_listing_seller_onboarding")
+      .insert(payload)
+      .select("id, private_listing_id, token, status")
+      .maybeSingle();
+
+  if (result.error) {
+    console.error("[final-signed] seller onboarding snapshot sync failed", {
+      listingId,
+      error: String(result.error?.message || result.error),
+    });
+    return null;
+  }
+  return result.data || null;
 }
 
 async function updateLeadConversionLink({
@@ -808,6 +936,12 @@ async function ensureListingFromSignedMandate({
     || normalizeText(sourceLead.sellerOnboardingStatus || sourceLead.seller_onboarding_status).toLowerCase() === "completed"
     ? "completed"
     : "not_started";
+  const sellerOnboardingSnapshot = resolveSellerOnboardingSnapshot({
+    sourceContext,
+    generatedSnapshot,
+    sourceLead,
+    lead,
+  });
   const existingListingFound = Boolean(listing?.id);
 
   if (listing?.id) {
@@ -872,6 +1006,12 @@ async function ensureListingFromSignedMandate({
   const listingId = normalizeText(listing?.id);
   if (!listingId) return null;
 
+  const onboardingSnapshotSync = await ensureSellerOnboardingSnapshotForListing({
+    supabase,
+    listingId,
+    snapshot: sellerOnboardingSnapshot,
+  });
+
   await updateLeadConversionLink({
     supabase,
     organisationId,
@@ -925,6 +1065,8 @@ async function ensureListingFromSignedMandate({
     listingId,
     leadId: leadId || null,
     existing: existingListingFound,
+    onboardingSnapshotSynced: Boolean(onboardingSnapshotSync?.id),
+    onboardingFieldCount: Object.keys(sellerOnboardingSnapshot.formData || {}).length,
   };
 }
 

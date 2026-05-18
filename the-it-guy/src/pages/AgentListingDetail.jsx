@@ -53,7 +53,11 @@ import {
   OFFER_WORKFLOW_STATUS,
 } from '../lib/listingOffersService'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
-import { getPrivateListing, updatePrivateListing } from '../services/privateListingService'
+import {
+  getPrivateListing,
+  updatePrivateListing,
+  updatePrivateListingOnboardingFormData,
+} from '../services/privateListingService'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 
 const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
@@ -114,6 +118,15 @@ function upsertListingRecord(rows = [], incoming = null) {
     return mergeListingRecord(row, incoming)
   })
   return found ? nextRows : [incoming, ...nextRows]
+}
+
+function firstDraftValue(...values) {
+  for (const value of values) {
+    if (value === 0 || value === false) return value
+    const normalized = String(value ?? '').trim()
+    if (normalized) return value
+  }
+  return ''
 }
 
 function formatCurrency(value) {
@@ -291,6 +304,10 @@ function readAsDataUrl(file) {
 function buildPropertyDraft(listingRecord) {
   const propertyDetails = listingRecord?.propertyDetails || {}
   const marketing = listingRecord?.marketing || {}
+  const onboardingFormData =
+    listingRecord?.sellerOnboarding?.formData && typeof listingRecord.sellerOnboarding.formData === 'object'
+      ? listingRecord.sellerOnboarding.formData
+      : {}
   const storedGallery = Array.isArray(marketing?.imageGallery) ? marketing.imageGallery : []
   const fallbackGallery = marketing?.mediaUrl
     ? [
@@ -309,36 +326,40 @@ function buildPropertyDraft(listingRecord) {
   const rawListingStatus = String(propertyDetails?.listingStatus || listingRecord?.status || 'active').trim().toLowerCase()
   const normalizedListingStatus = rawListingStatus === 'listing_active' ? 'active' : rawListingStatus
 
-  return {
-    listingCode: String(listingRecord?.listingCode || '').trim(),
-    headline: String(propertyDetails?.headline || listingRecord?.listingTitle || '').trim(),
-    propertyType: String(propertyDetails?.propertyType || listingRecord?.propertyType || 'House').trim(),
-    listingStatus: normalizedListingStatus,
-    source: String(marketing?.source || '').trim(),
-    addressLine1: String(propertyDetails?.addressLine1 || listingRecord?.addressLine1 || '').trim(),
-    suburb: String(propertyDetails?.suburb || listingRecord?.suburb || '').trim(),
-    city: String(propertyDetails?.city || listingRecord?.city || '').trim(),
-    province: String(propertyDetails?.province || listingRecord?.province || '').trim(),
-    bedrooms: String(propertyDetails?.bedrooms || '').trim(),
-    bathrooms: String(propertyDetails?.bathrooms || '').trim(),
-    garages: String(propertyDetails?.garages || '').trim(),
-    coveredParking: String(propertyDetails?.coveredParking || '').trim(),
-    openParking: String(propertyDetails?.openParking || '').trim(),
-    erfSize: String(propertyDetails?.erfSize || '').trim(),
-    floorSize: String(propertyDetails?.floorSize || '').trim(),
-    price: String(propertyDetails?.price || listingRecord?.askingPrice || '').trim(),
-    levies: String(propertyDetails?.levies || '').trim(),
-    leviesNotApplicable: Boolean(propertyDetails?.leviesNotApplicable),
-    ratesTaxes: String(propertyDetails?.ratesTaxes || '').trim(),
-    ratesTaxesNotApplicable: Boolean(propertyDetails?.ratesTaxesNotApplicable),
-    selectedFeatures: Array.isArray(propertyDetails?.selectedFeatures)
-      ? propertyDetails.selectedFeatures
+  const selectedFeatures = Array.isArray(propertyDetails?.selectedFeatures)
+    ? propertyDetails.selectedFeatures
+    : Array.isArray(onboardingFormData.features)
+      ? onboardingFormData.features
       : String(marketing?.features || '')
           .split(',')
           .map((item) => item.trim())
-          .filter(Boolean),
-    description: String(propertyDetails?.description || marketing?.description || '').trim(),
-    notes: String(propertyDetails?.notes || marketing?.notes || '').trim(),
+          .filter(Boolean)
+
+  return {
+    listingCode: String(listingRecord?.listingCode || '').trim(),
+    headline: String(firstDraftValue(propertyDetails?.headline, listingRecord?.listingTitle, onboardingFormData.propertyAddress)).trim(),
+    propertyType: String(firstDraftValue(propertyDetails?.propertyType, listingRecord?.propertyType, onboardingFormData.propertyType, 'House')).trim(),
+    listingStatus: normalizedListingStatus,
+    source: String(marketing?.source || '').trim(),
+    addressLine1: String(firstDraftValue(propertyDetails?.addressLine1, listingRecord?.addressLine1, onboardingFormData.propertyAddress, onboardingFormData.residentialAddress)).trim(),
+    suburb: String(firstDraftValue(propertyDetails?.suburb, listingRecord?.suburb, onboardingFormData.suburb)).trim(),
+    city: String(firstDraftValue(propertyDetails?.city, listingRecord?.city, onboardingFormData.city)).trim(),
+    province: String(firstDraftValue(propertyDetails?.province, listingRecord?.province, onboardingFormData.province)).trim(),
+    bedrooms: String(firstDraftValue(propertyDetails?.bedrooms, onboardingFormData.bedrooms)).trim(),
+    bathrooms: String(firstDraftValue(propertyDetails?.bathrooms, onboardingFormData.bathrooms)).trim(),
+    garages: String(firstDraftValue(propertyDetails?.garages, onboardingFormData.garages)).trim(),
+    coveredParking: String(firstDraftValue(propertyDetails?.coveredParking, onboardingFormData.parkingCovered, onboardingFormData.coveredParking)).trim(),
+    openParking: String(firstDraftValue(propertyDetails?.openParking, onboardingFormData.parkingOpen, onboardingFormData.openParking)).trim(),
+    erfSize: String(firstDraftValue(propertyDetails?.erfSize, onboardingFormData.erfSize)).trim(),
+    floorSize: String(firstDraftValue(propertyDetails?.floorSize, onboardingFormData.floorSize)).trim(),
+    price: String(firstDraftValue(propertyDetails?.price, listingRecord?.askingPrice, onboardingFormData.askingPrice)).trim(),
+    levies: String(firstDraftValue(propertyDetails?.levies, onboardingFormData.levies)).trim(),
+    leviesNotApplicable: Boolean(propertyDetails?.leviesNotApplicable),
+    ratesTaxes: String(firstDraftValue(propertyDetails?.ratesTaxes, onboardingFormData.ratesTaxes)).trim(),
+    ratesTaxesNotApplicable: Boolean(propertyDetails?.ratesTaxesNotApplicable),
+    selectedFeatures,
+    description: String(firstDraftValue(propertyDetails?.description, marketing?.description, onboardingFormData.propertyNotes)).trim(),
+    notes: String(firstDraftValue(propertyDetails?.notes, marketing?.notes, onboardingFormData.sellingReason, onboardingFormData.sellingTimeline)).trim(),
     galleryImages,
     coverImageId,
     floorplans: Array.isArray(propertyDetails?.floorplans)
@@ -544,8 +565,43 @@ function AgentListingDetail() {
         province: marketingDraft.province.trim(),
         isActive: String(marketingDraft.listingStatus || '').trim().toLowerCase() === 'active',
       })
+      const savedOnboarding = await updatePrivateListingOnboardingFormData(updatedListing.id, {
+        propertyAddress: marketingDraft.addressLine1.trim(),
+        suburb: marketingDraft.suburb.trim(),
+        city: marketingDraft.city.trim(),
+        province: marketingDraft.province.trim(),
+        propertyType: marketingDraft.propertyType,
+        bedrooms: marketingDraft.bedrooms,
+        bathrooms: marketingDraft.bathrooms,
+        garages: marketingDraft.garages,
+        parkingCovered: marketingDraft.coveredParking,
+        parkingOpen: marketingDraft.openParking,
+        erfSize: marketingDraft.erfSize,
+        floorSize: marketingDraft.floorSize,
+        askingPrice: marketingDraft.price,
+        levies: marketingDraft.leviesNotApplicable ? '' : marketingDraft.levies,
+        leviesNotApplicable: marketingDraft.leviesNotApplicable,
+        ratesTaxes: marketingDraft.ratesTaxesNotApplicable ? '' : marketingDraft.ratesTaxes,
+        ratesTaxesNotApplicable: marketingDraft.ratesTaxesNotApplicable,
+        features: marketingDraft.selectedFeatures,
+        propertyNotes: marketingDraft.description.trim(),
+        internalNotes: marketingDraft.notes.trim(),
+      }).catch((error) => {
+        console.warn('[AgentListingDetail] onboarding form data save skipped', error)
+        return null
+      })
       if (savedListing?.id) {
-        setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(updatedListing, savedListing)))
+        const savedWithFormData = savedOnboarding?.form_data
+          ? {
+              ...savedListing,
+              sellerOnboarding: {
+                ...(savedListing.sellerOnboarding || updatedListing.sellerOnboarding || {}),
+                formData: savedOnboarding.form_data,
+                status: savedOnboarding.status || savedListing.sellerOnboardingStatus || savedListing.sellerOnboarding?.status,
+              },
+            }
+          : savedListing
+        setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(updatedListing, savedWithFormData)))
       }
       setDetailMessage('Listing details saved.')
     } catch (error) {

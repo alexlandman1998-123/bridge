@@ -881,6 +881,45 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
   return mapPrivateListingRow(updateQuery.data, onboardingMap, requirementsMap, documentsMap)
 }
 
+export async function updatePrivateListingOnboardingFormData(listingId, formData = {}, options = {}) {
+  const client = requireClient()
+  const normalizedId = normalizeUuid(listingId)
+  if (!normalizedId) throw new Error('Listing id is required.')
+
+  const existing = await client
+    .from('private_listing_seller_onboarding')
+    .select('id, private_listing_id, token, status, seller_type, ownership_structure, marital_regime, form_data, submitted_at')
+    .eq('private_listing_id', normalizedId)
+    .maybeSingle()
+  if (existing.error) {
+    if (isMissingTableError(existing.error, 'private_listing_seller_onboarding')) return null
+    throw existing.error
+  }
+  if (!existing.data?.id) return null
+
+  const existingFormData = existing.data.form_data && typeof existing.data.form_data === 'object' ? existing.data.form_data : {}
+  const nextFormData = {
+    ...existingFormData,
+    ...(formData && typeof formData === 'object' ? formData : {}),
+  }
+  const nextStatus = normalizeStatus(options.status || existing.data.status || 'completed', SELLER_ONBOARDING_STATUSES, 'completed')
+  const update = await client
+    .from('private_listing_seller_onboarding')
+    .update({
+      form_data: nextFormData,
+      status: nextStatus,
+      submitted_at: existing.data.submitted_at || (nextStatus === 'completed' ? new Date().toISOString() : null),
+      seller_type: normalizeNullableText(options.sellerType || existing.data.seller_type || nextFormData.sellerType || nextFormData.ownershipType),
+      ownership_structure: normalizeNullableText(options.ownershipStructure || existing.data.ownership_structure || nextFormData.ownershipType),
+      marital_regime: normalizeNullableText(options.maritalRegime || existing.data.marital_regime || nextFormData.maritalRegime || nextFormData.marriageRegime),
+    })
+    .eq('id', existing.data.id)
+    .select('*')
+    .single()
+  if (update.error) throw update.error
+  return update.data
+}
+
 export async function getPrivateListing(listingId, options = {}) {
   return getPrivateListingById(listingId, options)
 }
