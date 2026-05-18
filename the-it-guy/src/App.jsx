@@ -324,8 +324,8 @@ function AppLayout({ onLogout, user }) {
 
         <main ref={mainScrollRef} className={`ui-main-content ui-page-scroll ${hideSharedHeader ? 'pt-6' : ''}`.trim()}>
           <div key={routeContentKey} className="ui-content-container">
-            <Suspense fallback={<PageSkeleton />}>
-              <Outlet />
+            <Suspense key={routeContentKey} fallback={<PageSkeleton />}>
+              <Outlet key={routeContentKey} />
             </Suspense>
           </div>
         </main>

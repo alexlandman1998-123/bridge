@@ -20,7 +20,7 @@ import {
   Users,
   Wallet,
 } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { getRoleNavItems } from '../lib/roles'
@@ -90,6 +90,28 @@ const BRIDGE_BRAND_MARK = 'bridge.'
 const BRIDGE_BRAND_SUBTITLE = 'Property Transaction OS'
 const BRIDGE_POWERED_LABEL = 'Powered by Bridge'
 
+function routeMatches(pathname, target = '') {
+  return pathname === target || pathname.startsWith(`${target}/`)
+}
+
+function isParentNavActive(item, pathname) {
+  if (!Array.isArray(item?.children) || !item.children.length) {
+    return false
+  }
+
+  const childActive = item.children.some((child) => routeMatches(pathname, child.to))
+  const customActive = Array.isArray(item.activeMatch)
+    ? item.activeMatch.some((path) => routeMatches(pathname, path))
+    : false
+
+  return (
+    childActive ||
+    customActive ||
+    (item.key === 'agents' && routeMatches(pathname, '/agents')) ||
+    (item.key === 'agency' && (routeMatches(pathname, '/agency') || routeMatches(pathname, '/agents/reporting')))
+  )
+}
+
 function normalizeBrandText(value) {
   return String(value || '').trim()
 }
@@ -120,7 +142,10 @@ function Sidebar() {
   const { workspace, setWorkspace, allWorkspace, role, baseRole, profile } = useWorkspace()
   const location = useLocation()
   const [membershipRole, setMembershipRole] = useState('viewer')
-  const roleNavItems = getRoleNavItems(role, { baseRole, profile, membershipRole })
+  const roleNavItems = useMemo(
+    () => getRoleNavItems(role, { baseRole, profile, membershipRole }),
+    [baseRole, membershipRole, profile, role],
+  )
   const isIntelligencePath =
     location.pathname.startsWith('/attorney/intelligence') ||
     location.pathname.startsWith('/developer/intelligence') ||
@@ -197,6 +222,31 @@ function Sidebar() {
     }
   }, [loadSidebarBranding])
 
+  useEffect(() => {
+    setExpandedMenus((previous) => {
+      const next = {}
+      let changed = false
+
+      for (const item of roleNavItems) {
+        if (!Array.isArray(item.children) || !item.children.length) continue
+        const isActive = isParentNavActive(item, location.pathname)
+        if (isActive) {
+          next[item.key] = true
+        }
+        if (Boolean(previous[item.key]) !== Boolean(next[item.key])) {
+          changed = true
+        }
+      }
+
+      const previousKeys = Object.keys(previous)
+      if (previousKeys.length !== Object.keys(next).length) {
+        changed = true
+      }
+
+      return changed ? next : previous
+    })
+  }, [location.pathname, roleNavItems])
+
   return (
     <aside className="ui-sidebar no-print">
       <div className="ui-sidebar-top">
@@ -222,10 +272,6 @@ function Sidebar() {
               <p className="ui-sidebar-brand-copy">{BRIDGE_BRAND_SUBTITLE}</p>
             </>
           )}
-          <div className="ui-sidebar-status" aria-label="System status">
-            <span />
-            <strong>System Operational</strong>
-          </div>
         </div>
       </div>
 
@@ -234,11 +280,7 @@ function Sidebar() {
           {roleNavItems.map((item) => {
             const Icon = ICON_BY_KEY[item.key] || LayoutDashboard
             const hasChildren = Array.isArray(item.children) && item.children.length > 0
-            const isParentActive = hasChildren
-              ? item.children.some((child) => location.pathname === child.to || location.pathname.startsWith(`${child.to}/`)) ||
-                (item.key === 'agents' && (location.pathname === '/agents' || location.pathname.startsWith('/agents/'))) ||
-                (item.key === 'agency' && (location.pathname === '/agency' || location.pathname.startsWith('/agency/') || location.pathname.startsWith('/agents/reporting')))
-              : false
+            const isParentActive = hasChildren ? isParentNavActive(item, location.pathname) : false
             const menuExpanded = Boolean(expandedMenus[item.key] ?? isParentActive)
 
             if (!hasChildren) {

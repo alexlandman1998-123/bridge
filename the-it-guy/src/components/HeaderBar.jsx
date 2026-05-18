@@ -213,6 +213,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
       : agencyWorkflowMode === 'principal'
         ? 'Agency command centre'
         : 'Agent workspace'
+  const hidePremiumHeaderTitle = location.pathname.startsWith('/pipeline/leads')
   const developerHideTitle =
     role === 'developer' &&
     (
@@ -489,12 +490,14 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
 
   if (isPremiumWorkspace) {
     return (
-      <header className="no-print ui-shell-header ui-shell-header-premium">
-        <div className="ui-shell-dashboard-title">
-          <p>{premiumHeaderEyebrow}</p>
-          <h2>{premiumHeaderTitle}</h2>
-          <span>{premiumHeaderContext} · Last updated just now</span>
-        </div>
+      <header className={`no-print ui-shell-header ui-shell-header-premium${hidePremiumHeaderTitle ? ' ui-shell-header-premium-actions-only' : ''}`}>
+        {!hidePremiumHeaderTitle ? (
+          <div className="ui-shell-dashboard-title">
+            <p>{premiumHeaderEyebrow}</p>
+            <h2>{premiumHeaderTitle}</h2>
+            <span>{premiumHeaderContext} · Last updated just now</span>
+          </div>
+        ) : null}
 
         <div className="ui-shell-actions ui-shell-actions-premium">
           <div

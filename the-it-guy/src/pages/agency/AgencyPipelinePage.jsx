@@ -4736,8 +4736,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       {!isCalendarMode && !isLeadWorkspaceRoute ? (
         <>
-          <section className="relative overflow-hidden rounded-[26px] border border-[#dce6f1] bg-[linear-gradient(145deg,#ffffff_0%,#f8fbfe_100%)] p-5 shadow-[0_24px_60px_rgba(24,45,68,0.08)] sm:p-6">
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[radial-gradient(circle_at_18%_0%,rgba(54,94,128,0.13),transparent_38%)]" />
+          <section className="relative overflow-hidden rounded-[26px] border border-[#dce6f1] bg-white p-5 shadow-[0_18px_42px_rgba(24,45,68,0.06)] sm:p-6">
             <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0">
                 <p className="text-[0.73rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Pipeline Workspace</p>
