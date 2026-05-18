@@ -114,7 +114,7 @@ function DashboardSkeleton() {
   return (
     <div className="space-y-5">
       <div className="h-11 animate-pulse rounded-2xl bg-white" />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
         {Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[132px] animate-pulse rounded-2xl bg-white" />)}
       </div>
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
@@ -204,7 +204,7 @@ function PrincipalKpiCard({ icon: Icon, label, value, trend, inverse = false, to
 function PrincipalKpiRow({ data }) {
   const kpis = data.kpis
   return (
-    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
       <PrincipalKpiCard icon={PieChart} label="Pipeline Value" value={formatCurrency(kpis.pipelineValue, { compact: true })} trend={kpis.trends.pipelineValue} />
       <PrincipalKpiCard icon={Users} label="Active Transactions" value={formatCount(kpis.activeTransactions)} trend={kpis.trends.activeTransactions} tone="green" />
       <PrincipalKpiCard icon={BriefcaseBusiness} label="Expected Commission" value={kpis.expectedCommission === null ? '—' : formatCurrency(kpis.expectedCommission, { compact: true })} trend={kpis.trends.expectedCommission} tone="orange" />
@@ -225,7 +225,7 @@ function PipelineStageChart({ stages }) {
   const path = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
   const area = `${path} L ${points.at(-1)?.x || 98} 84 L ${points[0]?.x || 2} 84 Z`
   return (
-    <div className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
+    <div className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] w-full flex-col xl:max-w-[340px]`}>
       <div>
         <p className="text-xs font-medium text-[#667085]">Total Pipeline Value</p>
         <p className="mt-1 text-[1.45rem] font-semibold tracking-[-0.035em] text-[#101828]">{formatCurrency(stages.reduce((sum, stage) => sum + Number(stage.value || 0), 0))}</p>
@@ -580,7 +580,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '' }) {
 
   return (
     <main className="principal-dashboard min-h-screen bg-[#f8fafc] text-[#101828]">
-      <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-[1680px] flex-col gap-5 px-4 py-5 lg:px-5 xl:px-6">
         <PrincipalDashboardHeader
           dateRange={dateRange}
           onDateRangeChange={setDateRange}
