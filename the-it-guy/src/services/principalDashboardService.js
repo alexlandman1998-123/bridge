@@ -7,6 +7,14 @@ const DONE_DOCUMENT_STATUSES = ['uploaded', 'approved', 'completed', 'accepted']
 const OPEN_PACKET_STATUSES = ['draft', 'generated', 'ready', 'sent', 'viewed', 'partially_signed', 'pending']
 const FINANCE_PROCESS_KEYS = ['finance', 'bond', 'bond_origination', 'bond_originator']
 const ATTORNEY_PROCESS_KEYS = ['attorney', 'transfer', 'conveyancing']
+const ALL_WORKSPACES_ID = 'all'
+
+export const PRINCIPAL_DASHBOARD_DATE_PRESETS = [
+  { key: 'this_month', label: 'This Month' },
+  { key: 'last_month', label: 'Last Month' },
+  { key: 'last_30_days', label: 'Last 30 Days' },
+  { key: 'this_year', label: 'This Year' },
+]
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -47,6 +55,10 @@ function addMonths(date, months) {
   return new Date(date.getFullYear(), date.getMonth() + months, 1)
 }
 
+function startOfYear(date) {
+  return new Date(date.getFullYear(), 0, 1)
+}
+
 function daysBetween(start, end = new Date()) {
   const startDate = toDate(start)
   const endDate = toDate(end)
@@ -60,21 +72,65 @@ function isBetween(value, start, end) {
   return date >= start && date < end
 }
 
-function resolveDateRange(dateRange = 'this_month', now = new Date()) {
-  const today = startOfDay(now)
-  if (dateRange === 'last_30_days') {
-    const start = addDays(today, -29)
-    const end = addDays(today, 1)
-    return { key: dateRange, start, end, previousStart: addDays(start, -30), previousEnd: start }
+export function getDateRangeFromPreset(preset = 'this_month', { now = new Date(), startDate = null, endDate = null } = {}) {
+  const baseDate = toDate(now) || new Date()
+  const customStart = toDate(startDate)
+  const customEnd = toDate(endDate)
+  if (customStart && customEnd && customStart < customEnd) {
+    return {
+      key: 'custom',
+      startDate: customStart.toISOString(),
+      endDate: customEnd.toISOString(),
+      label: 'Custom Range',
+    }
   }
-  if (dateRange === 'last_month') {
-    const end = startOfMonth(now)
-    const start = addMonths(end, -1)
-    return { key: dateRange, start, end, previousStart: addMonths(start, -1), previousEnd: start }
+
+  const key = PRINCIPAL_DASHBOARD_DATE_PRESETS.some((item) => item.key === preset) ? preset : 'this_month'
+  const today = startOfDay(baseDate)
+  let start
+  let end
+  let previousStart
+  let previousEnd
+
+  if (key === 'last_30_days') {
+    start = addDays(today, -29)
+    end = addDays(today, 1)
+    previousStart = addDays(start, -30)
+    previousEnd = start
+  } else if (key === 'last_month') {
+    end = startOfMonth(baseDate)
+    start = addMonths(end, -1)
+    previousStart = addMonths(start, -1)
+    previousEnd = start
+  } else if (key === 'this_year') {
+    start = startOfYear(baseDate)
+    end = new Date(baseDate.getFullYear() + 1, 0, 1)
+    previousStart = new Date(baseDate.getFullYear() - 1, 0, 1)
+    previousEnd = start
+  } else {
+    start = startOfMonth(baseDate)
+    end = addMonths(start, 1)
+    previousStart = addMonths(start, -1)
+    previousEnd = start
   }
-  const start = startOfMonth(now)
-  const end = addMonths(start, 1)
-  return { key: 'this_month', start, end, previousStart: addMonths(start, -1), previousEnd: start }
+
+  return {
+    key,
+    startDate: start.toISOString(),
+    endDate: end.toISOString(),
+    previousStartDate: previousStart.toISOString(),
+    previousEndDate: previousEnd.toISOString(),
+    label: PRINCIPAL_DASHBOARD_DATE_PRESETS.find((item) => item.key === key)?.label || 'This Month',
+  }
+}
+
+function resolveDateRange(dateRange = 'this_month', now = new Date(), customRange = {}) {
+  const resolved = getDateRangeFromPreset(dateRange, { now, ...customRange })
+  const start = toDate(resolved.startDate) || startOfMonth(now)
+  const end = toDate(resolved.endDate) || addMonths(start, 1)
+  const previousStart = toDate(resolved.previousStartDate) || addMonths(start, -1)
+  const previousEnd = toDate(resolved.previousEndDate) || start
+  return { ...resolved, start, end, previousStart, previousEnd }
 }
 
 function isMissingSourceError(error) {
@@ -240,8 +296,97 @@ function normalizeAgentUser(row = {}) {
   }
 }
 
+function buildAvailableWorkspaces(branches = []) {
+  return [
+    { id: ALL_WORKSPACES_ID, label: 'All Workspaces', name: 'All Workspaces', type: 'all' },
+    ...branches
+      .filter((branch) => branch?.is_active !== false)
+      .map((branch) => ({
+        id: normalizeText(branch.id),
+        label: normalizeText(branch.name) || 'Untitled Branch',
+        name: normalizeText(branch.name) || 'Untitled Branch',
+        type: branch.is_head_office ? 'head_office' : 'branch',
+        location: normalizeText(branch.location || branch.city),
+      }))
+      .filter((item) => item.id),
+  ]
+}
+
+function getSelectedWorkspaceId(workspaceId, availableWorkspaces = []) {
+  const requested = normalizeText(workspaceId)
+  if (!requested || requested === ALL_WORKSPACES_ID) return ALL_WORKSPACES_ID
+  return availableWorkspaces.some((item) => item.id === requested) ? requested : ALL_WORKSPACES_ID
+}
+
+function isScopedToWorkspace(row = {}, selectedWorkspaceId = ALL_WORKSPACES_ID, branchColumn = 'branch_id') {
+  if (!selectedWorkspaceId || selectedWorkspaceId === ALL_WORKSPACES_ID) return true
+  return normalizeText(row?.[branchColumn] || row?.branchId) === selectedWorkspaceId
+}
+
+function getCommissionAmount(row = {}, commissionByTransaction = new Map()) {
+  return toNumber(row.agency_commission_amount || row.gross_commission_amount) || commissionByTransaction.get(normalizeText(row.id)) || 0
+}
+
+function buildMonthlyRevenueBuckets(transactions = [], range, commissionByTransaction = new Map()) {
+  const buckets = new Map()
+  const cursor = new Date(range.start.getFullYear(), range.start.getMonth(), 1)
+  const inclusiveEnd = addDays(range.end, -1)
+  const finalMonth = new Date(inclusiveEnd.getFullYear(), inclusiveEnd.getMonth(), 1)
+  while (cursor <= finalMonth && buckets.size < 13) {
+    const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`
+    buckets.set(key, {
+      key,
+      label: cursor.toLocaleDateString('en-ZA', { month: 'short' }),
+      salesValue: 0,
+      commission: 0,
+      count: 0,
+    })
+    cursor.setMonth(cursor.getMonth() + 1)
+  }
+
+  for (const row of transactions) {
+    const completedAt = toDate(getTransactionCompletedAt(row))
+    if (!completedAt) continue
+    const key = `${completedAt.getFullYear()}-${String(completedAt.getMonth() + 1).padStart(2, '0')}`
+    if (!buckets.has(key)) continue
+    const bucket = buckets.get(key)
+    bucket.salesValue += getDealValue(row)
+    bucket.commission += getCommissionAmount(row, commissionByTransaction)
+    bucket.count += 1
+  }
+
+  return [...buckets.values()]
+}
+
+function buildAgentRevenueRows(transactions = [], usersByKey = new Map(), commissionByTransaction = new Map()) {
+  const agentMap = new Map()
+  for (const row of transactions) {
+    const key = getAgentKeyFromTransaction(row)
+    const existing = agentMap.get(key) || {
+      agentId: usersByKey.get(key)?.agentId || normalizeText(row.assigned_user_id || row.owner_user_id),
+      agentName: getAgentName(row, usersByKey),
+      salesValue: 0,
+      commission: 0,
+      count: 0,
+    }
+    existing.salesValue += getDealValue(row)
+    existing.commission += getCommissionAmount(row, commissionByTransaction)
+    existing.count += 1
+    agentMap.set(key, existing)
+  }
+
+  return [...agentMap.values()]
+    .sort((left, right) => right.commission - left.commission || right.salesValue - left.salesValue)
+    .slice(0, 6)
+}
+
 function buildEmptyDashboard() {
   return {
+    filters: {
+      availableWorkspaces: [{ id: ALL_WORKSPACES_ID, label: 'All Workspaces', name: 'All Workspaces', type: 'all' }],
+      selectedWorkspaceId: ALL_WORKSPACES_ID,
+      dateRange: getDateRangeFromPreset('this_month'),
+    },
     kpis: {
       pipelineValue: 0,
       activeTransactions: 0,
@@ -277,6 +422,27 @@ function buildEmptyDashboard() {
       avgDealValue: null,
       winRate: 0,
     },
+    transactions: {
+      totalActive: 0,
+      registeredInRange: 0,
+      pendingRegistration: 0,
+      cancelledInRange: 0,
+      movement: null,
+      stages: [],
+    },
+    revenue: {
+      registeredValue: 0,
+      earnedCommission: 0,
+      expectedCommission: null,
+      monthly: [],
+      byAgent: [],
+    },
+    overview: {
+      pipeline: {},
+      transactions: {},
+      revenue: {},
+    },
+    pipelineByType: {},
     agentPerformance: [],
     attentionRequired: {
       stuckTransactions: 0,
@@ -308,33 +474,63 @@ function buildActivityItem(item) {
   }
 }
 
-export async function getPrincipalDashboardData({ agencyId = '', workspaceId = '', dateRange = 'this_month' } = {}) {
+export async function getPrincipalDashboardData({
+  agencyId = '',
+  organisationId = '',
+  workspaceId = ALL_WORKSPACES_ID,
+  dateRange = 'this_month',
+  dateRangePreset = '',
+  startDate = null,
+  endDate = null,
+  overviewMode = 'pipeline',
+} = {}) {
   if (!isSupabaseConfigured || !supabase) return buildEmptyDashboard()
 
-  const resolvedAgencyId = normalizeText(agencyId)
-  const range = resolveDateRange(dateRange)
+  const resolvedAgencyId = normalizeText(organisationId || agencyId)
+  const range = resolveDateRange(dateRangePreset || dateRange, new Date(), { startDate, endDate })
   const transactionFields = [
+    'id, organisation_id, assigned_branch_id, assigned_user_id, owner_user_id, assigned_agent, assigned_agent_email, transaction_reference, stage, current_main_stage, lifecycle_state, is_active, sales_price, purchase_price, finance_type, cash_amount, bond_amount, expected_transfer_date, registration_date, registered_at, completed_at, cancelled_at, archived_at, last_meaningful_activity_at, updated_at, created_at, assigned_attorney_email, attorney_stage, operational_state, waiting_on_role, next_action, property_address_line_1, suburb, city, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount',
     'id, organisation_id, assigned_user_id, owner_user_id, assigned_agent, assigned_agent_email, transaction_reference, stage, current_main_stage, lifecycle_state, is_active, sales_price, purchase_price, finance_type, cash_amount, bond_amount, expected_transfer_date, registration_date, registered_at, completed_at, cancelled_at, archived_at, last_meaningful_activity_at, updated_at, created_at, assigned_attorney_email, attorney_stage, operational_state, waiting_on_role, next_action, property_address_line_1, suburb, city, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount',
-    'id, organisation_id, assigned_user_id, owner_user_id, assigned_agent, assigned_agent_email, transaction_reference, stage, current_main_stage, lifecycle_state, is_active, sales_price, purchase_price, finance_type, cash_amount, bond_amount, expected_transfer_date, registration_date, registered_at, completed_at, cancelled_at, archived_at, last_meaningful_activity_at, updated_at, created_at, assigned_attorney_email, attorney_stage, operational_state, waiting_on_role, next_action, property_address_line_1, suburb, city',
   ]
 
   const [
-    transactions,
-    leads,
-    documentPackets,
-    packetEvents,
-    organisationUsers,
-    transactionCommissions,
+    allTransactions,
+    allLeads,
+    allDocumentPackets,
+    allPacketEvents,
+    allOrganisationUsers,
+    allTransactionCommissions,
+    organisationBranches,
   ] = await Promise.all([
     safeSelect('transactions', transactionFields, { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
-    safeSelect('leads', 'lead_id, organisation_id, assigned_agent_id, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id', { agencyId: resolvedAgencyId, order: 'created_at', limit: 1500 }),
+    safeSelect('leads', [
+      'lead_id, organisation_id, branch_id, assigned_agent_id, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
+      'lead_id, organisation_id, assigned_agent_id, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
+    ], { agencyId: resolvedAgencyId, order: 'created_at', limit: 1500 }),
     safeSelect('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1000 }),
     safeSelect('document_packet_events', 'id, packet_id, organisation_id, event_type, event_payload_json, created_by, created_at', { agencyId: resolvedAgencyId, order: 'created_at', limit: 300 }),
-    safeSelect('organisation_users', 'id, organisation_id, user_id, first_name, last_name, email, role, status, last_active_at, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 500 }),
+    safeSelect('organisation_users', [
+      'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, status, last_active_at, created_at, updated_at',
+      'id, organisation_id, user_id, first_name, last_name, email, role, status, last_active_at, created_at, updated_at',
+    ], { agencyId: resolvedAgencyId, order: 'updated_at', limit: 500 }),
     safeSelect('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
+    safeSelect('organisation_branches', 'id, organisation_id, name, location, city, is_head_office, is_active, updated_at, created_at', { agencyId: resolvedAgencyId, order: 'name', ascending: true, limit: 200 }),
   ])
 
+  const availableWorkspaces = buildAvailableWorkspaces(organisationBranches)
+  const selectedWorkspaceId = getSelectedWorkspaceId(workspaceId, availableWorkspaces)
+  const transactions = allTransactions.filter((row) => isScopedToWorkspace(row, selectedWorkspaceId, 'assigned_branch_id'))
+  const leads = allLeads.filter((row) => isScopedToWorkspace(row, selectedWorkspaceId, 'branch_id'))
+  const organisationUsers = allOrganisationUsers.filter((row) => isScopedToWorkspace(row, selectedWorkspaceId, 'branch_id'))
   const transactionIds = new Set(transactions.map((row) => normalizeText(row.id)).filter(Boolean))
+  const leadIds = new Set(leads.map((row) => normalizeText(row.lead_id)).filter(Boolean))
+  const documentPackets = allDocumentPackets.filter((packet) => {
+    if (selectedWorkspaceId === ALL_WORKSPACES_ID) return true
+    return transactionIds.has(normalizeText(packet.transaction_id)) || leadIds.has(normalizeText(packet.lead_id))
+  })
+  const packetIds = new Set(documentPackets.map((packet) => normalizeText(packet.id)).filter(Boolean))
+  const packetEvents = allPacketEvents.filter((event) => selectedWorkspaceId === ALL_WORKSPACES_ID || packetIds.has(normalizeText(event.packet_id)))
+  const transactionCommissions = allTransactionCommissions.filter((row) => selectedWorkspaceId === ALL_WORKSPACES_ID || transactionIds.has(normalizeText(row.transaction_id)))
   const [
     documentRequests,
     documents,
@@ -368,19 +564,23 @@ export async function getPrincipalDashboardData({ agencyId = '', workspaceId = '
     const amount = toNumber(row.agency_commission_amount || row.gross_commission_amount)
     if (amount > 0) commissionByTransaction.set(normalizeText(row.transaction_id), amount)
   }
-  const commissionValues = activeTransactions
-    .map((row) => toNumber(row.agency_commission_amount || row.gross_commission_amount) || commissionByTransaction.get(normalizeText(row.id)) || 0)
+  const expectedCommissionTransactions = activeTransactions.filter((row) => {
+    const expectedDate = row.expected_transfer_date || row.registration_date
+    return expectedDate ? isBetween(expectedDate, range.start, range.end) : true
+  })
+  const commissionValues = expectedCommissionTransactions
+    .map((row) => getCommissionAmount(row, commissionByTransaction))
     .filter((value) => value > 0)
   const expectedCommission = commissionValues.length ? commissionValues.reduce((sum, value) => sum + value, 0) : null
   const currentCommission = activeTransactions
-    .filter((row) => isBetween(row.created_at, range.start, range.end))
-    .reduce((sum, row) => sum + (toNumber(row.agency_commission_amount || row.gross_commission_amount) || commissionByTransaction.get(normalizeText(row.id)) || 0), 0)
+    .filter((row) => isBetween(row.expected_transfer_date || row.registration_date || row.created_at, range.start, range.end))
+    .reduce((sum, row) => sum + getCommissionAmount(row, commissionByTransaction), 0)
   const previousCommission = activeTransactions
-    .filter((row) => isBetween(row.created_at, range.previousStart, range.previousEnd))
-    .reduce((sum, row) => sum + (toNumber(row.agency_commission_amount || row.gross_commission_amount) || commissionByTransaction.get(normalizeText(row.id)) || 0), 0)
+    .filter((row) => isBetween(row.expected_transfer_date || row.registration_date || row.created_at, range.previousStart, range.previousEnd))
+    .reduce((sum, row) => sum + getCommissionAmount(row, commissionByTransaction), 0)
 
-  const closingThisMonth = activeTransactions.filter((row) => isBetween(row.expected_transfer_date || row.registration_date, startOfMonth(new Date()), addMonths(startOfMonth(new Date()), 1))).length
-  const previousClosingThisMonth = activeTransactions.filter((row) => isBetween(row.expected_transfer_date || row.registration_date, addMonths(startOfMonth(new Date()), -1), startOfMonth(new Date()))).length
+  const closingThisMonth = activeTransactions.filter((row) => isBetween(row.expected_transfer_date || row.registration_date, range.start, range.end)).length
+  const previousClosingThisMonth = activeTransactions.filter((row) => isBetween(row.expected_transfer_date || row.registration_date, range.previousStart, range.previousEnd)).length
   const dealCycles = completedTransactions
     .map((row) => daysBetween(row.created_at, getTransactionCompletedAt(row)))
     .filter((value) => Number.isFinite(value))
@@ -424,7 +624,9 @@ export async function getPrincipalDashboardData({ agencyId = '', workspaceId = '
   const financeValueTotal = [...financeTotals.values()].reduce((sum, item) => sum + item.value, 0)
   const financeTypes = [...financeTotals.values()].map((item) => ({ ...item, percentage: percentage(item.value, financeValueTotal) }))
 
-  const registeredThisMonth = completedTransactions.filter((row) => isBetween(getTransactionCompletedAt(row), startOfMonth(new Date()), addMonths(startOfMonth(new Date()), 1))).length
+  const registeredTransactionsInRange = completedTransactions.filter((row) => isBetween(getTransactionCompletedAt(row), range.start, range.end))
+  const previousRegisteredTransactions = completedTransactions.filter((row) => isBetween(getTransactionCompletedAt(row), range.previousStart, range.previousEnd))
+  const registeredThisMonth = registeredTransactionsInRange.length
   const pendingRegistration = activeTransactions.filter((row) => {
     const status = getTransactionStatusText(row)
     return status.includes('transfer') || status.includes('lodg') || status.includes('registration') || status.includes('pending')
@@ -456,7 +658,7 @@ export async function getPrincipalDashboardData({ agencyId = '', workspaceId = '
     existing.activeDeals += 1
     agentMap.set(key, existing)
   }
-  for (const row of completedTransactions) {
+  for (const row of registeredTransactionsInRange) {
     const key = getAgentKeyFromTransaction(row)
     const existing = agentMap.get(key) || {
       agentId: usersByKey.get(key)?.agentId || normalizeText(row.assigned_user_id || row.owner_user_id),
@@ -472,7 +674,7 @@ export async function getPrincipalDashboardData({ agencyId = '', workspaceId = '
     existing.registeredCount += 1
     agentMap.set(key, existing)
   }
-  for (const lead of leads) {
+  for (const lead of selectedLeads) {
     const key = getAgentKeyFromLead(lead)
     const existing = agentMap.get(key) || {
       agentId: usersByKey.get(key)?.agentId || normalizeText(lead.assigned_agent_id),
@@ -516,9 +718,39 @@ export async function getPrincipalDashboardData({ agencyId = '', workspaceId = '
   const financeApprovalsPending = scopedSubprocesses.filter((row) => FINANCE_PROCESS_KEYS.some((key) => normalizeKey(row.process_type).includes(key)) && !COMPLETED_STATES.includes(normalizeKey(row.status))).length
   const attorneyDelays = scopedSubprocesses.filter((row) => ATTORNEY_PROCESS_KEYS.some((key) => normalizeKey(row.process_type).includes(key)) && !COMPLETED_STATES.includes(normalizeKey(row.status)) && daysBetween(row.updated_at, now) > 7).length
 
+  const transactionsByStage = stageDefinitions.map((stage) => {
+    const matching = activeTransactions.filter((row) => getStageBucket(row) === stage.key)
+    return {
+      ...stage,
+      count: matching.length,
+      value: matching.reduce((sum, row) => sum + getDealValue(row), 0),
+      percentage: percentage(matching.length, activeTransactions.length),
+    }
+  })
+  const cancelledInRange = cancelledTransactions.filter((row) => isBetween(row.cancelled_at || row.archived_at || row.updated_at, range.start, range.end)).length
+  const transactionsOverview = {
+    totalActive: activeTransactions.length,
+    registeredInRange: registeredTransactionsInRange.length,
+    pendingRegistration,
+    cancelledInRange,
+    movement: trend(registeredTransactionsInRange.length, previousRegisteredTransactions.length),
+    stages: transactionsByStage,
+  }
+
+  const monthlyRevenue = buildMonthlyRevenueBuckets(registeredTransactionsInRange, range, commissionByTransaction)
+  const registeredValue = registeredTransactionsInRange.reduce((sum, row) => sum + getDealValue(row), 0)
+  const earnedCommission = registeredTransactionsInRange.reduce((sum, row) => sum + getCommissionAmount(row, commissionByTransaction), 0)
+  const revenueOverview = {
+    registeredValue,
+    earnedCommission,
+    expectedCommission,
+    monthly: monthlyRevenue,
+    byAgent: buildAgentRevenueRows(registeredTransactionsInRange, usersByKey, commissionByTransaction),
+  }
+
   const transactionsById = new Map(transactions.map((row) => [normalizeText(row.id), row]))
   const sourceMap = new Map()
-  for (const lead of leads) {
+  for (const lead of selectedLeads) {
     const source = normalizeText(lead.lead_source) || 'Other'
     const existing = sourceMap.get(source) || { source, leads: 0, converted: 0, dealValue: 0, dealCount: 0, cpl: null }
     existing.leads += 1
@@ -598,11 +830,22 @@ export async function getPrincipalDashboardData({ agencyId = '', workspaceId = '
         createdAt: row.created_at,
       })),
   ]
-    .filter((item) => item.createdAt)
+    .filter((item) => item.createdAt && isBetween(item.createdAt, range.start, range.end))
     .sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0))
     .slice(0, 8)
 
   return {
+    filters: {
+      availableWorkspaces,
+      selectedWorkspaceId,
+      dateRange: {
+        key: range.key,
+        startDate: range.startDate,
+        endDate: range.endDate,
+        label: range.label,
+      },
+      overviewMode,
+    },
     kpis: {
       pipelineValue,
       activeTransactions: activeTransactions.length,
@@ -628,6 +871,22 @@ export async function getPrincipalDashboardData({ agencyId = '', workspaceId = '
       avgDealValue,
       winRate,
     },
+    transactions: transactionsOverview,
+    revenue: revenueOverview,
+    overview: {
+      pipeline: {
+        totalValue: pipelineValue,
+        stages,
+        financeTypes,
+        registeredThisMonth,
+        pendingRegistration,
+        avgDealValue,
+        winRate,
+      },
+      transactions: transactionsOverview,
+      revenue: revenueOverview,
+    },
+    pipelineByType: financeTypes,
     agentPerformance,
     attentionRequired: {
       stuckTransactions,
@@ -642,8 +901,11 @@ export async function getPrincipalDashboardData({ agencyId = '', workspaceId = '
     meta: {
       lastUpdatedAt: new Date().toISOString(),
       isEmpty: transactions.length === 0 && leads.length === 0 && recentActivity.length === 0,
+      hasAnyRecords: allTransactions.length > 0 || allLeads.length > 0 || allDocumentPackets.length > 0,
       agencyId: resolvedAgencyId,
-      workspaceId,
+      workspaceId: selectedWorkspaceId,
+      requestedWorkspaceId: normalizeText(workspaceId),
+      dateRange: range.key,
     },
   }
 }

@@ -3311,6 +3311,8 @@ function normalizeOrganisationUserRow(row) {
   return {
     id: row?.id || null,
     userId: row?.user_id || null,
+    organisationId: row?.organisation_id || null,
+    branchId: row?.branch_id || null,
     firstName: normalizeText(row?.first_name),
     lastName: normalizeText(row?.last_name),
     fullName: [normalizeText(row?.first_name), normalizeText(row?.last_name)].filter(Boolean).join(' ') || normalizeText(row?.email),
@@ -3359,7 +3361,7 @@ export async function listOrganisationUsers() {
 
     const { data, error } = await client
       .from('organisation_users')
-      .select('id, user_id, first_name, last_name, email, role, status, invited_at, accepted_at, last_active_at')
+      .select('id, organisation_id, user_id, branch_id, first_name, last_name, email, role, status, invited_at, accepted_at, last_active_at')
       .eq('organisation_id', context.organisation.id)
       .order('created_at', { ascending: true })
 
@@ -3423,7 +3425,7 @@ export async function inviteOrganisationUser(input = {}) {
 
   const { data, error } = await client
     .from('organisation_users')
-    .select('id, user_id, first_name, last_name, email, role, status, invited_at, accepted_at, last_active_at')
+    .select('id, organisation_id, user_id, branch_id, first_name, last_name, email, role, status, invited_at, accepted_at, last_active_at')
     .eq('organisation_id', context.organisation.id)
     .eq('email', payload.email)
     .maybeSingle()
@@ -3432,6 +3434,7 @@ export async function inviteOrganisationUser(input = {}) {
     throw error
   }
 
+  organisationUsersCache = null
   return normalizeOrganisationUserRow(data)
 }
 
@@ -3445,13 +3448,14 @@ export async function updateOrganisationUserRole(userRowId, role) {
     .update({ role: normalizeOrganisationUserRole(role, 'viewer') })
     .eq('id', userRowId)
     .eq('organisation_id', context.organisation.id)
-    .select('id, user_id, first_name, last_name, email, role, status, invited_at, accepted_at, last_active_at')
+    .select('id, organisation_id, user_id, branch_id, first_name, last_name, email, role, status, invited_at, accepted_at, last_active_at')
     .single()
 
   if (error) {
     throw error
   }
 
+  organisationUsersCache = null
   return normalizeOrganisationUserRow(data)
 }
 
@@ -3465,13 +3469,14 @@ export async function deactivateOrganisationUser(userRowId) {
     .update({ status: 'deactivated' })
     .eq('id', userRowId)
     .eq('organisation_id', context.organisation.id)
-    .select('id, user_id, first_name, last_name, email, role, status, invited_at, accepted_at, last_active_at')
+    .select('id, organisation_id, user_id, branch_id, first_name, last_name, email, role, status, invited_at, accepted_at, last_active_at')
     .single()
 
   if (error) {
     throw error
   }
 
+  organisationUsersCache = null
   return normalizeOrganisationUserRow(data)
 }
 

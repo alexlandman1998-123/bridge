@@ -11,7 +11,7 @@ import { canAccessAgentsModule, canManageAgentOrganisations } from '../lib/roles
 import { fetchTransactionsByParticipantSummary, fetchTransactionsListSummary, saveTransaction } from '../lib/api'
 import { listAppointmentsAsync } from '../lib/agencyPipelineService'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
-import { fetchOrganisationSettings } from '../lib/settingsApi'
+import { deactivateOrganisationUser, fetchOrganisationSettings, listOrganisationUsers, updateOrganisationUserRole } from '../lib/settingsApi'
 import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import {
   AGENT_INVITE_STATUS,
@@ -50,6 +50,16 @@ const AGENT_WORKSPACE_PREVIEW_MODES = [
   { key: 'agent', label: 'Agent' },
 ]
 
+const ORGANISATION_ROLE_OPTIONS = [
+  { value: 'super_admin', label: 'Super Admin' },
+  { value: 'principal', label: 'Principal / Owner' },
+  { value: 'admin', label: 'Admin' },
+  { value: 'branch_manager', label: 'Branch Manager' },
+  { value: 'branch_admin', label: 'Branch Admin / Manager' },
+  { value: 'senior_agent', label: 'Senior Agent' },
+  { value: 'agent', label: 'Agent' },
+]
+
 const EMPTY_ORGANISATION = { id: 'all', name: 'All Organisations' }
 
 const PIPELINE_STATUS_ORDER = [
@@ -82,7 +92,7 @@ const AGENT_STATUS_PILL_CLASS = {
 
 function formatRoleLabel(value) {
   const normalized = String(value || '').trim().toLowerCase()
-  const matched = AGENT_ROLE_OPTIONS.find((item) => item.value === normalized)
+  const matched = ORGANISATION_ROLE_OPTIONS.find((item) => item.value === normalized) || AGENT_ROLE_OPTIONS.find((item) => item.value === normalized)
   return matched?.label || 'Agent'
 }
 
@@ -97,6 +107,16 @@ function formatDateTime(value) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function getAgentInitials(agent) {
+  const source = String(agent?.name || agent?.email || 'Agent').trim()
+  const parts = source.includes('@') ? source.split('@')[0].split(/[._\s-]+/) : source.split(/\s+/)
+  return parts
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('') || 'A'
 }
 
 function buildInviteMessage({ invite, inviteLink }) {
@@ -371,6 +391,129 @@ function formatDate(value) {
 
 function normalizeIdentityEmail(value) {
   return String(value || '').trim().toLowerCase()
+}
+
+function normalizeAgentRecordId(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function normalizeAgentDirectoryStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'active' || normalized === 'accepted') return AGENT_INVITE_STATUS.ACTIVE
+  if (normalized === 'invited' || normalized === 'pending') return AGENT_INVITE_STATUS.PENDING_INVITE
+  if (normalized === 'deactivated' || normalized === 'disabled' || normalized === 'inactive') return AGENT_INVITE_STATUS.REVOKED
+  return normalized || AGENT_INVITE_STATUS.ACTIVE
+}
+
+function buildEmptyAgentMetrics() {
+  return {
+    activeListings: 0,
+    activeDeals: 0,
+    completedDeals: 0,
+    cancelledDeals: 0,
+    registeredDeals: 0,
+    totalSalesValue: 0,
+    pipelineValue: 0,
+    activeDealValue: 0,
+    commissionEarned: 0,
+    upcomingAppointments: 0,
+    completedAppointments: 0,
+    followUpsDue: 0,
+    averageDealTime: 0,
+  }
+}
+
+function normalizeOrganisationUserAgent(user = {}, context = {}) {
+  const email = normalizeIdentityEmail(user.email)
+  const id = normalizeAgentRecordId(user.id || user.userId || email)
+  if (!id && !email) return null
+  const role = String(user.role || 'agent').trim().toLowerCase()
+  const fullName = String(user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ') || email || 'Agent').trim()
+  return {
+    id: id || email,
+    organisationUserId: normalizeAgentRecordId(user.id),
+    userId: normalizeAgentRecordId(user.userId),
+    name: fullName,
+    email,
+    phone: user.phone || '',
+    office: user.branchName || (user.branchId ? 'Assigned Branch' : 'Head Office'),
+    branchId: user.branchId || null,
+    organisationId: normalizeAgentRecordId(context.organisationId || user.organisationId || 'agency-default'),
+    organisationName: context.organisationName || user.organisationName || 'Bridge Organisation',
+    role,
+    status: normalizeAgentDirectoryStatus(user.status),
+    invitedAt: user.invitedAt || null,
+    activatedAt: user.acceptedAt || null,
+    lastActiveAt: user.lastActiveAt || null,
+    inviteId: '',
+    inviteToken: '',
+    deals: [],
+    developmentListings: [],
+    privateListings: [],
+    pipelineRows: [],
+    appointments: [],
+    metrics: buildEmptyAgentMetrics(),
+    recentDeals: [],
+  }
+}
+
+function getAgentMatchKeys(agent = {}) {
+  return [
+    agent.id,
+    agent.organisationUserId,
+    agent.userId,
+    agent.email,
+  ].map(normalizeAgentRecordId).filter(Boolean)
+}
+
+function mergeAgentRows(baseRows = [], overlayRows = []) {
+  const merged = [...baseRows]
+  for (const overlay of overlayRows.filter(Boolean)) {
+    const overlayKeys = getAgentMatchKeys(overlay)
+    const existingIndex = merged.findIndex((candidate) => {
+      const candidateKeys = getAgentMatchKeys(candidate)
+      return overlayKeys.some((key) => candidateKeys.includes(key))
+    })
+    if (existingIndex === -1) {
+      merged.push(overlay)
+      continue
+    }
+    const existing = merged[existingIndex]
+    merged[existingIndex] = {
+      ...existing,
+      ...overlay,
+      id: overlay.id || existing.id,
+      organisationUserId: overlay.organisationUserId || existing.organisationUserId,
+      userId: overlay.userId || existing.userId,
+      name: overlay.name || existing.name,
+      email: overlay.email || existing.email,
+      phone: overlay.phone || existing.phone,
+      office: overlay.office || existing.office,
+      organisationId: overlay.organisationId || existing.organisationId,
+      organisationName: overlay.organisationName || existing.organisationName,
+      role: overlay.role || existing.role,
+      status: overlay.status || existing.status,
+      invitedAt: overlay.invitedAt || existing.invitedAt,
+      activatedAt: overlay.activatedAt || existing.activatedAt,
+      lastActiveAt: overlay.lastActiveAt || existing.lastActiveAt,
+      inviteId: overlay.inviteId || existing.inviteId,
+      inviteToken: overlay.inviteToken || existing.inviteToken,
+      deals: existing.deals?.length ? existing.deals : overlay.deals || [],
+      developmentListings: existing.developmentListings?.length ? existing.developmentListings : overlay.developmentListings || [],
+      privateListings: existing.privateListings?.length ? existing.privateListings : overlay.privateListings || [],
+      pipelineRows: existing.pipelineRows?.length ? existing.pipelineRows : overlay.pipelineRows || [],
+      appointments: existing.appointments?.length ? existing.appointments : overlay.appointments || [],
+      metrics: existing.metrics || overlay.metrics || buildEmptyAgentMetrics(),
+      recentDeals: existing.recentDeals?.length ? existing.recentDeals : overlay.recentDeals || [],
+    }
+  }
+  return merged
+}
+
+function findAgentByRouteId(agents = [], routeId = '') {
+  const target = normalizeAgentRecordId(routeId)
+  if (!target) return null
+  return agents.find((agent) => getAgentMatchKeys(agent).includes(target)) || null
 }
 
 function resolveOrganisationOptions({ directory = null, invites = [], profile = null } = {}) {
@@ -1086,6 +1229,24 @@ function AgentWorkspace({ agent, canManageSettings }) {
                 </div>
               ))}
             </div>
+            <div className="mt-5">
+              <h4 className="text-sm font-semibold text-[#142132]">Access & activation</h4>
+              <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {[
+                  ['Invite status', AGENT_STATUS_LABELS[String(agent?.status || '').trim().toLowerCase()] || agent?.status || 'Active'],
+                  ['Date invited', formatDateTime(agent?.invitedAt)],
+                  ['Date activated', formatDateTime(agent?.activatedAt)],
+                  ['Last active', formatDateTime(agent?.lastActiveAt)],
+                  ['Permissions', formatRoleLabel(agent?.role)],
+                  ['Team assignment', agent?.office || agent?.organisationName || 'Main Office'],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-[12px] border border-[#e4ebf5] bg-white px-3 py-2">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</p>
+                    <p className="mt-1 truncate text-sm font-semibold text-[#2d445d]">{value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         ) : null}
       </section>
@@ -1352,9 +1513,13 @@ export function AgentsPage() {
       setLoading(true)
       setError('')
 
-      const transactions = canManageDirectory
-        ? await fetchTransactionsListSummary({ activeTransactionsOnly: false })
-        : await fetchTransactionsByParticipantSummary({ userId: profile?.id, roleType: role })
+      const [transactions, organisationSettings, organisationUsers] = await Promise.all([
+        canManageDirectory
+          ? fetchTransactionsListSummary({ activeTransactionsOnly: false })
+          : fetchTransactionsByParticipantSummary({ userId: profile?.id, roleType: role }),
+        fetchOrganisationSettings().catch(() => null),
+        canManageDirectory ? listOrganisationUsers().catch(() => []) : Promise.resolve([]),
+      ])
       const transactionRowsSource = Array.isArray(transactions) ? transactions : []
 
       const privateListings = readLocalRows(PRIVATE_LISTINGS_STORAGE_KEY)
@@ -1408,16 +1573,24 @@ export function AgentsPage() {
           inviteToken: invite?.token || '',
         }
       })
+      const organisationAgentRows = (organisationUsers || [])
+        .map((user) => normalizeOrganisationUserAgent(user, {
+          organisationId: organisationSettings?.organisation?.id || directory?.agency?.id,
+          organisationName: organisationSettings?.organisation?.name || directory?.agency?.name,
+        }))
+        .filter(Boolean)
+      const mergedAgents = mergeAgentRows(mappedAgents, organisationAgentRows)
       const profileEmail = String(profile?.email || '').trim().toLowerCase()
       const profileId = String(profile?.id || profileEmail || '').trim().toLowerCase()
-      const principalAlreadyListed = mappedAgents.some((agent) => {
+      const principalAlreadyListed = mergedAgents.some((agent) => {
         const agentEmail = String(agent?.email || '').trim().toLowerCase()
-        const agentId = String(agent?.id || '').trim().toLowerCase()
+        const agentId = String(agent?.id || agent?.userId || '').trim().toLowerCase()
         return (profileEmail && agentEmail === profileEmail) || (profileId && agentId === profileId)
       })
       if (canManageDirectory && (profileEmail || profileId) && !principalAlreadyListed) {
-        mappedAgents.unshift({
+        mergedAgents.unshift({
           id: profileId || profileEmail,
+          userId: profileId || '',
           name: profile?.fullName || profile?.name || profileEmail || 'Principal',
           email: profile?.email || '',
           phone: profile?.phoneNumber || profile?.phone || '',
@@ -1436,26 +1609,12 @@ export function AgentsPage() {
           privateListings: [],
           pipelineRows: [],
           appointments: [],
-          metrics: {
-            activeListings: 0,
-            activeDeals: 0,
-            completedDeals: 0,
-            cancelledDeals: 0,
-            registeredDeals: 0,
-            totalSalesValue: 0,
-            pipelineValue: 0,
-            activeDealValue: 0,
-            commissionEarned: 0,
-            upcomingAppointments: 0,
-            completedAppointments: 0,
-            followUpsDue: 0,
-            averageDealTime: 0,
-          },
+          metrics: buildEmptyAgentMetrics(),
           recentDeals: [],
         })
       }
 
-      setAgents(mappedAgents)
+      setAgents(mergedAgents)
       setTransactionRows(transactionRowsSource)
       setAgentDirectory(directory)
       setAgentInvites(invites)
@@ -1764,11 +1923,15 @@ export function AgentsPage() {
     if (!roleEditTarget) return
     try {
       setRoleEditSubmitting(true)
-      updateAgentRole({
-        agentEmail: roleEditTarget.email,
-        organisationId: roleEditTarget.organisationId,
-        role: roleEditValue,
-      })
+      if (roleEditTarget.organisationUserId) {
+        await updateOrganisationUserRole(roleEditTarget.organisationUserId, roleEditValue)
+      } else {
+        updateAgentRole({
+          agentEmail: roleEditTarget.email,
+          organisationId: roleEditTarget.organisationId,
+          role: roleEditValue,
+        })
+      }
       setRoleEditOpen(false)
       setRoleEditTarget(null)
       setActionMessage('Agent role updated.')
@@ -1793,11 +1956,15 @@ export function AgentsPage() {
       setConfirmingAction(true)
       setActionError('')
       if (type === 'deactivate') {
-        setAgentStatus({
-          agentEmail: agent.email,
-          organisationId: agent.organisationId,
-          status: AGENT_INVITE_STATUS.REVOKED,
-        })
+        if (agent.organisationUserId) {
+          await deactivateOrganisationUser(agent.organisationUserId)
+        } else {
+          setAgentStatus({
+            agentEmail: agent.email,
+            organisationId: agent.organisationId,
+            status: AGENT_INVITE_STATUS.REVOKED,
+          })
+        }
         setActionMessage('Agent deactivated.')
       } else if (type === 'remove') {
         removeAgentFromOrganisation({
@@ -1958,7 +2125,7 @@ export function AgentsPage() {
                 <AgentCard
                   key={`${agent.id}-${agent.organisationId || 'org'}`}
                   agent={agent}
-                  onView={() => navigate(`/agents/${encodeURIComponent(agent.id)}`)}
+                  onView={() => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
                 />
               ))
             ) : (
@@ -1968,67 +2135,155 @@ export function AgentsPage() {
             )}
           </section>
 
-          <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Agents Registry</h2>
-            <p className="mt-1.5 text-sm text-[#647a92]">Track invite status, role, organisation assignment, and activation progress.</p>
+            <p className="mt-1.5 text-sm text-[#647a92]">Track who belongs to each branch, their role, and current operational state.</p>
 
-            <div className="mt-4 overflow-x-auto rounded-[16px] border border-[#e2eaf3]">
-              <table className="min-w-[1120px] w-full text-left">
-                <thead className="bg-[#f5f9fd] text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#70849d]">
+            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+              <table className="w-full table-fixed text-left">
+                <colgroup>
+                  <col className="w-[20%]" />
+                  <col className="w-[22%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[16%]" />
+                </colgroup>
+                <thead className="bg-slate-50 text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#70849d]">
                   <tr>
                     <th className="px-4 py-3">Agent</th>
                     <th className="px-4 py-3">Email</th>
                     <th className="px-4 py-3">Mobile</th>
-                    <th className="px-4 py-3">Organisation</th>
+                    <th className="px-4 py-3">Branch / Organisation</th>
                     <th className="px-4 py-3">Role</th>
                     <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Date Invited</th>
-                    <th className="px-4 py-3">Date Activated</th>
-                    <th className="px-4 py-3">Last Active</th>
-                    <th className="px-4 py-3">Actions</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#e8eef5] bg-white text-sm text-[#22384c]">
-                  {filteredAgents.map((agent) => {
+                <tbody className="divide-y divide-slate-100 bg-white text-sm text-[#22384c]">
+                  {filteredAgents.length ? filteredAgents.map((agent) => {
                     const statusKey = String(agent?.status || '').trim().toLowerCase()
                     const statusLabel = AGENT_STATUS_LABELS[statusKey] || agent?.status || 'Active'
                     const statusClassName = AGENT_STATUS_PILL_CLASS[statusKey] || AGENT_STATUS_PILL_CLASS[AGENT_INVITE_STATUS.ACTIVE]
+                    const workspacePath = `/agency/agents/${encodeURIComponent(agent.id)}`
+                    const organisationLabel = [agent.office, agent.organisationName || 'Bridge Organisation'].filter(Boolean).join(' / ')
                     return (
-                      <tr key={`${agent.id}-${agent.organisationId || 'org'}-row`}>
-                        <td className="px-4 py-3 font-semibold text-[#142132]">{agent.name || 'Agent'}</td>
-                        <td className="px-4 py-3">{agent.email || '—'}</td>
-                        <td className="px-4 py-3">{agent.phone || '—'}</td>
-                        <td className="px-4 py-3">{agent.organisationName || 'Bridge Organisation'}</td>
-                        <td className="px-4 py-3">{formatRoleLabel(agent.role)}</td>
+                      <tr
+                        key={`${agent.id}-${agent.organisationId || 'org'}-row`}
+                        className="min-h-[72px] cursor-pointer transition-colors hover:bg-slate-50"
+                        onClick={() => navigate(workspacePath)}
+                      >
+                        <td className="px-4 py-4">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <span className="inline-flex h-10 w-10 flex-none items-center justify-center rounded-full border border-[#d7e2ef] bg-[#f8fbff] text-sm font-semibold text-[#245076]">
+                              {getAgentInitials(agent)}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="truncate font-semibold text-[#142132]">{agent.name || 'Agent'}</p>
+                              <p className="truncate text-xs text-[#60758d]">{formatRoleLabel(agent.role)}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="truncate px-4 py-4">{agent.email || '—'}</td>
+                        <td className="truncate px-4 py-4">{agent.phone || '—'}</td>
+                        <td className="truncate px-4 py-4">{organisationLabel}</td>
+                        <td className="truncate px-4 py-4">{formatRoleLabel(agent.role)}</td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClassName}`}>
                             {statusLabel}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-xs text-[#60758d]">{formatDateTime(agent.invitedAt)}</td>
-                        <td className="px-4 py-3 text-xs text-[#60758d]">{formatDateTime(agent.activatedAt)}</td>
-                        <td className="px-4 py-3 text-xs text-[#60758d]">{formatDateTime(agent.lastActiveAt)}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-1.5">
+                        <td className="px-4 py-4">
+                          <div className="flex flex-wrap justify-end gap-1.5">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                navigate(workspacePath)
+                              }}
+                            >
+                              View
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                openRoleEditor(agent)
+                              }}
+                            >
+                              Role
+                            </Button>
                             {agent.inviteId ? (
-                              <>
-                                <Button type="button" size="sm" variant="secondary" onClick={() => handleResendInvite(agent)}>Resend Invite</Button>
-                                <Button type="button" size="sm" variant="secondary" onClick={() => handleCopyInviteLink(agent)}>Copy Invite Link</Button>
-                              </>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void handleResendInvite(agent)
+                                }}
+                              >
+                                Resend
+                              </Button>
                             ) : null}
-                            <Button type="button" size="sm" variant="secondary" onClick={() => openRoleEditor(agent)}>Edit Role</Button>
-                            {statusKey !== AGENT_INVITE_STATUS.REVOKED ? (
-                              <Button type="button" size="sm" variant="secondary" onClick={() => openConfirm('deactivate', agent)}>Deactivate Agent</Button>
+                            {agent.inviteToken ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void handleCopyInviteLink(agent)
+                                }}
+                              >
+                                Copy
+                              </Button>
                             ) : null}
-                            {agent.inviteId && ![AGENT_INVITE_STATUS.ACTIVE, AGENT_INVITE_STATUS.REVOKED].includes(statusKey) ? (
-                              <Button type="button" size="sm" variant="secondary" onClick={() => openConfirm('revoke', agent)}>Revoke Invite</Button>
+                            {statusKey === AGENT_INVITE_STATUS.ACTIVE ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  openConfirm('deactivate', agent)
+                                }}
+                              >
+                                Deactivate
+                              </Button>
                             ) : null}
-                            <Button type="button" size="sm" variant="secondary" onClick={() => openConfirm('remove', agent)}>Remove</Button>
                           </div>
                         </td>
                       </tr>
                     )
-                  })}
+                  }) : (
+                    <tr>
+                      <td colSpan={7} className="px-6 py-12 text-center">
+                        <div className="mx-auto max-w-md">
+                          <p className="text-base font-semibold text-[#142132]">No agents added yet.</p>
+                          <p className="mt-2 text-sm leading-6 text-[#647a92]">
+                            Invite agents to start managing transactions, listings, and pipeline activity across your agency.
+                          </p>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="mt-4"
+                            onClick={() => {
+                              resetInviteForm()
+                              setInviteModalOpen(true)
+                            }}
+                          >
+                            + Invite Agent
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -2179,9 +2434,13 @@ export function AgentWorkspacePage() {
       setLoading(true)
       setError('')
 
-      const transactions = canManageSettings
-        ? await fetchTransactionsListSummary({ activeTransactionsOnly: false })
-        : await fetchTransactionsByParticipantSummary({ userId: profile?.id, roleType: role })
+      const [transactions, organisationSettings, organisationUsers] = await Promise.all([
+        canManageSettings
+          ? fetchTransactionsListSummary({ activeTransactionsOnly: false })
+          : fetchTransactionsByParticipantSummary({ userId: profile?.id, roleType: role }),
+        fetchOrganisationSettings().catch(() => null),
+        canManageSettings ? listOrganisationUsers().catch(() => []) : Promise.resolve([]),
+      ])
 
       const privateListings = readLocalRows(PRIVATE_LISTINGS_STORAGE_KEY)
       const pipelineRows = readLocalRows(PIPELINE_STORAGE_KEY)
@@ -2206,8 +2465,15 @@ export function AgentWorkspacePage() {
         appointments,
         agentDirectory,
       })
+      const organisationAgentRows = (organisationUsers || [])
+        .map((user) => normalizeOrganisationUserAgent(user, {
+          organisationId: organisationSettings?.organisation?.id || agentDirectory?.agency?.id,
+          organisationName: organisationSettings?.organisation?.name || agentDirectory?.agency?.name,
+        }))
+        .filter(Boolean)
+      const mergedAgents = mergeAgentRows(mappedAgents, organisationAgentRows)
 
-      const target = mappedAgents.find((item) => item.id === String(agentId || '').trim().toLowerCase())
+      const target = findAgentByRouteId(mergedAgents, agentId)
       if (!target) {
         setError('Agent not found in your current workspace scope.')
         setAgent(null)

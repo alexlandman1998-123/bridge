@@ -4,6 +4,7 @@ import {
   Bell,
   BriefcaseBusiness,
   CalendarDays,
+  Check,
   CheckCircle2,
   ChevronDown,
   CircleDollarSign,
@@ -23,11 +24,11 @@ import {
   Users,
   WalletCards,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
-import { getPrincipalDashboardData } from '../services/principalDashboardService'
+import { getPrincipalDashboardData, PRINCIPAL_DASHBOARD_DATE_PRESETS } from '../services/principalDashboardService'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -57,6 +58,12 @@ const FINANCE_COLORS = {
   bond: '#7c5cff',
   unknown: '#94a3b8',
 }
+
+const OVERVIEW_MODES = [
+  { key: 'pipeline', label: 'Pipeline' },
+  { key: 'transactions', label: 'Transactions' },
+  { key: 'revenue', label: 'Revenue' },
+]
 
 const dashboardCardClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm'
 const dashboardCardPadding = 'p-4 sm:p-5'
@@ -129,14 +136,14 @@ function DashboardSkeleton() {
   )
 }
 
-function DashboardEmptyState({ onRetry }) {
+function DashboardEmptyState({ onRetry, filtered = false }) {
   return (
     <section className="rounded-2xl border border-dashed border-[#cfdbe8] bg-white px-4 py-12 text-center shadow-sm sm:px-6">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#edf5ff] text-[#1769d1]">
         <LineChart size={22} />
       </div>
-      <h2 className="mt-4 text-[1.2rem] font-semibold text-[#101828]">Your agency dashboard will appear here once transactions, leads, and activity are added.</h2>
-      <p className="mx-auto mt-2 max-w-[560px] text-sm leading-6 text-[#667085]">The dashboard uses live transaction, lead, document, signing, and activity data. Once those records exist, the KPIs and charts will populate automatically.</p>
+      <h2 className="mt-4 text-[1.2rem] font-semibold text-[#101828]">{filtered ? 'No data found for this workspace and date range.' : 'Your agency dashboard will appear here once transactions, leads, and activity are added.'}</h2>
+      <p className="mx-auto mt-2 max-w-[560px] text-sm leading-6 text-[#667085]">{filtered ? 'Try another workspace or date preset to broaden the dashboard scope.' : 'The dashboard uses live transaction, lead, document, signing, and activity data. Once those records exist, the KPIs and charts will populate automatically.'}</p>
       <button type="button" onClick={onRetry} className="mt-5 inline-flex h-10 items-center justify-center rounded-xl border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#1f4f78] shadow-sm">
         Refresh
       </button>
@@ -144,7 +151,78 @@ function DashboardEmptyState({ onRetry }) {
   )
 }
 
-function PrincipalDashboardHeader({ dateRange, onDateRangeChange, workspaceLabel, profile }) {
+function FilterDropdown({ icon: Icon, value, options, onChange, ariaLabel }) {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef(null)
+  const selected = options.find((option) => option.value === value) || options[0]
+
+  useEffect(() => {
+    if (!open) return undefined
+    function handlePointerDown(event) {
+      if (menuRef.current && !menuRef.current.contains(event.target)) setOpen(false)
+    }
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open])
+
+  return (
+    <div ref={menuRef} className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={ariaLabel}
+        onClick={() => setOpen((previous) => !previous)}
+        className="inline-flex h-11 min-w-[168px] items-center justify-between gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] shadow-sm"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          {Icon ? <Icon size={16} className="shrink-0 text-[#1769d1]" /> : null}
+          <span className="truncate">{selected?.label || 'Select'}</span>
+        </span>
+        <ChevronDown size={14} className={`shrink-0 text-[#8a9aac] transition ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open ? (
+        <div role="menu" className="absolute right-0 z-20 mt-2 w-[240px] overflow-hidden rounded-xl border border-[#d9e3ef] bg-white p-1.5 shadow-xl shadow-slate-200/70">
+          {options.map((option) => {
+            const active = option.value === value
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="menuitemradio"
+                aria-checked={active}
+                onClick={() => {
+                  onChange(option.value)
+                  setOpen(false)
+                }}
+                className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium ${active ? 'bg-[#edf5ff] text-[#1769d1]' : 'text-[#344054] hover:bg-[#f8fafc]'}`}
+              >
+                <span className="min-w-0 truncate">{option.label}</span>
+                {active ? <Check size={15} className="shrink-0" /> : null}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function PrincipalDashboardHeader({
+  dateRange,
+  onDateRangeChange,
+  selectedWorkspaceId,
+  onWorkspaceChange,
+  workspaceOptions,
+  profile,
+}) {
   const initials = String(profile?.fullName || profile?.name || profile?.email || 'AL')
     .split(/\s+/)
     .map((part) => part[0])
@@ -154,23 +232,24 @@ function PrincipalDashboardHeader({ dateRange, onDateRangeChange, workspaceLabel
   return (
     <header className="flex justify-end">
       <div className="flex flex-wrap items-center gap-2.5">
-        <button type="button" className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] shadow-sm">
-          <LayoutGrid size={16} className="text-[#1769d1]" />
-          {workspaceLabel || 'All Workspaces'}
-          <ChevronDown size={14} className="text-[#8a9aac]" />
-        </button>
-        <label className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] shadow-sm">
-          <select value={dateRange} onChange={(event) => onDateRangeChange(event.target.value)} className="appearance-none border-0 bg-transparent p-0 text-sm font-semibold outline-none">
-            <option value="this_month">This Month</option>
-            <option value="last_30_days">Last 30 Days</option>
-            <option value="last_month">Last Month</option>
-          </select>
-          <CalendarDays size={15} className="text-[#51657b]" />
-        </label>
-        <button type="button" className="relative inline-flex h-11 w-11 items-center justify-center rounded-xl border border-[#d9e3ef] bg-white text-[#24364b] shadow-sm">
+        <FilterDropdown
+          icon={LayoutGrid}
+          value={selectedWorkspaceId}
+          options={workspaceOptions}
+          onChange={onWorkspaceChange}
+          ariaLabel="Filter dashboard by workspace"
+        />
+        <FilterDropdown
+          icon={CalendarDays}
+          value={dateRange}
+          options={PRINCIPAL_DASHBOARD_DATE_PRESETS.map((preset) => ({ value: preset.key, label: preset.label }))}
+          onChange={onDateRangeChange}
+          ariaLabel="Filter dashboard by date range"
+        />
+        <button type="button" disabled title="Coming soon" className="relative inline-flex h-11 w-11 cursor-not-allowed items-center justify-center rounded-xl border border-[#d9e3ef] bg-white text-[#8a9aac] opacity-70 shadow-sm">
           <Bell size={17} />
         </button>
-        <button type="button" className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-2.5 shadow-sm">
+        <button type="button" disabled title="Coming soon" className="inline-flex h-11 cursor-not-allowed items-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-2.5 opacity-80 shadow-sm">
           <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#0f172a] text-xs font-semibold text-white">{initials}</span>
           <ChevronDown size={14} className="text-[#8a9aac]" />
         </button>
@@ -179,7 +258,8 @@ function PrincipalDashboardHeader({ dateRange, onDateRangeChange, workspaceLabel
   )
 }
 
-function PrincipalKpiCard({ icon: Icon, label, value, trend, inverse = false, tone = 'blue' }) {
+function PrincipalKpiCard({ icon, label, value, trend, inverse = false, tone = 'blue' }) {
+  const KpiIcon = icon
   const tones = {
     blue: 'bg-[#edf5ff] text-[#1769d1]',
     green: 'bg-[#ecfdf3] text-[#16894f]',
@@ -190,7 +270,7 @@ function PrincipalKpiCard({ icon: Icon, label, value, trend, inverse = false, to
   return (
     <article className={`${dashboardCardClass} flex h-full min-h-[132px] flex-col justify-between p-[18px]`}>
       <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${tones[tone] || tones.blue}`}>
-        <Icon size={18} />
+        <KpiIcon size={18} />
       </div>
       <div>
         <p className="truncate text-[13px] font-medium leading-5 text-[#52657a]">{label}</p>
@@ -203,12 +283,13 @@ function PrincipalKpiCard({ icon: Icon, label, value, trend, inverse = false, to
 
 function PrincipalKpiRow({ data }) {
   const kpis = data.kpis
+  const dateLabel = data?.filters?.dateRange?.label || 'This Month'
   return (
     <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
       <PrincipalKpiCard icon={PieChart} label="Pipeline Value" value={formatCurrency(kpis.pipelineValue, { compact: true })} trend={kpis.trends.pipelineValue} />
       <PrincipalKpiCard icon={Users} label="Active Transactions" value={formatCount(kpis.activeTransactions)} trend={kpis.trends.activeTransactions} tone="green" />
       <PrincipalKpiCard icon={BriefcaseBusiness} label="Expected Commission" value={kpis.expectedCommission === null ? '—' : formatCurrency(kpis.expectedCommission, { compact: true })} trend={kpis.trends.expectedCommission} tone="orange" />
-      <PrincipalKpiCard icon={CalendarDays} label="Closing This Month" value={formatCount(kpis.closingThisMonth)} trend={kpis.trends.closingThisMonth} tone="purple" />
+      <PrincipalKpiCard icon={CalendarDays} label={`Closing ${dateLabel}`} value={formatCount(kpis.closingThisMonth)} trend={kpis.trends.closingThisMonth} tone="purple" />
       <PrincipalKpiCard icon={Gauge} label="Avg. Deal Cycle" value={formatDays(kpis.avgDealCycleDays)} trend={kpis.trends.avgDealCycleDays} inverse tone="indigo" />
       <PrincipalKpiCard icon={Target} label="Lead → Deal Conversion" value={formatPercent(kpis.leadToDealConversion)} trend={kpis.trends.leadToDealConversion} tone="green" />
     </section>
@@ -264,15 +345,20 @@ function PipelineStageChart({ stages }) {
 }
 
 function FinanceTypeDonut({ items, totalValue }) {
-  let cursor = 0
-  const gradient = items
+  const gradientParts = items
     .filter((item) => item.percentage > 0)
-    .map((item) => {
-      const start = cursor
-      cursor += item.percentage
-      return `${FINANCE_COLORS[item.key] || '#94a3b8'} ${start}% ${cursor}%`
-    })
-    .join(', ')
+    .reduce(
+      (state, item) => {
+        const start = state.cursor
+        const end = start + item.percentage
+        return {
+          cursor: end,
+          parts: [...state.parts, `${FINANCE_COLORS[item.key] || '#94a3b8'} ${start}% ${end}%`],
+        }
+      },
+      { cursor: 0, parts: [] },
+    )
+  const gradient = gradientParts.parts.join(', ')
   return (
     <div className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
       <p className="text-sm font-semibold text-[#101828]">Pipeline by Type</p>
@@ -301,9 +387,108 @@ function FinanceTypeDonut({ items, totalValue }) {
   )
 }
 
-function PipelineSalesOverview({ data }) {
+function TransactionsOverviewChart({ data }) {
+  const stages = Array.isArray(data?.stages) ? data.stages : []
+  const maxCount = Math.max(1, ...stages.map((stage) => Number(stage.count || 0)))
+  return (
+    <div className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
+      <div>
+        <p className="text-xs font-medium text-[#667085]">Active Transactions</p>
+        <p className="mt-1 text-[1.45rem] font-semibold tracking-[-0.035em] text-[#101828]">{formatCount(data?.totalActive)}</p>
+      </div>
+      <div className="mt-5 flex flex-1 flex-col justify-center gap-4">
+        {stages.map((stage) => (
+          <div key={stage.key}>
+            <div className="mb-1.5 flex items-center justify-between gap-3 text-xs font-medium">
+              <span className="text-[#344054]">{stage.label}</span>
+              <span className="text-[#667085]">{formatCount(stage.count)}</span>
+            </div>
+            <div className="h-3 overflow-hidden rounded-full bg-[#edf2f7]">
+              <div className="h-full rounded-full bg-[#1769d1]" style={{ width: `${Math.max(4, (Number(stage.count || 0) / maxCount) * 100)}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function TransactionsSummaryCard({ data }) {
   const metrics = [
-    { label: 'Registered This Month', value: formatCount(data.pipeline.registeredThisMonth), trend: null },
+    { label: 'Registered', value: formatCount(data?.registeredInRange) },
+    { label: 'Pending Registration', value: formatCount(data?.pendingRegistration) },
+    { label: 'Cancelled', value: formatCount(data?.cancelledInRange) },
+    { label: 'Deal Count Movement', value: data?.movement === null || data?.movement === undefined ? '—' : `${data.movement > 0 ? '+' : ''}${Math.round(data.movement)}%` },
+  ]
+  return (
+    <div className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
+      <p className="text-sm font-semibold text-[#101828]">Transaction Movement</p>
+      <div className="mt-5 grid flex-1 content-center gap-3">
+        {metrics.map((metric) => (
+          <div key={metric.label} className="rounded-xl border border-[#edf2f7] bg-[#fbfdff] px-4 py-3">
+            <p className="text-xs font-medium text-[#667085]">{metric.label}</p>
+            <p className="mt-1 text-[1.25rem] font-semibold text-[#101828]">{metric.value}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function RevenueOverviewChart({ data }) {
+  const monthly = Array.isArray(data?.monthly) ? data.monthly : []
+  const maxValue = Math.max(1, ...monthly.map((item) => Number(item.salesValue || 0)))
+  return (
+    <div className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
+      <div>
+        <p className="text-xs font-medium text-[#667085]">Registered Value</p>
+        <p className="mt-1 text-[1.45rem] font-semibold tracking-[-0.035em] text-[#101828]">{formatCurrency(data?.registeredValue, { compact: true })}</p>
+      </div>
+      <div className="mt-6 flex min-h-[190px] items-end gap-3">
+        {monthly.map((item) => (
+          <div key={item.key} className="flex min-w-0 flex-1 flex-col items-center gap-2">
+            <div className="flex h-[160px] w-full items-end rounded-t-lg bg-[#f1f5f9]">
+              <div className="w-full rounded-t-lg bg-[#169b52]" style={{ height: `${Math.max(4, (Number(item.salesValue || 0) / maxValue) * 100)}%` }} />
+            </div>
+            <span className="text-[0.7rem] font-medium text-[#667085]">{item.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function RevenueAgentCard({ data }) {
+  const rows = Array.isArray(data?.byAgent) ? data.byAgent : []
+  return (
+    <div className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
+      <p className="text-sm font-semibold text-[#101828]">Revenue by Agent</p>
+      <div className="mt-4 space-y-3">
+        {rows.length ? rows.map((agent) => (
+          <div key={agent.agentId || agent.agentName} className="flex items-center justify-between gap-3 rounded-xl border border-[#edf2f7] bg-[#fbfdff] px-4 py-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-[#101828]">{agent.agentName}</p>
+              <p className="mt-0.5 text-xs text-[#667085]">{formatCount(agent.count)} registrations</p>
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-semibold text-[#101828]">{formatCurrency(agent.commission, { compact: true })}</p>
+              <p className="mt-0.5 text-xs text-[#667085]">{formatCurrency(agent.salesValue, { compact: true })}</p>
+            </div>
+          </div>
+        )) : (
+          <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-[#d3ddea] bg-[#fbfdff] px-4 py-8 text-center text-sm text-[#667085]">
+            No revenue data for this date range.
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PipelineSalesOverview({ data, overviewMode, onOverviewModeChange }) {
+  const dateLabel = data?.filters?.dateRange?.label || 'This Month'
+  const metrics = [
+    { label: `Registered ${dateLabel}`, value: formatCount(data.pipeline.registeredThisMonth), trend: null },
     { label: 'Pending Registration', value: formatCount(data.pipeline.pendingRegistration), trend: null },
     { label: 'Avg. Deal Value', value: data.pipeline.avgDealValue === null ? '—' : formatCurrency(data.pipeline.avgDealValue, { compact: true }), trend: null },
     { label: 'Win Rate', value: formatPercent(data.pipeline.winRate), trend: null },
@@ -312,24 +497,52 @@ function PipelineSalesOverview({ data }) {
     <section className="space-y-4">
       <div className="flex flex-col gap-3 px-1 md:flex-row md:items-center md:justify-between">
         <h2 className="text-[1.08rem] font-semibold text-[#101828]">Pipeline & Sales Overview</h2>
-        <div className="inline-flex h-9 w-fit rounded-xl border border-[#d9e3ef] bg-[#f8fafc] p-1 text-xs font-semibold text-[#52657a]">
-          <span className="rounded-lg bg-white px-3 py-1.5 text-[#1769d1] shadow-sm">Pipeline</span>
-          <span className="px-3 py-1.5">Transactions</span>
-          <span className="px-3 py-1.5">Revenue</span>
+        <div className="inline-flex h-9 w-fit rounded-xl border border-[#d9e3ef] bg-[#f8fafc] p-1 text-xs font-semibold text-[#52657a]" role="tablist" aria-label="Overview mode">
+          {OVERVIEW_MODES.map((mode) => {
+            const active = overviewMode === mode.key
+            return (
+              <button
+                key={mode.key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => onOverviewModeChange(mode.key)}
+                className={`rounded-lg px-3 py-1.5 transition ${active ? 'bg-white text-[#1769d1] shadow-sm' : 'hover:text-[#24364b]'}`}
+              >
+                {mode.label}
+              </button>
+            )
+          })}
         </div>
       </div>
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <PipelineStageChart stages={data.pipeline.stages} />
-        <FinanceTypeDonut items={data.pipeline.financeTypes} totalValue={data.pipeline.totalValue} />
-      </div>
-      <div className={`${dashboardCardClass} grid gap-3 p-3 sm:p-4 md:grid-cols-4`}>
-        {metrics.map((metric, index) => (
-          <div key={metric.label} className={`px-3 py-2 ${index ? 'md:border-l md:border-[#edf2f7]' : ''}`}>
-            <p className="text-xs font-medium text-[#667085]">{metric.label}</p>
-            <p className="mt-2 text-[1.25rem] font-semibold text-[#101828]">{metric.value}</p>
+      {overviewMode === 'pipeline' ? (
+        <>
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+            <PipelineStageChart stages={data.pipeline.stages} />
+            <FinanceTypeDonut items={data.pipeline.financeTypes} totalValue={data.pipeline.totalValue} />
           </div>
-        ))}
-      </div>
+          <div className={`${dashboardCardClass} grid gap-3 p-3 sm:p-4 md:grid-cols-4`}>
+            {metrics.map((metric, index) => (
+              <div key={metric.label} className={`px-3 py-2 ${index ? 'md:border-l md:border-[#edf2f7]' : ''}`}>
+                <p className="text-xs font-medium text-[#667085]">{metric.label}</p>
+                <p className="mt-2 text-[1.25rem] font-semibold text-[#101828]">{metric.value}</p>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : null}
+      {overviewMode === 'transactions' ? (
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <TransactionsOverviewChart data={data.transactions} />
+          <TransactionsSummaryCard data={data.transactions} />
+        </div>
+      ) : null}
+      {overviewMode === 'revenue' ? (
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <RevenueOverviewChart data={data.revenue} />
+          <RevenueAgentCard data={data.revenue} />
+        </div>
+      ) : null}
     </section>
   )
 }
@@ -394,7 +607,7 @@ function AttentionRequiredCard({ attention }) {
     <section className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-[1.05rem] font-semibold text-[#101828]">Attention Required</h2>
-        <button type="button" className="h-9 rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#24364b] shadow-sm">View all</button>
+        <button type="button" disabled title="Coming soon" className="h-9 cursor-not-allowed rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#8a9aac] opacity-70 shadow-sm">View all</button>
       </div>
       <div className="mt-4 max-h-[360px] overflow-y-auto rounded-2xl border border-[#edf2f7] pr-1">
         <div className="divide-y divide-[#edf2f7]">
@@ -415,7 +628,7 @@ function AttentionRequiredCard({ attention }) {
         })}
         </div>
       </div>
-      <button type="button" className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#1f4f78]">
+      <button type="button" disabled title="Coming soon" className="mt-4 inline-flex cursor-not-allowed items-center gap-2 text-sm font-semibold text-[#8a9aac]">
         View all tasks <ArrowRight size={14} />
       </button>
     </section>
@@ -479,7 +692,7 @@ function RecentActivityFeed({ rows }) {
     <section className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-[1.05rem] font-semibold text-[#101828]">Recent Activity</h2>
-        <button type="button" className="inline-flex h-9 items-center gap-1 rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#24364b] shadow-sm">
+        <button type="button" disabled title="Coming soon" className="inline-flex h-9 cursor-not-allowed items-center gap-1 rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#8a9aac] opacity-70 shadow-sm">
           All Activity <ChevronDown size={13} />
         </button>
       </div>
@@ -505,7 +718,7 @@ function RecentActivityFeed({ rows }) {
           </div>
         )}
       </div>
-      <button type="button" className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#1f4f78]">
+      <button type="button" disabled title="Coming soon" className="mt-4 inline-flex cursor-not-allowed items-center gap-2 text-sm font-semibold text-[#8a9aac]">
         View all activity <ArrowRight size={14} />
       </button>
     </section>
@@ -513,8 +726,10 @@ function RecentActivityFeed({ rows }) {
 }
 
 function PrincipalDashboard({ agencyId = '', workspaceId = '' }) {
-  const { workspace, profile } = useWorkspace()
+  const { profile } = useWorkspace()
   const [dateRange, setDateRange] = useState('this_month')
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => String(workspaceId || 'all').trim() || 'all')
+  const [overviewMode, setOverviewMode] = useState('pipeline')
   const [resolvedAgencyId, setResolvedAgencyId] = useState(agencyId)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -546,17 +761,21 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '' }) {
     try {
       const result = await getPrincipalDashboardData({
         agencyId: resolvedAgencyId,
-        workspaceId: workspaceId || workspace?.id || '',
-        dateRange,
+        workspaceId: selectedWorkspaceId,
+        dateRangePreset: dateRange,
+        overviewMode,
       })
       setData(result)
+      if (result?.filters?.selectedWorkspaceId && result.filters.selectedWorkspaceId !== selectedWorkspaceId) {
+        setSelectedWorkspaceId(result.filters.selectedWorkspaceId)
+      }
     } catch (loadError) {
       console.error('[PrincipalDashboard] load failed', loadError)
       setError(loadError?.message || 'We couldn’t load the principal dashboard data.')
     } finally {
       setLoading(false)
     }
-  }, [dateRange, resolvedAgencyId, workspace?.id, workspaceId])
+  }, [dateRange, overviewMode, resolvedAgencyId, selectedWorkspaceId])
 
   useEffect(() => {
     void loadDashboard()
@@ -576,7 +795,14 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '' }) {
     }
   }, [loadDashboard])
 
+  const workspaceOptions = useMemo(() => {
+    const options = data?.filters?.availableWorkspaces
+    if (Array.isArray(options) && options.length) return options.map((item) => ({ value: item.id, label: item.label || item.name || 'Workspace' }))
+    return [{ value: 'all', label: 'All Workspaces' }]
+  }, [data?.filters?.availableWorkspaces])
   const lastUpdated = useMemo(() => formatTimestamp(data?.meta?.lastUpdatedAt), [data?.meta?.lastUpdatedAt])
+  const isInitialLoading = loading && !data
+  const isRefreshing = loading && data
 
   return (
     <main className="principal-dashboard min-h-screen bg-[#f8fafc] text-[#101828]">
@@ -584,7 +810,9 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '' }) {
         <PrincipalDashboardHeader
           dateRange={dateRange}
           onDateRangeChange={setDateRange}
-          workspaceLabel={workspace?.id === 'all' ? 'All Workspaces' : workspace?.name}
+          selectedWorkspaceId={selectedWorkspaceId}
+          onWorkspaceChange={setSelectedWorkspaceId}
+          workspaceOptions={workspaceOptions}
           profile={profile}
         />
 
@@ -597,14 +825,14 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '' }) {
           </section>
         ) : null}
 
-        {loading ? <DashboardSkeleton /> : null}
+        {isInitialLoading ? <DashboardSkeleton /> : null}
 
-        {!loading && data?.meta?.isEmpty ? <DashboardEmptyState onRetry={loadDashboard} /> : null}
+        {!loading && data?.meta?.isEmpty ? <DashboardEmptyState onRetry={loadDashboard} filtered={Boolean(data?.meta?.hasAnyRecords)} /> : null}
 
-        {!loading && data && !data.meta?.isEmpty ? (
-          <>
+        {data && !data.meta?.isEmpty ? (
+          <div className={`space-y-5 transition-opacity ${isRefreshing ? 'opacity-60' : 'opacity-100'}`} aria-busy={isRefreshing}>
             <PrincipalKpiRow data={data} />
-            <PipelineSalesOverview data={data} />
+            <PipelineSalesOverview data={data} overviewMode={overviewMode} onOverviewModeChange={setOverviewMode} />
             <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
               <AgentPerformanceTable rows={data.agentPerformance} />
               <AttentionRequiredCard attention={data.attentionRequired} />
@@ -617,7 +845,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '' }) {
               <Loader2 size={12} className="mr-1 inline-block" />
               Data last updated: {lastUpdated || 'just now'}
             </p>
-          </>
+          </div>
         ) : null}
       </div>
     </main>

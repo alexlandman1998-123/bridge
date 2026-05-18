@@ -14,9 +14,13 @@ export const AGENT_INVITE_STATUS = {
 }
 
 export const AGENT_ROLE_OPTIONS = [
+  { value: 'super_admin', label: 'Super Admin' },
+  { value: 'principal', label: 'Principal / Owner' },
+  { value: 'admin', label: 'Admin' },
+  { value: 'branch_manager', label: 'Branch Manager' },
+  { value: 'branch_admin', label: 'Branch Admin / Manager' },
   { value: 'agent', label: 'Agent' },
   { value: 'senior_agent', label: 'Senior Agent' },
-  { value: 'branch_admin', label: 'Branch Admin / Manager' },
 ]
 
 function readJson(key, fallback) {

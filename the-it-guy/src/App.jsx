@@ -99,6 +99,7 @@ const NewTransactionPage = lazy(() => import('./pages/NewTransactionPage'))
 const OnboardingProfileSetup = lazy(() => import('./pages/OnboardingProfileSetup'))
 const Pipeline = lazy(() => import('./pages/Pipeline'))
 const PipelineCanvassingPage = lazy(() => import('./pages/PipelineCanvassingPage'))
+const PipelineOverviewPage = lazy(() => import('./pages/PipelineOverviewPage'))
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'))
 const PostDashboardSetup = lazy(() => import('./pages/PostDashboardSetup'))
 const Report = lazy(() => import('./pages/Report'))
@@ -1370,7 +1371,7 @@ function AppRoutes() {
                 path="/pipeline/overview"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <Pipeline key="pipeline-overview" initialAgentViewMode="overview" />
+                    <PipelineOverviewPage />
                   </RoleRoute>
                 }
               />
