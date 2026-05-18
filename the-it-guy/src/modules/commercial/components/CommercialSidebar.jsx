@@ -1,6 +1,7 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import WorkspaceSwitcher from '../../../components/WorkspaceSwitcher'
 import { COMMERCIAL_NAV_ITEMS } from '../commercialNavigation'
+import CommercialBranding from './CommercialBranding'
 
 function CommercialSidebar() {
   const location = useLocation()
@@ -9,10 +10,7 @@ function CommercialSidebar() {
   return (
     <aside className="hidden h-screen w-[278px] shrink-0 border-r border-slate-200 bg-white px-4 py-5 shadow-[12px_0_36px_rgba(15,23,42,0.035)] lg:flex lg:flex-col">
       <div className="shrink-0">
-        <div className="border-b border-slate-200 pb-4">
-          <h1 className="text-[2.35rem] font-bold leading-none tracking-[-0.055em] text-[#113a6b]">bridge.</h1>
-          <p className="mt-2 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">Commercial workspace</p>
-        </div>
+        <CommercialBranding />
 
         <WorkspaceSwitcher
           currentPath={`${location.pathname}${location.search || ''}`}

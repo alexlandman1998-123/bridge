@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import WorkspaceSwitcher from '../../../components/WorkspaceSwitcher'
 import { COMMERCIAL_NAV_ITEMS } from '../commercialNavigation'
+import CommercialBranding from './CommercialBranding'
 import CommercialSidebar from './CommercialSidebar'
 
 function CommercialLayout() {
@@ -13,10 +14,7 @@ function CommercialLayout() {
       <main className="min-w-0 flex-1 overflow-y-auto">
         <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur lg:hidden">
           <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-2xl font-bold leading-none tracking-[-0.055em] text-[#113a6b]">bridge.</p>
-              <p className="mt-1 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-slate-500">Commercial workspace</p>
-            </div>
+            <CommercialBranding compact />
             <div className="w-[190px]">
               <WorkspaceSwitcher
                 currentPath={`${location.pathname}${location.search || ''}`}
