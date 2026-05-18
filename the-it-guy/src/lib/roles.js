@@ -260,8 +260,6 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
     { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'documents', label: 'Documents', to: '/documents' },
     { key: 'reports', label: 'Reports', to: '/reports' },
-    { key: 'financials', label: 'Finance', to: '/reports' },
-    { key: 'marketing', label: 'Marketing', to: '/pipeline/canvassing' },
   ]
 
 }

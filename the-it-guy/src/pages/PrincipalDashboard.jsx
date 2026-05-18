@@ -146,11 +146,7 @@ function PrincipalDashboardHeader({ dateRange, onDateRangeChange, workspaceLabel
     .slice(0, 2)
     .toUpperCase()
   return (
-    <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-      <div>
-        <h1 className="text-[1.55rem] font-semibold tracking-[-0.025em] text-[#101828]">Principal Overview</h1>
-        <p className="mt-1 text-sm text-[#667085]">Welcome back, here&apos;s what&apos;s happening across your agency.</p>
-      </div>
+    <header className="flex justify-end">
       <div className="flex flex-wrap items-center gap-2.5">
         <button type="button" className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] shadow-sm">
           <LayoutGrid size={16} className="text-[#1769d1]" />
