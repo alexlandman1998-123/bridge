@@ -3918,6 +3918,7 @@ function ClientPortal() {
   const isTeam = workspaceSection === 'team'
   const isAlterations = workspaceSection === 'alterations'
   const isReview = workspaceSection === 'review'
+  const hideSellerWorkspaceHeader = effectiveWorkspace === 'seller' && ['overview', 'appointments', 'offers', 'documents'].includes(workspaceSection)
 
   const trustFormStatus = portal?.trustInvestmentForm?.status || 'Not Started'
   const trustFormSubmittedAt = portal?.trustInvestmentForm?.submittedAt || null
@@ -5681,7 +5682,7 @@ function ClientPortal() {
           </div>
 
           <div className="space-y-6 px-5 py-5 md:px-8 md:py-8 xl:px-10">
-            {effectiveWorkspace === 'seller' && isOverview ? null : (
+            {hideSellerWorkspaceHeader ? null : (
             <section className="rounded-[24px] border border-[#223d57] bg-[linear-gradient(135deg,#10253a_0%,#1d3c5b_60%,#2a5078_100%)] px-5 py-5 text-white shadow-[0_20px_36px_rgba(12,24,40,0.3)]">
               <h2 className="text-[1.35rem] font-semibold tracking-[-0.03em]">Welcome, {clientFirstName}</h2>
               <p className="mt-2 text-sm leading-6 text-[#d6e5f3]">
@@ -5696,7 +5697,7 @@ function ClientPortal() {
             </section>
             )}
 
-            {effectiveWorkspace === 'seller' && isOverview ? null : (
+            {hideSellerWorkspaceHeader ? null : (
             <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-6 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
               {effectiveWorkspace === 'seller' ? (
                 <div>
@@ -6386,6 +6387,7 @@ function ClientPortal() {
                 appointments={clientVisibleAppointments}
                 workspace={effectiveWorkspace === 'seller' ? 'selling' : 'buying'}
                 documentCenter={workspaceData?.documentCenter || {}}
+                hideHeader={effectiveWorkspace === 'seller'}
                 pendingAction={appointmentActionPending}
                 feedbackMessage={appointmentFeedback}
                 onConfirmAppointment={(appointment) => {
@@ -6402,18 +6404,6 @@ function ClientPortal() {
 
             {isOffers && effectiveWorkspace === 'seller' ? (
               <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-[1.16rem] font-semibold tracking-[-0.03em] text-[#142132]">Offers</h3>
-                    <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                      Review active seller-facing offers and see whether any action is needed.
-                    </p>
-                  </div>
-                  <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-3 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
-                    {activeSellerOfferCount} active
-                  </span>
-                </div>
-
                 {sellerOfferItems.length ? (
                   <div className="grid gap-3 lg:grid-cols-2">
                     {sellerOfferItems.map((offer) => (
@@ -7469,6 +7459,7 @@ function ClientPortal() {
             workspace={effectiveWorkspace === 'seller' ? 'selling' : 'buying'}
             uploadingDocumentKey={uploadingDocumentKey}
             openingDocumentPath={openingDocumentPath}
+            hideHeader={effectiveWorkspace === 'seller'}
             onUpload={handleDocumentCentreUpload}
             onOpenDocument={handleOpenPortalDocument}
           />

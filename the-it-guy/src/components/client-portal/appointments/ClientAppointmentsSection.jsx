@@ -78,6 +78,7 @@ function ClientAppointmentsSection({
   appointments = [],
   workspace = 'buying',
   documentCenter = {},
+  hideHeader = false,
   pendingAction = '',
   onConfirmAppointment = null,
   onDeclineAppointment = null,
@@ -146,6 +147,7 @@ function ClientAppointmentsSection({
   return (
     <>
       <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+        {!hideHeader ? (
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className="text-[1.16rem] font-semibold tracking-[-0.03em] text-[#142132]">Appointments</h3>
@@ -157,6 +159,7 @@ function ClientAppointmentsSection({
             {visibleAppointments.length} total
           </span>
         </div>
+        ) : null}
 
         {feedbackMessage ? (
           <p className="rounded-[12px] border border-[#cfe4d8] bg-[#eef9f2] px-3 py-2 text-sm text-[#2f7a51]">{feedbackMessage}</p>

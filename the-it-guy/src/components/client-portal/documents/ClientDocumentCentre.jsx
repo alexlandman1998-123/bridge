@@ -198,6 +198,7 @@ function ClientDocumentCentre({
   workspace = 'buying',
   uploadingDocumentKey = '',
   openingDocumentPath = '',
+  hideHeader = false,
   onUpload = null,
   onOpenDocument = null,
 }) {
@@ -216,6 +217,7 @@ function ClientDocumentCentre({
 
   return (
     <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+      {!hideHeader ? (
       <div>
         <h3 className="text-[1.16rem] font-semibold tracking-[-0.03em] text-[#142132]">{isSelling ? 'Seller Documents' : 'Document Centre'}</h3>
         <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
@@ -224,6 +226,7 @@ function ClientDocumentCentre({
             : 'Upload, review, and track all required documents for your transaction.'}
         </p>
       </div>
+      ) : null}
 
       {isSelling ? (
         <>
