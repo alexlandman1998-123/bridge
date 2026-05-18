@@ -597,8 +597,12 @@
     gap: 0.65rem;
     border: 1px solid transparent;
     border-radius: 14px;
+    background: transparent;
     padding: 0.58rem 0.62rem;
     color: #132236;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
     text-decoration: none;
     transition: background 150ms ease, border-color 150ms ease;
   }

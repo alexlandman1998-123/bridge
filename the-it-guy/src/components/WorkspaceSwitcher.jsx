@@ -90,6 +90,7 @@ function WorkspaceSwitcher({ currentPath = '/', onSelectWorkspace }) {
   function handleSelect(nextWorkspace) {
     setOpen(false)
     if (nextWorkspace === activeWorkspace) return
+    writeStorage(WORKSPACE_STORAGE_KEY, nextWorkspace)
     onSelectWorkspace?.(getWorkspacePath(nextWorkspace))
   }
 
@@ -117,16 +118,14 @@ function WorkspaceSwitcher({ currentPath = '/', onSelectWorkspace }) {
           {WORKSPACES.map((workspace) => {
             const Icon = workspace.icon
             const active = workspace.key === activeWorkspace
-            const workspacePath = getWorkspacePath(workspace.key)
             return (
-              <a
+              <button
                 key={workspace.key}
-                href={workspacePath}
+                type="button"
                 role="menuitemradio"
                 aria-checked={active}
                 className={`ui-workspace-switcher-option ${active ? 'ui-workspace-switcher-option-active' : ''}`.trim()}
-                onClick={(event) => {
-                  if (active) event.preventDefault()
+                onClick={() => {
                   handleSelect(workspace.key)
                 }}
               >
@@ -138,7 +137,7 @@ function WorkspaceSwitcher({ currentPath = '/', onSelectWorkspace }) {
                   <span className="ui-workspace-switcher-option-description">{workspace.description}</span>
                 </span>
                 {active ? <Check size={15} className="text-[#1a7f55]" /> : null}
-              </a>
+              </button>
             )
           })}
         </div>
