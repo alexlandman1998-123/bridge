@@ -106,6 +106,23 @@ function normalizeNumber(value) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+function normalizeMediaItems(items = []) {
+  return (Array.isArray(items) ? items : [])
+    .filter((item) => item?.url || item?.signedUrl || item?.publicUrl)
+    .map((item, index) => ({
+      id: normalizeText(item.id || item.path || `media-${index + 1}`),
+      name: normalizeText(item.name || item.fileName || `Image ${index + 1}`),
+      url: normalizeText(item.url || item.signedUrl || item.publicUrl),
+      path: normalizeText(item.path),
+      bucket: normalizeText(item.bucket),
+      signedUrl: normalizeText(item.signedUrl),
+      publicUrl: normalizeText(item.publicUrl),
+      contentType: normalizeText(item.contentType),
+      size: Number(item.size || 0) || 0,
+      label: normalizeText(item.label),
+    }))
+}
+
 function normalizeStatus(value, allowed, fallback) {
   const normalized = normalizeText(value).toLowerCase()
   return allowed.includes(normalized) ? normalized : fallback
@@ -444,6 +461,16 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     SELLER_ONBOARDING_STATUSES,
     'not_started',
   )
+  const onboardingFormData = onboarding?.form_data && typeof onboarding.form_data === 'object' ? onboarding.form_data : {}
+  const imageGallery = normalizeMediaItems(onboardingFormData.imageGallery)
+  const coverImageId = normalizeText(onboardingFormData.coverImageId) || normalizeText(imageGallery[0]?.id)
+  const coverImage = imageGallery.find((item) => normalizeText(item.id) === coverImageId) || imageGallery[0] || null
+  const floorplans = normalizeMediaItems(onboardingFormData.floorplans)
+  const onboardingDescription = normalizeText(onboardingFormData.propertyNotes)
+  const onboardingNotes = normalizeText(onboardingFormData.internalNotes)
+  const onboardingFeatures = Array.isArray(onboardingFormData.features)
+    ? onboardingFormData.features.map((item) => normalizeText(item)).filter(Boolean)
+    : []
 
   const mapped = {
     id: row.id,
@@ -490,6 +517,50 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     lifecycleStatusDescription: getPrivateListingStatusDescription(listingStatus),
     lifecycleStatusGroup: getPrivateListingStatusGroup(listingStatus),
     lifecycleNextAction: getPrivateListingLifecycleNextAction({ ...row, listingStatus }),
+    bedrooms: normalizeNumber(onboardingFormData.bedrooms) ?? 0,
+    bathrooms: normalizeNumber(onboardingFormData.bathrooms) ?? 0,
+    garages: normalizeNumber(onboardingFormData.garages) ?? 0,
+    coveredParking: normalizeNumber(onboardingFormData.parkingCovered) ?? 0,
+    openParking: normalizeNumber(onboardingFormData.parkingOpen) ?? 0,
+    erfSize: normalizeNumber(onboardingFormData.erfSize) ?? 0,
+    floorSize: normalizeNumber(onboardingFormData.floorSize) ?? 0,
+    marketing: {
+      mediaUrl: coverImage?.url || '',
+      imageGallery,
+      coverImageId,
+      floorplans,
+      description: onboardingDescription,
+      features: onboardingFeatures.join(', '),
+      notes: onboardingNotes,
+      status: listingStatus,
+      source: row.listing_source || '',
+    },
+    propertyDetails: {
+      headline: row.title || '',
+      propertyType: row.property_type || '',
+      listingStatus,
+      addressLine1: row.address_line_1 || '',
+      suburb: row.suburb || '',
+      city: row.city || '',
+      province: row.province || '',
+      bedrooms: normalizeNumber(onboardingFormData.bedrooms) ?? 0,
+      bathrooms: normalizeNumber(onboardingFormData.bathrooms) ?? 0,
+      garages: normalizeNumber(onboardingFormData.garages) ?? 0,
+      coveredParking: normalizeNumber(onboardingFormData.parkingCovered) ?? 0,
+      openParking: normalizeNumber(onboardingFormData.parkingOpen) ?? 0,
+      erfSize: normalizeNumber(onboardingFormData.erfSize) ?? 0,
+      floorSize: normalizeNumber(onboardingFormData.floorSize) ?? 0,
+      price: normalizeNumber(onboardingFormData.askingPrice) ?? (Number(row.asking_price || 0) || 0),
+      levies: normalizeNumber(onboardingFormData.levies) ?? 0,
+      leviesNotApplicable: Boolean(onboardingFormData.leviesNotApplicable),
+      ratesTaxes: normalizeNumber(onboardingFormData.ratesTaxes) ?? 0,
+      ratesTaxesNotApplicable: Boolean(onboardingFormData.ratesTaxesNotApplicable),
+      selectedFeatures: onboardingFeatures,
+      description: onboardingDescription,
+      notes: onboardingNotes,
+      coverImageId,
+      floorplans,
+    },
     documentRequirements: requirementRows,
     documents: documentRows,
     mandateStartDate: null,

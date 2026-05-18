@@ -265,9 +265,20 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
       ],
     },
     { key: 'transactions', label: 'Transactions', to: '/transactions' },
-    { key: 'agents', label: 'Agents', to: '/agents' },
     { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'documents', label: 'Documents', to: '/documents' },
+    {
+      key: 'agency',
+      label: 'Agency',
+      to: '/agency/branches',
+      activeMatch: ['/agency', '/agents/reporting'],
+      children: [
+        { key: 'agency_branches', label: 'Branches', to: '/agency/branches' },
+        { key: 'agency_agents', label: 'Agents', to: '/agency/agents' },
+        { key: 'agency_analytics', label: 'Analytics', to: '/agency/analytics' },
+        { key: 'agents_reporting', label: 'Reports', to: '/agents/reporting' },
+      ],
+    },
     { key: 'reports', label: 'Reports', to: '/reports' },
   ]
 

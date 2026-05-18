@@ -203,6 +203,22 @@ function ListingCardImage({ src = '', alt = '' }) {
   )
 }
 
+function resolveListingImageUrl(listing = {}) {
+  const marketing = listing?.marketing && typeof listing.marketing === 'object' ? listing.marketing : {}
+  const propertyDetails = listing?.propertyDetails && typeof listing.propertyDetails === 'object' ? listing.propertyDetails : {}
+  const onboardingFormData =
+    listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
+      ? listing.sellerOnboarding.formData
+      : {}
+  const gallery = [
+    ...(Array.isArray(marketing.imageGallery) ? marketing.imageGallery : []),
+    ...(Array.isArray(onboardingFormData.imageGallery) ? onboardingFormData.imageGallery : []),
+  ].filter((item) => item?.url || item?.signedUrl || item?.publicUrl)
+  const coverImageId = String(marketing.coverImageId || propertyDetails.coverImageId || onboardingFormData.coverImageId || '').trim()
+  const coverImage = gallery.find((item) => String(item?.id || item?.path || '') === coverImageId) || gallery[0] || null
+  return String(marketing.mediaUrl || coverImage?.url || coverImage?.signedUrl || coverImage?.publicUrl || '').trim()
+}
+
 function readListingsViewMode() {
   if (typeof window === 'undefined') return 'residential'
   const stored = String(window.localStorage.getItem(LISTINGS_VIEW_STORAGE_KEY) || '').trim().toLowerCase()
@@ -785,7 +801,7 @@ function AgentListings({ initialTab = null } = {}) {
           .replace(/_/g, ' '),
         listingVisibilityLabel: String(listing?.listingVisibility || listing?.listing_visibility || 'internal').replace(/_/g, ' '),
         listingRecord: listing,
-        imageUrl: String(listing?.marketing?.mediaUrl || '').trim(),
+        imageUrl: resolveListingImageUrl(listing),
         agentName,
       }
     })

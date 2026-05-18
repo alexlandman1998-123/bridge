@@ -52,6 +52,7 @@ const ICON_BY_KEY = {
   agency: BriefcaseBusiness,
   agency_branches: Building2,
   agency_agents: Users,
+  agency_analytics: FileText,
   agents_directory: BriefcaseBusiness,
   agents_reporting: FileText,
   intelligence_beta: BrainCircuit,
@@ -235,7 +236,8 @@ function Sidebar() {
             const hasChildren = Array.isArray(item.children) && item.children.length > 0
             const isParentActive = hasChildren
               ? item.children.some((child) => location.pathname === child.to || location.pathname.startsWith(`${child.to}/`)) ||
-                (item.key === 'agents' && (location.pathname === '/agents' || location.pathname.startsWith('/agents/')))
+                (item.key === 'agents' && (location.pathname === '/agents' || location.pathname.startsWith('/agents/'))) ||
+                (item.key === 'agency' && (location.pathname === '/agency' || location.pathname.startsWith('/agency/') || location.pathname.startsWith('/agents/reporting')))
               : false
             const menuExpanded = Boolean(expandedMenus[item.key] ?? isParentActive)
 

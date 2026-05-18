@@ -58,6 +58,9 @@ const FINANCE_COLORS = {
   unknown: '#94a3b8',
 }
 
+const dashboardCardClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm'
+const dashboardCardPadding = 'p-4 sm:p-5'
+
 function formatCurrency(value, { compact = false, empty = 'R0' } = {}) {
   const numeric = Number(value || 0)
   if (!Number.isFinite(numeric) || numeric <= 0) return empty
@@ -110,14 +113,17 @@ function TrendBadge({ value, inverse = false, label = 'vs last month' }) {
 function DashboardSkeleton() {
   return (
     <div className="space-y-5">
-      <div className="h-16 animate-pulse rounded-[22px] bg-white" />
-      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        {Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[138px] animate-pulse rounded-[18px] bg-white" />)}
+      <div className="h-11 animate-pulse rounded-2xl bg-white" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        {Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[132px] animate-pulse rounded-2xl bg-white" />)}
       </div>
-      <div className="h-[430px] animate-pulse rounded-[22px] bg-white" />
-      <div className="grid gap-5 xl:grid-cols-[1.35fr_0.9fr]">
-        <div className="h-[360px] animate-pulse rounded-[22px] bg-white" />
-        <div className="h-[360px] animate-pulse rounded-[22px] bg-white" />
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="h-[360px] animate-pulse rounded-2xl bg-white" />
+        <div className="h-[360px] animate-pulse rounded-2xl bg-white" />
+      </div>
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="h-[340px] animate-pulse rounded-2xl bg-white" />
+        <div className="h-[340px] animate-pulse rounded-2xl bg-white" />
       </div>
     </div>
   )
@@ -125,7 +131,7 @@ function DashboardSkeleton() {
 
 function DashboardEmptyState({ onRetry }) {
   return (
-    <section className="rounded-[24px] border border-dashed border-[#cfdbe8] bg-white px-6 py-14 text-center shadow-[0_16px_40px_rgba(15,23,42,0.04)]">
+    <section className="rounded-2xl border border-dashed border-[#cfdbe8] bg-white px-4 py-12 text-center shadow-sm sm:px-6">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#edf5ff] text-[#1769d1]">
         <LineChart size={22} />
       </div>
@@ -182,13 +188,13 @@ function PrincipalKpiCard({ icon: Icon, label, value, trend, inverse = false, to
     indigo: 'bg-[#eef4ff] text-[#3d63dd]',
   }
   return (
-    <article className="flex min-h-[138px] flex-col justify-between rounded-[18px] border border-[#e2e8f0] bg-white p-4 shadow-[0_14px_32px_rgba(15,23,42,0.045)]">
+    <article className={`${dashboardCardClass} flex h-full min-h-[132px] flex-col justify-between p-[18px]`}>
       <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${tones[tone] || tones.blue}`}>
         <Icon size={18} />
       </div>
       <div>
-        <p className="text-[0.78rem] font-medium text-[#52657a]">{label}</p>
-        <p className="mt-2 text-[1.5rem] font-semibold leading-none tracking-[-0.035em] text-[#101828] tabular-nums">{value}</p>
+        <p className="truncate text-[13px] font-medium leading-5 text-[#52657a]">{label}</p>
+        <p className="mt-1.5 text-[1.55rem] font-semibold leading-none tracking-[-0.035em] text-[#101828] tabular-nums">{value}</p>
       </div>
       <TrendBadge value={trend} inverse={inverse} />
     </article>
@@ -198,7 +204,7 @@ function PrincipalKpiCard({ icon: Icon, label, value, trend, inverse = false, to
 function PrincipalKpiRow({ data }) {
   const kpis = data.kpis
   return (
-    <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
       <PrincipalKpiCard icon={PieChart} label="Pipeline Value" value={formatCurrency(kpis.pipelineValue, { compact: true })} trend={kpis.trends.pipelineValue} />
       <PrincipalKpiCard icon={Users} label="Active Transactions" value={formatCount(kpis.activeTransactions)} trend={kpis.trends.activeTransactions} tone="green" />
       <PrincipalKpiCard icon={BriefcaseBusiness} label="Expected Commission" value={kpis.expectedCommission === null ? '—' : formatCurrency(kpis.expectedCommission, { compact: true })} trend={kpis.trends.expectedCommission} tone="orange" />
@@ -219,27 +225,29 @@ function PipelineStageChart({ stages }) {
   const path = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
   const area = `${path} L ${points.at(-1)?.x || 92} 84 L ${points[0]?.x || 8} 84 Z`
   return (
-    <div className="rounded-[18px] border border-[#e2e8f0] bg-white p-4">
+    <div className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
       <div>
         <p className="text-xs font-medium text-[#667085]">Total Pipeline Value</p>
         <p className="mt-1 text-[1.45rem] font-semibold tracking-[-0.035em] text-[#101828]">{formatCurrency(stages.reduce((sum, stage) => sum + Number(stage.value || 0), 0))}</p>
       </div>
-      <svg viewBox="0 0 100 92" className="mt-2 h-[190px] w-full overflow-visible" role="img" aria-label="Pipeline by stage">
-        <defs>
-          <linearGradient id="pipelineArea" x1="0" x2="1" y1="0" y2="0">
-            <stop offset="0%" stopColor="#dbeafe" />
-            <stop offset="36%" stopColor="#ede9fe" />
-            <stop offset="62%" stopColor="#ffedd5" />
-            <stop offset="80%" stopColor="#dcfce7" />
-            <stop offset="100%" stopColor="#f1f5f9" />
-          </linearGradient>
-        </defs>
-        {[8, 26, 44, 62, 80].map((x) => <line key={x} x1={x} x2={x} y1="24" y2="84" stroke="#e8eef6" strokeWidth="0.6" />)}
-        <path d={area} fill="url(#pipelineArea)" opacity="0.88" />
-        <path d={path} fill="none" stroke="#4f86e8" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-        {points.map((point) => <circle key={point.key} cx={point.x} cy={point.y} r="2.5" fill={STAGE_COLORS[point.key] || '#3b82f6'} />)}
-      </svg>
-      <div className="grid gap-3 sm:grid-cols-5">
+      <div className="flex min-h-[210px] items-center justify-center">
+        <svg viewBox="0 0 100 92" className="h-[190px] w-full overflow-visible" role="img" aria-label="Pipeline by stage">
+          <defs>
+            <linearGradient id="pipelineArea" x1="0" x2="1" y1="0" y2="0">
+              <stop offset="0%" stopColor="#dbeafe" />
+              <stop offset="36%" stopColor="#ede9fe" />
+              <stop offset="62%" stopColor="#ffedd5" />
+              <stop offset="80%" stopColor="#dcfce7" />
+              <stop offset="100%" stopColor="#f1f5f9" />
+            </linearGradient>
+          </defs>
+          {[8, 26, 44, 62, 80].map((x) => <line key={x} x1={x} x2={x} y1="24" y2="84" stroke="#e8eef6" strokeWidth="0.6" />)}
+          <path d={area} fill="url(#pipelineArea)" opacity="0.88" />
+          <path d={path} fill="none" stroke="#4f86e8" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          {points.map((point) => <circle key={point.key} cx={point.x} cy={point.y} r="2.5" fill={STAGE_COLORS[point.key] || '#3b82f6'} />)}
+        </svg>
+      </div>
+      <div className="mt-auto grid gap-3 sm:grid-cols-5">
         {stages.map((stage) => (
           <div key={stage.key} className="min-w-0">
             <p className="flex items-center gap-1.5 text-xs font-medium text-[#344054]">
@@ -266,9 +274,9 @@ function FinanceTypeDonut({ items, totalValue }) {
     })
     .join(', ')
   return (
-    <div className="flex h-full flex-col rounded-[18px] border border-[#e2e8f0] bg-white p-4">
+    <div className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
       <p className="text-sm font-semibold text-[#101828]">Pipeline by Type</p>
-      <div className="mt-6 grid place-items-center">
+      <div className="grid flex-1 place-items-center py-4">
         <div className="grid h-40 w-40 place-items-center rounded-full" style={{ background: gradient ? `conic-gradient(${gradient})` : 'conic-gradient(#e2e8f0 0% 100%)' }}>
           <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center shadow-inner">
             <div>
@@ -278,7 +286,7 @@ function FinanceTypeDonut({ items, totalValue }) {
           </div>
         </div>
       </div>
-      <div className="mt-auto space-y-3 pt-6">
+      <div className="mt-auto space-y-3">
         {items.map((item) => (
           <div key={item.key} className="flex items-center justify-between gap-3 text-sm">
             <span className="inline-flex items-center gap-2 text-[#344054]">
@@ -301,8 +309,8 @@ function PipelineSalesOverview({ data }) {
     { label: 'Win Rate', value: formatPercent(data.pipeline.winRate), trend: null },
   ]
   return (
-    <section className="rounded-[22px] border border-[#e2e8f0] bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.045)] sm:p-5">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <section className="space-y-4">
+      <div className="flex flex-col gap-3 px-1 md:flex-row md:items-center md:justify-between">
         <h2 className="text-[1.08rem] font-semibold text-[#101828]">Pipeline & Sales Overview</h2>
         <div className="inline-flex h-9 w-fit rounded-xl border border-[#d9e3ef] bg-[#f8fafc] p-1 text-xs font-semibold text-[#52657a]">
           <span className="rounded-lg bg-white px-3 py-1.5 text-[#1769d1] shadow-sm">Pipeline</span>
@@ -310,11 +318,11 @@ function PipelineSalesOverview({ data }) {
           <span className="px-3 py-1.5">Revenue</span>
         </div>
       </div>
-      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.9fr)_minmax(280px,0.8fr)]">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         <PipelineStageChart stages={data.pipeline.stages} />
         <FinanceTypeDonut items={data.pipeline.financeTypes} totalValue={data.pipeline.totalValue} />
       </div>
-      <div className="mt-4 grid gap-3 rounded-[18px] border border-[#e2e8f0] bg-white p-3 md:grid-cols-4">
+      <div className={`${dashboardCardClass} grid gap-3 p-3 sm:p-4 md:grid-cols-4`}>
         {metrics.map((metric, index) => (
           <div key={metric.label} className={`px-3 py-2 ${index ? 'md:border-l md:border-[#edf2f7]' : ''}`}>
             <p className="text-xs font-medium text-[#667085]">{metric.label}</p>
@@ -329,12 +337,12 @@ function PipelineSalesOverview({ data }) {
 function AgentPerformanceTable({ rows }) {
   const navigate = useNavigate()
   return (
-    <section className="rounded-[22px] border border-[#e2e8f0] bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.045)] sm:p-5">
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-[1.05rem] font-semibold text-[#101828]">Agent Performance</h2>
         <button type="button" onClick={() => navigate('/agents')} className="h-9 rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#24364b] shadow-sm">View all agents</button>
       </div>
-      <div className="mt-4 overflow-x-auto">
+      <div className="mt-4 flex-1 overflow-x-auto">
         <table className="min-w-[720px] w-full text-left text-sm">
           <thead className="text-[0.72rem] uppercase tracking-[0.04em] text-[#667085]">
             <tr className="border-b border-[#edf2f7]">
@@ -363,7 +371,7 @@ function AgentPerformanceTable({ rows }) {
               </tr>
             )) : (
               <tr>
-                <td colSpan="6" className="py-10 text-center text-sm text-[#667085]">No agent performance data yet.</td>
+                <td colSpan="6" className="h-[210px] text-center align-middle text-sm text-[#667085]">No agent performance data yet.</td>
               </tr>
             )}
           </tbody>
@@ -383,17 +391,18 @@ function AttentionRequiredCard({ attention }) {
     { key: 'attorneyDelays', label: 'Attorney delays', icon: ShieldAlert, color: '#3d63dd' },
   ]
   return (
-    <section className="rounded-[22px] border border-[#e2e8f0] bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.045)] sm:p-5">
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-[1.05rem] font-semibold text-[#101828]">Attention Required</h2>
         <button type="button" className="h-9 rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#24364b] shadow-sm">View all</button>
       </div>
-      <div className="mt-4 overflow-hidden rounded-[16px] border border-[#edf2f7]">
+      <div className="mt-4 max-h-[360px] overflow-y-auto rounded-2xl border border-[#edf2f7] pr-1">
+        <div className="divide-y divide-[#edf2f7]">
         {items.map((item) => {
           const Icon = item.icon
           const count = Number(attention[item.key] || 0)
           return (
-            <div key={item.key} className="flex items-center justify-between gap-3 border-b border-[#edf2f7] px-3 py-3 last:border-0">
+            <div key={item.key} className="flex min-h-[56px] items-center justify-between gap-4 px-4 py-3">
               <div className="flex min-w-0 items-center gap-3">
                 <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full" style={{ color: item.color, background: `${item.color}14` }}>
                   <Icon size={15} />
@@ -404,6 +413,7 @@ function AttentionRequiredCard({ attention }) {
             </div>
           )
         })}
+        </div>
       </div>
       <button type="button" className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#1f4f78]">
         View all tasks <ArrowRight size={14} />
@@ -415,12 +425,12 @@ function AttentionRequiredCard({ attention }) {
 function LeadIntelligenceTable({ rows }) {
   const navigate = useNavigate()
   return (
-    <section className="rounded-[22px] border border-[#e2e8f0] bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.045)] sm:p-5">
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-[1.05rem] font-semibold text-[#101828]">Lead Intelligence</h2>
         <button type="button" onClick={() => navigate('/reports')} className="h-9 rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#24364b] shadow-sm">This Month</button>
       </div>
-      <div className="mt-4 overflow-x-auto">
+      <div className="mt-4 flex-1 overflow-x-auto">
         <table className="min-w-[650px] w-full text-left text-sm">
           <thead className="text-[0.72rem] uppercase tracking-[0.04em] text-[#667085]">
             <tr className="border-b border-[#edf2f7]">
@@ -444,7 +454,7 @@ function LeadIntelligenceTable({ rows }) {
               </tr>
             )) : (
               <tr>
-                <td colSpan="6" className="py-10 text-center text-sm text-[#667085]">Lead source data will appear once leads are captured.</td>
+                <td colSpan="6" className="h-[190px] text-center align-middle text-sm text-[#667085]">Lead source data will appear once leads are captured.</td>
               </tr>
             )}
           </tbody>
@@ -466,14 +476,14 @@ function RecentActivityFeed({ rows }) {
     offer_accepted: CircleDollarSign,
   }
   return (
-    <section className="rounded-[22px] border border-[#e2e8f0] bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.045)] sm:p-5">
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-[1.05rem] font-semibold text-[#101828]">Recent Activity</h2>
         <button type="button" className="inline-flex h-9 items-center gap-1 rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#24364b] shadow-sm">
           All Activity <ChevronDown size={13} />
         </button>
       </div>
-      <div className="mt-4 divide-y divide-[#edf2f7]">
+      <div className="mt-4 max-h-[360px] flex-1 divide-y divide-[#edf2f7] overflow-y-auto pr-1">
         {rows.length ? rows.map((item) => {
           const Icon = icons[item.type] || CheckCircle2
           return (
@@ -490,7 +500,7 @@ function RecentActivityFeed({ rows }) {
             </article>
           )
         }) : (
-          <div className="rounded-[16px] border border-dashed border-[#d3ddea] bg-[#fbfdff] px-4 py-8 text-center text-sm text-[#667085]">
+          <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-[#d3ddea] bg-[#fbfdff] px-4 py-8 text-center text-sm text-[#667085]">
             No recent high-value activity yet.
           </div>
         )}
@@ -569,8 +579,8 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '' }) {
   const lastUpdated = useMemo(() => formatTimestamp(data?.meta?.lastUpdatedAt), [data?.meta?.lastUpdatedAt])
 
   return (
-    <main className="principal-dashboard min-h-screen bg-[#f8fafc] px-4 py-5 text-[#101828] sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-[1440px] flex-col gap-5">
+    <main className="principal-dashboard min-h-screen bg-[#f8fafc] text-[#101828]">
+      <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
         <PrincipalDashboardHeader
           dateRange={dateRange}
           onDateRangeChange={setDateRange}
@@ -595,14 +605,14 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '' }) {
           <>
             <PrincipalKpiRow data={data} />
             <PipelineSalesOverview data={data} />
-            <div className="grid gap-5 xl:grid-cols-[1.35fr_0.9fr]">
+            <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
               <AgentPerformanceTable rows={data.agentPerformance} />
               <AttentionRequiredCard attention={data.attentionRequired} />
-            </div>
-            <div className="grid gap-5 xl:grid-cols-[1.35fr_0.9fr]">
+            </section>
+            <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
               <LeadIntelligenceTable rows={data.leadIntelligence} />
               <RecentActivityFeed rows={data.recentActivity} />
-            </div>
+            </section>
             <p className="pb-2 text-center text-xs text-[#667085]">
               <Loader2 size={12} className="mr-1 inline-block" />
               Data last updated: {lastUpdated || 'just now'}
