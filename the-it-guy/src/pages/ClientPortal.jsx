@@ -1,7 +1,9 @@
 import {
+  ArrowRight,
   Bell,
   CalendarClock,
   CheckCircle2,
+  ChevronRight,
   AlertTriangle,
   Download,
   FileSignature,
@@ -9,10 +11,13 @@ import {
   FolderOpen,
   HandCoins,
   Handshake,
+  Home,
   KeyRound,
   LayoutDashboard,
   MessageCircle,
+  PhoneCall,
   Settings,
+  ShieldCheck,
   User,
   Users,
   Wrench,
@@ -62,6 +67,7 @@ import {
   getMainStageIndex,
 } from '../lib/stages'
 import { getOffersForListing } from '../lib/listingOffersService'
+import { getSellerPortalStageMeta } from '../lib/sellerPortalStageMapper'
 
 const ISSUE_CATEGORIES = [
   'Paint / Finishes',
@@ -79,51 +85,6 @@ const HANDOVER_PHOTO_FIELDS = [
   { key: 'water', label: 'Water meter photo', category: 'Handover / Water Meter' },
   { key: 'gas', label: 'Gas meter photo', category: 'Handover / Gas Meter' },
 ]
-
-const SELLER_PROCESS_STAGES = [
-  'Seller Lead',
-  'Onboarding',
-  'Mandate',
-  'Listing',
-  'Offers',
-  'Sale Agreement',
-  'Transfer',
-  'Registered / Completed',
-]
-
-const SELLER_STATUS_STAGE_MAP = {
-  new: 'Seller Lead',
-  seller_lead: 'Seller Lead',
-  contacted: 'Seller Lead',
-  pending: 'Onboarding',
-  not_started: 'Onboarding',
-  appointment_scheduled: 'Onboarding',
-  onboarding_sent: 'Onboarding',
-  onboarding_completed: 'Onboarding',
-  under_review: 'Onboarding',
-  listing_review: 'Mandate',
-  mandate_ready: 'Mandate',
-  mandate_generated: 'Mandate',
-  mandate_sent: 'Mandate',
-  mandate_viewed: 'Mandate',
-  mandate_signed: 'Mandate',
-  converted_to_listing: 'Listing',
-  active: 'Listing',
-  listing_active: 'Listing',
-  under_offer: 'Offers',
-  offer_submitted: 'Offers',
-  seller_review: 'Offers',
-  countered: 'Offers',
-  offer_accepted: 'Sale Agreement',
-  accepted: 'Sale Agreement',
-  sale_agreement: 'Sale Agreement',
-  transaction_created: 'Sale Agreement',
-  transfer: 'Transfer',
-  transfer_in_progress: 'Transfer',
-  lodged: 'Transfer',
-  registered: 'Registered / Completed',
-  completed: 'Registered / Completed',
-}
 
 const SELLER_PORTAL_MENU = [
   { key: 'overview', label: 'Dashboard', icon: LayoutDashboard },
@@ -1571,74 +1532,6 @@ function normalizeSellerPortalKey(value = '') {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, '_')
 }
 
-function hasActualSellerCompletion({ context = null, portal = null } = {}) {
-  const transactionStatus = normalizeSellerPortalKey(portal?.transaction?.status)
-  const mainStage = normalizeSellerPortalKey(portal?.transaction?.current_main_stage || portal?.mainStage)
-  const stage = normalizeSellerPortalKey(portal?.transaction?.stage || portal?.stage)
-  const contextStatus = normalizeSellerPortalKey(context?.status)
-  return (
-    ['registered', 'completed', 'closed'].includes(transactionStatus) ||
-    mainStage === 'reg' ||
-    stage.includes('registered') ||
-    ['registered', 'completed'].includes(contextStatus)
-  )
-}
-
-function resolveSellerStageFromContext(context = null, portal = null, offers = []) {
-  if (hasActualSellerCompletion({ context, portal })) return 'Registered / Completed'
-
-  const mandateState = normalizeSellerPortalKey(
-    context?.mandatePacket?.state ||
-      context?.mandateStatus ||
-      context?.mandate_status ||
-      portal?.activeSellingContext?.mandatePacket?.state ||
-      portal?.mandate?.packet?.state,
-  )
-  const onboardingStatus = normalizeSellerPortalKey(
-    context?.sellerOnboardingStatus ||
-      context?.seller_onboarding_status ||
-      portal?.onboarding?.status ||
-      portal?.onboardingFormData?.status,
-  )
-  const transactionStage = normalizeSellerPortalKey(portal?.transaction?.stage || portal?.stage)
-  const listingStatus = normalizeSellerPortalKey(
-    context?.listingStatus ||
-      context?.listing_status ||
-      portal?.unit?.status ||
-      portal?.transaction?.stage,
-  )
-  const contextStatus = normalizeSellerPortalKey(context?.status)
-  const offerStatuses = (Array.isArray(offers) ? offers : []).map((offer) => normalizeSellerPortalKey(offer?.status))
-
-  if (transactionStage.includes('transfer') || transactionStage.includes('lodg')) return 'Transfer'
-  if (offerStatuses.some((status) => ['accepted', 'converted_to_transaction'].includes(status))) return 'Sale Agreement'
-  if (offerStatuses.some((status) => status && !['draft', 'withdrawn', 'expired', 'rejected'].includes(status))) return 'Offers'
-  if (SELLER_STATUS_STAGE_MAP[contextStatus]) return SELLER_STATUS_STAGE_MAP[contextStatus]
-  if (SELLER_STATUS_STAGE_MAP[listingStatus]) return SELLER_STATUS_STAGE_MAP[listingStatus]
-  if (SELLER_STATUS_STAGE_MAP[mandateState]) return SELLER_STATUS_STAGE_MAP[mandateState]
-  if (mandateState === 'fully_signed' || mandateState === 'signed') return 'Listing'
-  if (mandateState && !['not_started', 'not_available'].includes(mandateState)) return 'Mandate'
-  if (onboardingStatus && ['completed', 'submitted', 'under_review'].includes(onboardingStatus)) return 'Mandate'
-  if (onboardingStatus && onboardingStatus !== 'not_started') return 'Onboarding'
-  if (context?.listingId || context?.listing_id || portal?.unit?.id) return 'Listing'
-  if (context?.mandatePacketId || context?.mandate_packet_id) return 'Mandate'
-  if (context?.sellerLeadId || context?.seller_lead_id) return 'Seller Lead'
-  return 'Seller Lead'
-}
-
-function getSellerProgressPercent(stageLabel = 'Seller Lead') {
-  const index = SELLER_PROCESS_STAGES.indexOf(stageLabel)
-  if (index <= 0) return 8
-  if (index >= SELLER_PROCESS_STAGES.length - 1) return 100
-  return Math.round((index / (SELLER_PROCESS_STAGES.length - 1)) * 100)
-}
-
-function getSellerNextStage(stageLabel = 'Seller Lead') {
-  const index = SELLER_PROCESS_STAGES.indexOf(stageLabel)
-  if (index < 0) return 'Onboarding'
-  return SELLER_PROCESS_STAGES[index + 1] || 'Completed'
-}
-
 function getFriendlySellerStatusLabel(value = '', fallback = 'Awaiting update') {
   const normalized = normalizeSellerPortalKey(value)
   if (!normalized) return fallback
@@ -2324,6 +2217,370 @@ function buildClientWhatHappensNextCopy({
     'No action is needed unless we request it in your Next Step card.',
     `Your journey is currently moving toward ${nextStageLabel}.`,
   ]
+}
+
+function SellerPortalAction({ action, token, workspaceNavigationScope, className = '', children }) {
+  const content = children || (
+    <>
+      <span>{action.label}</span>
+      <ChevronRight size={15} />
+    </>
+  )
+
+  if (action.disabled) {
+    return (
+      <button
+        type="button"
+        disabled
+        title="Coming soon"
+        className={`${className} cursor-not-allowed opacity-55`}
+      >
+        {content}
+      </button>
+    )
+  }
+
+  if (action.href) {
+    return (
+      <a href={action.href} className={className}>
+        {content}
+      </a>
+    )
+  }
+
+  return (
+    <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, action.to || 'overview')} className={className}>
+      {content}
+    </Link>
+  )
+}
+
+function SellerWelcomeHero({ sellerFirstName, sellerAgentName, sellerAgentPhone, sellerAgentEmail, sellerAgencyName, token, workspaceNavigationScope }) {
+  const messageAction = sellerAgentEmail
+    ? { label: 'Message agent', href: `mailto:${sellerAgentEmail}` }
+    : { label: 'Message agent', disabled: true }
+  const callAction = sellerAgentPhone
+    ? { label: 'Call agent', href: `tel:${sellerAgentPhone}` }
+    : { label: 'Call agent', disabled: true }
+  const heroButtonClass = 'inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[12px] border border-white/20 bg-white/10 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-white/16'
+
+  return (
+    <section className="overflow-hidden rounded-[28px] border border-[#12375c] bg-[linear-gradient(135deg,#0b1f34_0%,#123b62_58%,#1a5b82_100%)] px-5 py-5 text-white shadow-[0_24px_48px_rgba(8,24,42,0.28)] md:px-8 md:py-7">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-center">
+        <div className="min-w-0">
+          <span className="inline-flex items-center gap-2 rounded-full border border-white/16 bg-white/10 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#cfe0ef]">
+            <ShieldCheck size={13} />
+            Secure seller workspace
+          </span>
+          <h1 className="mt-4 text-[2rem] font-semibold leading-tight tracking-[-0.04em] text-white sm:text-[2.35rem]">
+            Welcome, {sellerFirstName}
+          </h1>
+          <p className="mt-3 max-w-3xl text-[1rem] font-medium leading-7 text-[#e4eef8]">
+            This is your secure transaction workspace.
+          </p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#c9d9e8]">
+            Track your property sale from mandate to registration with clear progress updates, documents, offers, and next steps all in one place.
+          </p>
+        </div>
+
+        <article className="rounded-[22px] border border-white/14 bg-white/10 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur">
+          <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#bed2e4]">Agent</span>
+          <h2 className="mt-2 text-base font-semibold text-white">{sellerAgentName || sellerAgencyName || 'Bridge Property Team'}</h2>
+          {sellerAgentPhone ? (
+            <p className="mt-2 inline-flex items-center gap-2 text-sm text-[#d9e7f4]">
+              <PhoneCall size={14} />
+              {sellerAgentPhone}
+            </p>
+          ) : null}
+          <div className="mt-4 flex flex-wrap gap-2">
+            <SellerPortalAction action={messageAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={heroButtonClass}>
+              <MessageCircle size={15} />
+              <span>Message agent</span>
+            </SellerPortalAction>
+            <SellerPortalAction action={callAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={heroButtonClass}>
+              <PhoneCall size={15} />
+              <span>Call agent</span>
+            </SellerPortalAction>
+          </div>
+        </article>
+      </div>
+    </section>
+  )
+}
+
+function SellerProgressJourney({ stageMeta, stageDates, token, workspaceNavigationScope }) {
+  return (
+    <section className="rounded-[28px] border border-[#dbe5ef] bg-white p-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)] md:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[1.28rem] font-semibold tracking-[-0.03em] text-[#142132]">Your Sale Progress</h2>
+          <p className="mt-1 text-sm leading-6 text-[#64748b]">A simple view of where your property sale stands.</p>
+        </div>
+        <span className="inline-flex items-center rounded-[14px] bg-[#ecfdf5] px-3.5 py-2 text-sm font-semibold text-[#047857]">
+          {stageMeta.progressPercent}% complete
+        </span>
+      </div>
+
+      <div className="mt-7 overflow-x-auto pb-2">
+        <div className="relative grid min-w-[720px] grid-cols-6 gap-3">
+          <div className="absolute left-[8%] right-[8%] top-[19px] h-1 rounded-full bg-[#dce6f1]" />
+          <div
+            className="absolute left-[8%] top-[19px] h-1 rounded-full bg-[#17a37a] transition-all duration-300"
+            style={{ width: `${Math.max(0, Math.min(84, stageMeta.progressPercent * 0.84))}%` }}
+          />
+          {stageMeta.stages.map((stage) => {
+            const isComplete = stage.state === 'completed'
+            const isCurrent = stage.state === 'current'
+            const dateLabel = stageDates?.[stage.key] || ''
+            return (
+              <div key={stage.key} className="relative z-10 flex flex-col items-center text-center">
+                <span
+                  className={[
+                    'inline-flex h-10 w-10 items-center justify-center rounded-full border-4 text-sm transition',
+                    isComplete
+                      ? 'border-[#17a37a] bg-[#17a37a] text-white'
+                      : isCurrent
+                        ? 'border-[#d8ecff] bg-[#0f75d1] text-white shadow-[0_0_0_6px_rgba(15,117,209,0.12)]'
+                        : 'border-[#dce6f1] bg-[#edf3f8] text-[#9aacbd]',
+                  ].join(' ')}
+                >
+                  {isComplete ? <CheckCircle2 size={19} /> : stage.key === 'registered' ? <Home size={18} /> : <span className="h-3 w-3 rounded-full bg-current opacity-70" />}
+                </span>
+                <strong className="mt-3 max-w-[112px] text-sm font-semibold leading-5 text-[#142132]">{stage.label}</strong>
+                {isCurrent ? (
+                  <span className="mt-1 text-xs font-semibold text-[#0f75d1]">Current stage</span>
+                ) : dateLabel && isComplete ? (
+                  <span className="mt-1 text-xs font-medium text-[#64748b]">{dateLabel}</span>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#e5edf5] bg-[#f5f9fd] px-4 py-3">
+        <p className="flex min-w-0 items-start gap-2 text-sm leading-6 text-[#4f647b]">
+          <CheckCircle2 className="mt-0.5 shrink-0 text-[#17a37a]" size={16} />
+          <span>{stageMeta.currentStage.message}</span>
+        </p>
+        <Link
+          to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')}
+          className="inline-flex items-center gap-2 text-sm font-semibold text-[#0f65b7] transition hover:text-[#084d8e]"
+        >
+          View documents
+          <ArrowRight size={15} />
+        </Link>
+      </div>
+    </section>
+  )
+}
+
+function SellerDetailsCard({ sellerSummaryItems, currentStageLabel }) {
+  const detailIcons = [User, Home, FileSignature, Handshake, CalendarClock]
+
+  return (
+    <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Seller Details</h2>
+        <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-3 py-1 text-[0.68rem] font-semibold text-[#35546c]">
+          {currentStageLabel}
+        </span>
+      </div>
+      <div className="mt-5 space-y-3">
+        {sellerSummaryItems.map((item, index) => {
+          const Icon = detailIcons[index] || FileText
+          return (
+            <div key={item.label} className="grid grid-cols-[22px_minmax(110px,0.55fr)_1fr] items-start gap-3 text-sm">
+              <Icon className="mt-0.5 text-[#5f7892]" size={16} />
+              <span className="font-medium text-[#64748b]">{item.label}</span>
+              <strong className="font-semibold leading-6 text-[#142132]">{item.value || 'Awaiting update'}</strong>
+            </div>
+          )
+        })}
+      </div>
+    </article>
+  )
+}
+
+function SellerNextStepCard({ sellerNextStep, token, workspaceNavigationScope, sellerAgentEmail }) {
+  const primaryAction = {
+    label: sellerNextStep.label,
+    to: sellerNextStep.to,
+    href: sellerNextStep.href,
+  }
+  const agentAction = sellerAgentEmail
+    ? { label: 'Message agent', href: `mailto:${sellerAgentEmail}` }
+    : { label: 'Message agent', disabled: true }
+  const primaryClass = 'inline-flex min-h-[42px] items-center justify-center rounded-[12px] bg-[#00866d] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#00735d]'
+  const secondaryClass = 'inline-flex min-h-[42px] items-center justify-center rounded-[12px] px-4 py-2 text-sm font-semibold text-[#00866d] transition hover:bg-white/70'
+
+  return (
+    <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+      <h2 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Next Step</h2>
+      <div className="mt-5 rounded-[20px] border border-[#cdeee3] bg-[linear-gradient(135deg,#f0fdf7_0%,#eef8ff_100%)] p-5">
+        <span className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] bg-white/70 text-[#00866d]">
+          <CalendarClock size={20} />
+        </span>
+        <h3 className="mt-4 text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">{sellerNextStep.title}</h3>
+        <p className="mt-2 max-w-xl text-sm leading-6 text-[#52677f]">{sellerNextStep.description}</p>
+        <div className="mt-5 flex flex-wrap gap-2.5">
+          <SellerPortalAction action={primaryAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={primaryClass} />
+          <SellerPortalAction action={agentAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={secondaryClass} />
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function SellerQuickActions({ actions, token, workspaceNavigationScope }) {
+  const actionClass = 'flex min-h-[60px] items-center gap-3 rounded-[14px] border border-[#dbe5ef] bg-[#fbfdff] px-3.5 py-3 text-left transition hover:border-[#bfd0e1] hover:bg-white'
+
+  return (
+    <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+      <h2 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Quick Actions</h2>
+      <div className="mt-4 space-y-3">
+        {actions.map((action) => {
+          const Icon = action.icon
+          return (
+            <SellerPortalAction
+              key={action.label}
+              action={action}
+              token={token}
+              workspaceNavigationScope={workspaceNavigationScope}
+              className={actionClass}
+            >
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-[#eef5ff] text-[#0f65b7]">
+                <Icon size={18} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <strong className="block text-sm font-semibold text-[#142132]">{action.label}</strong>
+                <span className="mt-0.5 block text-xs leading-5 text-[#64748b]">{action.description}</span>
+              </span>
+              {action.badge ? (
+                <span className="rounded-full border border-[#dbe5ef] bg-white px-2 py-0.5 text-[0.68rem] font-semibold text-[#4f647b]">{action.badge}</span>
+              ) : null}
+              <ChevronRight className="shrink-0 text-[#8aa0b8]" size={16} />
+            </SellerPortalAction>
+          )
+        })}
+      </div>
+    </article>
+  )
+}
+
+function SellerRecentActivity({ items }) {
+  return (
+    <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Recent Activity</h2>
+        <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#4f647b]">
+          {items.length ? `${items.length} updates` : 'No updates'}
+        </span>
+      </div>
+      {items.length ? (
+        <div className="mt-4 space-y-3">
+          {items.map((item) => (
+            <article key={item.id} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-[#ecfdf5] text-[#0f8d69]">
+                  <CheckCircle2 size={16} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold leading-5 text-[#142132]">{item.message || 'Your sale workspace has been updated.'}</p>
+                  <p className="mt-1 text-xs font-medium text-[#7b8ca2]">{item.timestampLabel || 'Recently'}</p>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-4 rounded-[16px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-5 text-sm leading-6 text-[#6b7d93]">
+          No seller-facing updates yet. Your activity feed will appear here once your agent shares progress.
+        </div>
+      )}
+    </article>
+  )
+}
+
+function SellerSupportCard({ sellerAgentPhone, sellerAgentEmail }) {
+  const contactAction = sellerAgentEmail
+    ? { label: 'Contact support', href: `mailto:${sellerAgentEmail}` }
+    : { label: 'Contact support', disabled: true }
+  const callAction = sellerAgentPhone
+    ? { label: 'Call us', href: `tel:${sellerAgentPhone}` }
+    : { label: 'Call us', disabled: true }
+
+  return (
+    <section className="rounded-[26px] border border-[#dbe5ef] bg-[linear-gradient(135deg,#f4f8fc_0%,#ffffff_100%)] px-5 py-5 shadow-[0_14px_30px_rgba(15,23,42,0.04)] md:px-7">
+      <div className="flex flex-wrap items-center justify-between gap-5">
+        <div className="flex min-w-0 items-center gap-4">
+          <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] bg-[#0f65b7] text-white shadow-[0_12px_24px_rgba(15,101,183,0.22)]">
+            <ShieldCheck size={25} />
+          </span>
+          <div>
+            <h2 className="text-base font-semibold text-[#142132]">We&apos;re here to help you</h2>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-[#64748b]">
+              If you have any questions about your sale, documents, or next steps, our team is ready to assist.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2.5">
+          <SellerPortalAction action={contactAction} className="inline-flex min-h-[42px] items-center justify-center rounded-[12px] bg-[#10253a] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#1a3b5a]" />
+          <SellerPortalAction action={callAction} className="inline-flex min-h-[42px] items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]" />
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function SellerPortalDashboard({
+  sellerFirstName,
+  sellerAgentName,
+  sellerAgentPhone,
+  sellerAgentEmail,
+  sellerAgencyName,
+  sellerSummaryItems,
+  sellerNextStep,
+  sellerQuickActions,
+  sellerActivityItems,
+  sellerStageMeta,
+  sellerStageDates,
+  token,
+  workspaceNavigationScope,
+}) {
+  return (
+    <section className="space-y-6">
+      <SellerWelcomeHero
+        sellerFirstName={sellerFirstName}
+        sellerAgentName={sellerAgentName}
+        sellerAgentPhone={sellerAgentPhone}
+        sellerAgentEmail={sellerAgentEmail}
+        sellerAgencyName={sellerAgencyName}
+        token={token}
+        workspaceNavigationScope={workspaceNavigationScope}
+      />
+      <SellerProgressJourney
+        stageMeta={sellerStageMeta}
+        stageDates={sellerStageDates}
+        token={token}
+        workspaceNavigationScope={workspaceNavigationScope}
+      />
+      <section className="grid gap-5 xl:grid-cols-2">
+        <SellerDetailsCard sellerSummaryItems={sellerSummaryItems} currentStageLabel={sellerStageMeta.currentStage.label} />
+        <SellerNextStepCard
+          sellerNextStep={sellerNextStep}
+          token={token}
+          workspaceNavigationScope={workspaceNavigationScope}
+          sellerAgentEmail={sellerAgentEmail}
+        />
+      </section>
+      <section className="grid gap-5 xl:grid-cols-2">
+        <SellerQuickActions actions={sellerQuickActions} token={token} workspaceNavigationScope={workspaceNavigationScope} />
+        <SellerRecentActivity items={sellerActivityItems} />
+      </section>
+      <SellerSupportCard sellerAgentPhone={sellerAgentPhone} sellerAgentEmail={sellerAgentEmail} />
+    </section>
+  )
 }
 
 function ClientPortal() {
@@ -3613,10 +3870,29 @@ function ClientPortal() {
   const activeSellerOfferCount = sellerOfferItems.filter((offer) =>
     !['rejected', 'withdrawn', 'expired'].includes(normalizeSellerPortalKey(offer.status)),
   ).length
-  const sellerCurrentStage = resolveSellerStageFromContext(activeSellingContext, portal, sellerOfferItems)
-  const sellerStageIndex = Math.max(SELLER_PROCESS_STAGES.indexOf(sellerCurrentStage), 0)
-  const sellerProgressPercent = getSellerProgressPercent(sellerCurrentStage)
-  const sellerNextStage = getSellerNextStage(sellerCurrentStage)
+  const sellerStageMeta = getSellerPortalStageMeta({
+    ...(portal?.transaction || {}),
+    portal,
+    context: activeSellingContext,
+    activeSellingContext,
+    status: activeSellingContext?.status,
+    mandateStatus: activeSellingContext?.mandateStatus || activeSellingContext?.mandate_status,
+    mandatePacketState: activeSellingContext?.mandatePacket?.state || portal?.mandate?.packet?.state,
+    sellerOnboardingStatus:
+      activeSellingContext?.sellerOnboardingStatus ||
+      activeSellingContext?.seller_onboarding_status ||
+      portal?.onboarding?.status ||
+      portal?.onboardingFormData?.status,
+    listingStatus: activeSellingContext?.listingStatus || activeSellingContext?.listing_status || portal?.unit?.status,
+    listingId: sellerListingId,
+    hasListing: Boolean(sellerListingId || portal?.unit?.id),
+    hasMandate: Boolean(activeSellingContext?.mandatePacketId || activeSellingContext?.mandate_packet_id || activeSellingContext?.mandatePacket || portal?.mandate?.packet),
+    offers: sellerOfferItems,
+    sellerOfferCount: activeSellerOfferCount,
+    hasOffers: activeSellerOfferCount > 0,
+  })
+  const sellerCurrentStage = sellerStageMeta.currentStage.label
+  const sellerProgressPercent = sellerStageMeta.progressPercent
   const missingRequired = Math.max(
     Number(portal.requiredDocumentSummary?.totalRequired || 0) - Number(portal.requiredDocumentSummary?.uploadedCount || 0),
     0,
@@ -4606,8 +4882,8 @@ function ClientPortal() {
   }).length
   const sidebarStatusByKey = {
     documents: missingRequired > 0 ? `${missingRequired} required` : 'Ready',
-    appointments: upcomingAppointmentCount > 0 ? `${upcomingAppointmentCount} upcoming` : 'None',
-    offers: activeSellerOfferCount > 0 ? `${activeSellerOfferCount} active` : 'None',
+    appointments: upcomingAppointmentCount > 0 ? `${upcomingAppointmentCount} upcoming` : null,
+    offers: activeSellerOfferCount > 0 ? `${activeSellerOfferCount}` : null,
     snags: portal?.settings?.snag_reporting_enabled ? `${snagOpenCount} open` : null,
   }
   const activeMenuItem = portalNavigationItems.find((item) => item.key === activeSection) || portalNavigationItems[0] || CLIENT_PORTAL_MENU[0]
@@ -4646,6 +4922,14 @@ function ClientPortal() {
     activeSellingContext?.assigned_agent_email,
     portal?.buyer?.email,
   )
+  const sellerAgentPhone = pickFirstText(
+    portal?.transaction?.assigned_agent_phone,
+    portal?.transaction?.agent_phone,
+    activeSellingContext?.assignedAgentPhone,
+    activeSellingContext?.assigned_agent_phone,
+    activeSellingContext?.agentPhone,
+    activeSellingContext?.agent_phone,
+  )
   const sellerMandateStatus = getFriendlySellerStatusLabel(
     activeSellingContext?.mandatePacket?.state ||
       activeSellingContext?.mandateStatus ||
@@ -4661,10 +4945,32 @@ function ClientPortal() {
     { label: 'Seller', value: sellerDisplayName },
     { label: 'Property', value: sellerPropertyTitle },
     { label: 'Mandate status', value: sellerMandateStatus },
-    { label: 'Current sale stage', value: sellerCurrentStage },
-    { label: 'Assigned agent / agency', value: sellerAgentName },
+    { label: 'Agent / Agency', value: sellerAgentName },
     { label: 'Last updated', value: sellerLastUpdatedLabel },
   ]
+  const acceptedSellerOffer = sellerOfferItems.find((offer) => ['accepted', 'converted_to_transaction'].includes(normalizeSellerPortalKey(offer.status)))
+  const sellerStageDates = {
+    mandate_signed: formatShortPortalDate(
+      activeSellingContext?.mandatePacket?.signedAt ||
+        activeSellingContext?.mandatePacket?.signed_at ||
+        portal?.mandate?.packet?.signedAt ||
+        portal?.mandate?.packet?.signed_at,
+      '',
+    ),
+    listed: formatShortPortalDate(
+      activeSellingContext?.listingPublishedAt ||
+        activeSellingContext?.listing_published_at ||
+        activeSellingContext?.listingCreatedAt ||
+        activeSellingContext?.listing_created_at ||
+        portal?.unit?.published_at ||
+        portal?.unit?.created_at,
+      '',
+    ),
+    offers: formatShortPortalDate(sellerOfferItems[0]?.receivedAt, ''),
+    offer_accepted: formatShortPortalDate(acceptedSellerOffer?.receivedAt, ''),
+    transfer: formatShortPortalDate(portal?.transaction?.stage_updated_at, ''),
+    registered: formatShortPortalDate(portal?.transaction?.registered_at || portal?.transaction?.completed_at, ''),
+  }
   const sellerRequiredDocuments = Array.isArray(workspaceData?.documentCenter?.requiredDocuments)
     ? workspaceData.documentCenter.requiredDocuments
     : []
@@ -4720,8 +5026,8 @@ function ClientPortal() {
     }
     if (sellerOfferItems.some((offer) => ['seller_review', 'submitted', 'countered'].includes(normalizeSellerPortalKey(offer.status)))) {
       return {
-        title: 'Review offer',
-        description: 'An offer is waiting for seller review. Your agent will guide the decision process.',
+        title: 'Review offers with your agent',
+        description: 'Your agent will present all offers received and advise you on the best next steps.',
         to: 'offers',
         label: 'View offers',
         tone: 'action',
@@ -4737,23 +5043,81 @@ function ClientPortal() {
       }
     }
     return {
-      title: 'Waiting for agent update',
-      description: 'Your seller workspace is up to date. Your agent will share the next update here.',
-      to: 'appointments',
-      label: 'View appointments',
+      title: sellerStageMeta.currentStage.nextStepTitle,
+      description: sellerStageMeta.currentStage.nextStepDescription,
+      to: sellerStageMeta.currentStage.primaryRoute,
+      label: sellerStageMeta.currentStage.primaryAction,
       tone: 'info',
     }
   })()
   const sellerQuickActions = [
-    { to: 'appointments', label: 'View appointments', icon: CalendarClock, show: true },
-    { to: 'offers', label: 'View offers', icon: HandCoins, show: true },
-    { to: 'documents', label: 'View documents', icon: FolderOpen, show: true },
-    { to: 'documents', label: 'Review mandate', icon: FileSignature, show: mandatePacketUsingStructuredFlow || sellerMandateStatus !== 'Not available' },
-    { href: sellerAgentEmail ? `mailto:${sellerAgentEmail}` : '', label: 'Contact agent', icon: MessageCircle, show: Boolean(sellerAgentEmail) },
-  ].filter((action) => action.show).slice(0, 5)
-  const sellerActivityItems = latestJourneyFeedItems
-    .filter((item) => !/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(`${item.message || ''} ${item.contextLabel || ''}`))
+    {
+      to: 'appointments',
+      label: 'View appointments',
+      description: 'See upcoming and past appointments',
+      icon: CalendarClock,
+      badge: upcomingAppointmentCount > 0 ? String(upcomingAppointmentCount) : '',
+    },
+    {
+      to: 'offers',
+      label: 'View offers',
+      description: 'Review all offers received',
+      icon: HandCoins,
+      badge: activeSellerOfferCount > 0 ? String(activeSellerOfferCount) : '',
+    },
+    {
+      to: 'documents',
+      label: 'View documents',
+      description: 'Access and download your documents',
+      icon: FolderOpen,
+      badge: missingRequired > 0 ? `${missingRequired} due` : 'Ready',
+    },
+    {
+      href: sellerAgentEmail ? `mailto:${sellerAgentEmail}` : '',
+      label: 'Message agent',
+      description: sellerAgentEmail ? 'Send a message to your agent' : 'Agent messaging is coming soon',
+      icon: MessageCircle,
+      disabled: !sellerAgentEmail,
+    },
+  ]
+  const safeSellerActivityItems = latestJourneyFeedItems
+    .filter((item) => {
+      const haystack = `${item.message || ''} ${item.contextLabel || ''}`.toLowerCase()
+      if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(haystack)) return false
+      return !/(internal|system|admin|workflow|supabase|row id|debug|rls|stage key)/i.test(haystack)
+    })
     .slice(0, 5)
+  const sellerActivityFallbackItems = [
+    activeSellerOfferCount > 0
+      ? {
+          id: 'seller-offer-activity',
+          message: activeSellerOfferCount === 1 ? 'New offer received for your property.' : `${activeSellerOfferCount} offers received for your property.`,
+          timestampLabel: formatShortPortalDate(sellerOfferItems[0]?.receivedAt, 'Recently'),
+        }
+      : null,
+    ['Listed', 'Offers', 'Offer Accepted', 'Transfer', 'Registered'].includes(sellerCurrentStage)
+      ? {
+          id: 'seller-listed-activity',
+          message: 'Your property has been listed.',
+          timestampLabel: sellerStageDates.listed || 'Recently',
+        }
+      : null,
+    sellerUploadedDocuments.length > 0
+      ? {
+          id: 'seller-documents-activity',
+          message: `${sellerUploadedDocuments.length} document${sellerUploadedDocuments.length === 1 ? '' : 's'} uploaded to your workspace.`,
+          timestampLabel: 'Recently',
+        }
+      : null,
+    upcomingAppointmentCount > 0
+      ? {
+          id: 'seller-appointment-activity',
+          message: 'Appointment scheduled with your agent.',
+          timestampLabel: 'Recently',
+        }
+      : null,
+  ].filter(Boolean)
+  const sellerActivityItems = safeSellerActivityItems.length ? safeSellerActivityItems : sellerActivityFallbackItems
   const overviewStatusLabel = ['REGISTERED', 'REG'].includes(mainStage) ? 'Registered' : 'In Progress'
   const workspaceHeaderStatusLabel = isHandover ? (handoverCompleted ? 'Handover Completed' : 'Preparing for Handover') : overviewStatusLabel
   const hasCoApplicantProfile =
@@ -5197,14 +5561,17 @@ function ClientPortal() {
             <h1 className="text-[3rem] font-bold leading-none tracking-[-0.05em] text-[#f8fbff]">bridge.</h1>
             <p className="mt-2.5 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Client Transaction Workspace</p>
             {effectiveWorkspace === 'seller' ? (
-              <div className="mt-4 rounded-[16px] border border-white/10 bg-[rgba(7,14,24,0.34)] px-3.5 py-3.5">
+              <div className="mt-4 overflow-hidden rounded-[18px] border border-white/10 bg-[rgba(7,14,24,0.34)]">
+                <div className="h-1 bg-[linear-gradient(90deg,#34d399,#38bdf8)]" style={{ width: `${sellerProgressPercent}%` }} />
+                <div className="px-3.5 py-3.5">
                 <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-[#a8bdd2]">Selling workspace</span>
                 <strong className="mt-1.5 block text-sm font-semibold leading-5 text-white">
                   {sellerPropertyTitle}
                 </strong>
                 <p className="mt-1 text-xs leading-5 text-[#b8c8d8]">
-                  Secure seller portal
+                  {sellerCurrentStage} with {sellerAgentName || 'Bridge Property Team'}
                 </p>
+                </div>
               </div>
             ) : (
             <div className="mt-4 rounded-[14px] border border-white/10 bg-[rgba(7,14,24,0.34)] px-3 py-3">
@@ -5265,9 +5632,13 @@ function ClientPortal() {
         <div className="min-w-0 flex-1 lg:pl-[280px]">
           <div className="border-b border-[#dbe5ef] bg-white/80 px-5 py-4 backdrop-blur lg:hidden">
             {effectiveWorkspace === 'seller' ? (
-              <div className="mb-3 rounded-[14px] border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-3">
+              <div className="mb-3 overflow-hidden rounded-[14px] border border-[#dbe5ef] bg-[#f8fbff]">
+                <div className="h-1 bg-[#17a37a]" style={{ width: `${sellerProgressPercent}%` }} />
+                <div className="px-3.5 py-3">
                 <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">bridge. seller workspace</span>
                 <strong className="mt-1 block text-sm font-semibold text-[#142132]">{sellerPropertyTitle}</strong>
+                <p className="mt-1 text-xs font-medium text-[#64748b]">{sellerCurrentStage}</p>
+                </div>
               </div>
             ) : (
             <div className="mb-3 rounded-[12px] border border-[#dbe5ef] bg-[#f8fbff] px-3 py-2.5">
@@ -5310,6 +5681,7 @@ function ClientPortal() {
           </div>
 
           <div className="space-y-6 px-5 py-5 md:px-8 md:py-8 xl:px-10">
+            {effectiveWorkspace === 'seller' && isOverview ? null : (
             <section className="rounded-[24px] border border-[#223d57] bg-[linear-gradient(135deg,#10253a_0%,#1d3c5b_60%,#2a5078_100%)] px-5 py-5 text-white shadow-[0_20px_36px_rgba(12,24,40,0.3)]">
               <h2 className="text-[1.35rem] font-semibold tracking-[-0.03em]">Welcome, {clientFirstName}</h2>
               <p className="mt-2 text-sm leading-6 text-[#d6e5f3]">
@@ -5322,7 +5694,9 @@ function ClientPortal() {
                   : 'Track your purchase from onboarding to registration with clear stage-by-stage guidance.'}
               </p>
             </section>
+            )}
 
+            {effectiveWorkspace === 'seller' && isOverview ? null : (
             <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-6 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
               {effectiveWorkspace === 'seller' ? (
                 <div>
@@ -5609,6 +5983,7 @@ function ClientPortal() {
                 </div>
               )}
             </section>
+            )}
 
             {error ? <p className="rounded-[18px] border border-[#f1cbc7] bg-[#fff5f4] px-4 py-3 text-sm text-[#b42318]">{error}</p> : null}
 
@@ -5616,146 +5991,21 @@ function ClientPortal() {
               effectiveWorkspace === 'seller' ? (
                 <section className="space-y-5">
                   {hasSellingContext ? (
-                    <>
-                      <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-                        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.7fr)]">
-                          <div>
-                            <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#64748b]">
-                              Secure seller dashboard
-                            </span>
-                            <h2 className="mt-3 text-[1.55rem] font-semibold tracking-[-0.04em] text-[#142132]">
-                              Welcome, {sellerFirstName}
-                            </h2>
-                            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#5f7288]">
-                              Track your sale, appointments, offers, documents, and next steps in one secure workspace.
-                            </p>
-                          </div>
-                          <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                            <span className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Next step</span>
-                            <h3 className="mt-1.5 text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">{sellerNextStep.title}</h3>
-                            <p className="mt-1.5 text-sm leading-6 text-[#566b82]">{sellerNextStep.description}</p>
-                            <Link
-                              to={sellerNextStep.href || getPortalWorkspacePath(token, workspaceNavigationScope, sellerNextStep.to)}
-                              className={`mt-3 inline-flex min-h-[40px] items-center justify-center rounded-[12px] px-3.5 py-2 text-sm font-semibold transition ${
-                                sellerNextStep.tone === 'action'
-                                  ? 'bg-[#2f5478] text-white hover:bg-[#244463]'
-                                  : 'border border-[#d1deeb] bg-white text-[#21384d] hover:bg-[#f8fbff]'
-                              }`}
-                            >
-                              {sellerNextStep.label}
-                            </Link>
-                          </article>
-                        </div>
-                      </section>
-
-                      <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-                        <article className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-                          <div className="flex items-center justify-between gap-3">
-                            <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Seller Details</h3>
-                            <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#3b5873]">
-                              {sellerCurrentStage}
-                            </span>
-                          </div>
-                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                            {sellerSummaryItems.map((item) => (
-                              <article key={item.label} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                                <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">{item.label}</span>
-                                <strong className="mt-1.5 block text-sm font-semibold leading-6 text-[#142132]">{item.value || 'Awaiting update'}</strong>
-                              </article>
-                            ))}
-                          </div>
-                        </article>
-
-                        <article className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div>
-                              <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Sale Progress</h3>
-                              <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Seller workflow progress is based on seller onboarding, mandate, listing, offer, and transfer status.</p>
-                            </div>
-                            <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-3 py-1 text-xs font-semibold text-[#35546c]">
-                              {sellerProgressPercent}% complete
-                            </span>
-                          </div>
-                          <div className="mt-4">
-                            <ProgressTimeline
-                              currentStage={sellerCurrentStage}
-                              stages={SELLER_PROCESS_STAGES}
-                              progressPercent={sellerProgressPercent}
-                              compact
-                              premium
-                              framed={false}
-                              showCurrentSummary={false}
-                            />
-                          </div>
-                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                            <div className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                              <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current stage</span>
-                              <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{sellerCurrentStage}</strong>
-                            </div>
-                            <div className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                              <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Next milestone</span>
-                              <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{sellerNextStage}</strong>
-                            </div>
-                          </div>
-                        </article>
-                      </section>
-
-                      <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-                        <article className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-                          <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Quick Actions</h3>
-                          <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                            {sellerQuickActions.map((action) => {
-                              const Icon = action.icon
-                              const className = "inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[12px] border border-[#d1deeb] bg-[#fbfdff] px-3 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-white"
-                              return action.href ? (
-                                <a key={action.label} href={action.href} className={className}>
-                                  <Icon size={15} />
-                                  {action.label}
-                                </a>
-                              ) : (
-                                <Link key={action.label} to={getPortalWorkspacePath(token, workspaceNavigationScope, action.to)} className={className}>
-                                  <Icon size={15} />
-                                  {action.label}
-                                </Link>
-                              )
-                            })}
-                          </div>
-                        </article>
-
-                        <article className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div>
-                              <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Recent Activity</h3>
-                              <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Client-facing updates from your sale workspace.</p>
-                            </div>
-                            <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#64748b]">
-                              {sellerActivityItems.length || 0} updates
-                            </span>
-                          </div>
-                          {sellerActivityItems.length ? (
-                            <div className="mt-4 space-y-3">
-                              {sellerActivityItems.map((item) => (
-                                <article key={item.id} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                                  <div className="flex items-start gap-3">
-                                    <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-[#eef4fb] text-[#35546c]">
-                                      <CheckCircle2 size={15} />
-                                    </span>
-                                    <div>
-                                      <p className="text-sm leading-6 text-[#324559]">{item.message || 'Your seller workspace has been updated.'}</p>
-                                      <p className="mt-1 text-xs font-medium text-[#7b8ca2]">{item.timestampLabel || 'Recently'}</p>
-                                    </div>
-                                  </div>
-                                </article>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="mt-4 rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4 text-sm leading-6 text-[#6b7d93]">
-                              No updates yet. Your activity feed will appear here once your agent shares progress.
-                            </div>
-                          )}
-                        </article>
-                      </section>
-                    </>
+                    <SellerPortalDashboard
+                      sellerFirstName={sellerFirstName}
+                      sellerAgentName={sellerAgentName}
+                      sellerAgentPhone={sellerAgentPhone}
+                      sellerAgentEmail={sellerAgentEmail}
+                      sellerAgencyName={sellerAgencyName}
+                      sellerSummaryItems={sellerSummaryItems}
+                      sellerNextStep={sellerNextStep}
+                      sellerQuickActions={sellerQuickActions}
+                      sellerActivityItems={sellerActivityItems}
+                      sellerStageMeta={sellerStageMeta}
+                      sellerStageDates={sellerStageDates}
+                      token={token}
+                      workspaceNavigationScope={workspaceNavigationScope}
+                    />
                   ) : (
                     <form className="space-y-4" onSubmit={handleSubmitSellerAssistanceRequest}>
                       <p className="text-sm text-[#5f7086]">
