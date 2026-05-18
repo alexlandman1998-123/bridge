@@ -18,7 +18,7 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
@@ -52,7 +52,8 @@ import {
   normalizeOfferWorkflowStatus,
   OFFER_WORKFLOW_STATUS,
 } from '../lib/listingOffersService'
-import { invokeEdgeFunction } from '../lib/supabaseClient'
+import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
+import { getPrivateListing, updatePrivateListing } from '../services/privateListingService'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 
 const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
@@ -82,8 +83,38 @@ const BOND_ORIGINATOR_OPTIONS = [
 ]
 
 const PROPERTY_TYPE_OPTIONS = ['House', 'Apartment', 'Townhouse', 'Cluster', 'Land', 'Commercial', 'Mixed-use']
-const LISTING_STATUS_OPTIONS = ['draft', 'active', 'sold']
+const LISTING_STATUS_OPTIONS = ['mandate_signed', 'active', 'under_offer', 'sold', 'withdrawn']
 const FEATURE_OPTIONS = ['Solar', 'Backup Water', 'Pool', 'Pet Friendly', 'Security', 'Garden', 'Fibre']
+
+function mergeListingRecord(existing = {}, incoming = {}) {
+  return {
+    ...(existing || {}),
+    ...(incoming || {}),
+    marketing: {
+      ...((existing || {}).marketing || {}),
+      ...((incoming || {}).marketing || {}),
+    },
+    propertyDetails: {
+      ...((existing || {}).propertyDetails || {}),
+      ...((incoming || {}).propertyDetails || {}),
+    },
+    rolePlayers: {
+      ...((existing || {}).rolePlayers || {}),
+      ...((incoming || {}).rolePlayers || {}),
+    },
+  }
+}
+
+function upsertListingRecord(rows = [], incoming = null) {
+  if (!incoming?.id) return rows
+  let found = false
+  const nextRows = rows.map((row) => {
+    if (String(row?.id || '') !== String(incoming.id)) return row
+    found = true
+    return mergeListingRecord(row, incoming)
+  })
+  return found ? nextRows : [incoming, ...nextRows]
+}
 
 function formatCurrency(value) {
   const amount = Number(value || 0)
@@ -337,6 +368,8 @@ function AgentListingDetail() {
   const [offerActionError, setOfferActionError] = useState('')
   const [sendingOfferLink, setSendingOfferLink] = useState(false)
   const [copiedOfferToken, setCopiedOfferToken] = useState('')
+  const [detailMessage, setDetailMessage] = useState('')
+  const [detailError, setDetailError] = useState('')
   const [offerNotesDraftById, setOfferNotesDraftById] = useState({})
   const [marketingDraft, setMarketingDraft] = useState(() => buildPropertyDraft(null))
   const [rolePlayersDraft, setRolePlayersDraft] = useState({
@@ -361,17 +394,36 @@ function AgentListingDetail() {
     navigate(`/developments/${developmentId}`, { replace: true })
   }, [listingId, navigate])
 
-  useEffect(() => {
+  const loadListingData = useCallback(async () => {
     setLoading(true)
-    setPrivateListings(readAgentPrivateListings())
+    setDetailError('')
+    const runtimeListings = readAgentPrivateListings()
     setPipelineLeads(readPipelineLeads())
+
+    let nextListings = runtimeListings
+    if (isSupabaseConfigured && listingId && !listingId.startsWith('development-')) {
+      try {
+        const dbListing = await getPrivateListing(listingId)
+        if (dbListing?.id) {
+          nextListings = upsertListingRecord(runtimeListings, dbListing)
+        }
+      } catch (error) {
+        console.error('[AgentListingDetail] Supabase listing load failed', error)
+        setDetailError(error?.message || 'Unable to load this listing from Supabase.')
+      }
+    }
+
+    setPrivateListings(nextListings)
     setLoading(false)
-  }, [])
+  }, [listingId])
+
+  useEffect(() => {
+    void loadListingData()
+  }, [loadListingData])
 
   useEffect(() => {
     const refreshListingData = () => {
-      setPrivateListings(readAgentPrivateListings())
-      setPipelineLeads(readPipelineLeads())
+      void loadListingData()
       setOffersRefreshTick((value) => value + 1)
     }
 
@@ -381,7 +433,7 @@ function AgentListingDetail() {
       window.removeEventListener('itg:listings-updated', refreshListingData)
       window.removeEventListener('itg:pipeline-updated', refreshListingData)
     }
-  }, [])
+  }, [loadListingData])
 
   useEffect(() => {
     if (!listingId) return undefined
@@ -417,9 +469,11 @@ function AgentListingDetail() {
     return updatedListing
   }
 
-  function saveMarketingDraft() {
+  async function saveMarketingDraft() {
     const selectedCover = marketingDraft.galleryImages.find((image) => String(image?.id) === String(marketingDraft.coverImageId)) || marketingDraft.galleryImages[0] || null
-    patchListing((row) => ({
+    setDetailMessage('')
+    setDetailError('')
+    const updatedListing = patchListing((row) => ({
       ...row,
       listingCode: marketingDraft.listingCode || row?.listingCode || '',
       listingTitle: marketingDraft.headline.trim() || row?.listingTitle || '',
@@ -471,6 +525,33 @@ function AgentListingDetail() {
         coverImageId: marketingDraft.coverImageId,
       },
     }))
+    if (!updatedListing?.id || !isSupabaseConfigured) {
+      setDetailMessage('Listing details saved locally.')
+      return
+    }
+
+    try {
+      const savedListing = await updatePrivateListing(updatedListing.id, {
+        title: marketingDraft.headline.trim() || updatedListing.listingTitle || '',
+        propertyType: marketingDraft.propertyType || updatedListing.propertyType || '',
+        listingStatus: marketingDraft.listingStatus || updatedListing.listingStatus || updatedListing.status || 'mandate_signed',
+        listingSource: marketingDraft.source || updatedListing.listingSource || 'private_listing',
+        description: marketingDraft.description.trim(),
+        askingPrice: Number(marketingDraft.price || 0),
+        addressLine1: marketingDraft.addressLine1.trim(),
+        suburb: marketingDraft.suburb.trim(),
+        city: marketingDraft.city.trim(),
+        province: marketingDraft.province.trim(),
+        isActive: String(marketingDraft.listingStatus || '').trim().toLowerCase() === 'active',
+      })
+      if (savedListing?.id) {
+        setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(updatedListing, savedListing)))
+      }
+      setDetailMessage('Listing details saved.')
+    } catch (error) {
+      console.error('[AgentListingDetail] Supabase listing save failed', error)
+      setDetailError(error?.message || 'Saved locally, but Supabase could not be updated.')
+    }
   }
 
   function saveRolePlayers() {
@@ -481,6 +562,7 @@ function AgentListingDetail() {
         bondOriginator: rolePlayersDraft.bondOriginator,
       },
     }))
+    setDetailMessage('Role players saved locally.')
   }
 
   async function handleCreateOfferLink(event) {
@@ -1006,7 +1088,7 @@ function AgentListingDetail() {
   if (!listingRecord) {
     return (
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <p className="text-sm text-[#6b7d93]">Listing not found.</p>
+        <p className="text-sm text-[#6b7d93]">{detailError || 'Listing not found.'}</p>
         <div className="mt-4">
           <Button variant="secondary" onClick={() => navigate('/listings')}>
             Back to Listings
@@ -1018,6 +1100,12 @@ function AgentListingDetail() {
 
   return (
     <section className="space-y-5">
+      {detailError ? (
+        <div className="rounded-[14px] border border-[#f3d2cc] bg-[#fef3f2] px-4 py-3 text-sm font-medium text-[#b42318]">{detailError}</div>
+      ) : null}
+      {detailMessage ? (
+        <div className="rounded-[14px] border border-[#d8eddf] bg-[#ecfaf1] px-4 py-3 text-sm font-medium text-[#1f7d44]">{detailMessage}</div>
+      ) : null}
       <section className="overflow-hidden rounded-[24px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
         <div className="h-[280px] w-full border-b border-[#e5edf6]">
           {getImageBlock(coverImage?.url || '', listingRecord.listingTitle)}
