@@ -282,6 +282,10 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
   const canCreateTransaction = role === 'developer' || role === 'agent' || role === 'attorney'
   const canCreateListing = role === 'agent'
   const unreadDisplay = notificationState.unreadCount > 99 ? '99+' : String(notificationState.unreadCount || 0)
+  const principalDashboardOwnsHeader =
+    role === 'agent' &&
+    agencyWorkflowMode === 'principal' &&
+    (location.pathname === '/dashboard' || location.pathname === '/')
 
   function handleNewDevelopment() {
     if (typeof onNewDevelopment === 'function') {
@@ -449,6 +453,10 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
       ) : null}
     </div>
   )
+
+  if (principalDashboardOwnsHeader) {
+    return null
+  }
 
   if (developerDashboardHeaderOnly) {
     return (

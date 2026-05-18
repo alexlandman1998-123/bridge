@@ -245,38 +245,23 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
     return items
   }
 
-  const withPrincipalPipeline = items.map((item) => {
-    if (item.key !== 'pipeline') return item
-    return {
-      ...item,
-      to: '/pipeline/overview',
-      children: [
-        { key: 'pipeline_overview', label: 'Overview', to: '/pipeline/overview' },
-        { key: 'pipeline_leads', label: 'Leads', to: '/pipeline/leads' },
-        { key: 'pipeline_canvassing', label: 'Canvassing', to: '/pipeline/canvassing' },
-        { key: 'pipeline_calendar', label: 'Calendar', to: '/pipeline/calendar' },
-      ],
-    }
-  })
-
-  const managementItem = {
-    key: 'agency',
-    label: 'Agency',
-    to: '/agency/branches',
-    children: [
-      { key: 'agency_branches', label: 'Branches', to: '/agency/branches' },
-      { key: 'agency_agents', label: 'Agent Directory', to: '/agency/agents' },
-      { key: 'agency_analytics', label: 'Analytics', to: '/agency/analytics' },
-    ],
-  }
-  const reportsIndex = withPrincipalPipeline.findIndex((item) => item.key === 'reports')
-  if (reportsIndex === -1) {
-    return [...withPrincipalPipeline, managementItem]
-  }
-
   return [
-    ...withPrincipalPipeline.slice(0, reportsIndex),
-    managementItem,
-    ...withPrincipalPipeline.slice(reportsIndex),
+    { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
+    {
+      key: 'listings',
+      label: 'Listings',
+      to: '/listings',
+      activeMatch: ['/listings', '/agent/listings'],
+    },
+    { key: 'pipeline', label: 'Pipeline', to: '/pipeline/overview' },
+    { key: 'transactions', label: 'Transactions', to: '/transactions' },
+    { key: 'leads', label: 'Leads', to: '/pipeline/leads' },
+    { key: 'agents', label: 'Agents', to: '/agents' },
+    { key: 'clients', label: 'Clients', to: '/clients' },
+    { key: 'documents', label: 'Documents', to: '/documents' },
+    { key: 'reports', label: 'Reports', to: '/reports' },
+    { key: 'financials', label: 'Finance', to: '/reports' },
+    { key: 'marketing', label: 'Marketing', to: '/pipeline/canvassing' },
   ]
+
 }

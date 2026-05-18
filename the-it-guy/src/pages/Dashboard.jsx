@@ -16,6 +16,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import SummaryCards from '../components/SummaryCards'
 import ConveyancerDashboardPage from '../components/ConveyancerDashboardPage'
+import PrincipalDashboard from './PrincipalDashboard'
 import { PillToggle } from '../components/ui/FilterBar'
 import {
   STAGE_AGING_BUCKETS,
@@ -3242,6 +3243,16 @@ function renderActiveTransactionsBlock({
           </article>
         ) : null}
       </section>
+    )
+  }
+
+  if (isPrincipalAgentView) {
+    return (
+      <PrincipalDashboard
+        agencyId={organisationIdForAppointments}
+        workspaceId={workspace.id}
+        onSwitchToAgentView={() => setAgentViewOverride('agent')}
+      />
     )
   }
 

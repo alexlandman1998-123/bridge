@@ -12,6 +12,7 @@ import {
   KeyRound,
   LayoutDashboard,
   ChevronDown,
+  Megaphone,
   PlusCircle,
   Settings,
   ShieldUser,
@@ -39,8 +40,10 @@ const ICON_BY_KEY = {
   applications: SwitchCamera,
   clients: Users,
   financials: Wallet,
+  marketing: Megaphone,
   new_transaction: PlusCircle,
   pipeline: KanbanSquare,
+  leads: Users,
   pipeline_overview: KanbanSquare,
   pipeline_leads: KanbanSquare,
   pipeline_canvassing: ClipboardList,
@@ -99,7 +102,7 @@ function resolveSidebarBranding(snapshot) {
   const logoLightUrl = normalizeBrandText(branding.logoLight)
   const logoDarkUrl = normalizeBrandText(branding.logoDark)
   const organisationLogoUrl = normalizeBrandText(organisation.logoUrl)
-  const logoUrl = logoLightUrl || organisationLogoUrl || logoDarkUrl
+  const logoUrl = logoDarkUrl || organisationLogoUrl || logoLightUrl
   const organisationLabel =
     normalizeBrandText(agencyInformation.tradingName) ||
     normalizeBrandText(agencyInformation.agencyName) ||

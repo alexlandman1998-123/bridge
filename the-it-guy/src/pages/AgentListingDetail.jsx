@@ -1,6 +1,8 @@
 import {
   ArrowLeft,
   Building2,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   CircleAlert,
   ExternalLink,
@@ -8,11 +10,13 @@ import {
   FolderKanban,
   HandCoins,
   ImagePlus,
+  Loader2,
   MapPin,
   Plus,
   Copy,
   Link2,
   ShieldCheck,
+  Star,
   TrendingUp,
   Upload,
   UserRound,
@@ -57,6 +61,7 @@ import {
   getPrivateListing,
   updatePrivateListing,
   updatePrivateListingOnboardingFormData,
+  uploadPrivateListingMediaAsset,
 } from '../services/privateListingService'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 
@@ -129,6 +134,51 @@ function firstDraftValue(...values) {
   return ''
 }
 
+function normalizeMediaItems(items = []) {
+  return (Array.isArray(items) ? items : [])
+    .filter((item) => item?.url || item?.signedUrl || item?.publicUrl)
+    .map((item, index) => ({
+      id: String(item.id || item.path || `media-${index + 1}`),
+      name: String(item.name || item.fileName || `Image ${index + 1}`),
+      url: String(item.url || item.signedUrl || item.publicUrl || ''),
+      path: item.path || '',
+      bucket: item.bucket || '',
+      signedUrl: item.signedUrl || '',
+      publicUrl: item.publicUrl || '',
+      contentType: item.contentType || '',
+      size: Number(item.size || 0) || 0,
+      label: item.label || '',
+    }))
+}
+
+function buildListingSnapshotFormData(draft = {}) {
+  return {
+    propertyAddress: String(draft.addressLine1 || '').trim(),
+    suburb: String(draft.suburb || '').trim(),
+    city: String(draft.city || '').trim(),
+    province: String(draft.province || '').trim(),
+    propertyType: draft.propertyType,
+    bedrooms: draft.bedrooms,
+    bathrooms: draft.bathrooms,
+    garages: draft.garages,
+    parkingCovered: draft.coveredParking,
+    parkingOpen: draft.openParking,
+    erfSize: draft.erfSize,
+    floorSize: draft.floorSize,
+    askingPrice: draft.price,
+    levies: draft.leviesNotApplicable ? '' : draft.levies,
+    leviesNotApplicable: Boolean(draft.leviesNotApplicable),
+    ratesTaxes: draft.ratesTaxesNotApplicable ? '' : draft.ratesTaxes,
+    ratesTaxesNotApplicable: Boolean(draft.ratesTaxesNotApplicable),
+    features: Array.isArray(draft.selectedFeatures) ? draft.selectedFeatures : [],
+    propertyNotes: String(draft.description || '').trim(),
+    internalNotes: String(draft.notes || '').trim(),
+    imageGallery: normalizeMediaItems(draft.galleryImages),
+    coverImageId: draft.coverImageId || '',
+    floorplans: normalizeMediaItems(draft.floorplans),
+  }
+}
+
 function formatCurrency(value) {
   const amount = Number(value || 0)
   if (!Number.isFinite(amount) || amount <= 0) return 'Price on request'
@@ -137,6 +187,23 @@ function formatCurrency(value) {
     currency: 'ZAR',
     maximumFractionDigits: 0,
   }).format(amount)
+}
+
+function CompactActionButton({ active = false, disabled = false, className = '', children, ...props }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition ${
+        active
+          ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_8px_14px_rgba(31,79,120,0.18)]'
+          : 'border-[#dbe6f2] bg-white text-[#2f4862] hover:border-[#b7c8db] hover:bg-[#f7fbff]'
+      } disabled:cursor-not-allowed disabled:border-[#dbe6f2] disabled:bg-[#f5f8fb] disabled:text-[#9aa9ba] ${className}`}
+      {...props}
+    >
+      {children}
+    </button>
+  )
 }
 
 function formatDate(value) {
@@ -309,6 +376,7 @@ function buildPropertyDraft(listingRecord) {
       ? listingRecord.sellerOnboarding.formData
       : {}
   const storedGallery = Array.isArray(marketing?.imageGallery) ? marketing.imageGallery : []
+  const onboardingGallery = Array.isArray(onboardingFormData.imageGallery) ? onboardingFormData.imageGallery : []
   const fallbackGallery = marketing?.mediaUrl
     ? [
         {
@@ -318,9 +386,9 @@ function buildPropertyDraft(listingRecord) {
         },
       ]
     : []
-  const galleryImages = (storedGallery.length ? storedGallery : fallbackGallery).filter((item) => item?.url)
+  const galleryImages = normalizeMediaItems(storedGallery.length ? storedGallery : onboardingGallery.length ? onboardingGallery : fallbackGallery)
   const coverImageId =
-    String(marketing?.coverImageId || propertyDetails?.coverImageId || '').trim() ||
+    String(marketing?.coverImageId || propertyDetails?.coverImageId || onboardingFormData.coverImageId || '').trim() ||
     String(galleryImages[0]?.id || '').trim()
 
   const rawListingStatus = String(propertyDetails?.listingStatus || listingRecord?.status || 'active').trim().toLowerCase()
@@ -364,6 +432,8 @@ function buildPropertyDraft(listingRecord) {
     coverImageId,
     floorplans: Array.isArray(propertyDetails?.floorplans)
       ? propertyDetails.floorplans
+      : Array.isArray(onboardingFormData.floorplans)
+        ? onboardingFormData.floorplans
       : Array.isArray(marketing?.floorplans)
         ? marketing.floorplans
         : [],
@@ -391,6 +461,7 @@ function AgentListingDetail() {
   const [copiedOfferToken, setCopiedOfferToken] = useState('')
   const [detailMessage, setDetailMessage] = useState('')
   const [detailError, setDetailError] = useState('')
+  const [gallerySaving, setGallerySaving] = useState(false)
   const [offerNotesDraftById, setOfferNotesDraftById] = useState({})
   const [marketingDraft, setMarketingDraft] = useState(() => buildPropertyDraft(null))
   const [rolePlayersDraft, setRolePlayersDraft] = useState({
@@ -490,62 +561,102 @@ function AgentListingDetail() {
     return updatedListing
   }
 
-  async function saveMarketingDraft() {
-    const selectedCover = marketingDraft.galleryImages.find((image) => String(image?.id) === String(marketingDraft.coverImageId)) || marketingDraft.galleryImages[0] || null
-    setDetailMessage('')
-    setDetailError('')
-    const updatedListing = patchListing((row) => ({
+  async function persistListingSnapshot(nextDraft, { message = '', persistCoreFields = false } = {}) {
+    if (!listingRecord?.id || !nextDraft) return null
+    const selectedCover = nextDraft.galleryImages.find((image) => String(image?.id) === String(nextDraft.coverImageId)) || nextDraft.galleryImages[0] || null
+    const localListing = patchListing((row) => ({
       ...row,
-      listingCode: marketingDraft.listingCode || row?.listingCode || '',
-      listingTitle: marketingDraft.headline.trim() || row?.listingTitle || '',
-      propertyType: marketingDraft.propertyType || row?.propertyType || 'House',
-      status: marketingDraft.listingStatus || row?.status || 'active',
-      addressLine1: marketingDraft.addressLine1.trim(),
-      suburb: marketingDraft.suburb.trim(),
-      city: marketingDraft.city.trim(),
-      province: marketingDraft.province.trim(),
-      askingPrice: Number(marketingDraft.price || 0),
+      ...(persistCoreFields
+        ? {
+            listingCode: nextDraft.listingCode || row?.listingCode || '',
+            listingTitle: nextDraft.headline.trim() || row?.listingTitle || '',
+            propertyType: nextDraft.propertyType || row?.propertyType || 'House',
+            status: nextDraft.listingStatus || row?.status || 'active',
+            addressLine1: nextDraft.addressLine1.trim(),
+            suburb: nextDraft.suburb.trim(),
+            city: nextDraft.city.trim(),
+            province: nextDraft.province.trim(),
+            askingPrice: Number(nextDraft.price || 0),
+          }
+        : {}),
       marketing: {
         ...(row?.marketing || {}),
         mediaUrl: selectedCover?.url || '',
-        source: marketingDraft.source,
-        status: marketingDraft.listingStatus,
-        description: marketingDraft.description,
-        features: marketingDraft.selectedFeatures.join(', '),
-        notes: marketingDraft.notes,
-        imageGallery: marketingDraft.galleryImages,
-        coverImageId: marketingDraft.coverImageId,
-        floorplans: marketingDraft.floorplans,
+        source: nextDraft.source,
+        status: nextDraft.listingStatus,
+        description: nextDraft.description,
+        features: nextDraft.selectedFeatures.join(', '),
+        notes: nextDraft.notes,
+        imageGallery: normalizeMediaItems(nextDraft.galleryImages),
+        coverImageId: nextDraft.coverImageId,
+        floorplans: nextDraft.floorplans,
       },
       propertyDetails: {
-        listingCode: marketingDraft.listingCode,
-        headline: marketingDraft.headline.trim(),
-        propertyType: marketingDraft.propertyType,
-        listingStatus: marketingDraft.listingStatus,
-        source: marketingDraft.source.trim(),
-        addressLine1: marketingDraft.addressLine1.trim(),
-        suburb: marketingDraft.suburb.trim(),
-        city: marketingDraft.city.trim(),
-        province: marketingDraft.province.trim(),
-        bedrooms: marketingDraft.bedrooms,
-        bathrooms: marketingDraft.bathrooms,
-        garages: marketingDraft.garages,
-        coveredParking: marketingDraft.coveredParking,
-        openParking: marketingDraft.openParking,
-        erfSize: marketingDraft.erfSize,
-        floorSize: marketingDraft.floorSize,
-        price: Number(marketingDraft.price || 0),
-        levies: marketingDraft.leviesNotApplicable ? 0 : Number(marketingDraft.levies || 0),
-        leviesNotApplicable: marketingDraft.leviesNotApplicable,
-        ratesTaxes: marketingDraft.ratesTaxesNotApplicable ? 0 : Number(marketingDraft.ratesTaxes || 0),
-        ratesTaxesNotApplicable: marketingDraft.ratesTaxesNotApplicable,
-        selectedFeatures: marketingDraft.selectedFeatures,
-        description: marketingDraft.description.trim(),
-        notes: marketingDraft.notes.trim(),
-        floorplans: marketingDraft.floorplans,
-        coverImageId: marketingDraft.coverImageId,
+        ...(row?.propertyDetails || {}),
+        listingCode: nextDraft.listingCode,
+        headline: nextDraft.headline.trim(),
+        propertyType: nextDraft.propertyType,
+        listingStatus: nextDraft.listingStatus,
+        source: nextDraft.source.trim(),
+        addressLine1: nextDraft.addressLine1.trim(),
+        suburb: nextDraft.suburb.trim(),
+        city: nextDraft.city.trim(),
+        province: nextDraft.province.trim(),
+        bedrooms: nextDraft.bedrooms,
+        bathrooms: nextDraft.bathrooms,
+        garages: nextDraft.garages,
+        coveredParking: nextDraft.coveredParking,
+        openParking: nextDraft.openParking,
+        erfSize: nextDraft.erfSize,
+        floorSize: nextDraft.floorSize,
+        price: Number(nextDraft.price || 0),
+        levies: nextDraft.leviesNotApplicable ? 0 : Number(nextDraft.levies || 0),
+        leviesNotApplicable: nextDraft.leviesNotApplicable,
+        ratesTaxes: nextDraft.ratesTaxesNotApplicable ? 0 : Number(nextDraft.ratesTaxes || 0),
+        ratesTaxesNotApplicable: nextDraft.ratesTaxesNotApplicable,
+        selectedFeatures: nextDraft.selectedFeatures,
+        description: nextDraft.description.trim(),
+        notes: nextDraft.notes.trim(),
+        floorplans: nextDraft.floorplans,
+        coverImageId: nextDraft.coverImageId,
+      },
+      sellerOnboarding: {
+        ...(row?.sellerOnboarding || {}),
+        formData: {
+          ...((row?.sellerOnboarding?.formData && typeof row.sellerOnboarding.formData === 'object') ? row.sellerOnboarding.formData : {}),
+          ...buildListingSnapshotFormData(nextDraft),
+        },
       },
     }))
+
+    if (!isSupabaseConfigured) {
+      if (message) setDetailMessage(message)
+      return localListing
+    }
+
+    const savedOnboarding = await updatePrivateListingOnboardingFormData(listingRecord.id, buildListingSnapshotFormData(nextDraft)).catch((error) => {
+      console.warn('[AgentListingDetail] listing snapshot save skipped', error)
+      setDetailError(error?.message || 'Saved locally, but Supabase could not be updated.')
+      return null
+    })
+    if (savedOnboarding?.form_data) {
+      setPrivateListings((rows) => upsertListingRecord(rows, {
+        ...localListing,
+        sellerOnboarding: {
+          ...(localListing?.sellerOnboarding || {}),
+          status: savedOnboarding.status || localListing?.sellerOnboarding?.status,
+          formData: savedOnboarding.form_data,
+        },
+      }))
+    }
+    if (message) setDetailMessage(message)
+    return localListing
+  }
+
+  async function saveMarketingDraft() {
+    setDetailMessage('')
+    setDetailError('')
+    const updatedListing = await persistListingSnapshot(marketingDraft, { persistCoreFields: true })
     if (!updatedListing?.id || !isSupabaseConfigured) {
       setDetailMessage('Listing details saved locally.')
       return
@@ -565,43 +676,8 @@ function AgentListingDetail() {
         province: marketingDraft.province.trim(),
         isActive: String(marketingDraft.listingStatus || '').trim().toLowerCase() === 'active',
       })
-      const savedOnboarding = await updatePrivateListingOnboardingFormData(updatedListing.id, {
-        propertyAddress: marketingDraft.addressLine1.trim(),
-        suburb: marketingDraft.suburb.trim(),
-        city: marketingDraft.city.trim(),
-        province: marketingDraft.province.trim(),
-        propertyType: marketingDraft.propertyType,
-        bedrooms: marketingDraft.bedrooms,
-        bathrooms: marketingDraft.bathrooms,
-        garages: marketingDraft.garages,
-        parkingCovered: marketingDraft.coveredParking,
-        parkingOpen: marketingDraft.openParking,
-        erfSize: marketingDraft.erfSize,
-        floorSize: marketingDraft.floorSize,
-        askingPrice: marketingDraft.price,
-        levies: marketingDraft.leviesNotApplicable ? '' : marketingDraft.levies,
-        leviesNotApplicable: marketingDraft.leviesNotApplicable,
-        ratesTaxes: marketingDraft.ratesTaxesNotApplicable ? '' : marketingDraft.ratesTaxes,
-        ratesTaxesNotApplicable: marketingDraft.ratesTaxesNotApplicable,
-        features: marketingDraft.selectedFeatures,
-        propertyNotes: marketingDraft.description.trim(),
-        internalNotes: marketingDraft.notes.trim(),
-      }).catch((error) => {
-        console.warn('[AgentListingDetail] onboarding form data save skipped', error)
-        return null
-      })
       if (savedListing?.id) {
-        const savedWithFormData = savedOnboarding?.form_data
-          ? {
-              ...savedListing,
-              sellerOnboarding: {
-                ...(savedListing.sellerOnboarding || updatedListing.sellerOnboarding || {}),
-                formData: savedOnboarding.form_data,
-                status: savedOnboarding.status || savedListing.sellerOnboardingStatus || savedListing.sellerOnboarding?.status,
-              },
-            }
-          : savedListing
-        setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(updatedListing, savedWithFormData)))
+        setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(updatedListing, savedListing)))
       }
       setDetailMessage('Listing details saved.')
     } catch (error) {
@@ -1052,71 +1128,138 @@ function AgentListingDetail() {
     })
   }
 
+  async function applyMarketingDraftAndPersist(updater, { message = '', showSaving = false } = {}) {
+    const nextDraft = typeof updater === 'function' ? updater(marketingDraft) : updater
+    if (!nextDraft) return null
+    if (showSaving) setGallerySaving(true)
+    setDetailMessage('')
+    setDetailError('')
+    setMarketingDraft(nextDraft)
+    try {
+      return await persistListingSnapshot(nextDraft, { message })
+    } finally {
+      if (showSaving) setGallerySaving(false)
+    }
+  }
+
+  async function buildUploadedAsset(file, type, index = 0) {
+    const fallbackId = generateId(type === 'floorplans' ? 'floorplan' : 'gallery')
+    try {
+      const asset = await uploadPrivateListingMediaAsset(file, { listingId: listingRecord?.id, type })
+      return {
+        id: asset.path || fallbackId,
+        name: asset.fileName || file.name,
+        label: type === 'floorplans' ? `Plan ${marketingDraft.floorplans.length + index + 1}` : '',
+        url: asset.url || asset.signedUrl || asset.publicUrl || '',
+        signedUrl: asset.signedUrl || '',
+        publicUrl: asset.publicUrl || '',
+        bucket: asset.bucket || '',
+        path: asset.path || '',
+        contentType: asset.contentType || file.type || '',
+        size: asset.size || file.size || 0,
+      }
+    } catch (error) {
+      console.warn('[AgentListingDetail] storage upload failed; falling back to local data url', error)
+      return {
+        id: fallbackId,
+        name: file.name,
+        label: type === 'floorplans' ? `Plan ${marketingDraft.floorplans.length + index + 1}` : '',
+        url: await readAsDataUrl(file),
+        contentType: file.type || '',
+        size: file.size || 0,
+        uploadWarning: error?.message || 'Storage upload failed.',
+      }
+    }
+  }
+
   async function handleGalleryUpload(event) {
     const files = Array.from(event.target.files || [])
     if (!files.length) return
-    const uploads = await Promise.all(
-      files.map(async (file) => ({
-        id: generateId('gallery'),
-        name: file.name,
-        url: await readAsDataUrl(file),
-      })),
+    setGallerySaving(true)
+    setDetailMessage('')
+    setDetailError('')
+    try {
+      const uploads = await Promise.all(files.map((file, index) => buildUploadedAsset(file, 'gallery', index)))
+      const hadFallback = uploads.some((asset) => asset.uploadWarning)
+      const nextDraft = {
+        ...marketingDraft,
+        galleryImages: [...marketingDraft.galleryImages, ...uploads],
+        coverImageId: marketingDraft.coverImageId || uploads[0]?.id || '',
+      }
+      setMarketingDraft(nextDraft)
+      await persistListingSnapshot(nextDraft, {
+        message: hadFallback ? 'Images saved locally. Storage upload needs attention.' : 'Images uploaded and saved.',
+      })
+      if (hadFallback) {
+        setDetailError('One or more images could not be uploaded to Supabase Storage, so they were kept as local previews. Try uploading again after checking storage permissions.')
+      }
+    } finally {
+      setGallerySaving(false)
+      event.target.value = ''
+    }
+  }
+
+  async function setCoverImage(imageId) {
+    await applyMarketingDraftAndPersist(
+      (previous) => ({ ...previous, coverImageId: imageId }),
+      { message: 'Cover image saved.', showSaving: true },
     )
-    setMarketingDraft((previous) => {
-      const nextGallery = [...previous.galleryImages, ...uploads]
-      return {
-        ...previous,
-        galleryImages: nextGallery,
-        coverImageId: previous.coverImageId || uploads[0]?.id || '',
-      }
-    })
-    event.target.value = ''
   }
 
-  function setCoverImage(imageId) {
-    setMarketingDraft((previous) => ({ ...previous, coverImageId: imageId }))
+  async function moveGalleryImage(imageId, direction) {
+    await applyMarketingDraftAndPersist(
+      (previous) => {
+        const currentIndex = previous.galleryImages.findIndex((image) => String(image.id) === String(imageId))
+        if (currentIndex < 0) return previous
+        const nextIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1
+        if (nextIndex < 0 || nextIndex >= previous.galleryImages.length) return previous
+        const nextGallery = [...previous.galleryImages]
+        const [item] = nextGallery.splice(currentIndex, 1)
+        nextGallery.splice(nextIndex, 0, item)
+        return { ...previous, galleryImages: nextGallery }
+      },
+      { message: 'Gallery order saved.', showSaving: true },
+    )
   }
 
-  function moveGalleryImage(imageId, direction) {
-    setMarketingDraft((previous) => {
-      const currentIndex = previous.galleryImages.findIndex((image) => String(image.id) === String(imageId))
-      if (currentIndex < 0) return previous
-      const nextIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1
-      if (nextIndex < 0 || nextIndex >= previous.galleryImages.length) return previous
-      const nextGallery = [...previous.galleryImages]
-      const [item] = nextGallery.splice(currentIndex, 1)
-      nextGallery.splice(nextIndex, 0, item)
-      return { ...previous, galleryImages: nextGallery }
-    })
-  }
-
-  function removeGalleryImage(imageId) {
-    setMarketingDraft((previous) => {
-      const nextGallery = previous.galleryImages.filter((image) => String(image.id) !== String(imageId))
-      return {
-        ...previous,
-        galleryImages: nextGallery,
-        coverImageId:
-          String(previous.coverImageId) === String(imageId)
-            ? String(nextGallery[0]?.id || '')
-            : previous.coverImageId,
-      }
-    })
+  async function removeGalleryImage(imageId) {
+    await applyMarketingDraftAndPersist(
+      (previous) => {
+        const nextGallery = previous.galleryImages.filter((image) => String(image.id) !== String(imageId))
+        return {
+          ...previous,
+          galleryImages: nextGallery,
+          coverImageId:
+            String(previous.coverImageId) === String(imageId)
+              ? String(nextGallery[0]?.id || '')
+              : previous.coverImageId,
+        }
+      },
+      { message: 'Image removed from gallery.', showSaving: true },
+    )
   }
 
   async function handleFloorplanUpload(event) {
     const files = Array.from(event.target.files || [])
     if (!files.length) return
-    const uploads = await Promise.all(
-      files.map(async (file, index) => ({
-        id: generateId('floorplan'),
-        name: file.name,
-        label: `Plan ${marketingDraft.floorplans.length + index + 1}`,
-        url: await readAsDataUrl(file),
-      })),
-    )
-    setMarketingDraft((previous) => ({ ...previous, floorplans: [...previous.floorplans, ...uploads] }))
-    event.target.value = ''
+    setGallerySaving(true)
+    setDetailMessage('')
+    setDetailError('')
+    try {
+      const uploads = await Promise.all(files.map((file, index) => buildUploadedAsset(file, 'floorplans', index)))
+      const hadFallback = uploads.some((asset) => asset.uploadWarning)
+      const nextDraft = { ...marketingDraft, floorplans: [...marketingDraft.floorplans, ...uploads] }
+      setMarketingDraft(nextDraft)
+      await persistListingSnapshot(nextDraft, {
+        message: hadFallback ? 'Floor plans saved locally. Storage upload needs attention.' : 'Floor plans uploaded and saved.',
+      })
+      if (hadFallback) {
+        setDetailError('One or more floor plans could not be uploaded to Supabase Storage, so they were kept as local previews.')
+      }
+    } finally {
+      setGallerySaving(false)
+      event.target.value = ''
+    }
   }
 
   function updateFloorplanLabel(id, label) {
@@ -1423,7 +1566,7 @@ function AgentListingDetail() {
                   <h3 className="text-[1.08rem] font-semibold text-[#142132]">Property Details</h3>
                   <p className="mt-1 text-sm text-[#607387]">Structured listing data for stronger presentation, cleaner reporting, and better downstream conversion.</p>
                 </div>
-                <Button onClick={saveMarketingDraft}>Save Property Details</Button>
+                <Button size="sm" onClick={saveMarketingDraft}>Save Property Details</Button>
               </div>
               <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
                 <div className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
@@ -1628,11 +1771,11 @@ function AgentListingDetail() {
                   {sectionStatuses.find((item) => item.key === 'floorplans')?.complete ? 'Complete' : 'Missing info'}
                 </span>
               </div>
-              <div className="mt-5 rounded-[18px] border border-dashed border-[#c9d8e8] bg-[#fbfdff] p-4">
-                <label className="flex cursor-pointer items-center gap-3 rounded-[14px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm font-semibold text-[#35546c] hover:border-[#b7c8db]">
+              <div className="mt-5 rounded-[16px] border border-dashed border-[#c9d8e8] bg-[#fbfdff] p-3">
+                <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:border-[#b7c8db] hover:bg-[#f7fbff]">
                   <Upload size={16} />
                   Upload Floor Plans
-                  <input type="file" accept=".pdf,image/*" multiple className="hidden" onChange={handleFloorplanUpload} />
+                  <input type="file" accept=".pdf,image/*" multiple className="hidden" onChange={handleFloorplanUpload} disabled={gallerySaving} />
                 </label>
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -1705,47 +1848,74 @@ function AgentListingDetail() {
                   <h4 className="text-[1rem] font-semibold text-[#142132]">Image Gallery</h4>
                   <p className="mt-1 text-sm text-[#607387]">Bulk upload, select a cover image, and keep the listing gallery clean and consistent.</p>
                 </div>
-                <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${sectionStatuses.find((item) => item.key === 'gallery')?.complete ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]' : 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'}`}>
-                  {sectionStatuses.find((item) => item.key === 'gallery')?.complete ? 'Complete' : 'Missing info'}
-                </span>
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  {gallerySaving ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
+                      <Loader2 size={12} className="animate-spin" />
+                      Saving
+                    </span>
+                  ) : null}
+                  <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${sectionStatuses.find((item) => item.key === 'gallery')?.complete ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]' : 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'}`}>
+                    {sectionStatuses.find((item) => item.key === 'gallery')?.complete ? 'Complete' : 'Missing info'}
+                  </span>
+                </div>
               </div>
-              <div className="mt-5 rounded-[18px] border border-dashed border-[#c9d8e8] bg-[#fbfdff] p-4">
-                <label className="flex cursor-pointer items-center gap-3 rounded-[14px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm font-semibold text-[#35546c] hover:border-[#b7c8db]">
-                  <ImagePlus size={16} />
-                  Upload Listing Images
-                  <input type="file" accept="image/*" multiple className="hidden" onChange={handleGalleryUpload} />
-                </label>
-                <p className="mt-2 text-xs text-[#7b8ca2]">The first uploaded image becomes the cover by default. You can change it anytime.</p>
+              <div className="mt-5 rounded-[18px] border border-dashed border-[#c9d8e8] bg-[#fbfdff] p-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#dbe6f2] bg-white text-[#1f4f78]">
+                      <ImagePlus size={18} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-[#22374d]">{marketingDraft.galleryImages.length ? `${marketingDraft.galleryImages.length} image${marketingDraft.galleryImages.length === 1 ? '' : 's'} saved` : 'No images saved yet'}</p>
+                      <p className="text-xs text-[#7b8ca2]">Cover, order, and removals save automatically.</p>
+                    </div>
+                  </div>
+                  <label className={`inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-xs font-semibold transition ${gallerySaving ? 'border-[#dbe6f2] bg-[#f5f8fb] text-[#9aa9ba]' : 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_8px_14px_rgba(31,79,120,0.16)] hover:bg-[#183f61]'}`}>
+                    {gallerySaving ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                    Upload images
+                    <input type="file" accept="image/*" multiple className="hidden" onChange={handleGalleryUpload} disabled={gallerySaving} />
+                  </label>
+                </div>
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 {marketingDraft.galleryImages.length ? (
                   marketingDraft.galleryImages.map((image, index) => {
                     const active = String(image.id) === String(marketingDraft.coverImageId)
                     return (
-                      <div key={image.id} className="overflow-hidden rounded-[18px] border border-[#dce6f2] bg-white">
-                        <div className="h-[160px] border-b border-[#e5edf6]">
+                      <div key={image.id} className="overflow-hidden rounded-[16px] border border-[#dce6f2] bg-white">
+                        <div className="relative h-[150px] border-b border-[#e5edf6] bg-[#eef4fa]">
                           <img src={image.url} alt={image.name} className="h-full w-full object-cover" />
+                          {active ? (
+                            <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-white/95 px-2 py-1 text-[0.68rem] font-semibold text-[#1f4f78] shadow-sm">
+                              <Star size={11} fill="currentColor" />
+                              Cover
+                            </span>
+                          ) : null}
+                          <button type="button" onClick={() => removeGalleryImage(image.id)} disabled={gallerySaving} className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#dbe6f2] bg-white/95 text-[#6b7d93] shadow-sm hover:text-[#22374d] disabled:cursor-not-allowed disabled:opacity-60" aria-label={`Remove ${image.name}`}>
+                            <X size={14} />
+                          </button>
                         </div>
                         <div className="space-y-3 p-3">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <p className="truncate text-sm font-semibold text-[#22374d]">{image.name}</p>
-                              <p className="mt-1 text-xs text-[#7b8ca2]">{active ? 'Current cover image' : `Image ${index + 1}`}</p>
+                              <p className="mt-1 text-xs text-[#7b8ca2]">{image.path ? 'Stored in Supabase' : 'Local preview'} - Image {index + 1}</p>
                             </div>
-                            <button type="button" onClick={() => removeGalleryImage(image.id)} className="rounded-full border border-[#dbe6f2] p-1 text-[#6b7d93] hover:text-[#22374d]">
-                              <X size={14} />
-                            </button>
                           </div>
                           <div className="flex flex-wrap gap-2">
-                            <Button size="sm" type="button" variant={active ? 'primary' : 'secondary'} onClick={() => setCoverImage(image.id)}>
-                              {active ? 'Cover Image' : 'Set as Cover'}
-                            </Button>
-                            <Button size="sm" type="button" variant="secondary" onClick={() => moveGalleryImage(image.id, 'left')} disabled={index === 0}>
-                              Move Left
-                            </Button>
-                            <Button size="sm" type="button" variant="secondary" onClick={() => moveGalleryImage(image.id, 'right')} disabled={index === marketingDraft.galleryImages.length - 1}>
-                              Move Right
-                            </Button>
+                            <CompactActionButton active={active} onClick={() => setCoverImage(image.id)} disabled={gallerySaving || active}>
+                              <Star size={13} fill={active ? 'currentColor' : 'none'} />
+                              {active ? 'Cover' : 'Set cover'}
+                            </CompactActionButton>
+                            <CompactActionButton onClick={() => moveGalleryImage(image.id, 'left')} disabled={gallerySaving || index === 0} aria-label={`Move ${image.name} left`}>
+                              <ChevronLeft size={14} />
+                              Left
+                            </CompactActionButton>
+                            <CompactActionButton onClick={() => moveGalleryImage(image.id, 'right')} disabled={gallerySaving || index === marketingDraft.galleryImages.length - 1} aria-label={`Move ${image.name} right`}>
+                              Right
+                              <ChevronRight size={14} />
+                            </CompactActionButton>
                           </div>
                         </div>
                       </div>

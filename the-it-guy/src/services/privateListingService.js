@@ -56,6 +56,14 @@ function normalizeNullableText(value) {
   return normalized || null
 }
 
+function normalizeStorageSafeName(value = '', fallback = 'asset') {
+  const normalized = normalizeText(value)
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+  return normalized || fallback
+}
+
 function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeText(value))
 }
@@ -215,6 +223,37 @@ async function createPrivateListingDocumentSignedUrl(client, filePath, expiresIn
     if (error && isStorageBucketNotFoundError(error)) continue
   }
   return ''
+}
+
+export async function uploadPrivateListingMediaAsset(file, { listingId = '', type = 'gallery' } = {}) {
+  const client = requireClient()
+  const selectedFile = typeof File !== 'undefined' && file instanceof File ? file : null
+  const normalizedListingId = normalizeUuid(listingId)
+  if (!selectedFile) throw new Error('Select a valid file before uploading.')
+  if (!normalizedListingId) throw new Error('Listing id is required.')
+
+  const safeType = normalizeStorageSafeName(type || 'gallery', 'gallery')
+  const safeName = normalizeStorageSafeName(selectedFile.name || 'listing-image', 'listing-image')
+  const objectPath = `private-listings/${normalizedListingId}/${safeType}/${Date.now()}-${safeName}`
+  const uploadedBucket = await uploadToPrivateListingDocumentsBucket(client, objectPath, selectedFile, {
+    upsert: true,
+    cacheControl: '3600',
+    contentType: selectedFile.type || 'application/octet-stream',
+  })
+  const signedUrl = await createPrivateListingDocumentSignedUrl(client, objectPath, 60 * 60 * 24 * 30)
+  const { data: publicUrlData } = client.storage.from(uploadedBucket).getPublicUrl(objectPath)
+  const publicUrl = normalizeText(publicUrlData?.publicUrl)
+
+  return {
+    bucket: uploadedBucket,
+    path: objectPath,
+    fileName: selectedFile.name,
+    contentType: selectedFile.type || '',
+    size: selectedFile.size || 0,
+    url: signedUrl || publicUrl || '',
+    signedUrl: signedUrl || '',
+    publicUrl: publicUrl || '',
+  }
 }
 
 const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS =
@@ -895,7 +934,24 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
     if (isMissingTableError(existing.error, 'private_listing_seller_onboarding')) return null
     throw existing.error
   }
-  if (!existing.data?.id) return null
+  if (!existing.data?.id) {
+    const inserted = await client
+      .from('private_listing_seller_onboarding')
+      .insert({
+        private_listing_id: normalizedId,
+        token: generateSellerOnboardingToken(),
+        form_data: formData && typeof formData === 'object' ? formData : {},
+        status: normalizeStatus(options.status || 'completed', SELLER_ONBOARDING_STATUSES, 'completed'),
+        submitted_at: new Date().toISOString(),
+        seller_type: normalizeNullableText(options.sellerType || formData?.sellerType || formData?.ownershipType),
+        ownership_structure: normalizeNullableText(options.ownershipStructure || formData?.ownershipType),
+        marital_regime: normalizeNullableText(options.maritalRegime || formData?.maritalRegime || formData?.marriageRegime),
+      })
+      .select('*')
+      .single()
+    if (inserted.error) throw inserted.error
+    return inserted.data
+  }
 
   const existingFormData = existing.data.form_data && typeof existing.data.form_data === 'object' ? existing.data.form_data : {}
   const nextFormData = {
