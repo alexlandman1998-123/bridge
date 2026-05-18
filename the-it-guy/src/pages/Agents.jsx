@@ -1,11 +1,30 @@
-import { Building2, CalendarDays, Plus, Search, ShieldCheck, UserCircle2 } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowRight,
+  BriefcaseBusiness,
+  Building2,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  Grid2X2,
+  List,
+  Mail,
+  MoreHorizontal,
+  Phone,
+  Plus,
+  ShieldCheck,
+  SlidersHorizontal,
+  Trophy,
+  UserCircle2,
+  Users,
+  XCircle,
+} from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
-import SectionHeader from '../components/ui/SectionHeader'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessAgentsModule, canManageAgentOrganisations } from '../lib/roles'
 import { fetchTransactionsByParticipantSummary, fetchTransactionsListSummary, saveTransaction } from '../lib/api'
@@ -799,47 +818,378 @@ function AgentMetricCard({ label, value, helper = '' }) {
   )
 }
 
-function AgentCard({ agent, onView }) {
+function formatCompactCurrency(value) {
+  const amount = Number(value || 0)
+  if (!Number.isFinite(amount) || amount <= 0) return 'R 0'
+  return new Intl.NumberFormat('en-ZA', {
+    style: 'currency',
+    currency: 'ZAR',
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(amount).replace('ZAR', 'R')
+}
+
+function getAgentPipelineValue(agent) {
+  return Number(agent?.metrics?.pipelineValue || agent?.metrics?.activeDealValue || 0) || 0
+}
+
+function getAgentStatusMeta(agent) {
   const statusKey = String(agent.status || '').trim().toLowerCase()
-  const statusLabel = AGENT_STATUS_LABELS[statusKey] || agent.status || 'Active'
-  const statusClassName = AGENT_STATUS_PILL_CLASS[statusKey] || AGENT_STATUS_PILL_CLASS[AGENT_INVITE_STATUS.ACTIVE]
+  return {
+    key: statusKey || AGENT_INVITE_STATUS.ACTIVE,
+    label: AGENT_STATUS_LABELS[statusKey] || agent.status || 'Active',
+    className: AGENT_STATUS_PILL_CLASS[statusKey] || AGENT_STATUS_PILL_CLASS[AGENT_INVITE_STATUS.ACTIVE],
+  }
+}
+
+function getRegisteredThisMonth(agent) {
+  const now = new Date()
+  const currentMonth = now.getMonth()
+  const currentYear = now.getFullYear()
+  return (agent?.deals || []).filter((row) => {
+    const value = row?.transaction?.registered_at || row?.transaction?.registration_date || row?.transaction?.completed_at
+    if (!value) return false
+    const date = new Date(value)
+    return !Number.isNaN(date.getTime()) && date.getMonth() === currentMonth && date.getFullYear() === currentYear
+  }).length
+}
+
+function getAgentLastActivityDate(agent) {
+  const candidates = [
+    agent?.lastActiveAt,
+    ...(agent?.recentDeals || []).map((row) => row?.transaction?.updated_at || row?.transaction?.created_at),
+    ...(agent?.appointments || []).map((appointment) => appointment?.updatedAt || appointment?.dateTime),
+  ].filter(Boolean)
+  const timestamps = candidates
+    .map((value) => new Date(value).getTime())
+    .filter((value) => Number.isFinite(value))
+  return timestamps.length ? new Date(Math.max(...timestamps)) : null
+}
+
+function formatRelativeActivity(value) {
+  if (!value) return 'No recent activity'
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return 'No recent activity'
+  const diffMs = Date.now() - date.getTime()
+  const diffHours = Math.max(0, Math.round(diffMs / 3600000))
+  if (diffHours < 1) return 'Just now'
+  if (diffHours < 24) return `${diffHours}h ago`
+  return `${Math.round(diffHours / 24)}d ago`
+}
+
+function DirectorySelect({ label, value, onChange, options }) {
+  return (
+    <label className="min-w-[150px] flex-1 sm:flex-none">
+      <span className="sr-only">{label}</span>
+      <select
+        className="h-10 w-full rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] shadow-sm outline-none transition focus:border-[#1f4f78] focus:ring-2 focus:ring-[#1f4f78]/10"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function AgentSummaryStrip({ summary }) {
+  const cards = [
+    { label: 'Total Agents', value: summary.totalAgents, helper: 'Across selected branches', icon: Users, tone: 'bg-[#edf5ff] text-[#1769d1]' },
+    { label: 'Active Today', value: summary.activeToday, helper: `${summary.activePercent}% of total`, icon: CheckCircle2, tone: 'bg-[#ecfdf3] text-[#16894f]' },
+    { label: 'Total Pipeline Value', value: formatCompactCurrency(summary.pipelineValue), helper: 'Assigned active pipeline', icon: ArrowRight, tone: 'bg-[#eef4ff] text-[#315adf]' },
+    { label: 'Active Transactions', value: summary.activeTransactions, helper: 'Currently in motion', icon: BriefcaseBusiness, tone: 'bg-[#f3efff] text-[#7657d8]' },
+  ]
 
   return (
-    <article className="rounded-[20px] border border-[#dce5f0] bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+    <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {cards.map((card) => {
+        const Icon = card.icon
+        return (
+          <article key={card.label} className="rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${card.tone}`}>
+                <Icon size={19} />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[0.76rem] font-semibold text-[#60758d]">{card.label}</p>
+                <p className="mt-1 text-[1.45rem] font-semibold leading-none tracking-[-0.035em] text-[#0f2237]">{card.value}</p>
+                <p className="mt-1.5 truncate text-xs font-medium text-[#6b7f97]">{card.helper}</p>
+              </div>
+            </div>
+          </article>
+        )
+      })}
+    </section>
+  )
+}
+
+function AgentDirectoryCard({ agent, onView, onEditRole, onDeactivate, onResendInvite, onCopyInviteLink }) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const statusMeta = getAgentStatusMeta(agent)
+  const pipelineValue = getAgentPipelineValue(agent)
+  const registeredThisMonth = getRegisteredThisMonth(agent)
+
+  return (
+    <article className="flex min-h-[268px] flex-col rounded-2xl border border-[#dce5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:border-[#c8d6e5] hover:shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="inline-flex h-11 w-11 flex-none items-center justify-center rounded-full border border-[#d7e2ef] bg-[#f8fbff] text-[#30567a]">
-            <UserCircle2 size={20} />
+          <span className="inline-flex h-12 w-12 flex-none items-center justify-center rounded-full border border-[#d7e2ef] bg-[linear-gradient(135deg,#f8fbff,#eaf2fb)] text-sm font-semibold text-[#244e70]">
+            {getAgentInitials(agent)}
           </span>
           <div className="min-w-0">
-            <h3 className="truncate text-[1.02rem] font-semibold text-[#142132]">{agent.name}</h3>
-            <p className="truncate text-sm text-[#60758d]">{agent.office}</p>
+            <h3 className="truncate text-[1rem] font-semibold text-[#142132]">{agent.name || 'Agent'}</h3>
+            <p className="truncate text-sm text-[#60758d]">{formatRoleLabel(agent.role)}</p>
+            <p className="truncate text-xs font-medium text-[#6f839a]">{agent.office || agent.organisationName || 'Not assigned'}</p>
           </div>
         </div>
-        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClassName}`}>
-          {statusLabel}
+        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusMeta.className}`}>
+          {statusMeta.label}
         </span>
       </div>
 
-      <div className="mt-3 space-y-1 text-xs text-[#61778f]">
-        <p className="truncate">{agent.email || 'Email pending'}</p>
-        <p>{agent.phone || 'Phone pending'}</p>
+      <div className="mt-4 grid grid-cols-3 divide-x divide-[#e4ebf4] border-y border-[#edf2f7] py-3">
+        <div className="pr-3">
+          <p className="text-[0.68rem] font-medium text-[#72859c]">Pipeline</p>
+          <p className="mt-1 truncate text-sm font-semibold text-[#10243a]">{formatCompactCurrency(pipelineValue)}</p>
+        </div>
+        <div className="px-3">
+          <p className="text-[0.68rem] font-medium text-[#72859c]">Deals</p>
+          <p className="mt-1 text-sm font-semibold text-[#10243a]">{agent.metrics.activeDeals || 0}</p>
+        </div>
+        <div className="pl-3">
+          <p className="text-[0.68rem] font-medium text-[#72859c]">Listings</p>
+          <p className="mt-1 text-sm font-semibold text-[#10243a]">{agent.metrics.activeListings || 0}</p>
+        </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <AgentMetricCard label="Active Listings" value={agent.metrics.activeListings} />
-        <AgentMetricCard label="Active Deals" value={agent.metrics.activeDeals} />
-        <AgentMetricCard label="Pipeline" value={formatCurrency(agent.metrics.pipelineValue)} />
-        <AgentMetricCard label="Registered" value={agent.metrics.registeredDeals} />
+      <div className="mt-3 space-y-2 text-xs text-[#61778f]">
+        <p className="inline-flex min-w-0 max-w-full items-center gap-2">
+          <Mail size={13} className="shrink-0 text-[#8aa0b6]" />
+          <span className="truncate">{agent.email || 'No email added'}</span>
+        </p>
+        <p className="inline-flex items-center gap-2">
+          <Phone size={13} className="shrink-0 text-[#8aa0b6]" />
+          <span>{agent.phone || 'No phone added'}</span>
+        </p>
+        <p className="text-[#405870]">Registered this month: <span className="font-semibold text-[#10243a]">{registeredThisMonth}</span></p>
       </div>
 
-      <div className="mt-4 flex items-center justify-between">
-        <p className="text-sm font-semibold text-[#1f4f78]">Sales {formatCurrency(agent.metrics.totalSalesValue)}</p>
-        <Button type="button" size="sm" variant="secondary" onClick={onView}>
-          View Agent
-        </Button>
+      <div className="mt-auto flex items-center gap-2 pt-4">
+        <button
+          type="button"
+          className="inline-flex min-h-10 flex-1 items-center justify-center rounded-xl bg-[#0f2742] px-3 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(15,39,66,0.18)] transition hover:bg-[#173a5e]"
+          onClick={onView}
+        >
+          View Workspace
+        </button>
+        <div className="relative">
+          <button
+            type="button"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[#d9e3ef] bg-white text-[#3d5570] transition hover:bg-[#f7fafc]"
+            aria-label="Agent actions"
+            onClick={() => setMenuOpen((previous) => !previous)}
+          >
+            <MoreHorizontal size={17} />
+          </button>
+          {menuOpen ? (
+            <div className="absolute bottom-[calc(100%+8px)] right-0 z-20 w-44 rounded-2xl border border-[#dce6f0] bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.15)]">
+              <button type="button" className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]" onClick={onView}>View workspace</button>
+              <button
+                type="button"
+                className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]"
+                onClick={() => {
+                  setMenuOpen(false)
+                  onEditRole?.()
+                }}
+              >
+                Change role
+              </button>
+              {agent.inviteId ? (
+                <button
+                  type="button"
+                  className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onResendInvite?.()
+                  }}
+                >
+                  Resend invite
+                </button>
+              ) : null}
+              {agent.inviteToken ? (
+                <button
+                  type="button"
+                  className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onCopyInviteLink?.()
+                  }}
+                >
+                  Copy invite link
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#9a3a13] hover:bg-[#fff7ed]"
+                onClick={() => {
+                  setMenuOpen(false)
+                  onDeactivate?.()
+                }}
+              >
+                Deactivate
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
     </article>
+  )
+}
+
+function AddAgentDirectoryCard({ onAddAgent }) {
+  return (
+    <article className="flex min-h-[268px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#c9d8e8] bg-[linear-gradient(180deg,#ffffff,#f8fbff)] p-5 text-center shadow-sm">
+      <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#edf5ff] text-[#1769d1]">
+        <Plus size={24} />
+      </span>
+      <h3 className="mt-4 text-base font-semibold text-[#142132]">Add New Agent</h3>
+      <p className="mt-1 max-w-[220px] text-sm leading-6 text-[#667a92]">Invite a new agent to your organisation.</p>
+      <button
+        type="button"
+        className="mt-4 inline-flex min-h-10 items-center justify-center rounded-xl border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#1f4f78] transition hover:bg-[#f7fafc]"
+        onClick={onAddAgent}
+      >
+        + Add Agent
+      </button>
+    </article>
+  )
+}
+
+function AgentInsightPanel({ topPerformers, recentAgents, attentionAgents }) {
+  return (
+    <aside className="space-y-4">
+      <article className="rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-[#142132]">Top Performers</h3>
+          <span className="text-xs font-semibold text-[#1769d1]">Leaderboard</span>
+        </div>
+        <div className="mt-4 space-y-3">
+          {topPerformers.length ? topPerformers.map((agent, index) => (
+            <div key={`${agent.id}-top`} className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#eaf3ff] text-xs font-semibold text-[#1769d1]">{index + 1}</span>
+                <span className="truncate text-sm font-semibold text-[#263a4f]">{agent.name || 'Agent'}</span>
+              </div>
+              <span className="shrink-0 text-xs font-semibold text-[#0f2742]">{formatCompactCurrency(getAgentPipelineValue(agent))}</span>
+            </div>
+          )) : <p className="text-sm text-[#6b7f97]">No performance data yet.</p>}
+        </div>
+      </article>
+
+      <article className="rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-[#142132]">Agents Needing Attention</h3>
+          <span className="text-xs font-semibold text-[#1769d1]">Watchlist</span>
+        </div>
+        <div className="mt-4 space-y-3">
+          {attentionAgents.length ? attentionAgents.map((agent) => {
+            const inactive = getAgentStatusMeta(agent).key !== AGENT_INVITE_STATUS.ACTIVE
+            const reason = inactive ? 'Inactive status' : !agent.metrics.activeListings ? 'No active listings' : !agent.metrics.activeDeals ? 'No active transactions' : 'No recent activity'
+            return (
+              <div key={`${agent.id}-attention`} className="flex items-start gap-2">
+                <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#fff7ed] text-[#e07800]">
+                  <AlertTriangle size={14} />
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-[#263a4f]">{agent.name || 'Agent'}</p>
+                  <p className="text-xs text-[#6b7f97]">{reason}</p>
+                </div>
+              </div>
+            )
+          }) : <p className="text-sm text-[#6b7f97]">No attention items right now.</p>}
+        </div>
+      </article>
+
+      <article className="rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-[#142132]">Recent Agent Activity</h3>
+          <span className="text-xs font-semibold text-[#1769d1]">Latest</span>
+        </div>
+        <div className="mt-4 space-y-3">
+          {recentAgents.length ? recentAgents.map((agent) => (
+            <div key={`${agent.id}-recent`} className="flex items-start gap-2">
+              <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#ecfdf3] text-[#16894f]">
+                <Clock3 size={14} />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-[#263a4f]">{agent.name || 'Agent'} updated workspace</p>
+                <p className="text-xs text-[#6b7f97]">{formatRelativeActivity(getAgentLastActivityDate(agent))}</p>
+              </div>
+            </div>
+          )) : <p className="text-sm text-[#6b7f97]">No recent activity yet.</p>}
+        </div>
+      </article>
+    </aside>
+  )
+}
+
+function AgentDirectoryTable({ agents, onView, onEditRole, onDeactivate }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <table className="w-full min-w-[860px] text-left">
+        <thead className="bg-slate-50 text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#70849d]">
+          <tr>
+            <th className="px-4 py-3">Agent</th>
+            <th className="px-4 py-3">Branch / Office</th>
+            <th className="px-4 py-3">Role</th>
+            <th className="px-4 py-3">Pipeline</th>
+            <th className="px-4 py-3">Deals</th>
+            <th className="px-4 py-3">Status</th>
+            <th className="px-4 py-3 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 text-sm text-[#22384c]">
+          {agents.map((agent) => {
+            const statusMeta = getAgentStatusMeta(agent)
+            return (
+              <tr key={`${agent.id}-${agent.organisationId || 'org'}-list`} className="hover:bg-slate-50">
+                <td className="px-4 py-4">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#d7e2ef] bg-[#f8fbff] text-sm font-semibold text-[#245076]">
+                      {getAgentInitials(agent)}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-[#142132]">{agent.name || 'Agent'}</p>
+                      <p className="truncate text-xs text-[#60758d]">{agent.email || 'No email added'}</p>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-4 py-4">{agent.office || agent.organisationName || 'Not assigned'}</td>
+                <td className="px-4 py-4">{formatRoleLabel(agent.role)}</td>
+                <td className="px-4 py-4 font-semibold">{formatCompactCurrency(getAgentPipelineValue(agent))}</td>
+                <td className="px-4 py-4">{agent.metrics.activeDeals || 0}</td>
+                <td className="px-4 py-4">
+                  <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusMeta.className}`}>
+                    {statusMeta.label}
+                  </span>
+                </td>
+                <td className="px-4 py-4">
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" size="sm" variant="secondary" onClick={() => onView(agent)}>Workspace</Button>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => onEditRole(agent)}>Role</Button>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => onDeactivate(agent)}>Deactivate</Button>
+                  </div>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -1459,6 +1809,10 @@ export function AgentsPage() {
   const [transactionRows, setTransactionRows] = useState([])
   const [officeFilter, setOfficeFilter] = useState('all')
   const [organisationFilter, setOrganisationFilter] = useState(EMPTY_ORGANISATION.id)
+  const [roleFilter, setRoleFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [viewMode, setViewMode] = useState('grid')
+  const [sortBy, setSortBy] = useState('name')
   const [searchTerm, setSearchTerm] = useState('')
   const [agents, setAgents] = useState([])
   const [agentDirectory, setAgentDirectory] = useState(() => readAgentDirectory())
@@ -1646,6 +2000,28 @@ export function AgentsPage() {
     return () => window.removeEventListener('itg:agent-directory-updated', handleAgentDirectoryUpdate)
   }, [loadData])
 
+  useEffect(() => {
+    function handleOpenAddAgent() {
+      setActionMessage('')
+      setActionError('')
+      setInviteSentContext({ email: '', link: '' })
+      setInviteForm(buildAgentInviteForm({ profile, directory: readAgentDirectory() }))
+      setInviteError('')
+      setInviteModalOpen(true)
+    }
+
+    function handleAgentsSearch(event) {
+      setSearchTerm(String(event?.detail?.value || ''))
+    }
+
+    window.addEventListener('itg:open-add-agent', handleOpenAddAgent)
+    window.addEventListener('itg:agents-search', handleAgentsSearch)
+    return () => {
+      window.removeEventListener('itg:open-add-agent', handleOpenAddAgent)
+      window.removeEventListener('itg:agents-search', handleAgentsSearch)
+    }
+  }, [profile])
+
   const organisationOptions = useMemo(
     () => resolveOrganisationOptions({ directory: agentDirectory, invites: agentInvites, profile }),
     [agentDirectory, agentInvites, profile],
@@ -1686,19 +2062,87 @@ export function AgentsPage() {
     return ['all', ...items]
   }, [agents])
 
+  const roleOptions = useMemo(() => {
+    const items = [...new Set(agents.map((agent) => String(agent.role || 'agent').trim().toLowerCase()).filter(Boolean))]
+    return ['all', ...items]
+  }, [agents])
+
+  const statusOptions = useMemo(() => {
+    const items = [...new Set(agents.map((agent) => String(agent.status || AGENT_INVITE_STATUS.ACTIVE).trim().toLowerCase()).filter(Boolean))]
+    return ['all', ...items]
+  }, [agents])
+
   const filteredAgents = useMemo(() => {
     const query = searchTerm.trim().toLowerCase()
-    return agents.filter((agent) => {
+    const rows = agents.filter((agent) => {
       const organisationMatch = organisationFilter === EMPTY_ORGANISATION.id
         ? true
         : String(agent?.organisationId || '').trim().toLowerCase() === organisationFilter
       const officeMatch = officeFilter === 'all' ? true : agent.office === officeFilter
+      const roleMatch = roleFilter === 'all' ? true : String(agent.role || '').trim().toLowerCase() === roleFilter
+      const statusMatch = statusFilter === 'all' ? true : String(agent.status || '').trim().toLowerCase() === statusFilter
       const searchMatch = query
-        ? `${agent.name} ${agent.email} ${agent.office}`.toLowerCase().includes(query)
+        ? `${agent.name} ${agent.email} ${agent.office} ${agent.organisationName} ${formatRoleLabel(agent.role)}`.toLowerCase().includes(query)
         : true
-      return organisationMatch && officeMatch && searchMatch
+      return organisationMatch && officeMatch && roleMatch && statusMatch && searchMatch
     })
-  }, [agents, officeFilter, organisationFilter, searchTerm])
+    return rows.sort((left, right) => {
+      if (sortBy === 'pipeline') return getAgentPipelineValue(right) - getAgentPipelineValue(left)
+      if (sortBy === 'active_deals') return Number(right?.metrics?.activeDeals || 0) - Number(left?.metrics?.activeDeals || 0)
+      if (sortBy === 'recent') return (getAgentLastActivityDate(right)?.getTime() || 0) - (getAgentLastActivityDate(left)?.getTime() || 0)
+      if (sortBy === 'status') return getAgentStatusMeta(left).label.localeCompare(getAgentStatusMeta(right).label)
+      return String(left?.name || '').localeCompare(String(right?.name || ''))
+    })
+  }, [agents, officeFilter, organisationFilter, roleFilter, searchTerm, sortBy, statusFilter])
+
+  const directorySummary = useMemo(() => {
+    const activeAgents = agents.filter((agent) => getAgentStatusMeta(agent).key === AGENT_INVITE_STATUS.ACTIVE)
+    const activeTodayRows = agents.filter((agent) => {
+      const lastActivity = getAgentLastActivityDate(agent)
+      if (!lastActivity) return false
+      const today = new Date()
+      return lastActivity.toDateString() === today.toDateString()
+    })
+    const activeToday = activeTodayRows.length || activeAgents.length
+    const pipelineValue = agents.reduce((sum, agent) => sum + getAgentPipelineValue(agent), 0)
+    const activeTransactions = agents.reduce((sum, agent) => sum + (Number(agent?.metrics?.activeDeals || 0) || 0), 0)
+    return {
+      totalAgents: agents.length,
+      activeToday,
+      activePercent: agents.length ? Math.round((activeToday / agents.length) * 100) : 0,
+      pipelineValue,
+      activeTransactions,
+    }
+  }, [agents])
+
+  const topPerformers = useMemo(
+    () => [...agents].sort((left, right) => getAgentPipelineValue(right) - getAgentPipelineValue(left)).slice(0, 5),
+    [agents],
+  )
+
+  const recentAgents = useMemo(
+    () => [...agents]
+      .sort((left, right) => (getAgentLastActivityDate(right)?.getTime() || 0) - (getAgentLastActivityDate(left)?.getTime() || 0))
+      .slice(0, 5),
+    [agents],
+  )
+
+  const attentionAgents = useMemo(
+    () => agents
+      .filter((agent) => {
+        const statusKey = getAgentStatusMeta(agent).key
+        const lastActivity = getAgentLastActivityDate(agent)
+        const daysSinceActivity = lastActivity ? (Date.now() - lastActivity.getTime()) / 86400000 : Infinity
+        return (
+          statusKey !== AGENT_INVITE_STATUS.ACTIVE ||
+          Number(agent?.metrics?.activeListings || 0) <= 0 ||
+          Number(agent?.metrics?.activeDeals || 0) <= 0 ||
+          daysSinceActivity > 14
+        )
+      })
+      .slice(0, 5),
+    [agents],
+  )
 
   function handleInviteFormChange(key, value) {
     setInviteForm((previous) => ({ ...previous, [key]: value }))
@@ -2009,76 +2453,97 @@ export function AgentsPage() {
   return (
     <section className="space-y-5">
       {canManageDirectory ? (
-        <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-          <SectionHeader
-            title=""
-            copy="Principal / Owner workspace. Manage organisations, agents, and transaction allocations."
-            actions={
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <Button
+        <>
+          <section className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0">
+              <h1 className="text-[1.65rem] font-semibold tracking-[-0.035em] text-[#0f2237]">Agents Directory</h1>
+              <p className="mt-1 text-sm leading-6 text-[#667a92]">Browse and manage your agents across all branches and offices.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex rounded-xl border border-[#d9e3ef] bg-white p-1 shadow-sm">
+                <button
                   type="button"
-                  variant="secondary"
-                  onClick={() => {
-                    setOrganisationError('')
-                    setOrganisationName('')
-                    setOrganisationModalOpen(true)
-                  }}
+                  className={`inline-flex h-9 w-9 items-center justify-center rounded-lg transition ${viewMode === 'grid' ? 'bg-[#1769d1] text-white shadow-sm' : 'text-[#60758d] hover:bg-[#f5f8fb]'}`}
+                  aria-label="Grid view"
+                  onClick={() => setViewMode('grid')}
                 >
-                  <Building2 size={16} />
-                  Create Organisation
-                </Button>
-                <Button
+                  <Grid2X2 size={16} />
+                </button>
+                <button
                   type="button"
-                  onClick={() => {
-                    setActionMessage('')
-                    setActionError('')
-                    setInviteSentContext({ email: '', link: '' })
-                    resetInviteForm()
-                    setInviteModalOpen(true)
-                  }}
+                  className={`inline-flex h-9 w-9 items-center justify-center rounded-lg transition ${viewMode === 'list' ? 'bg-[#1769d1] text-white shadow-sm' : 'text-[#60758d] hover:bg-[#f5f8fb]'}`}
+                  aria-label="List view"
+                  onClick={() => setViewMode('list')}
                 >
-                  <Plus size={16} />
-                  Add Agent
-                </Button>
+                  <List size={17} />
+                </button>
               </div>
-            }
-          />
+              <label className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 shadow-sm">
+                <span className="text-xs font-semibold text-[#60758d]">Sort by</span>
+                <select
+                  className="min-w-[150px] border-0 bg-transparent p-0 text-sm font-semibold text-[#24364b] outline-none"
+                  value={sortBy}
+                  onChange={(event) => setSortBy(event.target.value)}
+                >
+                  <option value="name">Name A-Z</option>
+                  <option value="pipeline">Pipeline value</option>
+                  <option value="active_deals">Active deals</option>
+                  <option value="recent">Recently active</option>
+                  <option value="status">Status</option>
+                </select>
+              </label>
+            </div>
+          </section>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <label className="grid gap-1.5">
-              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Organisation</span>
-              <Field as="select" value={organisationFilter} onChange={(event) => setOrganisationFilter(event.target.value)}>
-                {organisationFilterOptions.map((organisation) => (
-                  <option key={organisation.id} value={organisation.id}>
-                    {organisation.name}
-                  </option>
-                ))}
-              </Field>
-            </label>
-            <label className="grid gap-1.5">
-              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Office</span>
-              <Field as="select" value={officeFilter} onChange={(event) => setOfficeFilter(event.target.value)}>
-                {officeOptions.map((office) => (
-                  <option key={office} value={office}>
-                    {office === 'all' ? 'All Offices' : office}
-                  </option>
-                ))}
-              </Field>
-            </label>
-            <label className="grid gap-1.5">
-              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Search Agent</span>
-              <div className="ui-input flex items-center gap-2">
-                <Search size={15} className="text-[#6f859d]" />
-                <input
-                  className="w-full border-0 bg-transparent p-0 text-sm text-[#142132] outline-none"
-                  value={searchTerm}
-                  onChange={(event) => setSearchTerm(event.target.value)}
-                  placeholder="Search by name, email, or office"
-                />
-              </div>
-            </label>
-          </div>
-        </section>
+          <section className="flex flex-wrap items-center gap-2">
+            <DirectorySelect
+              label="All Branches"
+              value={organisationFilter}
+              onChange={setOrganisationFilter}
+              options={organisationFilterOptions.map((organisation) => ({
+                value: organisation.id,
+                label: organisation.id === EMPTY_ORGANISATION.id ? 'All Branches' : organisation.name,
+              }))}
+            />
+            <DirectorySelect
+              label="All Offices"
+              value={officeFilter}
+              onChange={setOfficeFilter}
+              options={officeOptions.map((office) => ({ value: office, label: office === 'all' ? 'All Offices' : office }))}
+            />
+            <DirectorySelect
+              label="All Roles"
+              value={roleFilter}
+              onChange={setRoleFilter}
+              options={roleOptions.map((item) => ({ value: item, label: item === 'all' ? 'All Roles' : formatRoleLabel(item) }))}
+            />
+            <DirectorySelect
+              label="All Statuses"
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={statusOptions.map((item) => ({
+                value: item,
+                label: item === 'all' ? 'All Statuses' : AGENT_STATUS_LABELS[item] || item,
+              }))}
+            />
+            <button
+              type="button"
+              className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] shadow-sm transition hover:bg-[#f7fafc]"
+              onClick={() => {
+                setOrganisationFilter(EMPTY_ORGANISATION.id)
+                setOfficeFilter('all')
+                setRoleFilter('all')
+                setStatusFilter('all')
+                setSearchTerm('')
+              }}
+            >
+              <SlidersHorizontal size={15} />
+              Filters
+            </button>
+          </section>
+
+          <AgentSummaryStrip summary={directorySummary} />
+        </>
       ) : null}
 
       {error ? <p className="rounded-[16px] border border-[#f2d7d7] bg-[#fff6f6] px-4 py-3 text-sm text-[#b42318]">{error}</p> : null}
@@ -2118,177 +2583,70 @@ export function AgentsPage() {
       {loading ? <div className="rounded-[20px] border border-[#dde4ee] bg-white px-5 py-6 text-sm text-[#647a92]">Loading agents…</div> : null}
 
       {!loading && canManageDirectory ? (
-        <>
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="min-w-0">
             {filteredAgents.length ? (
-              filteredAgents.map((agent) => (
-                <AgentCard
-                  key={`${agent.id}-${agent.organisationId || 'org'}`}
-                  agent={agent}
-                  onView={() => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
+              viewMode === 'grid' ? (
+                <section className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                  {filteredAgents.map((agent) => (
+                    <AgentDirectoryCard
+                      key={`${agent.id}-${agent.organisationId || 'org'}`}
+                      agent={agent}
+                      onView={() => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
+                      onEditRole={() => openRoleEditor(agent)}
+                      onDeactivate={() => openConfirm('deactivate', agent)}
+                      onResendInvite={() => void handleResendInvite(agent)}
+                      onCopyInviteLink={() => void handleCopyInviteLink(agent)}
+                    />
+                  ))}
+                  <AddAgentDirectoryCard
+                    onAddAgent={() => {
+                      setActionMessage('')
+                      setActionError('')
+                      setInviteSentContext({ email: '', link: '' })
+                      resetInviteForm()
+                      setInviteModalOpen(true)
+                    }}
+                  />
+                </section>
+              ) : (
+                <AgentDirectoryTable
+                  agents={filteredAgents}
+                  onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
+                  onEditRole={openRoleEditor}
+                  onDeactivate={(agent) => openConfirm('deactivate', agent)}
                 />
-              ))
+              )
             ) : (
-              <div className="rounded-[20px] border border-[#dde4ee] bg-white px-5 py-8 text-sm text-[#647a92]">
-                No agents found for this filter.
-              </div>
+              <section className="rounded-2xl border border-dashed border-[#c9d8e8] bg-white px-5 py-12 text-center shadow-sm">
+                <span className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#edf5ff] text-[#1769d1]">
+                  <Users size={24} />
+                </span>
+                <h2 className="mt-4 text-base font-semibold text-[#142132]">No agents found for this filter.</h2>
+                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#647a92]">
+                  Try broadening the filters, or invite a new agent to this organisation.
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => {
+                    resetInviteForm()
+                    setInviteModalOpen(true)
+                  }}
+                >
+                  + Add Agent
+                </Button>
+              </section>
             )}
-          </section>
+          </div>
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Agents Registry</h2>
-            <p className="mt-1.5 text-sm text-[#647a92]">Track who belongs to each branch, their role, and current operational state.</p>
-
-            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
-              <table className="w-full table-fixed text-left">
-                <colgroup>
-                  <col className="w-[20%]" />
-                  <col className="w-[22%]" />
-                  <col className="w-[10%]" />
-                  <col className="w-[16%]" />
-                  <col className="w-[8%]" />
-                  <col className="w-[8%]" />
-                  <col className="w-[16%]" />
-                </colgroup>
-                <thead className="bg-slate-50 text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#70849d]">
-                  <tr>
-                    <th className="px-4 py-3">Agent</th>
-                    <th className="px-4 py-3">Email</th>
-                    <th className="px-4 py-3">Mobile</th>
-                    <th className="px-4 py-3">Branch / Organisation</th>
-                    <th className="px-4 py-3">Role</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 bg-white text-sm text-[#22384c]">
-                  {filteredAgents.length ? filteredAgents.map((agent) => {
-                    const statusKey = String(agent?.status || '').trim().toLowerCase()
-                    const statusLabel = AGENT_STATUS_LABELS[statusKey] || agent?.status || 'Active'
-                    const statusClassName = AGENT_STATUS_PILL_CLASS[statusKey] || AGENT_STATUS_PILL_CLASS[AGENT_INVITE_STATUS.ACTIVE]
-                    const workspacePath = `/agency/agents/${encodeURIComponent(agent.id)}`
-                    const organisationLabel = [agent.office, agent.organisationName || 'Bridge Organisation'].filter(Boolean).join(' / ')
-                    return (
-                      <tr
-                        key={`${agent.id}-${agent.organisationId || 'org'}-row`}
-                        className="min-h-[72px] cursor-pointer transition-colors hover:bg-slate-50"
-                        onClick={() => navigate(workspacePath)}
-                      >
-                        <td className="px-4 py-4">
-                          <div className="flex min-w-0 items-center gap-3">
-                            <span className="inline-flex h-10 w-10 flex-none items-center justify-center rounded-full border border-[#d7e2ef] bg-[#f8fbff] text-sm font-semibold text-[#245076]">
-                              {getAgentInitials(agent)}
-                            </span>
-                            <div className="min-w-0">
-                              <p className="truncate font-semibold text-[#142132]">{agent.name || 'Agent'}</p>
-                              <p className="truncate text-xs text-[#60758d]">{formatRoleLabel(agent.role)}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="truncate px-4 py-4">{agent.email || '—'}</td>
-                        <td className="truncate px-4 py-4">{agent.phone || '—'}</td>
-                        <td className="truncate px-4 py-4">{organisationLabel}</td>
-                        <td className="truncate px-4 py-4">{formatRoleLabel(agent.role)}</td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClassName}`}>
-                            {statusLabel}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex flex-wrap justify-end gap-1.5">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="secondary"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                navigate(workspacePath)
-                              }}
-                            >
-                              View
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="secondary"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                openRoleEditor(agent)
-                              }}
-                            >
-                              Role
-                            </Button>
-                            {agent.inviteId ? (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="secondary"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  void handleResendInvite(agent)
-                                }}
-                              >
-                                Resend
-                              </Button>
-                            ) : null}
-                            {agent.inviteToken ? (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="secondary"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  void handleCopyInviteLink(agent)
-                                }}
-                              >
-                                Copy
-                              </Button>
-                            ) : null}
-                            {statusKey === AGENT_INVITE_STATUS.ACTIVE ? (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="secondary"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  openConfirm('deactivate', agent)
-                                }}
-                              >
-                                Deactivate
-                              </Button>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  }) : (
-                    <tr>
-                      <td colSpan={7} className="px-6 py-12 text-center">
-                        <div className="mx-auto max-w-md">
-                          <p className="text-base font-semibold text-[#142132]">No agents added yet.</p>
-                          <p className="mt-2 text-sm leading-6 text-[#647a92]">
-                            Invite agents to start managing transactions, listings, and pipeline activity across your agency.
-                          </p>
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="mt-4"
-                            onClick={() => {
-                              resetInviteForm()
-                              setInviteModalOpen(true)
-                            }}
-                          >
-                            + Invite Agent
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </>
+          <AgentInsightPanel
+            topPerformers={topPerformers}
+            recentAgents={recentAgents}
+            attentionAgents={attentionAgents}
+          />
+        </section>
       ) : null}
 
       {!loading && !canManageDirectory ? (

@@ -10,7 +10,7 @@ function normalizeBrandText(value) {
 }
 
 function resolveCommercialBranding(snapshot) {
-  const onboarding = snapshot?.onboarding || {}
+  const onboarding = snapshot?.onboarding || snapshot?.organisationSettings?.agencyOnboarding || {}
   const organisation = snapshot?.organisation || {}
   const branding = onboarding?.branding || {}
   const agencyInformation = onboarding?.agencyInformation || {}
@@ -36,9 +36,15 @@ function CommercialBranding({ compact = false }) {
   const [logoLoadFailed, setLogoLoadFailed] = useState(false)
 
   const loadBranding = useCallback(async () => {
-    const [settingsResult, contextResult] = await Promise.allSettled([fetchAgencyOnboardingSettings(), fetchOrganisationSettings()])
-    const settings = settingsResult.status === 'fulfilled' ? settingsResult.value : null
-    const context = contextResult.status === 'fulfilled' ? contextResult.value : null
+    const contextResult = await Promise.allSettled([fetchOrganisationSettings()])
+    const context = contextResult[0].status === 'fulfilled' ? contextResult[0].value : null
+    let settings = null
+
+    if (context?.persisted) {
+      const settingsResult = await Promise.allSettled([fetchAgencyOnboardingSettings()])
+      settings = settingsResult[0].status === 'fulfilled' ? settingsResult[0].value : null
+    }
+
     const snapshot = settings || context
 
     if (snapshot) {

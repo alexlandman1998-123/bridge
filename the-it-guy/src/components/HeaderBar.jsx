@@ -1,8 +1,9 @@
-import { Bell, ChevronDown, FilePlus2, Home, Plus, Search, UserPlus, Users } from 'lucide-react'
+import { Bell, ChevronDown, Search } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchMyNotifications, markAllNotificationsRead, markNotificationRead } from '../lib/api'
+import QuickCreateDropdown from './QuickCreateDropdown'
 import Button from './ui/Button'
 
 function getPageTitle(pathname, stateTitle, role) {
@@ -102,7 +103,6 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
   const location = useLocation()
   const { role, rolePreviewActive, setActivePersona, personaOptions, agencyWorkflowMode } = useWorkspace()
   const [open, setOpen] = useState(false)
-  const [createOpen, setCreateOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notificationState, setNotificationState] = useState({
     notifications: [],
@@ -111,7 +111,6 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
     error: '',
   })
   const dropdownRef = useRef(null)
-  const createRef = useRef(null)
   const notificationsRef = useRef(null)
 
   const loadNotifications = useCallback(async ({ unreadOnly = false } = {}) => {
@@ -146,10 +145,6 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
 
       if (notificationsRef.current && !notificationsRef.current.contains(event.target)) {
         setNotificationsOpen(false)
-      }
-
-      if (createRef.current && !createRef.current.contains(event.target)) {
-        setCreateOpen(false)
       }
     }
 
@@ -279,6 +274,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
   const hideSearchInHeader = role === 'attorney' && (location.pathname === '/dashboard' || location.pathname === '/')
   const developerDashboardHeaderOnly = role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/')
   const userInitials = getUserInitials(user)
+  const isAgentsDirectoryRoute = location.pathname === '/agency/agents'
   const canCreateDevelopment = role === 'developer'
   const canCreateTransaction = role === 'developer' || role === 'agent' || role === 'attorney'
   const canCreateListing = role === 'agent'
@@ -318,21 +314,6 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
       },
     })
   }
-
-  const createMenuItems = [
-    { label: 'New Listing', helper: 'Capture a mandate-ready listing', icon: Home, action: handleNewListing },
-    { label: 'New Transaction', helper: 'Start a shared workflow', icon: FilePlus2, action: handleNewTransaction },
-    { label: 'New Lead', helper: 'Add a buyer or seller lead', icon: UserPlus, action: () => navigate('/pipeline/leads') },
-    { label: 'New Client', helper: 'Create a client profile', icon: Users, action: () => navigate('/clients') },
-  ]
-  const premiumCreateMenuItems = isPremiumAttorneyOperations
-    ? [
-        { label: 'New Matter', helper: 'Open a new conveyancing instruction', icon: FilePlus2, action: handleNewTransaction },
-        { label: 'Assign Matter', helper: 'Review matter allocation and ownership', icon: Users, action: () => navigate('/attorney/dashboard') },
-        { label: 'Open Scheduling', helper: 'Coordinate signing appointments', icon: Bell, action: () => navigate('/attorney/scheduling') },
-        { label: 'Generate Report', helper: 'Prepare firm operations reporting', icon: Home, action: () => navigate('/reports') },
-      ]
-    : createMenuItems
 
   const notificationsControl = (
     <div className="relative flex-none" ref={notificationsRef}>
@@ -482,6 +463,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
           </select>
           {rolePreviewActive ? <em>Preview</em> : null}
         </div>
+        <QuickCreateDropdown />
         {notificationsControl}
         {avatarControl}
       </header>
@@ -532,43 +514,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
             <kbd>⌘K</kbd>
           </div>
 
-          <div className="relative shrink-0" ref={createRef}>
-            <button
-              type="button"
-              className="ui-shell-create-button"
-              onClick={() => setCreateOpen((previous) => !previous)}
-            >
-              <Plus size={16} />
-              <span>Create</span>
-              <ChevronDown size={14} />
-            </button>
-            {createOpen ? (
-              <div className="ui-surface-floating absolute right-0 top-[calc(100%+12px)] z-40 w-[280px] p-2">
-                {premiumCreateMenuItems.map((item) => {
-                  const Icon = item.icon
-                  return (
-                    <button
-                      key={item.label}
-                      type="button"
-                      className="flex w-full items-start gap-3 rounded-[16px] px-3 py-3 text-left transition hover:bg-surfaceAlt"
-                      onClick={() => {
-                        setCreateOpen(false)
-                        item.action()
-                      }}
-                    >
-                      <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-[#edf4fb] text-[#24465d]">
-                        <Icon size={16} />
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block text-sm font-semibold text-textStrong">{item.label}</span>
-                        <span className="mt-0.5 block text-xs font-medium text-textMuted">{item.helper}</span>
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            ) : null}
-          </div>
+          <QuickCreateDropdown />
 
           {notificationsControl}
           {avatarControl}
@@ -586,19 +532,31 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
       ) : null}
 
       <div className="ui-shell-actions">
-        {canCreateDevelopment ? (
+        <QuickCreateDropdown />
+
+        {isAgentsDirectoryRoute ? (
+          <Button
+            variant="secondary"
+            className="shrink-0"
+            onClick={() => window.dispatchEvent(new Event('itg:open-add-agent'))}
+          >
+            + Add Agent
+          </Button>
+        ) : null}
+
+        {!isAgentsDirectoryRoute && canCreateDevelopment ? (
           <Button variant="secondary" className="shrink-0" onClick={handleNewDevelopment}>
             + New Development
           </Button>
         ) : null}
 
-        {canCreateListing ? (
+        {!isAgentsDirectoryRoute && canCreateListing ? (
           <Button variant="secondary" className="shrink-0" onClick={handleNewListing}>
             + New Listing
           </Button>
         ) : null}
 
-        {canCreateTransaction ? (
+        {!isAgentsDirectoryRoute && canCreateTransaction ? (
           <Button
             variant="primary"
             className="shrink-0"
@@ -608,38 +566,45 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
           </Button>
         ) : null}
 
-        <div
-          className="ui-shell-role-switch min-h-[42px] min-w-[212px] shrink-0"
-          aria-label="Active persona"
-        >
-          <span>View</span>
-          <select
-            className="flex-1"
-            value={role}
-            onChange={(event) => {
-              setActivePersona(event.target.value)
-              navigate('/dashboard')
-            }}
+        {!isAgentsDirectoryRoute ? (
+          <div
+            className="ui-shell-role-switch min-h-[42px] min-w-[212px] shrink-0"
+            aria-label="Active persona"
           >
-            {personaOptions.map((option) => (
-              <option value={option.value} key={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          {rolePreviewActive ? <em>Preview</em> : null}
-        </div>
+            <span>View</span>
+            <select
+              className="flex-1"
+              value={role}
+              onChange={(event) => {
+                setActivePersona(event.target.value)
+                navigate('/dashboard')
+              }}
+            >
+              {personaOptions.map((option) => (
+                <option value={option.value} key={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            {rolePreviewActive ? <em>Preview</em> : null}
+          </div>
+        ) : null}
 
         {!isClientRole && !hideSearchInHeader ? (
           <div
-            className="ui-shell-search min-h-[42px] min-w-[280px]"
+            className={`ui-shell-search min-h-[42px] ${isAgentsDirectoryRoute ? 'min-w-[320px] xl:min-w-[520px]' : 'min-w-[280px]'}`}
             aria-label="Search"
           >
             <Search size={16} className="shrink-0 text-textSoft" />
             <input
               className="min-w-0 flex-1 border-0 bg-transparent p-0 text-secondary text-textStrong outline-none"
               type="search"
-              placeholder="Search unit, buyer, stage..."
+              placeholder={isAgentsDirectoryRoute ? 'Search agents by name, email, branch...' : 'Search unit, buyer, stage...'}
+              onChange={(event) => {
+                if (isAgentsDirectoryRoute) {
+                  window.dispatchEvent(new CustomEvent('itg:agents-search', { detail: { value: event.target.value } }))
+                }
+              }}
             />
           </div>
         ) : (

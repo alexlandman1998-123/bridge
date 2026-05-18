@@ -79,16 +79,28 @@ const Clients = lazy(() => import('./pages/Clients'))
 const ConveyancerDevelopments = lazy(() => import('./pages/ConveyancerDevelopments'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const CommercialLayout = lazy(() => import('./modules/commercial/components/CommercialLayout'))
+const CommercialActivityPage = lazy(() => import('./modules/commercial/pages/CommercialActivityPage'))
+const CommercialBrokerPerformancePage = lazy(() => import('./modules/commercial/pages/CommercialBrokerPerformancePage'))
+const CommercialClientsPage = lazy(() => import('./modules/commercial/pages/CommercialClientsPage'))
 const CommercialDashboard = lazy(() => import('./modules/commercial/pages/CommercialDashboard'))
 const CommercialDealsPipelinePage = lazy(() => import('./modules/commercial/pages/CommercialDealsPipelinePage'))
 const CommercialDealsPage = lazy(() => import('./modules/commercial/pages/CommercialDealsPage'))
+const CommercialDocumentsPage = lazy(() => import('./modules/commercial/pages/CommercialDocumentsPage'))
+const CommercialExpiringOccupiersPage = lazy(() => import('./modules/commercial/pages/CommercialExpiringOccupiersPage'))
+const CommercialHeadsOfTermsPage = lazy(() => import('./modules/commercial/pages/CommercialHeadsOfTermsPage'))
 const CommercialLandlordsPage = lazy(() => import('./modules/commercial/pages/CommercialLandlordsPage'))
+const CommercialLeasingDealsPage = lazy(() => import('./modules/commercial/pages/CommercialLeasingDealsPage'))
 const CommercialLeasesPage = lazy(() => import('./modules/commercial/pages/CommercialLeasesPage'))
+const CommercialLeaseExpiryWatchPage = lazy(() => import('./modules/commercial/pages/CommercialLeaseExpiryWatchPage'))
+const CommercialMarketIntelligencePage = lazy(() => import('./modules/commercial/pages/CommercialMarketIntelligencePage'))
 const CommercialPropertiesPage = lazy(() => import('./modules/commercial/pages/CommercialPropertiesPage'))
 const CommercialReportsPage = lazy(() => import('./modules/commercial/pages/CommercialReportsPage'))
 const CommercialRequirementsPipelinePage = lazy(() => import('./modules/commercial/pages/CommercialRequirementsPipelinePage'))
 const CommercialRequirementsPage = lazy(() => import('./modules/commercial/pages/CommercialRequirementsPage'))
-const CommercialTenantsPage = lazy(() => import('./modules/commercial/pages/CommercialTenantsPage'))
+const CommercialSalesDealsPage = lazy(() => import('./modules/commercial/pages/CommercialSalesDealsPage'))
+const CommercialSettingsPage = lazy(() => import('./modules/commercial/pages/CommercialSettingsPage'))
+const CommercialVacanciesPage = lazy(() => import('./modules/commercial/pages/CommercialVacanciesPage'))
+const CommercialViewingsPage = lazy(() => import('./modules/commercial/pages/CommercialViewingsPage'))
 const DeveloperIntelligenceDashboardPage = lazy(() => import('./pages/developer-intelligence/DashboardPage'))
 const DeveloperIntelligenceFeasibilityPage = lazy(() => import('./pages/developer-intelligence/FeasibilityPage'))
 const DeveloperIntelligenceGrowthNetworkPage = lazy(() => import('./pages/developer-intelligence/GrowthNetworkPage'))
@@ -973,15 +985,30 @@ function AppRoutes() {
               <Route path="/commercial" element={<AppErrorBoundary scope="commercial-workspace" title="Commercial workspace failed to render"><CommercialLayout /></AppErrorBoundary>}>
                 <Route index element={<Navigate to="/commercial/dashboard" replace />} />
                 <Route path="dashboard" element={<CommercialDashboard />} />
-                <Route path="tenants" element={<CommercialTenantsPage />} />
+                <Route path="tenants" element={<Navigate to="/commercial/clients" replace />} />
+                <Route path="clients" element={<CommercialClientsPage />} />
+                <Route path="expiring-occupiers" element={<CommercialExpiringOccupiersPage />} />
+                <Route path="vacancies" element={<CommercialVacanciesPage />} />
                 <Route path="landlords" element={<CommercialLandlordsPage />} />
                 <Route path="properties" element={<CommercialPropertiesPage />} />
                 <Route path="requirements" element={<CommercialRequirementsPage />} />
                 <Route path="requirements/pipeline" element={<CommercialRequirementsPipelinePage />} />
-                <Route path="deals" element={<CommercialDealsPage />} />
-                <Route path="deals/pipeline" element={<CommercialDealsPipelinePage />} />
+                <Route path="deals" element={<Navigate to="/commercial/deals/leasing" replace />} />
+                <Route path="deals/pipeline" element={<Navigate to="/commercial/deals/leasing" replace />} />
+                <Route path="deals/overview" element={<CommercialDealsPage />} />
+                <Route path="deals/leasing" element={<CommercialLeasingDealsPage />} />
+                <Route path="deals/sales" element={<CommercialSalesDealsPage />} />
+                <Route path="deals/leasing/pipeline" element={<CommercialDealsPipelinePage />} />
                 <Route path="leases" element={<CommercialLeasesPage />} />
+                <Route path="viewings" element={<CommercialViewingsPage />} />
+                <Route path="heads-of-terms" element={<CommercialHeadsOfTermsPage />} />
                 <Route path="reports" element={<CommercialReportsPage />} />
+                <Route path="lease-expiry-watch" element={<CommercialLeaseExpiryWatchPage />} />
+                <Route path="market-intelligence" element={<CommercialMarketIntelligencePage />} />
+                <Route path="broker-performance" element={<CommercialBrokerPerformancePage />} />
+                <Route path="documents" element={<CommercialDocumentsPage />} />
+                <Route path="activity" element={<CommercialActivityPage />} />
+                <Route path="settings" element={<CommercialSettingsPage />} />
                 <Route path="*" element={<Navigate to="/commercial/dashboard" replace />} />
               </Route>
               <Route path="/setup" element={<PostDashboardSetup />} />

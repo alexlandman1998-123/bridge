@@ -14,6 +14,7 @@ import {
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
+import QuickCreateDropdown from '../components/QuickCreateDropdown'
 import SummaryCards from '../components/SummaryCards'
 import ConveyancerDashboardPage from '../components/ConveyancerDashboardPage'
 import PrincipalDashboard from './PrincipalDashboard'
@@ -3365,12 +3366,15 @@ function renderActiveTransactionsBlock({
                     <p className="mt-1 text-[0.9rem] text-[#6b7d93]">
                       {isPrincipalAgentView
                         ? 'Organisation-wide visibility across branches, agents, and transaction performance.'
-                        : 'Personal execution workspace focused on your assigned pipeline and transactions.'}
+                      : 'Personal execution workspace focused on your assigned pipeline and transactions.'}
                     </p>
                   </div>
-                  <span className={DASHBOARD_CHIP_CLASS}>
-                    {isPrincipalAgentView ? 'Principal / Owner View' : 'Assigned Agent View'}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <QuickCreateDropdown />
+                    <span className={DASHBOARD_CHIP_CLASS}>
+                      {isPrincipalAgentView ? 'Principal / Owner View' : 'Assigned Agent View'}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center gap-2">

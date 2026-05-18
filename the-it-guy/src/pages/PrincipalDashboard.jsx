@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import QuickCreateDropdown from '../components/QuickCreateDropdown'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { getPrincipalDashboardData, PRINCIPAL_DASHBOARD_DATE_PRESETS } from '../services/principalDashboardService'
@@ -226,6 +227,7 @@ function PrincipalDashboardHeader({
   return (
     <header className="flex justify-end">
       <div className="flex flex-wrap items-center gap-2.5">
+        <QuickCreateDropdown />
         <FilterDropdown
           icon={LayoutGrid}
           value={selectedWorkspaceId}

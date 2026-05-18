@@ -1,12 +1,13 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import WorkspaceSwitcher from '../../../components/WorkspaceSwitcher'
-import { COMMERCIAL_NAV_ITEMS } from '../commercialNavigation'
+import { COMMERCIAL_DASHBOARD_NAV_ITEM, COMMERCIAL_NAV_GROUPS } from '../commercialNavigation'
 import CommercialBranding from './CommercialBranding'
 import CommercialSidebar from './CommercialSidebar'
 
 function CommercialLayout() {
   const location = useLocation()
   const navigate = useNavigate()
+  const mobileNavItems = [COMMERCIAL_DASHBOARD_NAV_ITEM, ...COMMERCIAL_NAV_GROUPS.flatMap((group) => group.items)]
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#f6f8fb] text-[#102236]">
@@ -23,7 +24,7 @@ function CommercialLayout() {
             </div>
           </div>
           <nav className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Commercial mobile navigation">
-            {COMMERCIAL_NAV_ITEMS.map((item) => {
+            {mobileNavItems.map((item) => {
               const Icon = item.icon
               return (
                 <NavLink

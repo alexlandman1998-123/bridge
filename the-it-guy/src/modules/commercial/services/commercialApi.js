@@ -8,6 +8,7 @@ const TABLES = {
   requirements: 'commercial_requirements',
   deals: 'commercial_deals',
   leases: 'commercial_leases',
+  vacancies: 'commercial_vacancies',
   activity: 'commercial_activity',
   documents: 'commercial_documents',
   documentRequests: 'commercial_document_requests',
@@ -27,6 +28,8 @@ const SELECTS = {
     'id, organisation_id, created_at, updated_at, created_by, updated_by, status, notes, deal_name, deal_type, requirement_id, tenant_id, landlord_id, property_id, assigned_broker, stage, deal_value, estimated_commission, expected_close_date, probability_percentage',
   leases:
     'id, organisation_id, created_at, updated_at, created_by, updated_by, status, notes, deal_id, tenant_id, landlord_id, property_id, lease_start_date, lease_end_date, occupation_date, lease_term_months, monthly_rental, rental_per_m2, escalation_percentage, deposit_amount, tenant_installation_allowance, rent_free_period_months, renewal_option, renewal_notice_date',
+  vacancies:
+    'id, organisation_id, created_at, updated_at, created_by, updated_by, status, notes, property_id, landlord_id, vacancy_name, unit_or_floor, available_area_m2, asking_rental, availability_date, broker_assignment, incentives, fit_out_allowance',
   activity:
     'id, organisation_id, entity_type, entity_id, activity_type, title, body, metadata, created_at, created_by',
   documents:
@@ -269,6 +272,7 @@ export const getCommercialProperties = (organisationId) => listCommercialRecords
 export const getCommercialRequirements = (organisationId) => listCommercialRecords('requirements', organisationId)
 export const getCommercialDeals = (organisationId) => listCommercialRecords('deals', organisationId)
 export const getCommercialLeases = (organisationId) => listCommercialRecords('leases', organisationId)
+export const getCommercialVacancies = (organisationId) => listCommercialRecords('vacancies', organisationId, { order: 'availability_date', ascending: true })
 export const getCommercialAllDocuments = (organisationId) => listCommercialRecords('documents', organisationId)
 export const getCommercialAllDocumentRequests = (organisationId) => listCommercialRecords('documentRequests', organisationId)
 export const getCommercialAllHeadsOfTerms = (organisationId) => listCommercialRecords('headsOfTerms', organisationId)
@@ -279,6 +283,7 @@ export const createCommercialProperty = (payload) => createCommercialRecord('pro
 export const createCommercialRequirement = (payload) => createCommercialRecord('requirements', payload)
 export const createCommercialDeal = (payload) => createCommercialRecord('deals', payload)
 export const createCommercialLease = (payload) => createCommercialRecord('leases', payload)
+export const createCommercialVacancy = (payload) => createCommercialRecord('vacancies', payload)
 
 export const updateCommercialLandlord = (id, payload) => updateCommercialRecord('landlords', id, payload)
 export const updateCommercialTenant = (id, payload) => updateCommercialRecord('tenants', id, payload)
@@ -286,6 +291,7 @@ export const updateCommercialProperty = (id, payload) => updateCommercialRecord(
 export const updateCommercialRequirement = (id, payload) => updateCommercialRecord('requirements', id, payload)
 export const updateCommercialDeal = (id, payload) => updateCommercialRecord('deals', id, payload)
 export const updateCommercialLease = (id, payload) => updateCommercialRecord('leases', id, payload)
+export const updateCommercialVacancy = (id, payload) => updateCommercialRecord('vacancies', id, payload)
 
 export const archiveCommercialLandlord = (id) => archiveCommercialRecord('landlords', id)
 export const archiveCommercialTenant = (id) => archiveCommercialRecord('tenants', id)
@@ -293,6 +299,7 @@ export const archiveCommercialProperty = (id) => archiveCommercialRecord('proper
 export const archiveCommercialRequirement = (id) => archiveCommercialRecord('requirements', id)
 export const archiveCommercialDeal = (id) => archiveCommercialRecord('deals', id)
 export const archiveCommercialLease = (id) => archiveCommercialRecord('leases', id)
+export const archiveCommercialVacancy = (id) => archiveCommercialRecord('vacancies', id)
 
 export async function getCommercialDocuments(entityType, entityId, organisationId) {
   const resolvedOrganisationId = await resolveOrganisationId(organisationId)
@@ -641,6 +648,25 @@ export async function getCommercialActivity({ organisationId, entityType, entity
     .eq('entity_type', normalizedEntityType)
     .eq('entity_id', normalizedEntityId)
     .order('created_at', { ascending: false })
+
+  if (query.error) {
+    if (isMissingCommercialTableError(query.error)) return []
+    throw query.error
+  }
+
+  return query.data || []
+}
+
+export async function getCommercialRecentActivity(organisationId, limit = 20) {
+  const resolvedOrganisationId = await resolveOrganisationId(organisationId)
+  if (!resolvedOrganisationId || !isSupabaseConfigured || !supabase) return []
+
+  const query = await supabase
+    .from(TABLES.activity)
+    .select(SELECTS.activity)
+    .eq('organisation_id', resolvedOrganisationId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
 
   if (query.error) {
     if (isMissingCommercialTableError(query.error)) return []
