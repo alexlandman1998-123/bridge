@@ -3251,7 +3251,6 @@ function renderActiveTransactionsBlock({
       <PrincipalDashboard
         agencyId={organisationIdForAppointments}
         workspaceId={workspace.id}
-        onSwitchToAgentView={() => setAgentViewOverride('agent')}
       />
     )
   }

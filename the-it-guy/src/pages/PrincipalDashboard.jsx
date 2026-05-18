@@ -506,7 +506,7 @@ function RecentActivityFeed({ rows }) {
   )
 }
 
-function PrincipalDashboard({ agencyId = '', workspaceId = '', onSwitchToAgentView = null }) {
+function PrincipalDashboard({ agencyId = '', workspaceId = '' }) {
   const { workspace, profile } = useWorkspace()
   const [dateRange, setDateRange] = useState('this_month')
   const [resolvedAgencyId, setResolvedAgencyId] = useState(agencyId)
@@ -581,12 +581,6 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', onSwitchToAgentVi
           workspaceLabel={workspace?.id === 'all' ? 'All Workspaces' : workspace?.name}
           profile={profile}
         />
-
-        {onSwitchToAgentView ? (
-          <button type="button" onClick={onSwitchToAgentView} className="w-fit text-xs font-semibold text-[#667085] underline-offset-4 hover:text-[#1f4f78] hover:underline">
-            Switch to assigned agent view
-          </button>
-        ) : null}
 
         {error ? (
           <section className="rounded-[18px] border border-[#f7c9c9] bg-[#fff5f5] p-4 text-sm text-[#b42318]">
