@@ -1,13 +1,17 @@
 function AttorneyKpiCard({ icon: Icon, label, value, helperText = '', trendText = '' }) {
   return (
-    <div className="panel card-tier-standard" style={{ display: 'grid', gap: '0.45rem', minHeight: '112px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.6rem' }}>
-        <p className="status-message" style={{ margin: 0, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{label}</p>
-        {Icon ? <Icon size={16} color="#4f5f79" /> : null}
+    <div className="grid min-h-[128px] gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+        {Icon ? (
+          <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-500">
+            <Icon size={17} />
+          </span>
+        ) : null}
       </div>
-      <p style={{ margin: 0, fontSize: '1.7rem', fontWeight: 700, lineHeight: 1.05 }}>{value}</p>
-      {helperText ? <p className="status-message" style={{ margin: 0 }}>{helperText}</p> : null}
-      {trendText ? <p className="status-message" style={{ margin: 0 }}>{trendText}</p> : null}
+      <p className="text-3xl font-semibold leading-none text-slate-950">{value}</p>
+      {helperText ? <p className="text-sm text-slate-600">{helperText}</p> : null}
+      {trendText ? <p className="text-sm text-slate-500">{trendText}</p> : null}
     </div>
   )
 }

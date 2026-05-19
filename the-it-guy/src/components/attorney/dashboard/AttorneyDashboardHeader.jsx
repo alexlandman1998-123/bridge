@@ -2,16 +2,16 @@ import AttorneyFirmIdentityCard from '../branding/AttorneyFirmIdentityCard'
 
 function AttorneyDashboardHeader({ firm, currentUserRole, activeDepartmentsCount = 0, activeMembersCount = 0 }) {
   return (
-    <div style={{ display: 'grid', gap: '0.9rem', gridTemplateColumns: 'minmax(0, 1fr) minmax(260px, 320px)' }}>
-      <div className="panel card-tier-standard" style={{ display: 'grid', gap: '0.35rem' }}>
-        <p className="status-message" style={{ margin: 0, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Firm Overview</p>
-        <h2 style={{ margin: 0 }}>Attorney Management Dashboard</h2>
-        <p className="status-message" style={{ margin: 0 }}>
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+      <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Firm Overview</p>
+        <h2 className="text-2xl font-semibold text-slate-950">Attorney Management Dashboard</h2>
+        <p className="max-w-3xl text-sm leading-6 text-slate-600">
           Track active matters, department workload, and key conveyancing milestones across your firm.
         </p>
       </div>
 
-      <div style={{ display: 'grid', gap: '0.5rem' }}>
+      <div className="grid gap-3">
         <AttorneyFirmIdentityCard
           firm={firm}
           title="Firm Identity"
@@ -21,14 +21,14 @@ function AttorneyDashboardHeader({ firm, currentUserRole, activeDepartmentsCount
           compactMode
         />
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.5rem' }}>
-          <div className="panel card-tier-soft" style={{ padding: '0.55rem 0.65rem' }}>
-            <p className="status-message" style={{ margin: 0 }}>Active departments</p>
-            <p style={{ margin: 0, fontWeight: 700 }}>{activeDepartmentsCount}</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium text-slate-500">Active departments</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-950">{activeDepartmentsCount}</p>
           </div>
-          <div className="panel card-tier-soft" style={{ padding: '0.55rem 0.65rem' }}>
-            <p className="status-message" style={{ margin: 0 }}>Active members</p>
-            <p style={{ margin: 0, fontWeight: 700 }}>{activeMembersCount}</p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium text-slate-500">Active members</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-950">{activeMembersCount}</p>
           </div>
         </div>
       </div>

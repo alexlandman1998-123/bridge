@@ -21,37 +21,37 @@ function DepartmentStatusPill({ status = '' }) {
 
 function AttorneyDepartmentOverview({ departments = [] }) {
   return (
-    <section className="panel card-tier-standard" style={{ display: 'grid', gap: '0.75rem' }}>
-      <h3 style={{ margin: 0 }}>Department Overview</h3>
+    <section className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <h3 className="text-base font-semibold text-slate-950">Department Overview</h3>
       {departments.length ? (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] border-collapse">
+            <thead className="border-b border-slate-200">
               <tr>
-                <th style={{ textAlign: 'left', padding: '0.48rem 0.3rem' }}>Department</th>
-                <th style={{ textAlign: 'left', padding: '0.48rem 0.3rem' }}>Type</th>
-                <th style={{ textAlign: 'left', padding: '0.48rem 0.3rem' }}>Active Matters</th>
-                <th style={{ textAlign: 'left', padding: '0.48rem 0.3rem' }}>Assigned Staff</th>
-                <th style={{ textAlign: 'left', padding: '0.48rem 0.3rem' }}>Delayed</th>
-                <th style={{ textAlign: 'left', padding: '0.48rem 0.3rem' }}>Status</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Department</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Type</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Active Matters</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Assigned Staff</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Delayed</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Status</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-100">
               {departments.map((department) => (
                 <tr key={department.departmentId}>
-                  <td style={{ padding: '0.48rem 0.3rem', fontWeight: 600 }}>{department.departmentName}</td>
-                  <td style={{ padding: '0.48rem 0.3rem' }}>{department.departmentType}</td>
-                  <td style={{ padding: '0.48rem 0.3rem' }}>{department.activeMatters}</td>
-                  <td style={{ padding: '0.48rem 0.3rem' }}>{department.assignedStaff}</td>
-                  <td style={{ padding: '0.48rem 0.3rem' }}>{department.delayedMatters}</td>
-                  <td style={{ padding: '0.48rem 0.3rem' }}><DepartmentStatusPill status={department.status} /></td>
+                  <td className="px-3 py-3 text-sm font-semibold text-slate-950">{department.departmentName}</td>
+                  <td className="px-3 py-3 text-sm text-slate-600">{department.departmentType}</td>
+                  <td className="px-3 py-3 text-sm text-slate-700">{department.activeMatters}</td>
+                  <td className="px-3 py-3 text-sm text-slate-700">{department.assignedStaff}</td>
+                  <td className="px-3 py-3 text-sm text-slate-700">{department.delayedMatters}</td>
+                  <td className="px-3 py-3"><DepartmentStatusPill status={department.status} /></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       ) : (
-        <p className="status-message" style={{ margin: 0 }}>Departments will appear here once your firm setup is complete.</p>
+        <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Departments will appear here once your firm setup is complete.</p>
       )}
     </section>
   )

@@ -39,6 +39,10 @@ function AttorneyDashboardPage() {
   const [error, setError] = useState('')
   const [dashboard, setDashboard] = useState(EMPTY_DASHBOARD)
 
+  const shellClass = 'mx-auto grid w-full max-w-[1680px] gap-4 px-4 py-5 sm:px-5 lg:px-6'
+  const stateCardClass = 'rounded-2xl border border-slate-200 bg-white p-5 shadow-sm'
+  const mutedTextClass = 'text-sm text-slate-600'
+
   useEffect(() => {
     let active = true
 
@@ -71,9 +75,9 @@ function AttorneyDashboardPage() {
 
   if (permissionsState.loading) {
     return (
-      <section className="page">
-        <div className="panel card-tier-standard">
-          <p className="status-message" style={{ margin: 0 }}>Loading attorney permissions…</p>
+      <section className={shellClass}>
+        <div className={stateCardClass}>
+          <p className={mutedTextClass}>Loading attorney permissions...</p>
         </div>
       </section>
     )
@@ -81,9 +85,9 @@ function AttorneyDashboardPage() {
 
   if (permissionsState.error) {
     return (
-      <section className="page">
-        <div className="panel card-tier-standard">
-          <p className="status-message" style={{ margin: 0, color: '#b42318' }}>{permissionsState.error}</p>
+      <section className={shellClass}>
+        <div className={stateCardClass}>
+          <p className="text-sm text-red-700">{permissionsState.error}</p>
         </div>
       </section>
     )
@@ -91,9 +95,9 @@ function AttorneyDashboardPage() {
 
   if (permissionsState.membership && !permissionsState.membership.isActive) {
     return (
-      <section className="page">
-        <div className="panel card-tier-standard">
-          <p className="status-message" style={{ margin: 0 }}>
+      <section className={shellClass}>
+        <div className={stateCardClass}>
+          <p className={mutedTextClass}>
             {permissionsState.membership.status === 'suspended'
               ? 'Your access to this firm has been suspended. Please contact your firm administrator.'
               : 'You are not an active member of this attorney firm.'}
@@ -105,9 +109,9 @@ function AttorneyDashboardPage() {
 
   if (loading) {
     return (
-      <section className="page">
-        <div className="panel card-tier-standard">
-          <p className="status-message" style={{ margin: 0 }}>Loading attorney management dashboard…</p>
+      <section className={shellClass}>
+        <div className={stateCardClass}>
+          <p className={mutedTextClass}>Loading attorney management dashboard...</p>
         </div>
       </section>
     )
@@ -117,19 +121,19 @@ function AttorneyDashboardPage() {
     const hasProfileFirmLink = Boolean(String(profile?.primaryAttorneyFirmId || '').trim())
 
     return (
-      <section className="page">
-        <div className="panel card-tier-standard" style={{ display: 'grid', gap: '0.75rem' }}>
-          <h2 style={{ margin: 0 }}>Firm Setup Pending</h2>
-          <p className="status-message" style={{ margin: 0 }}>
+      <section className={shellClass}>
+        <div className={`${stateCardClass} grid gap-3`}>
+          <h2 className="text-xl font-semibold text-slate-950">Firm Setup Pending</h2>
+          <p className={mutedTextClass}>
             {hasProfileFirmLink
               ? 'Your profile points to an attorney firm, but we could not load an active firm workspace. Review or repair the firm setup to unlock full workflow access.'
               : 'Your onboarding is complete, but your attorney firm is not configured yet. Continue setup to unlock full workflow access.'}
           </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
-            <Link to="/attorney/onboarding?repair=firm" className="header-secondary-cta">
+          <div className="flex flex-wrap gap-2">
+            <Link to="/attorney/onboarding?repair=firm" className="inline-flex min-h-10 items-center rounded-xl bg-[#10273A] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1F3E57]">
               {hasProfileFirmLink ? 'Repair Firm Setup' : 'Continue Firm Setup'}
             </Link>
-            <Link to="/setup" className="header-secondary-cta">View Setup Status</Link>
+            <Link to="/setup" className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">View Setup Status</Link>
           </div>
         </div>
       </section>
@@ -144,10 +148,10 @@ function AttorneyDashboardPage() {
   const activeMembersCount = (dashboard.members || []).filter((member) => member.status === 'active').length
 
   return (
-    <section className="page" style={{ display: 'grid', gap: '1rem' }}>
+    <section className={shellClass}>
       {error ? (
-        <div className="panel card-tier-standard">
-          <p className="status-message" style={{ margin: 0, color: '#b42318' }}>{error}</p>
+        <div className={stateCardClass}>
+          <p className="text-sm text-red-700">{error}</p>
         </div>
       ) : null}
 
@@ -159,8 +163,8 @@ function AttorneyDashboardPage() {
       />
 
       {permissionsState.canManageFirmSettings ? (
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <Link to="/attorney/firm-settings" className="header-secondary-cta">Manage Firm Settings</Link>
+        <div className="flex justify-end">
+          <Link to="/attorney/firm-settings" className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">Manage Firm Settings</Link>
         </div>
       ) : null}
 

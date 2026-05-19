@@ -26,37 +26,37 @@ function WorkloadStatusPill({ status = '' }) {
 
 function AttorneyStaffWorkload({ rows = [] }) {
   return (
-    <section className="panel card-tier-standard" style={{ display: 'grid', gap: '0.75rem' }}>
-      <h3 style={{ margin: 0 }}>Staff Workload</h3>
+    <section className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <h3 className="text-base font-semibold text-slate-950">Staff Workload</h3>
       {rows.length ? (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] border-collapse">
+            <thead className="border-b border-slate-200">
               <tr>
-                <th style={{ textAlign: 'left', padding: '0.48rem 0.3rem' }}>Staff Member</th>
-                <th style={{ textAlign: 'left', padding: '0.48rem 0.3rem' }}>Role</th>
-                <th style={{ textAlign: 'left', padding: '0.48rem 0.3rem' }}>Department</th>
-                <th style={{ textAlign: 'left', padding: '0.48rem 0.3rem' }}>Assigned Matters</th>
-                <th style={{ textAlign: 'left', padding: '0.48rem 0.3rem' }}>Delayed Matters</th>
-                <th style={{ textAlign: 'left', padding: '0.48rem 0.3rem' }}>Status</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Staff Member</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Role</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Department</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Assigned Matters</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Delayed Matters</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Status</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-100">
               {rows.map((row) => (
                 <tr key={row.memberId}>
-                  <td style={{ padding: '0.48rem 0.3rem', fontWeight: 600 }}>{row.fullName}</td>
-                  <td style={{ padding: '0.48rem 0.3rem' }}>{row.role}</td>
-                  <td style={{ padding: '0.48rem 0.3rem' }}>{row.departmentName}</td>
-                  <td style={{ padding: '0.48rem 0.3rem' }}>{row.assignedMatters}</td>
-                  <td style={{ padding: '0.48rem 0.3rem' }}>{row.delayedMatters}</td>
-                  <td style={{ padding: '0.48rem 0.3rem' }}><WorkloadStatusPill status={row.status} /></td>
+                  <td className="px-3 py-3 text-sm font-semibold text-slate-950">{row.fullName}</td>
+                  <td className="px-3 py-3 text-sm text-slate-600">{row.role}</td>
+                  <td className="px-3 py-3 text-sm text-slate-600">{row.departmentName}</td>
+                  <td className="px-3 py-3 text-sm text-slate-700">{row.assignedMatters}</td>
+                  <td className="px-3 py-3 text-sm text-slate-700">{row.delayedMatters}</td>
+                  <td className="px-3 py-3"><WorkloadStatusPill status={row.status} /></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       ) : (
-        <p className="status-message" style={{ margin: 0 }}>Team members will appear here once they are added to the firm.</p>
+        <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Team members will appear here once they are added to the firm.</p>
       )}
     </section>
   )

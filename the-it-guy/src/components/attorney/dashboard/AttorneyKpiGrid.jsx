@@ -23,9 +23,9 @@ const KPI_CONFIG = [
 
 function AttorneyKpiGrid({ kpis = {} }) {
   return (
-    <section style={{ display: 'grid', gap: '0.8rem' }}>
-      <h3 style={{ margin: 0 }}>Key Metrics</h3>
-      <div style={{ display: 'grid', gap: '0.8rem', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+    <section className="grid gap-3">
+      <h3 className="text-base font-semibold text-slate-950">Key Metrics</h3>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
         {KPI_CONFIG.map((config) => (
           <AttorneyKpiCard
             key={config.key}

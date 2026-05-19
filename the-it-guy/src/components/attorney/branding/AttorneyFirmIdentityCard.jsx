@@ -21,15 +21,13 @@ function AttorneyFirmIdentityCard({
 
   return (
     <section
-      className="panel card-tier-standard"
+      className="grid overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
       style={{
-        display: 'grid',
         gap: compactMode ? '0.55rem' : '0.75rem',
-        overflow: 'hidden',
       }}
     >
       <AttorneyBrandAccent primaryColour={firm?.primary_colour || firm?.primaryColour} secondaryColour={firm?.secondary_colour || firm?.secondaryColour} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+      <div className="flex items-center gap-3">
         <AttorneyFirmLogo
           firmName={firmName}
           logoUrl={firm?.logo_url || firm?.logoUrl}
@@ -38,21 +36,21 @@ function AttorneyFirmIdentityCard({
           size={compactMode ? 40 : 46}
           borderRadius={compactMode ? 10 : 12}
         />
-        <div style={{ minWidth: 0 }}>
-          <p className="status-message" style={{ margin: 0, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
             {title}
           </p>
-          <p style={{ margin: 0, fontWeight: 700, lineHeight: 1.3 }}>{firmName}</p>
-          {subtitle ? <p className="status-message" style={{ margin: 0 }}>{subtitle}</p> : null}
+          <p className="truncate text-base font-semibold leading-snug text-slate-950">{firmName}</p>
+          {subtitle ? <p className="truncate text-sm text-slate-500">{subtitle}</p> : null}
         </div>
       </div>
       {roleLabel ? (
-        <p className="status-message" style={{ margin: 0 }}>
+        <p className="text-sm text-slate-600">
           {roleLabel}
         </p>
       ) : null}
       {contactSummary && contactLine ? (
-        <p className="status-message" style={{ margin: 0 }}>
+        <p className="truncate text-sm text-slate-600">
           {contactLine}
         </p>
       ) : null}
