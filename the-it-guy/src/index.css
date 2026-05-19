@@ -318,6 +318,12 @@
     justify-content: flex-end;
   }
 
+  .ui-shell-header-attorney-dashboard {
+    min-height: 64px;
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+
   .ui-shell-header-premium {
     display: grid;
     grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.65fr);
@@ -1142,6 +1148,22 @@
 
     .ui-shell-create-button {
       width: 100%;
+    }
+
+    .ui-shell-header-attorney-dashboard {
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+
+    .ui-shell-header-attorney-dashboard > div {
+      width: 100%;
+      flex-wrap: wrap;
+      justify-content: flex-start;
+    }
+
+    .ui-shell-header-attorney-dashboard .ui-shell-search {
+      min-width: 0;
+      max-width: none;
     }
 
     .dashboard-grid {

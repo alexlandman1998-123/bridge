@@ -1,4 +1,4 @@
-import { Bell, ChevronDown, Search } from 'lucide-react'
+import { Bell, ChevronDown, Search, Users } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -96,6 +96,15 @@ function formatNotificationTimestamp(value) {
 
   return date.toLocaleDateString()
 }
+
+const ATTORNEY_DASHBOARD_ROLE_VIEWS = [
+  { value: 'all', label: 'All Matters' },
+  { value: 'transfer', label: 'Transfer Matters' },
+  { value: 'bond', label: 'Bond Matters' },
+  { value: 'cancellation', label: 'Cancellation Matters' },
+  { value: 'shared', label: 'Shared Matters' },
+  { value: 'full-service', label: 'Full-Service Matters' },
+]
 
 function HeaderBar({ onLogout, user }) {
   const navigate = useNavigate()
@@ -278,6 +287,11 @@ function HeaderBar({ onLogout, user }) {
   const agentDashboardOwnsHeader =
     role === 'agent' &&
     (location.pathname === '/dashboard' || location.pathname === '/')
+  const isAttorneyDashboardRoute = role === 'attorney' && location.pathname === '/attorney/dashboard'
+  const attorneyDashboardRoleView = (() => {
+    const value = new URLSearchParams(location.search).get('roleView') || 'all'
+    return ATTORNEY_DASHBOARD_ROLE_VIEWS.some((option) => option.value === value) ? value : 'all'
+  })()
 
   const notificationsControl = (
     <div className="relative flex-none" ref={notificationsRef}>
@@ -401,6 +415,48 @@ function HeaderBar({ onLogout, user }) {
 
   if (agentDashboardOwnsHeader) {
     return null
+  }
+
+  if (isAttorneyDashboardRoute) {
+    return (
+      <header className="no-print ui-shell-header ui-shell-header-attorney-dashboard">
+        <div className="flex min-w-0 shrink-0 items-center gap-3">
+          <QuickCreateDropdown />
+          <label className="relative min-w-[220px] max-w-[280px] flex-1 sm:flex-none">
+            <span className="sr-only">Matter role view</span>
+            <select
+              className="h-10 w-full appearance-none rounded-xl border border-slate-200 bg-white py-0 pl-10 pr-9 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+              value={attorneyDashboardRoleView}
+              onChange={(event) => {
+                const nextValue = event.target.value
+                navigate(`/attorney/dashboard?roleView=${encodeURIComponent(nextValue)}`)
+              }}
+            >
+              {ATTORNEY_DASHBOARD_ROLE_VIEWS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <Users className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-blue-700" />
+            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
+          </label>
+        </div>
+
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
+          <div className="ui-shell-search min-h-[40px] min-w-[240px] max-w-[520px]" aria-label="Search">
+            <Search size={16} className="shrink-0 text-textSoft" />
+            <input
+              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-secondary text-textStrong outline-none"
+              type="search"
+              placeholder="Search matters, clients, documents..."
+            />
+          </div>
+          {notificationsControl}
+          {avatarControl}
+        </div>
+      </header>
+    )
   }
 
   if (developerDashboardHeaderOnly) {

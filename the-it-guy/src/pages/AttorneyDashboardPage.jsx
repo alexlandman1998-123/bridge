@@ -1,25 +1,21 @@
 import {
   AlertTriangle,
-  Bell,
   BriefcaseBusiness,
   Building2,
   CalendarDays,
   CheckCircle2,
-  ChevronDown,
   ClipboardCheck,
   Clock3,
   FileCheck2,
   FileText,
-  Filter,
   Landmark,
   Scale,
   ShieldAlert,
   Signature,
-  Users,
   Wallet,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { Link, Navigate, useLocation } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import { getAttorneyManagementDashboardData } from '../services/attorneyDashboard'
@@ -51,8 +47,8 @@ const EMPTY_DASHBOARD = {
   financialSnapshot: {},
 }
 
-const cardClass = 'min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm'
-const cardPadding = 'p-4 sm:p-5'
+const cardClass = 'min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm'
+const cardPadding = 'p-4'
 const actionLinkClass = 'inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-900'
 
 function formatNumber(value) {
@@ -71,11 +67,6 @@ function toTitle(value = '') {
   return String(value || '')
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
-}
-
-function todayRangeLabel() {
-  const formatter = new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
-  return formatter.format(new Date())
 }
 
 function StatusBadge({ children, tone = 'green' }) {
@@ -103,47 +94,6 @@ function StatePanel({ children, tone = 'neutral' }) {
   )
 }
 
-function DashboardTopbar({ roleView, setRoleView }) {
-  return (
-    <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-      <div className="min-w-0">
-        <h1 className="text-[clamp(1.45rem,2vw,2rem)] font-semibold leading-tight text-slate-950">Dashboard</h1>
-        <p className="mt-1 text-sm text-slate-600">Firm overview and operational insights</p>
-      </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <label className="relative min-w-[220px] flex-1 sm:flex-none">
-          <span className="sr-only">Role view</span>
-          <select
-            value={roleView}
-            onChange={(event) => setRoleView(event.target.value)}
-            className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-10 pr-9 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
-          >
-            {ROLE_VIEW_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                Role View: {option.label}
-              </option>
-            ))}
-          </select>
-          <Users className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-blue-700" />
-          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
-        </label>
-        <button className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50" type="button">
-          <CalendarDays size={16} />
-          {todayRangeLabel()}
-        </button>
-        <button className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50" type="button">
-          <Filter size={16} />
-          Filter
-        </button>
-        <button className="relative inline-flex size-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50" type="button" aria-label="Notifications">
-          <Bell size={17} />
-          <span className="absolute -right-1 -top-1 inline-flex size-5 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white">0</span>
-        </button>
-      </div>
-    </header>
-  )
-}
-
 function FirmSummaryCard({ dashboard }) {
   const firmSummary = dashboard.firmSummary || {}
   const otherRoles = Array.isArray(firmSummary.otherRoles) && firmSummary.otherRoles.length
@@ -151,13 +101,13 @@ function FirmSummaryCard({ dashboard }) {
     : 'Bond Attorney, Cancellation Attorney'
 
   return (
-    <article className={`${cardClass} ${cardPadding} grid gap-4`}>
+    <article className={`${cardClass} ${cardPadding} grid gap-4 lg:col-span-2 xl:col-span-3`}>
       <div className="flex items-start gap-3">
         <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
           <Building2 size={21} />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-lg font-semibold text-slate-950">{firmSummary.name || dashboard.firm?.name || 'Attorney Firm'}</h2>
+          <h2 className="truncate text-sm font-semibold text-slate-950">{firmSummary.name || dashboard.firm?.name || 'Attorney Firm'}</h2>
           <div className="mt-2"><StatusBadge>Operational</StatusBadge></div>
         </div>
       </div>
@@ -191,23 +141,23 @@ function CriticalAlerts({ alerts = [] }) {
   }
 
   return (
-    <section className={`${cardClass} ${cardPadding} grid min-w-0 gap-4`}>
+    <section className={`${cardClass} ${cardPadding} grid min-w-0 gap-3 lg:col-span-4 xl:col-span-9`}>
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-base font-semibold text-slate-950">Critical Alerts</h2>
+        <h2 className="text-sm font-medium text-slate-950">Critical Alerts</h2>
         <Link to="/transactions" className={actionLinkClass}>View all alerts</Link>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {(alerts || []).map((alert) => {
           const Icon = iconMap[alert.key] || AlertTriangle
           return (
-            <article key={alert.key} className={`grid min-h-[112px] gap-2 rounded-2xl border p-4 ${toneMap[alert.tone] || toneMap.red}`}>
+            <article key={alert.key} className={`grid min-h-[140px] content-center gap-2 rounded-2xl border p-3 ${toneMap[alert.tone] || toneMap.red}`}>
               <div className="flex items-center gap-3">
-                <span className="inline-flex size-9 items-center justify-center rounded-full bg-white/70">
-                  <Icon size={17} />
+                <span className="inline-flex size-8 items-center justify-center rounded-full bg-white/70">
+                  <Icon size={15} />
                 </span>
-                <strong className="text-2xl leading-none">{formatNumber(alert.count)}</strong>
+                <strong className="text-2xl font-semibold leading-none">{formatNumber(alert.count)}</strong>
               </div>
-              <p className="text-sm font-semibold leading-5 text-slate-800">{alert.label}</p>
+              <p className="text-xs font-semibold leading-5 text-slate-800">{alert.label}</p>
               <Link to="/transactions" className="text-xs font-semibold">View matters</Link>
             </article>
           )
@@ -234,13 +184,13 @@ function KpiStrip({ stats = {} }) {
         {items.map((item) => {
           const Icon = item.icon
           return (
-            <article key={item.key} className="min-w-0 rounded-xl border border-slate-100 bg-white px-3 py-3">
+            <article key={item.key} className="min-h-[88px] min-w-0 rounded-xl border border-slate-100 bg-white px-3 py-3">
               <div className="flex items-center gap-3">
                 <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
                   <Icon size={16} />
                 </span>
                 <div className="min-w-0">
-                  <p className="truncate text-xs font-semibold text-slate-500">{item.label}</p>
+                  <p className="truncate text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{item.label}</p>
                   <div className="mt-1 flex items-baseline gap-2">
                     <strong className="text-[clamp(1.25rem,2vw,1.65rem)] leading-none text-slate-950">{item.value}</strong>
                     <span className="text-xs font-semibold text-emerald-600">{item.trend}</span>
@@ -263,20 +213,20 @@ function MatterPipeline({ rows = [], roleLabel = 'All Matters' }) {
   }
 
   return (
-    <section className={`${cardClass} ${cardPadding} grid gap-5 xl:col-span-2`}>
+    <section className={`${cardClass} ${cardPadding} grid gap-4 md:col-span-2 lg:col-span-6 xl:col-span-6`}>
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-base font-semibold text-slate-950">Matter Pipeline <span className="font-normal text-slate-500">({roleLabel})</span></h2>
+        <h2 className="text-sm font-medium text-slate-950">Matter Pipeline <span className="font-normal text-slate-500">({roleLabel})</span></h2>
         <Link to="/attorney/operations" className={actionLinkClass}>View full pipeline</Link>
       </div>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-7">
         {(rows || []).map((stage, index) => (
-          <article key={stage.key} className="relative min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            {index < rows.length - 1 ? <span className="absolute left-[calc(50%+1.5rem)] top-8 hidden h-px w-[calc(100%-3rem)] bg-slate-200 xl:block" /> : null}
-            <span className="relative z-10 inline-flex size-11 items-center justify-center rounded-full border border-blue-200 bg-white text-blue-700">
-              <ClipboardCheck size={18} />
+          <article key={stage.key} className="relative min-h-[132px] min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+            {index < rows.length - 1 ? <span className="absolute left-[calc(50%+1.25rem)] top-7 hidden h-px w-[calc(100%-2.5rem)] bg-slate-200 xl:block" /> : null}
+            <span className="relative z-10 inline-flex size-9 items-center justify-center rounded-full border border-blue-200 bg-white text-blue-700">
+              <ClipboardCheck size={15} />
             </span>
-            <p className="mt-3 text-sm font-semibold text-slate-800">{stage.label}</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-950">{formatNumber(stage.count)}</p>
+            <p className="mt-2 truncate text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{stage.label}</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-950">{formatNumber(stage.count)}</p>
             <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
               <span className={`size-2 rounded-full ${statusColors[stage.status] || statusColors.on_track}`} />
               <span>{stage.status === 'bottleneck' ? 'Bottleneck' : stage.status === 'attention' ? 'Attention needed' : 'On track'}</span>
@@ -304,10 +254,10 @@ function MattersByRole({ data = {} }) {
   const total = rows.reduce((sum, row) => sum + row.value, 0)
 
   return (
-    <section className={`${cardClass} ${cardPadding} grid gap-4`}>
-      <h2 className="text-base font-semibold text-slate-950">Matters by Role</h2>
-      <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-        <div className="relative mx-auto size-36 shrink-0 rounded-full bg-[conic-gradient(#2563eb_0_42%,#0ea5e9_42%_58%,#fb7185_58%_68%,#f59e0b_68%_84%,#7c3aed_84%_100%)]">
+    <section className={`${cardClass} ${cardPadding} grid gap-3 lg:col-span-3 xl:col-span-3`}>
+      <h2 className="text-sm font-medium text-slate-950">Matters by Role</h2>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center xl:flex-col">
+        <div className="relative mx-auto size-40 shrink-0 rounded-full bg-[conic-gradient(#2563eb_0_42%,#0ea5e9_42%_58%,#fb7185_58%_68%,#f59e0b_68%_84%,#7c3aed_84%_100%)]">
           <div className="absolute inset-8 grid place-items-center rounded-full bg-white text-center">
             <strong className="block text-2xl text-slate-950">{formatNumber(total)}</strong>
             <span className="text-xs text-slate-500">Matters</span>
@@ -329,14 +279,14 @@ function MattersByRole({ data = {} }) {
 
 function DepartmentOverview({ rows = [] }) {
   return (
-    <section className={`${cardClass} ${cardPadding} grid gap-4`}>
-      <h2 className="text-base font-semibold text-slate-950">Department Overview</h2>
-      <div className="grid gap-3">
+    <section className={`${cardClass} ${cardPadding} grid gap-3 lg:col-span-3 xl:col-span-3`}>
+      <h2 className="text-sm font-medium text-slate-950">Department Overview</h2>
+      <div className="grid gap-2">
         {(rows || []).map((department) => {
           const delayed = Number(department.delayedMatters || 0)
           const barColor = delayed > 1 ? 'bg-red-500' : delayed > 0 ? 'bg-amber-500' : 'bg-emerald-500'
           return (
-            <article key={department.departmentId} className="grid gap-2 rounded-xl border border-slate-100 bg-slate-50 p-3">
+            <article key={department.departmentId} className="grid gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-slate-900">{department.departmentName}</p>
@@ -361,29 +311,29 @@ function DepartmentOverview({ rows = [] }) {
 
 function StaffWorkload({ rows = [] }) {
   return (
-    <section className={`${cardClass} ${cardPadding} grid gap-4 xl:col-span-2`}>
+    <section className={`${cardClass} ${cardPadding} grid gap-3 md:col-span-2 lg:col-span-6 xl:col-span-6`}>
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-base font-semibold text-slate-950">Staff Workload</h2>
+        <h2 className="text-sm font-medium text-slate-950">Staff Workload</h2>
         <Link to="/users" className={actionLinkClass}>View full workload</Link>
       </div>
-      <div className="hidden overflow-x-auto min-[900px]:block">
+      <div className="hidden max-h-[270px] overflow-auto rounded-xl border border-slate-100 min-[900px]:block">
         <table className="w-full min-w-[760px] border-collapse">
-          <thead className="border-b border-slate-200">
+          <thead className="sticky top-0 z-10 border-b border-slate-200 bg-white">
             <tr>
               {['Staff Member', 'Role', 'Active Matters', 'Delayed', 'Lodging This Week', 'Capacity'].map((header) => (
-                <th key={header} className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{header}</th>
+                <th key={header} className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{header}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {(rows || []).map((row) => (
               <tr key={row.memberId}>
-                <td className="px-3 py-3 text-sm font-semibold text-slate-950">{row.fullName}</td>
-                <td className="px-3 py-3 text-sm text-slate-600">{toTitle(row.role)}</td>
-                <td className="px-3 py-3 text-sm text-slate-700">{formatNumber(row.assignedMatters)}</td>
-                <td className="px-3 py-3 text-sm text-red-600">{formatNumber(row.delayedMatters)}</td>
-                <td className="px-3 py-3 text-sm text-slate-700">{formatNumber(row.lodgingThisWeek)}</td>
-                <td className="px-3 py-3">
+                <td className="px-3 py-2 text-sm font-semibold text-slate-950">{row.fullName}</td>
+                <td className="px-3 py-2 text-sm text-slate-600">{toTitle(row.role)}</td>
+                <td className="px-3 py-2 text-sm text-slate-700">{formatNumber(row.assignedMatters)}</td>
+                <td className="px-3 py-2 text-sm text-red-600">{formatNumber(row.delayedMatters)}</td>
+                <td className="px-3 py-2 text-sm text-slate-700">{formatNumber(row.lodgingThisWeek)}</td>
+                <td className="px-3 py-2">
                   <div className="flex items-center gap-2">
                     <span className="w-10 text-sm font-semibold text-slate-700">{formatNumber(row.capacity)}%</span>
                     <span className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200">
@@ -393,6 +343,11 @@ function StaffWorkload({ rows = [] }) {
                 </td>
               </tr>
             ))}
+            {!(rows || []).length ? (
+              <tr>
+                <td className="px-3 py-8 text-center text-sm text-slate-500" colSpan={6}>No staff workload data yet.</td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>
@@ -432,8 +387,8 @@ function AttentionList({ rows = [], alerts = [] }) {
     : fallbackRows
 
   return (
-    <section className={`${cardClass} ${cardPadding} grid gap-4`}>
-      <h2 className="text-base font-semibold text-slate-950">Matters Requiring Attention</h2>
+    <section className={`${cardClass} ${cardPadding} grid gap-3 lg:col-span-3 xl:col-span-3`}>
+      <h2 className="text-sm font-medium text-slate-950">Matters Requiring Attention</h2>
       <div className="grid gap-2">
         {displayRows.map((row) => (
           <Link key={row.key} to="/transactions" className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 transition hover:bg-slate-100">
@@ -449,9 +404,9 @@ function AttentionList({ rows = [], alerts = [] }) {
 
 function RecentActivity({ rows = [] }) {
   return (
-    <section className={`${cardClass} ${cardPadding} grid gap-4`}>
-      <h2 className="text-base font-semibold text-slate-950">Recent Activity</h2>
-      <div className="grid gap-2">
+    <section className={`${cardClass} ${cardPadding} grid gap-3 lg:col-span-3 xl:col-span-3`}>
+      <h2 className="text-sm font-medium text-slate-950">Recent Activity</h2>
+      <div className="grid max-h-[270px] gap-2 overflow-y-auto pr-1">
         {(rows || []).length ? rows.map((row) => (
           <article key={row.id} className="flex items-start justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
             <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700"><CheckCircle2 size={15} /></span>
@@ -473,8 +428,8 @@ function RecentActivity({ rows = [] }) {
 function UpcomingDates({ rows = [] }) {
   const iconMap = { signings: Signature, lodgements: Landmark, registrations: FileCheck2, guarantees: ShieldAlert }
   return (
-    <section className={`${cardClass} ${cardPadding} grid gap-4 xl:col-span-2`}>
-      <h2 className="text-base font-semibold text-slate-950">Upcoming Key Dates <span className="font-normal text-slate-500">(Next 7 Days)</span></h2>
+    <section className={`${cardClass} ${cardPadding} grid gap-3 md:col-span-2 lg:col-span-3 xl:col-span-6`}>
+      <h2 className="text-sm font-medium text-slate-950">Upcoming Key Dates <span className="font-normal text-slate-500">(Next 7 Days)</span></h2>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {(rows || []).map((row) => {
           const Icon = iconMap[row.key] || CalendarDays
@@ -498,8 +453,8 @@ function FinancialSnapshot({ data = {} }) {
     { label: 'Trust Balance', value: formatCurrency(data.trustBalance), icon: Scale },
   ]
   return (
-    <section className={`${cardClass} ${cardPadding} grid gap-4 xl:col-span-2`}>
-      <h2 className="text-base font-semibold text-slate-950">Financial Snapshot <span className="font-normal text-slate-500">(This Month)</span></h2>
+    <section className={`${cardClass} ${cardPadding} grid gap-3 md:col-span-2 lg:col-span-3 xl:col-span-6`}>
+      <h2 className="text-sm font-medium text-slate-950">Financial Snapshot <span className="font-normal text-slate-500">(This Month)</span></h2>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {items.map((item) => {
           const Icon = item.icon
@@ -518,12 +473,16 @@ function FinancialSnapshot({ data = {} }) {
 function AttorneyDashboardPage() {
   const { role, profile } = useWorkspace()
   const permissionsState = useAttorneyPermissions()
-  const [roleView, setRoleView] = useState('all')
+  const location = useLocation()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [dashboard, setDashboard] = useState(EMPTY_DASHBOARD)
 
-  const shellClass = 'mx-auto grid w-full max-w-none gap-4 px-3 py-4 sm:px-4 lg:px-5 xl:px-6'
+  const roleView = useMemo(() => {
+    const value = new URLSearchParams(location.search).get('roleView') || 'all'
+    return ROLE_VIEW_OPTIONS.some((option) => option.value === value) ? value : 'all'
+  }, [location.search])
+  const shellClass = 'mx-auto grid w-full max-w-[1600px] gap-4 px-4 py-4 sm:px-6'
   const selectedRoleLabel = useMemo(
     () => ROLE_VIEW_OPTIONS.find((option) => option.value === roleView)?.label || 'All Matters',
     [roleView],
@@ -596,13 +555,12 @@ function AttorneyDashboardPage() {
   return (
     <section className={shellClass}>
       {error ? <div className={`${cardClass} ${cardPadding}`}><p className="text-sm text-red-700">{error}</p></div> : null}
-      <DashboardTopbar roleView={roleView} setRoleView={setRoleView} />
-      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(260px,0.85fr)_minmax(0,2.4fr)]">
+      <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-6 xl:grid-cols-12">
         <FirmSummaryCard dashboard={dashboard} />
         <CriticalAlerts alerts={dashboard.criticalAlerts} />
       </div>
       <KpiStrip stats={dashboard.matterStats} />
-      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.9fr)_minmax(300px,0.75fr)]">
+      <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-6 xl:grid-cols-12">
         <MatterPipeline rows={dashboard.matterPipeline} roleLabel={selectedRoleLabel} />
         <MattersByRole data={dashboard.mattersByRole} />
         <DepartmentOverview rows={dashboard.departmentOverview} />
