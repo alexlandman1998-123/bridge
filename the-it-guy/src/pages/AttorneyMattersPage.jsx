@@ -47,6 +47,10 @@ const MATTER_VIEW_COPY = {
     title: 'Registered Matters',
     description: 'Completed or registered matters ready for close-out and reporting.',
   },
+  'full-service': {
+    title: 'Full-Service Matters',
+    description: 'Matters where transfer, bond, and cancellation work all apply to the same transaction.',
+  },
 }
 
 function normalize(value) {
@@ -105,6 +109,9 @@ function matterMatchesView(matter = {}, view = 'all') {
   if (type === 'bond') return lanes.includes('bond')
   if (type === 'cancellation') return lanes.includes('cancellation')
   if (type === 'shared') return lanes.length > 1
+  if (type === 'full-service') {
+    return ['transfer', 'bond', 'cancellation'].every((lane) => lanes.includes(lane))
+  }
   if (type === 'delayed') return Boolean(matter.flags?.delayed) || status.includes('attention') || status.includes('blocked')
   if (type === 'registered') {
     return lifecycle.includes('registered') || stage.includes('registered') || Boolean(matter.registrationDate)

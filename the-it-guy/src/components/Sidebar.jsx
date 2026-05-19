@@ -66,6 +66,7 @@ const ICON_BY_KEY = {
   attorney_matters_shared: Users,
   attorney_matters_delayed: AlertTriangle,
   attorney_matters_registered: FileCheck2,
+  attorney_matters_full_service: BriefcaseBusiness,
   attorney_workflow_board: KanbanSquare,
   team_departments: ShieldUser,
   buyer_information: FileCheck2,

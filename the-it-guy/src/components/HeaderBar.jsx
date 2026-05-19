@@ -103,6 +103,8 @@ const ATTORNEY_DASHBOARD_ROLE_VIEWS = [
   { value: 'bond', label: 'Bond Matters' },
   { value: 'cancellation', label: 'Cancellation Matters' },
   { value: 'shared', label: 'Shared Matters' },
+  { value: 'delayed', label: 'Delayed Matters' },
+  { value: 'registered', label: 'Registered Matters' },
   { value: 'full-service', label: 'Full-Service Matters' },
 ]
 
@@ -288,11 +290,6 @@ function HeaderBar({ onLogout, user }) {
     role === 'agent' &&
     (location.pathname === '/dashboard' || location.pathname === '/')
   const isAttorneyDashboardRoute = role === 'attorney' && location.pathname === '/attorney/dashboard'
-  const attorneyDashboardRoleView = (() => {
-    const value = new URLSearchParams(location.search).get('roleView') || 'all'
-    return ATTORNEY_DASHBOARD_ROLE_VIEWS.some((option) => option.value === value) ? value : 'all'
-  })()
-
   const notificationsControl = (
     <div className="relative flex-none" ref={notificationsRef}>
       <button
@@ -426,12 +423,17 @@ function HeaderBar({ onLogout, user }) {
             <span className="sr-only">Matter role view</span>
             <select
               className="h-10 w-full appearance-none rounded-xl border border-slate-200 bg-white py-0 pl-10 pr-9 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
-              value={attorneyDashboardRoleView}
+              value=""
               onChange={(event) => {
                 const nextValue = event.target.value
-                navigate(`/attorney/dashboard?roleView=${encodeURIComponent(nextValue)}`)
+                if (nextValue) {
+                  navigate(`/attorney/matters/${encodeURIComponent(nextValue)}`)
+                }
               }}
             >
+              <option value="" disabled>
+                Matters
+              </option>
               {ATTORNEY_DASHBOARD_ROLE_VIEWS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}

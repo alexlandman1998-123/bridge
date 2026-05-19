@@ -18336,6 +18336,82 @@ async function fetchDirectTransactionIdsForUser(
     }
   }
 
+  if (normalizedRole === 'attorney') {
+    let membershipsQuery = await client
+      .from('attorney_firm_members')
+      .select('firm_id, department_id, role, status')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+
+    if (
+      membershipsQuery.error &&
+      !isMissingSchemaError(membershipsQuery.error) &&
+      !isMissingTableError(membershipsQuery.error, 'attorney_firm_members')
+    ) {
+      throw membershipsQuery.error
+    }
+
+    const membershipsByFirmId = (membershipsQuery.data || []).reduce((accumulator, membership) => {
+      const firmId = normalizeTextValue(membership?.firm_id)
+      if (firmId) accumulator[firmId] = membership
+      return accumulator
+    }, {})
+    const firmWideRoles = new Set(['firm_admin', 'director_partner', 'managing_partner', 'partner', 'admin'])
+
+    let assignmentQuery = await client
+      .from('transaction_attorney_assignments')
+      .select('transaction_id, firm_id, attorney_firm_id, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, secretary_id, admin_handler_id, status, assignment_status')
+
+    if (
+      assignmentQuery.error &&
+      (isMissingColumnError(assignmentQuery.error, 'assignment_status') ||
+        isMissingColumnError(assignmentQuery.error, 'attorney_firm_id') ||
+        isMissingColumnError(assignmentQuery.error, 'attorney_department_id') ||
+        isMissingColumnError(assignmentQuery.error, 'attorney_user_id'))
+    ) {
+      assignmentQuery = await client
+        .from('transaction_attorney_assignments')
+        .select('transaction_id, firm_id, department_id, primary_attorney_id, secretary_id, admin_handler_id, status')
+    }
+
+    if (
+      assignmentQuery.error &&
+      !isMissingSchemaError(assignmentQuery.error) &&
+      !isMissingTableError(assignmentQuery.error, 'transaction_attorney_assignments')
+    ) {
+      throw assignmentQuery.error
+    }
+
+    for (const row of assignmentQuery.data || []) {
+      const status = normalizeTextValue(row?.assignment_status || row?.status || '').toLowerCase()
+      if (status === 'removed' || status === 'inactive' || status === 'suspended') {
+        continue
+      }
+      const assignedUserIds = [
+        row?.primary_attorney_id,
+        row?.attorney_user_id,
+        row?.secretary_id,
+        row?.admin_handler_id,
+      ].map((item) => normalizeTextValue(item))
+      const firmId = normalizeTextValue(row?.attorney_firm_id || row?.firm_id)
+      const departmentId = normalizeTextValue(row?.attorney_department_id || row?.department_id)
+      const membership = firmId ? membershipsByFirmId[firmId] : null
+      const membershipDepartmentId = normalizeTextValue(membership?.department_id)
+      const membershipRole = normalizeTextValue(membership?.role).toLowerCase()
+      const hasAssignmentAccess =
+        assignedUserIds.includes(normalizeTextValue(userId)) ||
+        (membership && firmWideRoles.has(membershipRole)) ||
+        Boolean(membership && membershipDepartmentId && departmentId && membershipDepartmentId === departmentId)
+
+      if (!hasAssignmentAccess) {
+        continue
+      }
+      if (row?.transaction_id) {
+        transactionIds.add(row.transaction_id)
+      }
+    }
+  }
+
   // Agent access is resolved through transaction_participants and legacy assigned_agent_email.
   // Some production schemas do not expose transactions.assigned_user_id, and probing it adds
   // a failing REST request to every agent pipeline load.

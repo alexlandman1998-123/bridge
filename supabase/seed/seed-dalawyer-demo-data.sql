@@ -98,14 +98,76 @@ begin
   end if;
 
   if v_org_id is null then
-    raise exception 'Dalawyer demo seed aborted: could not resolve an organisation/workspace for info@yakstack.co / Dalawyer Lawyers.';
+    insert into public.organisations (
+      name,
+      display_name,
+      company_email,
+      company_phone,
+      city,
+      province,
+      country,
+      primary_contact_person,
+      is_demo_data,
+      created_at,
+      updated_at
+    )
+    values (
+      'Dalawyer Lawyers',
+      'Dalawyer Lawyers',
+      'info@yakstack.co',
+      '+27 11 555 0190',
+      'Johannesburg',
+      'Gauteng',
+      'South Africa',
+      'Dalawyer Lawyers',
+      true,
+      v_now,
+      v_now
+    )
+    returning id into v_org_id;
   end if;
 
   update public.attorney_firms
-  set organisation_id = coalesce(organisation_id, v_org_id),
+  set name = 'Dalawyer Lawyers',
+      email = coalesce(email, 'info@yakstack.co'),
+      phone = coalesce(phone, '+27 11 555 0190'),
+      city = coalesce(city, 'Johannesburg'),
+      province = coalesce(province, 'Gauteng'),
+      organisation_id = coalesce(organisation_id, v_org_id),
       is_active = true,
       updated_at = v_now
   where id = v_firm_id;
+
+  update public.organisation_users
+  set status = 'active',
+      updated_at = v_now
+  where organisation_id = v_org_id
+    and user_id = v_user_id;
+
+  if not found then
+    insert into public.organisation_users (
+      organisation_id,
+      user_id,
+      email,
+      role,
+      status,
+      accepted_at,
+      created_at,
+      updated_at,
+      is_demo_data
+    )
+    values (
+      v_org_id,
+      v_user_id,
+      'info@yakstack.co',
+      'attorney',
+      'active',
+      v_now,
+      v_now,
+      v_now,
+      true
+    );
+  end if;
 
   update public.profiles
   set primary_attorney_firm_id = coalesce(primary_attorney_firm_id, v_firm_id),
@@ -186,6 +248,7 @@ begin
   delete from public.attorney_workflow_blockers where is_demo_data = true and transaction_id = any(v_tx_ids);
   delete from public.document_requests where is_demo_data = true and transaction_id = any(v_tx_ids);
   delete from public.documents where is_demo_data = true and transaction_id = any(v_tx_ids);
+  delete from public.transaction_participants where is_demo_data = true and transaction_id = any(v_tx_ids);
   delete from public.transaction_subprocess_steps where is_demo_data = true and subprocess_id = any(v_subprocess_ids);
   delete from public.transaction_subprocesses where is_demo_data = true and id = any(v_subprocess_ids);
   delete from public.transaction_events where is_demo_data = true and transaction_id = any(v_tx_ids);
@@ -345,16 +408,34 @@ begin
       rec.current_bond_bank,
       rec.current_bond_account_number,
       rec.estimated_settlement_amount,
-      v_matter_status,
-      rec.current_stage,
+      case when v_is_registered then 'Registered' else 'Transfer in Progress' end,
+      case when v_is_registered then 'REG' else 'ATTY' end,
       case
         when rec.matter_status = 'blocked' then 'Blocked workflow step needs attention'
         when v_is_registered then 'Registration confirmed and final pack approved'
         else 'Attorney workflow in progress'
       end,
-      rec.current_stage,
-      rec.risk_status,
-      case when rec.matter_status = 'blocked' then 'blocked' when v_is_registered then 'registered' else 'in_progress' end,
+      case
+        when v_is_registered then 'registered'
+        when rec.current_stage like '%fica%' then 'fica_onboarding'
+        when rec.current_stage like '%document%' or rec.current_stage like '%docs%' then 'drafting'
+        when rec.current_stage like '%signed%' then 'signing'
+        when rec.current_stage like '%guarantee%' then 'guarantees'
+        when rec.current_stage like '%settlement%' or rec.current_stage like '%cancellation%' then 'clearances'
+        when rec.current_stage like '%lodg%' then 'lodgement'
+        else 'instruction_received'
+      end,
+      case
+        when rec.matter_status = 'blocked' and rec.risk_status = 'critical' then 'Blocked'
+        when rec.matter_status = 'blocked' then 'Delayed'
+        when rec.risk_status in ('watch', 'high', 'critical') then 'At Risk'
+        else 'On Track'
+      end,
+      case
+        when rec.matter_status = 'blocked' then 'blocked'
+        when rec.risk_status in ('critical', 'high', 'watch') then 'at_risk'
+        else 'on_track'
+      end,
       case
         when rec.blocked_lane = 'bond' then 'Follow up outstanding guarantees with bank'
         when rec.blocked_lane = 'cancellation' then 'Escalate settlement figures with bank'
@@ -375,6 +456,93 @@ begin
       v_updated_at,
       true
     );
+
+    insert into public.transaction_participants (
+      transaction_id,
+      user_id,
+      role_type,
+      legal_role,
+      status,
+      participant_name,
+      participant_email,
+      can_view,
+      can_comment,
+      can_upload_documents,
+      can_edit_finance_workflow,
+      can_edit_attorney_workflow,
+      can_edit_core_transaction,
+      visibility_scope,
+      participant_scope,
+      is_primary,
+      assignment_source,
+      organisation_name,
+      accepted_at,
+      created_at,
+      updated_at,
+      is_demo_data
+    )
+    values
+      (
+        v_tx_id,
+        null,
+        'buyer',
+        'none',
+        'active',
+        rec.buyer_name,
+        lower(rec.buyer_email),
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        'shared',
+        'transaction',
+        true,
+        'dalawyer_demo_seed',
+        null,
+        v_created_at,
+        v_created_at,
+        v_updated_at,
+        true
+      ),
+      (
+        v_tx_id,
+        null,
+        'seller',
+        'none',
+        'active',
+        rec.seller_name,
+        lower(rec.seller_email),
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        'shared',
+        'transaction',
+        true,
+        'dalawyer_demo_seed',
+        null,
+        v_created_at,
+        v_created_at,
+        v_updated_at,
+        true
+      )
+    on conflict (transaction_id, role_type, legal_role)
+    do update set
+      participant_name = excluded.participant_name,
+      participant_email = excluded.participant_email,
+      status = 'active',
+      removed_at = null,
+      can_view = excluded.can_view,
+      can_comment = excluded.can_comment,
+      can_upload_documents = excluded.can_upload_documents,
+      is_primary = excluded.is_primary,
+      assignment_source = excluded.assignment_source,
+      updated_at = excluded.updated_at,
+      is_demo_data = true;
 
     v_transfer_assignment_id := null;
     v_bond_assignment_id := null;
@@ -429,7 +597,7 @@ begin
       'transfer_attorney',
       'active',
       true,
-      'professional_shared',
+      'firm_matter',
       v_lane_firm_id = v_firm_id,
       v_lane_firm_id = v_firm_id,
       v_lane_firm_id = v_firm_id,
@@ -462,7 +630,7 @@ begin
         case when v_lane_firm_id = v_firm_id then v_user_id else null end, 'active', v_user_id, v_created_at,
         v_lane_firm_id, case when v_lane_firm_id = v_firm_id then v_user_id else null end,
         case when v_lane_firm_id = v_firm_id then v_bond_department_id else null end, 'bond_attorney', 'active', true,
-        'professional_shared', v_lane_firm_id = v_firm_id, v_lane_firm_id = v_firm_id, v_lane_firm_id = v_firm_id,
+        'firm_matter', v_lane_firm_id = v_firm_id, v_lane_firm_id = v_firm_id, v_lane_firm_id = v_firm_id,
         v_lane_firm_id = v_firm_id, true, v_lane_firm_id = v_firm_id, v_created_at, v_updated_at, true
       )
       returning id into v_bond_assignment_id;
@@ -488,7 +656,7 @@ begin
         case when v_lane_firm_id = v_firm_id then v_user_id else null end, 'active', v_user_id, v_created_at,
         v_lane_firm_id, case when v_lane_firm_id = v_firm_id then v_user_id else null end,
         case when v_lane_firm_id = v_firm_id then v_admin_department_id else null end, 'cancellation_attorney', 'active', true,
-        'professional_shared', v_lane_firm_id = v_firm_id, v_lane_firm_id = v_firm_id, v_lane_firm_id = v_firm_id,
+        'firm_matter', v_lane_firm_id = v_firm_id, v_lane_firm_id = v_firm_id, v_lane_firm_id = v_firm_id,
         v_lane_firm_id = v_firm_id, true, v_lane_firm_id = v_firm_id, v_created_at, v_updated_at, true
       )
       returning id into v_cancellation_assignment_id;
@@ -522,6 +690,77 @@ begin
         v_step_keys := array['cancellation_instruction_received','settlement_figures_requested','settlement_figures_received','guarantees_provided','cancellation_docs_prepared','cancellation_lodged','bond_cancelled'];
         v_step_labels := array['Cancellation Instruction Received','Settlement Figures Requested','Settlement Figures Received','Guarantees Provided','Cancellation Docs Prepared','Cancellation Lodged','Bond Cancelled'];
       end if;
+
+      select coalesce(taa.attorney_firm_id, taa.firm_id), coalesce(taa.attorney_department_id, taa.department_id)
+        into v_lane_firm_id, v_lane_department_id
+      from public.transaction_attorney_assignments taa
+      where taa.id = v_lane_assignment_id;
+
+      insert into public.transaction_participants (
+        transaction_id,
+        user_id,
+        role_type,
+        legal_role,
+        status,
+        participant_name,
+        participant_email,
+        can_view,
+        can_comment,
+        can_upload_documents,
+        can_edit_finance_workflow,
+        can_edit_attorney_workflow,
+        can_edit_core_transaction,
+        visibility_scope,
+        participant_scope,
+        is_primary,
+        assignment_source,
+        organisation_name,
+        accepted_at,
+        created_at,
+        updated_at,
+        is_demo_data
+      )
+      select
+        v_tx_id,
+        case when v_lane_firm_id = v_firm_id then v_user_id else null end,
+        'attorney',
+        v_lane_key,
+        'active',
+        coalesce(f.name, 'Attorney firm'),
+        lower(coalesce(f.email, case when v_lane_firm_id = v_firm_id then 'info@yakstack.co' else null end)),
+        true,
+        true,
+        true,
+        false,
+        v_lane_firm_id = v_firm_id,
+        false,
+        'shared',
+        'transaction',
+        v_lane_firm_id = v_firm_id,
+        'attorney_assignment',
+        coalesce(f.name, 'Attorney firm'),
+        v_created_at,
+        v_created_at,
+        v_updated_at,
+        true
+      from public.attorney_firms f
+      where f.id = v_lane_firm_id
+      on conflict (transaction_id, role_type, legal_role)
+      do update set
+        user_id = coalesce(excluded.user_id, public.transaction_participants.user_id),
+        participant_name = excluded.participant_name,
+        participant_email = excluded.participant_email,
+        status = 'active',
+        removed_at = null,
+        can_view = excluded.can_view,
+        can_comment = excluded.can_comment,
+        can_upload_documents = excluded.can_upload_documents,
+        can_edit_attorney_workflow = excluded.can_edit_attorney_workflow,
+        is_primary = excluded.is_primary,
+        assignment_source = excluded.assignment_source,
+        organisation_name = excluded.organisation_name,
+        updated_at = excluded.updated_at,
+        is_demo_data = true;
 
       v_step_count := array_length(v_step_keys, 1);
       v_lane_blocked_step := case when rec.blocked_lane = v_lane_key then nullif(rec.blocked_step, 0) else null end;
@@ -683,7 +922,7 @@ begin
         jsonb_build_object('title', initcap(v_lane_key) || ' lane updated', 'description', initcap(v_lane_key) || ' workflow moved to ' || replace(v_current_stage, '_', ' '), 'laneKey', v_lane_key),
         v_user_id,
         'attorney',
-        'professional_shared',
+        'shared',
         v_updated_at,
         true
       );
@@ -694,9 +933,9 @@ begin
       uploaded_by_role, stage_key, is_client_visible, lane_key, attorney_role, review_status, created_at, updated_at, is_demo_data
     )
     values
-      (v_tx_id, 'Buyer ID and proof of address.pdf', 'demo/dalawyer/' || rec.matter_ref || '/buyer-fica.pdf', 'Buyer Documents', 'buyer_fica', case when rec.blocked_lane = 'transfer' then 'rejected' else 'approved' end, 'professional_shared', v_user_id, 'attorney', 'fica_received', false, 'transfer', 'transfer_attorney', case when rec.blocked_lane = 'transfer' then 'rejected' else 'approved' end, v_created_at + interval '2 days', v_updated_at, true),
-      (v_tx_id, 'Seller FICA pack.pdf', 'demo/dalawyer/' || rec.matter_ref || '/seller-fica.pdf', 'Seller Documents', 'seller_fica', 'approved', 'professional_shared', v_user_id, 'attorney', 'fica_received', false, 'transfer', 'transfer_attorney', 'approved', v_created_at + interval '3 days', v_updated_at, true),
-      (v_tx_id, 'Signed Offer to Purchase.pdf', 'demo/dalawyer/' || rec.matter_ref || '/signed-otp.pdf', 'Transfer Documents', 'signed_otp', case when rec.transfer_progress >= 4 then 'approved' else 'uploaded' end, 'professional_shared', v_user_id, 'attorney', 'instruction_received', false, 'transfer', 'transfer_attorney', case when rec.transfer_progress >= 4 then 'approved' else 'under_review' end, v_created_at + interval '4 days', v_updated_at, true),
+      (v_tx_id, 'Buyer ID and proof of address.pdf', 'demo/dalawyer/' || rec.matter_ref || '/buyer-fica.pdf', 'Buyer Documents', 'buyer_fica', case when rec.blocked_lane = 'transfer' then 'rejected' else 'approved' end, 'shared', v_user_id, 'attorney', 'fica_received', false, 'transfer', 'transfer_attorney', case when rec.blocked_lane = 'transfer' then 'rejected' else 'approved' end, v_created_at + interval '2 days', v_updated_at, true),
+      (v_tx_id, 'Seller FICA pack.pdf', 'demo/dalawyer/' || rec.matter_ref || '/seller-fica.pdf', 'Seller Documents', 'seller_fica', 'approved', 'shared', v_user_id, 'attorney', 'fica_received', false, 'transfer', 'transfer_attorney', 'approved', v_created_at + interval '3 days', v_updated_at, true),
+      (v_tx_id, 'Signed Offer to Purchase.pdf', 'demo/dalawyer/' || rec.matter_ref || '/signed-otp.pdf', 'Transfer Documents', 'signed_otp', case when rec.transfer_progress >= 4 then 'approved' else 'uploaded' end, 'shared', v_user_id, 'attorney', 'instruction_received', false, 'transfer', 'transfer_attorney', case when rec.transfer_progress >= 4 then 'approved' else 'pending_review' end, v_created_at + interval '4 days', v_updated_at, true),
       (v_tx_id, 'Transfer document pack.pdf', 'demo/dalawyer/' || rec.matter_ref || '/transfer-pack.pdf', 'Generated Documents', 'transfer_document_pack', case when rec.transfer_progress >= 5 then 'approved' else 'requested' end, 'internal', v_user_id, 'attorney', 'transfer_documents_prepared', false, 'transfer', 'transfer_attorney', case when rec.transfer_progress >= 5 then 'approved' else 'requested' end, v_created_at + interval '8 days', v_updated_at, true),
       (v_tx_id, 'Internal matter note.pdf', 'demo/dalawyer/' || rec.matter_ref || '/internal-note.pdf', 'Internal Working Documents', 'internal_note', 'uploaded', 'internal', v_user_id, 'attorney', null, false, null, null, 'uploaded', v_created_at + interval '1 day', v_updated_at, true);
 
@@ -706,8 +945,8 @@ begin
         uploaded_by_role, stage_key, is_client_visible, lane_key, attorney_role, review_status, created_at, updated_at, is_demo_data
       )
       values
-        (v_tx_id, 'Bond instruction from bank.pdf', 'demo/dalawyer/' || rec.matter_ref || '/bond-instruction.pdf', 'Bond Documents', 'bond_instruction', case when rec.bond_progress >= 1 then 'approved' else 'requested' end, 'professional_shared', v_user_id, 'attorney', 'bond_instruction_received', false, 'bond', 'bond_attorney', case when rec.bond_progress >= 1 then 'approved' else 'requested' end, v_created_at + interval '5 days', v_updated_at, true),
-        (v_tx_id, 'Guarantees.pdf', 'demo/dalawyer/' || rec.matter_ref || '/guarantees.pdf', 'Bond Documents', 'guarantees', case when rec.bond_progress >= 5 then 'approved' when rec.blocked_lane = 'bond' then 'requested' else 'under_review' end, 'professional_shared', v_user_id, 'attorney', 'guarantees_issued', false, 'bond', 'bond_attorney', case when rec.bond_progress >= 5 then 'approved' when rec.blocked_lane = 'bond' then 'requested' else 'under_review' end, v_created_at + interval '14 days', v_updated_at, true);
+        (v_tx_id, 'Bond instruction from bank.pdf', 'demo/dalawyer/' || rec.matter_ref || '/bond-instruction.pdf', 'Bond Documents', 'bond_instruction', case when rec.bond_progress >= 1 then 'approved' else 'requested' end, 'shared', v_user_id, 'attorney', 'bond_instruction_received', false, 'bond', 'bond_attorney', case when rec.bond_progress >= 1 then 'approved' else 'requested' end, v_created_at + interval '5 days', v_updated_at, true),
+        (v_tx_id, 'Guarantees.pdf', 'demo/dalawyer/' || rec.matter_ref || '/guarantees.pdf', 'Bond Documents', 'guarantees', case when rec.bond_progress >= 5 then 'approved' when rec.blocked_lane = 'bond' then 'requested' else 'pending_review' end, 'shared', v_user_id, 'attorney', 'guarantees_issued', false, 'bond', 'bond_attorney', case when rec.bond_progress >= 5 then 'approved' when rec.blocked_lane = 'bond' then 'requested' else 'pending_review' end, v_created_at + interval '14 days', v_updated_at, true);
     end if;
 
     if rec.seller_has_existing_bond then
@@ -716,8 +955,8 @@ begin
         uploaded_by_role, stage_key, is_client_visible, lane_key, attorney_role, review_status, created_at, updated_at, is_demo_data
       )
       values
-        (v_tx_id, 'Cancellation instruction.pdf', 'demo/dalawyer/' || rec.matter_ref || '/cancellation-instruction.pdf', 'Cancellation Documents', 'cancellation_instruction', 'approved', 'professional_shared', v_user_id, 'attorney', 'cancellation_instruction_received', false, 'cancellation', 'cancellation_attorney', 'approved', v_created_at + interval '6 days', v_updated_at, true),
-        (v_tx_id, 'Settlement figures.pdf', 'demo/dalawyer/' || rec.matter_ref || '/settlement-figures.pdf', 'Cancellation Documents', 'settlement_figures', case when rec.cancellation_progress >= 3 then 'approved' when rec.blocked_lane = 'cancellation' then 'requested' else 'under_review' end, 'professional_shared', v_user_id, 'attorney', 'settlement_figures_received', false, 'cancellation', 'cancellation_attorney', case when rec.cancellation_progress >= 3 then 'approved' when rec.blocked_lane = 'cancellation' then 'requested' else 'under_review' end, v_created_at + interval '12 days', v_updated_at, true);
+        (v_tx_id, 'Cancellation instruction.pdf', 'demo/dalawyer/' || rec.matter_ref || '/cancellation-instruction.pdf', 'Cancellation Documents', 'cancellation_instruction', 'approved', 'shared', v_user_id, 'attorney', 'cancellation_instruction_received', false, 'cancellation', 'cancellation_attorney', 'approved', v_created_at + interval '6 days', v_updated_at, true),
+        (v_tx_id, 'Settlement figures.pdf', 'demo/dalawyer/' || rec.matter_ref || '/settlement-figures.pdf', 'Cancellation Documents', 'settlement_figures', case when rec.cancellation_progress >= 3 then 'approved' when rec.blocked_lane = 'cancellation' then 'requested' else 'pending_review' end, 'shared', v_user_id, 'attorney', 'settlement_figures_received', false, 'cancellation', 'cancellation_attorney', case when rec.cancellation_progress >= 3 then 'approved' when rec.blocked_lane = 'cancellation' then 'requested' else 'pending_review' end, v_created_at + interval '12 days', v_updated_at, true);
     end if;
 
     if v_is_registered then
@@ -726,8 +965,8 @@ begin
         uploaded_by_role, stage_key, is_client_visible, lane_key, attorney_role, review_status, created_at, updated_at, is_demo_data
       )
       values
-        (v_tx_id, 'Registration confirmation.pdf', 'demo/dalawyer/' || rec.matter_ref || '/registration-confirmation.pdf', 'Signed Documents', 'registration_confirmation', 'approved', 'client_visible', v_user_id, 'attorney', 'registration_confirmed', true, 'transfer', 'transfer_attorney', 'approved', coalesce(rec.registration_date::timestamptz, v_updated_at), v_updated_at, true),
-        (v_tx_id, 'Final client closing pack.pdf', 'demo/dalawyer/' || rec.matter_ref || '/closing-pack.pdf', 'Signed Documents', 'closing_pack', 'approved', 'client_visible', v_user_id, 'attorney', 'registration_confirmed', true, 'transfer', 'transfer_attorney', 'approved', coalesce(rec.registration_date::timestamptz, v_updated_at), v_updated_at, true);
+        (v_tx_id, 'Registration confirmation.pdf', 'demo/dalawyer/' || rec.matter_ref || '/registration-confirmation.pdf', 'Signed Documents', 'registration_confirmation', 'approved', 'client', v_user_id, 'attorney', 'registration_confirmed', true, 'transfer', 'transfer_attorney', 'approved', coalesce(rec.registration_date::timestamptz, v_updated_at), v_updated_at, true),
+        (v_tx_id, 'Final client closing pack.pdf', 'demo/dalawyer/' || rec.matter_ref || '/closing-pack.pdf', 'Signed Documents', 'closing_pack', 'approved', 'client', v_user_id, 'attorney', 'registration_confirmed', true, 'transfer', 'transfer_attorney', 'approved', coalesce(rec.registration_date::timestamptz, v_updated_at), v_updated_at, true);
     end if;
 
     if rec.blocked_lane is not null then
@@ -789,7 +1028,7 @@ begin
       )
       values (
         v_tx_id, 'Signing Documents', 'signed_transfer_pack', 'Signed transfer documents', 'Signed buyer and seller transfer packs are required before lodgement.',
-        'required', 'client', 'requested', true, 'professional_shared', v_user_id, 'attorney', current_date + 4,
+        'required', 'client', 'requested', true, 'shared', v_user_id, 'attorney', current_date + 4,
         'transfer', 'transfer_attorney', 'client', v_user_id, 'requested', 'signed_transfer_pack', v_updated_at - interval '2 days', v_updated_at, true
       );
     end if;
@@ -799,12 +1038,12 @@ begin
     )
     values
       (v_tx_id, 'TransactionCreated', jsonb_build_object('title', 'Matter created', 'description', rec.matter_ref || ' opened for ' || rec.property_description), v_user_id, 'attorney', 'internal', v_created_at, true),
-      (v_tx_id, 'AttorneyLaneCreated', jsonb_build_object('title', 'Transfer instruction received', 'description', 'Transfer workflow opened for buyer and seller onboarding.'), v_user_id, 'attorney', 'professional_shared', v_created_at + interval '1 day', true),
-      (v_tx_id, 'AttorneyDocumentUploaded', jsonb_build_object('title', 'Seller FICA uploaded', 'description', rec.seller_name || ' uploaded FICA documents.'), v_user_id, 'attorney', 'professional_shared', v_created_at + interval '3 days', true),
+      (v_tx_id, 'AttorneyLaneCreated', jsonb_build_object('title', 'Transfer instruction received', 'description', 'Transfer workflow opened for buyer and seller onboarding.'), v_user_id, 'attorney', 'shared', v_created_at + interval '1 day', true),
+      (v_tx_id, 'AttorneyDocumentUploaded', jsonb_build_object('title', 'Seller FICA uploaded', 'description', rec.seller_name || ' uploaded FICA documents.'), v_user_id, 'attorney', 'shared', v_created_at + interval '3 days', true),
       (v_tx_id, case when v_is_registered then 'AttorneyLaneCompleted' when rec.blocked_lane is not null then 'AttorneyCriticalBlockerCreated' else 'AttorneyLaneStageUpdated' end,
        jsonb_build_object('title', case when v_is_registered then 'Registration confirmed' when rec.blocked_lane is not null then 'Matter requires attention' else 'Workflow updated' end,
                           'description', case when v_is_registered then 'Final registration and close-out pack approved.' when rec.blocked_lane is not null then 'A critical workflow item is blocking progress.' else 'Matter moved to ' || replace(rec.current_stage, '_', ' ') || '.' end),
-       v_user_id, 'attorney', 'professional_shared', v_updated_at, true);
+       v_user_id, 'attorney', 'shared', v_updated_at, true);
   end loop;
 
   raise notice 'Dalawyer demo seed complete. Seeded 15 attorney matters for firm % in organisation %.', v_firm_id, v_org_id;

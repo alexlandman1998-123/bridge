@@ -128,6 +128,7 @@ export const APP_NAV_BY_ROLE = {
         { key: 'attorney_matters_shared', label: 'Shared Matters', to: '/attorney/matters/shared' },
         { key: 'attorney_matters_delayed', label: 'Delayed Matters', to: '/attorney/matters/delayed' },
         { key: 'attorney_matters_registered', label: 'Registered Matters', to: '/attorney/matters/registered' },
+        { key: 'attorney_matters_full_service', label: 'Full-Service Matters', to: '/attorney/matters/full-service' },
       ],
     },
     { key: 'attorney_workflow_board', label: 'Workflow Board', to: '/attorney/operations' },
