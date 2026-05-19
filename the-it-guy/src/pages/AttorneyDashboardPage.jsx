@@ -417,7 +417,6 @@ function AttorneyDashboardPage() {
       {error ? <div className={`${cardClass} p-4`}><p className="text-sm text-red-700">{error}</p></div> : null}
 
       <KpiStrip stats={dashboard.matterStats} financialSnapshot={dashboard.financialSnapshot} />
-      <CriticalAlerts alerts={dashboard.criticalAlerts} />
 
       <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(320px,1fr)]">
         <div className="grid min-w-0 gap-6">
@@ -456,6 +455,8 @@ function AttorneyDashboardPage() {
           <FinancialSnapshot data={dashboard.financialSnapshot} />
         </aside>
       </div>
+
+      <CriticalAlerts alerts={dashboard.criticalAlerts} />
     </section>
   )
 }
