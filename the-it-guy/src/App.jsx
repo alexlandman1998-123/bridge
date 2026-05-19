@@ -235,6 +235,7 @@ function AppLayout({ onLogout, user }) {
     /^\/pipeline\/leads\/[^/]+\/legal\/[^/]+/.test(location.pathname)
   const isCommercialRoute = location.pathname.startsWith('/commercial')
   const hideSharedHeader = isLegalWorkspaceRoute || (role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/'))
+  const isAttorneyDashboardRoute = role === 'attorney' && location.pathname === '/attorney/dashboard'
   const isDashboardRoute = location.pathname === '/dashboard' || location.pathname === '/'
   const defaultDevelopmentId = workspace.id === 'all' ? '' : workspace.id
 
@@ -359,7 +360,10 @@ function AppLayout({ onLogout, user }) {
         ) : null}
 
         <main ref={mainScrollRef} className={`ui-main-content ui-page-scroll ${hideSharedHeader ? 'pt-6' : ''}`.trim()}>
-          <div key={routeContentKey} className={`ui-content-container ${isDashboardRoute ? 'ui-content-container-dashboard' : ''}`.trim()}>
+          <div
+            key={routeContentKey}
+            className={`ui-content-container ${isDashboardRoute ? 'ui-content-container-dashboard' : ''} ${isAttorneyDashboardRoute ? 'ui-content-container-edge' : ''}`.trim()}
+          >
             <Suspense key={routeContentKey} fallback={<PageSkeleton />}>
               <Outlet key={routeContentKey} />
             </Suspense>

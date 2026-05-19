@@ -344,7 +344,7 @@ function AttorneyDashboardPage() {
     const value = new URLSearchParams(location.search).get('roleView') || 'all'
     return ROLE_VIEW_OPTIONS.some((option) => option.value === value) ? value : 'all'
   }, [location.search])
-  const shellClass = 'grid w-full max-w-none gap-5 px-3 py-4 sm:px-4 lg:px-5 xl:px-5'
+  const shellClass = 'grid w-full max-w-none gap-5 px-3 py-4 sm:px-4 lg:px-4 xl:px-4'
 
   useEffect(() => {
     let active = true

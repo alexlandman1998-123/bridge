@@ -288,6 +288,10 @@
     @apply px-2 sm:px-3 lg:px-4;
   }
 
+  .ui-content-container-edge {
+    @apply px-0;
+  }
+
   .ui-page-scroll {
     @apply min-w-0 flex-1 overflow-y-auto px-0 py-6;
   }
