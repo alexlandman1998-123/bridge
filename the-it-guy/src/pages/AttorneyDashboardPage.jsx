@@ -263,12 +263,12 @@ function AttentionList({ rows = [], alerts = [] }) {
       <h2 className="text-sm font-semibold text-slate-950">Matters Requiring Attention</h2>
       <div className="grid gap-2">
         {displayRows.map((row) => (
-          <Link key={row.key} to="/transactions" className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 transition hover:bg-slate-100">
-            <span className="inline-flex min-w-0 items-center gap-2 text-sm font-medium text-slate-700">
+          <Link key={row.key} to="/transactions" className="flex min-w-0 items-start justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 transition hover:bg-slate-100">
+            <span className="inline-flex min-w-0 flex-1 items-start gap-2 text-sm font-medium leading-5 text-slate-700">
               <AlertTriangle size={15} className="shrink-0 text-red-500" />
-              <span className="truncate">{row.label}</span>
+              <span className="min-w-0 break-words">{row.label}</span>
             </span>
-            <strong className="text-sm text-red-600">{formatNumber(row.count)}</strong>
+            <strong className="shrink-0 text-sm text-red-600">{formatNumber(row.count)}</strong>
           </Link>
         ))}
       </div>
@@ -418,7 +418,7 @@ function AttorneyDashboardPage() {
 
       <KpiStrip stats={dashboard.matterStats} financialSnapshot={dashboard.financialSnapshot} />
 
-      <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,4fr)_minmax(280px,1fr)] 2xl:grid-cols-[minmax(0,4.4fr)_minmax(300px,1fr)]">
+      <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,4fr)_minmax(320px,1fr)] 2xl:grid-cols-[minmax(0,4.3fr)_minmax(340px,1fr)]">
         <div className="grid min-w-0 gap-6">
           <MatterLane
             title="Transfer Matters"
