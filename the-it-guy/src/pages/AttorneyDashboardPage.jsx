@@ -63,7 +63,7 @@ function formatCurrency(value) {
 function StatePanel({ children, tone = 'neutral' }) {
   const toneClass = tone === 'danger' ? 'text-red-700' : 'text-slate-600'
   return (
-    <section className="mx-auto grid w-full max-w-[1600px] gap-4 px-3 py-4 sm:px-4 lg:px-6">
+    <section className="grid w-full max-w-none gap-4 px-3 py-4 sm:px-4 lg:px-5">
       <div className={`${cardClass} p-4`}>
         <p className={`text-sm ${toneClass}`}>{children}</p>
       </div>
@@ -170,7 +170,7 @@ function MatterCard({ matter, type }) {
   const isTransfer = type === 'transfer'
   const isBond = type === 'bond'
   return (
-    <Link to={matter.href || '/transactions'} className="block w-[320px] shrink-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md">
+    <Link to={matter.href || '/transactions'} className="block w-[300px] shrink-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md 2xl:w-[316px]">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-slate-950">{matter.reference}</p>
@@ -344,7 +344,7 @@ function AttorneyDashboardPage() {
     const value = new URLSearchParams(location.search).get('roleView') || 'all'
     return ROLE_VIEW_OPTIONS.some((option) => option.value === value) ? value : 'all'
   }, [location.search])
-  const shellClass = 'mx-auto grid w-full max-w-[1600px] gap-5 px-3 py-4 sm:px-4 lg:px-6'
+  const shellClass = 'grid w-full max-w-none gap-5 px-3 py-4 sm:px-4 lg:px-5 xl:px-5'
 
   useEffect(() => {
     let active = true
@@ -418,7 +418,7 @@ function AttorneyDashboardPage() {
 
       <KpiStrip stats={dashboard.matterStats} financialSnapshot={dashboard.financialSnapshot} />
 
-      <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(320px,1fr)]">
+      <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,4fr)_minmax(280px,1fr)] 2xl:grid-cols-[minmax(0,4.4fr)_minmax(300px,1fr)]">
         <div className="grid min-w-0 gap-6">
           <MatterLane
             title="Transfer Matters"
