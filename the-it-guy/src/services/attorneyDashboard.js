@@ -393,6 +393,59 @@ export function getFinancialSnapshot() {
   }
 }
 
+function daysSince(value) {
+  const timestamp = new Date(value || '').getTime()
+  if (!Number.isFinite(timestamp)) return 0
+  const delta = Date.now() - timestamp
+  return Math.max(0, Math.floor(delta / 86400000))
+}
+
+function riskToneFromMatter(matter = {}) {
+  if (matter.flags?.delayed) return 'high'
+  if (matter.flags?.awaitingGuarantees || matter.flags?.awaitingFica || matter.flags?.awaitingSignatures) return 'attention'
+  return 'normal'
+}
+
+function buildOperationalMatterLanes({ matterRoleSummaries = [], buyersById = {}, memberProfilesById = {} } = {}) {
+  const lanes = {
+    transfer: [],
+    bond: [],
+    cancellation: [],
+  }
+
+  matterRoleSummaries.forEach((summary) => {
+    const primaryUnit = summary.units?.[0] || {}
+    const transaction = summary.transaction || primaryUnit.transaction || {}
+    const assignedUserId = primaryUnit.primaryAttorneyId || primaryUnit.secretaryId || primaryUnit.adminHandlerId || null
+    const assignedProfile = assignedUserId ? memberProfilesById[assignedUserId] : null
+    const buyer = buyersById[transaction.buyer_id] || {}
+    const reference = transaction.transaction_reference || `Matter ${String(summary.transactionId || primaryUnit.transactionId || '').slice(0, 8)}`
+    const currentStage = transaction.current_sub_stage_summary || transaction.current_main_stage || transaction.stage || 'Instruction'
+    const card = {
+      id: summary.transactionId,
+      reference,
+      propertyAddress: transaction.property_address || transaction.address || 'Property address pending',
+      buyerName: buyer.name || buyer.email || 'Buyer pending',
+      sellerName: transaction.seller_name || transaction.seller || 'Seller pending',
+      bank: transaction.bank || transaction.bond_bank || transaction.financing_bank || 'Bank pending',
+      linkedReference: reference,
+      currentStage,
+      progress: Math.min(100, Math.max(12, Math.round(((daysSince(transaction.created_at) + 1) / 90) * 100))),
+      assignedStaff: assignedProfile?.fullName || transaction.assigned_attorney_email || 'Unassigned',
+      daysInStage: daysSince(transaction.updated_at || transaction.created_at),
+      riskTone: riskToneFromMatter(primaryUnit),
+      statusLabel: primaryUnit.issue || (primaryUnit.flags?.delayed ? 'Delayed' : 'On track'),
+      href: `/transactions/${summary.transactionId}`,
+    }
+
+    if (summary.roles.has('transfer')) lanes.transfer.push(card)
+    if (summary.roles.has('bond')) lanes.bond.push(card)
+    if (summary.roles.has('cancellation')) lanes.cancellation.push(card)
+  })
+
+  return lanes
+}
+
 function buildOwnerDashboardMember(firm = {}, user = {}) {
   const nowIso = new Date().toISOString()
   return {
@@ -758,6 +811,11 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
   const criticalAlerts = getCriticalAlerts({ uniqueMatters, kpis })
   const upcomingKeyDates = getUpcomingKeyDates({ kpis })
   const financialSnapshot = getFinancialSnapshot()
+  const matterLanes = buildOperationalMatterLanes({
+    matterRoleSummaries: scopedMatterRoleSummaries,
+    buyersById,
+    memberProfilesById,
+  })
 
   return {
     firm: {
@@ -793,5 +851,6 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     recentActivity: getRecentAttorneyActivity({ rows: recentActivity }),
     upcomingKeyDates,
     financialSnapshot,
+    matterLanes,
   }
 }
