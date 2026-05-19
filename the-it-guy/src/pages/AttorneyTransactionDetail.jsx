@@ -2449,6 +2449,59 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
+        {activeWorkspaceMenu === 'financials' ? (
+          <section className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.9fr)]">
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-section-title font-semibold text-textStrong">Financials</h3>
+                  <p className="mt-1 text-secondary text-textMuted">Purchase price, bond exposure, guarantees, transfer fees, and trust placeholders for this matter.</p>
+                </div>
+                <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
+                  Management view
+                </span>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {[
+                  ['Purchase Price', currency.format(purchasePriceValue || 0)],
+                  ['Deposit', transaction?.deposit_amount ? currency.format(Number(transaction.deposit_amount || 0)) : 'Not captured'],
+                  ['Bond Amount', transaction?.bond_amount ? currency.format(Number(transaction.bond_amount || 0)) : financeTypeLabel.includes('Bond') ? 'Pending' : 'Not applicable'],
+                  ['Cash Portion', transaction?.cash_portion ? currency.format(Number(transaction.cash_portion || 0)) : 'Not captured'],
+                  ['Transfer Fees', transaction?.transfer_fees ? currency.format(Number(transaction.transfer_fees || 0)) : 'Pending'],
+                  ['Bond Registration Costs', transaction?.bond_registration_costs ? currency.format(Number(transaction.bond_registration_costs || 0)) : 'Pending'],
+                  ['Cancellation Costs', transaction?.cancellation_costs ? currency.format(Number(transaction.cancellation_costs || 0)) : transaction?.seller_has_existing_bond ? 'Pending' : 'Not applicable'],
+                  ['Guarantees', transaction?.guarantee_amount ? currency.format(Number(transaction.guarantee_amount || 0)) : 'Pending'],
+                  ['Commission', transaction?.commission_amount ? currency.format(Number(transaction.commission_amount || 0)) : 'Pending'],
+                  ['Trust Balance', transaction?.trust_balance ? currency.format(Number(transaction.trust_balance || 0)) : 'Not connected'],
+                ].map(([label, value]) => (
+                  <article key={label} className="min-w-0 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                    <span className="text-label font-semibold uppercase text-textMuted">{label}</span>
+                    <strong className="mt-1 block truncate text-body font-semibold text-textStrong">{value}</strong>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+              <h3 className="text-section-title font-semibold text-textStrong">Guarantee & Cost Notes</h3>
+              <p className="mt-1 text-secondary text-textMuted">Financial workflows can be expanded here as trust and fee ledgers are connected.</p>
+              <div className="mt-4 grid gap-3">
+                {[
+                  ['Finance Type', financeTypeLabel],
+                  ['Current Stage', transferStageLabel],
+                  ['Expected Transfer Date', formatDate(transaction?.expected_transfer_date)],
+                  ['Registration Date', formatDate(transaction?.registration_date || transaction?.registered_at)],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex items-center justify-between gap-3 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                    <span className="text-sm text-textMuted">{label}</span>
+                    <strong className="truncate text-right text-sm text-textStrong">{value}</strong>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </section>
+        ) : null}
+
         {activeWorkspaceMenu === 'activity' ? (
           <section className="space-y-5">
             <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
