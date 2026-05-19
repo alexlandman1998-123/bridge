@@ -118,10 +118,10 @@ export const APP_NAV_BY_ROLE = {
     {
       key: 'attorney_matters',
       label: 'Matters',
-      to: '/transactions',
+      to: '/attorney/matters/all',
       activeMatch: ['/transactions', '/attorney/matters'],
       children: [
-        { key: 'attorney_matters_all', label: 'All Matters', to: '/transactions' },
+        { key: 'attorney_matters_all', label: 'All Matters', to: '/attorney/matters/all' },
         { key: 'attorney_matters_transfer', label: 'Transfer Matters', to: '/attorney/matters/transfer' },
         { key: 'attorney_matters_bond', label: 'Bond Matters', to: '/attorney/matters/bond' },
         { key: 'attorney_matters_cancellation', label: 'Cancellation Matters', to: '/attorney/matters/cancellation' },

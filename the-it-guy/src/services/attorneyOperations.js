@@ -129,13 +129,21 @@ function resolveMatterType(transaction = {}, assignmentType = '') {
   const normalizedAssignmentType = toLower(assignmentType)
   if (normalizedAssignmentType === 'transfer') return 'Transfer'
   if (normalizedAssignmentType === 'bond') return 'Bond'
+  if (normalizedAssignmentType === 'cancellation') return 'Cancellation'
   if (normalizedAssignmentType === 'transfer_and_bond') return 'Transfer + Bond'
+  if (normalizedAssignmentType === 'transfer_bond_cancellation') return 'Transfer + Bond + Cancellation'
+  if (normalizedAssignmentType === 'bond_cancellation') return 'Bond + Cancellation'
+  if (normalizedAssignmentType === 'transfer_cancellation') return 'Transfer + Cancellation'
 
   const financeType = toLower(transaction.finance_type)
+  const sellerHasExistingBond =
+    transaction.seller_has_existing_bond === true ||
+    toLower(transaction.seller_has_existing_bond) === 'true' ||
+    toLower(transaction.seller_existing_bond) === 'true'
   if (financeType.includes('bond') || financeType.includes('hybrid') || financeType.includes('combination')) {
-    return 'Transfer + Bond'
+    return sellerHasExistingBond ? 'Transfer + Bond + Cancellation' : 'Transfer + Bond'
   }
-  return 'Transfer'
+  return sellerHasExistingBond ? 'Transfer + Cancellation' : 'Transfer'
 }
 
 function resolveMatterFlags(transaction = {}) {
@@ -213,7 +221,7 @@ async function fetchTransactions(client, ids = []) {
   if (!transactionIds.length) return []
 
   const primarySelect =
-    'id, organisation_id, assigned_user_id, buyer_id, transaction_reference, stage, current_main_stage, current_sub_stage_summary, finance_type, risk_status, operational_state, attorney_stage, next_action, updated_at, created_at, assigned_attorney_email, attorney'
+    'id, organisation_id, assigned_user_id, buyer_id, transaction_reference, stage, current_main_stage, current_sub_stage_summary, finance_type, risk_status, operational_state, attorney_stage, next_action, updated_at, created_at, assigned_attorney_email, attorney, property_description, property_address_line_1, property_address_line_2, suburb, city, province, seller_name, seller_email, seller_phone, seller_has_existing_bond, current_bond_bank, current_bond_account_number, estimated_settlement_amount, purchase_price, sales_price, expected_transfer_date, registration_date, registered_at, lifecycle_state'
 
   let query = await client
     .from('transactions')
@@ -225,7 +233,10 @@ async function fetchTransactions(client, ids = []) {
     (isMissingColumnError(query.error, 'current_main_stage') ||
       isMissingColumnError(query.error, 'assigned_attorney_email') ||
       isMissingColumnError(query.error, 'operational_state') ||
-      isMissingColumnError(query.error, 'attorney_stage'))
+      isMissingColumnError(query.error, 'attorney_stage') ||
+      isMissingColumnError(query.error, 'property_description') ||
+      isMissingColumnError(query.error, 'seller_has_existing_bond') ||
+      isMissingColumnError(query.error, 'current_bond_bank'))
   ) {
     query = await client
       .from('transactions')
@@ -726,6 +737,23 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
         organisationId: transaction.organisation_id || null,
         matterReference: transaction.transaction_reference || `Transaction ${String(transaction.id || '').slice(0, 8)}`,
         clientName,
+        buyerName: clientName,
+        sellerName: transaction.seller_name || transaction.seller_email || 'Seller pending',
+        propertyLabel:
+          transaction.property_description ||
+          [transaction.property_address_line_1, transaction.suburb, transaction.city].filter(Boolean).join(', ') ||
+          'Property pending',
+        developmentName: transaction.development_name || 'Standalone matter',
+        financeType: transaction.finance_type || 'cash',
+        purchasePrice: Number(transaction.purchase_price || transaction.sales_price || 0),
+        sellerHasExistingBond:
+          transaction.seller_has_existing_bond === true ||
+          toLower(transaction.seller_has_existing_bond) === 'true' ||
+          toLower(transaction.seller_existing_bond) === 'true',
+        currentBondBank: transaction.current_bond_bank || '',
+        estimatedSettlementAmount: Number(transaction.estimated_settlement_amount || 0),
+        registrationDate: transaction.registration_date || transaction.registered_at || null,
+        lifecycleState: transaction.lifecycle_state || null,
         matterType,
         currentStage: buildStageLabel(transaction),
         assignedRole: assignmentRole,

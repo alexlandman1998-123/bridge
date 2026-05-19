@@ -45,10 +45,11 @@ import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 
 const ATTORNEY_WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
+  { id: 'buyer', label: 'Buyer' },
+  { id: 'seller', label: 'Seller' },
   { id: 'documents', label: 'Documents' },
+  { id: 'financials', label: 'Financials' },
   { id: 'activity', label: 'Activity' },
-  { id: 'stakeholders', label: 'Stakeholders' },
-  { id: 'details', label: 'Details' },
 ]
 
 const ATTORNEY_STAGE_RAIL = [
@@ -78,22 +79,22 @@ const ATTORNEY_DOCUMENT_CATEGORIES = [
 
 const ATTORNEY_DOCUMENT_GROUPS = [
   {
-    key: 'sales_documents',
-    label: 'Sales Documents',
-    description: 'Core sales pack, drafting, and signing-related files.',
-    categories: ['Instruction / OTP Documents', 'Drafting Documents', 'Signing Documents'],
+    key: 'buyer_documents',
+    label: 'Buyer Documents',
+    description: 'Buyer FICA, finance, onboarding, and signature-ready files.',
+    categories: ['Buyer FICA / Compliance'],
   },
   {
-    key: 'fica_documents',
-    label: 'FICA Documents',
-    description: 'Buyer and seller compliance documentation required for onboarding.',
-    categories: ['Buyer FICA / Compliance', 'Seller FICA / Compliance'],
+    key: 'seller_documents',
+    label: 'Seller Documents',
+    description: 'Seller FICA, mandate, existing bond, and seller signature files.',
+    categories: ['Seller FICA / Compliance'],
   },
   {
-    key: 'additional_requests',
-    label: 'Additional Requests',
-    description: 'Additional manually requested supporting documents.',
-    categories: ['Internal Working Documents'],
+    key: 'transfer_documents',
+    label: 'Transfer Documents',
+    description: 'Instruction, transfer drafting, signing, lodgement, and registration files.',
+    categories: ['Instruction / OTP Documents', 'Drafting Documents', 'Signing Documents', 'Lodgement Documents'],
   },
   {
     key: 'bond_documents',
@@ -102,10 +103,22 @@ const ATTORNEY_DOCUMENT_GROUPS = [
     categories: ['Guarantees', 'Clearance Documents'],
   },
   {
-    key: 'property_documents',
-    label: 'Property Documents',
-    description: 'Lodgement, registration, and property close-out material.',
-    categories: ['Lodgement Documents', 'Registration / Close-Out Documents'],
+    key: 'cancellation_documents',
+    label: 'Cancellation Documents',
+    description: 'Existing bond cancellation figures, cancellation packs, and bank clearances.',
+    categories: ['Clearance Documents'],
+  },
+  {
+    key: 'generated_documents',
+    label: 'Generated Documents',
+    description: 'Generated transfer, bond, cancellation, and reporting documents.',
+    categories: ['Internal Working Documents'],
+  },
+  {
+    key: 'signed_documents',
+    label: 'Signed Documents',
+    description: 'Executed documents and registration close-out files.',
+    categories: ['Registration / Close-Out Documents'],
   },
 ]
 
@@ -410,7 +423,7 @@ function buildPropertyAddress(transaction) {
 function getAttorneyDocumentGroupKey(category) {
   const normalizedCategory = ATTORNEY_DOCUMENT_CATEGORIES.includes(category) ? category : 'Internal Working Documents'
   const match = ATTORNEY_DOCUMENT_GROUPS.find((group) => group.categories.includes(normalizedCategory))
-  return match?.key || 'additional_requests'
+  return match?.key || 'generated_documents'
 }
 
 function toTitle(value) {
@@ -876,17 +889,20 @@ function AttorneyTransactionDetail() {
     [sortedAppointments],
   )
   const workspaceMenuTabs = ATTORNEY_WORKSPACE_TABS.map((tab) => {
+    if (tab.id === 'buyer') {
+      return { ...tab, meta: buyer?.name ? 'Buyer ready' : 'Buyer pending' }
+    }
+    if (tab.id === 'seller') {
+      return { ...tab, meta: transaction?.seller_name ? 'Seller ready' : 'Seller pending' }
+    }
     if (tab.id === 'documents') {
       return { ...tab, meta: `${documents.length} files` }
     }
+    if (tab.id === 'financials') {
+      return { ...tab, meta: currency.format(purchasePriceValue || 0) }
+    }
     if (tab.id === 'activity') {
       return { ...tab, meta: `${visibleTransactionDiscussion.length + transactionEvents.length} updates` }
-    }
-    if (tab.id === 'stakeholders') {
-      return { ...tab, meta: `${transactionParticipants.filter((item) => item?.stakeholderStatus !== 'removed').length} active` }
-    }
-    if (tab.id === 'details') {
-      return { ...tab, meta: lifecycleLabel }
     }
     return { ...tab, meta: transferStageLabel }
   })
@@ -2131,6 +2147,113 @@ function AttorneyTransactionDetail() {
               <AttorneyWorkflowLanesPanel transactionId={transaction?.id} onChanged={loadData} />
             </section>
           </>
+        ) : null}
+
+        {activeWorkspaceMenu === 'buyer' ? (
+          <section className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-section-title font-semibold text-textStrong">Buyer Workspace</h3>
+                  <p className="mt-1 text-secondary text-textMuted">Buyer identity, FICA, finance position, signatures, and communication notes.</p>
+                </div>
+                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-helper font-semibold ${onboardingCompleted ? 'border-success/30 bg-successSoft text-success' : 'border-warning/30 bg-warningSoft text-warning'}`}>
+                  {onboardingCompleted ? 'Onboarding complete' : 'Onboarding pending'}
+                </span>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {detailPanelSections.buyer.items.map((item) => (
+                  <article key={item.label} className="min-w-0 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                    <span className="text-label font-semibold uppercase text-textMuted">{item.label}</span>
+                    <strong className="mt-1 block truncate text-body font-semibold text-textStrong">{item.value}</strong>
+                  </article>
+                ))}
+                <article className="min-w-0 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                  <span className="text-label font-semibold uppercase text-textMuted">Finance Type</span>
+                  <strong className="mt-1 block text-body font-semibold text-textStrong">{financeTypeLabel}</strong>
+                </article>
+                <article className="min-w-0 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                  <span className="text-label font-semibold uppercase text-textMuted">Signature Status</span>
+                  <strong className="mt-1 block text-body font-semibold text-textStrong">
+                    {requiredDocumentChecklist.length ? documentReadinessText : 'No signature pack configured'}
+                  </strong>
+                </article>
+              </div>
+            </section>
+
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+              <h3 className="text-section-title font-semibold text-textStrong">Buyer Documents</h3>
+              <p className="mt-1 text-secondary text-textMuted">Buyer-facing files remain separated from seller and internal legal documents.</p>
+              <div className="mt-4 grid gap-3">
+                {(groupedDocuments.buyer_documents || []).slice(0, 6).map((document) => (
+                  <article key={document.id} className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                    <strong className="block truncate text-sm text-textStrong">{document.name || 'Buyer document'}</strong>
+                    <p className="mt-1 text-xs text-textMuted">{document.normalizedCategory || document.category || 'Buyer document'} • {toTitle(document.status || 'uploaded')}</p>
+                  </article>
+                ))}
+                {!(groupedDocuments.buyer_documents || []).length ? (
+                  <p className="rounded-control border border-dashed border-borderSoft bg-surfaceAlt px-4 py-4 text-sm text-textMuted">
+                    No buyer documents have been uploaded yet.
+                  </p>
+                ) : null}
+              </div>
+            </section>
+          </section>
+        ) : null}
+
+        {activeWorkspaceMenu === 'seller' ? (
+          <section className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-section-title font-semibold text-textStrong">Seller Workspace</h3>
+                  <p className="mt-1 text-secondary text-textMuted">Seller identity, FICA, existing bond information, cancellation triggers, and seller documents.</p>
+                </div>
+                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-helper font-semibold ${
+                  transaction?.seller_has_existing_bond ? 'border-warning/30 bg-warningSoft text-warning' : 'border-borderDefault bg-mutedBg text-textMuted'
+                }`}>
+                  {transaction?.seller_has_existing_bond ? 'Cancellation required' : 'No seller bond flagged'}
+                </span>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {detailPanelSections.seller.items.map((item) => (
+                  <article key={item.label} className="min-w-0 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                    <span className="text-label font-semibold uppercase text-textMuted">{item.label}</span>
+                    <strong className="mt-1 block truncate text-body font-semibold text-textStrong">{item.value}</strong>
+                  </article>
+                ))}
+                {[
+                  ['Existing Bond', transaction?.seller_has_existing_bond ? 'Yes' : 'Not flagged'],
+                  ['Current Bond Bank', transaction?.current_bond_bank || 'Not captured'],
+                  ['Bond Account', transaction?.current_bond_account_number || 'Not captured'],
+                  ['Estimated Settlement', transaction?.estimated_settlement_amount ? currency.format(Number(transaction.estimated_settlement_amount || 0)) : 'Not captured'],
+                ].map(([label, value]) => (
+                  <article key={label} className="min-w-0 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                    <span className="text-label font-semibold uppercase text-textMuted">{label}</span>
+                    <strong className="mt-1 block truncate text-body font-semibold text-textStrong">{value}</strong>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+              <h3 className="text-section-title font-semibold text-textStrong">Seller & Cancellation Documents</h3>
+              <p className="mt-1 text-secondary text-textMuted">Seller files and cancellation-specific documents stay visible together.</p>
+              <div className="mt-4 grid gap-3">
+                {[...(groupedDocuments.seller_documents || []), ...(groupedDocuments.cancellation_documents || [])].slice(0, 6).map((document) => (
+                  <article key={document.id} className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                    <strong className="block truncate text-sm text-textStrong">{document.name || 'Seller document'}</strong>
+                    <p className="mt-1 text-xs text-textMuted">{document.normalizedCategory || document.category || 'Seller document'} • {toTitle(document.status || 'uploaded')}</p>
+                  </article>
+                ))}
+                {![...(groupedDocuments.seller_documents || []), ...(groupedDocuments.cancellation_documents || [])].length ? (
+                  <p className="rounded-control border border-dashed border-borderSoft bg-surfaceAlt px-4 py-4 text-sm text-textMuted">
+                    No seller or cancellation documents have been uploaded yet.
+                  </p>
+                ) : null}
+              </div>
+            </section>
+          </section>
         ) : null}
 
         {activeWorkspaceMenu === 'documents' ? (

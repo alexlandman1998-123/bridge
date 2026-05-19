@@ -54,6 +54,7 @@ const AttorneyIntelligenceMarketPositionPage = lazy(() => import('./pages/attorn
 const AttorneyIntelligenceOpportunityEnginePage = lazy(() => import('./pages/attorney-intelligence/OpportunityEnginePage'))
 const AttorneyIntelligencePartnerPage = lazy(() => import('./pages/attorney-intelligence/PartnerIntelligencePage'))
 const AttorneyIntelligenceRevenueForecastPage = lazy(() => import('./pages/attorney-intelligence/RevenueForecastPage'))
+const AttorneyMattersPage = lazy(() => import('./pages/AttorneyMattersPage'))
 const AttorneyOnboardingPage = lazy(() => import('./pages/AttorneyOnboardingPage'))
 const AttorneyOperationsPage = lazy(() => import('./pages/AttorneyOperationsPage'))
 const AttorneySchedulingPage = lazy(() => import('./pages/AttorneySchedulingPage'))
@@ -1074,10 +1075,7 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['attorney']}>
                     <AttorneyFirmRoute>
-                      <PlaceholderPage
-                        title="Attorney Matters"
-                        description="Matter-specific legal workspaces are being prepared. Use All Matters for the active transaction list."
-                      />
+                      <AttorneyMattersPage />
                     </AttorneyFirmRoute>
                   </RoleRoute>
                 }
