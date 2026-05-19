@@ -115,12 +115,28 @@ export const APP_NAV_BY_ROLE = {
   ],
   attorney: [
     { key: 'dashboard', label: 'Dashboard', to: '/attorney/dashboard' },
-    { key: 'scheduling', label: 'Scheduling', to: '/attorney/scheduling' },
-    { key: 'transactions', label: 'Transactions', to: '/transactions' },
-    { key: 'developments', label: 'Developments', to: '/developments' },
-    { key: 'clients', label: 'Clients', to: '/clients' },
+    {
+      key: 'attorney_matters',
+      label: 'Matters',
+      to: '/transactions',
+      activeMatch: ['/transactions', '/attorney/matters'],
+      children: [
+        { key: 'attorney_matters_all', label: 'All Matters', to: '/transactions' },
+        { key: 'attorney_matters_transfer', label: 'Transfer Matters', to: '/attorney/matters/transfer' },
+        { key: 'attorney_matters_bond', label: 'Bond Matters', to: '/attorney/matters/bond' },
+        { key: 'attorney_matters_cancellation', label: 'Cancellation Matters', to: '/attorney/matters/cancellation' },
+        { key: 'attorney_matters_shared', label: 'Shared Matters', to: '/attorney/matters/shared' },
+        { key: 'attorney_matters_delayed', label: 'Delayed Matters', to: '/attorney/matters/delayed' },
+        { key: 'attorney_matters_registered', label: 'Registered Matters', to: '/attorney/matters/registered' },
+      ],
+    },
+    { key: 'attorney_workflow_board', label: 'Workflow Board', to: '/attorney/operations' },
+    { key: 'scheduling', label: 'Calendar & Scheduling', to: '/attorney/scheduling' },
+    { key: 'documents', label: 'Documents', to: '/documents' },
+    { key: 'clients', label: 'Clients & Parties', to: '/clients' },
     { key: 'financials', label: 'Financials', to: '/financials' },
-    { key: 'reports', label: 'Reports', to: '/reports' },
+    { key: 'team_departments', label: 'Team & Departments', to: '/users' },
+    { key: 'reports', label: 'Reports & Analytics', to: '/reports' },
     ...(SHOW_INTELLIGENCE_BETA
       ? [
           {

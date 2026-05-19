@@ -1065,6 +1065,32 @@ function AppRoutes() {
                   </RoleRoute>
                 }
               />
+              <Route
+                path="/attorney/matters/:matterType"
+                element={
+                  <RoleRoute allowedRoles={['attorney']}>
+                    <AttorneyFirmRoute>
+                      <PlaceholderPage
+                        title="Attorney Matters"
+                        description="Matter-specific legal workspaces are being prepared. Use All Matters for the active transaction list."
+                      />
+                    </AttorneyFirmRoute>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/attorney/audit-logs"
+                element={
+                  <RoleRoute allowedRoles={['attorney']}>
+                    <AttorneyFirmRoute>
+                      <PlaceholderPage
+                        title="Audit Logs"
+                        description="Legal activity, document, and workflow audit trails will appear here."
+                      />
+                    </AttorneyFirmRoute>
+                  </RoleRoute>
+                }
+              />
               {SHOW_INTELLIGENCE_BETA ? (
                 <>
                   <Route

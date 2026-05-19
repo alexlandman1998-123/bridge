@@ -220,6 +220,179 @@ function isOperationalAssignmentStatus(status) {
   return ['pending', 'active', 'paused'].includes(normalizeAssignmentStatus(status))
 }
 
+function getMatterRolesFromUnit(matter = {}) {
+  const roles = new Set()
+  const assignmentType = toLower(matter.assignmentType)
+  const attorneyRole = toLower(matter.attorneyRole)
+  const matterType = toLower(matter.matterType)
+
+  if (assignmentType === 'transfer' || assignmentType === 'transfer_and_bond' || attorneyRole === 'transfer_attorney' || matterType === 'transfer') {
+    roles.add('transfer')
+  }
+  if (assignmentType === 'bond' || assignmentType === 'transfer_and_bond' || attorneyRole === 'bond_attorney' || matterType === 'bond') {
+    roles.add('bond')
+  }
+  if (assignmentType === 'cancellation' || attorneyRole === 'cancellation_attorney' || matterType === 'cancellation') {
+    roles.add('cancellation')
+  }
+  if (!roles.size) {
+    roles.add('transfer')
+  }
+
+  return roles
+}
+
+function buildMatterRoleSummaries(matterUnits = []) {
+  const byTransactionId = new Map()
+
+  matterUnits.forEach((matter) => {
+    const transactionId = matter.transactionId
+    if (!transactionId) return
+    if (!byTransactionId.has(transactionId)) {
+      byTransactionId.set(transactionId, {
+        transactionId,
+        roles: new Set(),
+        units: [],
+        delayed: false,
+        hasAttention: false,
+        transaction: matter.transaction || null,
+      })
+    }
+
+    const summary = byTransactionId.get(transactionId)
+    getMatterRolesFromUnit(matter).forEach((role) => summary.roles.add(role))
+    summary.units.push(matter)
+    summary.delayed = summary.delayed || Boolean(matter.flags?.delayed)
+    summary.hasAttention = summary.hasAttention || Boolean(matter.issue)
+  })
+
+  return [...byTransactionId.values()].map((summary) => ({
+    ...summary,
+    roleList: [...summary.roles],
+    isShared: summary.roles.size > 1,
+    isFullService: summary.roles.has('transfer') && summary.roles.has('bond') && summary.roles.has('cancellation'),
+  }))
+}
+
+function matterMatchesRoleView(summary, roleView = 'all') {
+  const normalized = toLower(roleView || 'all').replace(/_/g, '-')
+  if (normalized === 'transfer') return summary.roles.has('transfer')
+  if (normalized === 'bond') return summary.roles.has('bond')
+  if (normalized === 'cancellation') return summary.roles.has('cancellation')
+  // TODO: once cross-firm participant rows are exposed to this service, shared matters should include matters with multiple firms, not only multi-role matters for this firm.
+  if (normalized === 'shared') return summary.isShared
+  if (normalized === 'full-service') return summary.isFullService
+  return true
+}
+
+function resolvePipelineStage(transaction = {}) {
+  const haystack = [
+    transaction.stage,
+    transaction.current_main_stage,
+    transaction.current_sub_stage_summary,
+    transaction.attorney_stage,
+    transaction.next_action,
+  ].map(toLower).join(' ')
+
+  if (haystack.includes('registered') || haystack.includes('registration')) return 'registration'
+  if (haystack.includes('lodg')) return 'lodgement'
+  if (haystack.includes('guarantee')) return 'guarantees'
+  if (haystack.includes('sign') || haystack.includes('otp')) return 'signing'
+  if (haystack.includes('draft')) return 'drafting'
+  if (haystack.includes('fica') || haystack.includes('document')) return 'fica'
+  return 'instruction'
+}
+
+export function getAttorneyMatterStats({ kpis = {}, matterRoleSummaries = [] } = {}) {
+  const roleCounts = getMattersByLegalRole({ matterRoleSummaries })
+  return {
+    activeMatters: Number(kpis.activeMatters || 0),
+    lodgementsPending: Number(kpis.lodgementsPending || 0),
+    registeredThisMonth: Number(kpis.registeredThisMonth || 0),
+    delayedMatters: Number(kpis.delayedMatters || 0),
+    averageTransferTimeDays: Number(kpis.averageTransferTimeDays || 0),
+    bondMatters: roleCounts.bondOnly + roleCounts.dualRole + roleCounts.allThreeRoles,
+    cancellationMatters: roleCounts.cancellationOnly + roleCounts.allThreeRoles,
+  }
+}
+
+export function getMattersByLegalRole({ matterRoleSummaries = [] } = {}) {
+  return matterRoleSummaries.reduce(
+    (accumulator, summary) => {
+      const roles = summary.roles || new Set(summary.roleList || [])
+      const count = roles.size
+      if (roles.has('transfer') && count === 1) accumulator.transferOnly += 1
+      else if (roles.has('bond') && count === 1) accumulator.bondOnly += 1
+      else if (roles.has('cancellation') && count === 1) accumulator.cancellationOnly += 1
+      else if (roles.has('transfer') && roles.has('bond') && roles.has('cancellation')) accumulator.allThreeRoles += 1
+      else if (count > 1) accumulator.dualRole += 1
+      return accumulator
+    },
+    { transferOnly: 0, bondOnly: 0, cancellationOnly: 0, dualRole: 0, allThreeRoles: 0 },
+  )
+}
+
+export function getCriticalAlerts({ uniqueMatters = [], kpis = {} } = {}) {
+  const lodgedTomorrow = 0 // TODO: connect to matter/lodgement due-date fields when they are available.
+  const stalledBondApproval = uniqueMatters.filter((matter) => matter.matterType === 'bond' && matter.flags?.delayed).length
+  return [
+    { key: 'guarantees', label: 'Matters awaiting guarantees', count: Number(kpis.awaitingGuarantees || 0), tone: 'red' },
+    { key: 'fica', label: 'FICA documents overdue', count: Number(kpis.awaitingFica || 0), tone: 'orange' },
+    { key: 'documents', label: 'Unsent / unsigned documents', count: Number(kpis.awaitingSignatures || 0), tone: 'amber' },
+    { key: 'lodgement', label: 'Lodgement deadline tomorrow', count: lodgedTomorrow, tone: 'purple' },
+    { key: 'bond', label: 'Stalled bond approval', count: stalledBondApproval, tone: 'red' },
+  ]
+}
+
+export function getDepartmentOverview({ departments = [] } = {}) {
+  return departments.map((department) => {
+    const capacity = Math.min(100, Math.round((Number(department.activeMatters || 0) / 24) * 100))
+    return {
+      ...department,
+      capacity,
+      statusTone: Number(department.delayedMatters || 0) > 0 ? 'attention' : Number(department.activeMatters || 0) > 0 ? 'active' : 'idle',
+    }
+  })
+}
+
+export function getStaffWorkload({ staff = [], matterUnits = [] } = {}) {
+  const weekStart = startOfWeek(new Date())
+  return staff.map((member) => {
+    const memberUnits = matterUnits.filter((matter) =>
+      [matter.primaryAttorneyId, matter.secretaryId, matter.adminHandlerId].filter(Boolean).includes(member.userId),
+    )
+    const lodgingThisWeek = memberUnits.filter((matter) => {
+      const stage = resolvePipelineStage(matter.transaction)
+      return stage === 'lodgement' && isAfter(matter.transaction?.updated_at || matter.transaction?.created_at, weekStart)
+    }).length
+    const capacity = Math.min(100, Math.round((Number(member.assignedMatters || 0) / 20) * 100))
+    return { ...member, lodgingThisWeek, capacity }
+  })
+}
+
+export function getUpcomingKeyDates({ kpis = {} } = {}) {
+  return [
+    { key: 'signings', label: 'Signings', helper: 'Scheduled', count: Number(kpis.awaitingSignatures || 0) },
+    { key: 'lodgements', label: 'Lodgements', helper: 'Due', count: Number(kpis.lodgementsPending || 0) },
+    { key: 'registrations', label: 'Registrations', helper: 'Expected', count: Number(kpis.registeredThisMonth || 0) },
+    { key: 'guarantees', label: 'Guarantee', helper: 'Expiring', count: Number(kpis.awaitingGuarantees || 0) },
+  ]
+}
+
+export function getRecentAttorneyActivity({ rows = [] } = {}) {
+  return rows.slice(0, 6)
+}
+
+export function getFinancialSnapshot() {
+  // TODO: connect this to attorney billing, collection, trust ledger, and fee allocation records once those tables are available.
+  return {
+    feesBilled: 0,
+    feesCollected: 0,
+    outstandingFees: 0,
+    trustBalance: 0,
+  }
+}
+
 function buildOwnerDashboardMember(firm = {}, user = {}) {
   const nowIso = new Date().toISOString()
   return {
@@ -245,7 +418,7 @@ async function readDashboardDependency(label, promise, fallback) {
   }
 }
 
-export async function getAttorneyManagementDashboardData(firmId = null) {
+export async function getAttorneyManagementDashboardData(firmId = null, { roleView = 'all' } = {}) {
   const client = requireClient()
   const authUser = await getAuthenticatedUser(client)
 
@@ -386,6 +559,13 @@ export async function getAttorneyManagementDashboardData(firmId = null) {
     })
   }
 
+  const allMatterRoleSummaries = buildMatterRoleSummaries(matterUnits)
+  const scopedMatterRoleSummaries = allMatterRoleSummaries.filter((summary) => matterMatchesRoleView(summary, roleView))
+  const scopedTransactionIds = new Set(scopedMatterRoleSummaries.map((summary) => summary.transactionId))
+  if (toLower(roleView || 'all') !== 'all') {
+    matterUnits = matterUnits.filter((matter) => scopedTransactionIds.has(matter.transactionId))
+  }
+
   const weekStart = startOfWeek(new Date())
   const monthStart = startOfMonth(new Date())
 
@@ -403,6 +583,8 @@ export async function getAttorneyManagementDashboardData(firmId = null) {
     activeMatters: uniqueMatters.length,
     transferMatters: transferAssignments.length,
     bondMatters: bondAssignments.length,
+    cancellationMatters: scopedMatterRoleSummaries.filter((summary) => summary.roles.has('cancellation')).length,
+    lodgementsPending: uniqueMatters.filter((matter) => resolvePipelineStage(matter.transaction) === 'lodgement').length,
     lodgedThisWeek: uniqueMatters.filter((matter) => {
       const stage = toLower(matter.transaction?.stage)
       const mainStage = toLower(matter.transaction?.current_main_stage)
@@ -420,6 +602,8 @@ export async function getAttorneyManagementDashboardData(firmId = null) {
     delayedMatters: uniqueMatters.filter((matter) => matter.flags.delayed).length,
     awaitingFica: uniqueMatters.filter((matter) => matter.flags.awaitingFica).length,
     awaitingSignatures: uniqueMatters.filter((matter) => matter.flags.awaitingSignatures).length,
+    awaitingGuarantees: uniqueMatters.filter((matter) => matter.flags.awaitingGuarantees).length,
+    averageTransferTimeDays: 0, // TODO: calculate from instruction to registration once dated attorney milestones are stored consistently.
   }
 
   const departmentsById = departments.reduce((accumulator, department) => {
@@ -427,7 +611,7 @@ export async function getAttorneyManagementDashboardData(firmId = null) {
     return accumulator
   }, {})
 
-  const departmentOverview = departments.map((department) => {
+  const rawDepartmentOverview = departments.map((department) => {
     const membersInDepartment = activeMembers.filter((member) => member.departmentId === department.id)
     const assignmentsForDepartment = matterUnits.filter((matter) => matter.departmentId === department.id)
 
@@ -466,7 +650,7 @@ export async function getAttorneyManagementDashboardData(firmId = null) {
     return accumulator
   }, {})
 
-  const staffWorkload = members.map((member) => {
+  const rawStaffWorkload = members.map((member) => {
     const profile = memberProfilesById[member.userId] || null
     const assigned = assignmentByUserId[member.userId] || []
     const delayedMatters = assigned.filter((matter) => matter.flags.delayed).length
@@ -555,6 +739,26 @@ export async function getAttorneyManagementDashboardData(firmId = null) {
     .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
     .slice(0, 12)
 
+  const matterPipeline = ['instruction', 'fica', 'drafting', 'signing', 'guarantees', 'lodgement', 'registration'].map((stage) => {
+    const stageMatters = uniqueMatters.filter((matter) => resolvePipelineStage(matter.transaction) === stage)
+    const delayed = stageMatters.filter((matter) => matter.flags.delayed).length
+    return {
+      key: stage,
+      label: stage === 'fica' ? 'FICA' : stage.charAt(0).toUpperCase() + stage.slice(1),
+      count: stageMatters.length,
+      trend: stageMatters.length ? '+0%' : '—',
+      status: delayed > 0 ? 'bottleneck' : stageMatters.length >= 8 ? 'attention' : 'on_track',
+    }
+  })
+
+  const departmentOverview = getDepartmentOverview({ departments: rawDepartmentOverview })
+  const staffWorkload = getStaffWorkload({ staff: rawStaffWorkload, matterUnits })
+  const mattersByRole = getMattersByLegalRole({ matterRoleSummaries: scopedMatterRoleSummaries })
+  const matterStats = getAttorneyMatterStats({ kpis, matterRoleSummaries: scopedMatterRoleSummaries })
+  const criticalAlerts = getCriticalAlerts({ uniqueMatters, kpis })
+  const upcomingKeyDates = getUpcomingKeyDates({ kpis })
+  const financialSnapshot = getFinancialSnapshot()
+
   return {
     firm: {
       id: resolvedFirm.id,
@@ -568,9 +772,26 @@ export async function getAttorneyManagementDashboardData(firmId = null) {
     departments,
     members,
     kpis,
+    filterContext: {
+      roleView,
+      totalMatters: allMatterRoleSummaries.length,
+      scopedMatters: scopedMatterRoleSummaries.length,
+    },
+    firmSummary: {
+      name: resolvedFirm.name,
+      status: 'Operational',
+      primaryRole: currentUserRole || 'firm_admin',
+      otherRoles: [...new Set(activeMembers.map((member) => member.role).filter((role) => role && role !== currentUserRole))],
+    },
+    matterStats,
+    criticalAlerts,
+    matterPipeline,
+    mattersByRole,
     departmentOverview,
     staffWorkload,
     mattersRequiringAttention,
-    recentActivity,
+    recentActivity: getRecentAttorneyActivity({ rows: recentActivity }),
+    upcomingKeyDates,
+    financialSnapshot,
   }
 }

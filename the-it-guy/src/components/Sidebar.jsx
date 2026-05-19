@@ -58,9 +58,20 @@ const ICON_BY_KEY = {
   agents_reporting: FileText,
   intelligence_beta: BrainCircuit,
   documents: Files,
+  attorney_matters: Files,
+  attorney_matters_all: Files,
+  attorney_matters_transfer: SwitchCamera,
+  attorney_matters_bond: FileCheck2,
+  attorney_matters_cancellation: AlertTriangle,
+  attorney_matters_shared: Users,
+  attorney_matters_delayed: AlertTriangle,
+  attorney_matters_registered: FileCheck2,
+  attorney_workflow_board: KanbanSquare,
+  team_departments: ShieldUser,
   buyer_information: FileCheck2,
   handover: KeyRound,
   reports: FileText,
+  audit_logs: FileText,
   snags: AlertTriangle,
   team: ShieldUser,
   users: ShieldUser,
@@ -164,7 +175,7 @@ function Sidebar() {
     role === 'developer'
       ? [{ key: 'team', label: 'Team', to: '/team' }, { key: 'settings', label: 'Settings', to: '/settings' }]
       : role === 'attorney'
-        ? [{ key: 'settings', label: 'Settings', to: '/settings' }, { key: 'users', label: 'Users', to: '/users' }]
+        ? [{ key: 'settings', label: 'Settings', to: '/settings' }, { key: 'audit_logs', label: 'Audit Logs', to: '/attorney/audit-logs' }]
         : role === 'agent'
           ? [{ key: 'settings', label: 'Settings', to: '/settings' }]
         : role === 'client'
