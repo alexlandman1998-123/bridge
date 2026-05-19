@@ -249,7 +249,7 @@ function buildDraftStorageKey(profileId = '') {
 
 function AttorneyOnboardingPage() {
   const navigate = useNavigate()
-  const { role, profile, refreshProfile } = useWorkspace()
+  const { role, profile } = useWorkspace()
   const [firmLoading, setFirmLoading] = useState(true)
   const [existingFirm, setExistingFirm] = useState(null)
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
@@ -535,7 +535,6 @@ function AttorneyOnboardingPage() {
       }
 
       const completion = await completeAttorneyFirmOnboarding(onboardingPayload)
-      await refreshProfile()
       if (typeof window !== 'undefined') {
         window.localStorage.removeItem(draftStorageKey)
       }
