@@ -634,6 +634,10 @@ async function getCurrentUserOwnedAttorneyFirm(client, userId) {
     if (isMissingTableError(query.error, 'attorney_firms')) {
       return null
     }
+    if (isPermissionDeniedError(query.error)) {
+      console.warn('[Attorney Firm] owned firm lookup blocked by RLS; continuing without owned firm fallback.', query.error)
+      return null
+    }
     throw query.error
   }
 
@@ -660,6 +664,32 @@ export async function getCurrentUserAttorneyFirms() {
             membershipRole: 'firm_admin',
             membershipStatus: 'active',
             membershipJoinedAt: null,
+          },
+        ]
+      }
+      return []
+    }
+    if (isPermissionDeniedError(membershipsQuery.error)) {
+      console.warn('[Attorney Firm] membership firm lookup blocked by RLS; attempting owned-firm fallback.', membershipsQuery.error)
+      const ownedFirm = await getCurrentUserOwnedAttorneyFirm(client, user.id)
+      if (ownedFirm?.id) {
+        return [
+          {
+            ...ownedFirm,
+            membershipRole: 'firm_admin',
+            membershipStatus: 'active',
+            membershipJoinedAt: ownedFirm.createdAt || null,
+          },
+        ]
+      }
+      const rememberedFirm = getRememberedAttorneyFirmRecovery(user.id)
+      if (rememberedFirm?.id) {
+        return [
+          {
+            ...rememberedFirm,
+            membershipRole: 'firm_admin',
+            membershipStatus: 'active',
+            membershipJoinedAt: rememberedFirm.createdAt || null,
           },
         ]
       }
@@ -714,6 +744,21 @@ export async function getCurrentUserAttorneyFirms() {
             membershipRole: 'firm_admin',
             membershipStatus: 'active',
             membershipJoinedAt: null,
+          },
+        ]
+      }
+      return []
+    }
+    if (isPermissionDeniedError(firmsQuery.error)) {
+      console.warn('[Attorney Firm] firm list lookup blocked by RLS; falling back to cached firm if available.', firmsQuery.error)
+      const rememberedFirm = getRememberedAttorneyFirmRecovery(user.id)
+      if (rememberedFirm?.id) {
+        return [
+          {
+            ...rememberedFirm,
+            membershipRole: 'firm_admin',
+            membershipStatus: 'active',
+            membershipJoinedAt: rememberedFirm.createdAt || null,
           },
         ]
       }

@@ -236,6 +236,15 @@ function buildOwnerDashboardMember(firm = {}, user = {}) {
   }
 }
 
+async function readDashboardDependency(label, promise, fallback) {
+  try {
+    return await promise
+  } catch (error) {
+    console.warn(`[Attorney Dashboard] ${label} could not be loaded; continuing with fallback data.`, error)
+    return fallback
+  }
+}
+
 export async function getAttorneyManagementDashboardData(firmId = null) {
   const client = requireClient()
   const authUser = await getAuthenticatedUser(client)
@@ -266,11 +275,11 @@ export async function getAttorneyManagementDashboardData(firmId = null) {
   }
 
   const [departmentsRaw, membersRaw, invitesRaw, transactionsRaw, assignmentRows] = await Promise.all([
-    getAttorneyFirmDepartments(resolvedFirm.id),
-    getAttorneyFirmMembers(resolvedFirm.id),
-    getAttorneyFirmInvitations(resolvedFirm.id),
-    fetchTransactionsForDashboard(client),
-    getFirmAttorneyAssignments(resolvedFirm.id, { includeInactive: true }),
+    readDashboardDependency('departments', getAttorneyFirmDepartments(resolvedFirm.id), []),
+    readDashboardDependency('members', getAttorneyFirmMembers(resolvedFirm.id), []),
+    readDashboardDependency('invitations', getAttorneyFirmInvitations(resolvedFirm.id), []),
+    readDashboardDependency('transactions', fetchTransactionsForDashboard(client), []),
+    readDashboardDependency('assignments', getFirmAttorneyAssignments(resolvedFirm.id, { includeInactive: true }), []),
   ])
 
   const ownerFallbackMembers =
@@ -289,13 +298,13 @@ export async function getAttorneyManagementDashboardData(firmId = null) {
   }, {})
 
   const [memberProfilesById, buyersById] = await Promise.all([
-    fetchMemberProfilesMap(client, members),
-    fetchBuyerMap(
+    readDashboardDependency('member profiles', fetchMemberProfilesMap(client, members), {}),
+    readDashboardDependency('buyer summaries', fetchBuyerMap(
       client,
       Object.values(transactionsById)
         .map((transaction) => transaction.buyer_id)
         .filter(Boolean),
-    ),
+    ), {}),
   ])
 
   const firmNameToken = toLower(resolvedFirm.name)
