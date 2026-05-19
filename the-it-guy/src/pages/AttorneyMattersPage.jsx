@@ -14,8 +14,7 @@ import {
   UserRoundCheck,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { Link, Navigate, useParams } from 'react-router-dom'
-import { useWorkspace } from '../context/WorkspaceContext'
+import { Link, useParams } from 'react-router-dom'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import { getAttorneyOperationalWorkspaceData } from '../services/attorneyOperations'
 
@@ -348,7 +347,6 @@ function MattersTable({ matters = [] }) {
 }
 
 function AttorneyMattersPage() {
-  const { role } = useWorkspace()
   const { matterType = 'all' } = useParams()
   const permissionsState = useAttorneyPermissions()
   const [loading, setLoading] = useState(true)
@@ -395,16 +393,27 @@ function AttorneyMattersPage() {
     [data?.matterQueue],
   )
 
-  if (role !== 'attorney') return <Navigate to="/dashboard" replace />
   if (permissionsState.loading) return <LoadingState copy="Loading attorney permissions…" />
   if (loading) return <LoadingState />
-  if (!data?.firm?.id) return <Navigate to="/attorney/onboarding" replace />
 
   if (error || permissionsState.error) {
     return (
       <section className="w-full px-3 py-4 sm:px-4 lg:px-5">
         <div className="rounded-2xl border border-red-200 bg-white p-5 text-sm font-medium text-red-700 shadow-sm">
           {error || permissionsState.error}
+        </div>
+      </section>
+    )
+  }
+
+  if (!data?.firm?.id) {
+    return (
+      <section className="w-full px-3 py-4 sm:px-4 lg:px-5">
+        <div className="rounded-2xl border border-amber-200 bg-white p-5 shadow-sm">
+          <h1 className="text-lg font-semibold text-slate-950">Firm workspace unavailable</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            We could not load an active firm matter queue just now. Please refresh or open Firm Settings to repair the attorney firm context.
+          </p>
         </div>
       </section>
     )
