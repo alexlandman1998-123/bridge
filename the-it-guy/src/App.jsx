@@ -333,8 +333,8 @@ function AppLayout({ onLogout, user }) {
   if (isCommercialRoute) {
     return (
       <div className="h-screen overflow-hidden bg-[#f6f8fb] text-textStrong">
-        <Suspense key={routeContentKey} fallback={<PageSkeleton />}>
-          <Outlet key={routeContentKey} />
+        <Suspense fallback={<PageSkeleton />}>
+          <Outlet />
         </Suspense>
       </div>
     )
@@ -552,6 +552,7 @@ function AuthGate({ authLoading, session, authBootstrapError = '', onRetryBootst
 
   const redirectDecision = decideAuthRedirect({
     pathname: location.pathname,
+    search: location.search,
     hasSession: Boolean(session),
     profile,
     baseRole,

@@ -1,6 +1,8 @@
 import {
   ArrowLeft,
   Building2,
+  CalendarDays,
+  Camera,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
@@ -9,7 +11,9 @@ import {
   FileText,
   FolderKanban,
   HandCoins,
+  Home,
   ImagePlus,
+  Info,
   Loader2,
   MapPin,
   Plus,
@@ -93,7 +97,8 @@ const BOND_ORIGINATOR_OPTIONS = [
 
 const PROPERTY_TYPE_OPTIONS = ['House', 'Apartment', 'Townhouse', 'Cluster', 'Land', 'Commercial', 'Mixed-use']
 const LISTING_STATUS_OPTIONS = ['mandate_signed', 'active', 'under_offer', 'sold', 'withdrawn']
-const FEATURE_OPTIONS = ['Solar', 'Backup Water', 'Pool', 'Pet Friendly', 'Security', 'Garden', 'Fibre']
+const FEATURE_OPTIONS = ['Solar', 'Backup Water', 'Pool', 'Pet Friendly', 'Security', 'Garden', 'Fibre', 'Study', 'Staff Quarters', 'Entertainment Area']
+const PORTAL_STATUS_OPTIONS = ['not_published', 'draft', 'published', 'paused', 'removed']
 
 function mergeListingRecord(existing = {}, incoming = {}) {
   return {
@@ -170,18 +175,43 @@ function buildListingSnapshotFormData(draft = {}) {
     leviesNotApplicable: Boolean(draft.leviesNotApplicable),
     ratesTaxes: draft.ratesTaxesNotApplicable ? '' : draft.ratesTaxes,
     ratesTaxesNotApplicable: Boolean(draft.ratesTaxesNotApplicable),
+    saleType: String(draft.saleType || '').trim(),
+    vatApplicable: String(draft.vatApplicable || '').trim(),
+    offersFrom: draft.offersFrom,
     features: Array.isArray(draft.selectedFeatures) ? draft.selectedFeatures : [],
     propertyNotes: String(draft.description || '').trim(),
+    listingPreviewDescription: String(draft.listingPreviewDescription || '').trim(),
     internalNotes: String(draft.notes || '').trim(),
     imageGallery: normalizeMediaItems(draft.galleryImages),
     coverImageId: draft.coverImageId || '',
     floorplans: normalizeMediaItems(draft.floorplans),
+    mandateSignedDate: draft.mandateSignedDate || '',
+    listingDate: draft.listingDate || '',
+    expiryDate: draft.expiryDate || '',
+    property24ListingUrl: String(draft.property24ListingUrl || '').trim(),
+    property24Reference: String(draft.property24Reference || '').trim(),
+    property24Status: String(draft.property24Status || 'not_published').trim(),
+    privatePropertyListingUrl: String(draft.privatePropertyListingUrl || '').trim(),
+    privatePropertyReference: String(draft.privatePropertyReference || '').trim(),
+    privatePropertyStatus: String(draft.privatePropertyStatus || 'not_published').trim(),
+    bridgeListingStatus: String(draft.bridgeListingStatus || 'not_published').trim(),
+    bridgeListingPublicUrl: String(draft.bridgeListingPublicUrl || '').trim(),
   }
 }
 
 function formatCurrency(value) {
   const amount = Number(value || 0)
   if (!Number.isFinite(amount) || amount <= 0) return 'Price on request'
+  return new Intl.NumberFormat('en-ZA', {
+    style: 'currency',
+    currency: 'ZAR',
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+function formatMoneyValue(value) {
+  const amount = Number(value || 0)
+  if (!Number.isFinite(amount)) return '—'
   return new Intl.NumberFormat('en-ZA', {
     style: 'currency',
     currency: 'ZAR',
@@ -211,6 +241,15 @@ function formatDate(value) {
   const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) return '—'
   return parsed.toLocaleDateString('en-ZA')
+}
+
+function formatDateInputValue(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return ''
+  return parsed.toISOString().slice(0, 10)
 }
 
 function formatDateTime(value) {
@@ -264,6 +303,44 @@ function getImageBlock(mediaUrl, title) {
   )
 }
 
+function CompletionBadge({ complete = false, label = '' }) {
+  return (
+    <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${complete ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]' : 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'}`}>
+      {complete ? <CheckCircle2 size={12} /> : <CircleAlert size={12} />}
+      {label || (complete ? 'Complete' : 'Missing info')}
+    </span>
+  )
+}
+
+function HubCard({ icon: Icon = Info, title, copy = '', complete = null, children, className = '' }) {
+  return (
+    <section className={`rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)] ${className}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] border border-[#dce6f2] bg-[#f7fbff] text-[#1f4f78]">
+            <Icon size={17} />
+          </div>
+          <div className="min-w-0">
+            <h4 className="text-[1rem] font-semibold text-[#142132]">{title}</h4>
+            {copy ? <p className="mt-1 text-sm leading-5 text-[#607387]">{copy}</p> : null}
+          </div>
+        </div>
+        {complete === null ? null : <CompletionBadge complete={complete} />}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function SnapshotRow({ label, value }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-[#e7edf5] py-2.5 last:border-b-0">
+      <span className="text-xs font-semibold text-[#6b7d93]">{label}</span>
+      <span className="min-w-0 truncate text-right text-sm font-semibold text-[#142132]">{value || '—'}</span>
+    </div>
+  )
+}
+
 function readPipelineLeads() {
   if (typeof window === 'undefined') return []
   try {
@@ -282,10 +359,6 @@ function normalizeListingStatus(listing) {
   if (raw.includes('sold')) return 'sold'
   if (raw.includes('withdraw')) return 'withdrawn'
   return raw || 'active'
-}
-
-function getDerivedMarketingStatus(listing) {
-  return String(listing?.marketing?.status || listing?.marketing?.marketingStatus || '').trim().toLowerCase() || 'draft'
 }
 
 function getDaysOnMarket(createdAt) {
@@ -408,7 +481,7 @@ function buildPropertyDraft(listingRecord) {
     headline: String(firstDraftValue(propertyDetails?.headline, listingRecord?.listingTitle, onboardingFormData.propertyAddress)).trim(),
     propertyType: String(firstDraftValue(propertyDetails?.propertyType, listingRecord?.propertyType, onboardingFormData.propertyType, 'House')).trim(),
     listingStatus: normalizedListingStatus,
-    source: String(marketing?.source || '').trim(),
+    source: String(firstDraftValue(marketing?.source, propertyDetails?.source, listingRecord?.listingSource, onboardingFormData.listingSource, 'seller_onboarding')).trim(),
     addressLine1: String(firstDraftValue(propertyDetails?.addressLine1, listingRecord?.addressLine1, onboardingFormData.propertyAddress, onboardingFormData.residentialAddress)).trim(),
     suburb: String(firstDraftValue(propertyDetails?.suburb, listingRecord?.suburb, onboardingFormData.suburb)).trim(),
     city: String(firstDraftValue(propertyDetails?.city, listingRecord?.city, onboardingFormData.city)).trim(),
@@ -425,8 +498,12 @@ function buildPropertyDraft(listingRecord) {
     leviesNotApplicable: Boolean(propertyDetails?.leviesNotApplicable),
     ratesTaxes: String(firstDraftValue(propertyDetails?.ratesTaxes, onboardingFormData.ratesTaxes)).trim(),
     ratesTaxesNotApplicable: Boolean(propertyDetails?.ratesTaxesNotApplicable),
+    saleType: String(firstDraftValue(propertyDetails?.saleType, onboardingFormData.saleType, 'For Sale')).trim(),
+    vatApplicable: String(firstDraftValue(propertyDetails?.vatApplicable, onboardingFormData.vatApplicable, 'no')).trim(),
+    offersFrom: String(firstDraftValue(propertyDetails?.offersFrom, onboardingFormData.offersFrom)).trim(),
     selectedFeatures,
     description: String(firstDraftValue(propertyDetails?.description, marketing?.description, onboardingFormData.propertyNotes)).trim(),
+    listingPreviewDescription: String(firstDraftValue(propertyDetails?.listingPreviewDescription, onboardingFormData.listingPreviewDescription)).trim(),
     notes: String(firstDraftValue(propertyDetails?.notes, marketing?.notes, onboardingFormData.sellingReason, onboardingFormData.sellingTimeline)).trim(),
     galleryImages,
     coverImageId,
@@ -437,6 +514,17 @@ function buildPropertyDraft(listingRecord) {
       : Array.isArray(marketing?.floorplans)
         ? marketing.floorplans
         : [],
+    mandateSignedDate: String(firstDraftValue(propertyDetails?.mandateSignedDate, onboardingFormData.mandateSignedDate)).trim(),
+    listingDate: String(firstDraftValue(propertyDetails?.listingDate, onboardingFormData.listingDate)).trim(),
+    expiryDate: String(firstDraftValue(propertyDetails?.expiryDate, onboardingFormData.expiryDate)).trim(),
+    property24ListingUrl: String(firstDraftValue(propertyDetails?.property24ListingUrl, listingRecord?.property24ListingUrl, onboardingFormData.property24ListingUrl)).trim(),
+    property24Reference: String(firstDraftValue(propertyDetails?.property24Reference, listingRecord?.property24Reference, onboardingFormData.property24Reference)).trim(),
+    property24Status: String(firstDraftValue(propertyDetails?.property24Status, listingRecord?.property24Status, onboardingFormData.property24Status, 'not_published')).trim(),
+    privatePropertyListingUrl: String(firstDraftValue(propertyDetails?.privatePropertyListingUrl, listingRecord?.privatePropertyListingUrl, onboardingFormData.privatePropertyListingUrl)).trim(),
+    privatePropertyReference: String(firstDraftValue(propertyDetails?.privatePropertyReference, listingRecord?.privatePropertyReference, onboardingFormData.privatePropertyReference)).trim(),
+    privatePropertyStatus: String(firstDraftValue(propertyDetails?.privatePropertyStatus, listingRecord?.privatePropertyStatus, onboardingFormData.privatePropertyStatus, 'not_published')).trim(),
+    bridgeListingStatus: String(firstDraftValue(propertyDetails?.bridgeListingStatus, listingRecord?.bridgeListingStatus, onboardingFormData.bridgeListingStatus, 'not_published')).trim(),
+    bridgeListingPublicUrl: String(firstDraftValue(propertyDetails?.bridgeListingPublicUrl, listingRecord?.bridgeListingPublicUrl, onboardingFormData.bridgeListingPublicUrl)).trim(),
   }
 }
 
@@ -462,6 +550,7 @@ function AgentListingDetail() {
   const [detailMessage, setDetailMessage] = useState('')
   const [detailError, setDetailError] = useState('')
   const [gallerySaving, setGallerySaving] = useState(false)
+  const [showFullGallery, setShowFullGallery] = useState(false)
   const [offerNotesDraftById, setOfferNotesDraftById] = useState({})
   const [marketingDraft, setMarketingDraft] = useState(() => buildPropertyDraft(null))
   const [rolePlayersDraft, setRolePlayersDraft] = useState({
@@ -614,11 +703,26 @@ function AgentListingDetail() {
         leviesNotApplicable: nextDraft.leviesNotApplicable,
         ratesTaxes: nextDraft.ratesTaxesNotApplicable ? 0 : Number(nextDraft.ratesTaxes || 0),
         ratesTaxesNotApplicable: nextDraft.ratesTaxesNotApplicable,
+        saleType: nextDraft.saleType,
+        vatApplicable: nextDraft.vatApplicable,
+        offersFrom: Number(nextDraft.offersFrom || 0),
         selectedFeatures: nextDraft.selectedFeatures,
         description: nextDraft.description.trim(),
+        listingPreviewDescription: nextDraft.listingPreviewDescription.trim(),
         notes: nextDraft.notes.trim(),
         floorplans: nextDraft.floorplans,
         coverImageId: nextDraft.coverImageId,
+        mandateSignedDate: nextDraft.mandateSignedDate,
+        listingDate: nextDraft.listingDate,
+        expiryDate: nextDraft.expiryDate,
+        property24ListingUrl: nextDraft.property24ListingUrl.trim(),
+        property24Reference: nextDraft.property24Reference.trim(),
+        property24Status: nextDraft.property24Status,
+        privatePropertyListingUrl: nextDraft.privatePropertyListingUrl.trim(),
+        privatePropertyReference: nextDraft.privatePropertyReference.trim(),
+        privatePropertyStatus: nextDraft.privatePropertyStatus,
+        bridgeListingStatus: nextDraft.bridgeListingStatus,
+        bridgeListingPublicUrl: nextDraft.bridgeListingPublicUrl.trim(),
       },
       sellerOnboarding: {
         ...(row?.sellerOnboarding || {}),
@@ -675,6 +779,16 @@ function AgentListingDetail() {
         city: marketingDraft.city.trim(),
         province: marketingDraft.province.trim(),
         isActive: String(marketingDraft.listingStatus || '').trim().toLowerCase() === 'active',
+        property24ListingUrl: marketingDraft.property24ListingUrl.trim(),
+        property24Reference: marketingDraft.property24Reference.trim(),
+        property24Status: marketingDraft.property24Status,
+        privatePropertyListingUrl: marketingDraft.privatePropertyListingUrl.trim(),
+        privatePropertyReference: marketingDraft.privatePropertyReference.trim(),
+        privatePropertyStatus: marketingDraft.privatePropertyStatus,
+        bridgeListingStatus: marketingDraft.bridgeListingStatus,
+        bridgeListingPublicUrl: marketingDraft.bridgeListingPublicUrl.trim(),
+        listingPreviewDescription: marketingDraft.listingPreviewDescription.trim(),
+        internalListingNotes: marketingDraft.notes.trim(),
       })
       if (savedListing?.id) {
         setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(updatedListing, savedListing)))
@@ -1049,16 +1163,39 @@ function AgentListingDetail() {
     const descriptionComplete = Boolean(marketingDraft.description.trim())
     const floorplansComplete = marketingDraft.floorplans.length > 0
     const galleryComplete = marketingDraft.galleryImages.length > 0 && Boolean(coverImage?.url)
+    const portalComplete = Boolean(
+      (marketingDraft.property24Status !== 'published' || marketingDraft.property24ListingUrl.trim() || marketingDraft.property24Reference.trim()) &&
+      (marketingDraft.privatePropertyStatus !== 'published' || marketingDraft.privatePropertyListingUrl.trim() || marketingDraft.privatePropertyReference.trim()) &&
+      (marketingDraft.property24Status !== 'not_published' || marketingDraft.privatePropertyStatus !== 'not_published' || marketingDraft.bridgeListingStatus !== 'not_published'),
+    )
     return [
       { key: 'basic', label: 'Basic Information', complete: basicComplete },
       { key: 'specs', label: 'Property Specs', complete: specsComplete },
       { key: 'financial', label: 'Financial Details', complete: financialComplete },
       { key: 'features', label: 'Features & Amenities', complete: featuresComplete },
       { key: 'description', label: 'Description', complete: descriptionComplete },
+      { key: 'portal', label: 'Portal Listings', complete: portalComplete },
       { key: 'floorplans', label: 'Floor Plans', complete: floorplansComplete },
       { key: 'gallery', label: 'Image Gallery', complete: galleryComplete },
     ]
   }, [coverImage?.url, marketingDraft])
+
+  const sectionStatusByKey = useMemo(() => {
+    return sectionStatuses.reduce((map, item) => ({ ...map, [item.key]: item }), {})
+  }, [sectionStatuses])
+
+  const galleryPreviewImages = useMemo(() => {
+    return showFullGallery ? marketingDraft.galleryImages : marketingDraft.galleryImages.slice(0, 4)
+  }, [marketingDraft.galleryImages, showFullGallery])
+
+  const propertySummaryFacts = useMemo(() => [
+    marketingDraft.propertyType || 'Property',
+    marketingDraft.bedrooms ? `${marketingDraft.bedrooms} Beds` : '',
+    marketingDraft.bathrooms ? `${marketingDraft.bathrooms} Baths` : '',
+    marketingDraft.garages ? `${marketingDraft.garages} Garages` : '',
+    marketingDraft.floorSize ? `${marketingDraft.floorSize} m² floor` : '',
+    marketingDraft.erfSize ? `${marketingDraft.erfSize} m² erf` : '',
+  ].filter(Boolean), [marketingDraft])
 
   const viewingGroups = useMemo(() => ({
     pending: viewings.filter((item) => [VIEWING_STATUS.PENDING_APPROVAL, VIEWING_STATUS.RESCHEDULE_REQUESTED, VIEWING_STATUS.VIEWING_REQUESTED].includes(String(item?.status || '').trim().toLowerCase())),
@@ -1558,6 +1695,369 @@ function AgentListingDetail() {
       ) : null}
 
       {activeTab === 'property_details' ? (
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_390px]">
+          <div className="min-w-0 space-y-5">
+            <section className="overflow-hidden rounded-[24px] border border-[#dde4ee] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+              <div className="grid gap-0 lg:grid-cols-[320px_minmax(0,1fr)]">
+                <div className="relative h-[260px] border-b border-[#e5edf6] bg-[#eef4fa] lg:h-full lg:border-b-0 lg:border-r">
+                  {getImageBlock(coverImage?.url || '', marketingDraft.headline || listingRecord.listingTitle)}
+                  <span className="absolute bottom-4 left-4 inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/95 px-3 py-1.5 text-xs font-semibold text-[#142132] shadow-sm">
+                    <Camera size={14} />
+                    {marketingDraft.galleryImages.length || 0} image{marketingDraft.galleryImages.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <div className="min-w-0 p-5 lg:p-6">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusClass(marketingDraft.listingStatus)}`}>
+                          {formatStatusLabel(marketingDraft.listingStatus)}
+                        </span>
+                        <span className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
+                          {marketingDraft.source || 'Seller Onboarding'}
+                        </span>
+                      </div>
+                      <h3 className="mt-3 truncate text-[1.35rem] font-semibold tracking-[-0.03em] text-[#142132]">{marketingDraft.headline || listingRecord.listingTitle || 'Listing headline pending'}</h3>
+                      <p className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-[#607387]">
+                        <MapPin size={14} />
+                        {[marketingDraft.suburb, marketingDraft.city, marketingDraft.province].filter(Boolean).join(', ') || 'Location pending'}
+                      </p>
+                    </div>
+                    <Button size="sm" onClick={saveMarketingDraft}>Save Property Details</Button>
+                  </div>
+
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    {propertySummaryFacts.map((fact) => (
+                      <span key={fact} className="inline-flex rounded-full border border-[#dbe6f2] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                        {fact}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="mt-5 grid gap-4 border-t border-[#e7edf5] pt-5 sm:grid-cols-2 xl:grid-cols-4">
+                    <SnapshotRow label="Listing ID" value={marketingDraft.listingCode || listingRecord.listingReference || 'Pending'} />
+                    <SnapshotRow label="Assigned Agent" value={listingRecord?.assignedAgentName || listingRecord?.assignedAgent || 'Agent pending'} />
+                    <SnapshotRow label="Last Updated" value={formatDate(listingRecord?.updatedAt || listingRecord?.createdAt)} />
+                    <SnapshotRow label="Source" value={marketingDraft.source || 'Seller Onboarding'} />
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <HubCard icon={Home} title="Basic Information" copy="Core public listing fields pulled from seller onboarding and refined for publishing." complete={sectionStatusByKey.basic?.complete}>
+              <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <label className="grid gap-2 xl:col-span-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Headline</span>
+                  <Field value={marketingDraft.headline} onChange={(event) => updateMarketingDraft('headline', event.target.value)} placeholder="House, Olympus" />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Property Type</span>
+                  <Field as="select" value={marketingDraft.propertyType} onChange={(event) => updateMarketingDraft('propertyType', event.target.value)}>
+                    {PROPERTY_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </Field>
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Listing Status</span>
+                  <Field as="select" value={marketingDraft.listingStatus} onChange={(event) => updateMarketingDraft('listingStatus', event.target.value)}>
+                    {LISTING_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{formatStatusLabel(option)}</option>)}
+                  </Field>
+                </label>
+                <label className="grid gap-2 xl:col-span-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Address</span>
+                  <Field value={marketingDraft.addressLine1} onChange={(event) => updateMarketingDraft('addressLine1', event.target.value)} placeholder="Property address" />
+                </label>
+                {[
+                  ['suburb', 'Suburb'],
+                  ['city', 'City'],
+                  ['province', 'Province'],
+                  ['source', 'Listing Source'],
+                  ['mandateSignedDate', 'Mandate Signed Date', 'date'],
+                ].map(([key, label, type]) => (
+                  <label key={key} className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">{label}</span>
+                    <Field type={type || 'text'} value={type === 'date' ? formatDateInputValue(marketingDraft[key]) : marketingDraft[key]} onChange={(event) => updateMarketingDraft(key, event.target.value)} />
+                  </label>
+                ))}
+              </div>
+            </HubCard>
+
+            <HubCard icon={Building2} title="Property Specs" copy="The key measurable details buyers and downstream portals compare first." complete={sectionStatusByKey.specs?.complete}>
+              <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  ['bedrooms', 'Bedrooms'],
+                  ['bathrooms', 'Bathrooms'],
+                  ['garages', 'Garages'],
+                  ['coveredParking', 'Covered Parking'],
+                  ['openParking', 'Open Parking'],
+                  ['erfSize', 'Erf Size (m²)'],
+                  ['floorSize', 'Floor Size (m²)'],
+                ].map(([key, label]) => (
+                  <label key={key} className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">{label}</span>
+                    <Field type="number" min="0" value={marketingDraft[key]} onChange={(event) => updateMarketingDraft(key, event.target.value)} placeholder="0" />
+                  </label>
+                ))}
+              </div>
+            </HubCard>
+
+            <HubCard icon={HandCoins} title="Price & Financial Details" copy="Structured pricing, recurring costs and offer positioning for portals and reporting." complete={sectionStatusByKey.financial?.complete}>
+              <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Asking Price</span>
+                  <Field type="number" min="0" step="1000" value={marketingDraft.price} onChange={(event) => updateMarketingDraft('price', event.target.value)} placeholder="0" />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Levies</span>
+                  <Field type="number" min="0" step="100" value={marketingDraft.levies} onChange={(event) => updateMarketingDraft('levies', event.target.value)} placeholder="0" disabled={marketingDraft.leviesNotApplicable} />
+                  <span className="inline-flex items-center gap-2 text-xs text-[#607387]">
+                    <input type="checkbox" checked={marketingDraft.leviesNotApplicable} onChange={(event) => updateMarketingDraft('leviesNotApplicable', event.target.checked)} />
+                    Not applicable
+                  </span>
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Rates & Taxes</span>
+                  <Field type="number" min="0" step="100" value={marketingDraft.ratesTaxes} onChange={(event) => updateMarketingDraft('ratesTaxes', event.target.value)} placeholder="0" disabled={marketingDraft.ratesTaxesNotApplicable} />
+                  <span className="inline-flex items-center gap-2 text-xs text-[#607387]">
+                    <input type="checkbox" checked={marketingDraft.ratesTaxesNotApplicable} onChange={(event) => updateMarketingDraft('ratesTaxesNotApplicable', event.target.checked)} />
+                    Not applicable
+                  </span>
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Sale Type</span>
+                  <Field as="select" value={marketingDraft.saleType} onChange={(event) => updateMarketingDraft('saleType', event.target.value)}>
+                    <option value="For Sale">For Sale</option>
+                    <option value="Auction">Auction</option>
+                    <option value="Tender">Tender</option>
+                    <option value="POA">Price on Application</option>
+                  </Field>
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">VAT Applicable</span>
+                  <Field as="select" value={marketingDraft.vatApplicable} onChange={(event) => updateMarketingDraft('vatApplicable', event.target.value)}>
+                    <option value="no">No</option>
+                    <option value="yes">Yes</option>
+                    <option value="unknown">Unknown</option>
+                  </Field>
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Offers From</span>
+                  <Field type="number" min="0" step="1000" value={marketingDraft.offersFrom} onChange={(event) => updateMarketingDraft('offersFrom', event.target.value)} placeholder="0" />
+                </label>
+              </div>
+            </HubCard>
+
+            <HubCard icon={CheckCircle2} title="Features & Amenities" copy="Public-facing feature chips for Bridge Listings and external portal copy." complete={sectionStatusByKey.features?.complete}>
+              <div className="mt-5 flex flex-wrap gap-2">
+                {FEATURE_OPTIONS.map((feature) => {
+                  const active = marketingDraft.selectedFeatures.includes(feature)
+                  return (
+                    <button
+                      key={feature}
+                      type="button"
+                      onClick={() => toggleFeature(feature)}
+                      className={`rounded-full border px-3.5 py-2 text-sm font-semibold transition ${
+                        active
+                          ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_10px_18px_rgba(31,79,120,0.14)]'
+                          : 'border-[#dbe6f2] bg-white text-[#47627c] hover:border-[#b7c8db] hover:bg-[#f7fbff]'
+                      }`}
+                    >
+                      {feature}
+                    </button>
+                  )
+                })}
+              </div>
+            </HubCard>
+
+            <HubCard icon={FileText} title="Property Description" copy="Separate public listing copy from internal-only notes so publishing stays safe." complete={sectionStatusByKey.description?.complete}>
+              <div className="mt-5 grid gap-4">
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Full Description</span>
+                  <Field as="textarea" rows={6} value={marketingDraft.description} onChange={(event) => updateMarketingDraft('description', event.target.value)} placeholder="Public-facing listing description." />
+                  <span className="text-xs text-[#607387]">Public-facing field. This can feed Bridge Listings and portal exports later.</span>
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Short Description / Listing Preview Copy</span>
+                  <Field as="textarea" rows={3} value={marketingDraft.listingPreviewDescription} onChange={(event) => updateMarketingDraft('listingPreviewDescription', event.target.value)} placeholder="Short preview copy for listing cards and snippets." />
+                </label>
+                <label className="grid gap-2 rounded-[16px] border border-[#f1d8bd] bg-[#fffaf4] p-3">
+                  <span className="text-sm font-semibold text-[#7a4b16]">Internal Notes</span>
+                  <Field as="textarea" rows={3} value={marketingDraft.notes} onChange={(event) => updateMarketingDraft('notes', event.target.value)} placeholder="Private agent notes, campaign angle, seller context." />
+                  <span className="text-xs font-semibold text-[#9a5b13]">Internal-only. Do not publish this field to public listing sites.</span>
+                </label>
+              </div>
+            </HubCard>
+
+            <HubCard icon={FolderKanban} title="Floor Plans" copy="Optional plan files for the listing pack and future buyer-facing downloads." complete={sectionStatusByKey.floorplans?.complete}>
+              <div className="mt-5 rounded-[16px] border border-dashed border-[#c9d8e8] bg-[#fbfdff] p-3">
+                <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:border-[#b7c8db] hover:bg-[#f7fbff]">
+                  <Upload size={16} />
+                  Upload Floor Plans
+                  <input type="file" accept=".pdf,image/*" multiple className="hidden" onChange={handleFloorplanUpload} disabled={gallerySaving} />
+                </label>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {marketingDraft.floorplans.length ? (
+                  marketingDraft.floorplans.map((plan) => (
+                    <div key={plan.id} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-[#22374d]">{plan.name}</p>
+                          <a href={plan.url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
+                            <ExternalLink size={12} />
+                            Open file
+                          </a>
+                        </div>
+                        <button type="button" onClick={() => removeFloorplan(plan.id)} className="rounded-full border border-[#dbe6f2] p-1 text-[#6b7d93] hover:text-[#22374d]">
+                          <X size={14} />
+                        </button>
+                      </div>
+                      <label className="mt-3 grid gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Plan Label</span>
+                        <Field value={plan.label || ''} onChange={(event) => updateFloorplanLabel(plan.id, event.target.value)} placeholder="Ground Floor" />
+                      </label>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-4 text-sm text-[#6b7d93]">
+                    No floor plans uploaded yet.
+                  </div>
+                )}
+              </div>
+            </HubCard>
+          </div>
+
+          <aside className="min-w-0 space-y-5 xl:sticky xl:top-4 xl:self-start">
+            <HubCard icon={ExternalLink} title="Portal Listings" copy="Track external portal references without turning this into a bulky admin form." complete={sectionStatusByKey.portal?.complete}>
+              <div className="mt-5 space-y-4">
+                {[
+                  {
+                    name: 'Property24',
+                    prefix: 'property24',
+                    urlKey: 'property24ListingUrl',
+                    referenceKey: 'property24Reference',
+                    statusKey: 'property24Status',
+                    accent: 'text-[#d12c2c]',
+                  },
+                  {
+                    name: 'Private Property',
+                    prefix: 'privateProperty',
+                    urlKey: 'privatePropertyListingUrl',
+                    referenceKey: 'privatePropertyReference',
+                    statusKey: 'privatePropertyStatus',
+                    accent: 'text-[#2f8f6b]',
+                  },
+                ].map((portal) => (
+                  <div key={portal.name} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className={`text-sm font-semibold ${portal.accent}`}>{portal.name}</p>
+                      <Field as="select" value={marketingDraft[portal.statusKey]} onChange={(event) => updateMarketingDraft(portal.statusKey, event.target.value)} className="max-w-[150px]">
+                        {PORTAL_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{formatStatusLabel(option)}</option>)}
+                      </Field>
+                    </div>
+                    <div className="mt-3 grid gap-3">
+                      <Field value={marketingDraft[portal.referenceKey]} onChange={(event) => updateMarketingDraft(portal.referenceKey, event.target.value)} placeholder={`${portal.name} reference`} />
+                      <Field value={marketingDraft[portal.urlKey]} onChange={(event) => updateMarketingDraft(portal.urlKey, event.target.value)} placeholder={`${portal.name} listing link`} />
+                      {marketingDraft[portal.urlKey] ? (
+                        <a href={marketingDraft[portal.urlKey]} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
+                          Open listing
+                          <ExternalLink size={12} />
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </HubCard>
+
+            <HubCard icon={Info} title="Listing Snapshot">
+              <div className="mt-4">
+                <SnapshotRow label="Asking Price" value={formatCurrency(marketingDraft.price)} />
+                <SnapshotRow label="Property Type" value={marketingDraft.propertyType || '—'} />
+                <SnapshotRow label="Erf Size" value={marketingDraft.erfSize ? `${marketingDraft.erfSize} m²` : '—'} />
+                <SnapshotRow label="Floor Size" value={marketingDraft.floorSize ? `${marketingDraft.floorSize} m²` : '—'} />
+                <SnapshotRow label="Bedrooms" value={marketingDraft.bedrooms || '—'} />
+                <SnapshotRow label="Bathrooms" value={marketingDraft.bathrooms || '—'} />
+                <SnapshotRow label="Garages" value={marketingDraft.garages || '—'} />
+                <SnapshotRow label="Rates & Taxes" value={marketingDraft.ratesTaxesNotApplicable ? 'N/A' : formatMoneyValue(marketingDraft.ratesTaxes)} />
+                <SnapshotRow label="Levy" value={marketingDraft.leviesNotApplicable ? 'N/A' : formatMoneyValue(marketingDraft.levies)} />
+              </div>
+            </HubCard>
+
+            <HubCard icon={ImagePlus} title="Image Gallery" copy={`${marketingDraft.galleryImages.length || 0} images saved. ${coverImage?.url ? 'Cover image selected.' : 'Cover image pending.'}`} complete={sectionStatusByKey.gallery?.complete}>
+              <div className="mt-4 overflow-hidden rounded-[18px] border border-[#dce6f2]">
+                <div className="h-[150px] border-b border-[#e5edf6] bg-[#eef4fa]">{getImageBlock(coverImage?.url || '', marketingDraft.headline || listingRecord.listingTitle)}</div>
+                <div className="p-3">
+                  <div className="grid grid-cols-4 gap-2">
+                    {galleryPreviewImages.length ? galleryPreviewImages.map((image) => (
+                      <button key={image.id} type="button" onClick={() => setCoverImage(image.id)} className={`relative h-14 overflow-hidden rounded-[10px] border ${String(image.id) === String(marketingDraft.coverImageId) ? 'border-[#1f4f78]' : 'border-[#dce6f2]'}`}>
+                        <img src={image.url} alt={image.name} className="h-full w-full object-cover" />
+                      </button>
+                    )) : (
+                      <div className="col-span-4 rounded-[12px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-3 text-xs text-[#6b7d93]">No images uploaded yet.</div>
+                    )}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <label className={`inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-xs font-semibold transition ${gallerySaving ? 'border-[#dbe6f2] bg-[#f5f8fb] text-[#9aa9ba]' : 'border-[#1f4f78] bg-[#1f4f78] text-white hover:bg-[#183f61]'}`}>
+                      {gallerySaving ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                      Upload Images
+                      <input type="file" accept="image/*" multiple className="hidden" onChange={handleGalleryUpload} disabled={gallerySaving} />
+                    </label>
+                    {marketingDraft.galleryImages.length > 4 ? (
+                      <button type="button" onClick={() => setShowFullGallery((value) => !value)} className="inline-flex h-9 items-center justify-center rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]">
+                        {showFullGallery ? 'Show Less' : 'View All Images'}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </HubCard>
+
+            <HubCard icon={CalendarDays} title="Important Dates">
+              <div className="mt-4 grid gap-3">
+                {[
+                  ['mandateSignedDate', 'Mandate Signed Date'],
+                  ['listingDate', 'Listing Date'],
+                  ['expiryDate', 'Expiry Date'],
+                ].map(([key, label]) => (
+                  <label key={key} className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">{label}</span>
+                    <Field type="date" value={formatDateInputValue(marketingDraft[key])} onChange={(event) => updateMarketingDraft(key, event.target.value)} />
+                  </label>
+                ))}
+                <SnapshotRow label="Last Updated" value={formatDate(listingRecord?.updatedAt || listingRecord?.createdAt)} />
+              </div>
+            </HubCard>
+
+            <HubCard icon={Plus} title="Quick Actions">
+              <div className="mt-4 grid gap-2">
+                {[
+                  ['Preview Listing', marketingDraft.bridgeListingPublicUrl],
+                  ['Share with Client', ''],
+                  ['Duplicate Listing', ''],
+                  ['Open Property24 Link', marketingDraft.property24ListingUrl],
+                  ['Open Private Property Link', marketingDraft.privatePropertyListingUrl],
+                  ['Publish to Bridge Listings', ''],
+                  ['View Public Listing', marketingDraft.bridgeListingPublicUrl],
+                ].map(([label, href]) => (
+                  href ? (
+                    <a key={label} href={href} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center justify-between rounded-lg border border-[#dbe6f2] bg-white px-3 text-sm font-semibold text-[#22374d] hover:bg-[#f7fbff]">
+                      {label}
+                      <ExternalLink size={14} />
+                    </a>
+                  ) : (
+                    <button key={label} type="button" disabled className="inline-flex h-10 items-center justify-between rounded-lg border border-[#e1e8f0] bg-[#f8fafc] px-3 text-sm font-semibold text-[#9aa9ba]" title="Coming soon">
+                      {label}
+                      <span className="text-[0.68rem] uppercase tracking-[0.08em]">Soon</span>
+                    </button>
+                  )
+                ))}
+              </div>
+            </HubCard>
+          </aside>
+        </section>
+      ) : null}
+
+      {activeTab === 'property_details_legacy' ? (
         <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
           <div className="space-y-5">
             <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">

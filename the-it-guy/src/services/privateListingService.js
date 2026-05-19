@@ -450,6 +450,31 @@ function stripUnsupportedTaxonomyColumns(payload = {}) {
   return next
 }
 
+const PRIVATE_LISTING_PORTAL_COLUMNS = [
+  'property24_listing_url',
+  'property24_reference',
+  'property24_status',
+  'private_property_listing_url',
+  'private_property_reference',
+  'private_property_status',
+  'bridge_listing_status',
+  'bridge_listing_public_url',
+  'listing_preview_description',
+  'internal_listing_notes',
+]
+
+function hasMissingPrivateListingPortalColumn(error) {
+  return PRIVATE_LISTING_PORTAL_COLUMNS.some((column) => isMissingColumnError(error, column))
+}
+
+function stripUnsupportedPortalColumns(payload = {}) {
+  const next = { ...(payload || {}) }
+  for (const column of PRIVATE_LISTING_PORTAL_COLUMNS) {
+    delete next[column]
+  }
+  return next
+}
+
 function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByListingId = null, documentsByListingId = null) {
   if (!row) return null
   const onboarding = onboardingByListingId ? onboardingByListingId.get(String(row.id || '')) || null : null
@@ -467,6 +492,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   const coverImage = imageGallery.find((item) => normalizeText(item.id) === coverImageId) || imageGallery[0] || null
   const floorplans = normalizeMediaItems(onboardingFormData.floorplans)
   const onboardingDescription = normalizeText(onboardingFormData.propertyNotes)
+  const listingPreviewDescription = normalizeText(row.listing_preview_description || onboardingFormData.listingPreviewDescription)
   const onboardingNotes = normalizeText(onboardingFormData.internalNotes)
   const onboardingFeatures = Array.isArray(onboardingFormData.features)
     ? onboardingFormData.features.map((item) => normalizeText(item)).filter(Boolean)
@@ -507,6 +533,16 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     createdBy: row.created_by || null,
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null,
+    property24ListingUrl: row.property24_listing_url || onboardingFormData.property24ListingUrl || '',
+    property24Reference: row.property24_reference || onboardingFormData.property24Reference || '',
+    property24Status: row.property24_status || onboardingFormData.property24Status || 'not_published',
+    privatePropertyListingUrl: row.private_property_listing_url || onboardingFormData.privatePropertyListingUrl || '',
+    privatePropertyReference: row.private_property_reference || onboardingFormData.privatePropertyReference || '',
+    privatePropertyStatus: row.private_property_status || onboardingFormData.privatePropertyStatus || 'not_published',
+    bridgeListingStatus: row.bridge_listing_status || onboardingFormData.bridgeListingStatus || 'not_published',
+    bridgeListingPublicUrl: row.bridge_listing_public_url || onboardingFormData.bridgeListingPublicUrl || '',
+    listingPreviewDescription,
+    internalListingNotes: row.internal_listing_notes || onboardingNotes,
     // Compatibility shape used by existing listing UI while migration is underway.
     listingTitle: row.title || row.address_line_1 || 'Untitled listing',
     propertyAddress: [row.address_line_1, row.address_line_2].filter(Boolean).join(', '),
@@ -555,11 +591,26 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
       leviesNotApplicable: Boolean(onboardingFormData.leviesNotApplicable),
       ratesTaxes: normalizeNumber(onboardingFormData.ratesTaxes) ?? 0,
       ratesTaxesNotApplicable: Boolean(onboardingFormData.ratesTaxesNotApplicable),
+      saleType: onboardingFormData.saleType || 'For Sale',
+      vatApplicable: onboardingFormData.vatApplicable || 'no',
+      offersFrom: normalizeNumber(onboardingFormData.offersFrom) ?? 0,
       selectedFeatures: onboardingFeatures,
       description: onboardingDescription,
+      listingPreviewDescription,
       notes: onboardingNotes,
       coverImageId,
       floorplans,
+      mandateSignedDate: onboardingFormData.mandateSignedDate || '',
+      listingDate: onboardingFormData.listingDate || '',
+      expiryDate: onboardingFormData.expiryDate || '',
+      property24ListingUrl: row.property24_listing_url || onboardingFormData.property24ListingUrl || '',
+      property24Reference: row.property24_reference || onboardingFormData.property24Reference || '',
+      property24Status: row.property24_status || onboardingFormData.property24Status || 'not_published',
+      privatePropertyListingUrl: row.private_property_listing_url || onboardingFormData.privatePropertyListingUrl || '',
+      privatePropertyReference: row.private_property_reference || onboardingFormData.privatePropertyReference || '',
+      privatePropertyStatus: row.private_property_status || onboardingFormData.privatePropertyStatus || 'not_published',
+      bridgeListingStatus: row.bridge_listing_status || onboardingFormData.bridgeListingStatus || 'not_published',
+      bridgeListingPublicUrl: row.bridge_listing_public_url || onboardingFormData.bridgeListingPublicUrl || '',
     },
     documentRequirements: requirementRows,
     documents: documentRows,
@@ -844,6 +895,16 @@ function buildPrivateListingPayload(payload = {}, userId = null) {
     seller_onboarding_status: normalizeStatus(payload.sellerOnboardingStatus, SELLER_ONBOARDING_STATUSES, 'not_started'),
     is_active: payload.isActive === undefined ? false : Boolean(payload.isActive),
     created_by: normalizeUuid(payload.createdBy || userId),
+    property24_listing_url: normalizeNullableText(payload.property24ListingUrl),
+    property24_reference: normalizeNullableText(payload.property24Reference),
+    property24_status: normalizeNullableText(payload.property24Status) || 'not_published',
+    private_property_listing_url: normalizeNullableText(payload.privatePropertyListingUrl),
+    private_property_reference: normalizeNullableText(payload.privatePropertyReference),
+    private_property_status: normalizeNullableText(payload.privatePropertyStatus) || 'not_published',
+    bridge_listing_status: normalizeNullableText(payload.bridgeListingStatus) || 'not_published',
+    bridge_listing_public_url: normalizeNullableText(payload.bridgeListingPublicUrl),
+    listing_preview_description: normalizeNullableText(payload.listingPreviewDescription),
+    internal_listing_notes: normalizeNullableText(payload.internalListingNotes),
   }
 }
 
@@ -878,9 +939,14 @@ export async function createPrivateListing(payload = {}, options = {}) {
   if (insert.error && (
     isMissingColumnError(insert.error, 'property_category') ||
     isMissingColumnError(insert.error, 'listing_source') ||
-    isMissingColumnError(insert.error, 'property_structure_type')
+    isMissingColumnError(insert.error, 'property_structure_type') ||
+    hasMissingPrivateListingPortalColumn(insert.error)
   )) {
-    insert = await client.from('private_listings').insert(stripUnsupportedTaxonomyColumns(listingPayload)).select('*').single()
+    insert = await client
+      .from('private_listings')
+      .insert(stripUnsupportedPortalColumns(stripUnsupportedTaxonomyColumns(listingPayload)))
+      .select('*')
+      .single()
   }
   if (insert.error) {
     if (isMissingTableError(insert.error, 'private_listings')) {
@@ -968,16 +1034,27 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
     patch.seller_onboarding_status = normalizeStatus(payload.sellerOnboardingStatus, SELLER_ONBOARDING_STATUSES, 'not_started')
   }
   if (payload.isActive !== undefined) patch.is_active = Boolean(payload.isActive)
+  if (payload.property24ListingUrl !== undefined) patch.property24_listing_url = normalizeNullableText(payload.property24ListingUrl)
+  if (payload.property24Reference !== undefined) patch.property24_reference = normalizeNullableText(payload.property24Reference)
+  if (payload.property24Status !== undefined) patch.property24_status = normalizeNullableText(payload.property24Status) || 'not_published'
+  if (payload.privatePropertyListingUrl !== undefined) patch.private_property_listing_url = normalizeNullableText(payload.privatePropertyListingUrl)
+  if (payload.privatePropertyReference !== undefined) patch.private_property_reference = normalizeNullableText(payload.privatePropertyReference)
+  if (payload.privatePropertyStatus !== undefined) patch.private_property_status = normalizeNullableText(payload.privatePropertyStatus) || 'not_published'
+  if (payload.bridgeListingStatus !== undefined) patch.bridge_listing_status = normalizeNullableText(payload.bridgeListingStatus) || 'not_published'
+  if (payload.bridgeListingPublicUrl !== undefined) patch.bridge_listing_public_url = normalizeNullableText(payload.bridgeListingPublicUrl)
+  if (payload.listingPreviewDescription !== undefined) patch.listing_preview_description = normalizeNullableText(payload.listingPreviewDescription)
+  if (payload.internalListingNotes !== undefined) patch.internal_listing_notes = normalizeNullableText(payload.internalListingNotes)
 
   let updateQuery = await client.from('private_listings').update(patch).eq('id', normalizedId).select('*').single()
   if (updateQuery.error && (
     isMissingColumnError(updateQuery.error, 'property_category') ||
     isMissingColumnError(updateQuery.error, 'listing_source') ||
-    isMissingColumnError(updateQuery.error, 'property_structure_type')
+    isMissingColumnError(updateQuery.error, 'property_structure_type') ||
+    hasMissingPrivateListingPortalColumn(updateQuery.error)
   )) {
     updateQuery = await client
       .from('private_listings')
-      .update(stripUnsupportedTaxonomyColumns(patch))
+      .update(stripUnsupportedPortalColumns(stripUnsupportedTaxonomyColumns(patch)))
       .eq('id', normalizedId)
       .select('*')
       .single()

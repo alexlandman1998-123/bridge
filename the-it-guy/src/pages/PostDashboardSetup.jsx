@@ -1,9 +1,11 @@
 import { Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { APP_ROLE_LABELS } from '../lib/roles'
 import { deriveOnboardingSetupState } from '../lib/onboardingRouting'
+import { getCurrentUserPrimaryAttorneyFirm } from '../services/attorneyFirms'
 
-function resolveSetupActions(role = '', agencyWorkflowMode = 'agent') {
+function resolveSetupActions(role = '', agencyWorkflowMode = 'agent', options = {}) {
   if (role === 'developer') {
     return [
       { label: 'Create Organisation Profile', href: '/settings/organisation' },
@@ -29,8 +31,15 @@ function resolveSetupActions(role = '', agencyWorkflowMode = 'agent') {
   }
 
   if (role === 'attorney') {
+    if (!options.attorneyFirmReady) {
+      return [
+        { label: 'Create or Repair Attorney Firm', href: '/attorney/onboarding?repair=firm' },
+        { label: 'Open Attorney Dashboard', href: '/attorney/dashboard' },
+      ]
+    }
+
     return [
-      { label: 'Create or Join Attorney Firm', href: '/attorney/onboarding' },
+      { label: 'Review Firm Setup', href: '/attorney/onboarding?repair=firm' },
       { label: 'Configure Firm Settings', href: '/attorney/firm-settings' },
       { label: 'Open Attorney Dashboard', href: '/attorney/dashboard' },
     ]
@@ -50,7 +59,43 @@ function resolveSetupActions(role = '', agencyWorkflowMode = 'agent') {
 export default function PostDashboardSetup() {
   const { profile, baseRole, agencyWorkflowMode, setAgencyWorkflowMode } = useWorkspace()
   const setupState = deriveOnboardingSetupState({ profile, baseRole })
-  const actions = resolveSetupActions(setupState.appRole, agencyWorkflowMode)
+  const [attorneyFirmStatus, setAttorneyFirmStatus] = useState({
+    loading: setupState.appRole === 'attorney',
+    firm: null,
+    error: '',
+  })
+  const attorneyFirmReady = setupState.appRole === 'attorney' ? Boolean(attorneyFirmStatus.firm?.id) : true
+  const actions = resolveSetupActions(setupState.appRole, agencyWorkflowMode, { attorneyFirmReady })
+
+  useEffect(() => {
+    let active = true
+
+    async function resolveAttorneyFirmStatus() {
+      if (setupState.appRole !== 'attorney') {
+        setAttorneyFirmStatus({ loading: false, firm: null, error: '' })
+        return
+      }
+
+      setAttorneyFirmStatus((previous) => ({ ...previous, loading: true, error: '' }))
+      try {
+        const firm = await getCurrentUserPrimaryAttorneyFirm()
+        if (!active) return
+        setAttorneyFirmStatus({ loading: false, firm: firm || null, error: '' })
+      } catch (error) {
+        if (!active) return
+        setAttorneyFirmStatus({
+          loading: false,
+          firm: null,
+          error: error?.message || 'Unable to verify attorney firm setup.',
+        })
+      }
+    }
+
+    void resolveAttorneyFirmStatus()
+    return () => {
+      active = false
+    }
+  }, [setupState.appRole, profile?.primaryAttorneyFirmId])
 
   return (
     <section className="page">
@@ -109,6 +154,34 @@ export default function PostDashboardSetup() {
           <p>
             <strong>Module setup status:</strong> {setupState.moduleSetupStatus}
           </p>
+          {setupState.appRole === 'attorney' ? (
+            <>
+              <p>
+                <strong>Firm workspace status:</strong>{' '}
+                {attorneyFirmStatus.loading
+                  ? 'checking'
+                  : attorneyFirmStatus.firm?.id
+                    ? 'configured'
+                    : 'needs setup'}
+              </p>
+              {attorneyFirmStatus.firm?.id ? (
+                <p>
+                  <strong>Firm:</strong> {attorneyFirmStatus.firm.name || 'Attorney firm'}
+                </p>
+              ) : null}
+              {!attorneyFirmStatus.loading && !attorneyFirmStatus.firm?.id ? (
+                <p className="mt-2 rounded-[12px] border border-[#f5d3a4] bg-[#fff8ec] px-3 py-2 text-[#8a4b10]">
+                  Your profile setup is complete, but the firm workspace itself still needs to be created, repaired, or
+                  re-linked before the attorney workflow can open.
+                </p>
+              ) : null}
+              {attorneyFirmStatus.error ? (
+                <p className="mt-2 rounded-[12px] border border-[#f4c7c3] bg-[#fff5f4] px-3 py-2 text-[#9f1c1c]">
+                  {attorneyFirmStatus.error}
+                </p>
+              ) : null}
+            </>
+          ) : null}
         </div>
         <div className="grid gap-2">
           {actions.map((action) => (

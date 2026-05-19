@@ -26,6 +26,19 @@ export function isOnboardingRoute(pathname = '') {
   return ONBOARDING_PATHS.some((item) => isPathMatch(pathname, item))
 }
 
+function hasAttorneyFirmRepairRequest(search = '') {
+  const rawSearch = String(search || '').trim()
+  if (!rawSearch) return false
+
+  try {
+    const params = new URLSearchParams(rawSearch.startsWith('?') ? rawSearch : `?${rawSearch}`)
+    const repairValue = String(params.get('repair') || '').trim().toLowerCase()
+    return repairValue === 'firm' || repairValue === 'attorney_firm'
+  } catch {
+    return false
+  }
+}
+
 export function resolveRoleOnboardingPath(role = '') {
   const normalizedRole = normalizeAppRole(role)
   if (normalizedRole === 'agent') return '/agent/onboarding'
@@ -78,6 +91,7 @@ export function deriveOnboardingSetupState({ profile = null, baseRole = '' } = {
 
 export function decideAuthRedirect({
   pathname = '/',
+  search = '',
   hasSession = false,
   profile = null,
   baseRole = '',
@@ -87,6 +101,10 @@ export function decideAuthRedirect({
   const onOnboardingRoute = isOnboardingRoute(safePath)
   const roleOnboardingPath = resolveRoleOnboardingPath(setupState.appRole)
   const profileRoute = '/onboarding/profile'
+  const attorneyFirmRepairRequest =
+    setupState.appRole === 'attorney' &&
+    isPathMatch(safePath, '/attorney/onboarding') &&
+    hasAttorneyFirmRepairRequest(search)
 
   if (!hasSession) {
     return {
@@ -119,6 +137,7 @@ export function decideAuthRedirect({
   if (
     setupState.onboardingCompleted &&
     onOnboardingRoute &&
+    !attorneyFirmRepairRequest &&
     !(setupState.appRole === 'attorney' && isPathMatch(safePath, '/attorney/onboarding') && !setupState.hasAttorneyFirm)
   ) {
     return {

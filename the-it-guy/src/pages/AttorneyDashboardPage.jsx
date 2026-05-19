@@ -33,7 +33,7 @@ const EMPTY_DASHBOARD = {
 }
 
 function AttorneyDashboardPage() {
-  const { role } = useWorkspace()
+  const { role, profile } = useWorkspace()
   const permissionsState = useAttorneyPermissions()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -114,17 +114,22 @@ function AttorneyDashboardPage() {
   }
 
   if (!dashboard?.firm?.id) {
+    const hasProfileFirmLink = Boolean(String(profile?.primaryAttorneyFirmId || '').trim())
+
     return (
       <section className="page">
         <div className="panel card-tier-standard" style={{ display: 'grid', gap: '0.75rem' }}>
           <h2 style={{ margin: 0 }}>Firm Setup Pending</h2>
           <p className="status-message" style={{ margin: 0 }}>
-            Your onboarding is complete, but your attorney firm is not configured yet. Continue setup to unlock full
-            workflow access.
+            {hasProfileFirmLink
+              ? 'Your profile points to an attorney firm, but we could not load an active firm workspace. Review or repair the firm setup to unlock full workflow access.'
+              : 'Your onboarding is complete, but your attorney firm is not configured yet. Continue setup to unlock full workflow access.'}
           </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
-            <Link to="/attorney/onboarding" className="header-secondary-cta">Continue Firm Setup</Link>
-            <Link to="/setup" className="header-secondary-cta">Open Setup Guide</Link>
+            <Link to="/attorney/onboarding?repair=firm" className="header-secondary-cta">
+              {hasProfileFirmLink ? 'Repair Firm Setup' : 'Continue Firm Setup'}
+            </Link>
+            <Link to="/setup" className="header-secondary-cta">View Setup Status</Link>
           </div>
         </div>
       </section>

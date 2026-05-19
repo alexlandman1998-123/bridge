@@ -1513,6 +1513,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [organisationId, scheduleRecordsReload])
 
   useEffect(() => {
+    if (!organisationId || !isCalendarMode || typeof window === 'undefined') return undefined
+
+    const refreshCalendarAppointments = () => {
+      scheduleRecordsReload(organisationId, 0)
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshCalendarAppointments()
+      }
+    }
+
+    window.addEventListener('focus', refreshCalendarAppointments)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    const intervalId = window.setInterval(refreshCalendarAppointments, 45000)
+
+    return () => {
+      window.removeEventListener('focus', refreshCalendarAppointments)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.clearInterval(intervalId)
+    }
+  }, [isCalendarMode, organisationId, scheduleRecordsReload])
+
+  useEffect(() => {
     if (!organisationId) return
     const handler = (event) => {
       const eventDetail = event?.detail || {}

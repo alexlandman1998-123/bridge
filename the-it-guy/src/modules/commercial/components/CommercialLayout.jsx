@@ -1,4 +1,5 @@
 import { Bell, Search } from 'lucide-react'
+import { Suspense, useEffect, useRef } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import QuickCreateDropdown from '../../../components/QuickCreateDropdown'
 import WorkspaceSwitcher from '../../../components/WorkspaceSwitcher'
@@ -6,15 +7,37 @@ import { COMMERCIAL_DASHBOARD_NAV_ITEM, COMMERCIAL_NAV_GROUPS } from '../commerc
 import CommercialBranding from './CommercialBranding'
 import CommercialSidebar from './CommercialSidebar'
 
+function CommercialPageSkeleton() {
+  return (
+    <div className="grid gap-5">
+      <div className="h-28 animate-pulse rounded-3xl border border-slate-200 bg-white" />
+      <div className="grid gap-4 md:grid-cols-3">
+        {[0, 1, 2].map((item) => (
+          <div key={item} className="h-32 animate-pulse rounded-3xl border border-slate-200 bg-white" />
+        ))}
+      </div>
+      <div className="h-72 animate-pulse rounded-3xl border border-slate-200 bg-white" />
+    </div>
+  )
+}
+
 function CommercialLayout() {
   const location = useLocation()
   const navigate = useNavigate()
+  const contentScrollRef = useRef(null)
   const mobileNavItems = [COMMERCIAL_DASHBOARD_NAV_ITEM, ...COMMERCIAL_NAV_GROUPS.flatMap((group) => group.items)]
+
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      contentScrollRef.current?.scrollTo?.({ top: 0, left: 0, behavior: 'auto' })
+    })
+    return () => window.cancelAnimationFrame(frameId)
+  }, [location.pathname])
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#f6f8fb] text-[#102236]">
       <CommercialSidebar />
-      <main className="min-w-0 flex-1 overflow-y-auto">
+      <main ref={contentScrollRef} className="min-w-0 flex-1 overflow-y-auto">
         <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur lg:hidden">
           <div className="flex items-center justify-between gap-3">
             <CommercialBranding compact />
@@ -73,7 +96,9 @@ function CommercialLayout() {
           </div>
         </div>
         <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-5 px-4 py-5 sm:px-5 lg:px-6">
-          <Outlet />
+          <Suspense fallback={<CommercialPageSkeleton />}>
+            <Outlet />
+          </Suspense>
         </div>
       </main>
     </div>
