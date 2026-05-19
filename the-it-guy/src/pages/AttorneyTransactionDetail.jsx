@@ -1,22 +1,31 @@
-import { Archive, ArchiveRestore, Ban, CheckCircle2, ChevronRight, FileText, RotateCcw, Send } from 'lucide-react'
+import {
+  Activity,
+  Building2,
+  ChevronRight,
+  CircleDollarSign,
+  Clock3,
+  FileText,
+  MessageSquarePlus,
+  MoreHorizontal,
+  Send,
+  UsersRound,
+  Workflow,
+} from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import SharedTransactionShell from '../components/SharedTransactionShell'
-import TransactionWorkspaceHeader from '../components/TransactionWorkspaceHeader'
-import TransactionWorkspaceMenu from '../components/TransactionWorkspaceMenu'
 import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
 import AttorneyWorkflowLanesPanel from '../components/attorney/workflow/AttorneyWorkflowLanesPanel'
-import AppointmentCalendarActions from '../components/appointments/AppointmentCalendarActions'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import { getAttorneyTransferStage, stageLabelFromAttorneyKey } from '../core/transactions/attorneySelectors'
 import { normalizeFinanceType } from '../core/transactions/financeType'
-import { buildWorkspaceHeaderConfigForRole } from '../core/transactions/workspaceHeaderConfig'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
+import { getAttorneyWorkflowOperationsForTransaction } from '../services/attorneyWorkflow/attorneyWorkflowLaneService'
 import {
   addTransactionDiscussionComment,
   archiveTransactionLifecycle,
@@ -38,30 +47,15 @@ import {
   uploadDocument,
 } from '../lib/api'
 import { canAccessAttorneyMatter } from '../lib/attorneyPermissions'
-import { getAppointmentTypeLabel } from '../lib/appointmentTypeDefinitions'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
-import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
-import { parseEdgeFunctionError } from '../lib/edgeFunctions'
+import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 const ATTORNEY_WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'buyer', label: 'Buyer' },
-  { id: 'seller', label: 'Seller' },
+  { id: 'parties', label: 'Parties' },
   { id: 'documents', label: 'Documents' },
   { id: 'financials', label: 'Financials' },
   { id: 'activity', label: 'Activity' },
-]
-
-const ATTORNEY_STAGE_RAIL = [
-  { key: 'instruction_received', label: 'Instruction Received' },
-  { key: 'fica_onboarding', label: 'FICA / Onboarding' },
-  { key: 'drafting', label: 'Drafting' },
-  { key: 'signing', label: 'Signing' },
-  { key: 'guarantees', label: 'Guarantees' },
-  { key: 'clearances', label: 'Clearances' },
-  { key: 'lodgement', label: 'Lodgement' },
-  { key: 'registration_preparation', label: 'Registration Preparation' },
-  { key: 'registered', label: 'Registered' },
 ]
 
 const ATTORNEY_DOCUMENT_CATEGORIES = [
@@ -78,6 +72,12 @@ const ATTORNEY_DOCUMENT_CATEGORIES = [
 ]
 
 const ATTORNEY_DOCUMENT_GROUPS = [
+  {
+    key: 'all_documents',
+    label: 'All Documents',
+    description: 'All uploaded and requested documents across this matter.',
+    categories: ATTORNEY_DOCUMENT_CATEGORIES,
+  },
   {
     key: 'buyer_documents',
     label: 'Buyer Documents',
@@ -457,36 +457,283 @@ function buildInviteParticipantName(form = {}) {
   return extras.join(' • ')
 }
 
-function resolveAttorneyStageIndex(stageKey, signalText) {
-  const signal = String(signalText || '').toLowerCase()
-  if (stageKey === 'registered' || /registered|registration confirmed|deed registered/.test(signal)) return 8
-  if (stageKey === 'lodged_at_deeds_office' || /lodged|lodgement|deeds office|examination/.test(signal)) return 6
-  if (stageKey === 'ready_for_lodgement' || /registration preparation|ready for registration|ready to register/.test(signal)) return 7
-  if (/clearance|municipal|levy|duty|body corporate|consent/.test(signal)) return 5
-  if (/guarantee|bond approved|bank guarantee/.test(signal)) return 4
-  if (/sign|signature|signed/.test(signal)) return 3
-  if (/draft|preparation|prepare transfer|drafting/.test(signal)) return 2
-  if (stageKey === 'documents_pending' || /fica|onboarding|document/.test(signal)) return 1
-  return 0
+function formatCurrencyValue(value, fallback = 'Not captured') {
+  const amount = Number(value || 0)
+  return amount ? currency.format(amount) : fallback
 }
 
-function getAttorneyProgressFillClass(percent) {
-  if (percent >= 80) {
-    return 'bg-gradient-to-r from-[#2d7f8a] to-[#2f9a67]'
-  }
-  if (percent >= 60) {
-    return 'bg-gradient-to-r from-[#2f6ea6] to-[#2d8b97]'
-  }
-  if (percent >= 30) {
-    return 'bg-gradient-to-r from-[#426f9a] to-[#2f6ea6]'
-  }
-  return 'bg-gradient-to-r from-[#6f8093] to-[#5d6f83]'
+function daysBetween(startValue, endValue = Date.now()) {
+  const start = new Date(startValue || 0).getTime()
+  const end = new Date(endValue || Date.now()).getTime()
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start <= 0) return 'Not set'
+  return `${Math.max(0, Math.ceil((end - start) / 86_400_000))} days`
 }
 
-function buildStageNodeState(index, currentIndex) {
-  if (index < currentIndex) return 'completed'
-  if (index === currentIndex) return 'current'
-  return 'upcoming'
+const WORKFLOW_STATUS_META = {
+  completed: { label: 'Completed', dot: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+  in_progress: { label: 'In Progress', dot: 'bg-blue-600', text: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
+  waiting: { label: 'Waiting', dot: 'bg-amber-500', text: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200' },
+  blocked: { label: 'Blocked', dot: 'bg-red-500', text: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200' },
+  not_started: { label: 'Not Started', dot: 'bg-slate-300', text: 'text-slate-500', bg: 'bg-slate-50', border: 'border-slate-200' },
+}
+
+const LANE_ACCENTS = {
+  transfer: {
+    ring: 'border-l-blue-600',
+    icon: 'bg-blue-50 text-blue-700 ring-blue-100',
+    badge: 'border-blue-200 bg-blue-50 text-blue-700',
+    fill: 'bg-blue-600',
+  },
+  bond: {
+    ring: 'border-l-violet-600',
+    icon: 'bg-violet-50 text-violet-700 ring-violet-100',
+    badge: 'border-violet-200 bg-violet-50 text-violet-700',
+    fill: 'bg-violet-600',
+  },
+  cancellation: {
+    ring: 'border-l-orange-500',
+    icon: 'bg-orange-50 text-orange-700 ring-orange-100',
+    badge: 'border-orange-200 bg-orange-50 text-orange-700',
+    fill: 'bg-orange-500',
+  },
+}
+
+const WORKFLOW_STEP_LABEL_OVERRIDES = {
+  instruction_received: 'Instruction Received',
+  fica_received: 'FICA Received',
+  transfer_documents_prepared: 'Transfer Docs Prepared',
+  buyer_signed: 'Buyer Signed Docs',
+  seller_signed: 'Seller Signed Docs',
+  guarantees_received: 'Guarantees Received',
+  lodgement_submitted: 'Lodgement Submitted',
+  registration_confirmed: 'Registration Confirmed',
+  bond_instruction_received: 'Bond Instruction Received',
+  buyer_fica_received: 'Buyer FICA Received',
+  bond_documents_prepared: 'Bond Docs Prepared',
+  buyer_signed_bond_docs: 'Buyer Signed Bond Docs',
+  guarantees_issued: 'Guarantees Issued',
+  bond_lodged: 'Bond Lodged',
+  bond_registered: 'Bond Registered',
+  cancellation_instruction_received: 'Cancellation Instruction',
+  settlement_figures_requested: 'Settlement Figures Requested',
+  settlement_figures_received: 'Settlement Figures Received',
+  guarantees_provided: 'Guarantees Provided',
+  cancellation_docs_prepared: 'Cancellation Docs Prepared',
+  cancellation_lodged: 'Cancellation Lodged',
+  bond_cancelled: 'Bond Cancelled',
+}
+
+function normalizeWorkspaceStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'complete') return 'completed'
+  if (normalized === 'pending' || normalized === 'under_review' || normalized === 'requested') return 'waiting'
+  return WORKFLOW_STATUS_META[normalized] ? normalized : 'not_started'
+}
+
+function getWorkflowStepLabel(step = {}) {
+  return WORKFLOW_STEP_LABEL_OVERRIDES[step.stepKey] || WORKFLOW_STEP_LABEL_OVERRIDES[step.step_key] || step.stepLabel || step.step_label || toTitle(step.stepKey || step.step_key)
+}
+
+function getWorkflowLaneTitle(lane = {}) {
+  const laneKey = String(lane?.laneKey || lane?.processType || '').toLowerCase()
+  if (laneKey === 'bond') return 'Bond Workflow'
+  if (laneKey === 'cancellation') return 'Cancellation Workflow'
+  return 'Transfer Workflow'
+}
+
+function getAssignedFirmLabel(lane = {}) {
+  return (
+    lane?.assignment?.firmName ||
+    lane?.assignment?.attorneyFirmName ||
+    lane?.assignment?.firm_name ||
+    lane?.assignment?.attorney_firm_name ||
+    lane?.assignment?.organisationName ||
+    'Assigned firm pending'
+  )
+}
+
+function getDocumentStatus(document = {}) {
+  const raw = String(document.review_status || document.status || '').trim().toLowerCase()
+  if (raw === 'under_review') return 'Uploaded'
+  if (raw === 'completed') return 'Approved'
+  return toTitle(raw || 'Uploaded')
+}
+
+function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange }) {
+  const iconByTab = {
+    overview: Workflow,
+    parties: UsersRound,
+    documents: FileText,
+    financials: CircleDollarSign,
+    activity: Activity,
+  }
+
+  return (
+    <nav className="no-print -mx-1 overflow-x-auto border-b border-borderDefault px-1" aria-label="Matter workspace tabs">
+      <div className="flex min-w-max gap-5">
+        {tabs.map((tab) => {
+          const active = activeTab === tab.id
+          const Icon = iconByTab[tab.id] || FileText
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              className={`inline-flex min-h-[46px] items-center gap-2 border-b-2 px-1 text-sm font-semibold transition ${
+                active
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-textMuted hover:border-borderDefault hover:text-textStrong'
+              }`}
+              onClick={() => onChange?.(tab.id)}
+            >
+              <Icon size={15} />
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+    </nav>
+  )
+}
+
+function MatterCompactHeader({ title, statusLabel, statusClassName, propertyLabel, subtitle, stats = [], onAddNote, onAction }) {
+  return (
+    <section className="rounded-[18px] border border-borderDefault bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)] md:px-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="truncate text-xl font-bold text-textStrong md:text-2xl">{title}</h1>
+            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${statusClassName}`}>
+              {statusLabel}
+            </span>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-textMuted">
+            <strong className="text-textStrong">{propertyLabel}</strong>
+            {subtitle ? <span>{subtitle}</span> : null}
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Button type="button" variant="secondary" size="sm" onClick={onAction}>
+            <MoreHorizontal size={14} />
+            Actions
+          </Button>
+          <Button type="button" size="sm" onClick={onAddNote}>
+            <MessageSquarePlus size={14} />
+            Add Note
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5 xl:grid-cols-10">
+        {stats.map((item) => (
+          <article key={item.label} className="min-w-0 border-l border-borderSoft px-3 first:border-l-0 first:pl-0">
+            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{item.label}</span>
+            <strong className="mt-1 block truncate text-sm font-semibold text-textStrong">{item.value || 'Not set'}</strong>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function WorkflowLaneCard({ lane, expanded, onToggle, onOpenControls }) {
+  const laneKey = String(lane?.laneKey || 'transfer').toLowerCase()
+  const accent = LANE_ACCENTS[laneKey] || LANE_ACCENTS.transfer
+  const statusKey = normalizeWorkspaceStatus(lane?.laneStatus || lane?.summary?.status)
+  const statusMeta = WORKFLOW_STATUS_META[statusKey] || WORKFLOW_STATUS_META.not_started
+  const progress = Number(lane?.summary?.completionPercent || 0)
+  const canManage = Boolean(lane?.permissions?.canUpdateStage)
+  const steps = Array.isArray(lane?.steps) ? lane.steps : []
+
+  return (
+    <article className={`overflow-hidden rounded-[16px] border border-borderDefault border-l-4 bg-white shadow-[0_10px_22px_rgba(15,23,42,0.04)] ${accent.ring}`}>
+      <div className="p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 gap-3">
+            <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full ring-1 ${accent.icon}`}>
+              <Workflow size={18} />
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-base font-semibold text-textStrong">{getWorkflowLaneTitle(lane)}</h3>
+                <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${accent.badge}`}>
+                  {getAssignedFirmLabel(lane)}
+                </span>
+              </div>
+              <p className="mt-1 text-sm text-textMuted">Assigned firm shown for context. Phase 1 allows matter teams to update all active lanes.</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.border} ${statusMeta.bg} ${statusMeta.text}`}>
+              <span className={`h-2 w-2 rounded-full ${statusMeta.dot}`} />
+              {statusMeta.label}
+            </span>
+            <span className="text-sm font-semibold text-textStrong">{progress}%</span>
+            <Button type="button" variant="secondary" size="sm" onClick={onToggle}>
+              View Details
+              <ChevronRight size={14} />
+            </Button>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <div className="h-1.5 rounded-full bg-slate-100">
+            <div className={`h-1.5 rounded-full ${accent.fill}`} style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
+            {steps.map((step) => {
+              const stepStatusKey = normalizeWorkspaceStatus(step.status)
+              const stepStatus = WORKFLOW_STATUS_META[stepStatusKey] || WORKFLOW_STATUS_META.not_started
+              return (
+                <div key={step.id || step.stepKey} className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${stepStatus.dot}`} />
+                    <span className="truncate text-xs font-semibold text-textStrong">{getWorkflowStepLabel(step)}</span>
+                  </div>
+                  <p className={`mt-1 truncate pl-4 text-[0.7rem] font-medium ${stepStatus.text}`}>
+                    {step.completedAt ? formatShortDayMonth(step.completedAt) : stepStatus.label}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      {expanded ? (
+        <div className="border-t border-borderSoft bg-surfaceAlt p-4">
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {steps.map((step) => {
+              const stepStatusKey = normalizeWorkspaceStatus(step.status)
+              const stepStatus = WORKFLOW_STATUS_META[stepStatusKey] || WORKFLOW_STATUS_META.not_started
+              return (
+                <article key={`detail-${step.id || step.stepKey}`} className="rounded-[12px] border border-borderSoft bg-white px-3 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <strong className="text-sm text-textStrong">{getWorkflowStepLabel(step)}</strong>
+                    <span className={`rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${stepStatus.bg} ${stepStatus.text}`}>
+                      {stepStatus.label}
+                    </span>
+                  </div>
+                  {step.comment ? <p className="mt-2 text-xs leading-5 text-textMuted">{step.comment}</p> : null}
+                  <Button type="button" variant="ghost" size="sm" disabled={!canManage} onClick={onOpenControls} className="mt-3">
+                    Manage Step
+                  </Button>
+                </article>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
+    </article>
+  )
+}
+
+function OverviewSidePanel({ title, children }) {
+  return (
+    <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+      <h3 className="text-sm font-semibold text-textStrong">{title}</h3>
+      <div className="mt-3">{children}</div>
+    </section>
+  )
 }
 
 function AttorneyTransactionDetail() {
@@ -563,6 +810,12 @@ function AttorneyTransactionDetail() {
   const [detailPanelOpen, setDetailPanelOpen] = useState(false)
   const [detailPanelKey, setDetailPanelKey] = useState('matter')
   const [hydratingDetail, setHydratingDetail] = useState(false)
+  const [workflowOperations, setWorkflowOperations] = useState(null)
+  const [workflowLoading, setWorkflowLoading] = useState(false)
+  const [workflowError, setWorkflowError] = useState('')
+  const [expandedWorkflowLane, setExpandedWorkflowLane] = useState('')
+  const [showWorkflowControls, setShowWorkflowControls] = useState(false)
+  const [activityFilter, setActivityFilter] = useState('all')
 
   const loadData = useCallback(async ({ background = false } = {}) => {
     if (!isSupabaseConfigured) {
@@ -708,8 +961,38 @@ function AttorneyTransactionDetail() {
   )
   const transactionEvents = data?.transactionEvents ?? EMPTY_ARRAY
   const transactionParticipants = data?.transactionParticipants ?? EMPTY_ARRAY
-  const appointments = Array.isArray(data?.appointments) ? data.appointments : []
   const activeWorkspaceMenu = ATTORNEY_WORKSPACE_TABS.some((tab) => tab.id === workspaceMenu) ? workspaceMenu : 'overview'
+
+  useEffect(() => {
+    let active = true
+
+    async function loadWorkflowOperations() {
+      if (!transaction?.id) {
+        setWorkflowOperations(null)
+        return
+      }
+
+      try {
+        setWorkflowLoading(true)
+        setWorkflowError('')
+        const operations = await getAttorneyWorkflowOperationsForTransaction(transaction.id)
+        if (!active) return
+        setWorkflowOperations(operations)
+      } catch (workflowLoadError) {
+        if (!active) return
+        setWorkflowOperations(null)
+        setWorkflowError(workflowLoadError?.message || 'Unable to load attorney workflow lanes.')
+      } finally {
+        if (active) setWorkflowLoading(false)
+      }
+    }
+
+    void loadWorkflowOperations()
+
+    return () => {
+      active = false
+    }
+  }, [transaction?.id])
 
   const mainStage = useMemo(
     () => data?.mainStage || getMainStageFromDetailedStage(transaction?.stage || 'Available'),
@@ -726,11 +1009,8 @@ function AttorneyTransactionDetail() {
     ? `${development?.name || 'Development'}${unit?.unit_number ? ` • Unit ${unit.unit_number}` : ''}`
     : transaction?.property_description || transaction?.property_address_line_1 || 'Private Property Transaction'
   const matterReference = transaction?.transaction_reference || `TRX-${String(transaction?.id || '').slice(0, 8).toUpperCase()}`
-  const stageSignal = `${transaction?.next_action || ''} ${transaction?.comment || ''}`
   const transferStageKey = getAttorneyTransferStage({ transaction, stage: transaction?.stage, unit, development })
   const transferStageLabel = stageLabelFromAttorneyKey(transferStageKey)
-  const stageIndex = resolveAttorneyStageIndex(transferStageKey, stageSignal)
-  const railProgressPercent = Math.round((stageIndex / Math.max(ATTORNEY_STAGE_RAIL.length - 1, 1)) * 100)
   const lifecycleState = normalizeLifecycleState(
     transaction?.lifecycle_state || (transferStageKey === 'registered' ? 'registered' : 'active'),
   )
@@ -742,35 +1022,6 @@ function AttorneyTransactionDetail() {
     onboardingLifecycleStatus === 'client_onboarding_complete' ||
     Boolean(transaction?.onboarding_completed_at) ||
     ['submitted', 'reviewed', 'approved'].includes(onboardingRecordStatus)
-  const onboardingEmailEvents = transactionEvents
-    .filter((item) => {
-      const eventType = String(item?.event_type || item?.eventType || '').trim()
-      if (eventType !== 'TransactionUpdated') {
-        return false
-      }
-      const eventData = item?.event_data && typeof item.event_data === 'object'
-        ? item.event_data
-        : item?.eventData && typeof item.eventData === 'object'
-          ? item.eventData
-          : {}
-      const action = String(eventData?.action || '').trim().toLowerCase()
-      const type = String(eventData?.type || '').trim().toLowerCase()
-      return action === 'onboarding_email_sent' || type === 'onboarding_sent'
-    })
-    .sort((left, right) => new Date(right?.created_at || right?.createdAt || 0).getTime() - new Date(left?.created_at || left?.createdAt || 0).getTime())
-  const onboardingEmailSent = onboardingEmailEvents.length > 0
-  const onboardingHeaderLabel = onboardingCompleted
-    ? 'Onboarding Completed'
-    : onboardingEmailSent
-      ? 'Onboarding Sent'
-      : 'Onboarding Not Sent'
-  const timeInStageShortDate = formatShortDayMonth(transaction?.updated_at || transaction?.created_at)
-  const canRunRegistration = lifecycleState === 'active'
-  const canUndoRegistration = ['registered', 'completed'].includes(lifecycleState)
-  const canMarkCompleted = lifecycleState === 'registered'
-  const canArchive = ['registered', 'completed'].includes(lifecycleState)
-  const canUnarchive = lifecycleState === 'archived'
-  const canCancel = !['archived', 'cancelled'].includes(lifecycleState)
   const registrationDocumentOptions = useMemo(
     () =>
       documents.filter((document) => {
@@ -784,116 +1035,9 @@ function AttorneyTransactionDetail() {
     : documents.length
       ? `${documents.length} files uploaded`
       : 'No requirements configured'
-  const workspaceHeaderRole = ['developer', 'attorney', 'agent', 'bond_originator'].includes(workspaceRole)
-    ? workspaceRole
-    : 'attorney'
-  const workspaceHeaderConfig = buildWorkspaceHeaderConfigForRole({
-    role: workspaceHeaderRole,
-    title: development?.name || transaction?.property_description || 'Transaction Workspace',
-    unitLabel: unit?.unit_number ? `Unit ${unit.unit_number}` : '',
-    subtitle: 'Direct transaction control for onboarding, finance, transfer workflow, and the live purchase record.',
-    buyerLabel: buyer?.name || '',
-    currentStageLabel: transferStageLabel,
-    mainStageLabel,
-    operationalStateLabel,
-    financeTypeLabel,
-    purchasePriceLabel: currency.format(purchasePriceValue || 0),
-    timeInStageValue: timeInStageShortDate ? `Updated ${timeInStageShortDate}` : 'Updated —',
-    timeInStageMeta: '',
-    onboardingLabel: onboardingHeaderLabel,
-  })
-  const workspaceHeaderActions = [
-    {
-      id: 'onboarding',
-      label: workspaceHeaderRole === 'developer'
-        ? onboardingCompleted
-          ? 'Onboarding Completed'
-          : onboardingEmailSent
-            ? 'Onboarding Sent'
-            : 'Onboarding Required'
-        : onboardingCompleted
-          ? 'Onboarding Completed'
-          : 'Onboarding Links',
-      icon: onboardingCompleted ? null : 'onboarding_link',
-      as: workspaceHeaderRole === 'developer' ? 'badge' : onboardingCompleted ? 'badge' : 'button',
-      tone: onboardingCompleted ? 'success' : 'neutral',
-      variant: workspaceHeaderRole === 'developer' || onboardingCompleted ? undefined : 'secondary',
-      onClick: onboardingCompleted
-        ? undefined
-        : workspaceHeaderRole === 'developer'
-          ? undefined
-          : () => void handleOpenOnboardingModal(),
-      disabled: onboardingCompleted ? false : saving || onboardingActionBusy,
-      className: onboardingCompleted
-        ? 'inline-flex min-h-[44px] items-center rounded-full border border-success/35 bg-successSoft px-4 text-sm font-semibold text-success'
-        : 'min-w-[230px]',
-    },
-    ...(workspaceHeaderRole === 'developer' && !onboardingCompleted && !onboardingEmailSent
-      ? [{
-          id: 'send-onboarding',
-          label: onboardingActionBusy ? 'Sending…' : 'Send Onboarding',
-          icon: 'onboarding_link',
-          variant: 'primary',
-          className: 'min-w-[206px]',
-          onClick: () => void handleSendOnboardingEmail({ resend: false }),
-          disabled: loading || saving || onboardingActionBusy || !transaction?.id || !buyer?.email,
-        }]
-      : []),
-    ...(workspaceHeaderRole === 'developer' && !onboardingCompleted && onboardingEmailSent
-      ? [{
-          id: 'resend-onboarding',
-          label: onboardingActionBusy ? 'Sending…' : 'Resend Onboarding',
-          icon: 'onboarding_link',
-          variant: 'secondary',
-          className: 'min-w-[206px]',
-          onClick: () => void handleSendOnboardingEmail({ resend: true }),
-          disabled: loading || saving || onboardingActionBusy || !transaction?.id || !buyer?.email,
-        }]
-      : []),
-    ...(workspaceHeaderRole === 'developer' && (onboardingEmailSent || onboardingCompleted)
-      ? [{
-          id: 'copy-onboarding-link',
-          label: 'Copy Onboarding Link',
-          icon: 'onboarding_link',
-          variant: onboardingCompleted ? 'secondary' : 'ghost',
-          className: 'min-w-[206px]',
-          onClick: () => void handleCopyOnboardingLink(),
-          disabled: onboardingActionBusy || !transaction?.id,
-        }]
-      : []),
-    {
-      id: 'refresh',
-      label: hydratingDetail ? 'Refreshing…' : 'Refresh',
-      icon: 'refresh',
-      variant: 'secondary',
-      onClick: loadData,
-      disabled: saving || hydratingDetail,
-      className: 'min-w-[132px]',
-    },
-  ]
-  const sortedAppointments = useMemo(
-    () =>
-      appointments
-        .slice()
-        .sort((left, right) => new Date(left?.dateTime || left?.createdAt || 0).getTime() - new Date(right?.dateTime || right?.createdAt || 0).getTime()),
-    [appointments],
-  )
-  const upcomingAppointments = useMemo(
-    () =>
-      sortedAppointments.filter((item) => {
-        const status = String(item?.status || '').trim().toLowerCase()
-        if (status.includes('cancel') || status.includes('complete')) return false
-        const timestamp = new Date(item?.dateTime || 0).getTime()
-        return Number.isFinite(timestamp) && timestamp >= Date.now()
-      }),
-    [sortedAppointments],
-  )
   const workspaceMenuTabs = ATTORNEY_WORKSPACE_TABS.map((tab) => {
-    if (tab.id === 'buyer') {
-      return { ...tab, meta: buyer?.name ? 'Buyer ready' : 'Buyer pending' }
-    }
-    if (tab.id === 'seller') {
-      return { ...tab, meta: transaction?.seller_name ? 'Seller ready' : 'Seller pending' }
+    if (tab.id === 'parties') {
+      return { ...tab, meta: `${transactionParticipants.length} parties` }
     }
     if (tab.id === 'documents') {
       return { ...tab, meta: `${documents.length} files` }
@@ -916,7 +1060,9 @@ function AttorneyTransactionDetail() {
     for (const document of documents) {
       const category = ATTORNEY_DOCUMENT_CATEGORIES.includes(document?.category) ? document.category : 'Internal Working Documents'
       const groupKey = getAttorneyDocumentGroupKey(category)
-      groups[groupKey].push({ ...document, normalizedCategory: category })
+      const normalizedDocument = { ...document, normalizedCategory: category }
+      groups.all_documents.push(normalizedDocument)
+      groups[groupKey].push(normalizedDocument)
     }
 
     return groups
@@ -1042,28 +1188,203 @@ function AttorneyTransactionDetail() {
       ].sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime()),
     [transactionEvents, visibleTransactionDiscussion],
   )
-  const overviewDiscussionItems = useMemo(
+  const workflowLanes = useMemo(
+    () => (Array.isArray(workflowOperations?.lanes) ? workflowOperations.lanes : EMPTY_ARRAY),
+    [workflowOperations?.lanes],
+  )
+  const matterHeaderStats = useMemo(
+    () => [
+      { label: 'Buyer', value: buyer?.name || 'Buyer pending' },
+      { label: 'Seller', value: transaction?.seller_name || 'Seller pending' },
+      { label: 'Purchase Price', value: formatCurrencyValue(purchasePriceValue, 'Not captured') },
+      { label: 'Finance Type', value: financeTypeLabel },
+      { label: 'Bond Amount', value: formatCurrencyValue(transaction?.bond_amount, financeTypeLabel.toLowerCase().includes('bond') ? 'Pending' : 'N/A') },
+      { label: 'Deposit', value: formatCurrencyValue(transaction?.deposit_amount, 'Not captured') },
+      { label: 'Target Registration', value: formatDate(transaction?.target_registration_date || transaction?.expected_transfer_date) },
+      { label: 'Days Active', value: daysBetween(transaction?.created_at) },
+      { label: 'Current Stage', value: transferStageLabel },
+      { label: 'Matter Status', value: operationalStateLabel },
+    ],
+    [
+      buyer?.name,
+      financeTypeLabel,
+      operationalStateLabel,
+      purchasePriceValue,
+      transaction?.bond_amount,
+      transaction?.created_at,
+      transaction?.deposit_amount,
+      transaction?.expected_transfer_date,
+      transaction?.seller_name,
+      transaction?.target_registration_date,
+      transferStageLabel,
+    ],
+  )
+  const matterSubtitle = [
+    development?.name || null,
+    propertyAddress || null,
+  ].filter(Boolean).join(' • ')
+  const overviewKeyDates = [
+    { label: 'Offer accepted', value: formatDate(transaction?.offer_accepted_at || transaction?.created_at), complete: true },
+    { label: 'Transfer duty paid', value: formatDate(transaction?.transfer_duty_paid_at), complete: Boolean(transaction?.transfer_duty_paid_at) },
+    { label: 'Target registration', value: formatDate(transaction?.target_registration_date || transaction?.expected_transfer_date), emphasis: true },
+    { label: 'Estimated registration', value: formatDate(transaction?.estimated_registration_date || transaction?.target_registration_date || transaction?.expected_transfer_date) },
+  ]
+  const overviewNextActions = useMemo(() => {
+    const rows = []
+    const blockedLane = workflowLanes.find((lane) => normalizeWorkspaceStatus(lane?.laneStatus || lane?.summary?.status) === 'blocked')
+    const waitingLane = workflowLanes.find((lane) => lane?.documentSummary?.missing || lane?.documentSummary?.requested)
+    if (transaction?.next_action) {
+      rows.push({
+        title: transaction.next_action,
+        description: 'Matter-level next action',
+        dueDate: transaction?.target_registration_date || transaction?.expected_transfer_date,
+        workflow: 'Overview',
+        action: 'View matter',
+      })
+    }
+    if (blockedLane) {
+      rows.push({
+        title: `${getWorkflowLaneTitle(blockedLane)} blocked`,
+        description: blockedLane.summary?.blocked?.comment || 'A workflow step needs attention.',
+        dueDate: blockedLane.dueDate,
+        workflow: getWorkflowLaneTitle(blockedLane),
+        action: 'View workflow',
+      })
+    }
+    if (waitingLane) {
+      rows.push({
+        title: 'Documents outstanding',
+        description: `${waitingLane.documentSummary?.missing || waitingLane.documentSummary?.requested || 0} document item(s) need follow-up.`,
+        dueDate: waitingLane.dueDate,
+        workflow: getWorkflowLaneTitle(waitingLane),
+        action: 'Upload Document',
+      })
+    }
+    if (!rows.length) {
+      rows.push({
+        title: 'Review latest activity',
+        description: 'No urgent action is currently flagged.',
+        dueDate: transaction?.updated_at,
+        workflow: 'Activity',
+        action: 'Open Activity',
+      })
+    }
+    return rows.slice(0, 4)
+  }, [transaction?.expected_transfer_date, transaction?.next_action, transaction?.target_registration_date, transaction?.updated_at, workflowLanes])
+  const assignedTeamRows = useMemo(
+    () => [
+      { role: 'Transfer Attorney', participant: transferAttorney, lane: 'transfer' },
+      { role: 'Bond Attorney', participant: bondAttorney, lane: 'bond' },
+      { role: 'Cancellation Attorney', participant: cancellationAttorney, lane: 'cancellation' },
+      {
+        role: 'Conveyancer / Secretary',
+        participant: activeStakeholders.find((item) => /secretary|conveyancer|admin/i.test(`${item?.roleLabel || ''} ${item?.participantName || ''}`)),
+        lane: 'support',
+      },
+    ],
+    [activeStakeholders, bondAttorney, cancellationAttorney, transferAttorney],
+  )
+  const agents = useMemo(
+    () => activeStakeholders.filter((item) => item?.roleType === 'agent'),
+    [activeStakeholders],
+  )
+  const partySections = useMemo(
+    () => [
+      {
+        title: 'Buyer',
+        subtitle: 'Buyer details, onboarding, FICA, finance position, and buyer notes.',
+        items: [
+          ['Name', buyer?.name || 'Not assigned'],
+          ['Email', buyer?.email || 'Not captured'],
+          ['Phone', buyer?.phone || 'Not captured'],
+          ['Onboarding', onboardingCompleted ? 'Completed' : 'Pending'],
+          ['FICA Status', transaction?.buyer_fica_status ? toTitle(transaction.buyer_fica_status) : documentReadinessText],
+          ['Finance Details', financeTypeLabel],
+        ],
+      },
+      {
+        title: 'Seller',
+        subtitle: 'Seller details, onboarding, FICA, existing bond, and cancellation requirements.',
+        items: [
+          ['Name', transaction?.seller_name || 'Not assigned'],
+          ['Email', transaction?.seller_email || 'Not captured'],
+          ['Phone', transaction?.seller_phone || 'Not captured'],
+          ['FICA Status', transaction?.seller_fica_status ? toTitle(transaction.seller_fica_status) : 'Pending'],
+          ['Existing Bond', transaction?.seller_has_existing_bond ? 'Yes' : 'Not flagged'],
+          ['Cancellation Requirement', transaction?.seller_has_existing_bond ? 'Required' : 'Not required'],
+        ],
+      },
+      {
+        title: 'Property',
+        subtitle: 'Property, unit, development, price, and registration details.',
+        items: [
+          ['Erf / Unit', unit?.unit_number ? `Unit ${unit.unit_number}` : transaction?.erf_number || 'Not captured'],
+          ['Development', development?.name || 'Standalone matter'],
+          ['Address', propertyAddress || transaction?.property_description || 'Not captured'],
+          ['Purchase Price', formatCurrencyValue(purchasePriceValue, 'Not captured')],
+          ['Registration Date', formatDate(transaction?.registration_date || transaction?.registered_at)],
+          ['Target Registration', formatDate(transaction?.target_registration_date || transaction?.expected_transfer_date)],
+        ],
+      },
+      {
+        title: 'Agents',
+        subtitle: 'Agent and brokerage contacts linked to this matter.',
+        items: agents.length
+          ? agents.map((agent) => [agent.roleLabel || 'Agent', agent.participantName || agent.participantEmail || 'Agent'])
+          : [['Agents', 'No agents linked']],
+      },
+      {
+        title: 'Attorney Roles',
+        subtitle: 'Firms and people assigned to each legal role.',
+        items: [
+          ['Transfer Attorney', transferAttorney?.organisationName || transferAttorney?.participantName || transferAttorney?.participantEmail || 'Not assigned'],
+          ['Bond Attorney', bondAttorney?.organisationName || bondAttorney?.participantName || bondAttorney?.participantEmail || 'Not assigned'],
+          ['Cancellation Attorney', cancellationAttorney?.organisationName || cancellationAttorney?.participantName || cancellationAttorney?.participantEmail || 'Not assigned'],
+        ],
+      },
+    ],
+    [
+      agents,
+      bondAttorney,
+      buyer?.email,
+      buyer?.name,
+      buyer?.phone,
+      cancellationAttorney,
+      development?.name,
+      documentReadinessText,
+      financeTypeLabel,
+      onboardingCompleted,
+      propertyAddress,
+      purchasePriceValue,
+      transaction,
+      transferAttorney,
+      unit?.unit_number,
+    ],
+  )
+  const financialRows = [
+    ['Purchase Price', formatCurrencyValue(purchasePriceValue, 'Not captured')],
+    ['Deposit', formatCurrencyValue(transaction?.deposit_amount, 'Not captured')],
+    ['Bond Amount', formatCurrencyValue(transaction?.bond_amount, financeTypeLabel.toLowerCase().includes('bond') ? 'Pending' : 'N/A')],
+    ['Cash Portion', formatCurrencyValue(transaction?.cash_portion, 'Not captured')],
+    ['Transfer Fees', formatCurrencyValue(transaction?.transfer_fees, 'Pending')],
+    ['Bond Registration Fees', formatCurrencyValue(transaction?.bond_registration_costs, 'Pending')],
+    ['Cancellation Costs', formatCurrencyValue(transaction?.cancellation_costs, transaction?.seller_has_existing_bond ? 'Pending' : 'N/A')],
+    ['Guarantees', formatCurrencyValue(transaction?.guarantee_amount, 'Pending')],
+    ['Commission', formatCurrencyValue(transaction?.commission_amount, 'Pending')],
+    ['Trust / Disbursements', formatCurrencyValue(transaction?.trust_balance, 'Placeholder')],
+  ]
+  const activityFilterOptions = ['all', 'transfer', 'bond', 'cancellation', 'documents', 'notes', 'internal', 'client_visible']
+  const filteredActivityFeed = useMemo(
     () =>
-      [...visibleTransactionDiscussion]
-        .sort((left, right) => new Date(right.createdAt || right.created_at || 0).getTime() - new Date(left.createdAt || left.created_at || 0).getTime())
-        .map((comment) => {
-          const authorName = comment.authorName || 'Participant'
-          const roleLabel = comment.authorRoleLabel || toTitle(comment.authorRole || 'participant')
-          const commentType = toTitle(comment.discussionType || comment.discussion_type || 'operational')
-          const roleTone = getCommentRoleTone(comment.authorRole)
-          const rawBody = comment.commentBody || comment.commentText || ''
-          return {
-            id: comment.id,
-            authorName,
-            authorRole: comment.authorRole || '',
-            roleLabel,
-            commentType,
-            body: normalizeRichTextToPlainText(rawBody) || 'No detail provided.',
-            createdAt: comment.createdAt || comment.created_at,
-            roleTone,
-          }
-        }),
-    [visibleTransactionDiscussion],
+      activityFeed.filter((entry) => {
+        if (activityFilter === 'all') return true
+        if (activityFilter === 'notes') return entry.kind === 'comment'
+        if (activityFilter === 'documents') return /document/i.test(`${entry.commentType} ${entry.title} ${entry.body}`)
+        if (activityFilter === 'internal') return /internal/i.test(`${entry.commentType} ${entry.roleLabel}`)
+        if (activityFilter === 'client_visible') return /client/i.test(`${entry.commentType} ${entry.roleLabel}`)
+        return new RegExp(activityFilter, 'i').test(`${entry.commentType} ${entry.title} ${entry.body}`)
+      }),
+    [activityFeed, activityFilter],
   )
   const onboardingRecipients = useMemo(() => {
     const buyerParticipant = activeStakeholders.find((participant) => participant?.roleType === 'buyer')
@@ -1261,66 +1582,6 @@ function AttorneyTransactionDetail() {
     return `${window.location.origin}/client/onboarding/${record.token}`
   }
 
-  async function handleCopyOnboardingLink() {
-    try {
-      setOnboardingActionBusy(true)
-      setError('')
-      const linkUrl = await getOnboardingLinkUrl()
-      await navigator.clipboard.writeText(linkUrl)
-      setOnboardingActionMessage('Onboarding link copied.')
-    } catch (copyError) {
-      setError(copyError?.message || 'Unable to copy onboarding link right now.')
-    } finally {
-      setOnboardingActionBusy(false)
-    }
-  }
-
-  async function handleOpenOnboardingModal() {
-    setOnboardingActionMessage('')
-    setOnboardingModalOpen(true)
-  }
-
-  async function handleSendOnboardingEmail({ resend = false } = {}) {
-    if (!transaction?.id) {
-      setError('Transaction data is missing.')
-      return
-    }
-
-    if (!buyer?.email) {
-      setError('Capture buyer email before sending onboarding.')
-      return
-    }
-
-    if (!supabase) {
-      setError('Supabase is not configured in this environment.')
-      return
-    }
-
-    try {
-      setOnboardingActionBusy(true)
-      setError('')
-      const { error: invokeError } = await invokeEdgeFunction('send-email', {
-        body: {
-          type: 'client_onboarding',
-          transactionId: transaction.id,
-          resend,
-        },
-      })
-
-      if (invokeError) {
-        throw invokeError
-      }
-
-      setOnboardingActionMessage(resend ? 'Onboarding email resent.' : 'Onboarding email sent.')
-      await loadData()
-    } catch (sendError) {
-      const resolvedError = await parseEdgeFunctionError(sendError, 'Unable to send onboarding email right now.')
-      setError(resolvedError)
-    } finally {
-      setOnboardingActionBusy(false)
-    }
-  }
-
   async function handleCopyOnboardingLinkForRecipient(recipient) {
     if (!recipient?.canSend) {
       return
@@ -1361,7 +1622,7 @@ function AttorneyTransactionDetail() {
     }
   }
 
-  async function refreshRegistrationValidation() {
+  const refreshRegistrationValidation = useCallback(async () => {
     if (!transaction?.id) {
       return
     }
@@ -1391,7 +1652,12 @@ function AttorneyTransactionDetail() {
         ],
       })
     }
-  }
+  }, [
+    registrationDraft.registrationConfirmationDocumentId,
+    registrationDraft.registrationDate,
+    registrationDraft.titleDeedNumber,
+    transaction?.id,
+  ])
 
   async function handleOpenRegistrationFlow() {
     setRegistrationModalOpen(true)
@@ -1452,24 +1718,6 @@ function AttorneyTransactionDetail() {
     } finally {
       setSaving(false)
     }
-  }
-
-  function openReasonDialog({
-    action,
-    title,
-    subtitle,
-    confirmLabel,
-    reasonRequired = true,
-  }) {
-    setReasonDraft('')
-    setReasonDialog({
-      open: true,
-      action,
-      title,
-      subtitle,
-      confirmLabel,
-      reasonRequired,
-    })
   }
 
   async function handleSubmitReasonAction() {
@@ -1542,12 +1790,7 @@ function AttorneyTransactionDetail() {
       return
     }
     void refreshRegistrationValidation()
-  }, [
-    registrationDraft.registrationConfirmationDocumentId,
-    registrationDraft.registrationDate,
-    registrationDraft.titleDeedNumber,
-    registrationModalOpen,
-  ])
+  }, [refreshRegistrationValidation, registrationModalOpen])
 
   async function handleUploadDocument(event) {
     event.preventDefault()
@@ -1768,16 +2011,6 @@ function AttorneyTransactionDetail() {
     return <p className="status-message error">{error || 'Transaction not found.'}</p>
   }
 
-  const workspaceNavigationSection = (
-    <TransactionWorkspaceMenu
-      tabs={workspaceMenuTabs}
-      activeTab={activeWorkspaceMenu}
-      onChange={setWorkspaceMenu}
-      ariaLabel="Attorney workspace tabs"
-      sectionLabel="Transaction Workspace"
-    />
-  )
-
   return (
     <>
       <SharedTransactionShell
@@ -1785,366 +2018,167 @@ function AttorneyTransactionDetail() {
       printSubtitle={matterHeadline}
       printGeneratedAt={formatDate(new Date().toISOString())}
       errorMessage={error}
-      toolbar={workspaceNavigationSection}
-      headline={
-        activeWorkspaceMenu === 'overview' ? (
-          <TransactionWorkspaceHeader
-            contextLabel={null}
-            title={workspaceHeaderConfig.title}
-            unitLabel={workspaceHeaderConfig.unitLabel}
-            subtitle={workspaceHeaderConfig.subtitle}
-            pills={workspaceHeaderConfig.pills}
-            stats={workspaceHeaderConfig.stats}
-            actions={workspaceHeaderActions}
+      headline={(
+        <div className="space-y-4">
+            <MatterCompactHeader
+              title={matterReference}
+            statusLabel={hydratingDetail ? 'Refreshing' : lifecycleLabel}
+            statusClassName={getLifecycleStateClasses(lifecycleState)}
+            propertyLabel={matterHeadline}
+            subtitle={matterSubtitle}
+            stats={matterHeaderStats}
+            onAction={() => void handleOpenRegistrationFlow()}
+            onAddNote={() => setWorkspaceMenu('activity')}
           />
-        ) : null
-      }
+          <MatterWorkspaceTabs tabs={workspaceMenuTabs} activeTab={activeWorkspaceMenu} onChange={setWorkspaceMenu} />
+        </div>
+      )}
     >
       <div className="space-y-6">
         {activeWorkspaceMenu === 'overview' ? (
           <>
-            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-section-title font-semibold text-textStrong">Attorney Stage Rail</h3>
-                  <p className="mt-1 text-secondary text-textMuted">
-                    You are currently in <strong className="text-textStrong">{ATTORNEY_STAGE_RAIL[stageIndex]?.label || transferStageLabel}</strong>.
+            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+              <div className="space-y-4">
+                <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-base font-semibold text-textStrong">Workflow Lanes</h2>
+                      <p className="mt-1 text-sm text-textMuted">Assigned firms are shown for context. Phase 1 lets the authorised matter team update all active lanes.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-3 text-xs font-medium text-textMuted">
+                      {Object.entries(WORKFLOW_STATUS_META).map(([key, meta]) => (
+                        <span key={key} className="inline-flex items-center gap-1.5">
+                          <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
+                          {meta.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </section>
+
+                {workflowLoading ? (
+                  <LoadingSkeleton lines={5} className="rounded-[16px] border border-borderDefault bg-white p-4" />
+                ) : workflowError ? (
+                  <p className="rounded-[16px] border border-warning/30 bg-warningSoft px-4 py-3 text-sm font-medium text-warning">
+                    {workflowError}
                   </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {hydratingDetail ? (
-                    <span className="inline-flex items-center rounded-full border border-info/35 bg-infoSoft px-3 py-1 text-helper font-semibold text-info">
-                      Updating…
-                    </span>
-                  ) : null}
-                  <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
-                    {railProgressPercent}% complete
-                  </span>
-                </div>
-              </div>
+                ) : workflowLanes.length ? (
+                  workflowLanes.map((lane) => (
+                    <WorkflowLaneCard
+                      key={lane.id || lane.laneKey}
+                      lane={lane}
+                      expanded={expandedWorkflowLane === lane.laneKey}
+                      onToggle={() => setExpandedWorkflowLane((previous) => (previous === lane.laneKey ? '' : lane.laneKey))}
+                      onOpenControls={() => setShowWorkflowControls(true)}
+                    />
+                  ))
+                ) : (
+                  <p className="rounded-[16px] border border-dashed border-borderDefault bg-white px-4 py-6 text-sm text-textMuted">
+                    No required attorney workflow lanes are configured for this matter yet.
+                  </p>
+                )}
 
-              <div className="relative">
-                <div className="absolute left-0 right-0 top-4 h-2 rounded-full bg-mutedBg" aria-hidden />
-                <div className="absolute left-0 top-4 h-2 rounded-full bg-primary transition-all duration-500 ease-out" style={{ width: `${railProgressPercent}%` }} aria-hidden />
-                <div className="relative grid gap-2 md:grid-cols-9">
-                  {ATTORNEY_STAGE_RAIL.map((stage, index) => {
-                    const state = buildStageNodeState(index, stageIndex)
-                    return (
-                      <div key={stage.key} className="flex flex-col items-center text-center">
-                        <span
-                          className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-helper font-semibold ${
-                            state === 'completed'
-                              ? 'border-textStrong bg-textStrong text-textInverse'
-                              : state === 'current'
-                                ? 'border-textStrong bg-surface text-textStrong ring-2 ring-borderDefault'
-                                : 'border-borderDefault bg-surfaceAlt text-textMuted'
-                          }`}
-                        >
-                          {state === 'completed' ? '✓' : index + 1}
-                        </span>
-                        <span className={`mt-2 text-helper ${state === 'current' ? 'font-semibold text-textStrong' : state === 'completed' ? 'font-medium text-textBody' : 'text-textMuted'}`}>
-                          {stage.label}
-                        </span>
+                {showWorkflowControls ? (
+                  <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-textStrong">Workflow Controls</h3>
+                        <p className="mt-1 text-sm text-textMuted">Detailed lane updates are open to the authorised matter team in Phase 1.</p>
                       </div>
-                    )
-                  })}
-                </div>
-              </div>
-            </section>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setShowWorkflowControls(false)}>
+                        Hide controls
+                      </Button>
+                    </div>
+                    <AttorneyWorkflowLanesPanel transactionId={transaction?.id} onChanged={loadData} />
+                  </section>
+                ) : null}
 
-            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <article className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                  <span className="text-label font-semibold uppercase text-textMuted">Matter Reference</span>
-                  <strong className="mt-1 block text-body font-semibold text-textStrong">{matterReference}</strong>
-                </article>
-                <article className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                  <span className="text-label font-semibold uppercase text-textMuted">Property / Unit</span>
-                  <strong className="mt-1 block text-body font-semibold text-textStrong">{propertyAddress || matterHeadline}</strong>
-                </article>
-                <article className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                  <span className="text-label font-semibold uppercase text-textMuted">Finance Type</span>
-                  <strong className="mt-1 block text-body font-semibold text-textStrong">{financeTypeLabel}</strong>
-                </article>
-                <article className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                  <span className="text-label font-semibold uppercase text-textMuted">Document Readiness</span>
-                  <strong className="mt-1 block text-body font-semibold text-textStrong">{documentReadinessText}</strong>
-                </article>
-              </div>
-            </section>
-
-            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-section-title font-semibold text-textStrong">Lifecycle & Close-Out Control</h3>
-                  <p className="mt-1 text-secondary text-textMuted">Manage registration, completion, archive, cancellation, and final reporting.</p>
-                </div>
-                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-helper font-semibold ${getLifecycleStateClasses(lifecycleState)}`}>
-                  {lifecycleLabel}
-                </span>
-              </div>
-
-              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <article className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                  <span className="text-label font-semibold uppercase text-textMuted">Registration Date</span>
-                  <strong className="mt-1 block text-body font-semibold text-textStrong">{formatDate(transaction.registration_date || transaction.registered_at)}</strong>
-                </article>
-                <article className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                  <span className="text-label font-semibold uppercase text-textMuted">Title Deed Number</span>
-                  <strong className="mt-1 block text-body font-semibold text-textStrong">{transaction.title_deed_number || 'Not captured'}</strong>
-                </article>
-                <article className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                  <span className="text-label font-semibold uppercase text-textMuted">Completed At</span>
-                  <strong className="mt-1 block text-body font-semibold text-textStrong">{formatDateTime(transaction.completed_at)}</strong>
-                </article>
-                <article className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                  <span className="text-label font-semibold uppercase text-textMuted">Archive / Cancel</span>
-                  <strong className="mt-1 block text-body font-semibold text-textStrong">
-                    {transaction.archived_at
-                      ? `Archived ${formatDate(transaction.archived_at)}`
-                      : transaction.cancelled_at
-                        ? `Cancelled ${formatDate(transaction.cancelled_at)}`
-                        : 'Active'}
-                  </strong>
-                </article>
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Button type="button" variant="secondary" onClick={() => void handleOpenRegistrationFlow()} disabled={saving || !canRunRegistration}>
-                  <CheckCircle2 size={14} />
-                  Register Transaction
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() =>
-                    setConfirmDialog({
-                      open: true,
-                      action: 'complete',
-                      title: 'Mark Transaction Completed',
-                      description:
-                        'This will close out the file after validating required post-registration checklist and close-out documents.',
-                    })
-                  }
-                  disabled={saving || !canMarkCompleted}
-                >
-                  <CheckCircle2 size={14} />
-                  Mark Completed
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() =>
-                    openReasonDialog({
-                      action: 'undo_registration',
-                      title: 'Undo Registration',
-                      subtitle: 'Admin-only action. Add a clear reason for reversing this registration event.',
-                      confirmLabel: 'Undo Registration',
-                      reasonRequired: true,
-                    })
-                  }
-                  disabled={saving || !canUndoRegistration}
-                >
-                  <RotateCcw size={14} />
-                  Undo Registration
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() =>
-                    canUnarchive
-                      ? setConfirmDialog({
-                          open: true,
-                          action: 'unarchive',
-                          title: 'Unarchive Transaction',
-                          description: 'This file will be moved back into active operational lists.',
-                        })
-                      : openReasonDialog({
-                          action: 'archive',
-                          title: 'Archive Transaction',
-                          subtitle: 'Optional: add context for archival.',
-                          confirmLabel: 'Archive',
-                          reasonRequired: false,
-                        })
-                  }
-                  disabled={saving || (!canArchive && !canUnarchive)}
-                >
-                  {canUnarchive ? <ArchiveRestore size={14} /> : <Archive size={14} />}
-                  {canUnarchive ? 'Unarchive' : 'Archive'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() =>
-                    openReasonDialog({
-                      action: 'cancel',
-                      title: 'Cancel Transaction',
-                      subtitle: 'This removes the file from active operational flow. A cancellation reason is required.',
-                      confirmLabel: 'Cancel Transaction',
-                      reasonRequired: true,
-                    })
-                  }
-                  disabled={saving || !canCancel}
-                >
-                  <Ban size={14} />
-                  Cancel
-                </Button>
-              </div>
-            </section>
-
-            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-section-title font-semibold text-textStrong">Workflow-Linked Appointments</h3>
-                  <p className="mt-1 text-secondary text-textMuted">Operational coordination events linked to transaction workflow stages.</p>
-                </div>
-                <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
-                  {upcomingAppointments.length} upcoming
-                </span>
-              </div>
-
-              {sortedAppointments.length ? (
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  {sortedAppointments.slice(0, 6).map((appointment) => (
-                    <article key={appointment.appointmentId || appointment.id} className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <span className="text-label font-semibold uppercase text-textMuted">Appointment Type</span>
-                          <strong className="mt-1 block text-body font-semibold text-textStrong">
-                            {appointment.title || getAppointmentTypeLabel(appointment.appointmentType)}
-                          </strong>
+                <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-textStrong">Recent Activity Summary</h3>
+                      <p className="mt-1 text-sm text-textMuted">Latest workflow, document, and note updates.</p>
+                    </div>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setWorkspaceMenu('activity')}>
+                      View all activity
+                    </Button>
+                  </div>
+                  <div className="divide-y divide-borderSoft">
+                    {activityFeed.slice(0, 4).map((entry) => (
+                      <article key={entry.id} className="py-3 first:pt-0 last:pb-0">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <strong className="block truncate text-sm text-textStrong">{entry.title}</strong>
+                            <p className="mt-1 line-clamp-2 text-xs leading-5 text-textMuted">{entry.body}</p>
+                          </div>
+                          <span className="shrink-0 text-xs text-textMuted">{formatShortDayMonth(entry.createdAt)}</span>
                         </div>
-                        <span className="inline-flex items-center rounded-full border border-borderDefault bg-surface px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">
-                          {appointment.status || 'Pending'}
+                      </article>
+                    ))}
+                    {!activityFeed.length ? (
+                      <p className="py-3 text-sm text-textMuted">Activity will appear here as the matter progresses.</p>
+                    ) : null}
+                  </div>
+                </section>
+              </div>
+
+              <aside className="space-y-4">
+                <OverviewSidePanel title="Next Actions">
+                  <div className="space-y-3">
+                    {overviewNextActions.map((item) => (
+                      <article key={`${item.title}-${item.workflow}`} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+                        <div className="flex items-start gap-2">
+                          <Clock3 size={15} className="mt-0.5 shrink-0 text-primary" />
+                          <div className="min-w-0 flex-1">
+                            <strong className="block text-sm text-textStrong">{item.title}</strong>
+                            <p className="mt-1 text-xs leading-5 text-textMuted">{item.description}</p>
+                            <p className="mt-1 text-xs font-semibold text-warning">{formatDate(item.dueDate)}</p>
+                          </div>
+                        </div>
+                        <Button type="button" variant="secondary" size="sm" className="mt-2 w-full justify-center">
+                          {item.action}
+                        </Button>
+                      </article>
+                    ))}
+                  </div>
+                </OverviewSidePanel>
+
+                <OverviewSidePanel title="Key Dates">
+                  <div className="space-y-2">
+                    {overviewKeyDates.map((item) => (
+                      <div key={item.label} className="flex items-center justify-between gap-3 rounded-[10px] px-1 py-1.5">
+                        <span className="text-sm text-textMuted">{item.label}</span>
+                        <span className={`text-right text-sm font-semibold ${item.emphasis ? 'text-primary' : 'text-textStrong'}`}>
+                          {item.value}
                         </span>
                       </div>
-                      <p className="mt-2 text-[0.82rem] text-textBody">
-                        {appointment.linkedWorkflowStage || appointment.linkedTransactionStage || appointment.linkedWorkflow || 'General coordination'}
-                      </p>
-                      <p className="mt-1 text-[0.78rem] text-textMuted">{formatDateTime(appointment.dateTime || appointment.createdAt)}</p>
-                      {appointment.instructions ? (
-                        <p className="mt-2 text-[0.78rem] text-textBody">{appointment.instructions}</p>
-                      ) : null}
-                      <div className="mt-3">
-                        <AppointmentCalendarActions
-                          appointment={appointment}
-                          compact
-                          preferServerGeneration
-                          onError={(calendarError) => setError(calendarError?.message || 'Calendar invite could not be generated.')}
-                        />
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-3 rounded-[14px] border border-dashed border-borderSoft bg-surfaceAlt px-4 py-4 text-sm text-textMuted">
-                  No workflow-linked appointments are scheduled for this transaction yet.
-                </p>
-              )}
-            </section>
-
-            <section className="grid items-stretch gap-5 xl:grid-cols-2">
-              <section className="flex h-[640px] min-h-[540px] flex-col rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-section-title font-semibold text-textStrong">Recent Comments</h3>
-                    <p className="mt-1 text-secondary text-textMuted">Latest stakeholder and workflow updates on this file.</p>
+                    ))}
                   </div>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setWorkspaceMenu('activity')}>
-                    Open full activity
-                  </Button>
-                </div>
-                <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
-                  <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                    {overviewDiscussionItems.length ? (
-                      <div className="space-y-3 pb-1">
-                        {overviewDiscussionItems.map((comment) => (
-                          <article
-                            key={comment.id}
-                            className={`rounded-[20px] border px-5 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)] ${comment.roleTone.card}`}
-                          >
-                            <header className="flex flex-wrap items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <h4 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{comment.authorName}</h4>
-                                <p className="mt-1 text-xs text-[#7c8ea4]">{comment.roleLabel}</p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.08em] ${comment.roleTone.badge}`}>
-                                  {comment.commentType}
-                                </span>
-                                <em className="text-xs not-italic text-[#7c8ea4]">{formatDateTime(comment.createdAt)}</em>
-                              </div>
-                            </header>
-                            <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#2a3f53]">{comment.body}</p>
-                          </article>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-5 py-6 text-sm text-[#6b7d93]">
-                        No recent comments yet. New updates will appear here as the file progresses.
-                      </p>
-                    )}
+                </OverviewSidePanel>
+
+                <OverviewSidePanel title="Assigned Team">
+                  <div className="space-y-3">
+                    {assignedTeamRows.map((row) => {
+                      const isCurrentUser = row.participant?.userId && row.participant.userId === profile?.id
+                      return (
+                        <article key={row.role} className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <span className="block text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">{row.role}</span>
+                            <strong className="mt-1 block truncate text-sm text-textStrong">
+                              {row.participant?.participantName || row.participant?.organisationName || row.participant?.participantEmail || 'Not assigned'}
+                            </strong>
+                          </div>
+                          {isCurrentUser ? (
+                            <span className="rounded-full border border-primary/20 bg-primarySoft px-2 py-0.5 text-[0.68rem] font-semibold text-primary">
+                              You
+                            </span>
+                          ) : null}
+                        </article>
+                      )
+                    })}
                   </div>
-
-                  <form onSubmit={handleAddDiscussion} className="shrink-0 rounded-[20px] border border-[#dce6f1] bg-white px-5 py-4 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-                    <div className="grid gap-3 md:grid-cols-[minmax(0,220px)_minmax(0,220px)_auto] md:items-end">
-                      <label className="grid gap-1.5 text-sm font-medium text-[#35546c]">
-                        <span>Update Type</span>
-                        <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)}>
-                          {DISCUSSION_TYPES.map((item) => (
-                            <option key={item.key} value={item.key}>
-                              {item.label}
-                            </option>
-                          ))}
-                        </Field>
-                      </label>
-                      <label className="grid gap-1.5 text-sm font-medium text-[#35546c]">
-                        <span>Visibility</span>
-                        <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)}>
-                          {DISCUSSION_VISIBILITY_OPTIONS.map((item) => (
-                            <option
-                              key={item.key}
-                              value={item.key}
-                              disabled={
-                                (item.key === 'internal' && !canPostInternalDiscussion) ||
-                                (item.key === 'shared' && !canPostSharedDiscussion) ||
-                                (item.key === 'client_visible' && !canPublishClientVisibleDiscussion)
-                              }
-                            >
-                              {item.label}
-                            </option>
-                          ))}
-                        </Field>
-                      </label>
-                      <div className="md:justify-self-end">
-                        <Button
-                          type="submit"
-                          disabled={
-                            saving ||
-                            !discussionBody.trim() ||
-                            (discussionVisibility === 'internal' && !canPostInternalDiscussion) ||
-                            (discussionVisibility === 'shared' && !canPostSharedDiscussion) ||
-                            (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion)
-                          }
-                        >
-                          {saving ? 'Posting…' : 'Post Update'}
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="mt-3 rounded-[16px] border border-[#e3ebf4] bg-[#f9fbff] p-3">
-                      <Field
-                        as="textarea"
-                        rows={3}
-                        value={discussionBody}
-                        onChange={(event) => setDiscussionBody(event.target.value)}
-                        placeholder="Write a concise update for this file..."
-                      />
-                    </div>
-                  </form>
-                </div>
-              </section>
-
-              <AttorneyWorkflowLanesPanel transactionId={transaction?.id} onChanged={loadData} />
+                </OverviewSidePanel>
+              </aside>
             </section>
           </>
         ) : null}
@@ -2253,6 +2287,40 @@ function AttorneyTransactionDetail() {
                 ) : null}
               </div>
             </section>
+          </section>
+        ) : null}
+
+        {activeWorkspaceMenu === 'parties' ? (
+          <section className="space-y-5">
+            <section className="grid gap-4 lg:grid-cols-2">
+              {partySections.map((section) => (
+                <article key={section.title} className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                  <div className="flex items-start gap-3">
+                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primarySoft text-primary">
+                      {section.title === 'Property' ? <Building2 size={17} /> : section.title === 'Attorney Roles' ? <Workflow size={17} /> : <UsersRound size={17} />}
+                    </span>
+                    <div className="min-w-0">
+                      <h3 className="text-base font-semibold text-textStrong">{section.title}</h3>
+                      <p className="mt-1 text-sm leading-5 text-textMuted">{section.subtitle}</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    {section.items.map(([label, value]) => (
+                      <div key={`${section.title}-${label}`} className="min-w-0 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2.5">
+                        <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
+                        <strong className="mt-1 block truncate text-sm text-textStrong">{value || 'Not captured'}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </section>
+
+            <AttorneyAssignmentSection
+              transactionId={transaction?.id}
+              financeType={transaction?.finance_type || 'cash'}
+              transaction={transaction}
+            />
           </section>
         ) : null}
 
@@ -2390,7 +2458,7 @@ function AttorneyTransactionDetail() {
                                   {document.name || 'Untitled document'}
                                 </strong>
                                 <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                                  {document.normalizedCategory || 'Document'} • {document.uploaded_by_role || 'Internal user'}
+                                  {document.normalizedCategory || document.category || 'Document'}
                                 </p>
                               </div>
                               <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.72rem] font-semibold ${
@@ -2398,10 +2466,28 @@ function AttorneyTransactionDetail() {
                                   ? 'border-[#d6e5f4] bg-[#eef5fb] text-[#35546c]'
                                   : 'border-[#dde4ee] bg-[#f8fafc] text-[#66758b]'
                               }`}>
-                                {isShared ? 'Shared' : 'Internal'}
+                                {isShared ? 'Client-visible' : 'Internal'}
                               </span>
                             </div>
-                            <p className="mt-2 text-xs text-[#7c8ea4]">{formatDateTime(document.created_at)}</p>
+                            <div className="mt-4 grid gap-2 text-xs text-[#60758d]">
+                              {[
+                                ['Status', getDocumentStatus(document)],
+                                ['Uploaded by', document.uploaded_by_role || document.uploadedByRole || 'Internal user'],
+                                ['Requested by', document.requested_by_role || document.requestedByRole || document.requested_by || 'Not recorded'],
+                                ['Reviewed by', document.reviewed_by_name || document.reviewedByName || document.reviewed_by || 'Not reviewed'],
+                                ['Last updated', formatDateTime(document.updated_at || document.created_at)],
+                              ].map(([label, value]) => (
+                                <div key={label} className="flex justify-between gap-3">
+                                  <span>{label}</span>
+                                  <strong className="min-w-0 truncate text-right text-[#142132]">{value}</strong>
+                                </div>
+                              ))}
+                            </div>
+                            {document.rejection_reason || document.rejected_reason ? (
+                              <p className="mt-3 rounded-[12px] border border-red-100 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                                {document.rejection_reason || document.rejected_reason}
+                              </p>
+                            ) : null}
                             {isArchived ? <p className="mt-1 text-xs font-semibold text-[#b42318]">Archived</p> : null}
                             <div className="mt-4 flex flex-wrap gap-2">
                               {document.url ? (
@@ -2462,18 +2548,7 @@ function AttorneyTransactionDetail() {
                 </span>
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {[
-                  ['Purchase Price', currency.format(purchasePriceValue || 0)],
-                  ['Deposit', transaction?.deposit_amount ? currency.format(Number(transaction.deposit_amount || 0)) : 'Not captured'],
-                  ['Bond Amount', transaction?.bond_amount ? currency.format(Number(transaction.bond_amount || 0)) : financeTypeLabel.includes('Bond') ? 'Pending' : 'Not applicable'],
-                  ['Cash Portion', transaction?.cash_portion ? currency.format(Number(transaction.cash_portion || 0)) : 'Not captured'],
-                  ['Transfer Fees', transaction?.transfer_fees ? currency.format(Number(transaction.transfer_fees || 0)) : 'Pending'],
-                  ['Bond Registration Costs', transaction?.bond_registration_costs ? currency.format(Number(transaction.bond_registration_costs || 0)) : 'Pending'],
-                  ['Cancellation Costs', transaction?.cancellation_costs ? currency.format(Number(transaction.cancellation_costs || 0)) : transaction?.seller_has_existing_bond ? 'Pending' : 'Not applicable'],
-                  ['Guarantees', transaction?.guarantee_amount ? currency.format(Number(transaction.guarantee_amount || 0)) : 'Pending'],
-                  ['Commission', transaction?.commission_amount ? currency.format(Number(transaction.commission_amount || 0)) : 'Pending'],
-                  ['Trust Balance', transaction?.trust_balance ? currency.format(Number(transaction.trust_balance || 0)) : 'Not connected'],
-                ].map(([label, value]) => (
+                {financialRows.map(([label, value]) => (
                   <article key={label} className="min-w-0 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
                     <span className="text-label font-semibold uppercase text-textMuted">{label}</span>
                     <strong className="mt-1 block truncate text-body font-semibold text-textStrong">{value}</strong>
@@ -2504,134 +2579,113 @@ function AttorneyTransactionDetail() {
 
         {activeWorkspaceMenu === 'activity' ? (
           <section className="space-y-5">
-            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+            <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <h3 className="text-section-title font-semibold text-textStrong">File Progress</h3>
-                  <p className="mt-1 text-secondary text-textMuted">
-                    You are currently in <strong className="text-textStrong">{ATTORNEY_STAGE_RAIL[stageIndex]?.label || transferStageLabel}</strong>.
-                  </p>
+                  <h3 className="text-base font-semibold text-textStrong">Activity Timeline</h3>
+                  <p className="mt-1 text-sm text-textMuted">Workflow updates, documents, notes, appointments, generated documents, and status changes.</p>
                 </div>
-                <span className="text-body font-semibold text-textStrong">{railProgressPercent}%</span>
-              </div>
-              <div className="mt-3 h-2.5 rounded-full bg-[#e8edf4]">
-                <div
-                  className={`h-2.5 rounded-full transition-all duration-500 ${getAttorneyProgressFillClass(railProgressPercent)}`}
-                  style={{ width: `${Math.max(0, Math.min(100, railProgressPercent))}%` }}
-                />
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {activityFilterOptions.map((filter) => (
+                    <button
+                      key={filter}
+                      type="button"
+                      className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                        activityFilter === filter
+                          ? 'border-primary bg-primary text-white'
+                          : 'border-borderDefault bg-white text-textMuted hover:text-textStrong'
+                      }`}
+                      onClick={() => setActivityFilter(filter)}
+                    >
+                      {filter === 'client_visible' ? 'Client-visible' : toTitle(filter)}
+                    </button>
+                  ))}
+                </div>
               </div>
             </section>
 
-            <section className="grid items-stretch gap-5 xl:grid-cols-2">
-              <section className="flex h-[640px] min-h-[540px] flex-col rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-                <div className="mb-4">
-                  <h3 className="text-section-title font-semibold text-textStrong">Comments & Updates</h3>
-                  <p className="mt-1 text-secondary text-textMuted">Role-coloured stakeholder updates and workflow events for this file.</p>
-                </div>
-                <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
-                  <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                    {activityFeed.length ? (
-                      <div className="space-y-3 pb-1">
-                        {activityFeed.map((entry) => (
-                          <article
-                            key={entry.id}
-                            className={`rounded-[20px] border px-5 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)] ${
-                              entry.kind === 'comment' ? entry.roleTone.card : 'border-[#dbe5f0] bg-white'
-                            }`}
-                          >
-                            <header className="flex flex-wrap items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <h4 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{entry.authorName}</h4>
-                                <p className="mt-1 text-xs text-[#7c8ea4]">{entry.roleLabel}</p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className={`inline-flex items-center rounded-full px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.08em] ${
-                                    entry.kind === 'comment' ? entry.roleTone.badge : 'border border-borderDefault bg-mutedBg text-textMuted'
-                                  }`}
-                                >
-                                  {entry.commentType}
-                                </span>
-                                <em className="text-xs not-italic text-[#7c8ea4]">{formatDateTime(entry.createdAt)}</em>
-                              </div>
-                            </header>
-                            {entry.kind === 'event' ? (
-                              <div className="mt-3">
-                                <strong className="block text-sm font-semibold text-[#1b2d41]">{entry.title}</strong>
-                                <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-[#2a3f53]">{entry.body}</p>
-                              </div>
-                            ) : (
-                              <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#2a3f53]">{entry.body}</p>
-                            )}
-                          </article>
-                        ))}
+            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="rounded-[16px] border border-borderDefault bg-white shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                <div className="divide-y divide-borderSoft">
+                  {filteredActivityFeed.map((entry) => (
+                    <article key={entry.id} className="px-4 py-4">
+                      <div className="flex gap-3">
+                        <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${entry.kind === 'comment' ? 'bg-amber-500' : 'bg-blue-600'}`} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <h4 className="truncate text-sm font-semibold text-textStrong">{entry.title}</h4>
+                              <p className="mt-1 text-xs text-textMuted">{entry.authorName} • {entry.roleLabel}</p>
+                            </div>
+                            <span className="text-xs text-textMuted">{formatDateTime(entry.createdAt)}</span>
+                          </div>
+                          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-textBody">{entry.body}</p>
+                          <span className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-[0.68rem] font-semibold ${entry.kind === 'comment' ? entry.roleTone.badge : 'border border-borderDefault bg-mutedBg text-textMuted'}`}>
+                            {entry.commentType}
+                          </span>
+                        </div>
                       </div>
-                    ) : (
-                      <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-5 py-6 text-sm text-[#6b7d93]">
-                        No activity logged for this matter yet.
-                      </p>
-                    )}
-                  </div>
+                    </article>
+                  ))}
+                  {!filteredActivityFeed.length ? (
+                    <p className="px-4 py-8 text-sm text-textMuted">No activity matches this filter yet.</p>
+                  ) : null}
+                </div>
+              </div>
 
-                  <form onSubmit={handleAddDiscussion} className="shrink-0 rounded-[20px] border border-[#dce6f1] bg-white px-5 py-4 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-                    <div className="grid gap-3 md:grid-cols-[minmax(0,220px)_minmax(0,220px)_auto] md:items-end">
-                      <label className="grid gap-1.5 text-sm font-medium text-[#35546c]">
-                        <span>Update Type</span>
-                        <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)}>
-                          {DISCUSSION_TYPES.map((item) => (
-                            <option key={item.key} value={item.key}>
-                              {item.label}
-                            </option>
-                          ))}
-                        </Field>
-                      </label>
-                      <label className="grid gap-1.5 text-sm font-medium text-[#35546c]">
-                        <span>Visibility</span>
-                        <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)}>
-                          {DISCUSSION_VISIBILITY_OPTIONS.map((item) => (
-                            <option
-                              key={item.key}
-                              value={item.key}
-                              disabled={
-                                (item.key === 'internal' && !canPostInternalDiscussion) ||
-                                (item.key === 'shared' && !canPostSharedDiscussion) ||
-                                (item.key === 'client_visible' && !canPublishClientVisibleDiscussion)
-                              }
-                            >
-                              {item.label}
-                            </option>
-                          ))}
-                        </Field>
-                      </label>
-                      <div className="md:justify-self-end">
-                        <Button
-                          type="submit"
+              <form onSubmit={handleAddDiscussion} className="h-fit rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                <h3 className="text-sm font-semibold text-textStrong">Add Note</h3>
+                <div className="mt-4 grid gap-3">
+                  <label className="grid gap-1.5 text-sm font-medium text-[#35546c]">
+                    <span>Update Type</span>
+                    <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)}>
+                      {DISCUSSION_TYPES.map((item) => (
+                        <option key={item.key} value={item.key}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </Field>
+                  </label>
+                  <label className="grid gap-1.5 text-sm font-medium text-[#35546c]">
+                    <span>Visibility</span>
+                    <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)}>
+                      {DISCUSSION_VISIBILITY_OPTIONS.map((item) => (
+                        <option
+                          key={item.key}
+                          value={item.key}
                           disabled={
-                            saving ||
-                            !discussionBody.trim() ||
-                            (discussionVisibility === 'internal' && !canPostInternalDiscussion) ||
-                            (discussionVisibility === 'shared' && !canPostSharedDiscussion) ||
-                            (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion)
+                            (item.key === 'internal' && !canPostInternalDiscussion) ||
+                            (item.key === 'shared' && !canPostSharedDiscussion) ||
+                            (item.key === 'client_visible' && !canPublishClientVisibleDiscussion)
                           }
                         >
-                          {saving ? 'Posting…' : 'Post Update'}
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="mt-3 rounded-[16px] border border-[#e3ebf4] bg-[#f9fbff] p-3">
-                      <Field
-                        as="textarea"
-                        rows={3}
-                        value={discussionBody}
-                        onChange={(event) => setDiscussionBody(event.target.value)}
-                        placeholder="Add a concise operational update for this file..."
-                      />
-                    </div>
-                  </form>
+                          {item.label}
+                        </option>
+                      ))}
+                    </Field>
+                  </label>
+                  <Field
+                    as="textarea"
+                    rows={5}
+                    value={discussionBody}
+                    onChange={(event) => setDiscussionBody(event.target.value)}
+                    placeholder="Add an internal note or shared update..."
+                  />
+                  <Button
+                    type="submit"
+                    disabled={
+                      saving ||
+                      !discussionBody.trim() ||
+                      (discussionVisibility === 'internal' && !canPostInternalDiscussion) ||
+                      (discussionVisibility === 'shared' && !canPostSharedDiscussion) ||
+                      (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion)
+                    }
+                    className="justify-center"
+                  >
+                    {saving ? 'Posting...' : 'Post Update'}
+                  </Button>
                 </div>
-              </section>
-
-              <AttorneyWorkflowLanesPanel transactionId={transaction?.id} onChanged={loadData} />
+              </form>
             </section>
           </section>
         ) : null}

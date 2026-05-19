@@ -655,7 +655,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                       </>
                     ) : (
                       <span className="rounded-control border border-borderSoft bg-surface px-4 py-3 text-sm text-textMuted">
-                        View-only legal progress.
+                        Workflow actions are unavailable for this account.
                       </span>
                     )}
                   </div>

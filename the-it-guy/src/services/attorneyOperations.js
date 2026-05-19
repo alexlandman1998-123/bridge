@@ -221,7 +221,7 @@ async function fetchTransactions(client, ids = []) {
   if (!transactionIds.length) return []
 
   const primarySelect =
-    'id, organisation_id, assigned_user_id, buyer_id, transaction_reference, stage, current_main_stage, current_sub_stage_summary, finance_type, risk_status, operational_state, attorney_stage, next_action, updated_at, created_at, assigned_attorney_email, attorney, property_description, property_address_line_1, property_address_line_2, suburb, city, province, seller_name, seller_email, seller_phone, seller_has_existing_bond, current_bond_bank, current_bond_account_number, estimated_settlement_amount, purchase_price, sales_price, expected_transfer_date, registration_date, registered_at, lifecycle_state'
+    'id, organisation_id, buyer_id, transaction_reference, stage, current_main_stage, current_sub_stage_summary, finance_type, risk_status, operational_state, attorney_stage, next_action, updated_at, created_at, assigned_attorney_email, attorney, property_description, property_address_line_1, property_address_line_2, suburb, city, province, seller_name, seller_email, seller_phone, seller_has_existing_bond, current_bond_bank, current_bond_account_number, estimated_settlement_amount, purchase_price, sales_price, expected_transfer_date, registration_date, registered_at, lifecycle_state'
 
   let query = await client
     .from('transactions')
@@ -240,7 +240,7 @@ async function fetchTransactions(client, ids = []) {
   ) {
     query = await client
       .from('transactions')
-      .select('id, organisation_id, assigned_user_id, buyer_id, transaction_reference, stage, finance_type, risk_status, next_action, updated_at, created_at, attorney')
+      .select('id, organisation_id, buyer_id, transaction_reference, stage, finance_type, risk_status, next_action, updated_at, created_at, attorney')
       .in('id', transactionIds)
   }
 
