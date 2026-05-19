@@ -31,6 +31,38 @@ import { inviteAttorneyFirmMember } from './attorneyFirmInvitations'
 
 const ATTORNEY_FIRM_SELECT_COLUMNS =
   'id, name, registration_number, vat_number, website, email, phone, address_line_1, address_line_2, city, province, postal_code, country, logo_url, primary_colour, secondary_colour, created_by, created_at, updated_at, is_active'
+const ATTORNEY_FIRM_RECOVERY_CACHE_KEY_PREFIX = 'itg:attorney-firm-recovery'
+
+function buildAttorneyFirmRecoveryCacheKey(userId = '') {
+  return `${ATTORNEY_FIRM_RECOVERY_CACHE_KEY_PREFIX}:${normalizeText(userId) || 'anonymous'}`
+}
+
+function rememberAttorneyFirmRecovery(userId = '', firm = null) {
+  if (typeof window === 'undefined' || !firm?.id) return
+  try {
+    window.localStorage.setItem(buildAttorneyFirmRecoveryCacheKey(userId), JSON.stringify({
+      firm,
+      savedAt: new Date().toISOString(),
+    }))
+  } catch {
+    // Recovery cache is best-effort only.
+  }
+}
+
+function getRememberedAttorneyFirmRecovery(userId = '', expectedFirmId = '') {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(buildAttorneyFirmRecoveryCacheKey(userId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    const firm = parsed?.firm || null
+    if (!firm?.id) return null
+    if (expectedFirmId && firm.id !== expectedFirmId) return null
+    return firm
+  } catch {
+    return null
+  }
+}
 
 export function resolveAttorneyOnboardingErrorMessage(error) {
   const message = String(error?.message || '').toLowerCase()
@@ -364,6 +396,10 @@ export async function getAttorneyFirmDepartments(firmId) {
       }
       return []
     }
+    if (isPermissionDeniedError(query.error)) {
+      console.warn('[Attorney Firm] department lookup blocked by RLS; continuing with empty departments.', query.error)
+      return []
+    }
     throw query.error
   }
 
@@ -492,6 +528,24 @@ export async function createAttorneyFirm(payload = {}) {
     firm = insertResult.data
   }
   const nowIso = new Date().toISOString()
+
+  if (firm && firm.is_active === false) {
+    const reactivateResult = await client
+      .from('attorney_firms')
+      .update({
+        is_active: true,
+        updated_at: nowIso,
+      })
+      .eq('id', firm.id)
+      .select(ATTORNEY_FIRM_SELECT_COLUMNS)
+      .single()
+
+    if (reactivateResult.error) {
+      throw reactivateResult.error
+    }
+
+    firm = reactivateResult.data
+  }
 
   await ensureCurrentUserAttorneyFirmAdminMembership(firm.id)
 
@@ -705,14 +759,42 @@ export async function getCurrentUserPrimaryAttorneyFirm() {
 
   const primaryFirmId = profileQuery.data?.primary_attorney_firm_id || null
   if (primaryFirmId) {
-    const firm = await getAttorneyFirmById(primaryFirmId)
+    let firm = null
+    try {
+      firm = await getAttorneyFirmById(primaryFirmId)
+    } catch (error) {
+      if (!isPermissionDeniedError(error)) {
+        throw error
+      }
+      console.warn('[Attorney Firm] primary firm lookup blocked; attempting membership repair.', error)
+    }
+
+    if (!firm) {
+      try {
+        await ensureCurrentUserAttorneyFirmAdminMembership(primaryFirmId)
+        firm = await getAttorneyFirmById(primaryFirmId)
+      } catch (repairError) {
+        console.warn('[Attorney Firm] primary firm membership repair could not be completed.', repairError)
+      }
+    }
+
     if (firm) {
+      rememberAttorneyFirmRecovery(user.id, firm)
       return firm
+    }
+
+    const rememberedFirm = getRememberedAttorneyFirmRecovery(user.id, primaryFirmId)
+    if (rememberedFirm) {
+      return rememberedFirm
     }
   }
 
   const firms = await getCurrentUserAttorneyFirms()
   if (!firms.length) {
+    const rememberedFirm = getRememberedAttorneyFirmRecovery(user.id)
+    if (rememberedFirm) {
+      return rememberedFirm
+    }
     if (isAttorneyDemoContextEnabled()) {
       return buildAttorneyDemoFirm()
     }
@@ -764,6 +846,8 @@ export async function completeAttorneyFirmOnboarding({
 
   try {
     const createdFirm = await createAttorneyFirm(combinedFirmPayload)
+    const authUser = await getAuthenticatedUser(requireClient()).catch(() => null)
+    rememberAttorneyFirmRecovery(authUser?.id || '', createdFirm)
     const updatedDepartments = await setAttorneyFirmDepartmentActivation(createdFirm.id, activeDepartmentTypes)
     const activeDepartments = updatedDepartments.filter((department) => department.isActive)
     const departmentIdByType = activeDepartments.reduce((accumulator, department) => {

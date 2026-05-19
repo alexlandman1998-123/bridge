@@ -8,6 +8,7 @@ import {
   createInviteToken,
   getAuthenticatedUser,
   isMissingColumnError,
+  isPermissionDeniedError,
   isMissingTableError,
   isValidEmail,
   mapInvitationRow,
@@ -104,6 +105,10 @@ export async function getAttorneyFirmInvitations(firmId, { status = null } = {})
   const result = await query
   if (result.error) {
     if (isMissingTableError(result.error, 'attorney_firm_invitations')) {
+      return []
+    }
+    if (isPermissionDeniedError(result.error)) {
+      console.warn('[Attorney Firm] invitation lookup blocked by RLS; continuing with empty invitations.', result.error)
       return []
     }
     throw result.error

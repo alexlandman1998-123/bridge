@@ -1,6 +1,7 @@
 import {
   getAuthenticatedUser,
   isMissingColumnError,
+  isPermissionDeniedError,
   isMissingTableError,
   normalizeText,
   requireClient,
@@ -836,6 +837,10 @@ export async function getFirmAttorneyAssignments(firmId, { includeInactive = fal
   const result = await query
   if (result.error) {
     if (isMissingTableError(result.error, 'transaction_attorney_assignments')) {
+      return []
+    }
+    if (isPermissionDeniedError(result.error)) {
+      console.warn('[Attorney Assignments] firm assignment lookup blocked by RLS; continuing with empty assignments.', result.error)
       return []
     }
     throw result.error
