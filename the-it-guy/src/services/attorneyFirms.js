@@ -94,6 +94,27 @@ function isMissingRpcError(error, rpcName = '') {
   )
 }
 
+function shouldFallbackFromDepartmentActivationRpc(error) {
+  if (!error) return false
+  const message = normalizeText(error?.message).toLowerCase()
+  const code = normalizeText(error?.code).toLowerCase()
+  const status = Number(error?.status || error?.statusCode || 0)
+  return (
+    isMissingTableError(error, 'set_attorney_firm_department_activation') ||
+    isPermissionDeniedError(error) ||
+    status === 400 ||
+    code === 'pgrst202' ||
+    code === '42703' ||
+    code === '42883' ||
+    code === '42702' ||
+    message.includes('set_attorney_firm_department_activation') ||
+    message.includes('unnest') ||
+    message.includes('ambiguous') ||
+    message.includes('could not identify') ||
+    message.includes('operator does not exist')
+  )
+}
+
 function buildSyntheticFirmAdminMembership({ firmId, userId, joinedAt = null } = {}) {
   return mapMemberRow({
     id: `owner-admin-${firmId}-${userId}`,
@@ -310,6 +331,8 @@ export async function createDefaultAttorneyDepartments(firmId) {
     if (isPermissionDeniedError(query.error)) {
       const existingDepartments = await getAttorneyFirmDepartments(normalizedFirmId).catch(() => [])
       if (existingDepartments.length) return existingDepartments
+      console.warn('[Attorney Onboarding] default department upsert blocked by RLS; continuing without blocking firm setup.', query.error)
+      return []
     }
     throw query.error
   }
@@ -370,16 +393,26 @@ export async function setAttorneyFirmDepartmentActivation(firmId, activeDepartme
     return (rpcResult.data || []).map(mapDepartmentRow)
   }
 
-  const rpcUnavailable = isMissingTableError(rpcResult.error, 'set_attorney_firm_department_activation') ||
-    String(rpcResult.error?.code || '').toLowerCase() === 'pgrst202' ||
-    String(rpcResult.error?.message || '').toLowerCase().includes('set_attorney_firm_department_activation')
-  if (!rpcUnavailable && !isPermissionDeniedError(rpcResult.error)) {
+  if (!shouldFallbackFromDepartmentActivationRpc(rpcResult.error)) {
     throw rpcResult.error
   }
 
-  await createDefaultAttorneyDepartments(normalizedFirmId)
+  console.warn('[Attorney Onboarding] department activation RPC unavailable or failed; using client fallback.', rpcResult.error)
+  await createDefaultAttorneyDepartments(normalizedFirmId).catch((error) => {
+    if (isPermissionDeniedError(error)) {
+      console.warn('[Attorney Onboarding] default department fallback blocked by RLS; continuing without blocking firm setup.', error)
+      return []
+    }
+    throw error
+  })
 
-  const existingDepartments = await getAttorneyFirmDepartments(normalizedFirmId)
+  const existingDepartments = await getAttorneyFirmDepartments(normalizedFirmId).catch((error) => {
+    if (isPermissionDeniedError(error)) {
+      console.warn('[Attorney Onboarding] department lookup blocked by RLS; continuing without blocking firm setup.', error)
+      return []
+    }
+    throw error
+  })
   if (!existingDepartments.length) {
     return []
   }
