@@ -1,6 +1,20 @@
-import { CalendarPlus, ChevronDown, Loader2, Plus, UserPlus, UsersRound } from 'lucide-react'
+import {
+  Building2,
+  CalendarPlus,
+  ChevronDown,
+  ClipboardList,
+  DoorOpen,
+  FileCheck2,
+  Handshake,
+  Home,
+  Loader2,
+  Plus,
+  UserPlus,
+  UsersRound,
+  Warehouse,
+} from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { createAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
@@ -8,24 +22,192 @@ import Modal from './ui/Modal'
 
 const QUICK_CREATE_STORAGE_KEY = 'bridge:quick-create-records:v1'
 
-const QUICK_CREATE_ITEMS = [
+const RESIDENTIAL_QUICK_CREATE_GROUPS = [
   {
-    type: 'lead',
-    label: 'Lead',
-    helper: 'Capture a new buyer or seller enquiry',
-    icon: UserPlus,
+    label: 'Leads',
+    items: [
+      {
+        type: 'lead',
+        label: 'Lead',
+        helper: 'Capture a new buyer or seller enquiry',
+        icon: UserPlus,
+        action: 'modal',
+      },
+      {
+        type: 'prospect',
+        label: 'Prospect',
+        helper: 'Add a potential future client',
+        icon: UsersRound,
+        action: 'modal',
+      },
+    ],
   },
   {
-    type: 'prospect',
-    label: 'Prospect',
-    helper: 'Add a potential future client',
-    icon: UsersRound,
+    label: 'Sales',
+    items: [
+      {
+        type: 'listing',
+        label: 'Listing',
+        helper: 'Create or publish residential stock',
+        icon: Home,
+        action: 'route',
+        to: '/listings',
+        state: { openNewListing: true },
+      },
+      {
+        type: 'transaction',
+        label: 'Transaction',
+        helper: 'Start a residential deal workspace',
+        icon: Handshake,
+        action: 'route',
+        to: '/new-transaction',
+      },
+      {
+        type: 'client',
+        label: 'Client',
+        helper: 'Open the client workspace',
+        icon: UsersRound,
+        action: 'route',
+        to: '/clients',
+      },
+      {
+        type: 'seller-intake',
+        label: 'Seller Intake',
+        helper: 'Capture a seller enquiry',
+        icon: ClipboardList,
+        action: 'modal',
+        modalType: 'lead',
+        initialForm: { leadType: 'Seller', source: 'Seller Intake' },
+      },
+      {
+        type: 'buyer-intake',
+        label: 'Buyer Intake',
+        helper: 'Capture a buyer enquiry',
+        icon: UserPlus,
+        action: 'modal',
+        modalType: 'lead',
+        initialForm: { leadType: 'Buyer', source: 'Buyer Intake' },
+      },
+    ],
   },
   {
-    type: 'appointment',
-    label: 'Appointment',
-    helper: 'Schedule a viewing or meeting',
-    icon: CalendarPlus,
+    label: 'Scheduling',
+    items: [
+      {
+        type: 'appointment',
+        label: 'Appointment',
+        helper: 'Schedule a viewing or meeting',
+        icon: CalendarPlus,
+        action: 'modal',
+      },
+      {
+        type: 'viewing',
+        label: 'Viewing',
+        helper: 'Schedule a property viewing',
+        icon: CalendarPlus,
+        action: 'modal',
+        modalType: 'appointment',
+        initialForm: { appointmentType: 'Viewing', title: 'Property Viewing' },
+      },
+    ],
+  },
+]
+
+const COMMERCIAL_QUICK_CREATE_GROUPS = [
+  {
+    label: 'Demand',
+    items: [
+      {
+        type: 'requirement',
+        label: 'Requirement',
+        helper: 'Open commercial requirement records',
+        icon: ClipboardList,
+        action: 'route',
+        to: '/commercial/requirements',
+        state: { openCommercialCreate: true },
+      },
+      {
+        type: 'commercial-client',
+        label: 'Client',
+        helper: 'Open tenants, buyers, and investors',
+        icon: UsersRound,
+        action: 'route',
+        to: '/commercial/clients',
+        state: { openCommercialCreate: true },
+      },
+    ],
+  },
+  {
+    label: 'Supply',
+    items: [
+      {
+        type: 'vacancy',
+        label: 'Vacancy',
+        helper: 'Open available space records',
+        icon: DoorOpen,
+        action: 'route',
+        to: '/commercial/vacancies',
+        state: { openCommercialCreate: true },
+      },
+      {
+        type: 'property',
+        label: 'Property',
+        helper: 'Open commercial property stock',
+        icon: Building2,
+        action: 'route',
+        to: '/commercial/properties',
+        state: { openCommercialCreate: true },
+      },
+      {
+        type: 'landlord',
+        label: 'Landlord',
+        helper: 'Open landlord and portfolio records',
+        icon: Warehouse,
+        action: 'route',
+        to: '/commercial/landlords',
+        state: { openCommercialCreate: true },
+      },
+    ],
+  },
+  {
+    label: 'Transactions',
+    items: [
+      {
+        type: 'deal',
+        label: 'Deal',
+        helper: 'Open commercial deal management',
+        icon: Handshake,
+        action: 'route',
+        to: '/commercial/deals/leasing',
+        state: { openCommercialCreate: true },
+      },
+      {
+        type: 'lease',
+        label: 'Lease',
+        helper: 'Open commercial lease records',
+        icon: FileCheck2,
+        action: 'route',
+        to: '/commercial/leases',
+        state: { openCommercialCreate: true },
+      },
+      {
+        type: 'commercial-viewing',
+        label: 'Viewing',
+        helper: 'Open commercial viewing coordination',
+        icon: CalendarPlus,
+        action: 'route',
+        to: '/commercial/viewings',
+      },
+      {
+        type: 'commercial-appointment',
+        label: 'Appointment',
+        helper: 'Schedule a commercial meeting',
+        icon: CalendarPlus,
+        action: 'modal',
+        modalType: 'appointment',
+        initialForm: { appointmentType: 'Lease Meeting', title: 'Commercial Appointment' },
+      },
+    ],
   },
 ]
 
@@ -375,7 +557,8 @@ function QuickCreateModal({ type, form, setForm, onClose, onSubmit, saving, feed
 
 function QuickCreateDropdown({ className = '' }) {
   const location = useLocation()
-  const { profile } = useWorkspace()
+  const navigate = useNavigate()
+  const { agencyWorkflowMode, profile, role } = useWorkspace()
   const [open, setOpen] = useState(false)
   const [activeType, setActiveType] = useState('')
   const [form, setForm] = useState(INITIAL_FORMS.lead)
@@ -392,6 +575,11 @@ function QuickCreateDropdown({ className = '' }) {
     }
   }, [profile?.email, profile?.firstName, profile?.fullName, profile?.id, profile?.lastName])
 
+  const quickCreateGroups = useMemo(
+    () => location.pathname.startsWith('/commercial') ? COMMERCIAL_QUICK_CREATE_GROUPS : RESIDENTIAL_QUICK_CREATE_GROUPS,
+    [location.pathname],
+  )
+
   useEffect(() => {
     function onClickOutside(event) {
       if (containerRef.current && !containerRef.current.contains(event.target)) {
@@ -403,14 +591,30 @@ function QuickCreateDropdown({ className = '' }) {
     return () => document.removeEventListener('mousedown', onClickOutside)
   }, [])
 
-  function openModal(type) {
+  function openModal(type, initialForm = {}) {
+    const resolvedType = type || 'lead'
     setOpen(false)
-    setActiveType(type)
+    setActiveType(resolvedType)
     setFeedback({ kind: '', message: '' })
     setForm({
-      ...INITIAL_FORMS[type],
+      ...INITIAL_FORMS[resolvedType],
       assignedAgent: actor.name === 'Current user' ? '' : actor.name,
+      ...initialForm,
     })
+  }
+
+  function handleItemSelect(item) {
+    if (item.action === 'route' && item.to) {
+      setOpen(false)
+      const state =
+        item.type === 'listing'
+          ? { ...(item.state || {}), listingModalMode: role === 'agent' ? agencyWorkflowMode : 'principal' }
+          : item.state
+      navigate(item.to, state ? { state } : undefined)
+      return
+    }
+
+    openModal(item.modalType || item.type, item.initialForm || {})
   }
 
   function closeModal() {
@@ -551,31 +755,36 @@ function QuickCreateDropdown({ className = '' }) {
         </button>
 
         {open ? (
-          <div className="ui-surface-floating absolute right-0 top-[calc(100%+12px)] z-40 w-[300px] p-2" role="menu">
+          <div className="ui-surface-floating absolute right-0 top-[calc(100%+12px)] z-40 max-h-[min(74vh,640px)] w-[320px] overflow-y-auto p-2" role="menu">
             <div className="px-3 pb-2 pt-1">
               <p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-textMuted">Create</p>
             </div>
-            {QUICK_CREATE_ITEMS.map((item) => {
-              const Icon = item.icon
-              return (
-                <button
-                  key={item.type}
-                  type="button"
-                  className="flex w-full items-start gap-3 rounded-[16px] px-3 py-3 text-left transition hover:bg-surfaceAlt"
-                  onClick={() => openModal(item.type)}
-                  role="menuitem"
-                  data-testid={`quick-create-${item.type}`}
-                >
-                  <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-[#edf4fb] text-[#24465d]">
-                    <Icon size={16} />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-textStrong">{item.label}</span>
-                    <span className="mt-0.5 block text-xs font-medium text-textMuted">{item.helper}</span>
-                  </span>
-                </button>
-              )
-            })}
+            {quickCreateGroups.map((group) => (
+              <div key={group.label} className="border-t border-borderSoft py-2 first:border-t-0 first:pt-0">
+                <p className="px-3 pb-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-textSoft">{group.label}</p>
+                {group.items.map((item) => {
+                  const Icon = item.icon
+                  return (
+                    <button
+                      key={item.type}
+                      type="button"
+                      className="flex w-full items-start gap-3 rounded-[16px] px-3 py-2.5 text-left transition hover:bg-surfaceAlt"
+                      onClick={() => handleItemSelect(item)}
+                      role="menuitem"
+                      data-testid={`quick-create-${item.type}`}
+                    >
+                      <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-[#edf4fb] text-[#24465d]">
+                        <Icon size={16} />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold text-textStrong">{item.label}</span>
+                        <span className="mt-0.5 block text-xs font-medium text-textMuted">{item.helper}</span>
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            ))}
           </div>
         ) : null}
       </div>

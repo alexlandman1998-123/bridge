@@ -348,6 +348,69 @@ function formatCurrency(value) {
   return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(amount)
 }
 
+function buildAppointmentListingLabel(listing = {}) {
+  const reference = normalizeText(listing?.listingReference || listing?.reference || listing?.listing_reference)
+  const title = normalizeText(listing?.listingTitle || listing?.title || listing?.propertyName || listing?.property_name)
+  const address = normalizeText(listing?.propertyAddress || listing?.address || listing?.addressLine1 || listing?.address_line_1)
+  const suburb = normalizeText(listing?.suburb)
+  const price = Number(listing?.askingPrice || listing?.asking_price || listing?.price || listing?.estimatedValue || 0)
+  return [
+    reference || title || address || 'Listing',
+    address && address !== title ? address : '',
+    suburb,
+    Number.isFinite(price) && price > 0 ? formatCurrency(price) : '',
+  ].filter(Boolean).join(' — ')
+}
+
+function normalizeAppointmentListingOption(listing = {}) {
+  const id = normalizeText(listing?.id || listing?.listingId || listing?.listing_id)
+  if (!id) return null
+  const status = normalizeText(listing?.status || listing?.listingStatus || listing?.lifecycleStatus || listing?.listing_status).toLowerCase()
+  if (['archived', 'deleted', 'withdrawn', 'removed'].some((blocked) => status.includes(blocked))) return null
+  return {
+    id,
+    label: buildAppointmentListingLabel(listing),
+    status: status || 'active',
+    address: normalizeText(listing?.propertyAddress || listing?.address || listing?.addressLine1 || listing?.address_line_1),
+    suburb: normalizeText(listing?.suburb),
+    updatedAt: listing?.updatedAt || listing?.updated_at || listing?.createdAt || listing?.created_at || null,
+  }
+}
+
+function buildListingOptionsFromLeads(leads = []) {
+  const options = []
+  for (const lead of Array.isArray(leads) ? leads : []) {
+    const listingId = normalizeText(lead?.listingId || lead?.listing_id)
+    if (!listingId) continue
+    options.push(normalizeAppointmentListingOption({
+      id: listingId,
+      listingReference: listingId,
+      title: lead?.propertyInterest,
+      address: lead?.sellerPropertyAddress,
+      suburb: lead?.areaInterest,
+      estimatedValue: lead?.estimatedValue || lead?.budget,
+      updatedAt: lead?.updatedAt,
+    }))
+  }
+  return options.filter(Boolean)
+}
+
+function dedupeListingOptions(options = []) {
+  const byId = new Map()
+  for (const option of Array.isArray(options) ? options : []) {
+    if (!option?.id) continue
+    const existing = byId.get(option.id)
+    if (!existing) {
+      byId.set(option.id, option)
+      continue
+    }
+    const existingTime = new Date(existing.updatedAt || 0).getTime()
+    const optionTime = new Date(option.updatedAt || 0).getTime()
+    if (optionTime >= existingTime) byId.set(option.id, option)
+  }
+  return Array.from(byId.values()).sort((left, right) => left.label.localeCompare(right.label))
+}
+
 function formatDate(value) {
   if (!value) return '—'
   const date = new Date(value)
@@ -874,6 +937,7 @@ const LEAD_DETAIL_DEFAULT_APPOINTMENT = {
   allowOutsideBusinessHours: false,
   schedulingOverrideReason: '',
   notes: '',
+  recipientEmail: '',
   sendInviteEmails: true,
   attachCalendarInvite: true,
   notifyCreatorOnRsvp: true,
@@ -1030,6 +1094,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     followUpDate: '',
   })
   const [appointmentResources, setAppointmentResources] = useState([])
+  const [appointmentListingOptions, setAppointmentListingOptions] = useState([])
   const [appointmentSchedulingIntegrity, setAppointmentSchedulingIntegrity] = useState(null)
   const [appointmentSchedulingLoading, setAppointmentSchedulingLoading] = useState(false)
   const [appointmentSchedulingError, setAppointmentSchedulingError] = useState('')
@@ -1192,6 +1257,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       reloadRequestRef.current = requestId
       const snapshot = getAgencyPipelineSnapshot(orgId)
       let mergedSnapshot = snapshot
+      let listingOptionsForAppointments = buildListingOptionsFromLeads(snapshot.leads)
       const agentKeys = new Set(
         [currentAgent.id, currentAgent.email]
           .map((value) => normalizeKey(value))
@@ -1252,6 +1318,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               'Private listing data is taking too long to load.',
               PIPELINE_RECORDS_TIMEOUT_MS,
             )
+            listingOptionsForAppointments = dedupeListingOptions([
+              ...listingOptionsForAppointments,
+              ...(Array.isArray(privateListings) ? privateListings : []).map((listing) => normalizeAppointmentListingOption(listing)).filter(Boolean),
+            ])
             privateListingFallbackLeads = (Array.isArray(privateListings) ? privateListings : [])
               .map((listing) => mapPrivateListingToLeadFallback(listing))
               .filter(Boolean)
@@ -1303,6 +1373,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
 
       if (requestId !== reloadRequestRef.current) return
+      setAppointmentListingOptions(dedupeListingOptions([
+        ...listingOptionsForAppointments,
+        ...buildListingOptionsFromLeads(mergedSnapshot.leads),
+      ]))
       applySnapshotRecords(mergedSnapshot, appointmentRows)
     },
     [currentAgent.email, currentAgent.id, isPrincipal],
@@ -2431,6 +2505,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return records.appointments.find((appointment) => normalizeText(appointment?.appointmentId) === normalizeText(selectedAppointmentId)) || null
   }, [records.appointments, selectedAppointmentId])
 
+  const appointmentListingById = useMemo(() => {
+    const map = new Map()
+    for (const option of appointmentListingOptions) {
+      if (option?.id) map.set(normalizeText(option.id), option)
+    }
+    return map
+  }, [appointmentListingOptions])
+
+  const resolveAppointmentListingLabel = useCallback(
+    (listingId) => {
+      const id = normalizeText(listingId)
+      if (!id) return ''
+      return appointmentListingById.get(id)?.label || id
+    },
+    [appointmentListingById],
+  )
+
   const selectedAppointmentTemplate = useMemo(
     () => getAppointmentTypeTemplate(appointmentForm.appointmentType || 'other'),
     [appointmentForm.appointmentType],
@@ -3284,6 +3375,43 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     })
   }
 
+  function handleAppointmentListingChange(nextListingId) {
+    const listingId = normalizeText(nextListingId)
+    const listing = listingId ? appointmentListingById.get(listingId) : null
+    setAppointmentForm((previous) => ({
+      ...previous,
+      listingId,
+      relatedEntityType: listingId && ['none', 'listing', ''].includes(normalizeText(previous.relatedEntityType)) ? 'listing' : previous.relatedEntityType,
+      relatedEntityId: listingId && ['none', 'listing', ''].includes(normalizeText(previous.relatedEntityType)) ? listingId : previous.relatedEntityId,
+      location: normalizeText(previous.location) || normalizeText(listing?.address || listing?.label) || previous.location,
+    }))
+  }
+
+  function summarizeAppointmentInviteDelivery(created, requestedInvite, participants = []) {
+    if (!requestedInvite) return 'Appointment added.'
+    const participantRows = Array.isArray(participants) ? participants : []
+    const hasRecipientEmail = participantRows.some((participant) => isValidEmail(participant?.email))
+    if (!hasRecipientEmail) {
+      return 'Appointment saved. Add a recipient email to send the appointment request.'
+    }
+    if (created?.notificationError) {
+      return 'Appointment saved, but the appointment request email could not be sent.'
+    }
+    const emailRows = (Array.isArray(created?.notificationResults) ? created.notificationResults : [])
+      .map((row) => row?.email)
+      .filter(Boolean)
+    if (emailRows.some((row) => row?.sent === true)) {
+      return 'Appointment added. Email request sent.'
+    }
+    if (emailRows.some((row) => row?.status === 'failed')) {
+      return 'Appointment saved, but the appointment request email could not be sent.'
+    }
+    if (emailRows.some((row) => row?.reason === 'missing_recipient_email')) {
+      return 'Appointment saved. Add a recipient email to send the appointment request.'
+    }
+    return 'Appointment saved. No external appointment request email was sent.'
+  }
+
   async function handleCreateAppointment(event) {
     event.preventDefault()
     if (!organisationId) return
@@ -3310,6 +3438,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const linkedLeadEmail = normalizeText(selectedLeadContact?.email || linkedLead?.email)
     const linkedLeadParticipantRole = normalizeText(linkedLead?.leadCategory).toLowerCase() === 'seller' ? 'Seller' : 'Buyer'
     const participantSeed = [...(appointmentForm.participants || [])]
+    const explicitRecipientEmail = normalizeText(appointmentForm.recipientEmail).toLowerCase()
+    if (explicitRecipientEmail && !isValidEmail(explicitRecipientEmail)) {
+      setError('Enter a valid recipient email before sending the appointment request.')
+      return
+    }
+    if (explicitRecipientEmail && !participantSeed.some((participant) => normalizeText(participant?.email).toLowerCase() === explicitRecipientEmail)) {
+      participantSeed.push({
+        name: normalizeText(selectedLeadContact?.firstName || selectedLeadContact?.lastName)
+          ? [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim()
+          : explicitRecipientEmail,
+        email: explicitRecipientEmail,
+        phone: normalizeText(selectedLeadContact?.phone || linkedLead?.phone),
+        participantRole: linkedLeadParticipantRole || 'Client',
+        isRequired: true,
+        rsvpStatus: 'Pending',
+      })
+    }
     if (linkedLead && linkedLeadEmail && !participantSeed.some((participant) => normalizeText(participant?.email).toLowerCase() === linkedLeadEmail.toLowerCase())) {
       participantSeed.push({
         name: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || linkedLead?.name || linkedLeadEmail,
@@ -3336,6 +3481,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       leadId: normalizeText(linkedLead?.leadId) || null,
       contactId: normalizeText(appointmentForm.contactId || linkedLead?.contactId) || null,
       listingId: normalizeText(appointmentForm.listingId) || null,
+      listingLabel: resolveAppointmentListingLabel(appointmentForm.listingId),
       transactionId: normalizeText(appointmentForm.transactionId) || null,
       relatedEntityType: normalizeText(appointmentForm.relatedEntityType) || (linkedLead ? 'lead' : 'none'),
       relatedEntityId: normalizeText(appointmentForm.relatedEntityId || linkedLead?.leadId) || null,
@@ -3377,7 +3523,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setAppointmentSchedulingIntegrity(created?.schedulingIntegrity || null)
       setAppointmentSchedulingError('')
       setError('')
-      setMessage('Appointment added.')
+      setMessage(summarizeAppointmentInviteDelivery(created, appointmentPayload.sendInviteEmails !== false, participantSeed))
       setAppointmentModalOpen(false)
       if (created?.appointmentId) {
         setSelectedAppointmentId(created.appointmentId)
@@ -3470,6 +3616,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         allowOutsideBusinessHours: appointment.allowOutsideBusinessHours === true,
         schedulingOverrideReason: appointment.schedulingOverrideReason || '',
         notes: appointment.notes || '',
+        recipientEmail: (Array.isArray(appointment.participants)
+          ? appointment.participants.find((row) => normalizeText(row?.participantRole).toLowerCase() !== 'agent' && normalizeText(row?.email))?.email
+          : '') || '',
         sendInviteEmails: true,
         attachCalendarInvite: true,
         notifyCreatorOnRsvp: true,
@@ -3510,8 +3659,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         date: getTomorrowIsoDate(),
         startTime: getCurrentTimeValue(),
         contactId: normalizeText(selectedLead?.contactId) || '',
+        listingId: normalizeText(selectedLead?.listingId) || '',
         relatedEntityType: selectedLead ? 'lead' : 'none',
         relatedEntityId: normalizeText(selectedLead?.leadId) || '',
+        recipientEmail: normalizeText(selectedLeadContact?.email || selectedLead?.email) || '',
       }))
       setAppointmentOutcomeForm({
         outcomeSummary: '',
@@ -4139,6 +4290,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError('Appointment end time must be after the start time.')
       return
     }
+    const updateParticipants = [...(appointmentForm.participants || [])]
+    const explicitRecipientEmail = normalizeText(appointmentForm.recipientEmail).toLowerCase()
+    if (explicitRecipientEmail && !isValidEmail(explicitRecipientEmail)) {
+      setError('Enter a valid recipient email before sending the appointment request.')
+      return
+    }
+    if (explicitRecipientEmail && !updateParticipants.some((participant) => normalizeText(participant?.email).toLowerCase() === explicitRecipientEmail)) {
+      updateParticipants.push({
+        name: explicitRecipientEmail,
+        email: explicitRecipientEmail,
+        phone: '',
+        participantRole: 'Client',
+        isRequired: true,
+        rsvpStatus: 'Pending',
+      })
+    }
     try {
       const updatePayload = applyAppointmentTemplate(appointmentForm.appointmentType, {
         title: normalizeText(appointmentForm.title) || getAppointmentTypeLabel(appointmentForm.appointmentType),
@@ -4154,6 +4321,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         meetingUrl: appointmentForm.meetingUrl,
         status: appointmentForm.status,
         listingId: normalizeText(appointmentForm.listingId) || null,
+        listingLabel: resolveAppointmentListingLabel(appointmentForm.listingId),
         transactionId: normalizeText(appointmentForm.transactionId) || null,
         relatedEntityType: normalizeText(appointmentForm.relatedEntityType) || null,
         relatedEntityId: normalizeText(appointmentForm.relatedEntityId) || null,
@@ -4162,7 +4330,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         allowOutsideBusinessHours: isPrincipal && appointmentForm.allowOutsideBusinessHours === true,
         schedulingOverrideReason: isPrincipal ? normalizeText(appointmentForm.schedulingOverrideReason) || null : null,
         notes: appointmentForm.notes,
-        participants: appointmentForm.participants,
+        participants: updateParticipants,
         visibility: normalizeText(appointmentForm.visibility) || undefined,
         linkedWorkflow: normalizeText(appointmentForm.linkedWorkflow) || undefined,
         linkedWorkflowStage: normalizeText(appointmentForm.linkedWorkflowStage) || undefined,
@@ -4766,14 +4934,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   <Upload size={15} />
                   Import Leads
                 </button>
-                <button
-                  type="button"
-                  className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[16px] border border-transparent bg-[#163247] px-5 py-2 text-sm font-semibold text-white shadow-[0_18px_36px_rgba(22,50,71,0.22)] transition hover:-translate-y-0.5 hover:bg-[#10273a]"
-                  onClick={() => openLeadForm(leadTypeView)}
-                >
-                  <Plus size={15} />
-                  New Lead
-                </button>
               </div>
             </div>
           </section>
@@ -4813,10 +4973,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 <p className="mt-1 text-sm text-[#60758d]">Schedule, confirm, and complete internal appointments linked to leads, contacts, listings, and transactions.</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Button type="button" onClick={() => handleOpenAppointmentModal()} className="whitespace-nowrap">
-                  <Plus size={14} />
-                  <span>Create Appointment</span>
-                </Button>
                 {[
                   { key: 'week', label: 'Week' },
                   { key: 'month', label: 'Month' },
@@ -4926,23 +5082,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </div>
 
                       <div className="space-y-1">
-                        {shownRows.map((appointment) => (
-                          <button
-                            key={appointment.appointmentId}
-                            type="button"
-                            onClick={() => handleOpenAppointmentModal(appointment)}
-                            className="w-full rounded-[8px] border border-[#dce6f2] bg-[#f8fbff] px-2 py-1 text-left transition hover:border-[#c5d7ea]"
-                          >
-                            <p className="truncate text-[0.68rem] font-semibold text-[#203a52]">{formatAppointmentTimeRange(appointment)}</p>
-                            <p className="truncate text-[0.66rem] text-[#5f748d]">{appointment.title || getAppointmentTypeLabel(appointment.appointmentType)}</p>
-                            <span className="mt-1 inline-flex rounded-full bg-white px-1.5 py-0.5 text-[0.58rem] font-semibold uppercase tracking-[0.06em] text-[#315a7a]">
-                              {APPOINTMENT_STATUS_LABELS[appointment.status] || appointment.status || 'Requested'}
-                            </span>
-                            <p className="truncate text-[0.62rem] text-[#7a8fa5]">
-                              {(appointment.participants || []).filter((person) => person?.rsvpStatus === 'Accepted').length} accepted · {(appointment.participants || []).filter((person) => person?.rsvpStatus !== 'Accepted').length} pending
-                            </p>
-                          </button>
-                        ))}
+                        {shownRows.map((appointment) => {
+                          const listingLabel = resolveAppointmentListingLabel(appointment?.listingId)
+                          return (
+                            <button
+                              key={appointment.appointmentId}
+                              type="button"
+                              onClick={() => handleOpenAppointmentModal(appointment)}
+                              className="w-full rounded-[8px] border border-[#dce6f2] bg-[#f8fbff] px-2 py-1 text-left transition hover:border-[#c5d7ea]"
+                            >
+                              <p className="truncate text-[0.68rem] font-semibold text-[#203a52]">{formatAppointmentTimeRange(appointment)}</p>
+                              <p className="truncate text-[0.66rem] text-[#5f748d]">{appointment.title || getAppointmentTypeLabel(appointment.appointmentType)}</p>
+                              {listingLabel ? (
+                                <p className="truncate text-[0.62rem] text-[#6d8299]">{listingLabel}</p>
+                              ) : null}
+                              <span className="mt-1 inline-flex rounded-full bg-white px-1.5 py-0.5 text-[0.58rem] font-semibold uppercase tracking-[0.06em] text-[#315a7a]">
+                                {APPOINTMENT_STATUS_LABELS[appointment.status] || appointment.status || 'Requested'}
+                              </span>
+                              <p className="truncate text-[0.62rem] text-[#7a8fa5]">
+                                {(appointment.participants || []).filter((person) => person?.rsvpStatus === 'Accepted').length} accepted · {(appointment.participants || []).filter((person) => person?.rsvpStatus !== 'Accepted').length} pending
+                              </p>
+                            </button>
+                          )
+                        })}
                         {hiddenCount > 0 ? (
                           <p className="px-1 text-[0.66rem] font-semibold text-[#5f7894]">+{hiddenCount} more</p>
                         ) : null}
@@ -6388,6 +6550,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">What:</span> {selectedAppointment.title || getAppointmentTypeLabel(selectedAppointment.appointmentType) || 'Appointment'}</p>
                 <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">When:</span> {formatDate(selectedAppointment.dateTime)}</p>
                 <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">Where:</span> {selectedAppointment.location || 'Location pending'}</p>
+                <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">Listing:</span> {resolveAppointmentListingLabel(selectedAppointment.listingId) || 'Not linked'}</p>
                 <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">Why:</span> {getAppointmentTypeLabel(selectedAppointment.appointmentType) || selectedAppointment.nextStep || 'Meeting follow-up'}</p>
                 <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">Status:</span> {APPOINTMENT_STATUS_LABELS[selectedAppointment.status] || selectedAppointment.status || 'Requested'}</p>
               </div>
@@ -6472,6 +6635,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           <div className="rounded-[16px] border border-[#dce6f2] bg-white p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#6f839c]">Link this appointment</p>
             <div className="mt-3 grid gap-2 md:grid-cols-3">
+              <Field as="select" value={appointmentForm.listingId} onChange={(event) => handleAppointmentListingChange(event.target.value)}>
+                <option value="">No listing selected</option>
+                {appointmentListingOptions.map((listing) => (
+                  <option key={listing.id} value={listing.id}>
+                    {listing.label}
+                  </option>
+                ))}
+              </Field>
               <Field as="select" value={appointmentForm.relatedEntityType} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, relatedEntityType: event.target.value }))}>
                 <option value="none">General / Internal</option>
                 <option value="lead">Lead</option>
@@ -6505,6 +6676,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </Button>
               ) : null}
             </div>
+            <p className="mt-2 text-xs text-[#6f839c]">
+              Listings are loaded from current organisation stock. Older appointments without a listing still remain visible.
+            </p>
           </div>
 
           <div className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-3">
@@ -6737,6 +6911,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           <div className="rounded-[14px] border border-[#e4ebf4] bg-[#fbfdff] p-3">
             <p className="text-sm font-semibold text-[#28435e]">Notifications</p>
             <div className="mt-3 grid gap-2 md:grid-cols-3">
+              <Field
+                placeholder="Recipient email"
+                value={appointmentForm.recipientEmail || ''}
+                onChange={(event) => setAppointmentForm((previous) => ({ ...previous, recipientEmail: event.target.value }))}
+              />
               <label className="flex items-center gap-2 rounded-[10px] border border-[#dce6f2] bg-white px-3 py-2 text-xs text-[#33536d]">
                 <input type="checkbox" checked={appointmentForm.sendInviteEmails !== false} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, sendInviteEmails: event.target.checked }))} />
                 Send appointment invite emails

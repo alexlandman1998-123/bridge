@@ -4,7 +4,6 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchMyNotifications, markAllNotificationsRead, markNotificationRead } from '../lib/api'
 import QuickCreateDropdown from './QuickCreateDropdown'
-import Button from './ui/Button'
 
 function getPageTitle(pathname, stateTitle, role) {
   const isAgentWorkspaceRole = role === 'agent' || role === 'principal' || role === 'headquarters'
@@ -98,7 +97,7 @@ function formatNotificationTimestamp(value) {
   return date.toLocaleDateString()
 }
 
-function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
+function HeaderBar({ onLogout, user }) {
   const navigate = useNavigate()
   const location = useLocation()
   const { role, rolePreviewActive, setActivePersona, personaOptions, agencyWorkflowMode } = useWorkspace()
@@ -275,45 +274,10 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
   const developerDashboardHeaderOnly = role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/')
   const userInitials = getUserInitials(user)
   const isAgentsDirectoryRoute = location.pathname === '/agency/agents'
-  const canCreateDevelopment = role === 'developer'
-  const canCreateTransaction = role === 'developer' || role === 'agent' || role === 'attorney'
-  const canCreateListing = role === 'agent'
   const unreadDisplay = notificationState.unreadCount > 99 ? '99+' : String(notificationState.unreadCount || 0)
   const agentDashboardOwnsHeader =
     role === 'agent' &&
     (location.pathname === '/dashboard' || location.pathname === '/')
-
-  function handleNewDevelopment() {
-    if (typeof onNewDevelopment === 'function') {
-      onNewDevelopment()
-      return
-    }
-
-    window.dispatchEvent(new Event('itg:open-new-development'))
-  }
-
-  function handleNewTransaction() {
-    if (role === 'agent' || role === 'attorney') {
-      navigate('/new-transaction')
-      return
-    }
-
-    if (typeof onNewTransaction === 'function') {
-      onNewTransaction()
-      return
-    }
-
-    window.dispatchEvent(new Event('itg:open-new-transaction'))
-  }
-
-  function handleNewListing() {
-    navigate('/listings', {
-      state: {
-        openNewListing: true,
-        listingModalMode: role === 'agent' ? agencyWorkflowMode : 'principal',
-      },
-    })
-  }
 
   const notificationsControl = (
     <div className="relative flex-none" ref={notificationsRef}>
@@ -533,38 +497,6 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
 
       <div className="ui-shell-actions">
         <QuickCreateDropdown />
-
-        {isAgentsDirectoryRoute ? (
-          <Button
-            variant="secondary"
-            className="shrink-0"
-            onClick={() => window.dispatchEvent(new Event('itg:open-add-agent'))}
-          >
-            + Add Agent
-          </Button>
-        ) : null}
-
-        {!isAgentsDirectoryRoute && canCreateDevelopment ? (
-          <Button variant="secondary" className="shrink-0" onClick={handleNewDevelopment}>
-            + New Development
-          </Button>
-        ) : null}
-
-        {!isAgentsDirectoryRoute && canCreateListing ? (
-          <Button variant="secondary" className="shrink-0" onClick={handleNewListing}>
-            + New Listing
-          </Button>
-        ) : null}
-
-        {!isAgentsDirectoryRoute && canCreateTransaction ? (
-          <Button
-            variant="primary"
-            className="shrink-0"
-            onClick={handleNewTransaction}
-          >
-            + New Transaction
-          </Button>
-        ) : null}
 
         {!isAgentsDirectoryRoute ? (
           <div

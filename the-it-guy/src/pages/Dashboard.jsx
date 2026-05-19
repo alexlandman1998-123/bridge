@@ -104,8 +104,6 @@ const DASHBOARD_SUBPANEL_CLASS =
   'min-w-0 overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)] sm:p-5 xl:p-6'
 const DASHBOARD_CHIP_CLASS =
   'inline-flex min-w-0 items-center gap-2 rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-2.5 py-1 text-[0.74rem] font-semibold text-[#66758b]'
-const DASHBOARD_ACTION_PRIMARY_CLASS =
-  'inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[16px] border border-transparent bg-[#35546c] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition duration-150 ease-out hover:bg-[#2e475c]'
 const DASHBOARD_ACTION_SECONDARY_CLASS =
   'inline-flex min-h-[44px] items-center justify-center rounded-[16px] border border-[#dde4ee] bg-white px-4 py-2.5 text-sm font-semibold text-[#162334] shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition duration-150 ease-out hover:border-[#ccd6e3] hover:bg-[#f8fafc]'
 const DASHBOARD_FIELD_CLASS =
@@ -3278,23 +3276,6 @@ function renderActiveTransactionsBlock({
           {!isRoleScopedDashboard ? (
             <section className="rounded-[22px] border border-[#dde4ee] bg-white px-4 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
               <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    className={DASHBOARD_ACTION_PRIMARY_CLASS}
-                    onClick={() => window.dispatchEvent(new Event('itg:open-new-development'))}
-                  >
-                    + New Development
-                  </button>
-                  <button
-                    type="button"
-                    className={DASHBOARD_ACTION_PRIMARY_CLASS}
-                    onClick={() => window.dispatchEvent(new Event('itg:open-new-transaction'))}
-                  >
-                    + New Transaction
-                  </button>
-                </div>
-
                 <div className="flex min-w-0 flex-col gap-2 xl:flex-1 xl:flex-row xl:items-center xl:justify-end">
                   <div className={`${DASHBOARD_FIELD_CLASS} min-w-[220px] max-w-[280px]`}>
                     <span className="text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#6b7d93]">View</span>

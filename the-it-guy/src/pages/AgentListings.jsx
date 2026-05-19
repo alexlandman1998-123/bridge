@@ -1025,18 +1025,6 @@ function AgentListings({ initialTab = null } = {}) {
             </label>
           </div>
 
-          {listingsTab !== 'developments' ? (
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <Button type="button" variant="secondary" onClick={openSellerLeadModal}>
-                <Plus size={16} />
-                New Seller Lead
-              </Button>
-              <Button type="button" onClick={openManualListingModal}>
-                <Plus size={16} />
-                Add Listing
-              </Button>
-            </div>
-          ) : null}
         </div>
 
         {error ? <p className="mt-3 rounded-[14px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-2 text-sm text-[#b42318]">{error}</p> : null}

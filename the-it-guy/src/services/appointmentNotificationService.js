@@ -83,7 +83,7 @@ function normalizeClientRole(value = '') {
 
 function normalizeReminderStatus(value = '') {
   const normalized = normalizeLower(value)
-  if (['pending', 'sent', 'failed', 'cancelled'].includes(normalized)) return normalized
+  if (['pending', 'sent', 'failed', 'skipped', 'cancelled'].includes(normalized)) return normalized
   return 'pending'
 }
 
@@ -175,7 +175,7 @@ function shouldNotifyRoleForVisibility(participantRole = '', visibility = 'share
     return !['buyer', 'seller'].includes(role)
   }
   if (visibility === 'shared_role_players') {
-    return !['buyer', 'seller'].includes(role)
+    return true
   }
   return true
 }
@@ -345,6 +345,7 @@ async function sendAppointmentEmailToRecipient({ recipientEmail, eventType, appo
     recipientName: normalizeText(participant?.name || ''),
     participantRole: normalizeText(participant?.participantRole || ''),
     notes: normalizeText(metadata?.notes || appointment?.notes || ''),
+    relatedListing: normalizeText(metadata?.listingLabel || metadata?.listingReference || metadata?.propertyLabel || ''),
     transactionId: normalizeText(appointment?.transaction_id || ''),
     actionLink: normalizeText(participant?.rsvpToken)
       ? buildAppointmentActionUrl(`/appointment-rsvp/${encodeURIComponent(participant.rsvpToken)}`)
@@ -602,12 +603,26 @@ export async function notifyAppointmentParticipants(appointmentId, eventType, op
 
     let emailResult = { sent: false, status: 'skipped', reason: 'not_attempted' }
     if (EMAIL_SUPPORTED_EVENT_TYPES.has(normalizedEventType)) {
+      console.info('[appointment-notifications] email request', {
+        appointmentId,
+        eventType: normalizedEventType,
+        recipientEmailPresent: Boolean(recipientEmail),
+      })
       emailResult = await sendAppointmentEmailToRecipient({
         recipientEmail,
         eventType: normalizedEventType,
         appointment,
         participant,
         metadata: options?.metadata || {},
+      })
+
+      console.info('[appointment-notifications] email result', {
+        appointmentId,
+        eventType: normalizedEventType,
+        recipientEmailPresent: Boolean(recipientEmail),
+        success: emailResult.sent === true,
+        status: emailResult.status,
+        reason: emailResult.sent ? '' : emailResult.reason,
       })
 
       if (!emailResult.sent && emailResult.status === 'failed') {

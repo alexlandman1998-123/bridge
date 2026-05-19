@@ -114,6 +114,7 @@ export type SendAppointmentEmailPayload = {
   appointmentDate?: string;
   appointmentTime?: string;
   appointmentEndTime?: string;
+  relatedListing?: string;
   location?: string;
   status?: string;
   notes?: string;

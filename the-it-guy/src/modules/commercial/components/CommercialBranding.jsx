@@ -84,22 +84,21 @@ function CommercialBranding({ compact = false }) {
   if (showOrganisationBranding) {
     return (
       <div className={compact ? 'min-w-0' : 'border-b border-slate-200 pb-4'}>
-        <div className={compact ? 'flex min-w-0 items-center gap-3' : 'grid gap-2'}>
-          <div className={compact ? 'flex h-11 w-32 items-center' : 'flex min-h-[72px] items-center'}>
+        <div className={compact ? 'flex min-w-0 items-center gap-3' : 'ui-sidebar-brand-org'}>
+          <div className={compact ? 'flex h-11 w-32 items-center' : 'ui-sidebar-brand-logo-wrap'}>
             <img
               key={branding.logoUrl}
               src={branding.logoUrl}
               alt={`${branding.organisationLabel || 'Organisation'} logo`}
-              className={compact ? 'max-h-10 max-w-full object-contain' : 'max-h-20 max-w-[210px] object-contain'}
+              className={compact ? 'max-h-10 max-w-full object-contain' : 'ui-sidebar-brand-logo'}
               loading="lazy"
               onLoad={() => setLogoLoadFailed(false)}
               onError={() => setLogoLoadFailed(true)}
             />
           </div>
-          <div className="min-w-0">
-            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">{BRIDGE_POWERED_LABEL}</p>
-            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Commercial workspace</p>
-          </div>
+          <p className={compact ? 'truncate text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500' : 'ui-sidebar-brand-powered'}>
+            {BRIDGE_POWERED_LABEL}
+          </p>
         </div>
       </div>
     )
@@ -107,10 +106,9 @@ function CommercialBranding({ compact = false }) {
 
   return (
     <div className={compact ? 'min-w-0' : 'border-b border-slate-200 pb-4'}>
-      <h1 className={compact ? 'text-2xl font-bold leading-none tracking-[-0.055em] text-[#113a6b]' : 'text-[2.35rem] font-bold leading-none tracking-[-0.055em] text-[#113a6b]'}>
+      <h1 className={compact ? 'text-2xl font-bold leading-none tracking-[-0.055em] text-[#113a6b]' : 'ui-sidebar-brand-mark'}>
         {BRIDGE_BRAND_MARK}
       </h1>
-      <p className="mt-2 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">Commercial workspace</p>
     </div>
   )
 }

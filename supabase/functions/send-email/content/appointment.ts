@@ -40,6 +40,7 @@ export function buildAppointmentEmailHtml({
   appointmentTitle,
   appointmentDate,
   appointmentTime,
+  relatedListing,
   location,
   status,
   notes,
@@ -55,6 +56,7 @@ export function buildAppointmentEmailHtml({
   appointmentTitle?: string
   appointmentDate?: string
   appointmentTime?: string
+  relatedListing?: string
   location?: string
   status?: string
   notes?: string
@@ -90,6 +92,7 @@ export function buildAppointmentEmailHtml({
         { label: 'Appointment', value: typeLabel },
         { label: 'Date', value: pickText(appointmentDate, 'TBC') },
         { label: 'Time', value: pickText(appointmentTime, 'TBC') },
+        ...(relatedListing ? [{ label: 'Listing / Property', value: relatedListing }] : []),
         { label: 'Location', value: pickText(meetingUrl || location, 'To be confirmed') },
         { label: 'Status', value: pickText(status, 'Pending') },
       ],
@@ -127,6 +130,7 @@ export function buildAppointmentEmailText({
   appointmentTitle,
   appointmentDate,
   appointmentTime,
+  relatedListing,
   location,
   status,
   notes,
@@ -142,6 +146,7 @@ export function buildAppointmentEmailText({
   appointmentTitle?: string
   appointmentDate?: string
   appointmentTime?: string
+  relatedListing?: string
   location?: string
   status?: string
   notes?: string
@@ -159,6 +164,7 @@ export function buildAppointmentEmailText({
     `${eventTitle(eventType)}: ${typeLabel}`,
     appointmentDate ? `Date: ${appointmentDate}` : null,
     appointmentTime ? `Time: ${appointmentTime}` : null,
+    relatedListing ? `Listing / Property: ${relatedListing}` : null,
     meetingUrl || location ? `Location: ${meetingUrl || location}` : null,
     status ? `Status: ${status}` : null,
     notes ? `Notes: ${notes}` : null,

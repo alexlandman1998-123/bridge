@@ -817,10 +817,10 @@ function computeAgentWorkspaceData({ transactions, privateListings, pipelineRows
 
 function AgentMetricCard({ label, value, helper = '' }) {
   return (
-    <div className="rounded-[16px] border border-[#dfe7f1] bg-[#fbfcfe] px-4 py-3">
-      <p className="text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</p>
-      <p className="mt-2 text-[1.25rem] font-semibold tracking-[-0.02em] text-[#142132]">{value}</p>
-      {helper ? <p className="mt-1 text-xs text-[#657a92]">{helper}</p> : null}
+    <div className="min-w-0 overflow-hidden rounded-[16px] border border-[#dfe7f1] bg-[#fbfcfe] px-4 py-3">
+      <p className="truncate text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]" title={label}>{label}</p>
+      <p className="mt-2 truncate text-[1.25rem] font-semibold tracking-[-0.02em] text-[#142132]" title={String(value ?? '—')}>{value}</p>
+      {helper ? <p className="mt-1 truncate text-xs text-[#657a92]" title={helper}>{helper}</p> : null}
     </div>
   )
 }
@@ -1202,24 +1202,24 @@ function AgentDirectoryTable({ agents, onView, onEditRole, onDeactivate }) {
 
 function DetailInfoRow({ label, value }) {
   return (
-    <div className="grid grid-cols-[118px_minmax(0,1fr)] gap-3 border-b border-[#edf2f7] py-2.5 last:border-0">
-      <span className="text-xs font-semibold text-[#6f839a]">{label}</span>
-      <span className="min-w-0 truncate text-sm font-semibold text-[#20364d]">{value || '—'}</span>
+    <div className="grid min-w-0 grid-cols-[minmax(86px,0.42fr)_minmax(0,1fr)] gap-3 border-b border-[#edf2f7] py-2.5 last:border-0 sm:grid-cols-[118px_minmax(0,1fr)]">
+      <span className="min-w-0 truncate text-xs font-semibold text-[#6f839a]">{label}</span>
+      <span className="min-w-0 truncate text-sm font-semibold text-[#20364d]" title={String(value || '—')}>{value || '—'}</span>
     </div>
   )
 }
 
 function AgentManagementCard({ title, actionLabel, onAction, children, className = '' }) {
   return (
-    <article className={`rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-sm ${className}`}>
-      <div className="flex items-start justify-between gap-3 border-b border-[#edf2f7] pb-3">
-        <h3 className="text-base font-semibold tracking-[-0.025em] text-[#10243a]">{title}</h3>
+    <article className={`min-w-0 overflow-hidden rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-sm ${className}`}>
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3 border-b border-[#edf2f7] pb-3">
+        <h3 className="min-w-0 text-base font-semibold tracking-[-0.025em] text-[#10243a]">{title}</h3>
         {actionLabel && onAction ? (
-          <button type="button" onClick={onAction} className="text-xs font-semibold text-[#1769d1] hover:text-[#0f4f9f]">
+          <button type="button" onClick={onAction} className="shrink-0 text-xs font-semibold text-[#1769d1] hover:text-[#0f4f9f]">
             {actionLabel}
           </button>
         ) : actionLabel ? (
-          <span className="rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#60758d]">
+          <span className="shrink-0 rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#60758d]">
             {actionLabel}
           </span>
         ) : null}
@@ -1231,14 +1231,14 @@ function AgentManagementCard({ title, actionLabel, onAction, children, className
 
 function PrincipalAgentTabShell({ title, description, actionLabel, onAction, children }) {
   return (
-    <section className="rounded-2xl border border-[#dde6f1] bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold tracking-[-0.03em] text-[#10243a]">{title}</h2>
+    <section className="min-w-0 overflow-hidden rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-sm sm:p-5">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="truncate text-lg font-semibold tracking-[-0.03em] text-[#10243a]">{title}</h2>
           <p className="mt-1 text-sm text-[#61778f]">{description}</p>
         </div>
         {actionLabel ? (
-          <button type="button" onClick={onAction} className="inline-flex min-h-10 items-center rounded-xl border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc]">
+          <button type="button" onClick={onAction} className="inline-flex min-h-10 shrink-0 items-center rounded-xl border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc]">
             {actionLabel}
           </button>
         ) : null}
@@ -1372,7 +1372,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
   }
 
   return (
-    <section className="space-y-5">
+    <section className="min-w-0 space-y-5 overflow-hidden">
       <button
         type="button"
         onClick={() => navigate('/agency/agents')}
@@ -1388,48 +1388,48 @@ function AgentWorkspace({ agent, canManageSettings }) {
         </div>
       ) : null}
 
-      <section className="rounded-3xl border border-[#dde6f1] bg-white p-5 shadow-[0_16px_36px_rgba(15,23,42,0.06)]">
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(470px,0.85fr)]">
-          <div className="flex min-w-0 gap-4">
+      <section className="min-w-0 rounded-3xl border border-[#dde6f1] bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.06)] sm:p-5">
+        <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.72fr)]">
+          <div className="flex min-w-0 flex-col gap-4 sm:flex-row">
             <span className="relative inline-flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-[#d7e2ef] bg-[linear-gradient(135deg,#f8fbff,#e7eef7)] text-2xl font-semibold text-[#2f5578]">
               {getAgentInitials(agent)}
               <span className="absolute bottom-1 right-1 h-4 w-4 rounded-full border-2 border-white bg-[#16a365]" />
             </span>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="truncate text-2xl font-semibold tracking-[-0.04em] text-[#10243a]">{agent.name || 'Agent'}</h1>
+                <h1 className="min-w-0 truncate text-2xl font-semibold tracking-[-0.04em] text-[#10243a]">{agent.name || 'Agent'}</h1>
                 <StatusBadge agent={agent} />
               </div>
               <p className="mt-1 text-sm font-semibold text-[#60758d]">{formatRoleLabel(agent.role)}</p>
               <p className="mt-1 text-sm text-[#60758d]">{agent.office || agent.organisationName || 'Not assigned'}</p>
-              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs font-medium text-[#61778f]">
-                <span className="inline-flex items-center gap-1.5"><Mail size={13} />{agent.email || 'Email pending'}</span>
-                <span className="inline-flex items-center gap-1.5"><Phone size={13} />{agent.phone || 'Phone pending'}</span>
-                <span>Agent ID: {agent.userId || agent.id || 'Pending'}</span>
-                <span>Joined {formatDate(agent.activatedAt || agent.invitedAt)}</span>
+              <div className="mt-3 grid min-w-0 gap-x-5 gap-y-2 text-xs font-medium text-[#61778f] sm:grid-cols-2">
+                <span className="inline-flex min-w-0 items-center gap-1.5"><Mail size={13} className="shrink-0" /><span className="min-w-0 truncate" title={agent.email || 'Email pending'}>{agent.email || 'Email pending'}</span></span>
+                <span className="inline-flex min-w-0 items-center gap-1.5"><Phone size={13} className="shrink-0" /><span className="min-w-0 truncate">{agent.phone || 'Phone pending'}</span></span>
+                <span className="min-w-0 truncate">Agent ID: {agent.userId || agent.id || 'Pending'}</span>
+                <span className="min-w-0 truncate">Joined {formatDate(agent.activatedAt || agent.invitedAt)}</span>
               </div>
             </div>
           </div>
 
-          <div className="grid gap-4">
-            <div className="flex flex-wrap justify-start gap-2 xl:justify-end">
-              <button type="button" className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc]" onClick={() => openPlaceholder('message')}>
+          <div className="grid min-w-0 gap-4">
+            <div className="flex min-w-0 flex-wrap justify-start gap-2 2xl:justify-end">
+              <button type="button" className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] sm:w-auto" onClick={() => openPlaceholder('message')}>
                 <MessageCircle size={16} />
                 Message Agent
               </button>
-              <button type="button" className="inline-flex min-h-10 items-center rounded-xl border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc]" onClick={() => openPlaceholder('assign-listing')}>
+              <button type="button" className="inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] sm:w-auto" onClick={() => openPlaceholder('assign-listing')}>
                 Assign Listing
               </button>
-              <button type="button" className="inline-flex min-h-10 items-center rounded-xl border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc]" onClick={() => openPlaceholder('assign-deal')}>
+              <button type="button" className="inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] sm:w-auto" onClick={() => openPlaceholder('assign-deal')}>
                 Assign Deal
               </button>
-              <div className="relative">
-                <button type="button" onClick={() => setEditMenuOpen((open) => !open)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#0f2742] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(15,39,66,0.18)] transition hover:bg-[#173a5e]">
+              <div className="relative w-full sm:w-auto">
+                <button type="button" onClick={() => setEditMenuOpen((open) => !open)} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#0f2742] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(15,39,66,0.18)] transition hover:bg-[#173a5e] sm:w-auto">
                   Edit Agent
                   <MoreHorizontal size={16} />
                 </button>
                 {editMenuOpen ? (
-                  <div className="absolute right-0 top-[calc(100%+8px)] z-20 w-52 rounded-2xl border border-[#dce6f0] bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.15)]">
+                  <div className="absolute left-0 top-[calc(100%+8px)] z-20 w-52 rounded-2xl border border-[#dce6f0] bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.15)] sm:left-auto sm:right-0">
                     <button type="button" className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]" onClick={() => openPlaceholder('profile')}><Edit3 size={15} />Edit profile</button>
                     <button type="button" className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]" onClick={() => openPlaceholder('commission')}><DollarSign size={15} />Commission</button>
                     <button type="button" className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]" onClick={() => openPlaceholder('permissions')}><ShieldCheck size={15} />Permissions</button>
@@ -1437,12 +1437,12 @@ function AgentWorkspace({ agent, canManageSettings }) {
                 ) : null}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(136px,1fr))] gap-3">
               {primaryMetrics.map((metric) => (
-                <div key={metric.label} className="border-l border-[#e4ebf4] pl-4">
+                <div key={metric.label} className="min-w-0 rounded-2xl border border-[#e4ebf4] bg-[#fbfcfe] px-3 py-3">
                   <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#71859c]">{metric.label}</p>
-                  <p className="mt-1 text-[1.2rem] font-semibold tracking-[-0.035em] text-[#10243a]">{metric.value}</p>
-                  <p className="mt-1 text-[0.68rem] text-[#73879f]">{metric.helper}</p>
+                  <p className="mt-1 truncate text-[1.2rem] font-semibold tracking-[-0.035em] text-[#10243a]">{metric.value}</p>
+                  <p className="mt-1 truncate text-[0.68rem] text-[#73879f]">{metric.helper}</p>
                 </div>
               ))}
             </div>
@@ -1450,8 +1450,8 @@ function AgentWorkspace({ agent, canManageSettings }) {
         </div>
       </section>
 
-      <nav className="overflow-x-auto rounded-2xl border border-[#dde6f1] bg-white p-2 shadow-sm">
-        <div className="flex min-w-max items-center gap-1">
+      <nav className="min-w-0 max-w-full overflow-x-auto rounded-2xl border border-[#dde6f1] bg-white p-2 shadow-sm">
+        <div className="flex w-max min-w-full items-center gap-1">
           {AGENT_WORKSPACE_TABS.map((tab) => {
             const Icon = tab.icon
             return (
@@ -1459,7 +1459,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
               key={tab.key}
               type="button"
               onClick={() => setActiveTab(tab.key)}
-              className={`inline-flex min-h-10 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold transition ${
+              className={`inline-flex min-h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3.5 text-sm font-semibold transition ${
                 effectiveActiveTab === tab.key
                   ? 'bg-[#0f2742] text-white shadow-sm'
                   : 'text-[#405870] hover:bg-[#f6f9fc] hover:text-[#10243a]'
@@ -1473,17 +1473,17 @@ function AgentWorkspace({ agent, canManageSettings }) {
       </nav>
 
       {effectiveActiveTab === 'overview' ? (
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.8fr)_minmax(320px,0.8fr)]">
-          <div className="space-y-4 xl:col-span-2">
+        <section className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.38fr)]">
+          <div className="min-w-0 space-y-4">
             <AgentManagementCard title="Agent Summary" actionLabel="This Month">
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
                 {[...primaryMetrics, ...secondaryMetrics].map((metric) => (
                   <AgentMetricCard key={metric.label} label={metric.label} value={metric.value} helper={metric.helper} />
                 ))}
               </div>
             </AgentManagementCard>
 
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-4">
               <AgentManagementCard title="Commission Structure" actionLabel="Manage Commission" onAction={() => openPlaceholder('commission')}>
                 <div className="space-y-1">
                   <DetailInfoRow label="Current Structure" value={formatRoleLabel(agent.role).toLowerCase().includes('principal') ? 'Principal Commission Plan' : 'Standard Agent Plan'} />
@@ -1498,12 +1498,12 @@ function AgentWorkspace({ agent, canManageSettings }) {
               <AgentManagementCard title="Permissions" actionLabel="Manage Permissions" onAction={() => openPlaceholder('permissions')}>
                 <div className="space-y-1">
                   {permissionRows.map(([label, value]) => (
-                    <div key={label} className="flex items-center justify-between gap-3 border-b border-[#edf2f7] py-2.5 last:border-0">
-                      <span className="inline-flex items-center gap-2 text-sm font-semibold text-[#20364d]">
-                        <CheckCircle2 size={15} className="text-[#1d9a56]" />
-                        {label}
+                    <div key={label} className="flex min-w-0 items-center justify-between gap-3 border-b border-[#edf2f7] py-2.5 last:border-0">
+                      <span className="inline-flex min-w-0 items-center gap-2 text-sm font-semibold text-[#20364d]">
+                        <CheckCircle2 size={15} className="shrink-0 text-[#1d9a56]" />
+                        <span className="truncate">{label}</span>
                       </span>
-                      <span className="text-xs font-semibold text-[#647a92]">{value}</span>
+                      <span className="shrink-0 text-xs font-semibold text-[#647a92]">{value}</span>
                     </div>
                   ))}
                 </div>
@@ -1511,7 +1511,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
             </div>
           </div>
 
-          <div className="space-y-4">
+          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-4 2xl:block 2xl:space-y-4">
             <AgentManagementCard title="Contact & Details" actionLabel="View Full Profile" onAction={() => openPlaceholder('profile')}>
               <DetailInfoRow label="Email" value={agent.email || 'Email pending'} />
               <DetailInfoRow label="Phone" value={agent.phone || 'Phone pending'} />
@@ -1528,9 +1528,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
                 <DetailInfoRow key={label} label={label} value={value} />
               ))}
             </AgentManagementCard>
-          </div>
 
-          <div className="space-y-4">
             <AgentManagementCard title="Agent Actions">
               <div className="divide-y divide-[#edf2f7]">
                 {[
@@ -1545,12 +1543,12 @@ function AgentWorkspace({ agent, canManageSettings }) {
                     key={key}
                     type="button"
                     onClick={() => destructive ? setPendingAction(key) : openPlaceholder(key)}
-                    className={`flex w-full items-center gap-3 py-3 text-left text-sm font-semibold transition ${
+                    className={`flex w-full min-w-0 items-center gap-3 py-3 text-left text-sm font-semibold transition ${
                       destructive ? 'text-[#b42318] hover:text-[#8a1c14]' : 'text-[#294159] hover:text-[#0f2742]'
                     }`}
                   >
-                    {createElement(icon, { size: 16 })}
-                    {label}
+                    {createElement(icon, { size: 16, className: 'shrink-0' })}
+                    <span className="truncate">{label}</span>
                   </button>
                 ))}
               </div>
@@ -1585,22 +1583,22 @@ function AgentWorkspace({ agent, canManageSettings }) {
 
       {effectiveActiveTab === 'listings' ? (
         <PrincipalAgentTabShell title="Listings" description="Listings assigned to this agent, with principal-level assignment context." actionLabel="Assign Listing" onAction={() => openPlaceholder('assign-listing')}>
-          <div className="mb-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
-            <input className="h-10 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-2 focus:ring-[#1f4f78]/10" placeholder="Search listings..." />
-            <select className="h-10 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#294159]"><option>All Statuses</option></select>
+          <div className="mb-4 grid min-w-0 gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
+            <input className="h-10 min-w-0 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-2 focus:ring-[#1f4f78]/10" placeholder="Search listings..." />
+            <select className="h-10 min-w-0 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#294159]"><option>All Statuses</option></select>
           </div>
           <div className="space-y-2">
             {allListings.length ? allListings.map((listing) => (
-              <div key={listing.id} className="grid gap-3 rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3 text-sm md:grid-cols-[1.4fr_110px_120px_90px_90px_110px] md:items-center">
+              <div key={listing.id} className="grid min-w-0 gap-2 rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3 text-sm 2xl:grid-cols-[minmax(0,1.4fr)_110px_120px_90px_90px_110px] 2xl:items-center">
                 <div className="min-w-0">
                   <p className="truncate font-semibold text-[#10243a]">{listing.title}</p>
                   <p className="truncate text-xs text-[#6f839a]">{listing.developmentName || listing.suburb || 'Property pending'}</p>
                 </div>
-                <span>{listing.status || 'Active'}</span>
-                <span className="font-semibold">{formatCurrency(listing.price)}</span>
-                <span>{listing.enquiries || 0} enquiries</span>
-                <span>{listing.viewings || 0} viewings</span>
-                <span>{formatDate(listing.listedAt)}</span>
+                <span className="truncate">{listing.status || 'Active'}</span>
+                <span className="truncate font-semibold">{formatCurrency(listing.price)}</span>
+                <span className="truncate">{listing.enquiries || 0} enquiries</span>
+                <span className="truncate">{listing.viewings || 0} viewings</span>
+                <span className="truncate">{formatDate(listing.listedAt)}</span>
               </div>
             )) : <p className="rounded-xl bg-[#f8fbff] px-4 py-3 text-sm text-[#61778f]">No listings assigned to this agent yet.</p>}
           </div>
@@ -1609,15 +1607,15 @@ function AgentWorkspace({ agent, canManageSettings }) {
 
       {effectiveActiveTab === 'transactions' ? (
         <PrincipalAgentTabShell title="Transactions" description="Active and closed transactions assigned to this agent." actionLabel="Assign Deal" onAction={() => openPlaceholder('assign-deal')}>
-          <div className="grid gap-4 xl:grid-cols-3">
+          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] gap-4">
             {[{ title: 'Active Transactions', rows: activeDeals }, { title: 'Closed Transactions', rows: completedDeals }, { title: 'Cancelled / Lost', rows: cancelledDeals }].map((group) => (
-              <article key={group.title} className="rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] p-4">
-                <h3 className="text-sm font-semibold text-[#10243a]">{group.title}</h3>
+              <article key={group.title} className="min-w-0 rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] p-4">
+                <h3 className="truncate text-sm font-semibold text-[#10243a]">{group.title}</h3>
                 <div className="mt-3 space-y-2">
                   {group.rows.length ? group.rows.map((row) => (
-                    <div key={row.transaction.id} className="rounded-xl border border-[#e4ebf5] bg-white px-3 py-2">
-                      <p className="text-sm font-semibold text-[#1f3448]">{row.buyer?.name || row.seller?.name || 'Client pending'}</p>
-                      <p className="mt-1 text-xs text-[#60758d]">{row.development?.name || 'Private'} • {row.unit?.unit_number || '-'} • {formatCurrency(row.transaction?.sales_price || row.transaction?.purchase_price)}</p>
+                    <div key={row.transaction.id} className="min-w-0 rounded-xl border border-[#e4ebf5] bg-white px-3 py-2">
+                      <p className="truncate text-sm font-semibold text-[#1f3448]">{row.buyer?.name || row.seller?.name || 'Client pending'}</p>
+                      <p className="mt-1 truncate text-xs text-[#60758d]">{row.development?.name || 'Private'} • {row.unit?.unit_number || '-'} • {formatCurrency(row.transaction?.sales_price || row.transaction?.purchase_price)}</p>
                     </div>
                   )) : <p className="text-sm text-[#60758d]">No transactions in this segment.</p>}
                 </div>
@@ -1629,7 +1627,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
 
       {effectiveActiveTab === 'pipeline' ? (
         <PrincipalAgentTabShell title="Pipeline" description="Lead and prospect movement for this agent only.">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
             {pipelineStageSummary.map((item) => (
               <AgentMetricCard key={item.status} label={item.status} value={item.count} helper="Pipeline leads" />
             ))}
@@ -1639,7 +1637,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
 
       {effectiveActiveTab === 'performance' ? (
         <PrincipalAgentTabShell title="Performance" description="Operational performance indicators for this agent.">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
             <AgentMetricCard label="Pipeline Value" value={formatCurrency(agent.metrics.pipelineValue)} helper="Open pipeline" />
             <AgentMetricCard label="Registered Value" value={formatCurrency(agent.metrics.totalSalesValue)} helper="Completed transactions" />
             <AgentMetricCard label="Conversion Rate" value={`${agent.deals.length ? Math.round((agent.metrics.registeredDeals / agent.deals.length) * 100) : 0}%`} helper="Registered / all deals" />
@@ -1654,10 +1652,10 @@ function AgentWorkspace({ agent, canManageSettings }) {
 
       {effectiveActiveTab === 'documents' ? (
         <PrincipalAgentTabShell title="Documents" description="Internal and compliance documents connected to this agent." actionLabel="Request Document" onAction={() => openPlaceholder('documents')}>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,220px),1fr))] gap-3">
             {['Agent FICA', 'Employment / Contractor Agreement', 'Mandates', 'Certificates', 'Compliance Documents', 'Internal Documents'].map((name) => (
-              <div key={name} className="rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3">
-                <p className="text-sm font-semibold text-[#20364d]">{name}</p>
+              <div key={name} className="min-w-0 rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3">
+                <p className="truncate text-sm font-semibold text-[#20364d]">{name}</p>
                 <p className="mt-1 text-xs text-[#61778f]">Ready for upload / review</p>
               </div>
             ))}
@@ -1667,12 +1665,12 @@ function AgentWorkspace({ agent, canManageSettings }) {
 
       {effectiveActiveTab === 'reviews' ? (
         <PrincipalAgentTabShell title="Reviews" description="Client and internal review notes for this agent.">
-          <div className="grid gap-3 md:grid-cols-2">
-            <article className="rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] p-4">
+          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] gap-3">
+            <article className="min-w-0 rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] p-4">
               <p className="text-sm font-semibold text-[#20364d]">Client Reviews</p>
               <p className="mt-1 text-sm text-[#61778f]">Review data will appear here once client feedback is connected.</p>
             </article>
-            <article className="rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] p-4">
+            <article className="min-w-0 rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] p-4">
               <p className="text-sm font-semibold text-[#20364d]">Internal Reviews</p>
               <p className="mt-1 text-sm text-[#61778f]">Principal notes and internal quality reviews can be tracked here.</p>
             </article>
@@ -1682,7 +1680,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
 
       {effectiveActiveTab === 'commission' ? (
         <PrincipalAgentTabShell title="Commission" description="Commission plan, split and transaction commission history." actionLabel="Manage Commission" onAction={() => openPlaceholder('commission')}>
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-4">
             <AgentManagementCard title="Current Plan">
               <DetailInfoRow label="Plan" value={formatRoleLabel(agent.role).toLowerCase().includes('principal') ? 'Principal Commission Plan' : 'Standard Agent Plan'} />
               <DetailInfoRow label="Base Commission" value="2.5%" />
@@ -1699,11 +1697,11 @@ function AgentWorkspace({ agent, canManageSettings }) {
 
       {effectiveActiveTab === 'permissions' ? (
         <PrincipalAgentTabShell title="Permissions" description="Role, workspace access and module permissions for this agent." actionLabel="Manage Permissions" onAction={() => openPlaceholder('permissions')}>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-3">
             {permissionRows.map(([label, value]) => (
-              <div key={label} className="flex items-center justify-between gap-3 rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3">
-                <span className="font-semibold text-[#20364d]">{label}</span>
-                <span className="rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-xs font-semibold text-[#405870]">{value}</span>
+              <div key={label} className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3">
+                <span className="min-w-0 truncate font-semibold text-[#20364d]">{label}</span>
+                <span className="shrink-0 rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-xs font-semibold text-[#405870]">{value}</span>
               </div>
             ))}
           </div>
@@ -1712,7 +1710,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
 
       {effectiveActiveTab === 'settings' ? (
         <PrincipalAgentTabShell title="Settings" description="Agent account, role, status and administrative controls.">
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-4">
             <AgentManagementCard title="Account State">
               <DetailInfoRow label="Status" value={getAgentStatusMeta(agent).label} />
               <DetailInfoRow label="Role" value={formatRoleLabel(agent.role)} />
@@ -1722,10 +1720,10 @@ function AgentWorkspace({ agent, canManageSettings }) {
             </AgentManagementCard>
             <AgentManagementCard title="Administrative Controls">
               <div className="grid gap-2">
-                <button type="button" className="rounded-xl border border-[#d9e3ef] bg-white px-4 py-2 text-left text-sm font-semibold text-[#20364d]" onClick={() => openPlaceholder('profile')}>Edit profile and branch</button>
-                <button type="button" className="rounded-xl border border-[#d9e3ef] bg-white px-4 py-2 text-left text-sm font-semibold text-[#20364d]" onClick={() => openPlaceholder('notification-preferences')}>Notification preferences</button>
-                <button type="button" className="rounded-xl border border-[#f2c9c5] bg-[#fff8f7] px-4 py-2 text-left text-sm font-semibold text-[#b42318]" onClick={() => setPendingAction('deactivate')}>Deactivate agent</button>
-                <button type="button" className="rounded-xl border border-[#f2c9c5] bg-[#fff8f7] px-4 py-2 text-left text-sm font-semibold text-[#b42318]" onClick={() => setPendingAction('remove')}>Remove agent</button>
+                <button type="button" className="truncate rounded-xl border border-[#d9e3ef] bg-white px-4 py-2 text-left text-sm font-semibold text-[#20364d]" onClick={() => openPlaceholder('profile')}>Edit profile and branch</button>
+                <button type="button" className="truncate rounded-xl border border-[#d9e3ef] bg-white px-4 py-2 text-left text-sm font-semibold text-[#20364d]" onClick={() => openPlaceholder('notification-preferences')}>Notification preferences</button>
+                <button type="button" className="truncate rounded-xl border border-[#f2c9c5] bg-[#fff8f7] px-4 py-2 text-left text-sm font-semibold text-[#b42318]" onClick={() => setPendingAction('deactivate')}>Deactivate agent</button>
+                <button type="button" className="truncate rounded-xl border border-[#f2c9c5] bg-[#fff8f7] px-4 py-2 text-left text-sm font-semibold text-[#b42318]" onClick={() => setPendingAction('remove')}>Remove agent</button>
               </div>
             </AgentManagementCard>
           </div>
@@ -3051,12 +3049,12 @@ export function AgentWorkspacePage() {
   }
 
   return (
-    <section className="space-y-4">
-      <div className="flex items-center justify-between">
+    <section className="min-w-0 space-y-4 overflow-hidden">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
         <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/agents')}>
           Back to Agents
         </Button>
-        <div className="inline-flex items-center gap-2 text-xs text-[#647a92]">
+        <div className="inline-flex min-w-0 items-center gap-2 truncate text-xs text-[#647a92]">
           <ShieldCheck size={13} />
           {canManageSettings ? 'Principal Workspace' : 'Agent Workspace'}
         </div>

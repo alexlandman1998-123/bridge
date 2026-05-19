@@ -103,11 +103,6 @@ function CommercialSidebar() {
         </div>
       </nav>
 
-      <div className="mt-4 rounded-3xl border border-[#d9e6f2] bg-[#f7fafc] p-4">
-        <p className="text-xs font-semibold uppercase tracking-[0.13em] text-slate-500">Portfolio workspace</p>
-        <p className="mt-1 text-sm font-semibold text-[#102236]">Commercial intelligence</p>
-        <p className="mt-1.5 text-xs leading-5 text-slate-500">Leasing, vacancy and deal oversight for this organisation.</p>
-      </div>
     </aside>
   )
 }

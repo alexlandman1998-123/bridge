@@ -1307,6 +1307,21 @@ function deriveDateTime({ date = '', startTime = '' } = {}) {
   return dateTime.toISOString()
 }
 
+function getAppointmentStartMs(appointment = {}) {
+  const explicit = appointment?.dateTime || appointment?.date_time || appointment?.startsAt || appointment?.starts_at
+  if (explicit) {
+    const parsed = new Date(explicit)
+    if (!Number.isNaN(parsed.getTime())) return parsed.getTime()
+  }
+  const derived = deriveDateTime({
+    date: appointment?.date || appointment?.appointmentDate || appointment?.appointment_date,
+    startTime: appointment?.startTime || appointment?.start_time || appointment?.appointmentTime || appointment?.appointment_time,
+  })
+  if (!derived) return NaN
+  const parsed = new Date(derived)
+  return Number.isNaN(parsed.getTime()) ? NaN : parsed.getTime()
+}
+
 function normalizeParticipantRecord(participant = {}, { appointmentId = '', organisationId = '' } = {}) {
   const participantRole = normalizeLabel(participant?.participantRole || participant?.role || 'Other Contact')
   const normalizedRole = APPOINTMENT_PARTICIPANT_ROLES.includes(participantRole) ? participantRole : 'Other Contact'
@@ -1674,7 +1689,7 @@ function applyAppointmentScope(rows = [], { includeAll = false, agentId = '', ag
     }
 
     if (fromMs || toMs) {
-      const value = new Date(row?.dateTime || deriveDateTime({ date: row?.date, startTime: row?.startTime }) || 0).getTime()
+      const value = getAppointmentStartMs(row)
       if (!Number.isFinite(value)) return false
       if (Number.isFinite(fromMs) && value < fromMs) return false
       if (Number.isFinite(toMs) && value >= toMs) return false
@@ -2238,34 +2253,53 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
 
   const saved = await fetchAppointmentByIdFromSupabase(scopedOrganisationId, appointment.appointmentId)
   const notificationSource = saved || { ...appointment, participants: defaultParticipants }
+  let inviteNotificationResults = []
+  let inviteNotificationError = null
+  let documentNotificationResults = []
+  let reminderResults = []
   if (payload?.sendInviteEmails !== false) {
-    await runAppointmentNotificationTask('appointment_confirmation_required', async () => {
-    await notifyAppointmentParticipants(notificationSource.appointmentId, 'appointment_confirmation_required', {
-      visibility: notificationSource.visibility,
-      metadata: {
-        source: 'createAppointmentAsync',
-        attachCalendarInvite: false,
-        notifyCreatorOnRsvp: payload?.notifyCreatorOnRsvp !== false,
-      },
-    })
-    if (normalizeLowerText(notificationSource.status).includes('confirm')) {
-      await scheduleAppointmentReminders(notificationSource.appointmentId)
-    }
-    if (Array.isArray(notificationSource.requiredDocuments) && notificationSource.requiredDocuments.length > 0) {
-      await notifyAppointmentParticipants(notificationSource.appointmentId, 'appointment_documents_required', {
+    try {
+      inviteNotificationResults = await notifyAppointmentParticipants(notificationSource.appointmentId, 'appointment_confirmation_required', {
         visibility: notificationSource.visibility,
         metadata: {
           source: 'createAppointmentAsync',
-          requiredDocuments: notificationSource.requiredDocuments,
+          attachCalendarInvite: payload?.attachCalendarInvite !== false,
+          notifyCreatorOnRsvp: payload?.notifyCreatorOnRsvp !== false,
+          listingId: normalizeText(payload?.listingId || notificationSource?.listingId) || '',
+          listingLabel: normalizeText(payload?.listingLabel || payload?.listingReference || payload?.listingReferenceSnapshot) || '',
         },
       })
+      if (['requested', 'pending', 'confirmed', 'accepted'].includes(normalizeLowerText(notificationSource.status))) {
+        reminderResults = await scheduleAppointmentReminders(notificationSource.appointmentId)
+      }
+      if (Array.isArray(notificationSource.requiredDocuments) && notificationSource.requiredDocuments.length > 0) {
+        documentNotificationResults = await notifyAppointmentParticipants(notificationSource.appointmentId, 'appointment_documents_required', {
+          visibility: notificationSource.visibility,
+          metadata: {
+            source: 'createAppointmentAsync',
+            requiredDocuments: notificationSource.requiredDocuments,
+          },
+        })
+      }
+    } catch (notificationError) {
+      inviteNotificationError = notificationError
+      console.warn('[appointments][notifications] appointment_confirmation_required failed', notificationError)
     }
-    })
   }
   emitAgencyCrmUpdated()
   return {
     ...notificationSource,
     schedulingIntegrity,
+    notificationResults: inviteNotificationResults,
+    notificationError: inviteNotificationError
+      ? {
+          message: normalizeText(inviteNotificationError?.message || inviteNotificationError) || 'Appointment request email failed.',
+          code: normalizeText(inviteNotificationError?.code),
+          status: normalizeText(inviteNotificationError?.status || inviteNotificationError?.statusCode),
+        }
+      : null,
+    documentNotificationResults,
+    reminderResults,
   }
 }
 
@@ -2438,6 +2472,8 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
       visibility: updatedRecord.visibility,
       metadata: {
         source: 'updateAppointmentAsync',
+        listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
+        listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
       },
     })
     if (currentStatus.includes('cancel') || currentStatus.includes('declin')) {
@@ -2446,6 +2482,8 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
         visibility: updatedRecord.visibility,
         metadata: {
           source: 'updateAppointmentAsync',
+          listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
+          listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
         },
       })
       return
@@ -2456,6 +2494,8 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
         visibility: updatedRecord.visibility,
         metadata: {
           source: 'updateAppointmentAsync',
+          listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
+          listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
         },
       })
       return
@@ -2465,6 +2505,8 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
         visibility: updatedRecord.visibility,
         metadata: {
           source: 'updateAppointmentAsync',
+          listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
+          listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
         },
       })
       return
@@ -2474,7 +2516,9 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
         visibility: updatedRecord.visibility,
         metadata: {
           source: 'updateAppointmentAsync',
-          attachCalendarInvite: false,
+          attachCalendarInvite: updater?.attachCalendarInvite !== false,
+          listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
+          listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
         },
       })
       return
@@ -2484,6 +2528,8 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
         visibility: updatedRecord.visibility,
         metadata: {
           source: 'updateAppointmentAsync',
+          listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
+          listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
         },
       })
       await scheduleAppointmentReminders(updatedRecord.appointmentId)
@@ -2976,19 +3022,19 @@ export function buildAppointmentsDashboardSummary(rows = [], { now = new Date() 
   const weekStart = weekStartDate.getTime()
   const weekEnd = weekEndDate.getTime()
 
-  const pending = sortedRows.filter((row) => ['requested', 'alternative_proposed'].includes(row.status))
-  const reschedule = sortedRows.filter((row) => row.status === 'alternative_requested')
+  const pending = sortedRows.filter((row) => ['requested', 'pending', 'alternative_proposed'].includes(row.status))
+  const reschedule = sortedRows.filter((row) => ['alternative_requested', 'needs_reschedule'].includes(row.status))
   const upcoming = sortedRows.filter((row) => {
-    if (!['requested', 'accepted', 'alternative_requested', 'alternative_proposed', 'confirmed'].includes(row?.status)) return false
-    const value = new Date(row?.dateTime || 0).getTime()
+    if (!['requested', 'pending', 'accepted', 'alternative_requested', 'needs_reschedule', 'alternative_proposed', 'confirmed'].includes(row?.status)) return false
+    const value = getAppointmentStartMs(row)
     return Number.isFinite(value) && value >= nowDate.getTime()
   })
   const today = sortedRows.filter((row) => {
-    const value = new Date(row?.dateTime || 0).getTime()
+    const value = getAppointmentStartMs(row)
     return Number.isFinite(value) && value >= todayStart && value < todayEnd
   })
   const thisWeek = sortedRows.filter((row) => {
-    const value = new Date(row?.dateTime || 0).getTime()
+    const value = getAppointmentStartMs(row)
     return Number.isFinite(value) && value >= weekStart && value < weekEnd
   })
 

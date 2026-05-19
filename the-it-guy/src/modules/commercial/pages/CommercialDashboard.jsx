@@ -176,11 +176,7 @@ function relativeTime(value) {
 
 function DashboardHeader({ organisationName }) {
   return (
-    <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
-      <div className="min-w-0 lg:max-w-[430px]">
-        <h1 className="text-3xl font-semibold tracking-[-0.045em] text-[#102236]">Commercial Dashboard</h1>
-        <p className="mt-2 text-sm text-slate-500">Portfolio oversight across vacancies, requirements, deals and lease risk.</p>
-      </div>
+    <header className="flex justify-end">
       <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap lg:justify-end">
         <div className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-[#102236] shadow-sm">
           <Users size={16} className="text-slate-500" />

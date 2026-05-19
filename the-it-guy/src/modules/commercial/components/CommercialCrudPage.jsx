@@ -1,6 +1,5 @@
-import { Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import CommercialFilterBar from './CommercialFilterBar'
 import CommercialFormModal from './CommercialFormModal'
 import CommercialRecordDrawer from './CommercialRecordDrawer'
@@ -39,6 +38,8 @@ function recordMatchesFilters(record, filters) {
 }
 
 function CommercialCrudPage({ config }) {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [records, setRecords] = useState([])
   const [lookups, setLookups] = useState({})
   const [organisationId, setOrganisationId] = useState('')
@@ -73,6 +74,12 @@ function CommercialCrudPage({ config }) {
   useEffect(() => {
     void loadData()
   }, [loadData])
+
+  useEffect(() => {
+    if (!location.state?.openCommercialCreate) return
+    setModalState({ open: true, mode: 'create', record: null })
+    navigate(location.pathname, { replace: true, state: {} })
+  }, [location.pathname, location.state, navigate])
 
   const lookupOptions = useMemo(() => toLookupOptions(lookups), [lookups])
   const columns = useMemo(
@@ -130,6 +137,7 @@ function CommercialCrudPage({ config }) {
           <h1 className="text-2xl font-semibold tracking-[-0.045em] text-[#102236]">{config.title}</h1>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">{config.description}</p>
         </div>
+        {config.secondaryActions?.length ? (
         <div className="flex flex-wrap gap-2">
           {(config.secondaryActions || []).map((action) => (
             <Link
@@ -140,15 +148,8 @@ function CommercialCrudPage({ config }) {
               {action.label}
             </Link>
           ))}
-          <button
-            type="button"
-            onClick={() => setModalState({ open: true, mode: 'create', record: null })}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-[#102b46] px-4 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(16,43,70,0.22)] transition hover:bg-[#163a5b]"
-          >
-            <Plus size={17} />
-            {config.createLabel}
-          </button>
         </div>
+        ) : null}
       </section>
 
       <CommercialFilterBar
