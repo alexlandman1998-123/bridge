@@ -466,17 +466,10 @@ function AttorneyMattersPage() {
     )
   }
 
-  const copy = MATTER_VIEW_COPY[viewKey]
-
   return (
     <main className="w-full max-w-none px-3 py-4 sm:px-4 lg:px-5">
       <div className="mx-auto w-full max-w-[1800px] space-y-5">
-        <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Attorney Matter Workspace</p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{copy.title}</h1>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">{copy.description}</p>
-          </div>
+        <section className="flex justify-end">
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"

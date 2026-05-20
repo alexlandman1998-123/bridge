@@ -87,14 +87,9 @@ function StatePanel({ children, tone = 'neutral' }) {
   )
 }
 
-function PageHeader({ firmName }) {
+function PageHeader() {
   return (
-    <section className="flex flex-wrap items-end justify-between gap-3">
-      <div className="min-w-0">
-        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{firmName || 'Attorney Workspace'}</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-normal text-slate-950 sm:text-3xl">Attorney Dashboard</h1>
-        <p className="mt-1 text-sm text-slate-600">Overview of your operational performance and matters.</p>
-      </div>
+    <section className="flex justify-end">
       <div className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm">
         <CalendarClock size={15} className="text-blue-700" />
         {new Date().toLocaleDateString('en-ZA', { day: '2-digit', month: 'long', year: 'numeric' })}
@@ -119,14 +114,11 @@ function SectionHeading({ title, actionHref, actionLabel }) {
 function ExecutiveSnapshot({ stats = {}, alerts = [] }) {
   const atRisk = Number(stats.delayedMatters || 0)
   const guaranteesPending = alerts.find((item) => item.key === 'guarantees')?.count || 0
-  const activeMatters = Number(stats.activeMatters || 0)
-  const slaCompliance = activeMatters ? Math.max(0, Math.round(((activeMatters - atRisk) / activeMatters) * 100)) : 0
   const cards = [
-    { key: 'active', label: 'Active Matters', value: activeMatters, helper: 'Firm-scoped active matters', icon: UsersRound, tone: 'blue' },
+    { key: 'active', label: 'Active Matters', value: stats.activeMatters, helper: 'Firm-scoped active matters', icon: UsersRound, tone: 'blue' },
     { key: 'registered', label: 'Registrations This Month', value: stats.registeredThisMonth, helper: 'Confirmed this month', icon: FileCheck2, tone: 'emerald' },
     { key: 'risk', label: 'Matters At Risk', value: atRisk, helper: atRisk ? 'Needs management review' : 'No delayed matters', icon: AlertTriangle, tone: 'red' },
     { key: 'guarantees', label: 'Guarantees Pending', value: guaranteesPending, helper: 'Awaiting guarantee movement', icon: ShieldAlert, tone: 'amber' },
-    { key: 'sla', label: 'SLA Compliance', value: `${slaCompliance}%`, helper: activeMatters ? 'Based on delayed matter ratio' : 'No active sample yet', icon: CheckCircle2, tone: 'violet' },
   ]
   const toneMap = {
     blue: 'bg-blue-50 text-blue-700',
@@ -139,7 +131,7 @@ function ExecutiveSnapshot({ stats = {}, alerts = [] }) {
   return (
     <section className="grid gap-3">
       <SectionHeading title="Executive Snapshot" />
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => {
           const Icon = card.icon
           return (
@@ -521,7 +513,7 @@ function AttorneyDashboardPage() {
     <section className={shellClass}>
       {error ? <div className={`${cardClass} p-4`}><p className="text-sm text-red-700">{error}</p></div> : null}
 
-      <PageHeader firmName={dashboard.firm?.name} />
+      <PageHeader />
       <ExecutiveSnapshot stats={dashboard.matterStats} alerts={dashboard.criticalAlerts} />
       <OperationalPipelines lanes={lanes} />
       <CriticalAlerts alerts={dashboard.criticalAlerts} />

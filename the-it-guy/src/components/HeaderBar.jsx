@@ -196,21 +196,21 @@ function HeaderBar({ onLogout, user }) {
   const isPremiumAttorneyOperations = role === 'attorney' && location.pathname === '/attorney/operations'
   const isPremiumWorkspace = isPremiumAgentWorkspace || isPremiumAttorneyOperations
   const premiumHeaderTitle = isPremiumAttorneyOperations
-    ? 'Conveyancing Operations'
+    ? ''
     : location.pathname.startsWith('/pipeline/leads')
     ? 'Leads'
     : location.pathname.startsWith('/agency/branches')
       ? 'Branch Workspace'
       : 'Principal Overview'
   const premiumHeaderEyebrow = isPremiumAttorneyOperations
-    ? 'Attorney'
+    ? ''
     : location.pathname.startsWith('/pipeline/leads')
     ? 'Pipeline'
     : location.pathname.startsWith('/agency/branches')
       ? 'Agency'
       : 'Dashboard'
   const premiumHeaderContext = isPremiumAttorneyOperations
-    ? 'Legal operations command center'
+    ? ''
     : location.pathname.startsWith('/pipeline/leads')
     ? 'Pipeline workspace'
     : location.pathname.startsWith('/agency/branches')
@@ -218,7 +218,7 @@ function HeaderBar({ onLogout, user }) {
       : agencyWorkflowMode === 'principal'
         ? 'Agency command centre'
         : 'Agent workspace'
-  const hidePremiumHeaderTitle = location.pathname.startsWith('/pipeline/leads')
+  const hidePremiumHeaderTitle = location.pathname.startsWith('/pipeline/leads') || isPremiumAttorneyOperations
   const developerHideTitle =
     role === 'developer' &&
     (
@@ -240,6 +240,7 @@ function HeaderBar({ onLogout, user }) {
     (
       location.pathname === '/dashboard' ||
       location.pathname === '/' ||
+      location.pathname.startsWith('/attorney/') ||
       location.pathname === '/transactions' ||
       location.pathname === '/developments' ||
       location.pathname === '/financials' ||

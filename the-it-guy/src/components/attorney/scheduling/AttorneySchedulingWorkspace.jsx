@@ -495,11 +495,7 @@ function SchedulingHeader({ firm, currentUser }) {
     .toUpperCase() || 'IN'
 
   return (
-    <section className="scheduling-header">
-      <div>
-        <h1>Calendar &amp; Scheduling</h1>
-        <p>Manage appointments, signings, and operational schedules.</p>
-      </div>
+    <section className="scheduling-header" style={{ justifyContent: 'flex-end' }}>
       <div className="scheduling-header-actions">
         <Link to="/new-transaction" className="scheduling-primary-action">
           <Plus size={16} />

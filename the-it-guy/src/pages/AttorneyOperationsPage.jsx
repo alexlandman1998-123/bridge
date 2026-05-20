@@ -125,22 +125,10 @@ function LoadingState({ copy = 'Loading conveyancing operations...' }) {
   )
 }
 
-function PageHeader({ firm, currentUser, metrics, lastUpdated }) {
+function PageHeader({ currentUser, metrics, lastUpdated }) {
   return (
     <header className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#12314f] text-xs font-bold text-white">
-              {initials(firm?.name || 'Firm')}
-            </span>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Workflow Board</p>
-          </div>
-          <h1 className="mt-2 text-xl font-semibold tracking-tight text-slate-950 sm:text-2xl">Conveyancing Operations</h1>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
-            Live operational flow, interventions, capacity, and matter movement for {firm?.name || 'your firm'}.
-          </p>
-        </div>
+      <div className="flex justify-end">
         <div className="flex flex-col gap-3 lg:items-end">
           <div className="flex flex-wrap gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
