@@ -312,7 +312,8 @@ function CompletionBadge({ complete = false, label = '' }) {
   )
 }
 
-function HubCard({ icon: Icon = Info, title, copy = '', complete = null, children, className = '' }) {
+function HubCard({ icon = Info, title, copy = '', complete = null, children, className = '' }) {
+  const Icon = icon
   return (
     <section className={`rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)] ${className}`}>
       <div className="flex items-start justify-between gap-3">
@@ -1150,6 +1151,131 @@ function AgentListingDetail() {
       .sort((left, right) => new Date(right.timestamp || 0) - new Date(left.timestamp || 0))
       .slice(0, 5)
   }, [listingRecord?.createdAt, listingRecord?.listingTitle, listingRecord?.requiredDocuments, offerRows, viewings])
+
+  const mandateWorkspace = useMemo(() => {
+    const mandate = listingRecord?.mandate || {}
+    const status = String(
+      listingRecord?.mandateStatus ||
+        mandate?.status ||
+        (marketingDraft.mandateSignedDate || mandate?.signedAt || mandate?.signed ? 'signed' : '') ||
+        (mandate?.sentAt ? 'sent' : '') ||
+        'draft',
+    ).trim().toLowerCase()
+    const signedDate = firstDraftValue(marketingDraft.mandateSignedDate, mandate?.signedAt, listingRecord?.mandateSignedDate)
+    const expiryDate = firstDraftValue(marketingDraft.expiryDate, listingRecord?.mandateEndDate, mandate?.endDate)
+    const expiryTime = expiryDate ? new Date(expiryDate).getTime() : NaN
+    const daysUntilExpiry = Number.isFinite(expiryTime)
+      ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24))
+      : null
+    const signedUrl = String(
+      mandate?.signedUrl ||
+        mandate?.signedFileUrl ||
+        mandate?.signedDocumentUrl ||
+        listingRecord?.signedMandateUrl ||
+        listingRecord?.mandateSignedUrl ||
+        '',
+    ).trim()
+    const viewUrl = String(
+      mandate?.url ||
+        mandate?.documentUrl ||
+        listingRecord?.mandateUrl ||
+        listingRecord?.mandateSigningLink ||
+        (listingRecord?.sellerOnboarding?.link ? `${listingRecord.sellerOnboarding.link}/mandate` : '') ||
+        '',
+    ).trim()
+    return {
+      status,
+      label: formatStatusLabel(status),
+      signedDate,
+      expiryDate,
+      daysUntilExpiry,
+      lastUpdated: firstDraftValue(mandate?.updatedAt, listingRecord?.updatedAt, listingRecord?.createdAt),
+      signedUrl,
+      viewUrl,
+      isSigned: ['signed', 'completed', 'uploaded_signed', 'mandate_signed'].includes(status) || Boolean(signedDate || signedUrl),
+      isExpired: daysUntilExpiry !== null && daysUntilExpiry < 0,
+    }
+  }, [listingRecord, marketingDraft.expiryDate, marketingDraft.mandateSignedDate])
+
+  const sellerDocumentTrackerRows = useMemo(() => {
+    const sourceDocs = Array.isArray(sellerDocuments) ? sellerDocuments : []
+    const suggested = [
+      { key: 'id_document', label: 'ID Document', match: /id|identity|seller/i },
+      { key: 'proof_of_address', label: 'Proof of Address', match: /address|residence/i },
+      { key: 'title_deed', label: 'Title Deed / Reference', match: /title|deed/i },
+      { key: 'rates_account', label: 'Rates Account', match: /rates/i },
+      { key: 'fica_documents', label: 'FICA Documents', match: /fica/i },
+      { key: 'mandate_signed', label: 'Mandate Signed', match: /mandate/i },
+    ]
+    return suggested.map((item) => {
+      const doc = sourceDocs.find((row) => item.match.test(`${row?.key || ''} ${row?.requirement_key || ''} ${row?.label || ''} ${row?.requirement_name || ''}`))
+      const status = String(doc?.status || '').trim().toLowerCase()
+      const hasUpload = Boolean(doc?.fileName || doc?.file_name || doc?.uploadedAt || doc?.uploaded_at || doc?.url || doc?.fileUrl)
+      return {
+        ...item,
+        required: doc?.is_required !== false,
+        uploaded: hasUpload,
+        status: doc ? (hasUpload && !status ? 'uploaded' : status || 'missing') : 'missing',
+        uploadedOn: doc?.uploadedAt || doc?.uploaded_at || doc?.createdAt || '',
+        fileName: doc?.fileName || doc?.file_name || '',
+        url: doc?.url || doc?.fileUrl || doc?.signedUrl || '',
+      }
+    })
+  }, [sellerDocuments])
+
+  const sellerReadinessChecklist = useMemo(() => {
+    const documentsReady = sellerDocumentTrackerRows.filter((doc) => ['uploaded', 'complete', 'approved'].includes(String(doc.status || '').toLowerCase())).length >= 3
+    return [
+      { key: 'seller', label: 'Seller onboarded', complete: onboardingStatusLabel === 'Completed' || String(listingRecord?.sellerOnboarding?.status || '').toLowerCase().includes('complete') },
+      { key: 'mandate', label: 'Mandate signed', complete: mandateWorkspace.isSigned },
+      { key: 'documents', label: 'Documents uploaded', complete: documentsReady },
+      { key: 'photos', label: 'Photos uploaded', complete: marketingDraft.galleryImages.length > 0 },
+      { key: 'description', label: 'Description completed', complete: Boolean(marketingDraft.description.trim()) },
+      { key: 'price', label: 'Price approved', complete: Boolean(Number(marketingDraft.price || listingRecord?.askingPrice || 0)) },
+      { key: 'published', label: 'Listing published', complete: ['active', 'published'].includes(String(marketingDraft.listingStatus || listingRecord?.status || '').toLowerCase()) || marketingDraft.bridgeListingStatus === 'published' },
+    ]
+  }, [listingRecord, mandateWorkspace.isSigned, marketingDraft, onboardingStatusLabel, sellerDocumentTrackerRows])
+
+  const sellerReadinessPercent = useMemo(() => {
+    if (!sellerReadinessChecklist.length) return 0
+    return Math.round((sellerReadinessChecklist.filter((item) => item.complete).length / sellerReadinessChecklist.length) * 100)
+  }, [sellerReadinessChecklist])
+
+  const sellerAttentionItems = useMemo(() => {
+    const missingDocs = sellerDocumentTrackerRows
+      .filter((doc) => !['uploaded', 'complete', 'approved'].includes(String(doc.status || '').toLowerCase()))
+      .map((doc) => `${doc.label} missing`)
+    const blockers = Array.isArray(sellerReadinessSummary?.blockedBy) ? sellerReadinessSummary.blockedBy : []
+    const commission = listingRecord?.commission || {}
+    return [
+      ...blockers,
+      ...missingDocs,
+      mandateWorkspace.isSigned ? '' : 'Mandate unsigned',
+      (commission.commission_percentage || commission.commission_amount) ? '' : 'Commission incomplete',
+      ['active', 'published'].includes(String(marketingDraft.listingStatus || listingRecord?.status || '').toLowerCase()) ? '' : 'Listing not published',
+    ].filter(Boolean).slice(0, 7)
+  }, [listingRecord?.commission, listingRecord?.status, mandateWorkspace.isSigned, marketingDraft.listingStatus, sellerDocumentTrackerRows, sellerReadinessSummary?.blockedBy])
+
+  const commissionWorkspace = useMemo(() => {
+    const commission = listingRecord?.commission || {}
+    const percentage = Number(commission?.commission_percentage || commission?.percentage || 0) || 0
+    const amount = Number(commission?.commission_amount || 0) || 0
+    const price = Number(marketingDraft.price || listingRecord?.askingPrice || 0) || 0
+    const estimatedExVat = amount || (price && percentage ? (price * percentage) / 100 : 0)
+    const vatIncluded = String(commission?.vat || commission?.vat_handling || '').toLowerCase().includes('incl')
+    const estimatedInclVat = vatIncluded ? estimatedExVat : estimatedExVat ? estimatedExVat * 1.15 : 0
+    return {
+      type: listingRecord?.mandateType || listingRecord?.mandate?.type || 'sole',
+      percentage,
+      amount,
+      estimatedInclVat,
+      vatIncluded,
+      split: commission?.commission_split || commission?.split || 'Not captured',
+      coAgentSplit: commission?.co_agent_split || commission?.coAgentSplit || 'Not captured',
+      referralSplit: commission?.referral_split || commission?.referralSplit || 'Not captured',
+      notes: commission?.commission_notes || commission?.notes || '',
+    }
+  }, [listingRecord, marketingDraft.price])
 
   const coverImage = useMemo(() => {
     return marketingDraft.galleryImages.find((image) => String(image?.id) === String(marketingDraft.coverImageId)) || marketingDraft.galleryImages[0] || null
@@ -2790,51 +2916,313 @@ function AgentListingDetail() {
       ) : null}
 
       {activeTab === 'seller' ? (
-        <section className="grid gap-5 xl:grid-cols-2">
-          <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-            <h3 className="text-[1.05rem] font-semibold text-[#142132]">Seller Details</h3>
-            <div className="mt-4 space-y-3">
-              <div className="flex items-center gap-3 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                <div className="rounded-full bg-[#eef4fb] p-2 text-[#1f4f78]"><UserRound size={18} /></div>
-                <div>
-                  <p className="text-sm font-semibold text-[#22374d]">{listingRecord?.seller?.name || 'Seller pending'}</p>
-                  <p className="text-sm text-[#607387]">{listingRecord?.seller?.email || 'Email pending'}</p>
+        <section className="space-y-5">
+          <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.06)]">
+            <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+              <div className="min-w-0">
+                <button
+                  type="button"
+                  onClick={() => navigate('/listings')}
+                  className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#5f7894] hover:text-[#1f4f78]"
+                >
+                  <ArrowLeft size={13} />
+                  Back to Listings
+                </button>
+                <p className="mt-4 text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Mandate Workspace</p>
+                <h3 className="mt-1 text-2xl font-semibold tracking-[-0.035em] text-[#142132]">{listingRecord.listingTitle}</h3>
+                <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
+                  {[
+                    ['Listing ID', marketingDraft.listingCode || listingRecord.listingReference || listingRecord.id],
+                    ['Property Type', marketingDraft.propertyType || listingRecord.propertyType || 'Pending'],
+                    ['Pipeline Value', formatCurrency(marketingDraft.price || listingRecord.askingPrice)],
+                    ['Assigned Agent', listingRecord.assignedAgentName || listingRecord.assignedAgent || listingRecord.assignedAgentEmail || 'Unassigned'],
+                    ['Location', [marketingDraft.suburb, marketingDraft.city].filter(Boolean).join(', ') || 'Location pending'],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-[14px] border border-[#e5edf6] bg-[#fbfdff] px-3 py-2.5">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">{label}</p>
+                      <p className="mt-1 truncate font-semibold text-[#243d56]" title={String(value)}>{value}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <MetricCard label="Phone" value={listingRecord?.seller?.phone || 'Pending'} meta="Primary seller contact" />
-                <MetricCard label="Onboarding" value={onboardingStatusLabel} meta={listingRecord?.sellerOnboarding?.link ? 'Seller link is active' : 'Onboarding link unavailable'} />
-              </div>
-              {listingRecord?.sellerOnboarding?.link ? (
-                <a href={listingRecord.sellerOnboarding.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f4f78]">
-                  <ExternalLink size={14} />
-                  Open Seller Onboarding
-                </a>
-              ) : null}
-              {sellerReadinessSummary ? (
-                <article className="rounded-[16px] border border-[#dce6f2] bg-white p-3">
-                  <p className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Seller Requirement Readiness</p>
-                  <p className="mt-1 text-sm font-semibold text-[#22374d]">
-                    {sellerReadinessSummary.requirementCompletionPct}% complete • {sellerReadinessSummary.missingRequirementsCount} outstanding
-                  </p>
-                  <p className="mt-1 text-xs text-[#607387]">
-                    {String(sellerReadinessSummary.readinessState || 'blocked').replace(/_/g, ' ')}
-                  </p>
-                </article>
-              ) : null}
+
+              <aside className="w-full rounded-[20px] border border-[#dfe8f2] bg-[#f8fbff] p-4 xl:max-w-[360px]">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Mandate Status</p>
+                    <span className={`mt-2 inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${
+                      mandateWorkspace.isSigned
+                        ? 'border-[#cde8d6] bg-[#eef9f2] text-[#237345]'
+                        : mandateWorkspace.isExpired
+                          ? 'border-[#f2c9c3] bg-[#fff2f0] text-[#a33a2d]'
+                          : 'border-[#f4d7ab] bg-[#fff7ea] text-[#9a5b13]'
+                    }`}>
+                      {mandateWorkspace.label}
+                    </span>
+                  </div>
+                  <FileText className="h-5 w-5 text-[#41627f]" />
+                </div>
+                <div className="mt-4 grid gap-2 text-xs">
+                  <SnapshotRow label="Signed Date" value={formatDate(mandateWorkspace.signedDate)} />
+                  <SnapshotRow label="Expiry Date" value={formatDate(mandateWorkspace.expiryDate)} />
+                  <SnapshotRow
+                    label="Days Until Expiry"
+                    value={
+                      mandateWorkspace.daysUntilExpiry === null
+                        ? 'Not captured'
+                        : mandateWorkspace.daysUntilExpiry < 0
+                          ? `${Math.abs(mandateWorkspace.daysUntilExpiry)} days expired`
+                          : `${mandateWorkspace.daysUntilExpiry} days`
+                    }
+                  />
+                  <SnapshotRow label="Last Updated" value={formatDate(mandateWorkspace.lastUpdated)} />
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {mandateWorkspace.signedUrl ? (
+                    <a href={mandateWorkspace.signedUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center justify-center rounded-xl bg-[#123955] px-3 text-xs font-semibold text-white shadow-[0_10px_22px_rgba(18,57,85,0.18)]">
+                      Download Signed Mandate
+                    </a>
+                  ) : (
+                    <Button size="sm" disabled title="No signed mandate file is linked yet.">Download Signed Mandate</Button>
+                  )}
+                  {mandateWorkspace.viewUrl ? (
+                    <a href={mandateWorkspace.viewUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center justify-center rounded-xl border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#2f4862]">
+                      View Mandate
+                    </a>
+                  ) : (
+                    <Button size="sm" variant="secondary" disabled>View Mandate</Button>
+                  )}
+                  <Button size="sm" variant="secondary" disabled title="Resend is available from the mandate generation workflow.">Resend to Seller</Button>
+                  <Button size="sm" variant="secondary" disabled title="Regeneration is available from the mandate generation workflow.">Regenerate Mandate</Button>
+                  <Button size="sm" variant="secondary" disabled>More actions</Button>
+                </div>
+              </aside>
             </div>
           </section>
 
-          <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-            <h3 className="text-[1.05rem] font-semibold text-[#142132]">Mandate & Commission</h3>
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <MetricCard label="Mandate Type" value={formatStatusLabel(listingRecord?.mandateType || 'sole')} meta={`${formatDate(listingRecord?.mandateStartDate)} → ${formatDate(listingRecord?.mandateEndDate)}`} />
-              <MetricCard label="Commission" value={listingRecord?.commission?.commission_type === 'fixed' ? formatCurrency(listingRecord?.commission?.commission_amount) : `${Number(listingRecord?.commission?.commission_percentage || 0)}%`} meta="Current agreement structure" />
+          <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="space-y-5">
+              <section className="grid gap-5 lg:grid-cols-2">
+                <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+                  <div className="flex items-start gap-4">
+                    <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#eaf3fb] text-[#1f4f78]">
+                      <UserRound size={20} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="text-lg font-semibold text-[#142132]">{listingRecord?.seller?.name || 'Seller pending'}</h4>
+                        <span className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-[0.7rem] font-semibold text-[#35546c]">Primary Seller</span>
+                      </div>
+                      <p className="mt-1 text-sm text-[#607387]">{listingRecord?.seller?.email || 'Email pending'} · {listingRecord?.seller?.phone || 'Phone pending'}</p>
+                    </div>
+                  </div>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                    {[
+                      ['Seller Type', listingRecord?.seller?.sellerType || listingRecord?.seller?.type || 'Individual'],
+                      ['ID / Registration', listingRecord?.seller?.idNumber || listingRecord?.seller?.companyNumber || listingRecord?.seller?.trustNumber || 'Not captured'],
+                      ['FICA Status', sellerDocumentTrackerRows.some((doc) => doc.key === 'fica_documents' && ['uploaded', 'complete', 'approved'].includes(doc.status)) ? 'In progress' : 'Missing'],
+                      ['Address / Suburb', listingRecord?.seller?.address || marketingDraft.suburb || 'Not captured'],
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-[14px] border border-[#e5edf6] bg-[#fbfdff] px-3 py-2.5">
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">{label}</p>
+                        <p className="mt-1 text-sm font-semibold text-[#243d56]">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+
+                <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+                  <h4 className="text-lg font-semibold text-[#142132]">Seller Onboarding Timeline</h4>
+                  <div className="mt-5 space-y-3">
+                    {[
+                      ['Contacted', true, listingRecord.createdAt],
+                      ['Appointment', viewings.length > 0, viewings[0]?.proposed_date || viewings[0]?.created_at],
+                      ['Valuation', Boolean(marketingDraft.price || listingRecord.askingPrice), listingRecord.updatedAt],
+                      ['Mandate Sent', ['sent', 'sent_for_signature', 'viewed', 'signed', 'completed'].includes(mandateWorkspace.status), listingRecord?.mandate?.sentAt],
+                      ['Mandate Signed', mandateWorkspace.isSigned, mandateWorkspace.signedDate],
+                      ['Listing Ready', sellerReadinessPercent >= 85, marketingDraft.listingDate],
+                    ].map(([label, done, date], index) => (
+                      <div key={label} className="flex items-center gap-3">
+                        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border text-xs font-semibold ${
+                          done ? 'border-[#cde8d6] bg-[#eef9f2] text-[#237345]' : 'border-[#dbe6f2] bg-[#f7fbff] text-[#7b8ca2]'
+                        }`}>
+                          {done ? <CheckCircle2 size={15} /> : index + 1}
+                        </span>
+                        <div className="min-w-0 flex-1 border-b border-[#edf2f7] py-2">
+                          <p className="text-sm font-semibold text-[#243d56]">{label}</p>
+                          <p className="text-xs text-[#74879d]">{done ? formatDate(date) : 'Pending'}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-4 rounded-[14px] bg-[#f7fbff] px-3 py-2 text-sm text-[#607387]">
+                    {onboardingStatusLabel === 'Completed' ? 'Seller onboarding completed.' : 'Seller onboarding still has outstanding readiness items.'}
+                  </p>
+                </article>
+              </section>
+
+              <section className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
+                <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-lg font-semibold text-[#142132]">Seller Document Tracker</h4>
+                      <p className="mt-1 text-sm text-[#607387]">Readiness state from existing seller document requirements.</p>
+                    </div>
+                    <Button size="sm" variant="secondary" onClick={() => setActiveTab('documents')}>
+                      <Upload size={14} />
+                      Upload Documents
+                    </Button>
+                  </div>
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="w-full min-w-[720px] text-left text-sm">
+                      <thead className="text-[0.68rem] uppercase tracking-[0.1em] text-[#7b8ca2]">
+                        <tr className="border-b border-[#e5edf6]">
+                          <th className="py-2 pr-3">Document</th>
+                          <th className="py-2 pr-3">Required</th>
+                          <th className="py-2 pr-3">Uploaded by Seller</th>
+                          <th className="py-2 pr-3">Status</th>
+                          <th className="py-2 pr-3">Uploaded On</th>
+                          <th className="py-2 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#edf2f7]">
+                        {sellerDocumentTrackerRows.map((doc) => (
+                          <tr key={doc.key} className="text-[#425970]">
+                            <td className="py-3 pr-3 font-semibold text-[#243d56]">{doc.label}</td>
+                            <td className="py-3 pr-3">{doc.required ? 'Yes' : 'No'}</td>
+                            <td className="py-3 pr-3">{doc.uploaded ? 'Yes' : 'No'}</td>
+                            <td className="py-3 pr-3">
+                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusClass(doc.status)}`}>
+                                {formatStatusLabel(doc.status)}
+                              </span>
+                            </td>
+                            <td className="py-3 pr-3">{doc.uploadedOn ? formatDate(doc.uploadedOn) : '—'}</td>
+                            <td className="py-3 text-right">
+                              {doc.url ? (
+                                <a href={doc.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
+                                  <ExternalLink size={13} />
+                                  Open
+                                </a>
+                              ) : (
+                                <span className="text-xs text-[#9aa9b8]">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </article>
+
+                <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+                  <h4 className="text-lg font-semibold text-[#142132]">Commission Structure</h4>
+                  <div className="mt-4 grid gap-3">
+                    <SnapshotRow label="Mandate Type" value={formatStatusLabel(commissionWorkspace.type)} />
+                    <SnapshotRow label="Commission excl. VAT" value={commissionWorkspace.percentage ? `${commissionWorkspace.percentage}%` : formatMoneyValue(commissionWorkspace.amount)} />
+                    <SnapshotRow label="VAT" value={commissionWorkspace.vatIncluded ? 'Included' : 'Excluded / not captured'} />
+                    <SnapshotRow label="Total Commission %" value={commissionWorkspace.percentage ? `${commissionWorkspace.percentage}%` : 'Not captured'} />
+                    <SnapshotRow label="Commission Split" value={commissionWorkspace.split} />
+                    <SnapshotRow label="Co-agent Split" value={commissionWorkspace.coAgentSplit} />
+                    <SnapshotRow label="Referral Split" value={commissionWorkspace.referralSplit} />
+                  </div>
+                  <div className="mt-4 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                    <p className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Estimated Commission Incl. VAT</p>
+                    <p className="mt-2 text-xl font-semibold text-[#142132]">{commissionWorkspace.estimatedInclVat ? formatMoneyValue(commissionWorkspace.estimatedInclVat) : 'Not available'}</p>
+                    <p className="mt-2 text-sm leading-6 text-[#607387]">{commissionWorkspace.notes || 'No special commission notes captured.'}</p>
+                  </div>
+                </article>
+              </section>
+
+              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-lg font-semibold text-[#142132]">Recent Activity</h4>
+                    <p className="mt-1 text-sm text-[#607387]">Latest mandate, seller, document, and listing movement.</p>
+                  </div>
+                  <span className="rounded-full bg-[#eef5fb] px-2.5 py-1 text-xs font-semibold text-[#315b7a]">{activityItems.length}</span>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {activityItems.length ? activityItems.map((item) => (
+                    <div key={`${item.title}-${item.timestamp}`} className="flex gap-3 rounded-[16px] border border-[#e5edf6] bg-[#fbfdff] px-4 py-3">
+                      <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#eaf3fb] text-[#1f4f78]">
+                        <FolderKanban size={15} />
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold text-[#243d56]">{item.title}</p>
+                        <p className="mt-0.5 text-sm text-[#607387]">{item.copy}</p>
+                        <p className="mt-1 text-xs text-[#91a2b5]">{formatDate(item.timestamp)}</p>
+                      </div>
+                    </div>
+                  )) : (
+                    <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-5 text-sm text-[#6b7d93]">
+                      No recent activity yet.
+                    </div>
+                  )}
+                </div>
+              </article>
             </div>
-            <div className="mt-4 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-              <p className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Commission Notes</p>
-              <p className="mt-2 text-sm leading-6 text-[#607387]">{listingRecord?.commission?.commission_notes || 'No special commission notes captured.'}</p>
-            </div>
+
+            <aside className="space-y-5">
+              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Listing Readiness</p>
+                <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[#142132]">{sellerReadinessPercent}%</p>
+                <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[#e5edf6]">
+                  <span className="block h-full rounded-full bg-[#1f6f9f]" style={{ width: `${sellerReadinessPercent}%` }} />
+                </div>
+                <div className="mt-4 space-y-2">
+                  {sellerReadinessChecklist.map((item) => (
+                    <div key={item.key} className="flex items-center justify-between gap-3 text-sm">
+                      <span className="text-[#52687f]">{item.label}</span>
+                      <CompletionBadge complete={item.complete} label={item.complete ? 'Done' : 'Missing'} />
+                    </div>
+                  ))}
+                </div>
+              </article>
+
+              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Attention Required</p>
+                <div className="mt-3 space-y-2">
+                  {sellerAttentionItems.length ? sellerAttentionItems.map((item) => (
+                    <div key={item} className="rounded-[14px] border border-[#f2dfbf] bg-[#fff8ec] px-3 py-2 text-sm font-semibold text-[#8a5b1f]">
+                      {item}
+                    </div>
+                  )) : (
+                    <div className="rounded-[14px] border border-[#d8eddf] bg-[#ecfaf1] px-3 py-2 text-sm font-semibold text-[#1f7d44]">
+                      No major blockers detected.
+                    </div>
+                  )}
+                </div>
+              </article>
+
+              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Quick Actions</p>
+                <div className="mt-3 grid gap-2">
+                  {listingRecord?.sellerOnboarding?.link ? (
+                    <a href={listingRecord.sellerOnboarding.link} target="_blank" rel="noreferrer" className="inline-flex items-center justify-between rounded-[14px] border border-[#dbe6f2] bg-white px-3 py-2 text-sm font-semibold text-[#2f4862]">
+                      Open Seller Onboarding
+                      <ExternalLink size={14} />
+                    </a>
+                  ) : null}
+                  <Button variant="secondary" onClick={() => setActiveTab('documents')}>Upload Document</Button>
+                  <Button variant="secondary" onClick={() => setActiveTab('overview')}>View Listing</Button>
+                  <Button variant="secondary" onClick={() => setActiveTab('property_details')}>Edit Commission</Button>
+                </div>
+              </article>
+
+              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Important Dates</p>
+                <div className="mt-3">
+                  <SnapshotRow label="Mandate Signed" value={formatDate(mandateWorkspace.signedDate)} />
+                  <SnapshotRow label="Mandate Expiry" value={formatDate(mandateWorkspace.expiryDate)} />
+                  <SnapshotRow label="Listing Target" value={formatDate(marketingDraft.listingDate)} />
+                  <SnapshotRow label="Last Seller Update" value={formatDate(listingRecord?.sellerOnboarding?.updatedAt || listingRecord?.updatedAt)} />
+                  <SnapshotRow
+                    label="Last Document Upload"
+                    value={formatDate(sellerDocumentTrackerRows.find((doc) => doc.uploadedOn)?.uploadedOn)}
+                  />
+                </div>
+              </article>
+            </aside>
           </section>
         </section>
       ) : null}
