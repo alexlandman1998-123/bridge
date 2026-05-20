@@ -18,7 +18,7 @@ import {
   Signature,
   UsersRound,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { createElement, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
@@ -183,7 +183,7 @@ function PipelinePanel({ title, icon, matters = [], href, tone = 'blue' }) {
   const topMatters = matters.slice(0, 5)
   const atRiskCount = matters.filter((matter) => matter.riskTone === 'high' || matter.riskTone === 'attention').length
   const progress = total ? Math.max(8, Math.round(((total - atRiskCount) / total) * 100)) : 0
-  const iconNode = icon ? icon({ size: 18 }) : null
+  const iconNode = icon ? createElement(icon, { size: 18 }) : null
 
   return (
     <section className={`${cardClass} flex h-full min-h-[344px] flex-col p-4`}>
@@ -346,7 +346,7 @@ function SegmentedChart({ rows = [], tone = 'blue' }) {
 }
 
 function IntelligenceCard({ title, icon, action = 'This month', children }) {
-  const iconNode = icon ? icon({ size: 16 }) : null
+  const iconNode = icon ? createElement(icon, { size: 16 }) : null
   return (
     <section className={`${cardClass} flex min-h-[244px] flex-col p-4`}>
       <div className="mb-4 flex items-start justify-between gap-3">
