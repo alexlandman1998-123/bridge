@@ -5793,48 +5793,81 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             ) : null}
 
             {isLeadWorkspaceRoute ? (
-            <article className="rounded-[22px] border border-[#dde4ee] bg-white p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#e6edf5] pb-3">
-                <div className="space-y-1">
-                  <button
-                    type="button"
-                    className="text-xs font-semibold uppercase tracking-[0.08em] text-[#5f7894]"
-                    onClick={() => navigate('/pipeline/leads')}
-                  >
-                    ← Back to Leads
-                  </button>
-                  <h3 className="text-base font-semibold text-[#20344b]">Lead Workspace</h3>
-                  {selectedLead ? (
-                    <p className="text-sm text-[#5f7590]">
-                      {[selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ') || 'Lead Contact'} • {selectedLead.leadCategory} • {selectedLead.stage}
-                    </p>
-	                ) : null}
-	              </div>
-	              {selectedLeadIsSeller ? (
-	                <div className={`mt-3 rounded-[14px] border px-3 py-2 text-xs ${
-	                  selectedLeadOnboardingCompleted
-	                    ? 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
-	                    : 'border-[#f1d8d0] bg-[#fff5f3] text-[#973824]'
-	                }`}>
-	                  <div className="flex flex-wrap items-center justify-between gap-2">
-	                    <div>
-	                      <p className="font-semibold">
-	                        Seller onboarding: {selectedLeadOnboardingStatusKey.replace(/_/g, ' ')}
-	                      </p>
-	                      <p className="mt-0.5">
-	                        {selectedLeadOnboardingCompleted
-	                          ? 'Seller onboarding is complete. Mandate generation is available.'
-	                          : 'Onboarding is not complete yet. Mandate generation can still continue.'}
-	                      </p>
-	                    </div>
-                    {selectedLeadOnboardingTimestamp ? (
-                      <span className="font-semibold">{formatDate(selectedLeadOnboardingTimestamp)}</span>
+            <article className="space-y-4">
+              <div className="rounded-[24px] border border-[#dfe8f2] bg-white p-5 shadow-[0_18px_44px_rgba(31,54,78,0.08)]">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="min-w-0 space-y-3">
+                    <button
+                      type="button"
+                      className="text-xs font-semibold uppercase tracking-[0.08em] text-[#5f7894] transition hover:text-[#1f4f78]"
+                      onClick={() => navigate('/pipeline/leads')}
+                    >
+                      ← Back to Leads
+                    </button>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8da3]">Lead Workspace</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <h3 className="text-2xl font-semibold tracking-[-0.035em] text-[#102033]">
+                          {[selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ') || 'Seller Lead'}
+                        </h3>
+                        {selectedLead ? (
+                          <span className="rounded-full border border-[#d8e5f2] bg-[#f5f9fd] px-3 py-1 text-xs font-semibold text-[#294c6e]">
+                            {selectedLeadIsSeller ? 'Seller' : 'Buyer'} Lead
+                          </span>
+                        ) : null}
+                        {selectedLead ? (
+                          <span className="rounded-full border border-[#d9e7f5] bg-[#eef6fd] px-3 py-1 text-xs font-semibold text-[#1f5f8a]">
+                            {resolveLeadFunnelStage(selectedLead)}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                    {selectedLead ? (
+                      <div className="grid gap-3 text-sm text-[#526b84] md:grid-cols-2 xl:grid-cols-4">
+                        <div>
+                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7c8fa5]">Assigned Agent</p>
+                          <p className="mt-1 font-semibold text-[#203a54]">{selectedLead.assignedAgentName || selectedLead.assignedAgentEmail || 'Unassigned'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7c8fa5]">Contact</p>
+                          <p className="mt-1 font-semibold text-[#203a54]">{selectedLeadContact?.phone || 'No phone'} · {selectedLeadContact?.email || 'No email'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7c8fa5]">Property / Listing</p>
+                          <p className="mt-1 truncate font-semibold text-[#203a54]">
+                            {selectedLead.listingId || selectedLead.sellerPropertyAddress || selectedLead.propertyInterest || 'Not linked yet'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7c8fa5]">Next Step</p>
+                          <p className="mt-1 truncate font-semibold text-[#203a54]">{selectedLeadNextStep || 'No next step set'}</p>
+                        </div>
+                      </div>
                     ) : null}
-	                  </div>
-	                </div>
-	              ) : null}
-	              {selectedLead ? (
-                  <div className="flex flex-wrap gap-2">
+                  </div>
+                  {selectedLeadIsSeller ? (
+                    <div className={`rounded-[16px] border px-3 py-2 text-xs ${
+                      selectedLeadOnboardingCompleted
+                        ? 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
+                        : 'border-[#f1d8d0] bg-[#fff5f3] text-[#973824]'
+                    }`}>
+                      <p className="font-semibold">
+                        Seller onboarding: {selectedLeadOnboardingStatusKey.replace(/_/g, ' ')}
+                      </p>
+                      <p className="mt-0.5 max-w-[260px]">
+                        {selectedLeadOnboardingCompleted
+                          ? 'Complete. Mandate generation is available.'
+                          : 'Not complete yet. Mandate generation can still continue.'}
+                      </p>
+                      {selectedLeadOnboardingTimestamp ? (
+                        <p className="mt-1 font-semibold">{formatDate(selectedLeadOnboardingTimestamp)}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+
+                {selectedLead ? (
+                  <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-[#e8eef5] pt-4">
                     {selectedLeadIsSeller ? (
                       <>
                         <Button
@@ -5873,13 +5906,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               ? 'Sending…'
                               : selectedLeadMandateActionState.label}
                         </Button>
-                        <Button type="button" size="sm" onClick={handleCreateListingFromSellerLead}>
+                        <Button type="button" size="sm" className="bg-[#123955] shadow-[0_10px_24px_rgba(18,57,85,0.18)]" onClick={handleCreateListingFromSellerLead}>
                           {selectedLeadMandateSigned ? 'Convert to Listing' : 'Convert to Listing (Override)'}
                         </Button>
                         <Button type="button" variant="secondary" size="sm" onClick={() => openArchiveLeadModal(selectedLead.leadId)}>
                           Archive Lead
                         </Button>
-                        <Button type="button" variant="secondary" size="sm" onClick={() => openDeleteLeadModal(selectedLead.leadId)}>
+                        <Button type="button" variant="secondary" size="sm" className="border-[#f1d0ca] text-[#9f3a2f] hover:bg-[#fff6f4]" onClick={() => openDeleteLeadModal(selectedLead.leadId)}>
                           Delete Lead
                         </Button>
                       </>
@@ -5902,7 +5935,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         <Button type="button" variant="secondary" size="sm" onClick={() => openArchiveLeadModal(selectedLead.leadId)}>
                           Archive Lead
                         </Button>
-                        <Button type="button" variant="secondary" size="sm" onClick={() => openDeleteLeadModal(selectedLead.leadId)}>
+                        <Button type="button" variant="secondary" size="sm" className="border-[#f1d0ca] text-[#9f3a2f] hover:bg-[#fff6f4]" onClick={() => openDeleteLeadModal(selectedLead.leadId)}>
                           Delete Lead
                         </Button>
                       </>
@@ -5911,56 +5944,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 ) : null}
               </div>
               {selectedLead ? (
-                <div className="mt-3 rounded-[14px] border border-[#dbe5f1] bg-[#f8fbff] p-3">
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Lead Type</p>
-                      <p className="mt-1 text-sm font-semibold text-[#1f3850]">{selectedLeadIsSeller ? 'Seller' : 'Buyer'}</p>
-                    </div>
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Funnel Stage</p>
-                      <p className="mt-1 text-sm font-semibold text-[#1f3850]">{resolveLeadFunnelStage(selectedLead)}</p>
-                    </div>
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Assigned Agent</p>
-                      <p className="mt-1 text-sm font-semibold text-[#1f3850]">
-                        {selectedLead.assignedAgentName || selectedLead.assignedAgentEmail || 'Unassigned'}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Next Step</p>
-                      <p className="mt-1 text-sm font-semibold text-[#1f3850]">{selectedLeadNextStep || 'No next step set'}</p>
-                    </div>
-                  </div>
-                  <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <p className="rounded-[10px] border border-[#dce6f2] bg-white px-3 py-2 text-xs text-[#5f7590]">
-                      <span className="font-semibold text-[#1f3850]">Contact:</span> {selectedLeadContact?.phone || 'No phone'} • {selectedLeadContact?.email || 'No email'}
-                    </p>
-                    <p className="rounded-[10px] border border-[#dce6f2] bg-white px-3 py-2 text-xs text-[#5f7590]">
-                      <span className="font-semibold text-[#1f3850]">{selectedLeadIsSeller ? 'Property:' : 'Interested Listing:'}</span>{' '}
-                      {selectedLead.listingId || selectedLead.sellerPropertyAddress || selectedLead.propertyInterest || 'Not linked yet'}
-                    </p>
-                  </div>
-                </div>
-              ) : null}
-              {selectedLead ? (
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" role="tablist" aria-label="Lead workspace sections">
+                <div className="overflow-x-auto rounded-[18px] border border-[#dfe8f2] bg-white p-1.5 shadow-[0_10px_28px_rgba(31,54,78,0.05)]" role="tablist" aria-label="Lead workspace sections">
+                  <div className="flex min-w-max items-center gap-1">
                   {[
-                    { key: 'overview', label: 'Overview', meta: 'Lead summary' },
+                    { key: 'overview', label: 'Overview', meta: 'Summary' },
                     {
                       key: 'activity',
                       label: 'Activity',
-                      meta: `${selectedLeadActivities.length} logged`,
+                      meta: selectedLeadActivities.length,
                     },
                     {
                       key: 'tasks',
                       label: 'Tasks',
-                      meta: `${selectedLeadTasks.length} ${selectedLeadTasks.length === 1 ? 'task' : 'tasks'}`,
+                      meta: selectedLeadTasks.length,
                     },
                     {
                       key: 'appointments',
                       label: 'Appointments',
-                      meta: `${selectedLeadAppointments.length} booked`,
+                      meta: selectedLeadAppointments.length,
                     },
                   ].map((tab) => {
                     const isActive = leadWorkspaceTab === tab.key
@@ -5971,21 +5972,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         onClick={() => setLeadWorkspaceTab(tab.key)}
                         role="tab"
                         aria-selected={isActive}
-                        className={`min-h-[58px] rounded-[18px] border px-4 py-3 text-center transition ${
+                        className={`rounded-[14px] px-4 py-2.5 text-left transition ${
                           isActive
-                            ? 'border-[#234e71] bg-[#234e71] text-white shadow-[0_16px_34px_rgba(31,79,120,0.18)]'
-                            : 'border-[#dbe6f2] bg-white text-[#4a6078] hover:border-[#b9cbe0] hover:bg-[#f8fbff] hover:text-[#1f4f78]'
+                            ? 'bg-[#eaf3fb] text-[#123955]'
+                            : 'text-[#536a83] hover:bg-[#f7faff] hover:text-[#1f4f78]'
                         }`}
                       >
-                        <span className={`block text-sm font-semibold leading-tight ${isActive ? 'text-white' : 'text-[#425970]'}`}>
+                        <span className="block text-sm font-semibold leading-tight">
                           {tab.label}
                         </span>
-                        <span className={`mt-1.5 block text-xs font-semibold leading-tight ${isActive ? 'text-[#d8e6f2]' : 'text-[#90a2b6]'}`}>
-                          {tab.meta}
+                        <span className={`mt-0.5 block text-[0.7rem] font-semibold leading-tight ${isActive ? 'text-[#2b6c99]' : 'text-[#90a2b6]'}`}>
+                          {tab.key === 'overview' ? tab.meta : `${tab.label} · ${tab.meta}`}
                         </span>
                       </button>
                     )
                   })}
+                  </div>
                 </div>
               ) : null}
               {selectedLead ? (
@@ -5993,44 +5995,58 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   <div className="space-y-4">
                   {leadWorkspaceTab === 'overview' ? (
                   <div className="space-y-4">
-                    <div className="rounded-[14px] border border-[#e4ebf4] bg-[#f8fbff] p-3">
-                      <div className="mb-2 grid gap-2">
-                        <Field as="select" value={selectedLead.stage} onChange={(event) => handleUpdateLeadStage(selectedLead.leadId, event.target.value)}>
-                          {LEAD_STAGES.map((stage) => (
-                            <option key={stage} value={stage}>
-                              {stage}
-                            </option>
-                          ))}
-                        </Field>
+                    <div className="rounded-[20px] border border-[#e0e8f2] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.06)]">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ea4]">Lead Summary</p>
+                          <h4 className="mt-1 text-base font-semibold text-[#172b3f]">
+                            {[selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ') || 'Lead Contact'}
+                          </h4>
+                        </div>
+                        <div className="w-full sm:w-56">
+                          <Field as="select" value={selectedLead.stage} onChange={(event) => handleUpdateLeadStage(selectedLead.leadId, event.target.value)}>
+                            {LEAD_STAGES.map((stage) => (
+                              <option key={stage} value={stage}>
+                                {stage}
+                              </option>
+                            ))}
+                          </Field>
+                        </div>
                       </div>
-                      <p className="text-sm font-semibold text-[#1f3850]">
-                        {[selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ') || 'Lead Contact'}
-                      </p>
-                      <p className="mt-1 text-xs text-[#5b728b]">{selectedLeadContact?.phone || 'No phone'} • {selectedLeadContact?.email || 'No email'}</p>
-                      <p className="mt-1 text-xs text-[#5b728b]">{selectedLead.leadCategory} • {selectedLead.leadDirection} • {selectedLead.leadSource}</p>
-                      <p className="mt-1 text-xs text-[#5b728b]">Pipeline value: {formatCurrency(selectedLead.estimatedValue || selectedLead.budget)}</p>
-                      <p className="mt-1 text-xs text-[#5b728b]">Agent: {selectedLead.assignedAgentName || selectedLead.assignedAgentEmail || 'Unassigned'}</p>
-                      <p className="mt-1 text-xs text-[#5b728b]">
-                        Linked listing/property: {selectedLead.listingId || selectedLead.sellerPropertyAddress || selectedLead.propertyInterest || 'Not linked yet'}
-                      </p>
-                      <p className="mt-1 text-xs text-[#5b728b]">
-                        Linked appointment:{' '}
-                        {selectedLeadLinkedAppointment
-                          ? `${getAppointmentTypeLabel(selectedLeadLinkedAppointment?.appointmentType) || 'Appointment'} (${formatDate(selectedLeadLinkedAppointment?.dateTime || selectedLeadLinkedAppointment?.createdAt)})`
-                          : 'Not linked yet'}
-                      </p>
-                      <p className="mt-1 text-xs text-[#5b728b]">
-                        Linked transaction: {selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not linked yet'}
-                      </p>
-                      <div className="mt-3 inline-flex items-center rounded-full border border-[#dbe5f1] bg-white px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#50708f]">
-                        {selectedLeadIsSeller ? 'Seller Workflow' : 'Buyer Workflow'}
+                      <div className="mt-4 grid gap-3 md:grid-cols-2">
+                        {[
+                          ['Seller name', [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ') || 'Lead Contact'],
+                          ['Phone', selectedLeadContact?.phone || 'No phone'],
+                          ['Email', selectedLeadContact?.email || 'No email'],
+                          ['Lead source', selectedLead.leadSource || 'Not captured'],
+                          ['Lead channel', selectedLead.leadDirection || 'Not captured'],
+                          ['Pipeline value', formatCurrency(selectedLead.estimatedValue || selectedLead.budget)],
+                          ['Property type', selectedLead.propertyInterest || 'Not captured'],
+                          ['Budget', formatCurrency(selectedLead.budget)],
+                          ['Preferred area', selectedLead.areaInterest || selectedLead.sellerPropertyAddress || 'Not captured'],
+                          ['Linked listing/property', selectedLead.listingId || selectedLead.sellerPropertyAddress || selectedLead.propertyInterest || 'Not linked yet'],
+                          [
+                            'Linked appointment',
+                            selectedLeadLinkedAppointment
+                              ? `${getAppointmentTypeLabel(selectedLeadLinkedAppointment?.appointmentType) || 'Appointment'} · ${formatDate(selectedLeadLinkedAppointment?.dateTime || selectedLeadLinkedAppointment?.createdAt)}`
+                              : 'Not linked yet',
+                          ],
+                          ['Linked transaction', selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not linked yet'],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-[14px] border border-[#e6edf5] bg-[#fbfdff] px-3 py-2.5">
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8395aa]">{label}</p>
+                            <p className="mt-1 truncate text-sm font-semibold text-[#263f58]" title={String(value)}>
+                              {value}
+                            </p>
+                          </div>
+                        ))}
                       </div>
                     </div>
 
-                    <form className="rounded-[14px] border border-[#e4ebf4] bg-white p-3" onSubmit={handleSaveLeadDetails}>
+                    <form className="rounded-[20px] border border-[#e0e8f2] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.05)]" onSubmit={handleSaveLeadDetails}>
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <h4 className="text-sm font-semibold text-[#28435e]">Lead Details</h4>
+                          <h4 className="text-base font-semibold text-[#172b3f]">Lead Details</h4>
                           <p className="mt-1 text-xs text-[#6d839b]">Update the contact and property basics for this lead.</p>
                         </div>
                         <Button type="submit" size="sm" disabled={isLeadDetailSaving}>
@@ -6079,6 +6095,51 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         />
                       </div>
                     </form>
+
+                    <div className="rounded-[20px] border border-[#e0e8f2] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h4 className="text-base font-semibold text-[#172b3f]">Documents</h4>
+                          <p className="mt-1 text-xs text-[#6d839b]">Generated packets and signed documents for this lead.</p>
+                        </div>
+                        <Upload className="h-4 w-4 text-[#7890a8]" />
+                      </div>
+                      <div className="mt-3 rounded-[16px] border border-dashed border-[#cfdae8] bg-[#fbfdff] px-4 py-6 text-center text-sm text-[#6f839c]">
+                        No linked documents yet.
+                      </div>
+                    </div>
+
+                    <div className="rounded-[20px] border border-[#e0e8f2] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h4 className="text-base font-semibold text-[#172b3f]">Lead Updates</h4>
+                          <p className="mt-1 text-xs text-[#6d839b]">Latest activity preview for this lead.</p>
+                        </div>
+                        <span className="rounded-full bg-[#eef5fb] px-2 py-1 text-xs font-semibold text-[#315b7a]">
+                          {selectedLeadActivities.length}
+                        </span>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {selectedLeadActivities.slice(0, 4).length ? (
+                          selectedLeadActivities.slice(0, 4).map((row) => (
+                            <div key={row.activityId} className="flex gap-3 rounded-[14px] border border-[#e7eef6] bg-[#fbfdff] px-3 py-2.5 text-xs">
+                              <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#eaf3fb] text-[#285b7d]">
+                                <Columns3 className="h-3.5 w-3.5" />
+                              </span>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-[#263f58]">{row.activityType || 'Lead update'}</p>
+                                <p className="mt-0.5 line-clamp-2 text-[#647a92]">{row.activityNote || row.outcome || 'No note captured'}</p>
+                                <p className="mt-1 text-[#91a2b5]">{formatDate(row.activityDate || row.createdAt)}</p>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="rounded-[14px] border border-dashed border-[#d7e2ef] bg-[#fbfdff] px-4 py-5 text-center text-sm text-[#6f839c]">
+                            No lead updates yet.
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                   ) : null}
 
@@ -6286,70 +6347,89 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </div>
                   ) : null}
 
-                  {leadWorkspaceTab === 'overview' ? (
-                  <div className="space-y-2 rounded-[14px] border border-[#e4ebf4] bg-white p-3">
-                    <h4 className="text-sm font-semibold text-[#28435e]">Documents</h4>
-                    <p className="text-xs text-[#5f7590]">
-                      Generated packets and signed documents for this lead will appear here as document workflows are linked.
-                    </p>
-                    <div className="rounded-[10px] border border-dashed border-[#d6e1ee] bg-[#fbfdff] px-3 py-2 text-xs text-[#6f839c]">
-                      No linked documents yet.
-                    </div>
-                  </div>
-                  ) : null}
                   </div>
 
                   {leadWorkspaceTab === 'overview' ? (
                   <aside className="space-y-3">
-                    <div className="rounded-[14px] border border-[#e4ebf4] bg-white p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Workflow Health</p>
-                      <p className="mt-2 text-sm font-semibold text-[#1f3850]">
-                        {selectedLeadWorkflowHealth.completed}/{selectedLeadWorkflowHealth.total} steps complete
-                      </p>
-                      <div className="mt-2 h-2 rounded-full bg-[#e3ebf4]">
+                    <div className="rounded-[20px] border border-[#e0e8f2] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ea4]">Workflow Health</p>
+                          <p className="mt-1 text-lg font-semibold text-[#172b3f]">
+                            {selectedLeadWorkflowHealth.completed}/{selectedLeadWorkflowHealth.total} steps complete
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-[#eef7f1] px-2.5 py-1 text-xs font-semibold text-[#247345]">
+                          {selectedLeadWorkflowHealth.percent}%
+                        </span>
+                      </div>
+                      <div className="mt-3 h-2 rounded-full bg-[#e3ebf4]">
                         <span className="block h-full rounded-full bg-[#2f7b9e]" style={{ width: `${selectedLeadWorkflowHealth.percent}%` }} />
                       </div>
-                      <div className="mt-2 space-y-1">
+                      <div className="mt-3 space-y-2">
                         {selectedLeadWorkflowHealth.items?.map((item) => (
-                          <div key={item.key} className="flex items-center justify-between text-xs">
-                            <span className="text-[#5f7590]">{item.label}</span>
-                            <span className={item.done ? 'text-[#1e7a46]' : 'text-[#b26d22]'}>{item.done ? 'Done' : 'Missing'}</span>
+                          <div key={item.key} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e7eef6] bg-[#fbfdff] px-3 py-2 text-xs">
+                            <span className="font-medium text-[#435b74]">{item.label}</span>
+                            <span className={`rounded-full px-2 py-0.5 font-semibold ${
+                              item.done ? 'bg-[#eaf7ef] text-[#1e7a46]' : 'bg-[#fff6e8] text-[#a35f14]'
+                            }`}>
+                              {item.done ? 'Done' : 'Missing'}
+                            </span>
                           </div>
                         ))}
                       </div>
                     </div>
 
-                    <div className="rounded-[14px] border border-[#e4ebf4] bg-white p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Linked Records</p>
-                      <p className="mt-2 text-xs text-[#5f7590]">Listing: {selectedLead.listingId || selectedLead.propertyInterest || selectedLead.sellerPropertyAddress || 'Not linked yet'}</p>
-                      <p className="mt-1 text-xs text-[#5f7590]">
-                        Transaction: {selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not linked yet'}
-                      </p>
-                      <p className="mt-1 text-xs text-[#5f7590]">
-                        Appointment: {selectedLeadLinkedAppointment ? getAppointmentTypeLabel(selectedLeadLinkedAppointment.appointmentType) : 'Not linked yet'}
-                      </p>
+                    <div className="rounded-[20px] border border-[#e0e8f2] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
+                      <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ea4]">Linked Records</p>
+                      <div className="mt-3 space-y-2">
+                        {[
+                          ['Listing', selectedLead.listingId || selectedLead.propertyInterest || selectedLead.sellerPropertyAddress || 'Not linked yet'],
+                          ['Transaction', selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not linked yet'],
+                          ['Appointment', selectedLeadLinkedAppointment ? getAppointmentTypeLabel(selectedLeadLinkedAppointment.appointmentType) : 'Not linked yet'],
+                        ].map(([label, value]) => (
+                          <div key={label} className="flex items-start justify-between gap-3 rounded-[12px] border border-[#e7eef6] bg-[#fbfdff] px-3 py-2 text-xs">
+                            <span className="font-semibold text-[#7b8ea4]">{label}</span>
+                            <span className="max-w-[62%] text-right font-semibold text-[#263f58]">{value}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
-                    <div className="rounded-[14px] border border-[#e4ebf4] bg-white p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">
+                    <div className="rounded-[20px] border border-[#e0e8f2] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
+                      <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ea4]">
                         {normalizeText(selectedLead.leadCategory).toLowerCase() === 'seller' ? 'Mandate / Listing' : 'Offers / Transaction'}
                       </p>
                       {normalizeText(selectedLead.leadCategory).toLowerCase() === 'seller' ? (
-                        <div className="mt-2 space-y-1 text-xs text-[#5f7590]">
-                          <p>Mandate: {normalizeText(selectedLead?.mandatePacketId || selectedLead?.mandatePacket?.id) || 'Not generated yet'}</p>
-                          <p>Listing: {normalizeText(selectedLead?.listingId || selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress) || 'Not linked yet'}</p>
+                        <div className="mt-3 space-y-2 text-xs">
+                          <div className="rounded-[12px] bg-[#fbfdff] px-3 py-2">
+                            <p className="font-semibold text-[#7b8ea4]">Mandate ID</p>
+                            <p className="mt-1 break-all font-semibold text-[#263f58]">{normalizeText(selectedLead?.mandatePacketId || selectedLead?.mandatePacket?.id) || 'Not generated yet'}</p>
+                          </div>
+                          <div className="rounded-[12px] bg-[#fbfdff] px-3 py-2">
+                            <p className="font-semibold text-[#7b8ea4]">Listing ID</p>
+                            <p className="mt-1 break-all font-semibold text-[#263f58]">{normalizeText(selectedLead?.listingId || selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress) || 'Not linked yet'}</p>
+                          </div>
                         </div>
                       ) : (
-                        <div className="mt-2 space-y-1 text-xs text-[#5f7590]">
-                          <p>Offers: {selectedLeadLinkedTransaction ? 'Offer linked to transaction' : 'No accepted offer linked yet'}</p>
-                          <p>Transaction: {selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not created yet'}</p>
+                        <div className="mt-3 space-y-2 text-xs">
+                          <div className="rounded-[12px] bg-[#fbfdff] px-3 py-2">
+                            <p className="font-semibold text-[#7b8ea4]">Offers</p>
+                            <p className="mt-1 font-semibold text-[#263f58]">{selectedLeadLinkedTransaction ? 'Offer linked to transaction' : 'No accepted offer linked yet'}</p>
+                          </div>
+                          <div className="rounded-[12px] bg-[#fbfdff] px-3 py-2">
+                            <p className="font-semibold text-[#7b8ea4]">Transaction</p>
+                            <p className="mt-1 font-semibold text-[#263f58]">{selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not created yet'}</p>
+                          </div>
                         </div>
                       )}
                     </div>
 
-                    <div className="rounded-[14px] border border-[#e4ebf4] bg-white p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Notes / Comments</p>
-                      <p className="mt-2 text-xs text-[#5f7590]">{selectedLeadNotes || 'No notes yet.'}</p>
+                    <div className="rounded-[20px] border border-[#e0e8f2] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
+                      <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ea4]">Notes / Comments</p>
+                      <div className="mt-3 rounded-[14px] border border-[#e7eef6] bg-[#fbfdff] px-3 py-3 text-sm text-[#5f7590]">
+                        {selectedLeadNotes || 'No notes yet.'}
+                      </div>
                     </div>
                   </aside>
                   ) : null}
