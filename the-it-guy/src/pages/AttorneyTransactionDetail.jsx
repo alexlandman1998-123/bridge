@@ -64,6 +64,9 @@ import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 const ATTORNEY_WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
+  { id: 'transfer', label: 'Transfer' },
+  { id: 'bond', label: 'Bond' },
+  { id: 'cancellation', label: 'Cancellation' },
   { id: 'parties', label: 'Parties' },
   { id: 'documents', label: 'Documents' },
   { id: 'financials', label: 'Financials' },
@@ -611,6 +614,39 @@ function getDocumentStatus(document = {}) {
   return toTitle(raw || 'Uploaded')
 }
 
+function getParticipantDisplayName(participant) {
+  return (
+    participant?.organisationName ||
+    participant?.firmName ||
+    participant?.participantName ||
+    participant?.participantEmail ||
+    'Not assigned'
+  )
+}
+
+const MATTER_STAGE_MILESTONES = [
+  { key: 'instruction', label: 'Instruction' },
+  { key: 'fica', label: 'FICA' },
+  { key: 'drafting', label: 'Drafting' },
+  { key: 'signing', label: 'Signing' },
+  { key: 'guarantees', label: 'Guarantees' },
+  { key: 'lodgement', label: 'Lodgement' },
+  { key: 'registration', label: 'Registration' },
+  { key: 'complete', label: 'Complete' },
+]
+
+function getMatterStageProgressIndex({ transferStageKey = '', transferStageLabel = '', lifecycleState = '' } = {}) {
+  const source = `${transferStageKey} ${transferStageLabel} ${lifecycleState}`.toLowerCase()
+  if (/complete|closed|final/.test(source)) return 7
+  if (/registered|registration/.test(source)) return 6
+  if (/lodge|lodgement/.test(source)) return 5
+  if (/guarantee|bank/.test(source)) return 4
+  if (/sign/.test(source)) return 3
+  if (/draft|doc|prepare/.test(source)) return 2
+  if (/fica|kyc|compliance/.test(source)) return 1
+  return 0
+}
+
 const ACTIVITY_FILTER_OPTIONS = [
   { key: 'all', label: 'All' },
   { key: 'transfer', label: 'Transfer' },
@@ -931,6 +967,9 @@ function buildMatterPreviewShell(matterPreview, transactionId) {
 function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange }) {
   const iconByTab = {
     overview: Workflow,
+    transfer: Workflow,
+    bond: Building2,
+    cancellation: AlertTriangle,
     parties: UsersRound,
     documents: FileText,
     financials: CircleDollarSign,
@@ -964,46 +1003,104 @@ function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange }) {
   )
 }
 
-function MatterCompactHeader({ title, statusLabel, statusClassName, propertyLabel, subtitle, stats = [], onAddNote, onAction }) {
+function MatterOverviewHeader({
+  title,
+  statusLabel,
+  statusClassName,
+  propertyLabel,
+  subtitle,
+  buyerName,
+  sellerName,
+  assignedFirms = [],
+  metrics = [],
+  progressIndex = 0,
+  onAction,
+}) {
   return (
-    <section className="rounded-[18px] border border-borderDefault bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)] md:px-5">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="truncate text-xl font-bold text-textStrong md:text-2xl">{title}</h1>
-            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${statusClassName}`}>
-              {statusLabel}
-            </span>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-textMuted">
-            <strong className="text-textStrong">{propertyLabel}</strong>
-            {subtitle ? <span>{subtitle}</span> : null}
-          </div>
-        </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
-          <Button type="button" variant="secondary" size="sm" onClick={onAction}>
-            <MoreHorizontal size={14} />
-            Actions
-          </Button>
-          <Button type="button" size="sm" onClick={onAddNote}>
-            <MessageSquarePlus size={14} />
-            Add Note
-          </Button>
-        </div>
-      </div>
+    <div className="space-y-4">
+      <section className="rounded-[24px] border border-borderDefault bg-white px-5 py-6 shadow-[0_14px_34px_rgba(15,23,42,0.06)] md:px-6">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="truncate text-2xl font-bold tracking-[-0.03em] text-textStrong md:text-3xl">{title}</h1>
+              <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${statusClassName}`}>
+                {statusLabel}
+              </span>
+            </div>
+            <p className="mt-3 max-w-4xl text-sm font-medium leading-6 text-textBody">
+              {propertyLabel}
+            </p>
+            {subtitle ? <p className="mt-1 text-sm text-textMuted">{subtitle}</p> : null}
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5 xl:grid-cols-10">
-        {stats.map((item) => (
-          <article key={item.label} className="min-w-0 border-l border-borderSoft px-3 first:border-l-0 first:pl-0">
-            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{item.label}</span>
-            <strong className="mt-1 block truncate text-sm font-semibold text-textStrong">{item.value || 'Not set'}</strong>
-          </article>
-        ))}
-      </div>
-    </section>
+            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+              {[
+                ['Buyer', buyerName || 'Buyer pending'],
+                ['Seller', sellerName || 'Seller pending'],
+                ...assignedFirms.map((item) => [item.label, item.value]),
+              ].map(([label, value]) => (
+                <article key={label} className="min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+                  <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
+                  <strong className="mt-1 block truncate text-sm font-semibold text-textStrong">{value || 'Not assigned'}</strong>
+                </article>
+              ))}
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button type="button" variant="secondary" onClick={onAction}>
+              <MoreHorizontal size={14} />
+              Actions
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {metrics.map((item) => {
+          const Icon = item.icon || FileText
+          return (
+            <article key={item.label} className="flex min-h-[104px] min-w-0 items-center gap-3 rounded-[18px] border border-borderDefault bg-white px-4 py-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+              <span className={`inline-flex size-10 shrink-0 items-center justify-center rounded-[13px] ${item.tone || 'bg-primarySoft text-primary'}`}>
+                {createElement(Icon, { size: 18 })}
+              </span>
+              <div className="min-w-0">
+                <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{item.label}</span>
+                <strong className="mt-1 block truncate text-base font-bold text-textStrong">{item.value || 'Not captured'}</strong>
+              </div>
+            </article>
+          )
+        })}
+      </section>
+
+      <section className="rounded-[18px] border border-borderDefault bg-white px-4 py-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-textStrong">Current Stage Progress</h2>
+          <span className="text-xs font-semibold text-textMuted">
+            {MATTER_STAGE_MILESTONES[Math.min(progressIndex, MATTER_STAGE_MILESTONES.length - 1)]?.label || 'Instruction'}
+          </span>
+        </div>
+        <div className="overflow-x-auto pb-1">
+          <div className="grid min-w-[760px] grid-cols-8 gap-2">
+            {MATTER_STAGE_MILESTONES.map((step, index) => {
+              const completed = index < progressIndex
+              const current = index === progressIndex
+              return (
+                <div key={step.key} className="min-w-0">
+                  <div className={`h-2 rounded-full ${completed ? 'bg-success' : current ? 'bg-primary' : 'bg-slate-200'}`} />
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${completed ? 'bg-success' : current ? 'bg-primary' : 'bg-slate-300'}`} />
+                    <span className={`truncate text-xs font-semibold ${completed || current ? 'text-textStrong' : 'text-textMuted'}`}>
+                      {step.label}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </section>
+    </div>
   )
 }
-
 function WorkflowLaneCard({ lane, onOpenDetails, onPrimaryAction }) {
   const laneKey = String(lane?.laneKey || 'transfer').toLowerCase()
   const accent = LANE_ACCENTS[laneKey] || LANE_ACCENTS.transfer
@@ -1850,6 +1947,12 @@ function AttorneyTransactionDetail() {
     () => (Array.isArray(workflowOperations?.lanes) ? workflowOperations.lanes : EMPTY_ARRAY),
     [workflowOperations?.lanes],
   )
+  const displayedWorkflowLanes = useMemo(
+    () => (['transfer', 'bond', 'cancellation'].includes(activeWorkspaceMenu)
+      ? workflowLanes.filter((lane) => lane.laneKey === activeWorkspaceMenu)
+      : workflowLanes),
+    [activeWorkspaceMenu, workflowLanes],
+  )
   const activeWorkflowLane = useMemo(
     () => workflowLanes.find((lane) => lane.laneKey === workflowDrawerLaneKey) || null,
     [workflowDrawerLaneKey, workflowLanes],
@@ -2013,21 +2116,18 @@ function AttorneyTransactionDetail() {
     })
   }
 
-  const matterHeaderStats = useMemo(
+  const matterHeaderMetrics = useMemo(
     () => [
-      { label: 'Buyer', value: buyer?.name || 'Buyer pending' },
-      { label: 'Seller', value: transaction?.seller_name || 'Seller pending' },
-      { label: 'Purchase Price', value: formatCurrencyValue(purchasePriceValue, 'Not captured') },
-      { label: 'Finance Type', value: financeTypeLabel },
-      { label: 'Bond Amount', value: formatCurrencyValue(transaction?.bond_amount, financeTypeLabel.toLowerCase().includes('bond') ? 'Pending' : 'N/A') },
-      { label: 'Deposit', value: formatCurrencyValue(transaction?.deposit_amount, 'Not captured') },
-      { label: 'Target Registration', value: formatDate(transaction?.target_registration_date || transaction?.expected_transfer_date) },
-      { label: 'Days Active', value: daysBetween(transaction?.created_at) },
-      { label: 'Current Stage', value: transferStageLabel },
-      { label: 'Matter Status', value: operationalStateLabel },
+      { label: 'Purchase Price', value: formatCurrencyValue(purchasePriceValue, 'Not captured'), icon: CircleDollarSign, tone: 'bg-emerald-50 text-emerald-700' },
+      { label: 'Finance Type', value: financeTypeLabel, icon: FileText, tone: 'bg-blue-50 text-blue-700' },
+      { label: 'Bond Amount', value: formatCurrencyValue(transaction?.bond_amount, financeTypeLabel.toLowerCase().includes('bond') ? 'Pending' : 'N/A'), icon: Building2, tone: 'bg-violet-50 text-violet-700' },
+      { label: 'Deposit', value: formatCurrencyValue(transaction?.deposit_amount, 'Not captured'), icon: CircleDollarSign, tone: 'bg-amber-50 text-amber-700' },
+      { label: 'Target Registration', value: formatDate(transaction?.target_registration_date || transaction?.expected_transfer_date), icon: CalendarDays, tone: 'bg-sky-50 text-sky-700' },
+      { label: 'Days Active', value: daysBetween(transaction?.created_at), icon: Clock3, tone: 'bg-slate-50 text-slate-600' },
+      { label: 'Current Stage', value: transferStageLabel, icon: Workflow, tone: 'bg-primarySoft text-primary' },
+      { label: 'Matter Status', value: operationalStateLabel, icon: GaugeCircle, tone: 'bg-emerald-50 text-emerald-700' },
     ],
     [
-      buyer?.name,
       financeTypeLabel,
       operationalStateLabel,
       purchasePriceValue,
@@ -2035,10 +2135,21 @@ function AttorneyTransactionDetail() {
       transaction?.created_at,
       transaction?.deposit_amount,
       transaction?.expected_transfer_date,
-      transaction?.seller_name,
       transaction?.target_registration_date,
       transferStageLabel,
     ],
+  )
+  const matterAssignedFirms = useMemo(
+    () => [
+      { label: 'Transfer Attorney', value: getParticipantDisplayName(transferAttorney) },
+      { label: 'Bond Attorney', value: getParticipantDisplayName(bondAttorney) },
+      { label: 'Cancellation Attorney', value: getParticipantDisplayName(cancellationAttorney) },
+    ],
+    [bondAttorney, cancellationAttorney, transferAttorney],
+  )
+  const matterProgressIndex = useMemo(
+    () => getMatterStageProgressIndex({ transferStageKey, transferStageLabel, lifecycleState }),
+    [lifecycleState, transferStageKey, transferStageLabel],
   )
   const matterSubtitle = [
     development?.name || null,
@@ -2838,16 +2949,19 @@ function AttorneyTransactionDetail() {
       errorMessage={error}
       headline={(
         <div className="space-y-4">
-            <MatterCompactHeader
+            <MatterOverviewHeader
               title={matterReference}
-            statusLabel={hydratingDetail ? 'Refreshing' : lifecycleLabel}
-            statusClassName={getLifecycleStateClasses(lifecycleState)}
-            propertyLabel={matterHeadline}
-            subtitle={matterSubtitle}
-            stats={matterHeaderStats}
-            onAction={() => void handleOpenRegistrationFlow()}
-            onAddNote={() => setWorkspaceMenu('activity')}
-          />
+              statusLabel={hydratingDetail ? 'Refreshing' : lifecycleLabel}
+              statusClassName={getLifecycleStateClasses(lifecycleState)}
+              propertyLabel={matterHeadline}
+              subtitle={matterSubtitle}
+              buyerName={buyer?.name}
+              sellerName={transaction?.seller_name}
+              assignedFirms={matterAssignedFirms}
+              metrics={matterHeaderMetrics}
+              progressIndex={matterProgressIndex}
+              onAction={() => void handleOpenRegistrationFlow()}
+            />
           <MatterWorkspaceTabs tabs={workspaceMenuTabs} activeTab={activeWorkspaceMenu} onChange={setWorkspaceMenu} />
         </div>
       )}
@@ -2874,7 +2988,7 @@ function AttorneyTransactionDetail() {
           </div>
         </div>
 
-        {activeWorkspaceMenu === 'overview' ? (
+        {['overview', 'transfer', 'bond', 'cancellation'].includes(activeWorkspaceMenu) ? (
           <>
             <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
               <div className="space-y-4">
@@ -2901,8 +3015,8 @@ function AttorneyTransactionDetail() {
                   <p className="rounded-[16px] border border-warning/30 bg-warningSoft px-4 py-3 text-sm font-medium text-warning">
                     {workflowError}
                   </p>
-                ) : workflowLanes.length ? (
-                  workflowLanes.map((lane) => (
+                ) : displayedWorkflowLanes.length ? (
+                  displayedWorkflowLanes.map((lane) => (
                     <WorkflowLaneCard
                       key={lane.id || lane.laneKey}
                       lane={lane}
@@ -2912,20 +3026,67 @@ function AttorneyTransactionDetail() {
                   ))
                 ) : (
                   <p className="rounded-[16px] border border-dashed border-borderDefault bg-white px-4 py-6 text-sm text-textMuted">
-                    No required attorney workflow lanes are configured for this matter yet.
+                    No required attorney workflow lanes are configured for this view yet.
                   </p>
                 )}
 
                 <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <h3 className="text-sm font-semibold text-textStrong">Recent Activity</h3>
-                      <p className="mt-1 text-sm text-textMuted">Latest workflow, document, and note updates.</p>
+                      <h3 className="text-sm font-semibold text-textStrong">Matter Feed</h3>
+                      <p className="mt-1 text-sm text-textMuted">Collaborative matter updates, notes, documents, and workflow movement.</p>
                     </div>
                     <Button type="button" variant="ghost" size="sm" onClick={() => setWorkspaceMenu('activity')}>
                       View all activity
                     </Button>
                   </div>
+                  <form onSubmit={handleAddDiscussion} className="mb-3 rounded-[14px] border border-borderSoft bg-surfaceAlt p-3">
+                    <Field
+                      as="textarea"
+                      rows={3}
+                      value={discussionBody}
+                      onChange={(event) => setDiscussionBody(event.target.value)}
+                      placeholder="Post a matter update..."
+                    />
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex gap-2">
+                        <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)} className="min-h-9 text-xs">
+                          {DISCUSSION_TYPES.map((item) => (
+                            <option key={item.key} value={item.key}>{item.label}</option>
+                          ))}
+                        </Field>
+                        <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)} className="min-h-9 text-xs">
+                          {DISCUSSION_VISIBILITY_OPTIONS.map((item) => (
+                            <option
+                              key={item.key}
+                              value={item.key}
+                              disabled={
+                                (item.key === 'internal' && !canPostInternalDiscussion) ||
+                                (item.key === 'shared' && !canPostSharedDiscussion) ||
+                                (item.key === 'client_visible' && !canPublishClientVisibleDiscussion)
+                              }
+                            >
+                              {item.label}
+                            </option>
+                          ))}
+                        </Field>
+                      </div>
+                      <Button
+                        type="submit"
+                        size="sm"
+                        disabled={
+                          saving ||
+                          !discussionBody.trim() ||
+                          (discussionVisibility === 'internal' && !canPostInternalDiscussion) ||
+                          (discussionVisibility === 'shared' && !canPostSharedDiscussion) ||
+                          (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion)
+                        }
+                      >
+                        <Send size={14} />
+                        {saving ? 'Posting...' : 'Post'}
+                      </Button>
+                    </div>
+                  </form>
                   <div className="divide-y divide-borderSoft">
                     {activityFeed.slice(0, 4).map((entry) => (
                       <article key={entry.id} className="py-3 first:pt-0 last:pb-0">
