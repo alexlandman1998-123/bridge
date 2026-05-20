@@ -117,7 +117,7 @@ function resolveAttentionIssue(flags = {}) {
 
 async function fetchTransactionsForDashboard(client) {
   const primarySelect =
-    'id, buyer_id, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, finance_type, onboarding_status, next_action, risk_status, operational_state, attorney_stage, updated_at, created_at'
+    'id, organisation_id, buyer_id, transaction_reference, title, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, finance_type, onboarding_status, next_action, risk_status, operational_state, attorney_stage, updated_at, created_at, property_description, property_address_line_1, property_address_line_2, suburb, city, province, seller_name, seller_email, seller_has_existing_bond, current_bond_bank, purchase_price, sales_price, bond_amount, deposit_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, lifecycle_state, last_meaningful_activity_at'
 
   let query = await client
     .from('transactions')
@@ -127,10 +127,16 @@ async function fetchTransactionsForDashboard(client) {
   if (
     query.error &&
     (isMissingColumnError(query.error, 'current_main_stage') ||
+      isMissingColumnError(query.error, 'transaction_reference') ||
       isMissingColumnError(query.error, 'assigned_attorney_email') ||
       isMissingColumnError(query.error, 'onboarding_status') ||
       isMissingColumnError(query.error, 'operational_state') ||
       isMissingColumnError(query.error, 'attorney_stage') ||
+      isMissingColumnError(query.error, 'property_description') ||
+      isMissingColumnError(query.error, 'current_bond_bank') ||
+      isMissingColumnError(query.error, 'purchase_price') ||
+      isMissingColumnError(query.error, 'target_registration_date') ||
+      isMissingColumnError(query.error, 'last_meaningful_activity_at') ||
       isMissingColumnError(query.error, 'is_active'))
   ) {
     query = await client
@@ -446,6 +452,116 @@ function buildOperationalMatterLanes({ matterRoleSummaries = [], buyersById = {}
   return lanes
 }
 
+function getTransactionValue(transaction = {}) {
+  return Number(transaction.purchase_price || transaction.sales_price || transaction.bond_amount || 0) || 0
+}
+
+function getFinanceBucket(transaction = {}) {
+  const financeType = toLower(transaction.finance_type)
+  if (financeType.includes('hybrid') || financeType.includes('combination')) return 'Hybrid'
+  if (financeType.includes('bond')) return 'Bond'
+  if (financeType.includes('cash')) return 'Cash'
+  return financeType ? financeType.charAt(0).toUpperCase() + financeType.slice(1) : 'Unspecified'
+}
+
+function getBankName(transaction = {}) {
+  const bank = String(transaction.current_bond_bank || transaction.bank || transaction.bond_bank || transaction.financing_bank || '').trim()
+  return bank || 'Bank not captured'
+}
+
+function getMatterSourceName({ transaction = {}, index = 0, isDalawyerDemo = false } = {}) {
+  const explicit = String(
+    transaction.referring_agent_name ||
+      transaction.referring_agent ||
+      transaction.source_name ||
+      transaction.lead_source ||
+      '',
+  ).trim()
+  if (explicit) return explicit
+
+  if (isDalawyerDemo) {
+    const demoSources = ['UrbanLink Realty', 'Northside Properties', 'Prime Estate Partners', 'Blue Crane Realty', 'Summit Homes']
+    return demoSources[index % demoSources.length]
+  }
+
+  return ''
+}
+
+function pushAggregate(map, key, value = 0) {
+  if (!key) return
+  if (!map.has(key)) {
+    map.set(key, { label: key, count: 0, value: 0 })
+  }
+  const row = map.get(key)
+  row.count += 1
+  row.value += Number(value || 0)
+}
+
+function toLeaderboardRows(map, sortKey = 'count', limit = 5) {
+  return [...map.values()]
+    .sort((left, right) => Number(right[sortKey] || 0) - Number(left[sortKey] || 0))
+    .slice(0, limit)
+}
+
+function buildBusinessIntelligence({ uniqueMatters = [], matterRoleSummaries = [], isDalawyerDemo = false } = {}) {
+  const sourceMap = new Map()
+  const bankMap = new Map()
+  const financeMap = new Map()
+  const roleCounts = {
+    Transfer: 0,
+    Bond: 0,
+    Cancellation: 0,
+  }
+  const registrationDurations = []
+
+  matterRoleSummaries.forEach((summary) => {
+    const roles = summary.roles || new Set(summary.roleList || [])
+    if (roles.has('transfer')) roleCounts.Transfer += 1
+    if (roles.has('bond')) roleCounts.Bond += 1
+    if (roles.has('cancellation')) roleCounts.Cancellation += 1
+  })
+
+  uniqueMatters.forEach((matter, index) => {
+    const transaction = matter.transaction || {}
+    const value = getTransactionValue(transaction)
+    const sourceName = getMatterSourceName({ transaction, index, isDalawyerDemo })
+    pushAggregate(sourceMap, sourceName, value)
+    pushAggregate(bankMap, getBankName(transaction), Number(transaction.bond_amount || 0) || value)
+    pushAggregate(financeMap, getFinanceBucket(transaction), value)
+
+    const registrationValue = transaction.registered_at || transaction.registration_date
+    const createdValue = transaction.created_at
+    const registrationTimestamp = new Date(registrationValue || '').getTime()
+    const createdTimestamp = new Date(createdValue || '').getTime()
+    if (Number.isFinite(registrationTimestamp) && Number.isFinite(createdTimestamp) && registrationTimestamp >= createdTimestamp) {
+      registrationDurations.push(Math.round((registrationTimestamp - createdTimestamp) / 86400000))
+    }
+  })
+
+  const activeMatters = uniqueMatters.length || 1
+  const averageRegistrationDays = registrationDurations.length
+    ? Math.round(registrationDurations.reduce((sum, value) => sum + value, 0) / registrationDurations.length)
+    : 0
+
+  return {
+    sourceStatus: sourceMap.size ? 'available' : 'empty',
+    topAgentsByVolume: toLeaderboardRows(sourceMap, 'count'),
+    topAgentsByValue: toLeaderboardRows(sourceMap, 'value'),
+    businessBreakdown: Object.entries(roleCounts).map(([label, count]) => ({
+      label,
+      count,
+      percentage: Math.round((count / activeMatters) * 100),
+    })),
+    bankBreakdown: toLeaderboardRows(bankMap, 'count'),
+    financeBreakdown: toLeaderboardRows(financeMap, 'count').map((row) => ({
+      ...row,
+      percentage: Math.round((row.count / activeMatters) * 100),
+    })),
+    averageRegistrationDays,
+    registrationSampleSize: registrationDurations.length,
+  }
+}
+
 function buildOwnerDashboardMember(firm = {}, user = {}) {
   const nowIso = new Date().toISOString()
   return {
@@ -517,6 +633,7 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
   const departments = departmentsRaw.filter((department) => department.isActive)
   const members = dashboardMembers.filter((member) => member.status !== 'suspended' && member.status !== 'removed')
   const activeMembers = members.filter((member) => member.status === 'active')
+  const isDalawyerDemo = toLower(resolvedFirm.name).includes('dalawyer') && toLower(authUser.email) === 'info@yakstack.co'
 
   const transactionsById = (transactionsRaw || []).reduce((accumulator, row) => {
     accumulator[row.id] = row
@@ -816,6 +933,11 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     buyersById,
     memberProfilesById,
   })
+  const businessIntelligence = buildBusinessIntelligence({
+    uniqueMatters,
+    matterRoleSummaries: scopedMatterRoleSummaries,
+    isDalawyerDemo,
+  })
 
   return {
     firm: {
@@ -852,5 +974,6 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     upcomingKeyDates,
     financialSnapshot,
     matterLanes,
+    businessIntelligence,
   }
 }

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import AttorneyOperationsHeader from '../components/attorney/operations/AttorneyOperationsHeader'
 import AttorneySchedulingWorkspace from '../components/attorney/scheduling/AttorneySchedulingWorkspace'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { listAppointmentResourcesAsync } from '../lib/agencyPipelineService'
@@ -89,12 +88,8 @@ function AttorneySchedulingPage() {
   if (!showAppointments) {
     return (
       <section className="page" style={{ display: 'grid', gap: '1rem' }}>
-        <AttorneyOperationsHeader
-          firm={data.firm}
-          currentUser={data.currentUser}
-          canViewFirmDashboard={Boolean(data.canViewFirmDashboard)}
-        />
         <div className="panel card-tier-standard">
+          <h2 style={{ margin: '0 0 0.35rem' }}>Calendar &amp; Scheduling</h2>
           <p className="status-message" style={{ margin: 0 }}>
             Your role does not include signing appointment coordination permissions.
           </p>
@@ -111,12 +106,6 @@ function AttorneySchedulingPage() {
         </div>
       ) : null}
 
-      <AttorneyOperationsHeader
-        firm={data.firm}
-        currentUser={data.currentUser}
-        canViewFirmDashboard={Boolean(data.canViewFirmDashboard)}
-      />
-
       <AttorneySchedulingWorkspace
         appointmentRows={data?.appointmentQueue || []}
         matterRows={data?.matterQueue || []}
@@ -124,6 +113,8 @@ function AttorneySchedulingPage() {
         resources={resources}
         memberOptions={memberOptions}
         currentRole={data?.currentUser?.role || ''}
+        firm={data.firm}
+        currentUser={data.currentUser}
         onWorkspaceChanged={loadWorkspace}
       />
     </section>

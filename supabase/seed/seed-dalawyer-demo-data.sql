@@ -448,7 +448,7 @@ begin
       rec.registration_date,
       case when v_is_registered then rec.registration_date::timestamptz + interval '10 hours' else null end,
       case when v_is_registered then 'registered' when rec.matter_status = 'blocked' then 'active' else 'active' end,
-      not v_is_registered,
+      true,
       v_updated_at,
       'info@yakstack.co',
       'Dalawyer Lawyers',

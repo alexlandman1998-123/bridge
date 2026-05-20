@@ -53,6 +53,14 @@ const MATTER_VIEW_COPY = {
   },
 }
 
+const ALL_MATTER_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'active', label: 'Active' },
+  { key: 'delayed', label: 'Delayed' },
+  { key: 'registered', label: 'Registered' },
+  { key: 'shared', label: 'Shared' },
+]
+
 function normalize(value) {
   return String(value || '').trim().toLowerCase()
 }
@@ -119,6 +127,23 @@ function matterMatchesView(matter = {}, view = 'all') {
   return true
 }
 
+function matterMatchesContextFilter(matter = {}, filter = 'all') {
+  const type = normalize(filter || 'all')
+  const lanes = getWorkflowLanes(matter).map(normalize)
+  const stage = normalize(matter.currentStage)
+  const status = normalize(matter.status)
+  const lifecycle = normalize(matter.lifecycleState)
+  const isDelayed = Boolean(matter.flags?.delayed) || status.includes('attention') || status.includes('blocked')
+  const isRegistered = lifecycle.includes('registered') || stage.includes('registered') || Boolean(matter.registrationDate)
+
+  if (type === 'all') return true
+  if (type === 'active') return !isDelayed && !isRegistered
+  if (type === 'delayed') return isDelayed
+  if (type === 'registered') return isRegistered
+  if (type === 'shared') return lanes.length > 1
+  return true
+}
+
 function matchesSearch(matter = {}, searchTerm = '') {
   const query = normalize(searchTerm)
   if (!query) return true
@@ -167,16 +192,23 @@ function LoadingState({ copy = 'Loading attorney matters…' }) {
   )
 }
 
-function EmptyState({ view }) {
+function EmptyState({ view, filter = 'all' }) {
+  const filterLabel = filter === 'all' ? '' : `${titleCase(filter)} `
   return (
     <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
         <BriefcaseBusiness size={20} />
       </div>
-      <h2 className="mt-4 text-base font-semibold text-slate-950">No {MATTER_VIEW_COPY[view]?.title?.toLowerCase() || 'matters'} visible</h2>
+      <h2 className="mt-4 text-base font-semibold text-slate-950">No {filterLabel}{MATTER_VIEW_COPY[view]?.title?.toLowerCase() || 'matters'} visible</h2>
       <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
         Matters appear here when they are assigned to this firm and match the current operational filter.
       </p>
+      <Link
+        to="/new-transaction"
+        className="mt-5 inline-flex items-center justify-center rounded-xl border border-[#12314f] bg-[#12314f] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1b4264]"
+      >
+        Create Matter
+      </Link>
     </section>
   )
 }
@@ -362,6 +394,7 @@ function AttorneyMattersPage() {
   const [viewMode, setViewMode] = useState('list')
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [allMatterFilter, setAllMatterFilter] = useState('all')
 
   const viewKey = MATTER_VIEW_COPY[matterType] ? matterType : 'all'
 
@@ -389,11 +422,18 @@ function AttorneyMattersPage() {
     }
   }, [])
 
+  useEffect(() => {
+    if (viewKey !== 'all') {
+      setAllMatterFilter('all')
+    }
+  }, [viewKey])
+
   const visibleMatters = useMemo(() => {
     let rows = (data?.matterQueue || []).filter((matter) => matterMatchesView(matter, viewKey))
+    if (viewKey === 'all') rows = rows.filter((matter) => matterMatchesContextFilter(matter, allMatterFilter))
     if (statusFilter !== 'all') rows = rows.filter((matter) => normalize(matter.status) === normalize(statusFilter))
     return rows.filter((matter) => matchesSearch(matter, searchTerm))
-  }, [data?.matterQueue, searchTerm, statusFilter, viewKey])
+  }, [allMatterFilter, data?.matterQueue, searchTerm, statusFilter, viewKey])
 
   const statuses = useMemo(
     () => [...new Set((data?.matterQueue || []).map((matter) => matter.status).filter(Boolean))],
@@ -457,6 +497,28 @@ function AttorneyMattersPage() {
           </div>
         </section>
 
+        {viewKey === 'all' ? (
+          <section className="flex max-w-full gap-2 overflow-x-auto pb-1">
+            {ALL_MATTER_FILTERS.map((filter) => {
+              const active = allMatterFilter === filter.key
+              return (
+                <button
+                  key={filter.key}
+                  type="button"
+                  onClick={() => setAllMatterFilter(filter.key)}
+                  className={`inline-flex shrink-0 items-center rounded-full border px-3.5 py-2 text-sm font-semibold transition ${
+                    active
+                      ? 'border-[#12314f] bg-[#12314f] text-white shadow-sm'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              )
+            })}
+          </section>
+        ) : null}
+
         <section className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:grid-cols-[minmax(0,1fr)_220px]">
           <label className="relative block min-w-0">
             <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
@@ -492,7 +554,7 @@ function AttorneyMattersPage() {
             </section>
           )
         ) : (
-          <EmptyState view={viewKey} />
+          <EmptyState view={viewKey} filter={viewKey === 'all' ? allMatterFilter : 'all'} />
         )}
 
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
