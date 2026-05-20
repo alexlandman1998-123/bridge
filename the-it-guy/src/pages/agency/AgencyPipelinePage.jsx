@@ -4926,65 +4926,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
 
       {!isCalendarMode && !isLeadWorkspaceRoute ? (
-        <>
-          <section className="relative overflow-hidden rounded-[26px] border border-[#dce6f1] bg-white p-5 shadow-[0_18px_42px_rgba(24,45,68,0.06)] sm:p-6">
-            <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-              <div className="min-w-0">
-                <p className="text-[0.73rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Pipeline Workspace</p>
-                <h1 className="mt-2 text-[2rem] font-semibold leading-tight tracking-[-0.055em] text-[#102236] sm:text-[2.4rem]">Leads</h1>
-                <p className="mt-2 max-w-2xl text-[0.96rem] leading-6 text-[#60758b]">
-                  Manage buyer and seller opportunities across your agency with clear ownership, next steps, and conversion signals.
-                </p>
-                <div className="mt-4 flex flex-wrap items-center gap-2">
-                  <span className="rounded-full border border-[#dce7f2] bg-white px-3 py-1 text-[0.78rem] font-semibold text-[#405b75]">
-                    {leadPageSummary.total} Active Leads
-                  </span>
-                  <span className="rounded-full border border-[#dce7f2] bg-white px-3 py-1 text-[0.78rem] font-semibold text-[#405b75]">
-                    {leadPageSummary.newThisWeek} New This Week
-                  </span>
-                  <span className="inline-flex items-center gap-2 rounded-full border border-[#cde8d8] bg-[#effaf3] px-3 py-1 text-[0.78rem] font-semibold text-[#26724c]">
-                    <span className="h-2 w-2 rounded-full bg-[#4fc27a] shadow-[0_0_0_3px_rgba(79,194,122,0.14)]" />
-                    Live pipeline
+        <section className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {[
+            { label: 'New Leads', value: metrics.newLeads, detail: `${leadPageSummary.newThisWeek} captured this week`, icon: UserRound, tone: 'text-[#315f8f] bg-[#edf5ff]' },
+            { label: 'Follow-Ups Today', value: metrics.followUpsDueToday, detail: 'Ready for agent action', icon: CheckSquare, tone: 'text-[#8a641d] bg-[#fff7e8]' },
+            { label: 'Active Opportunities', value: metrics.activeOpportunities, detail: `${leadPageSummary.filtered} visible now`, icon: TrendingUp, tone: 'text-[#26724c] bg-[#effaf3]' },
+            { label: 'Appointments This Week', value: metrics.appointmentsThisWeek, detail: 'Viewings and meetings', icon: CalendarDays, tone: 'text-[#405b75] bg-[#f5f8fc]' },
+            { label: 'Overdue Tasks', value: metrics.overdueTasks, detail: metrics.overdueTasks ? 'Needs attention' : 'No blockers', icon: CheckSquare, tone: 'text-[#9a4038] bg-[#fff5f4]' },
+          ].map((metric) => {
+            const Icon = metric.icon
+            return (
+              <article key={metric.label} className="group min-w-0 rounded-[20px] border border-[#dfe8f1] bg-white/88 px-4 py-3 shadow-[0_18px_36px_rgba(24,45,68,0.06)] backdrop-blur transition duration-200 hover:-translate-y-0.5 hover:border-[#cddbe9]">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="min-w-0 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{metric.label}</span>
+                  <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] ${metric.tone}`}>
+                    <Icon size={14} />
                   </span>
                 </div>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row lg:justify-end">
-                <button
-                  type="button"
-                  className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[16px] border border-[#d7e2ed] bg-white px-4 py-2 text-sm font-semibold text-[#1d3348] shadow-[0_14px_28px_rgba(24,45,68,0.07)] transition hover:-translate-y-0.5 hover:border-[#c6d5e5]"
-                  onClick={() => setMessage('Lead import will be available soon. Create a lead manually for now.')}
-                >
-                  <Upload size={15} />
-                  Import Leads
-                </button>
-              </div>
-            </div>
-          </section>
-
-          <section className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            {[
-              { label: 'New Leads', value: metrics.newLeads, detail: `${leadPageSummary.newThisWeek} captured this week`, icon: UserRound, tone: 'text-[#315f8f] bg-[#edf5ff]' },
-              { label: 'Follow-Ups Today', value: metrics.followUpsDueToday, detail: 'Ready for agent action', icon: CheckSquare, tone: 'text-[#8a641d] bg-[#fff7e8]' },
-              { label: 'Active Opportunities', value: metrics.activeOpportunities, detail: `${leadPageSummary.filtered} visible now`, icon: TrendingUp, tone: 'text-[#26724c] bg-[#effaf3]' },
-              { label: 'Appointments This Week', value: metrics.appointmentsThisWeek, detail: 'Viewings and meetings', icon: CalendarDays, tone: 'text-[#405b75] bg-[#f5f8fc]' },
-              { label: 'Overdue Tasks', value: metrics.overdueTasks, detail: metrics.overdueTasks ? 'Needs attention' : 'No blockers', icon: CheckSquare, tone: 'text-[#9a4038] bg-[#fff5f4]' },
-            ].map((metric) => {
-              const Icon = metric.icon
-              return (
-                <article key={metric.label} className="group min-w-0 rounded-[20px] border border-[#dfe8f1] bg-white/88 px-4 py-3 shadow-[0_18px_36px_rgba(24,45,68,0.06)] backdrop-blur transition duration-200 hover:-translate-y-0.5 hover:border-[#cddbe9]">
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="min-w-0 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{metric.label}</span>
-                    <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] ${metric.tone}`}>
-                      <Icon size={14} />
-                    </span>
-                  </div>
-                  <strong className="mt-3 block text-[1.9rem] font-semibold leading-none tracking-[-0.05em] text-[#102236] tabular-nums">{metric.value}</strong>
-                  <p className="mt-2 truncate text-[0.78rem] font-medium text-[#667b92]">{metric.detail}</p>
-                </article>
-              )
-            })}
-          </section>
-        </>
+                <strong className="mt-3 block text-[1.9rem] font-semibold leading-none tracking-[-0.05em] text-[#102236] tabular-nums">{metric.value}</strong>
+                <p className="mt-2 truncate text-[0.78rem] font-medium text-[#667b92]">{metric.detail}</p>
+              </article>
+            )
+          })}
+        </section>
       ) : null}
 
       {isCalendarMode ? (
