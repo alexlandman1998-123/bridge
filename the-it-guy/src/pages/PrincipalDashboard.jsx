@@ -27,6 +27,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import QuickCreateDropdown from '../components/QuickCreateDropdown'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { getPrincipalDashboardData, PRINCIPAL_DASHBOARD_DATE_PRESETS } from '../services/principalDashboardService'
 
@@ -542,6 +543,158 @@ function PipelineSalesOverview({ data, overviewMode, onOverviewModeChange }) {
   )
 }
 
+const TRANSACTION_CATEGORY_STYLES = {
+  development: {
+    label: 'Development',
+    border: 'border-t-[#1769d1]',
+    icon: 'bg-[#edf5ff] text-[#1769d1]',
+    progress: 'bg-[#1769d1]',
+    pill: 'border-[#cfe0ff] bg-[#f3f8ff] text-[#1769d1]',
+  },
+  second_hand: {
+    label: 'Second-Hand',
+    border: 'border-t-[#475467]',
+    icon: 'bg-[#f2f4f7] text-[#475467]',
+    progress: 'bg-[#475467]',
+    pill: 'border-[#d0d5dd] bg-[#f8fafc] text-[#475467]',
+  },
+  commercial: {
+    label: 'Commercial',
+    border: 'border-t-[#047857]',
+    icon: 'bg-[#ecfdf3] text-[#047857]',
+    progress: 'bg-[#047857]',
+    pill: 'border-[#bfe9d2] bg-[#f0fdf4] text-[#047857]',
+  },
+}
+
+const TRANSACTION_HEALTH_STYLES = {
+  on_track: 'border-[#cde8d6] bg-[#eef9f2] text-[#237345]',
+  attention: 'border-[#f4d7ab] bg-[#fff7ea] text-[#9a5b13]',
+  blocked: 'border-[#f2c9c3] bg-[#fff2f0] text-[#a33a2d]',
+  waiting: 'border-[#d8e0ea] bg-[#f8fafc] text-[#667085]',
+}
+
+function ActiveTransactionsSlider({ rows = [] }) {
+  const navigate = useNavigate()
+  const [filter, setFilter] = useState('all')
+  const filteredRows = useMemo(
+    () => (filter === 'all' ? rows : rows.filter((row) => row.category === filter)),
+    [filter, rows],
+  )
+  const filters = [
+    { key: 'all', label: 'All' },
+    { key: 'development', label: 'Development' },
+    { key: 'second_hand', label: 'Second-Hand' },
+    { key: 'commercial', label: 'Commercial' },
+  ]
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-col gap-3 px-1 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-[1.08rem] font-semibold text-[#101828]">Active Transactions</h2>
+          <p className="mt-1 text-sm text-[#667085]">Live operational movement across active deals.</p>
+        </div>
+        <button type="button" onClick={() => navigate('/transactions')} className="h-9 w-fit rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#24364b] shadow-sm">
+          View all transactions
+        </button>
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto px-1 pb-1">
+        {filters.map((item) => {
+          const active = filter === item.key
+          return (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setFilter(item.key)}
+              className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                active ? 'border-[#1769d1] bg-[#edf5ff] text-[#1769d1]' : 'border-[#d9e3ef] bg-white text-[#52657a] hover:border-[#b7c8db]'
+              }`}
+            >
+              {item.label}
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="overflow-x-auto px-1 pb-2 [scrollbar-width:thin]">
+        <div className="flex min-w-0 gap-4">
+          {filteredRows.length ? filteredRows.map((row) => {
+            const categoryStyle = TRANSACTION_CATEGORY_STYLES[row.category] || TRANSACTION_CATEGORY_STYLES.second_hand
+            const healthStyle = TRANSACTION_HEALTH_STYLES[row.health?.key] || TRANSACTION_HEALTH_STYLES.waiting
+            return (
+              <button
+                key={row.id}
+                type="button"
+                onClick={() => navigate(`/transactions/${row.id}`)}
+                className={`group flex w-[82vw] max-w-[380px] shrink-0 flex-col rounded-2xl border border-slate-200 border-t-4 ${categoryStyle.border} bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md sm:w-[340px]`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-[#101828]" title={row.propertyName}>{row.propertyName}</p>
+                    <p className="mt-0.5 truncate text-xs text-[#667085]" title={row.developmentName}>{row.developmentName}</p>
+                  </div>
+                  <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl ${categoryStyle.icon}`}>
+                    <BriefcaseBusiness size={15} />
+                  </span>
+                </div>
+
+                <div className="mt-3 grid gap-1.5 text-xs text-[#52657a]">
+                  <p className="truncate"><span className="font-semibold text-[#344054]">Buyer:</span> {row.buyerName}</p>
+                  <p className="truncate"><span className="font-semibold text-[#344054]">Agent:</span> {row.assignedAgent}</p>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-[#edf2f7] bg-[#fbfdff] p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[#101828]" title={row.stage}>{row.stage}</p>
+                      <p className="mt-1 text-xs text-[#667085]">{row.financeType} · {row.daysActive ?? 0} days active</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full border px-2 py-1 text-[0.68rem] font-semibold ${categoryStyle.pill}`}>
+                      {categoryStyle.label}
+                    </span>
+                  </div>
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between text-[0.68rem] font-semibold text-[#667085]">
+                      <span>Progress</span>
+                      <span>{row.progressPercent}%</span>
+                    </div>
+                    <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e5edf6]">
+                      <span className={`block h-full rounded-full ${categoryStyle.progress}`} style={{ width: `${row.progressPercent}%` }} />
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-1">
+                      {row.workflowSteps.map((step) => (
+                        <span key={step.label} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+                          <span className={`h-2 w-2 rounded-full ${step.state === 'complete' ? categoryStyle.progress : step.state === 'current' ? 'bg-[#101828]' : 'bg-[#d0d5dd]'}`} />
+                          <span className="max-w-full truncate text-[0.58rem] font-semibold text-[#8a9aac]">{step.label}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex items-start justify-between gap-3">
+                  <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${healthStyle}`}>
+                    {row.health?.label || 'Waiting'}
+                  </span>
+                  <p className="line-clamp-2 text-right text-xs font-semibold leading-5 text-[#52657a]" title={row.nextAction}>
+                    {row.nextAction || 'Next action pending'}
+                  </p>
+                </div>
+              </button>
+            )
+          }) : (
+            <div className={`${dashboardCardClass} flex min-h-[180px] min-w-full items-center justify-center border-dashed px-4 py-8 text-center text-sm text-[#667085]`}>
+              No active transactions match this filter.
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function AgentPerformanceTable({ rows }) {
   const navigate = useNavigate()
   return (
@@ -729,6 +882,14 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '' }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const canViewAllTransactions = useMemo(
+    () =>
+      canAccessPrincipalExperience({
+        appRole: profile?.role,
+        membershipRole: normalizeOrganisationMembershipRole(profile?.membershipRole || profile?.organisationRole || profile?.role),
+      }),
+    [profile?.membershipRole, profile?.organisationRole, profile?.role],
+  )
 
   useEffect(() => {
     let active = true
@@ -759,6 +920,9 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '' }) {
         workspaceId: selectedWorkspaceId,
         dateRangePreset: dateRange,
         overviewMode,
+        canViewAllTransactions,
+        actorId: profile?.id || profile?.userId || '',
+        actorEmail: profile?.email || '',
       })
       setData(result)
       if (result?.filters?.selectedWorkspaceId && result.filters.selectedWorkspaceId !== selectedWorkspaceId) {
@@ -770,7 +934,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '' }) {
     } finally {
       setLoading(false)
     }
-  }, [dateRange, overviewMode, resolvedAgencyId, selectedWorkspaceId])
+  }, [canViewAllTransactions, dateRange, overviewMode, profile?.email, profile?.id, profile?.userId, resolvedAgencyId, selectedWorkspaceId])
 
   useEffect(() => {
     void loadDashboard()
@@ -828,6 +992,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '' }) {
           <div className={`space-y-5 transition-opacity ${isRefreshing ? 'opacity-60' : 'opacity-100'}`} aria-busy={isRefreshing}>
             <PrincipalKpiRow data={data} />
             <PipelineSalesOverview data={data} overviewMode={overviewMode} onOverviewModeChange={setOverviewMode} />
+            <ActiveTransactionsSlider rows={data.activeTransactions || []} />
             <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
               <AgentPerformanceTable rows={data.agentPerformance} />
               <AttentionRequiredCard attention={data.attentionRequired} />

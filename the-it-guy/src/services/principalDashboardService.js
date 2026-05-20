@@ -242,6 +242,71 @@ function getFinanceBucket(row = {}) {
   return 'unknown'
 }
 
+function getActiveTransactionStageProgress(row = {}) {
+  const status = getTransactionStatusText(row)
+  if (status.includes('registered') || status.includes('complete')) return 100
+  if (status.includes('lodg')) return 82
+  if (status.includes('transfer') || status.includes('attorney')) return 64
+  if (status.includes('finance') || status.includes('bond')) return 42
+  if (status.includes('offer') || status.includes('otp') || status.includes('signed')) return 24
+  return 12
+}
+
+function classifyActiveTransactionCategory(row = {}) {
+  const haystack = [
+    row.transaction_type,
+    row.transactionType,
+    row.listing_source,
+    row.development_id,
+    row.development_name,
+    row.property_type,
+    row.source_context,
+  ].map(normalizeKey).join(' ')
+  if (haystack.includes('commercial')) return 'commercial'
+  if (haystack.includes('development') || normalizeText(row.development_id)) return 'development'
+  if (haystack.includes('resale') || haystack.includes('second') || haystack.includes('private_property')) return 'second_hand'
+  return 'second_hand'
+}
+
+function getTransactionHealth(row = {}) {
+  const status = getTransactionStatusText(row)
+  const staleDays = daysBetween(row.last_meaningful_activity_at || row.updated_at || row.created_at)
+  if (status.includes('blocked') || status.includes('delayed') || status.includes('cancel')) return { key: 'blocked', label: 'Blocked / Delayed' }
+  if (staleDays !== null && staleDays > 14) return { key: 'attention', label: 'Needs Attention' }
+  if (status.includes('waiting') || status.includes('pending')) return { key: 'waiting', label: 'Waiting' }
+  return { key: 'on_track', label: 'On Track' }
+}
+
+function buildActiveTransactionCard(row = {}, usersByKey = new Map()) {
+  const progressPercent = getActiveTransactionStageProgress(row)
+  const stage = normalizeText(row.current_main_stage || row.stage || row.lifecycle_state || row.operational_state) || 'Transaction opened'
+  const propertyName = normalizeText(row.unit_number || row.property_title || row.listing_title || row.property_address_line_1 || row.transaction_reference || row.id)
+  const developmentName = normalizeText(row.development_name || row.suburb || row.city || row.transaction_type) || 'Listing'
+  const financeKey = getFinanceBucket(row)
+  const nextAction = normalizeText(row.next_action || row.waiting_on_role || row.operational_state || row.attorney_stage || stage)
+  const stepIndex = progressPercent >= 95 ? 4 : progressPercent >= 75 ? 3 : progressPercent >= 55 ? 2 : progressPercent >= 32 ? 1 : 0
+  return {
+    id: normalizeText(row.id),
+    reference: normalizeText(row.transaction_reference || row.id),
+    propertyName,
+    developmentName,
+    buyerName: normalizeText(row.buyer_name || row.purchaser_name || row.client_name) || 'Buyer pending',
+    assignedAgent: getAgentName(row, usersByKey),
+    stage,
+    financeType: financeKey === 'bond' ? 'Bond' : financeKey === 'cash' ? 'Cash' : 'Finance TBC',
+    daysActive: daysBetween(row.created_at),
+    progressPercent,
+    category: classifyActiveTransactionCategory(row),
+    health: getTransactionHealth(row),
+    nextAction,
+    workflowSteps: ['OTP', 'Finance', 'Transfer', 'Lodgement', 'Registration'].map((label, index) => ({
+      label,
+      state: index < stepIndex ? 'complete' : index === stepIndex ? 'current' : 'upcoming',
+    })),
+    updatedAt: row.updated_at || row.created_at,
+  }
+}
+
 function trend(current, previous) {
   const currentValue = toNumber(current)
   const previousValue = toNumber(previous)
@@ -430,6 +495,7 @@ function buildEmptyDashboard() {
       movement: null,
       stages: [],
     },
+    activeTransactions: [],
     revenue: {
       registeredValue: 0,
       earnedCommission: 0,
@@ -483,13 +549,16 @@ export async function getPrincipalDashboardData({
   startDate = null,
   endDate = null,
   overviewMode = 'pipeline',
+  canViewAllTransactions = true,
+  actorId = '',
+  actorEmail = '',
 } = {}) {
   if (!isSupabaseConfigured || !supabase) return buildEmptyDashboard()
 
   const resolvedAgencyId = normalizeText(organisationId || agencyId)
   const range = resolveDateRange(dateRangePreset || dateRange, new Date(), { startDate, endDate })
   const transactionFields = [
-    'id, organisation_id, assigned_branch_id, assigned_user_id, owner_user_id, assigned_agent, assigned_agent_email, transaction_reference, stage, current_main_stage, lifecycle_state, is_active, sales_price, purchase_price, finance_type, cash_amount, bond_amount, expected_transfer_date, registration_date, registered_at, completed_at, cancelled_at, archived_at, last_meaningful_activity_at, updated_at, created_at, assigned_attorney_email, attorney_stage, operational_state, waiting_on_role, next_action, property_address_line_1, suburb, city, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount',
+    'id, organisation_id, assigned_branch_id, assigned_user_id, owner_user_id, assigned_agent, assigned_agent_email, transaction_reference, transaction_type, listing_id, development_id, development_name, listing_title, property_title, unit_number, buyer_name, purchaser_name, client_name, stage, current_main_stage, lifecycle_state, is_active, sales_price, purchase_price, finance_type, cash_amount, bond_amount, expected_transfer_date, registration_date, registered_at, completed_at, cancelled_at, archived_at, last_meaningful_activity_at, updated_at, created_at, assigned_attorney_email, attorney_stage, operational_state, waiting_on_role, next_action, property_address_line_1, suburb, city, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount',
     'id, organisation_id, assigned_user_id, owner_user_id, assigned_agent, assigned_agent_email, transaction_reference, stage, current_main_stage, lifecycle_state, is_active, sales_price, purchase_price, finance_type, cash_amount, bond_amount, expected_transfer_date, registration_date, registered_at, completed_at, cancelled_at, archived_at, last_meaningful_activity_at, updated_at, created_at, assigned_attorney_email, attorney_stage, operational_state, waiting_on_role, next_action, property_address_line_1, suburb, city, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount',
   ]
 
@@ -519,7 +588,19 @@ export async function getPrincipalDashboardData({
 
   const availableWorkspaces = buildAvailableWorkspaces(organisationBranches)
   const selectedWorkspaceId = getSelectedWorkspaceId(workspaceId, availableWorkspaces)
-  const transactions = allTransactions.filter((row) => isScopedToWorkspace(row, selectedWorkspaceId, 'assigned_branch_id'))
+  const scopedActorId = normalizeText(actorId).toLowerCase()
+  const scopedActorEmail = normalizeText(actorEmail).toLowerCase()
+  const scopedAllTransactions = canViewAllTransactions
+    ? allTransactions
+    : allTransactions.filter((row) => {
+        const assignedUserId = normalizeText(row.assigned_user_id || row.owner_user_id).toLowerCase()
+        const assignedEmail = normalizeText(row.assigned_agent_email).toLowerCase()
+        return Boolean(
+          (scopedActorId && assignedUserId === scopedActorId) ||
+          (scopedActorEmail && assignedEmail === scopedActorEmail),
+        )
+      })
+  const transactions = scopedAllTransactions.filter((row) => isScopedToWorkspace(row, selectedWorkspaceId, 'assigned_branch_id'))
   const leads = allLeads.filter((row) => isScopedToWorkspace(row, selectedWorkspaceId, 'branch_id'))
   const organisationUsers = allOrganisationUsers.filter((row) => isScopedToWorkspace(row, selectedWorkspaceId, 'branch_id'))
   const transactionIds = new Set(transactions.map((row) => normalizeText(row.id)).filter(Boolean))
@@ -640,6 +721,12 @@ export async function getPrincipalDashboardData({
     if (row.agentId) usersByKey.set(row.agentId.toLowerCase(), row)
     if (row.email) usersByKey.set(row.email, row)
   }
+  const activeTransactionCards = activeTransactions
+    .slice()
+    .sort((left, right) => new Date(right.updated_at || right.created_at || 0) - new Date(left.updated_at || left.created_at || 0))
+    .slice(0, 60)
+    .map((row) => buildActiveTransactionCard(row, usersByKey))
+
   const agentMap = new Map()
   for (const row of activeTransactions) {
     const key = getAgentKeyFromTransaction(row)
@@ -872,6 +959,7 @@ export async function getPrincipalDashboardData({
       winRate,
     },
     transactions: transactionsOverview,
+    activeTransactions: activeTransactionCards,
     revenue: revenueOverview,
     overview: {
       pipeline: {
