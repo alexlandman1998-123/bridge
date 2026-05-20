@@ -66,7 +66,19 @@ function normalizeLaneKey(value) {
 function normalizeLaneStatus(value, fallback = 'not_started') {
   const normalized = String(value || '').trim().toLowerCase()
   if (normalized === 'complete') return 'completed'
-  return ['not_started', 'in_progress', 'blocked', 'completed', 'not_required'].includes(normalized) ? normalized : fallback
+  return ['not_started', 'in_progress', 'waiting', 'blocked', 'completed', 'not_required'].includes(normalized) ? normalized : fallback
+}
+
+function normalizeStepStatus(value, fallback = 'not_started') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'complete') return 'completed'
+  if (normalized === 'pending') return 'waiting'
+  return ['not_started', 'in_progress', 'waiting', 'blocked', 'completed'].includes(normalized) ? normalized : fallback
+}
+
+function isConstraintLikeError(error) {
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase()
+  return error?.code === '23514' || message.includes('constraint') || message.includes('violates')
 }
 
 function normalizeVisibility(value, fallback = 'internal') {
@@ -123,13 +135,14 @@ function summarizeSteps(steps = [], stages = []) {
   const ordered = [...steps].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
   const completed = ordered.filter((step) => step.status === 'completed').length
   const blocked = ordered.find((step) => step.status === 'blocked') || null
+  const waiting = ordered.find((step) => step.status === 'waiting') || null
   const inProgress = ordered.find((step) => step.status === 'in_progress') || null
   const nextOpen = ordered.find((step) => step.status !== 'completed') || null
-  const current = blocked || inProgress || nextOpen || ordered.at(-1) || null
+  const current = blocked || waiting || inProgress || nextOpen || ordered.at(-1) || null
   const currentStage = current?.step_key || stages[0] || null
   const finalStage = stages.at(-1)
   const allComplete = Boolean(finalStage && ordered.length && ordered.every((step) => step.status === 'completed'))
-  const status = allComplete ? 'completed' : blocked ? 'blocked' : completed || inProgress ? 'in_progress' : 'not_started'
+  const status = allComplete ? 'completed' : blocked ? 'blocked' : waiting ? 'waiting' : completed || inProgress ? 'in_progress' : 'not_started'
 
   return {
     totalSteps: ordered.length,
@@ -966,6 +979,161 @@ export async function updateAttorneyWorkflowLaneStage({
       attorneyRole: LANE_META[normalizedLaneKey].attorneyRole,
       previousStage: currentStage || null,
       newStage: normalizedStageKey,
+      note: normalizedNote || null,
+    },
+  })
+
+  return getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
+}
+
+export async function updateAttorneyWorkflowStepStatus({
+  transactionId,
+  laneKey,
+  stepId = null,
+  stepKey = null,
+  status = 'in_progress',
+  note = '',
+  visibility = 'internal',
+} = {}) {
+  const client = requireClient()
+  const actor = await getAuthenticatedUser(client)
+  const normalizedTransactionId = String(transactionId || '').trim()
+  const normalizedLaneKey = normalizeLaneKey(laneKey)
+  const normalizedStepKey = String(stepKey || '').trim()
+  const normalizedStatus = normalizeStepStatus(status, 'not_started')
+  const normalizedNote = String(note || '').trim()
+  const normalizedVisibility = normalizeVisibility(visibility)
+  if (!normalizedTransactionId) throw new Error('Transaction id is required.')
+  if (!stepId && !normalizedStepKey) throw new Error('Workflow step is required.')
+
+  await assertCanUpdateLane({ user: actor, transactionId: normalizedTransactionId, laneKey: normalizedLaneKey })
+  const permissionContext = await getAttorneyLegalPermissionContext({
+    userId: actor.id,
+    transactionId: normalizedTransactionId,
+    attorneyRole: LANE_META[normalizedLaneKey].attorneyRole,
+  })
+  assertCanPublishVisibility(permissionContext, normalizedVisibility)
+
+  const lane = await fetchLaneForUpdate(client, normalizedTransactionId, normalizedLaneKey)
+  let stepQuery = client
+    .from('transaction_subprocess_steps')
+    .select('id, subprocess_id, step_key, step_label, status, completed_at, comment, owner_type, sort_order, updated_at, created_at')
+    .eq('subprocess_id', lane.id)
+
+  stepQuery = stepId ? stepQuery.eq('id', stepId) : stepQuery.eq('step_key', normalizedStepKey)
+  const stepResult = await stepQuery.maybeSingle()
+  if (stepResult.error) {
+    if (isMissingSchemaError(stepResult.error)) throw new Error('Attorney workflow steps are not set up yet.')
+    throw stepResult.error
+  }
+  if (!stepResult.data) throw new Error('Workflow step not found.')
+
+  const nowIso = new Date().toISOString()
+  const completedAt = normalizedStatus === 'completed' ? nowIso : null
+  const updatePayload = {
+    status: normalizedStatus,
+    comment: normalizedNote || null,
+    completed_at: completedAt,
+    visibility_scope: normalizedVisibility,
+    updated_at: nowIso,
+  }
+
+  let updateStep = await client
+    .from('transaction_subprocess_steps')
+    .update(updatePayload)
+    .eq('id', stepResult.data.id)
+    .select('id, subprocess_id, step_key, step_label, status, completed_at, comment, owner_type, sort_order, updated_at, created_at')
+    .single()
+
+  if (updateStep.error && (isMissingColumnError(updateStep.error, 'visibility_scope') || isConstraintLikeError(updateStep.error))) {
+    const fallbackPayload = { ...updatePayload }
+    delete fallbackPayload.visibility_scope
+    if (isConstraintLikeError(updateStep.error) && normalizedStatus === 'waiting') {
+      fallbackPayload.status = 'in_progress'
+      fallbackPayload.comment = normalizedNote ? `Waiting: ${normalizedNote}` : 'Waiting'
+    }
+    updateStep = await client
+      .from('transaction_subprocess_steps')
+      .update(fallbackPayload)
+      .eq('id', stepResult.data.id)
+      .select('id, subprocess_id, step_key, step_label, status, completed_at, comment, owner_type, sort_order, updated_at, created_at')
+      .single()
+  }
+  if (updateStep.error) throw updateStep.error
+
+  const allStepsQuery = await client
+    .from('transaction_subprocess_steps')
+    .select('id, status')
+    .eq('subprocess_id', lane.id)
+  if (allStepsQuery.error && !isMissingSchemaError(allStepsQuery.error)) {
+    throw allStepsQuery.error
+  }
+  const allSteps = allStepsQuery.data || []
+  const allCompleted = allSteps.length > 0 && allSteps.every((step) => step.status === 'completed')
+  const hasBlocked = allSteps.some((step) => step.status === 'blocked')
+  const hasWaiting = allSteps.some((step) => step.status === 'waiting')
+  const hasStarted = allSteps.some((step) => ['in_progress', 'waiting', 'completed'].includes(step.status))
+  const nextLaneStatus = allCompleted ? 'completed' : hasBlocked ? 'blocked' : hasWaiting ? 'waiting' : hasStarted ? 'in_progress' : 'not_started'
+
+  let laneUpdate = await client
+    .from('transaction_subprocesses')
+    .update({
+      current_stage: updateStep.data.step_key,
+      lane_status: nextLaneStatus,
+      status: nextLaneStatus,
+      completed_at: nextLaneStatus === 'completed' ? nowIso : null,
+      updated_by: actor.id,
+      updated_at: nowIso,
+    })
+    .eq('id', lane.id)
+
+  if (laneUpdate.error && (isMissingColumnError(laneUpdate.error, 'current_stage') || isMissingColumnError(laneUpdate.error, 'lane_status') || isConstraintLikeError(laneUpdate.error))) {
+    const fallbackLaneStatus = nextLaneStatus === 'waiting' ? 'in_progress' : nextLaneStatus
+    laneUpdate = await client
+      .from('transaction_subprocesses')
+      .update({
+        status: fallbackLaneStatus,
+        updated_at: nowIso,
+      })
+      .eq('id', lane.id)
+  }
+  if (laneUpdate.error) throw laneUpdate.error
+
+  await client.from('transaction_attorney_lane_history').insert({
+    transaction_id: normalizedTransactionId,
+    subprocess_id: lane.id,
+    lane_key: normalizedLaneKey,
+    attorney_role: LANE_META[normalizedLaneKey].attorneyRole,
+    previous_stage: lane.current_stage || null,
+    new_stage: updateStep.data.step_key,
+    previous_status: stepResult.data.status || null,
+    new_status: normalizedStatus,
+    changed_by: actor.id,
+    note: normalizedNote || null,
+    visibility: normalizedVisibility,
+    source: 'attorney_workspace_step_drawer',
+    metadata: { stepId: updateStep.data.id, stepLabel: updateStep.data.step_label || null },
+  }).catch(() => null)
+
+  await insertTransactionEvent(client, {
+    transactionId: normalizedTransactionId,
+    eventType:
+      normalizedStatus === 'blocked'
+        ? 'AttorneyWorkflowStepBlocked'
+        : normalizedStatus === 'waiting'
+          ? 'AttorneyWorkflowStepWaiting'
+          : normalizedStatus === 'completed'
+            ? 'AttorneyWorkflowStepCompleted'
+            : 'AttorneyWorkflowStepUpdated',
+    actorId: actor.id,
+    visibility: normalizedVisibility,
+    eventData: {
+      laneKey: normalizedLaneKey,
+      attorneyRole: LANE_META[normalizedLaneKey].attorneyRole,
+      stepId: updateStep.data.id,
+      stepKey: updateStep.data.step_key,
+      stepLabel: updateStep.data.step_label,
+      status: normalizedStatus,
       note: normalizedNote || null,
     },
   })

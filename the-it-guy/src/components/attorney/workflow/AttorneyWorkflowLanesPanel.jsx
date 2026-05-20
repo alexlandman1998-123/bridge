@@ -22,6 +22,7 @@ import Modal from '../../ui/Modal'
 const STATUS_CLASS = {
   completed: 'border-success/30 bg-successSoft text-success',
   in_progress: 'border-info/30 bg-infoSoft text-info',
+  waiting: 'border-warning/30 bg-warningSoft text-warning',
   blocked: 'border-danger/30 bg-dangerSoft text-danger',
   not_started: 'border-borderDefault bg-mutedBg text-textMuted',
 }

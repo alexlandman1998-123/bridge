@@ -251,6 +251,8 @@ function SummaryStrip({ matters = [] }) {
 function MatterCard({ matter }) {
   const lanes = getWorkflowLanes(matter)
   const riskTone = getRiskTone(matter)
+  const matterHref = matter.actionHref || `/transactions/${matter.matterId}`
+  const matterNavigationState = { matterPreview: matter }
   return (
     <article className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
       <div className="flex items-start justify-between gap-3">
@@ -309,7 +311,8 @@ function MatterCard({ matter }) {
       </div>
 
       <Link
-        to={matter.actionHref || `/transactions/${matter.matterId}`}
+        to={matterHref}
+        state={matterNavigationState}
         className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#12314f] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0d253d]"
       >
         Open Matter
@@ -348,6 +351,8 @@ function MattersTable({ matters = [] }) {
             {matters.map((matter) => {
               const lanes = getWorkflowLanes(matter)
               const riskTone = getRiskTone(matter)
+              const matterHref = matter.actionHref || `/transactions/${matter.matterId}`
+              const matterNavigationState = { matterPreview: matter }
               return (
                 <tr key={matter.assignmentId || matter.matterId} className="align-top hover:bg-slate-50/60">
                   <td className="px-4 py-4 font-semibold text-slate-950">{matter.matterReference}</td>
@@ -371,7 +376,7 @@ function MattersTable({ matters = [] }) {
                   </td>
                   <td className="px-4 py-4 text-slate-700">{formatDate(matter.lastUpdated)}</td>
                   <td className="px-4 py-4">
-                    <Link to={matter.actionHref || `/transactions/${matter.matterId}`} className="inline-flex items-center gap-1 font-semibold text-blue-700 hover:text-blue-900">
+                    <Link to={matterHref} state={matterNavigationState} className="inline-flex items-center gap-1 font-semibold text-blue-700 hover:text-blue-900">
                       Open <ArrowRight size={14} />
                     </Link>
                   </td>

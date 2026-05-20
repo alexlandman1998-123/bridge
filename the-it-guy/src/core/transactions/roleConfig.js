@@ -21,7 +21,7 @@ export const EXTERNAL_ROLE_LABELS = {
 
 export const FINANCE_MANAGED_BY_OPTIONS = ['bond_originator', 'client', 'internal']
 
-export const SUBPROCESS_STEP_STATUSES = ['not_started', 'in_progress', 'completed', 'blocked']
+export const SUBPROCESS_STEP_STATUSES = ['not_started', 'in_progress', 'completed', 'blocked', 'waiting']
 export const SUBPROCESS_TYPES = ['finance', 'transfer', 'bond', 'cancellation', 'attorney']
 export const SUBPROCESS_OWNER_TYPES = ['bond_originator', 'attorney', 'internal']
 

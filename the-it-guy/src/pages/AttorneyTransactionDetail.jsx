@@ -1,22 +1,29 @@
 import {
   Activity,
+  AlertTriangle,
+  AtSign,
   Building2,
+  CalendarDays,
   ChevronRight,
   CircleDollarSign,
   Clock3,
   FileText,
+  GaugeCircle,
   MessageSquarePlus,
   MoreHorizontal,
+  Paperclip,
   Send,
+  Smile,
+  Upload,
   UsersRound,
   Workflow,
+  X,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
+import { useLocation, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
-import AttorneyWorkflowLanesPanel from '../components/attorney/workflow/AttorneyWorkflowLanesPanel'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
@@ -25,7 +32,12 @@ import { getAttorneyTransferStage, stageLabelFromAttorneyKey } from '../core/tra
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
-import { getAttorneyWorkflowOperationsForTransaction } from '../services/attorneyWorkflow/attorneyWorkflowLaneService'
+import {
+  addAttorneyTransactionUpdate,
+  getAttorneyWorkflowOperationsForTransaction,
+  requestAttorneyWorkflowLaneDocument,
+  updateAttorneyWorkflowStepStatus,
+} from '../services/attorneyWorkflow/attorneyWorkflowLaneService'
 import {
   addTransactionDiscussionComment,
   archiveTransactionLifecycle,
@@ -154,14 +166,15 @@ const TRANSACTION_ACCESS_LEVEL_OPTIONS = [
 
 const DISCUSSION_TYPES = [
   { key: 'operational', label: 'Operational' },
-  { key: 'blocker', label: 'Blocker' },
+  { key: 'workflow', label: 'Workflow' },
   { key: 'document', label: 'Document' },
-  { key: 'decision', label: 'Decision' },
-  { key: 'legal', label: 'Legal' },
+  { key: 'reminder', label: 'Reminder' },
+  { key: 'internal_note', label: 'Internal Note' },
+  { key: 'client_update', label: 'Client Update' },
 ]
 const DISCUSSION_VISIBILITY_OPTIONS = [
-  { key: 'shared', label: 'Shared Update' },
-  { key: 'internal', label: 'Internal Note' },
+  { key: 'internal', label: 'Internal Only' },
+  { key: 'shared', label: 'Shared with Matter Team' },
   { key: 'client_visible', label: 'Client Visible' },
 ]
 
@@ -369,44 +382,6 @@ function normalizeRichTextToPlainText(value) {
     .trim()
 }
 
-function getCommentRoleTone(role) {
-  const normalized = String(role || '').trim().toLowerCase()
-  if (normalized === 'developer') {
-    return {
-      badge: 'border border-info/30 bg-infoSoft text-info',
-      card: 'border-[#d9e7f5] bg-[#f8fbff]',
-    }
-  }
-  if (normalized === 'attorney' || normalized === 'conveyancer') {
-    return {
-      badge: 'border border-primary/30 bg-primarySoft text-primary',
-      card: 'border-[#d9e7f5] bg-white',
-    }
-  }
-  if (normalized === 'agent') {
-    return {
-      badge: 'border border-warning/30 bg-warningSoft text-warning',
-      card: 'border-[#efe3cf] bg-white',
-    }
-  }
-  if (normalized === 'bond_originator' || normalized === 'bond') {
-    return {
-      badge: 'border border-indigo-200 bg-indigo-50 text-indigo-700',
-      card: 'border-[#e2e7f7] bg-white',
-    }
-  }
-  if (normalized === 'client' || normalized === 'buyer' || normalized === 'seller') {
-    return {
-      badge: 'border border-success/30 bg-successSoft text-success',
-      card: 'border-[#d8eadf] bg-white',
-    }
-  }
-  return {
-    badge: 'border border-borderDefault bg-mutedBg text-textMuted',
-    card: 'border-[#e1e9f2] bg-white',
-  }
-}
-
 function buildPropertyAddress(transaction) {
   return [
     transaction?.property_address_line_1,
@@ -474,8 +449,17 @@ const WORKFLOW_STATUS_META = {
   in_progress: { label: 'In Progress', dot: 'bg-blue-600', text: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
   waiting: { label: 'Waiting', dot: 'bg-amber-500', text: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200' },
   blocked: { label: 'Blocked', dot: 'bg-red-500', text: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200' },
+  delayed: { label: 'Delayed', dot: 'bg-orange-500', text: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-200' },
   not_started: { label: 'Not Started', dot: 'bg-slate-300', text: 'text-slate-500', bg: 'bg-slate-50', border: 'border-slate-200' },
 }
+
+const WORKFLOW_STEP_STATUS_OPTIONS = [
+  { value: 'not_started', label: 'Not Started' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'waiting', label: 'Waiting' },
+  { value: 'blocked', label: 'Blocked' },
+  { value: 'completed', label: 'Completed' },
+]
 
 const LANE_ACCENTS = {
   transfer: {
@@ -526,7 +510,8 @@ const WORKFLOW_STEP_LABEL_OVERRIDES = {
 function normalizeWorkspaceStatus(value) {
   const normalized = String(value || '').trim().toLowerCase()
   if (normalized === 'complete') return 'completed'
-  if (normalized === 'pending' || normalized === 'under_review' || normalized === 'requested') return 'waiting'
+  if (normalized === 'pending' || normalized === 'requested' || normalized === 'under_review') return 'waiting'
+  if (normalized === 'at_risk') return 'delayed'
   return WORKFLOW_STATUS_META[normalized] ? normalized : 'not_started'
 }
 
@@ -552,11 +537,395 @@ function getAssignedFirmLabel(lane = {}) {
   )
 }
 
+function getCurrentWorkflowStep(lane = {}) {
+  const steps = Array.isArray(lane?.steps) ? lane.steps : []
+  const currentKey = lane?.currentStage || lane?.summary?.currentStage
+  return (
+    steps.find((step) => step.stepKey === currentKey || step.step_key === currentKey) ||
+    steps.find((step) => ['blocked', 'waiting', 'in_progress'].includes(normalizeWorkspaceStatus(step.status))) ||
+    steps.find((step) => normalizeWorkspaceStatus(step.status) !== 'completed') ||
+    steps.at(-1) ||
+    null
+  )
+}
+
+function getWorkflowHealthKey(lane = {}) {
+  const status = normalizeWorkspaceStatus(lane?.laneStatus || lane?.summary?.status)
+  if (status === 'completed' || status === 'blocked' || status === 'waiting') return status
+  const dueDate = lane?.dueDate ? new Date(lane.dueDate).getTime() : null
+  if (dueDate && Number.isFinite(dueDate) && dueDate < Date.now() && status !== 'completed') return 'delayed'
+  return status === 'not_started' ? 'waiting' : 'in_progress'
+}
+
+function getWorkflowHealthLabel(lane = {}) {
+  const key = getWorkflowHealthKey(lane)
+  if (key === 'in_progress') return 'On Track'
+  return WORKFLOW_STATUS_META[key]?.label || 'On Track'
+}
+
+function getWorkflowFocus(lane = {}) {
+  const currentStep = getCurrentWorkflowStep(lane)
+  const status = normalizeWorkspaceStatus(currentStep?.status || lane?.laneStatus || lane?.summary?.status)
+  const label = currentStep ? getWorkflowStepLabel(currentStep) : lane?.summary?.nextAction || 'Workflow review'
+  if (status === 'blocked') return `Blocked: ${label}`
+  if (status === 'waiting') return `Waiting on ${label.toLowerCase()}`
+  if (status === 'completed') return `${label} completed`
+  if (status === 'not_started') return `Start ${label.toLowerCase()}`
+  return `Current focus: ${label}`
+}
+
+function getWorkflowExplanation(lane = {}) {
+  const currentStep = getCurrentWorkflowStep(lane)
+  const status = normalizeWorkspaceStatus(currentStep?.status || lane?.laneStatus || lane?.summary?.status)
+  if (currentStep?.comment) return currentStep.comment
+  if (status === 'blocked') return 'Resolve the blocker or add a note so the team can move the matter forward.'
+  if (status === 'waiting') return 'Capture who or what the workflow is waiting on, then follow up from the action drawer.'
+  if (lane?.documentSummary?.missing) return `${lane.documentSummary.missing} required document item(s) still need attention.`
+  return lane?.summary?.nextAction ? `Next action: ${lane.summary.nextAction}` : 'Keep the lane moving by updating the active step or adding a workflow note.'
+}
+
+function getPrimaryWorkflowAction(lane = {}) {
+  const currentStep = getCurrentWorkflowStep(lane)
+  const status = normalizeWorkspaceStatus(currentStep?.status || lane?.laneStatus || lane?.summary?.status)
+  if (status === 'blocked') return 'Blocker Details'
+  if (status === 'waiting') return 'Send Reminder'
+  if (lane?.documentSummary?.missing) return 'Upload Document'
+  return 'Mark Step Complete'
+}
+
+function getStepClasses(step = {}, currentStep = null) {
+  const status = normalizeWorkspaceStatus(step.status)
+  const meta = WORKFLOW_STATUS_META[status] || WORKFLOW_STATUS_META.not_started
+  const currentKey = currentStep?.stepKey || currentStep?.step_key
+  const stepKey = step.stepKey || step.step_key
+  const isCurrent = currentStep && (currentStep.id === step.id || currentKey === stepKey)
+  const base = isCurrent ? 'border-primary bg-primarySoft shadow-[0_8px_18px_rgba(15,70,110,0.10)]' : `${meta.border} ${meta.bg}`
+  const text = isCurrent ? 'text-primary' : meta.text
+  return { base, text, meta, isCurrent }
+}
+
 function getDocumentStatus(document = {}) {
   const raw = String(document.review_status || document.status || '').trim().toLowerCase()
   if (raw === 'under_review') return 'Uploaded'
   if (raw === 'completed') return 'Approved'
   return toTitle(raw || 'Uploaded')
+}
+
+const ACTIVITY_FILTER_OPTIONS = [
+  { key: 'all', label: 'All' },
+  { key: 'transfer', label: 'Transfer' },
+  { key: 'bond', label: 'Bond' },
+  { key: 'cancellation', label: 'Cancellation' },
+  { key: 'documents', label: 'Documents' },
+  { key: 'notes', label: 'Notes' },
+  { key: 'internal', label: 'Internal' },
+]
+
+const ACTIVITY_CATEGORY_META = {
+  transfer: {
+    label: 'Transfer',
+    badge: 'border-blue-200 bg-blue-50 text-blue-700',
+    icon: 'bg-blue-50 text-blue-700 ring-blue-100',
+    card: 'border-blue-100',
+    dot: 'bg-blue-600',
+    Icon: Workflow,
+  },
+  bond: {
+    label: 'Bond',
+    badge: 'border-violet-200 bg-violet-50 text-violet-700',
+    icon: 'bg-violet-50 text-violet-700 ring-violet-100',
+    card: 'border-violet-100',
+    dot: 'bg-violet-600',
+    Icon: Workflow,
+  },
+  cancellation: {
+    label: 'Cancellation',
+    badge: 'border-orange-200 bg-orange-50 text-orange-700',
+    icon: 'bg-orange-50 text-orange-700 ring-orange-100',
+    card: 'border-orange-100',
+    dot: 'bg-orange-500',
+    Icon: Workflow,
+  },
+  documents: {
+    label: 'Documents',
+    badge: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    icon: 'bg-emerald-50 text-emerald-700 ring-emerald-100',
+    card: 'border-emerald-100',
+    dot: 'bg-emerald-500',
+    Icon: FileText,
+  },
+  appointments: {
+    label: 'Appointment',
+    badge: 'border-sky-200 bg-sky-50 text-sky-700',
+    icon: 'bg-sky-50 text-sky-700 ring-sky-100',
+    card: 'border-sky-100',
+    dot: 'bg-sky-500',
+    Icon: CalendarDays,
+  },
+  notes: {
+    label: 'Notes',
+    badge: 'border-slate-200 bg-slate-50 text-slate-600',
+    icon: 'bg-slate-50 text-slate-600 ring-slate-100',
+    card: 'border-slate-100',
+    dot: 'bg-slate-400',
+    Icon: MessageSquarePlus,
+  },
+  internal: {
+    label: 'Internal',
+    badge: 'border-amber-200 bg-amber-50 text-amber-700',
+    icon: 'bg-amber-50 text-amber-700 ring-amber-100',
+    card: 'border-amber-100',
+    dot: 'bg-amber-500',
+    Icon: MessageSquarePlus,
+  },
+  system: {
+    label: 'System',
+    badge: 'border-borderSoft bg-mutedBg text-textMuted',
+    icon: 'bg-slate-50 text-slate-500 ring-slate-100',
+    card: 'border-borderSoft bg-slate-50/50',
+    dot: 'bg-slate-300',
+    Icon: Activity,
+  },
+  alert: {
+    label: 'Operational Alert',
+    badge: 'border-red-200 bg-red-50 text-red-700',
+    icon: 'bg-red-50 text-red-700 ring-red-100',
+    card: 'border-red-100',
+    dot: 'bg-red-500',
+    Icon: AlertTriangle,
+  },
+}
+
+function getLaneCategory(laneKey) {
+  const normalized = String(laneKey || '').trim().toLowerCase()
+  if (normalized.includes('bond')) return 'bond'
+  if (normalized.includes('cancellation')) return 'cancellation'
+  if (normalized.includes('transfer')) return 'transfer'
+  return ''
+}
+
+function getActivityCategoryMeta(category) {
+  return ACTIVITY_CATEGORY_META[category] || ACTIVITY_CATEGORY_META.notes
+}
+
+function getActivityEventType(event = {}) {
+  return String(event.eventType || event.event_type || event.type || '').trim()
+}
+
+function getActivityEventData(event = {}) {
+  return event.eventData && typeof event.eventData === 'object'
+    ? event.eventData
+    : event.event_data && typeof event.event_data === 'object'
+      ? event.event_data
+      : {}
+}
+
+function buildActivityFilterKeys(category, extra = []) {
+  const keys = new Set(['all', category, ...extra].filter(Boolean))
+  if (['transfer', 'bond', 'cancellation'].includes(category)) keys.add(category)
+  if (category === 'documents') keys.add('documents')
+  if (category === 'internal' || category === 'notes') keys.add('notes')
+  return [...keys]
+}
+
+function humanizeTransactionEvent(event = {}) {
+  const eventType = getActivityEventType(event)
+  const eventData = getActivityEventData(event)
+  const laneCategory = getLaneCategory(eventData.laneKey || eventData.lane_key || eventData.workflowLane || eventData.attorneyRole)
+  const lowerType = eventType.toLowerCase()
+  const stepLabel = eventData.stepLabel || eventData.step_label || toTitle(eventData.stepKey || eventData.step_key || '')
+  const laneLabel = laneCategory ? `${toTitle(laneCategory)} workflow` : 'Workflow'
+  let category = laneCategory || 'system'
+  let title = eventData.title || toTitle(eventType || 'Matter update')
+  let detail = eventData.message || eventData.note || ''
+  let attachmentName = eventData.fileName || eventData.documentName || eventData.title || ''
+
+  if (lowerType.includes('document')) {
+    category = 'documents'
+    title = eventData.title ? `${eventData.title} requested` : 'Document activity recorded'
+    detail = eventData.requestedFrom ? `Requested from ${toTitle(eventData.requestedFrom)}` : detail || 'Document workflow updated.'
+  } else if (lowerType.includes('appointment') || lowerType.includes('signing')) {
+    category = 'appointments'
+    title = eventData.title || 'Signing appointment scheduled'
+    detail = [eventData.date, eventData.time, eventData.boardroom].filter(Boolean).join(' · ') || detail || 'Appointment details updated.'
+  } else if (lowerType.includes('blocked') || lowerType.includes('overdue') || lowerType.includes('alert')) {
+    category = 'alert'
+    title = stepLabel ? `${laneLabel} blocked at ${stepLabel}` : 'Operational alert added'
+    detail = detail || 'This matter needs attention.'
+  } else if (lowerType.includes('waiting')) {
+    category = laneCategory || 'alert'
+    title = stepLabel ? `${laneLabel} waiting at ${stepLabel}` : 'Workflow marked as waiting'
+    detail = detail || 'Waiting reason captured for the workflow.'
+  } else if (lowerType.includes('stepcompleted') || lowerType.includes('completed')) {
+    category = laneCategory || 'transfer'
+    title = stepLabel ? `${laneLabel} moved to ${stepLabel}` : 'Workflow step completed'
+    detail = detail || `Step completed${eventData.status ? ` as ${toTitle(eventData.status)}` : ''}.`
+  } else if (lowerType.includes('registered')) {
+    category = 'system'
+    title = 'Matter registered'
+    detail = eventData.registrationDate ? `Registration date set to ${formatDate(eventData.registrationDate)}` : detail || 'Registration status updated.'
+  } else if (lowerType.includes('note')) {
+    category = 'internal'
+    title = 'Internal note added'
+    detail = detail || 'A matter note was added.'
+  } else if (lowerType.includes('sharedupdate')) {
+    category = laneCategory || 'notes'
+    title = 'Matter team update added'
+    detail = detail || 'An update was shared with the matter team.'
+  } else if (lowerType.includes('clientvisible')) {
+    category = 'notes'
+    title = 'Client update published'
+    detail = detail || 'A client-visible update was published.'
+  }
+
+  const meta = getActivityCategoryMeta(category)
+  return {
+    id: `event-${event.id || `${eventType}-${event.createdAt || event.created_at}`}`,
+    title,
+    body: normalizeRichTextToPlainText(detail) || 'Matter activity recorded.',
+    createdAt: event.createdAt || event.created_at,
+    kind: category === 'system' ? 'system' : 'event',
+    authorName: eventData.actorName || eventData.createdByName || (category === 'system' ? 'Bridge' : 'Matter team'),
+    roleLabel: toTitle(event.createdByRole || event.created_by_role || eventData.actorRole || 'system'),
+    category,
+    categoryLabel: meta.label,
+    commentType: meta.label,
+    filterKeys: buildActivityFilterKeys(category, [laneCategory]),
+    attachmentName: category === 'documents' ? attachmentName : '',
+    meta,
+  }
+}
+
+function humanizeDiscussionActivity(comment = {}) {
+  const visibility = String(comment.visibility || 'shared').trim().toLowerCase()
+  const discussionType = String(comment.discussionType || comment.discussion_type || 'operational').trim().toLowerCase()
+  const body = normalizeRichTextToPlainText(comment.commentBody || comment.commentText) || 'Comment added.'
+  const isInternal = visibility === 'internal' || discussionType === 'internal_note'
+  const isClient = visibility === 'client_safe' || visibility === 'client_visible' || discussionType === 'client_update'
+  let category = isInternal ? 'internal' : 'notes'
+  if (discussionType === 'document') category = 'documents'
+  if (discussionType === 'workflow') category = 'transfer'
+  if (discussionType === 'reminder') category = 'alert'
+
+  const titleByType = {
+    operational: 'Matter update added',
+    workflow: 'Workflow update added',
+    document: 'Document update added',
+    reminder: 'Reminder sent',
+    internal_note: 'Internal note added',
+    client_update: 'Client update published',
+  }
+  const meta = getActivityCategoryMeta(category)
+  return {
+    id: `comment-${comment.id}`,
+    title: isInternal ? 'Internal note added' : isClient ? 'Client update published' : titleByType[discussionType] || 'Matter update added',
+    body,
+    createdAt: comment.createdAt || comment.created_at,
+    kind: 'comment',
+    authorName: comment.authorName || 'Participant',
+    roleLabel: comment.authorRoleLabel || toTitle(comment.authorRole || 'participant'),
+    category,
+    categoryLabel: isInternal ? 'Internal' : isClient ? 'Client Update' : meta.label,
+    commentType: isInternal ? 'Internal' : isClient ? 'Client Update' : meta.label,
+    filterKeys: buildActivityFilterKeys(category, [isInternal ? 'internal' : 'notes']),
+    attachmentName: '',
+    meta,
+  }
+}
+
+function getActivityDateLabel(value) {
+  const date = new Date(value || 0)
+  if (!Number.isFinite(date.getTime())) return 'Earlier'
+  const today = new Date()
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  const diffDays = Math.round((startOfToday - startOfDate) / 86_400_000)
+  if (diffDays === 0) return 'Today'
+  if (diffDays === 1) return 'Yesterday'
+  return date.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function groupActivityByDate(entries = []) {
+  const groups = []
+  for (const entry of entries) {
+    const label = getActivityDateLabel(entry.createdAt)
+    const last = groups.at(-1)
+    if (last?.label === label) {
+      last.items.push(entry)
+    } else {
+      groups.push({ label, items: [entry] })
+    }
+  }
+  return groups
+}
+
+function buildMatterPreviewShell(matterPreview, transactionId) {
+  if (!matterPreview || !transactionId || matterPreview.matterId !== transactionId) {
+    return null
+  }
+
+  return {
+    transaction: {
+      id: matterPreview.matterId,
+      transaction_reference: matterPreview.matterReference || `Matter ${String(transactionId).slice(0, 8)}`,
+      finance_type: matterPreview.financeType || 'cash',
+      purchase_price: matterPreview.purchasePrice || 0,
+      sales_price: matterPreview.purchasePrice || 0,
+      seller_name: matterPreview.sellerName || '',
+      seller_has_existing_bond: matterPreview.sellerHasExistingBond || false,
+      current_bond_bank: matterPreview.currentBondBank || '',
+      estimated_settlement_amount: matterPreview.estimatedSettlementAmount || 0,
+      property_description: matterPreview.propertyLabel || '',
+      lifecycle_state: matterPreview.lifecycleState || 'active',
+      current_main_stage: matterPreview.currentStage || '',
+      stage: matterPreview.currentStage || '',
+      registration_date: matterPreview.registrationDate || null,
+      updated_at: matterPreview.lastUpdated || new Date().toISOString(),
+      created_at: matterPreview.lastUpdated || new Date().toISOString(),
+      is_active: true,
+    },
+    buyer: matterPreview.buyerName || matterPreview.clientName
+      ? {
+          id: null,
+          name: matterPreview.buyerName || matterPreview.clientName,
+          email: '',
+          phone: '',
+        }
+      : null,
+    development: matterPreview.developmentName
+      ? {
+          id: null,
+          name: matterPreview.developmentName,
+          location: '',
+        }
+      : null,
+    unit: null,
+    documents: [],
+    requiredDocumentChecklist: [],
+    transactionDiscussion: [],
+    transactionEvents: [],
+    transactionParticipants: [],
+    appointments: [],
+    documentRequests: [],
+    documentRequestSummary: {
+      total: 0,
+      pending: 0,
+      uploaded: 0,
+      approved: 0,
+      rejected: 0,
+    },
+    transactionChecklistItems: [],
+    checklistSummary: {
+      total: 0,
+      completed: 0,
+      open: 0,
+      blocked: 0,
+    },
+    stage: matterPreview.currentStage || '',
+    mainStage: matterPreview.currentStage || '',
+    __isNavigationPreview: true,
+    __loadedAt: new Date().toISOString(),
+  }
 }
 
 function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange }) {
@@ -569,8 +938,8 @@ function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange }) {
   }
 
   return (
-    <nav className="no-print -mx-1 overflow-x-auto border-b border-borderDefault px-1" aria-label="Matter workspace tabs">
-      <div className="flex min-w-max gap-5">
+    <nav className="no-print rounded-[16px] border border-borderDefault bg-white px-2 py-2 shadow-[0_10px_22px_rgba(15,23,42,0.04)]" aria-label="Matter workspace tabs">
+      <div className="flex min-w-0 gap-1 overflow-x-auto">
         {tabs.map((tab) => {
           const active = activeTab === tab.id
           const Icon = iconByTab[tab.id] || FileText
@@ -578,10 +947,10 @@ function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange }) {
             <button
               key={tab.id}
               type="button"
-              className={`inline-flex min-h-[46px] items-center gap-2 border-b-2 px-1 text-sm font-semibold transition ${
+              className={`inline-flex min-h-[38px] shrink-0 items-center gap-2 rounded-[11px] border px-3 text-sm font-semibold transition ${
                 active
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-textMuted hover:border-borderDefault hover:text-textStrong'
+                  ? 'border-primary/15 bg-primarySoft text-primary shadow-[0_4px_12px_rgba(15,70,110,0.08)]'
+                  : 'border-transparent text-textMuted hover:border-borderSoft hover:bg-surfaceAlt hover:text-textStrong'
               }`}
               onClick={() => onChange?.(tab.id)}
             >
@@ -635,94 +1004,89 @@ function MatterCompactHeader({ title, statusLabel, statusClassName, propertyLabe
   )
 }
 
-function WorkflowLaneCard({ lane, expanded, onToggle, onOpenControls }) {
+function WorkflowLaneCard({ lane, onOpenDetails, onPrimaryAction }) {
   const laneKey = String(lane?.laneKey || 'transfer').toLowerCase()
   const accent = LANE_ACCENTS[laneKey] || LANE_ACCENTS.transfer
-  const statusKey = normalizeWorkspaceStatus(lane?.laneStatus || lane?.summary?.status)
+  const statusKey = getWorkflowHealthKey(lane)
   const statusMeta = WORKFLOW_STATUS_META[statusKey] || WORKFLOW_STATUS_META.not_started
   const progress = Number(lane?.summary?.completionPercent || 0)
-  const canManage = Boolean(lane?.permissions?.canUpdateStage)
   const steps = Array.isArray(lane?.steps) ? lane.steps : []
+  const currentStep = getCurrentWorkflowStep(lane)
+  const visibleSteps = steps.slice(0, 8)
+  const primaryAction = getPrimaryWorkflowAction(lane)
 
   return (
     <article className={`overflow-hidden rounded-[16px] border border-borderDefault border-l-4 bg-white shadow-[0_10px_22px_rgba(15,23,42,0.04)] ${accent.ring}`}>
       <div className="p-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex min-w-0 gap-3">
-            <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full ring-1 ${accent.icon}`}>
-              <Workflow size={18} />
-            </span>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-base font-semibold text-textStrong">{getWorkflowLaneTitle(lane)}</h3>
-                <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${accent.badge}`}>
-                  {getAssignedFirmLabel(lane)}
-                </span>
-              </div>
-              <p className="mt-1 text-sm text-textMuted">Assigned firm shown for context. Phase 1 allows matter teams to update all active lanes.</p>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`inline-flex size-9 items-center justify-center rounded-[12px] ring-1 ${accent.icon}`}>
+                <Workflow size={17} />
+              </span>
+              <h3 className="text-base font-semibold text-textStrong">{getWorkflowLaneTitle(lane)}</h3>
+              <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${accent.badge}`}>
+                {getAssignedFirmLabel(lane)}
+              </span>
             </div>
+            <p className="mt-3 text-sm font-semibold text-textStrong">{getWorkflowFocus(lane)}</p>
+            <p className="mt-1 max-w-3xl text-sm leading-5 text-textMuted">{getWorkflowExplanation(lane)}</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+          <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
             <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.border} ${statusMeta.bg} ${statusMeta.text}`}>
               <span className={`h-2 w-2 rounded-full ${statusMeta.dot}`} />
-              {statusMeta.label}
+              {getWorkflowHealthLabel(lane)}
             </span>
-            <span className="text-sm font-semibold text-textStrong">{progress}%</span>
-            <Button type="button" variant="secondary" size="sm" onClick={onToggle}>
-              View Details
-              <ChevronRight size={14} />
-            </Button>
+            <span className="rounded-full border border-borderSoft bg-surfaceAlt px-2.5 py-1 text-xs font-semibold text-textStrong">
+              {progress}% complete
+            </span>
           </div>
         </div>
 
         <div className="mt-4">
-          <div className="h-1.5 rounded-full bg-slate-100">
-            <div className={`h-1.5 rounded-full ${accent.fill}`} style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
-          </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
-            {steps.map((step) => {
-              const stepStatusKey = normalizeWorkspaceStatus(step.status)
-              const stepStatus = WORKFLOW_STATUS_META[stepStatusKey] || WORKFLOW_STATUS_META.not_started
+          <div className="grid grid-cols-2 gap-1.5 md:grid-cols-4 xl:grid-cols-8">
+            {visibleSteps.map((step) => {
+              const classes = getStepClasses(step, currentStep)
               return (
-                <div key={step.id || step.stepKey} className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${stepStatus.dot}`} />
-                    <span className="truncate text-xs font-semibold text-textStrong">{getWorkflowStepLabel(step)}</span>
+                <div key={step.id || step.stepKey} className={`min-h-[76px] rounded-[12px] border px-2.5 py-2 ${classes.base}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${classes.meta.dot}`} />
+                    {classes.isCurrent ? <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[0.62rem] font-bold uppercase text-primary">Now</span> : null}
                   </div>
-                  <p className={`mt-1 truncate pl-4 text-[0.7rem] font-medium ${stepStatus.text}`}>
-                    {step.completedAt ? formatShortDayMonth(step.completedAt) : stepStatus.label}
+                  <p className={`mt-2 line-clamp-2 text-[0.72rem] font-semibold leading-4 ${classes.isCurrent ? 'text-textStrong' : 'text-textMuted'}`}>
+                    {getWorkflowStepLabel(step)}
+                  </p>
+                  <p className={`mt-1 truncate text-[0.68rem] font-medium ${classes.text}`}>
+                    {step.completedAt ? formatShortDayMonth(step.completedAt) : classes.meta.label}
                   </p>
                 </div>
               )
             })}
           </div>
+          {steps.length > visibleSteps.length ? (
+            <p className="mt-2 text-xs font-medium text-textMuted">+{steps.length - visibleSteps.length} more step(s) in details</p>
+          ) : null}
         </div>
-      </div>
 
-      {expanded ? (
-        <div className="border-t border-borderSoft bg-surfaceAlt p-4">
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {steps.map((step) => {
-              const stepStatusKey = normalizeWorkspaceStatus(step.status)
-              const stepStatus = WORKFLOW_STATUS_META[stepStatusKey] || WORKFLOW_STATUS_META.not_started
-              return (
-                <article key={`detail-${step.id || step.stepKey}`} className="rounded-[12px] border border-borderSoft bg-white px-3 py-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <strong className="text-sm text-textStrong">{getWorkflowStepLabel(step)}</strong>
-                    <span className={`rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${stepStatus.bg} ${stepStatus.text}`}>
-                      {stepStatus.label}
-                    </span>
-                  </div>
-                  {step.comment ? <p className="mt-2 text-xs leading-5 text-textMuted">{step.comment}</p> : null}
-                  <Button type="button" variant="ghost" size="sm" disabled={!canManage} onClick={onOpenControls} className="mt-3">
-                    Manage Step
-                  </Button>
-                </article>
-              )
-            })}
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 text-xs text-textMuted">
+            Next/current step: <span className="font-semibold text-textStrong">{currentStep ? getWorkflowStepLabel(currentStep) : 'No active step'}</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" onClick={() => onPrimaryAction?.(lane, primaryAction)}>
+              {primaryAction}
+            </Button>
+            <Button type="button" variant="secondary" size="sm" onClick={() => onPrimaryAction?.(lane, 'Upload Document')}>
+              <Upload size={14} />
+              Upload Document
+            </Button>
+            <Button type="button" variant="secondary" size="sm" onClick={onOpenDetails}>
+              View Details
+              <ChevronRight size={14} />
+            </Button>
           </div>
         </div>
-      ) : null}
+      </div>
     </article>
   )
 }
@@ -736,12 +1100,302 @@ function OverviewSidePanel({ title, children }) {
   )
 }
 
+function WorkflowDetailsDrawer({
+  lane,
+  open,
+  saving = false,
+  stepDraft,
+  noteDraft,
+  documentDraft,
+  onClose,
+  onSelectStepStatus,
+  onStepDraftChange,
+  onSubmitStep,
+  onNoteDraftChange,
+  onSubmitNote,
+  onDocumentDraftChange,
+  onSubmitDocument,
+  onUploadDocument,
+  onScheduleSigning,
+}) {
+  if (!open || !lane) return null
+  const steps = Array.isArray(lane.steps) ? lane.steps : []
+  const currentStep = getCurrentWorkflowStep(lane)
+  const progress = Number(lane?.summary?.completionPercent || 0)
+  const healthKey = getWorkflowHealthKey(lane)
+  const healthMeta = WORKFLOW_STATUS_META[healthKey] || WORKFLOW_STATUS_META.not_started
+  const laneActivity = lane.timeline || lane.updates || []
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/28 no-print" onMouseDown={(event) => event.target === event.currentTarget && onClose?.()}>
+      <aside className="flex h-full w-full max-w-[720px] flex-col overflow-hidden border-l border-borderDefault bg-white shadow-[0_24px_70px_rgba(15,23,42,0.22)]">
+        <header className="border-b border-borderSoft px-5 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-lg font-semibold text-textStrong">Workflow Details</h2>
+                <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold ${healthMeta.border} ${healthMeta.bg} ${healthMeta.text}`}>
+                  <span className={`h-2 w-2 rounded-full ${healthMeta.dot}`} />
+                  {getWorkflowHealthLabel(lane)}
+                </span>
+              </div>
+              <p className="mt-1 text-sm text-textMuted">
+                {getWorkflowLaneTitle(lane)} — {getAssignedFirmLabel(lane)}
+              </p>
+            </div>
+            <button type="button" className="ui-icon-button h-10 w-10" onClick={onClose} aria-label="Close workflow details">
+              <X size={16} />
+            </button>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <article className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2">
+              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Progress</span>
+              <strong className="mt-1 block text-sm text-textStrong">{progress}%</strong>
+            </article>
+            <article className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2">
+              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Current Step</span>
+              <strong className="mt-1 block truncate text-sm text-textStrong">{currentStep ? getWorkflowStepLabel(currentStep) : 'Not started'}</strong>
+            </article>
+            <article className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2">
+              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Documents</span>
+              <strong className="mt-1 block text-sm text-textStrong">
+                {lane.documentSummary?.missing || 0} missing
+              </strong>
+            </article>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-5 py-5">
+          <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-textStrong">Steps</h3>
+                <p className="mt-1 text-xs text-textMuted">Phase 1 allows assigned matter users to update every active workflow.</p>
+              </div>
+              {currentStep ? (
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" size="sm" onClick={() => onSelectStepStatus?.(lane, currentStep, 'completed')}>
+                    Mark Complete
+                  </Button>
+                  <Button type="button" size="sm" variant="secondary" onClick={() => onSelectStepStatus?.(lane, currentStep, 'waiting')}>
+                    Set Waiting
+                  </Button>
+                  <Button type="button" size="sm" variant="secondary" onClick={() => onSelectStepStatus?.(lane, currentStep, 'blocked')}>
+                    Block Step
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-4 space-y-2">
+              {steps.map((step) => {
+                const classes = getStepClasses(step, currentStep)
+                return (
+                  <article key={step.id || step.stepKey} className={`rounded-[12px] border px-3 py-3 ${classes.base}`}>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`h-2.5 w-2.5 rounded-full ${classes.meta.dot}`} />
+                          <strong className="text-sm text-textStrong">{getWorkflowStepLabel(step)}</strong>
+                          {classes.isCurrent ? <span className="rounded-full bg-white px-2 py-0.5 text-[0.65rem] font-bold uppercase text-primary">Current</span> : null}
+                        </div>
+                        <p className={`mt-1 text-xs font-medium ${classes.text}`}>
+                          {step.completedAt ? `Completed ${formatShortDayMonth(step.completedAt)}` : classes.meta.label}
+                        </p>
+                        {step.comment ? <p className="mt-1 text-xs leading-5 text-textMuted">{step.comment}</p> : null}
+                      </div>
+                      <div className="flex max-w-full gap-1 overflow-x-auto pb-1">
+                        {WORKFLOW_STEP_STATUS_OPTIONS.map((option) => {
+                          const active = normalizeWorkspaceStatus(step.status) === option.value
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold transition ${
+                                active ? 'border-primary bg-primary text-white' : 'border-borderSoft bg-white text-textMuted hover:border-primary/40 hover:text-textStrong'
+                              }`}
+                              onClick={() => onSelectStepStatus?.(lane, step, option.value)}
+                            >
+                              {option.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+
+            {stepDraft ? (
+              <form onSubmit={onSubmitStep} className="mt-4 rounded-[14px] border border-primary/20 bg-primarySoft p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <strong className="text-sm text-textStrong">
+                    Set {getWorkflowStepLabel(stepDraft.step)} to {toTitle(stepDraft.status)}
+                  </strong>
+                  <span className="text-xs font-semibold text-primary">{getWorkflowLaneTitle(lane)}</span>
+                </div>
+                <label className="mt-3 grid gap-1.5 text-sm font-medium text-textStrong">
+                  {stepDraft.status === 'blocked' ? 'Blocker reason' : stepDraft.status === 'waiting' ? 'Waiting reason / party' : 'Note'}
+                  <Field
+                    as="textarea"
+                    rows={3}
+                    value={stepDraft.note}
+                    onChange={(event) => onStepDraftChange?.({ ...stepDraft, note: event.target.value })}
+                    placeholder={stepDraft.status === 'blocked' ? 'What is blocking this step?' : stepDraft.status === 'waiting' ? 'Who or what are we waiting on?' : 'Optional context for this update'}
+                  />
+                </label>
+                <div className="mt-3 flex justify-end gap-2">
+                  <Button type="button" variant="secondary" size="sm" onClick={() => onStepDraftChange?.(null)} disabled={saving}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" size="sm" disabled={saving || (['blocked', 'waiting'].includes(stepDraft.status) && !stepDraft.note.trim())}>
+                    {saving ? 'Saving…' : 'Save Step'}
+                  </Button>
+                </div>
+              </form>
+            ) : null}
+          </section>
+
+          <section className="mt-4 rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-textStrong">Actions</h3>
+                <p className="mt-1 text-xs text-textMuted">Notes, documents, reminders, and scheduling from the workflow context.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" size="sm" variant="secondary" onClick={() => onNoteDraftChange?.({ laneKey: lane.laneKey, message: '', visibility: 'internal' })}>
+                  Add Note
+                </Button>
+                <Button type="button" size="sm" variant="secondary" onClick={() => onDocumentDraftChange?.({ laneKey: lane.laneKey, title: '', description: '', requestedFrom: 'client' })}>
+                  Request Document
+                </Button>
+                <Button type="button" size="sm" variant="secondary" onClick={onUploadDocument}>
+                  Upload Document
+                </Button>
+                <Button type="button" size="sm" variant="secondary" onClick={onScheduleSigning}>
+                  Schedule Signing
+                </Button>
+                <Button type="button" size="sm" variant="secondary" onClick={() => onNoteDraftChange?.({ laneKey: lane.laneKey, message: `Reminder sent for ${currentStep ? getWorkflowStepLabel(currentStep) : getWorkflowLaneTitle(lane)}.`, visibility: 'professional_shared' })}>
+                  Send Reminder
+                </Button>
+              </div>
+            </div>
+
+            {noteDraft ? (
+              <form onSubmit={onSubmitNote} className="mt-4 rounded-[14px] border border-borderSoft bg-surfaceAlt p-4">
+                <label className="grid gap-1.5 text-sm font-medium text-textStrong">
+                  Note visibility
+                  <Field as="select" value={noteDraft.visibility} onChange={(event) => onNoteDraftChange?.({ ...noteDraft, visibility: event.target.value })}>
+                    <option value="internal">Internal</option>
+                    <option value="professional_shared">Professional Shared</option>
+                    <option value="client_visible">Client Visible</option>
+                  </Field>
+                </label>
+                <label className="mt-3 grid gap-1.5 text-sm font-medium text-textStrong">
+                  Note
+                  <Field as="textarea" rows={4} value={noteDraft.message} onChange={(event) => onNoteDraftChange?.({ ...noteDraft, message: event.target.value })} />
+                </label>
+                <div className="mt-3 flex justify-end gap-2">
+                  <Button type="button" variant="secondary" size="sm" onClick={() => onNoteDraftChange?.(null)} disabled={saving}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" size="sm" disabled={saving || !noteDraft.message.trim()}>
+                    {saving ? 'Saving…' : 'Save Note'}
+                  </Button>
+                </div>
+              </form>
+            ) : null}
+
+            {documentDraft ? (
+              <form onSubmit={onSubmitDocument} className="mt-4 rounded-[14px] border border-borderSoft bg-surfaceAlt p-4">
+                <label className="grid gap-1.5 text-sm font-medium text-textStrong">
+                  Document name
+                  <Field value={documentDraft.title} onChange={(event) => onDocumentDraftChange?.({ ...documentDraft, title: event.target.value })} />
+                </label>
+                <label className="mt-3 grid gap-1.5 text-sm font-medium text-textStrong">
+                  Requested from
+                  <Field as="select" value={documentDraft.requestedFrom} onChange={(event) => onDocumentDraftChange?.({ ...documentDraft, requestedFrom: event.target.value })}>
+                    <option value="client">Client</option>
+                    <option value="buyer">Buyer</option>
+                    <option value="seller">Seller</option>
+                    <option value="attorney">Attorney Team</option>
+                    <option value="agent">Agent</option>
+                    <option value="bank">Bank</option>
+                  </Field>
+                </label>
+                <label className="mt-3 grid gap-1.5 text-sm font-medium text-textStrong">
+                  Description
+                  <Field as="textarea" rows={3} value={documentDraft.description} onChange={(event) => onDocumentDraftChange?.({ ...documentDraft, description: event.target.value })} />
+                </label>
+                <div className="mt-3 flex justify-end gap-2">
+                  <Button type="button" variant="secondary" size="sm" onClick={() => onDocumentDraftChange?.(null)} disabled={saving}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" size="sm" disabled={saving || !documentDraft.title.trim()}>
+                    {saving ? 'Requesting…' : 'Request Document'}
+                  </Button>
+                </div>
+              </form>
+            ) : null}
+          </section>
+
+          <section className="mt-4 rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+            <h3 className="text-sm font-semibold text-textStrong">Required Documents</h3>
+            <div className="mt-3 space-y-2">
+              {(lane.documentRequirements || []).slice(0, 8).map((item) => {
+                const status = normalizeWorkspaceStatus(item.status)
+                const meta = WORKFLOW_STATUS_META[status] || WORKFLOW_STATUS_META.not_started
+                return (
+                  <div key={item.id} className="flex items-start justify-between gap-3 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2">
+                    <div className="min-w-0">
+                      <strong className="block truncate text-sm text-textStrong">{item.label}</strong>
+                      <p className="mt-1 text-xs text-textMuted">{toTitle(item.category)} • {toTitle(item.requiredFrom)}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold ${meta.border} ${meta.bg} ${meta.text}`}>
+                      {toTitle(item.status || 'missing')}
+                    </span>
+                  </div>
+                )
+              })}
+              {!(lane.documentRequirements || []).length ? <p className="text-sm text-textMuted">No required documents are configured for this lane.</p> : null}
+            </div>
+          </section>
+
+          <section className="mt-4 rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+            <h3 className="text-sm font-semibold text-textStrong">Workflow Activity</h3>
+            <div className="mt-3 space-y-2">
+              {laneActivity.slice(0, 8).map((item) => (
+                <article key={item.id} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <strong className="block truncate text-sm text-textStrong">{item.title || toTitle(item.updateType || item.type || 'Workflow update')}</strong>
+                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-textMuted">{item.message || item.body || 'Workflow update recorded.'}</p>
+                    </div>
+                    <span className="shrink-0 text-xs text-textMuted">{formatShortDayMonth(item.timestamp || item.createdAt)}</span>
+                  </div>
+                </article>
+              ))}
+              {!laneActivity.length ? <p className="text-sm text-textMuted">Workflow activity will appear here as the lane changes.</p> : null}
+            </div>
+          </section>
+        </div>
+      </aside>
+    </div>
+  )
+}
+
 function AttorneyTransactionDetail() {
   const { transactionId } = useParams()
+  const location = useLocation()
   const { profile, role: workspaceRole } = useWorkspace()
   const attorneyPermissionState = useAttorneyPermissions()
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const navigationPreviewData = useMemo(
+    () => buildMatterPreviewShell(location.state?.matterPreview, transactionId),
+    [location.state?.matterPreview, transactionId],
+  )
+  const [data, setData] = useState(() => navigationPreviewData)
+  const [loading, setLoading] = useState(() => !navigationPreviewData)
   const [error, setError] = useState('')
   const [matterAccessChecked, setMatterAccessChecked] = useState(workspaceRole !== 'attorney')
   const [matterAccessAllowed, setMatterAccessAllowed] = useState(workspaceRole !== 'attorney')
@@ -813,8 +1467,11 @@ function AttorneyTransactionDetail() {
   const [workflowOperations, setWorkflowOperations] = useState(null)
   const [workflowLoading, setWorkflowLoading] = useState(false)
   const [workflowError, setWorkflowError] = useState('')
-  const [expandedWorkflowLane, setExpandedWorkflowLane] = useState('')
-  const [showWorkflowControls, setShowWorkflowControls] = useState(false)
+  const [workflowDrawerLaneKey, setWorkflowDrawerLaneKey] = useState('')
+  const [workflowStepDraft, setWorkflowStepDraft] = useState(null)
+  const [workflowNoteDraft, setWorkflowNoteDraft] = useState(null)
+  const [workflowDocumentDraft, setWorkflowDocumentDraft] = useState(null)
+  const [workflowSaving, setWorkflowSaving] = useState(false)
   const [activityFilter, setActivityFilter] = useState('all')
 
   const loadData = useCallback(async ({ background = false } = {}) => {
@@ -824,9 +1481,9 @@ function AttorneyTransactionDetail() {
     }
 
     const startedAt = Date.now()
-    let hasCoreData = false
+    let hasCoreData = Boolean(navigationPreviewData?.transaction)
     try {
-      if (!background) {
+      if (!background && !hasCoreData) {
         setLoading(true)
       }
       setError('')
@@ -850,26 +1507,37 @@ function AttorneyTransactionDetail() {
           transactionId,
           durationMs: Date.now() - startedAt,
         })
+        if (!background) {
+          setLoading(false)
+        }
       }
-      setLoading(false)
     } catch (coreError) {
-      if (!background) {
-        setLoading(true)
-      }
-      if (!hasCoreData) {
-        setError(coreError.message || 'Unable to load transaction.')
+      if (hasCoreData) {
+        if (!background) {
+          setLoading(false)
+        }
+      } else {
+        console.warn('[transaction-workspace] core data load deferred to full detail', {
+          transactionId,
+          message: coreError?.message || 'Core transaction fetch failed.',
+        })
       }
     }
 
     try {
       setHydratingDetail(true)
       const detail = await fetchTransactionById(transactionId)
-      setData(detail)
-      setError('')
-      console.log('[perf][transaction-workspace] full data loaded', {
-        transactionId,
-        durationMs: Date.now() - startedAt,
-      })
+      if (detail) {
+        setData(detail)
+        setError('')
+        console.log('[perf][transaction-workspace] full data loaded', {
+          transactionId,
+          durationMs: Date.now() - startedAt,
+        })
+      } else if (!hasCoreData) {
+        setData(null)
+        setError('Transaction not found.')
+      }
     } catch (loadError) {
       if (!hasCoreData) {
         setError(loadError.message || 'Unable to load transaction.')
@@ -878,7 +1546,17 @@ function AttorneyTransactionDetail() {
       setHydratingDetail(false)
       setLoading(false)
     }
-  }, [transactionId])
+  }, [navigationPreviewData?.transaction, transactionId])
+
+  useEffect(() => {
+    setData(navigationPreviewData)
+    setError('')
+    setHydratingDetail(false)
+    setWorkflowOperations(null)
+    setWorkflowError('')
+    setWorkflowDrawerLaneKey('')
+    setLoading(!navigationPreviewData)
+  }, [navigationPreviewData, transactionId])
 
   useEffect(() => {
     if (workspaceRole === 'attorney') {
@@ -1163,28 +1841,8 @@ function AttorneyTransactionDetail() {
   const activityFeed = useMemo(
     () =>
       [
-        ...transactionEvents.map((event) => ({
-          id: `event-${event.id}`,
-          title: event.title || toTitle(event.event_type || 'Update'),
-          body: normalizeRichTextToPlainText(event.body) || 'Transaction event recorded.',
-          createdAt: event.created_at,
-          kind: 'event',
-          authorName: event.actor_name || 'System',
-          roleLabel: toTitle(event.source_role || 'system'),
-          commentType: 'System',
-          roleTone: getCommentRoleTone(event.source_role || 'system'),
-        })),
-        ...visibleTransactionDiscussion.map((comment) => ({
-          id: `comment-${comment.id}`,
-          title: `${comment.authorName || 'Participant'} • ${comment.authorRoleLabel || toTitle(comment.authorRole || 'Participant')}`,
-          body: normalizeRichTextToPlainText(comment.commentBody || comment.commentText) || 'Comment added.',
-          createdAt: comment.createdAt || comment.created_at,
-          kind: 'comment',
-          authorName: comment.authorName || 'Participant',
-          roleLabel: comment.authorRoleLabel || toTitle(comment.authorRole || 'participant'),
-          commentType: toTitle(comment.discussionType || comment.discussion_type || 'operational'),
-          roleTone: getCommentRoleTone(comment.authorRole || 'participant'),
-        })),
+        ...transactionEvents.map((event) => humanizeTransactionEvent(event)),
+        ...visibleTransactionDiscussion.map((comment) => humanizeDiscussionActivity(comment)),
       ].sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime()),
     [transactionEvents, visibleTransactionDiscussion],
   )
@@ -1192,6 +1850,169 @@ function AttorneyTransactionDetail() {
     () => (Array.isArray(workflowOperations?.lanes) ? workflowOperations.lanes : EMPTY_ARRAY),
     [workflowOperations?.lanes],
   )
+  const activeWorkflowLane = useMemo(
+    () => workflowLanes.find((lane) => lane.laneKey === workflowDrawerLaneKey) || null,
+    [workflowDrawerLaneKey, workflowLanes],
+  )
+
+  async function refreshWorkflowAfterChange(nextOperations = null) {
+    if (nextOperations) {
+      setWorkflowOperations(nextOperations)
+    } else if (transaction?.id) {
+      const operations = await getAttorneyWorkflowOperationsForTransaction(transaction.id)
+      setWorkflowOperations(operations)
+    }
+    await loadData({ background: true })
+  }
+
+  function openWorkflowDrawer(lane) {
+    setWorkflowDrawerLaneKey(lane?.laneKey || '')
+    setWorkflowStepDraft(null)
+    setWorkflowNoteDraft(null)
+    setWorkflowDocumentDraft(null)
+  }
+
+  function handleWorkflowPrimaryAction(lane, action) {
+    const currentStep = getCurrentWorkflowStep(lane)
+    openWorkflowDrawer(lane)
+    if (action === 'Mark Step Complete' && currentStep) {
+      setWorkflowStepDraft({ laneKey: lane.laneKey, step: currentStep, status: 'completed', note: '' })
+      return
+    }
+    if (action === 'Send Reminder') {
+      setWorkflowNoteDraft({
+        laneKey: lane.laneKey,
+        visibility: 'professional_shared',
+        message: `Reminder sent for ${currentStep ? getWorkflowStepLabel(currentStep) : getWorkflowLaneTitle(lane)}.`,
+      })
+      return
+    }
+    if (action === 'Upload Document') {
+      setWorkspaceMenu('documents')
+      setWorkflowDrawerLaneKey('')
+      return
+    }
+    if (action === 'Blocker Details' && currentStep) {
+      setWorkflowStepDraft({ laneKey: lane.laneKey, step: currentStep, status: 'blocked', note: currentStep.comment || '' })
+    }
+  }
+
+  function handleSelectWorkflowStepStatus(lane, step, status) {
+    setWorkflowDrawerLaneKey(lane?.laneKey || workflowDrawerLaneKey)
+    setWorkflowStepDraft({ laneKey: lane?.laneKey || workflowDrawerLaneKey, step, status, note: step?.comment || '' })
+  }
+
+  async function handleWorkflowStepSubmit(event) {
+    event.preventDefault()
+    if (!workflowStepDraft || !transaction?.id) return
+    setWorkflowSaving(true)
+    setWorkflowError('')
+    try {
+      const next = await updateAttorneyWorkflowStepStatus({
+        transactionId: transaction.id,
+        laneKey: workflowStepDraft.laneKey,
+        stepId: workflowStepDraft.step?.id,
+        stepKey: workflowStepDraft.step?.stepKey || workflowStepDraft.step?.step_key,
+        status: workflowStepDraft.status,
+        note: workflowStepDraft.note,
+        visibility: 'internal',
+      })
+      setWorkflowStepDraft(null)
+      await refreshWorkflowAfterChange(next)
+    } catch (stepError) {
+      setWorkflowError(stepError?.message || 'Unable to update workflow step.')
+    } finally {
+      setWorkflowSaving(false)
+    }
+  }
+
+  async function handleWorkflowNoteSubmit(event) {
+    event.preventDefault()
+    if (!workflowNoteDraft || !transaction?.id) return
+    setWorkflowSaving(true)
+    setWorkflowError('')
+    try {
+      const next = await addAttorneyTransactionUpdate({
+        transactionId: transaction.id,
+        laneKey: workflowNoteDraft.laneKey,
+        updateType: 'internal_note',
+        visibility: workflowNoteDraft.visibility || 'internal',
+        message: workflowNoteDraft.message,
+      })
+      setWorkflowNoteDraft(null)
+      await refreshWorkflowAfterChange(next)
+    } catch (noteError) {
+      setWorkflowError(noteError?.message || 'Unable to save workflow note.')
+    } finally {
+      setWorkflowSaving(false)
+    }
+  }
+
+  async function handleWorkflowDocumentSubmit(event) {
+    event.preventDefault()
+    if (!workflowDocumentDraft || !transaction?.id) return
+    setWorkflowSaving(true)
+    setWorkflowError('')
+    try {
+      const next = await requestAttorneyWorkflowLaneDocument({
+        transactionId: transaction.id,
+        laneKey: workflowDocumentDraft.laneKey,
+        title: workflowDocumentDraft.title,
+        description: workflowDocumentDraft.description,
+        requestedFrom: workflowDocumentDraft.requestedFrom,
+      })
+      setWorkflowDocumentDraft(null)
+      await refreshWorkflowAfterChange(next)
+    } catch (documentError) {
+      setWorkflowError(documentError?.message || 'Unable to request workflow document.')
+    } finally {
+      setWorkflowSaving(false)
+    }
+  }
+
+  function handleQuickRequestDocuments() {
+    const lane = workflowLanes[0]
+    if (!lane) {
+      setWorkspaceMenu('documents')
+      return
+    }
+    openWorkflowDrawer(lane)
+    setWorkflowDocumentDraft({
+      laneKey: lane.laneKey,
+      title: '',
+      description: '',
+      requestedFrom: 'client',
+    })
+  }
+
+  function handleQuickAddWorkflowNote() {
+    const lane = workflowLanes[0]
+    if (!lane) {
+      setWorkspaceMenu('activity')
+      return
+    }
+    openWorkflowDrawer(lane)
+    setWorkflowNoteDraft({
+      laneKey: lane.laneKey,
+      visibility: 'internal',
+      message: '',
+    })
+  }
+
+  function handleQuickScheduleSigning() {
+    const lane = workflowLanes.find((item) => item.laneKey === 'transfer') || workflowLanes[0]
+    if (!lane) {
+      setWorkspaceMenu('activity')
+      return
+    }
+    openWorkflowDrawer(lane)
+    setWorkflowNoteDraft({
+      laneKey: lane.laneKey,
+      visibility: 'internal',
+      message: 'Signing appointment to be scheduled.',
+    })
+  }
+
   const matterHeaderStats = useMemo(
     () => [
       { label: 'Buyer', value: buyer?.name || 'Buyer pending' },
@@ -1373,19 +2194,15 @@ function AttorneyTransactionDetail() {
     ['Commission', formatCurrencyValue(transaction?.commission_amount, 'Pending')],
     ['Trust / Disbursements', formatCurrencyValue(transaction?.trust_balance, 'Placeholder')],
   ]
-  const activityFilterOptions = ['all', 'transfer', 'bond', 'cancellation', 'documents', 'notes', 'internal', 'client_visible']
   const filteredActivityFeed = useMemo(
     () =>
       activityFeed.filter((entry) => {
         if (activityFilter === 'all') return true
-        if (activityFilter === 'notes') return entry.kind === 'comment'
-        if (activityFilter === 'documents') return /document/i.test(`${entry.commentType} ${entry.title} ${entry.body}`)
-        if (activityFilter === 'internal') return /internal/i.test(`${entry.commentType} ${entry.roleLabel}`)
-        if (activityFilter === 'client_visible') return /client/i.test(`${entry.commentType} ${entry.roleLabel}`)
-        return new RegExp(activityFilter, 'i').test(`${entry.commentType} ${entry.title} ${entry.body}`)
+        return (entry.filterKeys || []).includes(activityFilter)
       }),
     [activityFeed, activityFilter],
   )
+  const groupedActivityFeed = useMemo(() => groupActivityByDate(filteredActivityFeed), [filteredActivityFeed])
   const onboardingRecipients = useMemo(() => {
     const buyerParticipant = activeStakeholders.find((participant) => participant?.roleType === 'buyer')
     const sellerParticipant = isPrivateMatter
@@ -1968,12 +2785,13 @@ function AttorneyTransactionDetail() {
 
       await addTransactionDiscussionComment({
         transactionId: transaction.id,
-        authorName: 'Bridge Conveyancing',
+        authorName: profile?.fullName || profile?.email || 'Bridge Conveyancing',
         authorRole: 'attorney',
         commentText: prefixedDiscussion,
         unitId: unit?.id || null,
       })
       setDiscussionBody('')
+      setDiscussionType('operational')
       setDiscussionVisibility('shared')
       await loadData()
     } catch (saveError) {
@@ -2035,6 +2853,27 @@ function AttorneyTransactionDetail() {
       )}
     >
       <div className="space-y-6">
+        <div className="sticky top-0 z-30 -mx-1 rounded-b-[16px] border border-t-0 border-borderDefault bg-white/95 px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.08)] backdrop-blur no-print">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <strong className="truncate text-sm text-textStrong">{matterReference}</strong>
+                <span className={`rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold ${getLifecycleStateClasses(lifecycleState)}`}>
+                  {lifecycleLabel}
+                </span>
+                <span className="rounded-full border border-borderSoft bg-surfaceAlt px-2 py-0.5 text-[0.68rem] font-semibold text-textMuted">
+                  {transferStageLabel}
+                </span>
+              </div>
+              <p className="mt-1 truncate text-xs text-textMuted">{buyer?.name || 'Buyer pending'} / {transaction?.seller_name || 'Seller pending'} • {propertyAddress || matterHeadline}</p>
+            </div>
+            <Button type="button" size="sm" variant="secondary" onClick={() => void handleOpenRegistrationFlow()}>
+              <MoreHorizontal size={14} />
+              Actions
+            </Button>
+          </div>
+        </div>
+
         {activeWorkspaceMenu === 'overview' ? (
           <>
             <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
@@ -2067,9 +2906,8 @@ function AttorneyTransactionDetail() {
                     <WorkflowLaneCard
                       key={lane.id || lane.laneKey}
                       lane={lane}
-                      expanded={expandedWorkflowLane === lane.laneKey}
-                      onToggle={() => setExpandedWorkflowLane((previous) => (previous === lane.laneKey ? '' : lane.laneKey))}
-                      onOpenControls={() => setShowWorkflowControls(true)}
+                      onOpenDetails={() => openWorkflowDrawer(lane)}
+                      onPrimaryAction={handleWorkflowPrimaryAction}
                     />
                   ))
                 ) : (
@@ -2078,25 +2916,10 @@ function AttorneyTransactionDetail() {
                   </p>
                 )}
 
-                {showWorkflowControls ? (
-                  <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-sm font-semibold text-textStrong">Workflow Controls</h3>
-                        <p className="mt-1 text-sm text-textMuted">Detailed lane updates are open to the authorised matter team in Phase 1.</p>
-                      </div>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => setShowWorkflowControls(false)}>
-                        Hide controls
-                      </Button>
-                    </div>
-                    <AttorneyWorkflowLanesPanel transactionId={transaction?.id} onChanged={loadData} />
-                  </section>
-                ) : null}
-
                 <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <h3 className="text-sm font-semibold text-textStrong">Recent Activity Summary</h3>
+                      <h3 className="text-sm font-semibold text-textStrong">Recent Activity</h3>
                       <p className="mt-1 text-sm text-textMuted">Latest workflow, document, and note updates.</p>
                     </div>
                     <Button type="button" variant="ghost" size="sm" onClick={() => setWorkspaceMenu('activity')}>
@@ -2106,10 +2929,19 @@ function AttorneyTransactionDetail() {
                   <div className="divide-y divide-borderSoft">
                     {activityFeed.slice(0, 4).map((entry) => (
                       <article key={entry.id} className="py-3 first:pt-0 last:pb-0">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <strong className="block truncate text-sm text-textStrong">{entry.title}</strong>
+                        <div className="flex items-start gap-3">
+                          <span className={`mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-[10px] ${entry.kind === 'comment' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                            {entry.kind === 'comment' ? <MessageSquarePlus size={15} /> : <Activity size={15} />}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <strong className="truncate text-sm text-textStrong">{entry.title}</strong>
+                              <span className="rounded-full bg-surfaceAlt px-2 py-0.5 text-[0.65rem] font-semibold text-textMuted">{entry.commentType}</span>
+                            </div>
                             <p className="mt-1 line-clamp-2 text-xs leading-5 text-textMuted">{entry.body}</p>
+                            <p className="mt-1 text-[0.68rem] font-medium text-textMuted">
+                              {entry.authorName} • {entry.roleLabel}
+                            </p>
                           </div>
                           <span className="shrink-0 text-xs text-textMuted">{formatShortDayMonth(entry.createdAt)}</span>
                         </div>
@@ -2139,6 +2971,41 @@ function AttorneyTransactionDetail() {
                           {item.action}
                         </Button>
                       </article>
+                    ))}
+                  </div>
+                </OverviewSidePanel>
+
+                <OverviewSidePanel title="Quick Actions">
+                  <div className="grid gap-2">
+                    {[
+                      ['Request Documents', FileText, handleQuickRequestDocuments],
+                      ['Upload Document', Upload, () => setWorkspaceMenu('documents')],
+                      ['Add Note', MessageSquarePlus, handleQuickAddWorkflowNote],
+                      ['Schedule Signing', CalendarDays, handleQuickScheduleSigning],
+                      ['Generate Document', FileText, () => setWorkspaceMenu('documents')],
+                    ].map(([label, Icon, action]) => (
+                      <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
+                        {createElement(Icon, { size: 14 })}
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                </OverviewSidePanel>
+
+                <OverviewSidePanel title="Matter Health">
+                  <div className="space-y-3">
+                    {[
+                      ['Workflow Health', workflowLanes.some((lane) => getWorkflowHealthKey(lane) === 'blocked') ? 'Blocked' : workflowLanes.some((lane) => getWorkflowHealthKey(lane) === 'waiting') ? 'Waiting' : 'On Track', GaugeCircle],
+                      ['Documents Missing', `${workflowLanes.reduce((total, lane) => total + Number(lane.documentSummary?.missing || 0), 0)}`, FileText],
+                      ['Active Blockers', `${workflowLanes.filter((lane) => getWorkflowHealthKey(lane) === 'blocked').length}`, AlertTriangle],
+                    ].map(([label, value, Icon]) => (
+                      <div key={label} className="flex items-center justify-between gap-3 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2">
+                        <span className="inline-flex items-center gap-2 text-sm text-textMuted">
+                          {createElement(Icon, { size: 14 })}
+                          {label}
+                        </span>
+                        <strong className="text-sm text-textStrong">{value}</strong>
+                      </div>
                     ))}
                   </div>
                 </OverviewSidePanel>
@@ -2579,113 +3446,236 @@ function AttorneyTransactionDetail() {
 
         {activeWorkspaceMenu === 'activity' ? (
           <section className="space-y-5">
-            <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <h3 className="text-base font-semibold text-textStrong">Activity Timeline</h3>
-                  <p className="mt-1 text-sm text-textMuted">Workflow updates, documents, notes, appointments, generated documents, and status changes.</p>
-                </div>
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  {activityFilterOptions.map((filter) => (
-                    <button
-                      key={filter}
-                      type="button"
-                      className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold ${
-                        activityFilter === filter
-                          ? 'border-primary bg-primary text-white'
-                          : 'border-borderDefault bg-white text-textMuted hover:text-textStrong'
-                      }`}
-                      onClick={() => setActivityFilter(filter)}
-                    >
-                      {filter === 'client_visible' ? 'Client-visible' : toTitle(filter)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </section>
-
             <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-              <div className="rounded-[16px] border border-borderDefault bg-white shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                <div className="divide-y divide-borderSoft">
-                  {filteredActivityFeed.map((entry) => (
-                    <article key={entry.id} className="px-4 py-4">
-                      <div className="flex gap-3">
-                        <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${entry.kind === 'comment' ? 'bg-amber-500' : 'bg-blue-600'}`} />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <h4 className="truncate text-sm font-semibold text-textStrong">{entry.title}</h4>
-                              <p className="mt-1 text-xs text-textMuted">{entry.authorName} • {entry.roleLabel}</p>
-                            </div>
-                            <span className="text-xs text-textMuted">{formatDateTime(entry.createdAt)}</span>
-                          </div>
-                          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-textBody">{entry.body}</p>
-                          <span className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-[0.68rem] font-semibold ${entry.kind === 'comment' ? entry.roleTone.badge : 'border border-borderDefault bg-mutedBg text-textMuted'}`}>
-                            {entry.commentType}
-                          </span>
-                        </div>
+              <section className="rounded-[16px] border border-borderDefault bg-white shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                <div className="border-b border-borderSoft px-4 py-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <h3 className="text-base font-semibold text-textStrong">Matter Conversation</h3>
+                      <p className="mt-1 text-sm text-textMuted">Human updates, workflow movement, documents, and operational alerts in one place.</p>
+                    </div>
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                      {ACTIVITY_FILTER_OPTIONS.map((filter) => (
+                        <button
+                          key={filter.key}
+                          type="button"
+                          className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                            activityFilter === filter.key
+                              ? 'bg-primary text-white shadow-[0_5px_14px_rgba(15,70,110,0.18)]'
+                              : 'bg-surfaceAlt text-textMuted hover:bg-primarySoft hover:text-primary'
+                          }`}
+                          onClick={() => setActivityFilter(filter.key)}
+                        >
+                          {filter.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="px-4 py-5">
+                  {groupedActivityFeed.map((group) => (
+                    <div key={group.label} className="mb-6 last:mb-0">
+                      <div className="mb-4 flex items-center gap-3">
+                        <span className="h-px flex-1 bg-borderSoft" />
+                        <span className="rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">
+                          {group.label}
+                        </span>
+                        <span className="h-px flex-1 bg-borderSoft" />
                       </div>
-                    </article>
+
+                      <div className="relative space-y-4 before:absolute before:left-[18px] before:top-0 before:h-full before:w-px before:bg-borderSoft">
+                        {group.items.map((entry) => {
+                          const meta = entry.meta || getActivityCategoryMeta(entry.category)
+                          return (
+                            <article key={entry.id} className="relative pl-11">
+                              <span className={`absolute left-[13px] top-5 z-10 h-2.5 w-2.5 rounded-full ring-4 ring-white ${meta.dot}`} />
+                              <div className={`rounded-[15px] border bg-white px-4 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)] ${meta.card}`}>
+                                <div className="flex items-start gap-3">
+                                  <span className={`mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-[12px] ring-1 ${meta.icon}`}>
+                                    {createElement(meta.Icon, { size: 16 })}
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <h4 className="text-sm font-semibold text-textStrong">{entry.title}</h4>
+                                        <p className="mt-1 text-xs text-textMuted">
+                                          {entry.kind === 'system' ? 'Recorded by' : 'Posted by'} {entry.authorName}
+                                          {entry.roleLabel ? ` · ${entry.roleLabel}` : ''}
+                                        </p>
+                                      </div>
+                                      <div className="flex shrink-0 items-center gap-2">
+                                        <span className="text-xs text-textMuted">{formatDateTime(entry.createdAt)}</span>
+                                        <button type="button" className="ui-icon-button h-7 w-7" aria-label="Activity actions">
+                                          <MoreHorizontal size={14} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <p className={`mt-2 whitespace-pre-wrap text-sm leading-6 ${entry.kind === 'system' ? 'text-textMuted' : 'text-textBody'}`}>
+                                      {entry.body}
+                                    </p>
+                                    {entry.attachmentName ? (
+                                      <div className="mt-3 inline-flex max-w-full items-center gap-2 rounded-[10px] border border-borderSoft bg-surfaceAlt px-3 py-2 text-xs font-semibold text-textStrong">
+                                        <Paperclip size={13} className="shrink-0 text-textMuted" />
+                                        <span className="truncate">{entry.attachmentName}</span>
+                                      </div>
+                                    ) : null}
+                                    <span className={`mt-3 inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${meta.badge}`}>
+                                      {entry.categoryLabel || meta.label}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </article>
+                          )
+                        })}
+                      </div>
+                    </div>
                   ))}
                   {!filteredActivityFeed.length ? (
-                    <p className="px-4 py-8 text-sm text-textMuted">No activity matches this filter yet.</p>
+                    <div className="rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-8 text-center">
+                      <MessageSquarePlus size={22} className="mx-auto text-textMuted" />
+                      <h4 className="mt-3 text-sm font-semibold text-textStrong">No activity matches this filter</h4>
+                      <p className="mt-1 text-sm text-textMuted">Updates will appear here as the matter team collaborates.</p>
+                    </div>
                   ) : null}
                 </div>
-              </div>
+              </section>
 
-              <form onSubmit={handleAddDiscussion} className="h-fit rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                <h3 className="text-sm font-semibold text-textStrong">Add Note</h3>
-                <div className="mt-4 grid gap-3">
-                  <label className="grid gap-1.5 text-sm font-medium text-[#35546c]">
-                    <span>Update Type</span>
-                    <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)}>
-                      {DISCUSSION_TYPES.map((item) => (
-                        <option key={item.key} value={item.key}>
-                          {item.label}
-                        </option>
-                      ))}
-                    </Field>
-                  </label>
-                  <label className="grid gap-1.5 text-sm font-medium text-[#35546c]">
-                    <span>Visibility</span>
-                    <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)}>
-                      {DISCUSSION_VISIBILITY_OPTIONS.map((item) => (
-                        <option
-                          key={item.key}
-                          value={item.key}
-                          disabled={
-                            (item.key === 'internal' && !canPostInternalDiscussion) ||
-                            (item.key === 'shared' && !canPostSharedDiscussion) ||
-                            (item.key === 'client_visible' && !canPublishClientVisibleDiscussion)
-                          }
-                        >
-                          {item.label}
-                        </option>
-                      ))}
-                    </Field>
-                  </label>
-                  <Field
-                    as="textarea"
-                    rows={5}
-                    value={discussionBody}
-                    onChange={(event) => setDiscussionBody(event.target.value)}
-                    placeholder="Add an internal note or shared update..."
-                  />
-                  <Button
-                    type="submit"
-                    disabled={
-                      saving ||
-                      !discussionBody.trim() ||
-                      (discussionVisibility === 'internal' && !canPostInternalDiscussion) ||
-                      (discussionVisibility === 'shared' && !canPostSharedDiscussion) ||
-                      (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion)
-                    }
-                    className="justify-center"
-                  >
-                    {saving ? 'Posting...' : 'Post Update'}
-                  </Button>
-                </div>
-              </form>
+              <aside className="space-y-4">
+                <form onSubmit={handleAddDiscussion} className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                  <h3 className="text-sm font-semibold text-textStrong">Add Update</h3>
+                  <div className="mt-4 grid gap-3">
+                    <label className="grid gap-1.5 text-sm font-medium text-[#35546c]">
+                      <span>Update Type</span>
+                      <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)}>
+                        {DISCUSSION_TYPES.map((item) => (
+                          <option key={item.key} value={item.key}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </Field>
+                    </label>
+                    <label className="grid gap-1.5 text-sm font-medium text-[#35546c]">
+                      <span>Visibility</span>
+                      <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)}>
+                        {DISCUSSION_VISIBILITY_OPTIONS.map((item) => (
+                          <option
+                            key={item.key}
+                            value={item.key}
+                            disabled={
+                              (item.key === 'internal' && !canPostInternalDiscussion) ||
+                              (item.key === 'shared' && !canPostSharedDiscussion) ||
+                              (item.key === 'client_visible' && !canPublishClientVisibleDiscussion)
+                            }
+                          >
+                            {item.label}
+                          </option>
+                        ))}
+                      </Field>
+                    </label>
+                    <Field
+                      as="textarea"
+                      rows={5}
+                      value={discussionBody}
+                      onChange={(event) => setDiscussionBody(event.target.value)}
+                      placeholder="Share a matter update..."
+                    />
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex gap-1">
+                        {[
+                          ['Attach file', Paperclip],
+                          ['Mention person', AtSign],
+                          ['Add reaction', Smile],
+                        ].map(([label, Icon]) => (
+                          <button key={label} type="button" className="ui-icon-button h-8 w-8" aria-label={label} title={label}>
+                            {createElement(Icon, { size: 14 })}
+                          </button>
+                        ))}
+                      </div>
+                      <Button
+                        type="submit"
+                        disabled={
+                          saving ||
+                          !discussionBody.trim() ||
+                          (discussionVisibility === 'internal' && !canPostInternalDiscussion) ||
+                          (discussionVisibility === 'shared' && !canPostSharedDiscussion) ||
+                          (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion)
+                        }
+                      >
+                        <Send size={14} />
+                        {saving ? 'Posting...' : 'Post Update'}
+                      </Button>
+                    </div>
+                  </div>
+                </form>
+
+                <OverviewSidePanel title="Quick Actions">
+                  <div className="grid gap-2">
+                    {[
+                      ['Request Documents', FileText, handleQuickRequestDocuments],
+                      ['Upload Document', Upload, () => setWorkspaceMenu('documents')],
+                      ['Schedule Appointment', CalendarDays, handleQuickScheduleSigning],
+                      ['Generate Document', FileText, () => setWorkspaceMenu('documents')],
+                      ['Add Internal Note', MessageSquarePlus, () => {
+                        setDiscussionType('internal_note')
+                        setDiscussionVisibility('internal')
+                      }],
+                    ].map(([label, Icon, action]) => (
+                      <button
+                        key={label}
+                        type="button"
+                        className="flex items-center justify-between gap-3 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2 text-left text-sm font-semibold text-textStrong transition hover:border-primary/30 hover:bg-primarySoft hover:text-primary"
+                        onClick={action}
+                      >
+                        <span className="inline-flex min-w-0 items-center gap-2">
+                          {createElement(Icon, { size: 14 })}
+                          <span className="truncate">{label}</span>
+                        </span>
+                        <ChevronRight size={14} className="shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                </OverviewSidePanel>
+
+                <OverviewSidePanel title="Matter Health">
+                  {(() => {
+                    const blockedCount = workflowLanes.filter((lane) => getWorkflowHealthKey(lane) === 'blocked').length
+                    const waitingCount = workflowLanes.filter((lane) => getWorkflowHealthKey(lane) === 'waiting').length
+                    const delayedCount = workflowLanes.filter((lane) => getWorkflowHealthKey(lane) === 'delayed').length
+                    const healthLabel = blockedCount ? 'Blocked' : delayedCount ? 'Delayed' : waitingCount ? 'At Risk' : 'On Track'
+                    const healthMeta = healthLabel === 'Blocked'
+                      ? WORKFLOW_STATUS_META.blocked
+                      : healthLabel === 'Delayed'
+                        ? WORKFLOW_STATUS_META.delayed
+                        : healthLabel === 'At Risk'
+                          ? WORKFLOW_STATUS_META.waiting
+                          : WORKFLOW_STATUS_META.in_progress
+                    return (
+                      <div className="space-y-3">
+                        <div className={`rounded-[14px] border px-3 py-3 ${healthMeta.border} ${healthMeta.bg}`}>
+                          <div className="flex items-center gap-2">
+                            <span className={`h-2.5 w-2.5 rounded-full ${healthMeta.dot}`} />
+                            <strong className={`text-sm ${healthMeta.text}`}>{healthLabel}</strong>
+                          </div>
+                          <p className="mt-2 text-sm leading-5 text-textMuted">
+                            {blockedCount
+                              ? `${blockedCount} workflow lane(s) have active blockers.`
+                              : delayedCount
+                                ? `${delayedCount} workflow lane(s) appear delayed.`
+                                : waitingCount
+                                  ? `${waitingCount} workflow lane(s) are waiting on a party or document.`
+                                  : 'No active workflow blockers are visible right now.'}
+                          </p>
+                        </div>
+                        <Button type="button" variant="secondary" size="sm" className="w-full justify-center" onClick={() => setWorkspaceMenu('overview')}>
+                          View Workflows
+                        </Button>
+                      </div>
+                    )
+                  })()}
+                </OverviewSidePanel>
+              </aside>
             </section>
           </section>
         ) : null}
@@ -3019,6 +4009,33 @@ function AttorneyTransactionDetail() {
         ) : null}
       </div>
       </SharedTransactionShell>
+
+      <WorkflowDetailsDrawer
+        lane={activeWorkflowLane}
+        open={Boolean(activeWorkflowLane)}
+        saving={workflowSaving}
+        stepDraft={workflowStepDraft}
+        noteDraft={workflowNoteDraft}
+        documentDraft={workflowDocumentDraft}
+        onClose={() => {
+          setWorkflowDrawerLaneKey('')
+          setWorkflowStepDraft(null)
+          setWorkflowNoteDraft(null)
+          setWorkflowDocumentDraft(null)
+        }}
+        onSelectStepStatus={handleSelectWorkflowStepStatus}
+        onStepDraftChange={setWorkflowStepDraft}
+        onSubmitStep={handleWorkflowStepSubmit}
+        onNoteDraftChange={setWorkflowNoteDraft}
+        onSubmitNote={handleWorkflowNoteSubmit}
+        onDocumentDraftChange={setWorkflowDocumentDraft}
+        onSubmitDocument={handleWorkflowDocumentSubmit}
+        onUploadDocument={() => {
+          setWorkspaceMenu('documents')
+          setWorkflowDrawerLaneKey('')
+        }}
+        onScheduleSigning={handleQuickScheduleSigning}
+      />
 
       <Modal
         open={detailPanelOpen}

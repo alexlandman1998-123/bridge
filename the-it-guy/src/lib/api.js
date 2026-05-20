@@ -156,7 +156,7 @@ export const ATTORNEY_LEGAL_ROLE_VALUES = ['transfer', 'bond', 'cancellation']
 export const ATTORNEY_LEGAL_ROLE_REQUIRED = ['transfer']
 export const RESERVATION_STATUSES = ['not_required', 'pending', 'paid', 'verified', 'rejected']
 export const FUNDING_SOURCE_STATUSES = ['planned', 'pending', 'paid', 'verified']
-const DISCUSSION_TYPES = ['operational', 'blocker', 'document', 'decision', 'client', 'finance', 'legal', 'system']
+const DISCUSSION_TYPES = ['operational', 'blocker', 'document', 'decision', 'client', 'finance', 'legal', 'system', 'workflow', 'reminder', 'internal_note', 'client_update']
 const WORKFLOW_COMMENT_META_PREFIX = '__bridge_workflow_meta__'
 export const TRANSACTION_EVENT_TYPES = [
   'TransactionCreated',
@@ -20621,8 +20621,9 @@ export async function fetchUnitWorkspaceShell(unitId) {
     }
 
     let unit = unitQuery.data || null
+    let transactionByRouteId = null
     if (!unit) {
-      const transactionByRouteId = await fetchTransactionRowById(client, resolvedUnitId)
+      transactionByRouteId = await fetchTransactionRowById(client, resolvedUnitId)
       if (transactionByRouteId?.unit_id) {
         resolvedUnitId = transactionByRouteId.unit_id
         timer.mark('unit_query_by_transaction_start')
@@ -20641,6 +20642,110 @@ export async function fetchUnitWorkspaceShell(unitId) {
     }
 
     if (!unit) {
+      if (transactionByRouteId?.id && transactionByRouteId?.is_active !== false) {
+        let buyer = null
+        if (transactionByRouteId.buyer_id) {
+          timer.mark('buyer_query_transaction_only_start')
+          const buyerQuery = await client
+            .from('buyers')
+            .select('id, name, phone, email')
+            .eq('id', transactionByRouteId.buyer_id)
+            .maybeSingle()
+          timer.mark('buyer_query_transaction_only_end')
+
+          if (buyerQuery.error && !isMissingSchemaError(buyerQuery.error)) {
+            throw buyerQuery.error
+          }
+          buyer = buyerQuery.data || null
+        }
+
+        let development = null
+        if (transactionByRouteId.development_id) {
+          timer.mark('development_query_transaction_only_start')
+          const developmentQuery = await client
+            .from('developments')
+            .select('id, name, location')
+            .eq('id', transactionByRouteId.development_id)
+            .maybeSingle()
+          timer.mark('development_query_transaction_only_end')
+
+          if (developmentQuery.error && !isMissingSchemaError(developmentQuery.error)) {
+            throw developmentQuery.error
+          }
+          development = developmentQuery.data || null
+        }
+
+        const stage = normalizeStage(transactionByRouteId.stage, transactionByRouteId.stage || 'Transfer in Progress')
+        const mainStage = normalizeMainStage(transactionByRouteId.current_main_stage, stage)
+        const attorneyStage = resolveAttorneyOperationalStageKey({ transaction: transactionByRouteId })
+        const shell = {
+          unit: null,
+          development,
+          transaction: transactionByRouteId,
+          buyer,
+          documents: [],
+          clientPortalLinks: [],
+          clientIssues: [],
+          alterationRequests: [],
+          serviceReviews: [],
+          trustInvestmentForm: getDefaultTrustInvestmentForm({
+            developmentId: transactionByRouteId.development_id || null,
+            unitId: null,
+            transaction: transactionByRouteId,
+            buyer,
+          }),
+          handover: getDefaultHandoverRecord({
+            developmentId: transactionByRouteId.development_id || null,
+            unitId: null,
+            transaction: transactionByRouteId,
+            buyer,
+          }),
+          occupationalRent: getDefaultOccupationalRentRecord({
+            developmentId: transactionByRouteId.development_id || null,
+            unitId: null,
+            transaction: transactionByRouteId,
+            buyer,
+          }),
+          transactionSubprocesses: buildDefaultSubprocessState(transactionByRouteId.id, {
+            financeType: transactionByRouteId.finance_type,
+          }),
+          onboarding: null,
+          onboardingFormData: null,
+          purchaserType: normalizePurchaserType(transactionByRouteId.purchaser_type),
+          purchaserTypeLabel: getPurchaserTypeLabel(transactionByRouteId.purchaser_type),
+          transactionRequiredDocuments: [],
+          transactionParticipants: [],
+          activeViewerRole: 'developer',
+          activeViewerPermissions: getRolePermissions({
+            role: 'developer',
+            financeManagedBy: transactionByRouteId.finance_managed_by,
+          }),
+          transactionDiscussion: [],
+          transactionStatusLink: null,
+          transactionEvents: [],
+          documentRequests: [],
+          documentRequestSummary: summarizeDocumentRequests([]),
+          transactionChecklistItems: [],
+          checklistSummary: summarizeChecklistItems([], { stageKey: attorneyStage }),
+          issueOverrides: [],
+          developmentSettings: DEFAULT_DEVELOPMENT_SETTINGS,
+          requiredDocumentChecklist: [],
+          documentSummary: {
+            uploadedCount: 0,
+            totalRequired: 0,
+            missingCount: 0,
+          },
+          stage,
+          mainStage,
+          __isShell: true,
+          __loadedAt: new Date().toISOString(),
+        }
+
+        writeTimedCache(unitWorkspaceShellCache, normalizedUnitId, shell)
+        timer.end({ found: true, transactionOnly: true, hasTransaction: true })
+        return shell
+      }
+
       timer.end({ found: false })
       return null
     }
