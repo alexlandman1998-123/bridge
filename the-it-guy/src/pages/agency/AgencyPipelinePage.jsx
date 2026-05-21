@@ -2961,19 +2961,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return groups
   }, [calendarScopedAppointments])
 
-  const calendarAgendaAppointments = useMemo(() => {
-    return calendarScopedAppointments
-      .slice()
-      .sort((left, right) => {
-        const leftTime = parseAppointmentDate(left)?.getTime()
-        const rightTime = parseAppointmentDate(right)?.getTime()
-        const safeLeft = Number.isFinite(leftTime) ? leftTime : Number.MAX_SAFE_INTEGER
-        const safeRight = Number.isFinite(rightTime) ? rightTime : Number.MAX_SAFE_INTEGER
-        return safeLeft - safeRight || new Date(right?.updatedAt || 0).getTime() - new Date(left?.updatedAt || 0).getTime()
-      })
-      .slice(0, 6)
-  }, [calendarScopedAppointments])
-
   const weekDays = useMemo(() => getWeekDays(calendarCursorDate), [calendarCursorDate])
   const dayDays = useMemo(() => getCalendarRangeDays(calendarCursorDate, 1), [calendarCursorDate])
   const threeDayDays = useMemo(() => getCalendarRangeDays(calendarCursorDate, 3), [calendarCursorDate])
@@ -5551,58 +5538,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               {visibleCalendarAppointmentCount === 0 ? (
                 <div className="rounded-[14px] border border-dashed border-[#dce6f2] bg-[#f8fbff] px-4 py-3 text-sm text-[#60758d]">
                   {calendarScopedAppointments.length
-                    ? 'No appointments in this calendar period. Use Today or the agenda below to jump back into the schedule.'
+                    ? 'No appointments in this calendar period. Use Today or move through the calendar to jump back into the schedule.'
                     : 'No appointments are visible for this calendar yet.'}
                 </div>
               ) : null}
-
-              <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-3">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#74879b]">Agenda</p>
-                  <p className="text-xs font-semibold text-[#47627b]">{calendarScopedAppointments.length} visible</p>
-                </div>
-                {calendarAgendaAppointments.length ? (
-                  <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                    {calendarAgendaAppointments.map((appointment) => {
-                      const parsedDate = parseAppointmentDate(appointment)
-                      const listingLabel = resolveAppointmentListingLabel(appointment?.listingId)
-                      const category = getAppointmentCategory(appointment)
-                      return (
-                        <button
-                          key={`agenda:${appointment.appointmentId}`}
-                          type="button"
-                          onClick={() => handleOpenAppointmentModal(appointment)}
-                          className="min-w-0 rounded-[12px] border border-l-[4px] px-3 py-2 text-left shadow-[0_8px_18px_rgba(31,54,78,0.035)] transition hover:brightness-[0.985]"
-                          style={getAppointmentCategoryCardStyle(appointment)}
-                        >
-                          <div className="mb-1.5 flex flex-wrap items-center gap-1">
-                            <span
-                              className="inline-flex rounded-full px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-[0.06em]"
-                              style={getAppointmentCategoryBadgeStyle(appointment)}
-                            >
-                              {category.label}
-                            </span>
-                            <span className="inline-flex rounded-full bg-white/80 px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-[0.06em] text-[#315a7a]">
-                              {APPOINTMENT_STATUS_LABELS[appointment.status] || appointment.status || 'Requested'}
-                            </span>
-                          </div>
-                          <p className="truncate text-xs font-semibold text-[#203a52]">
-                            {appointment.title || getAppointmentTypeLabel(appointment.appointmentType)}
-                          </p>
-                          <p className="mt-1 truncate text-[0.7rem] text-[#60758d]">
-                            {parsedDate ? formatDateShort(parsedDate) : 'Date pending'} · {formatAppointmentTimeRange(appointment)}
-                          </p>
-                          <p className="mt-1 truncate text-[0.68rem] text-[#7890a7]">
-                            {listingLabel || appointment.location || APPOINTMENT_STATUS_LABELS[appointment.status] || appointment.status || 'Requested'}
-                          </p>
-                        </button>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-xs text-[#6d839b]">Create an appointment to start the schedule.</p>
-                )}
-              </div>
             </div>
           </article>
         </section>
