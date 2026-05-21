@@ -1969,20 +1969,21 @@
   }
 
   .ui-modal-overlay {
-    @apply items-center justify-center p-4;
+    @apply items-center justify-center overflow-y-auto p-4;
   }
 
   .ui-modal {
-    @apply w-full max-w-[560px] rounded-surface-xl border border-borderDefault bg-surface shadow-modal;
+    @apply flex w-full max-w-[560px] flex-col overflow-hidden rounded-surface-xl border border-borderDefault bg-surface shadow-modal;
+    max-height: min(860px, calc(100dvh - 32px));
   }
 
   .ui-modal-head,
   .ui-modal-footer {
-    @apply px-6 py-6;
+    @apply shrink-0 px-6 py-6;
   }
 
   .ui-modal-body {
-    @apply px-6 pb-6;
+    @apply min-h-0 flex-1 overflow-y-auto px-6 py-6;
   }
 
   .ui-modal-footer {

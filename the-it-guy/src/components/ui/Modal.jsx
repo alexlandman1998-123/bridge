@@ -1,9 +1,10 @@
 import { X } from 'lucide-react'
+import { createPortal } from 'react-dom'
 
 function Modal({ open, onClose, title, subtitle = '', footer = null, className = '', children }) {
-  if (!open) return null
+  if (!open || typeof document === 'undefined') return null
 
-  return (
+  return createPortal(
     <div
       className="ui-modal-overlay no-print"
       onMouseDown={(event) => event.target === event.currentTarget && onClose?.()}
@@ -30,10 +31,11 @@ function Modal({ open, onClose, title, subtitle = '', footer = null, className =
             </button>
           ) : null}
         </header>
-        <div className="ui-modal-body max-h-[72vh] overflow-y-auto">{children}</div>
+        <div className="ui-modal-body">{children}</div>
         {footer ? <footer className="ui-modal-footer border-t border-borderSoft">{footer}</footer> : null}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
