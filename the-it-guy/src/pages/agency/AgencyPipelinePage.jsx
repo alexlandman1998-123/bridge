@@ -86,6 +86,7 @@ import {
 
 const PIPELINE_CONTEXT_TIMEOUT_MS = 3500
 const PIPELINE_RECORDS_TIMEOUT_MS = 3500
+const PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS = 15000
 const SELLER_ONBOARDING_COMPLETION_POLL_MS = 7000
 const LEAD_WORKSPACE_RETRY_MS = 2500
 const CANVASSING_STORAGE_PREFIX = 'itg:agency-canvassing:v1'
@@ -1440,7 +1441,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const snapshot = getAgencyPipelineSnapshot(orgId)
       let mergedSnapshot = snapshot
       let listingOptionsForAppointments = buildListingOptionsFromLeads(snapshot.leads)
-      const applySnapshotRecords = (sourceSnapshot, appointmentRows = []) => {
+      const applySnapshotRecords = (sourceSnapshot, appointmentRows = sourceSnapshot?.appointments || []) => {
         const scopedLeads = sourceSnapshot.leads
         const scopedLeadIds = new Set(
           scopedLeads
@@ -1536,7 +1537,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             agentKeys: isPrincipal ? [] : [currentAgent.id, currentAgent.email],
           }),
           'Appointment data is taking too long to load.',
-          PIPELINE_RECORDS_TIMEOUT_MS,
+          PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS,
         )
       } catch (appointmentLoadError) {
         console.warn('[PIPELINE] appointment load failed; continuing without appointment rows.', appointmentLoadError)
@@ -1659,7 +1660,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         status: 'active',
       }])
       setSelectedAgentId((previous) => previous || normalizeText(currentAgent.id || currentAgent.email))
-      void reloadRecords(storageOrgId)
+      if (isCalendarMode) {
+        await reloadRecords(storageOrgId)
+      } else {
+        void reloadRecords(storageOrgId)
+      }
       if (!resolvedOrgId && !contextError) {
         setError('Organisation membership is not active for this account yet. Add/accept your organisation membership, then refresh.')
       }
@@ -1668,7 +1673,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     } finally {
       setLoading(false)
     }
-  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, profile?.firstName, profile?.lastName, reloadRecords, role])
+  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, isCalendarMode, profile?.firstName, profile?.lastName, reloadRecords, role])
 
   useEffect(() => {
     void loadContext()
