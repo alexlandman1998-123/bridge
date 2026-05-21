@@ -403,98 +403,6 @@ function buildListingOptionsFromLeads(leads = []) {
   return options.filter(Boolean)
 }
 
-function buildScopedListingIdSet({ leads = [], listings = [], currentAgent = {}, includeAll = false } = {}) {
-  const ids = new Set()
-  const agentKeys = new Set(
-    [currentAgent?.id, currentAgent?.email]
-      .map((value) => normalizeKey(value))
-      .filter(Boolean),
-  )
-
-  for (const lead of Array.isArray(leads) ? leads : []) {
-    const listingId = normalizeText(lead?.listingId || lead?.listing_id)
-    if (listingId) ids.add(normalizeKey(listingId))
-  }
-
-  for (const listing of Array.isArray(listings) ? listings : []) {
-    const listingId = normalizeText(listing?.id || listing?.listingId || listing?.listing_id)
-    if (!listingId) continue
-    if (includeAll) {
-      ids.add(normalizeKey(listingId))
-      continue
-    }
-    const listingAgentKeys = [
-      listing?.assignedAgentId,
-      listing?.assignedAgentEmail,
-      listing?.agentId,
-      listing?.agentEmail,
-      listing?.createdBy,
-    ]
-      .map((value) => normalizeKey(value))
-      .filter(Boolean)
-    if (listingAgentKeys.some((key) => agentKeys.has(key))) {
-      ids.add(normalizeKey(listingId))
-    }
-  }
-
-  return ids
-}
-
-function canCurrentAgentSeeAppointment(appointment = {}, context = {}) {
-  const {
-    isPrincipal = false,
-    currentAgent = {},
-    currentOrganisationId = '',
-    scopedLeadIds = new Set(),
-    scopedListingIds = new Set(),
-  } = context
-
-  if (isPrincipal) return true
-
-  const appointmentOrganisationId = normalizeText(appointment?.organisationId || appointment?.organisation_id)
-  if (appointmentOrganisationId && currentOrganisationId && appointmentOrganisationId !== currentOrganisationId) {
-    return false
-  }
-
-  const currentAgentIds = new Set(
-    [currentAgent?.id, currentAgent?.userId]
-      .map((value) => normalizeKey(value))
-      .filter(Boolean),
-  )
-  const currentAgentEmails = new Set(
-    [currentAgent?.email]
-      .map((value) => normalizeKey(value))
-      .filter(Boolean),
-  )
-  const appointmentAgentKeys = [
-    appointment?.assignedAgentId,
-    appointment?.assignedAgentEmail,
-    appointment?.agentId,
-    appointment?.agent_id,
-    appointment?.createdBy,
-    appointment?.created_by,
-  ]
-    .map((value) => normalizeKey(value))
-    .filter(Boolean)
-  if (appointmentAgentKeys.some((key) => currentAgentIds.has(key) || currentAgentEmails.has(key))) return true
-
-  const leadKey = normalizeLeadIdentityKey(appointment?.leadId || appointment?.lead_id)
-  if (leadKey && scopedLeadIds.has(leadKey)) return true
-
-  const listingKey = normalizeKey(appointment?.listingId || appointment?.listing_id)
-  if (listingKey && scopedListingIds.has(listingKey)) return true
-
-  const participants = Array.isArray(appointment?.participants) ? appointment.participants : []
-  for (const participant of participants) {
-    const participantUserKey = normalizeKey(participant?.userId || participant?.user_id)
-    const participantEmailKey = normalizeKey(participant?.email)
-    if (participantUserKey && currentAgentIds.has(participantUserKey)) return true
-    if (participantEmailKey && currentAgentEmails.has(participantEmailKey)) return true
-  }
-
-  return false
-}
-
 function dedupeListingOptions(options = []) {
   const byId = new Map()
   for (const option of Array.isArray(options) ? options : []) {
@@ -1383,22 +1291,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             .map((value) => normalizeLeadIdentityKey(value))
             .filter(Boolean),
         )
-        const scopedListingIds = buildScopedListingIdSet({
-          leads: scopedLeads,
-          listings: listingOptionsForAppointments,
-          currentAgent,
-          includeAll: isPrincipal,
-        })
         const scopedTasks = sourceSnapshot.tasks.filter((task) => scopedLeadIds.has(normalizeLeadIdentityKey(task?.leadId)))
-        const scopedAppointments = appointmentRows.filter((row) =>
-          canCurrentAgentSeeAppointment(row, {
-            isPrincipal,
-            currentAgent,
-            currentOrganisationId: normalizeText(orgId),
-            scopedLeadIds,
-            scopedListingIds,
-          }),
-        )
+        const scopedAppointments = appointmentRows.filter((row) => {
+          const appointmentOrganisationId = normalizeText(row?.organisationId || row?.organisation_id)
+          return !appointmentOrganisationId || !normalizeText(orgId) || appointmentOrganisationId === normalizeText(orgId)
+        })
         const scopedActivities = sourceSnapshot.leadActivities.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
         const scopedDeals = sourceSnapshot.deals.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
 
@@ -2735,6 +2632,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return groups
   }, [calendarScopedAppointments])
 
+  const calendarAgendaAppointments = useMemo(() => {
+    return calendarScopedAppointments
+      .slice()
+      .sort((left, right) => {
+        const leftTime = parseAppointmentDate(left)?.getTime()
+        const rightTime = parseAppointmentDate(right)?.getTime()
+        const safeLeft = Number.isFinite(leftTime) ? leftTime : Number.MAX_SAFE_INTEGER
+        const safeRight = Number.isFinite(rightTime) ? rightTime : Number.MAX_SAFE_INTEGER
+        return safeLeft - safeRight || new Date(right?.updatedAt || 0).getTime() - new Date(left?.updatedAt || 0).getTime()
+      })
+      .slice(0, 6)
+  }, [calendarScopedAppointments])
+
   const weekDays = useMemo(() => getWeekDays(calendarCursorDate), [calendarCursorDate])
   const monthDays = useMemo(() => getMonthGridDays(calendarCursorDate), [calendarCursorDate])
   const visibleCalendarDays = calendarView === 'month' ? monthDays : weekDays
@@ -2742,6 +2652,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     () => formatCalendarPeriodLabel(calendarView, calendarCursorDate),
     [calendarCursorDate, calendarView],
   )
+  const visibleCalendarAppointmentCount = useMemo(() => {
+    return visibleCalendarDays.reduce((total, day) => {
+      const key = toDateOnlyIso(day)
+      return total + (calendarAppointmentsByDate.get(key)?.length || 0)
+    }, 0)
+  }, [calendarAppointmentsByDate, visibleCalendarDays])
 
   const metrics = useMemo(
     () =>
@@ -5273,6 +5189,49 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     </div>
                   )
                 })}
+              </div>
+
+              {visibleCalendarAppointmentCount === 0 ? (
+                <div className="rounded-[14px] border border-dashed border-[#dce6f2] bg-[#f8fbff] px-4 py-3 text-sm text-[#60758d]">
+                  {calendarScopedAppointments.length
+                    ? 'No appointments in this calendar period. Use Today or the agenda below to jump back into the schedule.'
+                    : 'No appointments are visible for this calendar yet.'}
+                </div>
+              ) : null}
+
+              <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#74879b]">Agenda</p>
+                  <p className="text-xs font-semibold text-[#47627b]">{calendarScopedAppointments.length} visible</p>
+                </div>
+                {calendarAgendaAppointments.length ? (
+                  <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                    {calendarAgendaAppointments.map((appointment) => {
+                      const parsedDate = parseAppointmentDate(appointment)
+                      const listingLabel = resolveAppointmentListingLabel(appointment?.listingId)
+                      return (
+                        <button
+                          key={`agenda:${appointment.appointmentId}`}
+                          type="button"
+                          onClick={() => handleOpenAppointmentModal(appointment)}
+                          className="min-w-0 rounded-[12px] border border-[#dce6f2] bg-white px-3 py-2 text-left transition hover:border-[#c5d7ea] hover:bg-[#f8fbff]"
+                        >
+                          <p className="truncate text-xs font-semibold text-[#203a52]">
+                            {appointment.title || getAppointmentTypeLabel(appointment.appointmentType)}
+                          </p>
+                          <p className="mt-1 truncate text-[0.7rem] text-[#60758d]">
+                            {parsedDate ? formatDateShort(parsedDate) : 'Date pending'} · {formatAppointmentTimeRange(appointment)}
+                          </p>
+                          <p className="mt-1 truncate text-[0.68rem] text-[#7890a7]">
+                            {listingLabel || appointment.location || APPOINTMENT_STATUS_LABELS[appointment.status] || appointment.status || 'Requested'}
+                          </p>
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-[#6d839b]">Create an appointment to start the schedule.</p>
+                )}
               </div>
             </div>
           </article>
