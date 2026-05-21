@@ -1183,6 +1183,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [appointmentForm, setAppointmentForm] = useState(() => buildDefaultAppointmentFormForType('', LEAD_DETAIL_DEFAULT_APPOINTMENT))
   const [calendarView, setCalendarView] = useState('week')
   const [calendarCursorDate, setCalendarCursorDate] = useState(() => new Date())
+  const [calendarAgentFilter, setCalendarAgentFilter] = useState('all')
   const principalView = isOverviewMode ? 'reporting' : 'operational'
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
   const [selectedAppointmentId, setSelectedAppointmentId] = useState('')
@@ -1276,6 +1277,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     },
     [agentOptions, currentAgent.email, currentAgent.fullName, currentAgent.id],
   )
+
+  useEffect(() => {
+    if (!isPrincipal) {
+      setCalendarAgentFilter(normalizeText(currentAgent.id || currentAgent.email))
+      return
+    }
+    setCalendarAgentFilter((previous) => {
+      const normalizedPrevious = normalizeText(previous)
+      if (!normalizedPrevious || normalizedPrevious === normalizeText(currentAgent.id || currentAgent.email)) return 'all'
+      if (normalizedPrevious === 'all') return previous
+      const stillAvailable = agentOptions.some(
+        (agent) => normalizeKey(agent.id) === normalizeKey(normalizedPrevious) || normalizeKey(agent.email) === normalizeKey(normalizedPrevious),
+      )
+      return stillAvailable ? previous : 'all'
+    })
+  }, [agentOptions, currentAgent.email, currentAgent.id, isPrincipal])
 
   const buildAppointmentDraftForIntegrity = useCallback(() => {
     const selectedAppointmentForDraft = selectedAppointmentId
@@ -1459,7 +1476,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       try {
         appointmentRows = await withPipelineTimeout(
           listAppointmentsAsync(orgId, {
-            includeAll: true,
+            includeAll: isPrincipal,
+            agentId: isPrincipal ? '' : currentAgent.id,
+            agentEmail: isPrincipal ? '' : currentAgent.email,
+            agentKeys: isPrincipal ? [] : [currentAgent.id, currentAgent.email],
           }),
           'Appointment data is taking too long to load.',
           PIPELINE_RECORDS_TIMEOUT_MS,
@@ -2604,6 +2624,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadLinkedTransaction?.dealId,
   ])
 
+  const calendarScopedAppointments = useMemo(() => {
+    if (!isCalendarMode) return records.appointments
+    if (!isPrincipal) return records.appointments
+    const filterKey = normalizeKey(calendarAgentFilter)
+    if (!filterKey || filterKey === 'all') return records.appointments
+    return records.appointments.filter((appointment) => {
+      const appointmentKeys = [
+        appointment?.assignedAgentId,
+        appointment?.assignedAgentEmail,
+        appointment?.agentId,
+        appointment?.agentEmail,
+        appointment?.createdBy,
+        ...(Array.isArray(appointment?.participants)
+          ? appointment.participants.flatMap((participant) => [
+              participant?.userId,
+              participant?.email,
+            ])
+          : []),
+      ]
+        .map((value) => normalizeKey(value))
+        .filter(Boolean)
+      return appointmentKeys.includes(filterKey)
+    })
+  }, [calendarAgentFilter, isCalendarMode, isPrincipal, records.appointments])
+
   const appointmentSummary = useMemo(() => {
     if (!organisationId) {
       return {
@@ -2617,8 +2662,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         typeCounts: [],
       }
     }
-    return buildAppointmentsDashboardSummary(records.appointments, { now: new Date() })
-  }, [organisationId, records.appointments])
+    return buildAppointmentsDashboardSummary(calendarScopedAppointments, { now: new Date() })
+  }, [calendarScopedAppointments, organisationId])
 
   const selectedAppointment = useMemo(() => {
     if (!selectedAppointmentId) return null
@@ -2669,7 +2714,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const calendarAppointmentsByDate = useMemo(() => {
     const groups = new Map()
-    for (const appointment of records.appointments) {
+    for (const appointment of calendarScopedAppointments) {
       const parsedDate = parseAppointmentDate(appointment)
       if (!parsedDate) continue
       const key = toDateOnlyIso(parsedDate)
@@ -2688,7 +2733,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
 
     return groups
-  }, [records.appointments])
+  }, [calendarScopedAppointments])
 
   const weekDays = useMemo(() => getWeekDays(calendarCursorDate), [calendarCursorDate])
   const monthDays = useMemo(() => getMonthGridDays(calendarCursorDate), [calendarCursorDate])
@@ -3552,8 +3597,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     const linkedLead = selectedLead || null
+    const calendarTargetAgent = isCalendarMode && isPrincipal && normalizeText(calendarAgentFilter) && normalizeText(calendarAgentFilter) !== 'all'
+      ? resolveAgentById(calendarAgentFilter)
+      : currentAgent
     const assignedAgent = resolveAgentById(
-      normalizeText(linkedLead?.assignedAgentId || linkedLead?.assignedAgentEmail || currentAgent.id),
+      normalizeText(
+        linkedLead?.assignedAgentId ||
+        linkedLead?.assignedAgentEmail ||
+        calendarTargetAgent?.id ||
+        calendarTargetAgent?.email ||
+        currentAgent.id,
+      ),
     )
     const linkedLeadEmail = normalizeText(selectedLeadContact?.email || linkedLead?.email)
     const linkedLeadParticipantRole = normalizeText(linkedLead?.leadCategory).toLowerCase() === 'seller' ? 'Seller' : 'Buyer'
@@ -5057,6 +5111,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 <p className="mt-1 text-sm text-[#60758d]">Schedule, confirm, and complete internal appointments linked to leads, contacts, listings, and transactions.</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {isPrincipal ? (
+                  <select
+                    value={calendarAgentFilter}
+                    onChange={(event) => setCalendarAgentFilter(event.target.value)}
+                    className="h-9 min-w-[160px] rounded-full border border-[#d6e1ee] bg-white px-3 text-xs font-semibold text-[#35546c] outline-none transition focus:border-[#1f4f78] focus:ring-2 focus:ring-[#dcecff]"
+                    aria-label="Calendar agent filter"
+                  >
+                    <option value="all">All agents</option>
+                    {agentOptions.map((agent) => (
+                      <option key={`${agent.id}:${agent.email}:calendar`} value={agent.id || agent.email}>
+                        {agent.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
                 {[
                   { key: 'week', label: 'Week' },
                   { key: 'month', label: 'Month' },
@@ -5074,6 +5143,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     {option.label}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => handleOpenAppointmentModal()}
+                  className="inline-flex h-9 items-center gap-2 rounded-full border border-[#1f4f78] bg-[#1f4f78] px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-[#173f61]"
+                >
+                  <Plus size={14} />
+                  Appointment
+                </button>
               </div>
             </div>
 

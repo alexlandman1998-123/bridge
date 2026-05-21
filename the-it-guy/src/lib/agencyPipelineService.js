@@ -2182,6 +2182,7 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
           {
             name: assigned.name || 'Agent',
             email: assigned.email || '',
+            userId: toNullableUuid(resolvedAssignedAgentId) ? resolvedAssignedAgentId : null,
             participantRole: 'Agent',
             rsvpStatus: 'Pending',
           },
@@ -2773,6 +2774,7 @@ export function createAppointment(organisationId, payload = {}, { actor = null }
           {
             name: assigned.name || 'Agent',
             email: assigned.email || '',
+            userId: assigned.id || null,
             participantRole: 'Agent',
             rsvpStatus: 'Pending',
           },
