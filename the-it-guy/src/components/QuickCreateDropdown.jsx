@@ -17,8 +17,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { createAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
+import { readAgentPrivateListings } from '../lib/agentListingStorage'
 import { createAppointmentAsync } from '../lib/agencyPipelineService'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
+import { getOrganisationPrivateListings } from '../services/privateListingService'
 import Modal from './ui/Modal'
 
 const QUICK_CREATE_STORAGE_KEY = 'bridge:quick-create-records:v1'
@@ -78,7 +80,7 @@ const RESIDENTIAL_QUICK_CREATE_GROUPS = [
         icon: ClipboardList,
         action: 'modal',
         modalType: 'lead',
-        initialForm: { leadType: 'Seller', source: 'Seller Intake' },
+        initialForm: { leadType: 'Seller', source: 'Manual Entry' },
       },
       {
         type: 'buyer-intake',
@@ -87,7 +89,7 @@ const RESIDENTIAL_QUICK_CREATE_GROUPS = [
         icon: UserPlus,
         action: 'modal',
         modalType: 'lead',
-        initialForm: { leadType: 'Buyer', source: 'Buyer Intake' },
+        initialForm: { leadType: 'Buyer', source: 'Manual Entry' },
       },
     ],
   },
@@ -213,6 +215,22 @@ const COMMERCIAL_QUICK_CREATE_GROUPS = [
 ]
 
 const PERSON_TYPES = ['Buyer', 'Seller', 'Tenant', 'Landlord', 'Investor']
+const LEAD_SOURCE_OPTIONS = [
+  'Property24',
+  'Private Property',
+  'Website',
+  'Referral',
+  'Walk-In',
+  'WhatsApp',
+  'Facebook',
+  'Google',
+  'Signboard',
+  'Listing Call',
+  'Cold Call',
+  'Door Knock',
+  'Manual Entry',
+  'Other / Unknown',
+]
 const APPOINTMENT_TYPES = [
   'Viewing',
   'Valuation',
@@ -229,7 +247,8 @@ const INITIAL_FORMS = {
     phone: '',
     email: '',
     leadType: 'Buyer',
-    source: '',
+    source: LEAD_SOURCE_OPTIONS[0],
+    listingId: '',
     notes: '',
     assignedAgent: '',
   },
@@ -278,6 +297,59 @@ function splitName(fullName) {
     firstName: parts[0] || '',
     lastName: parts.slice(1).join(' '),
   }
+}
+
+function formatListingPrice(value) {
+  const amount = Number(value || 0)
+  if (!Number.isFinite(amount) || amount <= 0) return ''
+  return new Intl.NumberFormat('en-ZA', {
+    style: 'currency',
+    currency: 'ZAR',
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+function isBuyerStyleLeadType(value = '') {
+  const normalized = normalizeText(value).toLowerCase()
+  return ['buyer', 'tenant', 'investor'].includes(normalized)
+}
+
+function normalizeLeadSource(value = '') {
+  const normalized = normalizeText(value)
+  return LEAD_SOURCE_OPTIONS.includes(normalized) ? normalized : LEAD_SOURCE_OPTIONS[0]
+}
+
+function isCurrentListing(listing = {}) {
+  const status = normalizeText(listing?.listingStatus || listing?.lifecycleStatus || listing?.status).toLowerCase()
+  if (!status) return true
+  return !['archived', 'withdrawn', 'lost', 'sold', 'registered', 'closed'].some((token) => status.includes(token))
+}
+
+function mapListingToOption(listing = {}) {
+  const id = normalizeText(listing?.id || listing?.listingId || listing?.privateListingId)
+  if (!id || !isCurrentListing(listing)) return null
+  const title = normalizeText(listing?.listingTitle || listing?.title || listing?.propertyAddress || listing?.addressLine1) || 'Untitled listing'
+  const area = normalizeText(listing?.suburb || listing?.city || listing?.area)
+  const price = formatListingPrice(listing?.askingPrice || listing?.price || listing?.estimatedValue)
+  const label = [title, area].filter(Boolean).join(' · ')
+  return {
+    id,
+    label,
+    meta: price || normalizeText(listing?.listingReference || listing?.listingCode),
+  }
+}
+
+function dedupeListingOptions(listings = []) {
+  const seen = new Set()
+  return listings
+    .map((listing) => mapListingToOption(listing))
+    .filter(Boolean)
+    .filter((option) => {
+      const key = option.id.toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
 }
 
 function readQuickCreateStore() {
@@ -333,10 +405,11 @@ function FormField({ label, children, className = '' }) {
 const inputClass =
   'min-h-[42px] rounded-[12px] border border-[#d8e3ef] bg-white px-3 py-2 text-sm font-medium text-[#162334] outline-none transition focus:border-[#22445e] focus:ring-2 focus:ring-[#22445e]/10'
 
-function QuickCreateModal({ type, form, setForm, onClose, onSubmit, saving, feedback }) {
+function QuickCreateModal({ type, form, setForm, onClose, onSubmit, saving, feedback, listingOptions = [], listingOptionsLoading = false }) {
   const isLead = type === 'lead'
   const isProspect = type === 'prospect'
   const isAppointment = type === 'appointment'
+  const shouldShowListingSelect = isLead && isBuyerStyleLeadType(form.leadType)
 
   const title = isLead ? 'Create Lead' : isProspect ? 'Create Prospect' : 'Create Appointment'
   const subtitle = isLead
@@ -349,6 +422,7 @@ function QuickCreateModal({ type, form, setForm, onClose, onSubmit, saving, feed
     setForm((previous) => ({
       ...previous,
       [field]: value,
+      ...(field === 'leadType' && !isBuyerStyleLeadType(value) ? { listingId: '' } : {}),
     }))
   }
 
@@ -431,12 +505,15 @@ function QuickCreateModal({ type, form, setForm, onClose, onSubmit, saving, feed
               </FormField>
               {isLead ? (
                 <FormField label="Source">
-                  <input
+                  <select
                     className={inputClass}
-                    value={form.source}
+                    value={normalizeLeadSource(form.source)}
                     onChange={(event) => updateField('source', event.target.value)}
-                    placeholder="Website, referral, signboard..."
-                  />
+                  >
+                    {LEAD_SOURCE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
                 </FormField>
               ) : (
                 <>
@@ -466,6 +543,25 @@ function QuickCreateModal({ type, form, setForm, onClose, onSubmit, saving, feed
                   placeholder="Agent name"
                 />
               </FormField>
+              {shouldShowListingSelect ? (
+                <FormField label="Current listing">
+                  <select
+                    className={inputClass}
+                    value={form.listingId}
+                    onChange={(event) => updateField('listingId', event.target.value)}
+                    disabled={listingOptionsLoading && listingOptions.length === 0}
+                  >
+                    <option value="">
+                      {listingOptionsLoading && listingOptions.length === 0 ? 'Loading current listings...' : 'No listing selected'}
+                    </option>
+                    {listingOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.meta ? `${option.label} · ${option.meta}` : option.label}
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
+              ) : null}
             </div>
             <FormField label="Notes">
               <textarea
@@ -566,6 +662,8 @@ function QuickCreateDropdown({ className = '' }) {
   const [form, setForm] = useState(INITIAL_FORMS.lead)
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState({ kind: '', message: '' })
+  const [listingOptions, setListingOptions] = useState([])
+  const [listingOptionsLoading, setListingOptionsLoading] = useState(false)
   const containerRef = useRef(null)
 
   const actor = useMemo(() => {
@@ -593,15 +691,62 @@ function QuickCreateDropdown({ className = '' }) {
     return () => document.removeEventListener('mousedown', onClickOutside)
   }, [])
 
+  useEffect(() => {
+    if (activeType !== 'lead') return undefined
+    let isCancelled = false
+
+    async function loadCurrentListings() {
+      const localOptions = dedupeListingOptions(readAgentPrivateListings())
+      if (!isCancelled) {
+        setListingOptions(localOptions)
+        setListingOptionsLoading(true)
+      }
+
+      try {
+        const organisationId = await resolveOrganisationId()
+        const remoteListings = await getOrganisationPrivateListings(organisationId, { includeRequirementsAndDocuments: false })
+        if (!isCancelled) {
+          setListingOptions(dedupeListingOptions([
+            ...(Array.isArray(remoteListings) ? remoteListings : []),
+            ...readAgentPrivateListings(),
+          ]))
+        }
+      } catch {
+        if (!isCancelled) {
+          setListingOptions(localOptions)
+        }
+      } finally {
+        if (!isCancelled) {
+          setListingOptionsLoading(false)
+        }
+      }
+    }
+
+    void loadCurrentListings()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [activeType])
+
   function openModal(type, initialForm = {}) {
     const resolvedType = type || 'lead'
+    const nextForm = {
+      ...INITIAL_FORMS[resolvedType],
+      assignedAgent: actor.name === 'Current user' ? '' : actor.name,
+      ...initialForm,
+    }
     setOpen(false)
     setActiveType(resolvedType)
     setFeedback({ kind: '', message: '' })
     setForm({
-      ...INITIAL_FORMS[resolvedType],
-      assignedAgent: actor.name === 'Current user' ? '' : actor.name,
-      ...initialForm,
+      ...nextForm,
+      ...(resolvedType === 'lead'
+        ? {
+            source: normalizeLeadSource(nextForm.source),
+            listingId: isBuyerStyleLeadType(nextForm.leadType) ? normalizeText(nextForm.listingId) : '',
+          }
+        : {}),
     })
   }
 
@@ -670,6 +815,7 @@ function QuickCreateDropdown({ className = '' }) {
 
       if (activeType === 'lead') {
         const nameParts = splitName(form.name)
+        const selectedListing = listingOptions.find((option) => option.id === normalizeText(form.listingId)) || null
         await createAgencyCrmLeadRecord(
           organisationId,
           {
@@ -685,10 +831,12 @@ function QuickCreateDropdown({ className = '' }) {
             lead: {
               leadCategory: normalizeText(form.leadType) || 'Buyer',
               leadDirection: 'Inbound',
-              leadSource: normalizeText(form.source) || 'Quick Create',
-              stage: 'New Lead',
-              status: 'New Lead',
+              leadSource: normalizeLeadSource(form.source),
+              stage: 'Lead',
+              status: 'Lead',
               priority: 'Medium',
+              listingId: normalizeText(selectedListing?.id),
+              propertyInterest: normalizeText(selectedListing?.label),
               notes: normalizeText(form.notes),
             },
           },
@@ -773,6 +921,7 @@ function QuickCreateDropdown({ className = '' }) {
       setForm({
         ...INITIAL_FORMS[activeType],
         assignedAgent: actor.name === 'Current user' ? '' : actor.name,
+        ...(activeType === 'lead' ? { source: LEAD_SOURCE_OPTIONS[0], listingId: '' } : {}),
       })
     } catch {
       setFeedback({ kind: 'error', message: 'We could not save that yet. Please try again.' })
@@ -840,6 +989,8 @@ function QuickCreateDropdown({ className = '' }) {
         onSubmit={handleSubmit}
         saving={saving}
         feedback={feedback}
+        listingOptions={listingOptions}
+        listingOptionsLoading={listingOptionsLoading}
       />
     </>
   )

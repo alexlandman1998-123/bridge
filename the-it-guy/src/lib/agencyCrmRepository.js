@@ -208,6 +208,7 @@ function buildLocalLeadAndContactRows(payload = {}, organisationId = '') {
     propertyInterest: normalizeText(leadPayload?.propertyInterest),
     sellerPropertyAddress: normalizeText(leadPayload?.sellerPropertyAddress),
     estimatedValue: Number(leadPayload?.estimatedValue || 0) || 0,
+    listingId: normalizeText(leadPayload?.listingId || leadPayload?.listing_id),
     notes: normalizeText(leadPayload?.notes),
     canvassingProspectId: normalizeText(leadPayload?.canvassingProspectId),
     sellerName: normalizeText(leadPayload?.sellerName || payload?.contact?.firstName),
@@ -382,7 +383,7 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
     }, { onConflict: 'contact_id' })
     if (contactResult.error) throw contactResult.error
 
-    const leadResult = await supabase.from('leads').upsert({
+    const leadPayloadForRemote = {
       lead_id: normalizeText(lead.leadId),
       organisation_id: organisationId,
       assigned_agent_id: normalizeNullableUuid(lead.assignedAgentId),
@@ -398,9 +399,16 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
       property_interest: normalizeText(lead.propertyInterest) || null,
       seller_property_address: normalizeText(lead.sellerPropertyAddress) || null,
       estimated_value: Number(lead.estimatedValue || 0) || 0,
+      listing_id: normalizeText(lead.listingId) || null,
       notes: normalizeText(lead.notes) || null,
       updated_at: lead.updatedAt,
-    }, { onConflict: 'lead_id' })
+    }
+    let leadResult = await supabase.from('leads').upsert(leadPayloadForRemote, { onConflict: 'lead_id' })
+    if (leadResult.error && isMissingColumnError(leadResult.error, 'listing_id')) {
+      const fallbackLeadPayload = { ...leadPayloadForRemote }
+      delete fallbackLeadPayload.listing_id
+      leadResult = await supabase.from('leads').upsert(fallbackLeadPayload, { onConflict: 'lead_id' })
+    }
     if (leadResult.error) throw leadResult.error
 
     const reconciled = reconcileAgencyPipelineSnapshot(organisationId, {

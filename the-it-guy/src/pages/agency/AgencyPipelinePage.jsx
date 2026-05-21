@@ -3270,6 +3270,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
 
     const assignedAgent = resolveAgentById(selectedAgentId || currentAgent.id)
+    const linkedListingId = normalizeText(leadForm.linkedListing)
+    const linkedListing = linkedListingId ? appointmentListingById.get(linkedListingId) : null
     setIsLeadCreating(true)
     try {
       const createdLead = await createAgencyCrmLeadRecord(
@@ -3289,10 +3291,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           leadSource: leadForm.leadSource,
           stage: leadForm.stage,
           priority: leadForm.priority,
+          listingId: linkedListingId,
           budget: Number(leadForm.budget || 0) || 0,
           estimatedValue: Number(leadForm.estimatedValue || 0) || 0,
           areaInterest: normalizeText(leadForm.areaInterest || leadForm.propertyArea),
-          propertyInterest: normalizeText(leadForm.propertyInterest || leadForm.linkedListing || leadForm.propertyType),
+          propertyInterest: normalizeText(leadForm.propertyInterest || linkedListing?.label || leadForm.linkedListing || leadForm.propertyType),
           sellerPropertyAddress: normalizeText(leadForm.sellerPropertyAddress || leadForm.propertyArea),
           notes: leadForm.notes,
         },
@@ -6877,7 +6880,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               </button>
               <button
                 type="button"
-                onClick={() => updateLeadFormField('leadCategory', 'Seller')}
+                onClick={() => setLeadForm((previous) => ({ ...previous, leadCategory: 'Seller', linkedListing: '' }))}
                 className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
                   normalizeText(leadForm.leadCategory).toLowerCase() === 'seller'
                     ? 'bg-[#1f4f78] text-white'
@@ -6927,7 +6930,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             </div>
           ) : (
             <div className="grid gap-2 md:grid-cols-2">
-              <Field placeholder="Linked Listing (optional)" value={leadForm.linkedListing} onChange={(event) => updateLeadFormField('linkedListing', event.target.value)} />
+              <Field as="select" value={leadForm.linkedListing} onChange={(event) => updateLeadFormField('linkedListing', event.target.value)}>
+                <option value="">No listing selected</option>
+                {appointmentListingOptions.map((listing) => (
+                  <option key={listing.id} value={listing.id}>
+                    {listing.label}
+                  </option>
+                ))}
+              </Field>
               <Field placeholder="Budget (optional)" value={leadForm.budget} onChange={(event) => updateLeadFormField('budget', event.target.value)} />
               <Field placeholder="Area Interest (optional)" value={leadForm.areaInterest} onChange={(event) => updateLeadFormField('areaInterest', event.target.value)} />
             </div>
