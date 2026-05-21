@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import Button from '../components/ui/Button'
+import { getAgentClientProfile, loadAgentClientDirectory } from '../core/clients/agentClientDirectory'
 import { getAttorneyClientProfile } from '../core/clients/attorneyClientSelectors'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchDashboardOverview, fetchTransactionsByParticipant } from '../lib/api'
@@ -46,7 +47,7 @@ function getProfileCopy(role) {
     return {
       transactionLabel: 'Transactions',
       transactionSubtitle: 'All development-linked deals where this client appears in your portfolio.',
-      snapshotLabel: 'portfolio',
+      snapshotLabel: 'portfolio item',
     }
   }
 
@@ -54,27 +55,43 @@ function getProfileCopy(role) {
     return {
       transactionLabel: 'Transactions',
       transactionSubtitle: 'All active deals where this client appears in your agent workspace.',
-      snapshotLabel: 'deals',
+      snapshotLabel: 'deal',
     }
   }
 
   return {
     transactionLabel: 'Linked Transactions',
     transactionSubtitle: 'All matters where this client appears in your conveyancing workspace.',
-    snapshotLabel: 'matters',
+    snapshotLabel: 'matter',
   }
 }
 
 function ClientProfile() {
   const navigate = useNavigate()
   const { clientId } = useParams()
-  const { profile, role } = useWorkspace()
+  const { profile, role, workspace } = useWorkspace()
   const [rows, setRows] = useState([])
+  const [agentClients, setAgentClients] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState('overview')
 
   const loadData = useCallback(async () => {
+    if (role === 'agent') {
+      try {
+        setLoading(true)
+        setError('')
+        const directory = await loadAgentClientDirectory({ profile, role, workspace })
+        setAgentClients(directory.clients || [])
+        setRows([])
+      } catch (loadError) {
+        setError(loadError.message || 'Unable to load client profile.')
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
+
     if (!isSupabaseConfigured) {
       setLoading(false)
       return
@@ -96,13 +113,16 @@ function ClientProfile() {
     } finally {
       setLoading(false)
     }
-  }, [profile?.id, role])
+  }, [profile, role, workspace])
 
   useEffect(() => {
     void loadData()
   }, [loadData])
 
-  const profileData = useMemo(() => getAttorneyClientProfile(rows, clientId), [rows, clientId])
+  const profileData = useMemo(
+    () => (role === 'agent' ? getAgentClientProfile(agentClients, clientId) : getAttorneyClientProfile(rows, clientId)),
+    [agentClients, clientId, role, rows],
+  )
   const copy = useMemo(() => getProfileCopy(role), [role])
 
   if (loading) {
@@ -291,7 +311,7 @@ function ClientProfile() {
               </div>
 
               <div className="mt-5 grid gap-4">
-                {transactions.map((transaction) => (
+                {transactions.length ? transactions.map((transaction) => (
                   <article
                     key={transaction.reference}
                     className="cursor-pointer rounded-[22px] border border-[#dde4ee] bg-[#fbfcfe] p-5 transition duration-150 ease-out hover:border-[#ccd6e3] hover:bg-white hover:shadow-[0_12px_28px_rgba(15,23,42,0.06)]"
@@ -353,7 +373,14 @@ function ClientProfile() {
                       </div>
                     </div>
                   </article>
-                ))}
+                )) : (
+                  <div className="rounded-[22px] border border-[#dde4ee] bg-[#fbfcfe] p-5">
+                    <h4 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">No linked transactions yet</h4>
+                    <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
+                      This contact can still be a buyer lead, seller lead, prospect, or manually created client before a transaction is opened.
+                    </p>
+                  </div>
+                )}
               </div>
             </section>
           ) : null}

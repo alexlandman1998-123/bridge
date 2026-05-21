@@ -1,4 +1,4 @@
-import { Grid3X3, List, Plus, User2 } from 'lucide-react'
+import { Archive, ExternalLink, Grid3X3, List, Mail, MessageCircle, MoreVertical, Phone, Plus, User2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
@@ -8,6 +8,11 @@ import { ViewToggle } from '../components/ui/FilterBar'
 import Modal from '../components/ui/Modal'
 import SearchInput from '../components/ui/SearchInput'
 import DataTable, { DataTableInner } from '../components/ui/DataTable'
+import {
+  filterAgentClientDirectory,
+  getAgentClientOpenPath,
+  loadAgentClientDirectory,
+} from '../core/clients/agentClientDirectory'
 import { deriveAttorneyClients, filterAttorneyClients } from '../core/clients/attorneyClientSelectors'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { createClientRecord, fetchDashboardOverview, fetchTransactionsByParticipant } from '../lib/api'
@@ -22,6 +27,28 @@ const CLIENT_FILTERS = [
   { key: 'active', label: 'Active' },
   { key: 'inactive', label: 'Inactive' },
 ]
+
+const AGENT_TYPE_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'buyer_leads', label: 'Buyer Leads' },
+  { key: 'seller_leads', label: 'Seller Leads' },
+  { key: 'prospects', label: 'Prospects' },
+  { key: 'buyers', label: 'Buyers' },
+  { key: 'sellers', label: 'Sellers' },
+  { key: 'companies', label: 'Companies' },
+  { key: 'trusts', label: 'Trusts' },
+]
+
+const AGENT_STATUS_FILTERS = [
+  { key: 'all', label: 'All Statuses' },
+  { key: 'new', label: 'New' },
+  { key: 'active', label: 'Active' },
+  { key: 'follow_up_due', label: 'Follow-up Due' },
+  { key: 'transaction_linked', label: 'Transaction Linked' },
+  { key: 'archived', label: 'Archived' },
+]
+
+const ARCHIVED_CLIENTS_STORAGE_KEY = 'itg:agent-clients-archived:v1'
 
 function formatRelativeTime(value) {
   const date = new Date(value || 0)
@@ -56,6 +83,14 @@ function getAvatarTone(name = '') {
 }
 
 function getClientsPageCopy(role) {
+  if (role === 'agent') {
+    return {
+      subtitle: 'Buyer leads, seller leads, prospects and transaction clients in one contact layer',
+      emptyCopy: 'No contacts found yet.',
+      emptyDetail: 'Buyer leads, seller leads, prospects and transaction clients will appear here as soon as they are captured.',
+    }
+  }
+
   if (role === 'developer' || role === 'attorney') {
     return {
       subtitle: 'People and entities across your developments and transactions',
@@ -87,16 +122,51 @@ function getClientsPageCopy(role) {
   }
 }
 
-function getMatterPath({ role, transactionId, unitId, fallbackSearch = '' }) {
-  if (unitId) {
-    return `/units/${unitId}`
+function readArchivedClientIds() {
+  if (typeof window === 'undefined') return []
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(ARCHIVED_CLIENTS_STORAGE_KEY) || '[]')
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
   }
+}
 
-  if (role === 'attorney' && transactionId) {
-    return `/transactions/${transactionId}`
-  }
+function writeArchivedClientIds(ids = []) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(ARCHIVED_CLIENTS_STORAGE_KEY, JSON.stringify([...new Set(ids)]))
+}
 
-  return fallbackSearch ? `/units?search=${encodeURIComponent(fallbackSearch)}` : '/units'
+function normalizePhoneForHref(value = '') {
+  return String(value || '').replace(/\D/g, '')
+}
+
+function getStatusBadgeClass(status = '') {
+  const normalized = String(status || '').toLowerCase()
+  if (normalized.includes('transaction')) return 'border-[#cfe1f7] bg-[#f0f6ff] text-[#275f9a]'
+  if (normalized.includes('follow')) return 'border-[#f1d49a] bg-[#fff7e8] text-[#8a5a12]'
+  if (normalized.includes('archived')) return 'border-[#e2d7cd] bg-[#faf7f3] text-[#735744]'
+  if (normalized.includes('new')) return 'border-[#dde4ee] bg-[#f7fafd] text-[#39546d]'
+  return 'border-[#d6ece0] bg-[#edfdf3] text-[#1c7d45]'
+}
+
+function TypeBadges({ client }) {
+  const labels = String(client?.roleLabel || client?.typeLabel || 'Client')
+    .split('+')
+    .map((item) => item.trim())
+    .filter(Boolean)
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {(labels.length ? labels : ['Client']).slice(0, 3).map((label) => (
+        <span
+          key={label}
+          className="inline-flex items-center rounded-full border border-[#dbe4ef] bg-[#f7fafd] px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#4d6680]"
+        >
+          {label}
+        </span>
+      ))}
+    </div>
+  )
 }
 
 function AddClientModal({ open, onClose, onSaved }) {
@@ -174,14 +244,37 @@ function Clients() {
   const navigate = useNavigate()
   const { profile, role, workspace } = useWorkspace()
   const [rows, setRows] = useState([])
+  const [agentFilters, setAgentFilters] = useState({ sources: [], assignedAgents: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [activeFilter, setActiveFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [sourceFilter, setSourceFilter] = useState('all')
+  const [assignedAgentFilter, setAssignedAgentFilter] = useState('all')
   const [viewMode, setViewMode] = useState('grid')
+  const [viewModeTouched, setViewModeTouched] = useState(false)
+  const [archivedClientIds, setArchivedClientIds] = useState(() => readArchivedClientIds())
+  const [openActionMenuId, setOpenActionMenuId] = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
+  const isAgentClientDirectory = role === 'agent'
 
   const loadData = useCallback(async () => {
+    if (isAgentClientDirectory) {
+      try {
+        setLoading(true)
+        setError('')
+        const directory = await loadAgentClientDirectory({ profile, role, workspace })
+        setRows(directory.clients || [])
+        setAgentFilters(directory.filters || { sources: [], assignedAgents: [] })
+      } catch (loadError) {
+        setError(loadError.message || 'Unable to load contacts.')
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
+
     if (!isSupabaseConfigured) {
       setLoading(false)
       return
@@ -214,15 +307,69 @@ function Clients() {
     } finally {
       setLoading(false)
     }
-  }, [profile?.id, role, workspace.id])
+  }, [isAgentClientDirectory, profile, role, workspace])
 
   useEffect(() => {
     void loadData()
   }, [loadData])
 
-  const clients = useMemo(() => deriveAttorneyClients(rows), [rows])
-  const filteredClients = useMemo(() => filterAttorneyClients(clients, { search, filter: activeFilter }), [clients, search, activeFilter])
+  const clients = useMemo(() => (isAgentClientDirectory ? rows : deriveAttorneyClients(rows)), [isAgentClientDirectory, rows])
+  const filteredClients = useMemo(
+    () =>
+      isAgentClientDirectory
+        ? filterAgentClientDirectory(clients, {
+            search,
+            type: activeFilter,
+            status: statusFilter,
+            source: sourceFilter,
+            assignedAgent: assignedAgentFilter,
+            archivedIds: archivedClientIds,
+          })
+        : filterAttorneyClients(clients, { search, filter: activeFilter }),
+    [activeFilter, archivedClientIds, assignedAgentFilter, clients, isAgentClientDirectory, search, sourceFilter, statusFilter],
+  )
   const pageCopy = useMemo(() => getClientsPageCopy(role), [role])
+
+  useEffect(() => {
+    if (loading || viewModeTouched) return
+    setViewMode((clients || []).length > 10 ? 'list' : 'grid')
+  }, [clients, loading, viewModeTouched])
+
+  function handleViewModeChange(nextMode) {
+    setViewModeTouched(true)
+    setViewMode(nextMode)
+  }
+
+  function handleOpenClient(client) {
+    if (isAgentClientDirectory) {
+      navigate(getAgentClientOpenPath(client, role))
+      return
+    }
+    navigate(`/clients/${client.id}`)
+  }
+
+  function handleArchiveClient(client) {
+    const next = [...new Set([...archivedClientIds, client.id])]
+    setArchivedClientIds(next)
+    writeArchivedClientIds(next)
+    setOpenActionMenuId('')
+  }
+
+  function handleQuickAction(event, client, action) {
+    event.stopPropagation()
+    const phoneDigits = normalizePhoneForHref(client.phone)
+    if (action === 'call' && phoneDigits) {
+      window.location.href = `tel:${phoneDigits}`
+    } else if (action === 'email' && client.email) {
+      window.location.href = `mailto:${client.email}`
+    } else if (action === 'whatsapp' && phoneDigits) {
+      window.open(`https://wa.me/${phoneDigits}`, '_blank', 'noopener,noreferrer')
+    } else if (action === 'archive') {
+      handleArchiveClient(client)
+    } else if (action === 'open') {
+      handleOpenClient(client)
+    }
+  }
 
   return (
     <section className="space-y-5">
@@ -232,18 +379,51 @@ function Clients() {
             <SearchInput
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search name, email, phone, property or matter"
+              placeholder="Search name, email, phone, property, listing or matter"
             />
           </div>
           <div className="w-full sm:w-[220px] lg:w-[240px]">
             <Field as="select" value={activeFilter} onChange={(event) => setActiveFilter(event.target.value)}>
-              {CLIENT_FILTERS.map((filter) => (
+              {(isAgentClientDirectory ? AGENT_TYPE_FILTERS : CLIENT_FILTERS).map((filter) => (
                 <option key={filter.key} value={filter.key}>
                   {filter.label}
                 </option>
               ))}
             </Field>
           </div>
+          {isAgentClientDirectory ? (
+            <>
+              <div className="w-full sm:w-[200px]">
+                <Field as="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                  {AGENT_STATUS_FILTERS.map((filter) => (
+                    <option key={filter.key} value={filter.key}>
+                      {filter.label}
+                    </option>
+                  ))}
+                </Field>
+              </div>
+              <div className="w-full sm:w-[200px]">
+                <Field as="select" value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
+                  <option value="all">All Sources</option>
+                  {(agentFilters.sources || []).map((source) => (
+                    <option key={source} value={source}>
+                      {source}
+                    </option>
+                  ))}
+                </Field>
+              </div>
+              <div className="w-full sm:w-[220px]">
+                <Field as="select" value={assignedAgentFilter} onChange={(event) => setAssignedAgentFilter(event.target.value)}>
+                  <option value="all">All Agents</option>
+                  {(agentFilters.assignedAgents || []).map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.label}
+                    </option>
+                  ))}
+                </Field>
+              </div>
+            </>
+          ) : null}
           <div className="ml-auto flex flex-wrap items-center gap-3">
             <ViewToggle
               items={[
@@ -251,7 +431,7 @@ function Clients() {
                 { key: 'list', label: 'List View', icon: List },
               ]}
               value={viewMode}
-              onChange={setViewMode}
+              onChange={handleViewModeChange}
             />
             <Button onClick={() => setShowAddModal(true)}>
               <Plus size={16} />
@@ -279,29 +459,25 @@ function Clients() {
           </div>
           <h3 className="text-[1.18rem] font-semibold tracking-[-0.025em] text-[#142132]">{pageCopy.emptyCopy}</h3>
           <p className="mt-3 max-w-[560px] text-sm leading-7 text-[#6b7d93]">{pageCopy.emptyDetail}</p>
-          <Button onClick={() => setShowAddModal(true)}>
+          <Button className="mt-5" onClick={() => setShowAddModal(true)}>
             <Plus size={16} />
             Add Client
           </Button>
         </section>
       ) : null}
 
-      {!loading && filteredClients.length && viewMode === 'grid' ? (
+      {!loading && filteredClients.length > 0 && viewMode === 'grid' ? (
         <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
           {filteredClients.map((client) => {
-            const latestRow = (client.transactions || []).find(
-              (row) => String(row?.transaction?.id || '') === String(client.latestTransactionId || ''),
-            )
-
             return (
               <article
                 key={client.id}
                 className="group flex h-full cursor-pointer flex-col rounded-[28px] border border-[#dde4ee] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.06)] transition duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_18px_44px_rgba(15,23,42,0.09)]"
-                onClick={() => navigate(`/clients/${client.id}`)}
+                onClick={() => handleOpenClient(client)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
-                    navigate(`/clients/${client.id}`)
+                    handleOpenClient(client)
                   }
                 }}
                 role="button"
@@ -316,9 +492,7 @@ function Clients() {
                       <h3 className="truncate text-[1.15rem] font-semibold tracking-[-0.03em] text-[#142132]">{client.name}</h3>
                       <p className="mt-1 truncate text-sm text-[#6b7d93]">{client.entityName || client.email || client.phone || 'No contact details yet'}</p>
                     </div>
-                    <span className="inline-flex shrink-0 items-center rounded-full border border-[#d9e3ef] bg-[#f7f9fc] px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#5c738d]">
-                        {client.typeLabel}
-                    </span>
+                    <TypeBadges client={client} />
                   </div>
                 </div>
 
@@ -329,7 +503,8 @@ function Clients() {
                   </div>
                   <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3.5">
                     <span className="block text-[0.73rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Contact</span>
-                    <strong className="mt-2 block truncate text-base font-semibold text-[#142132]">{client.email || client.phone || 'No contact details'}</strong>
+                    <strong className="mt-2 block truncate text-base font-semibold text-[#142132]">{client.phone || 'No phone'}</strong>
+                    <span className="mt-1 block truncate text-xs text-[#6b7d93]">{client.email || 'No email'}</span>
                   </div>
                 </div>
 
@@ -339,55 +514,48 @@ function Clients() {
                     <strong className="mt-2 block text-base font-semibold text-[#142132]">{formatRelativeTime(client.lastActivityAt)}</strong>
                   </div>
                   <div className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-3.5">
-                    <span className="block text-[0.73rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Transactions</span>
-                    <strong className="mt-2 block text-base font-semibold text-[#142132]">{client.activeTransactions}</strong>
+                    <span className="block text-[0.73rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Source</span>
+                    <strong className="mt-2 block truncate text-base font-semibold text-[#142132]">{client.sourceLabel || 'Manual'}</strong>
                   </div>
                   <div className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-3.5">
                     <span className="block text-[0.73rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Status</span>
                     <span
-                      className={`mt-2 inline-flex items-center justify-center rounded-full px-3 py-1.5 text-[0.78rem] font-semibold ${
-                        client.status === 'active'
-                          ? 'border border-[#d6ece0] bg-[#edfdf3] text-[#1c7d45]'
-                          : 'border border-[#dde4ee] bg-[#f7f9fc] text-[#66758b]'
-                      }`}
+                      className={`mt-2 inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-[0.78rem] font-semibold ${getStatusBadgeClass(client.statusLabel)}`}
                     >
                       {client.statusLabel}
                     </span>
                   </div>
                 </div>
 
+                <div className="mt-4 rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-3.5">
+                  <span className="block text-[0.73rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Linked Record</span>
+                  <strong className="mt-2 block truncate text-base font-semibold text-[#142132]">{client.linkedRecordLabel || client.latestPropertyLabel || 'No linked record'}</strong>
+                  <span className="mt-1 block truncate text-xs text-[#6b7d93]">{client.assignedAgentName || client.assignedAgentEmail || 'No assigned agent'}</span>
+                </div>
+
                 <footer className="mt-4 flex flex-1 flex-col justify-end border-t border-[#edf2f7] pt-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <span className="text-sm text-[#6b7d93]">Linked deal profile and recent matter access.</span>
+                    <span className="text-sm text-[#6b7d93]">{client.assignedAgentName || client.assignedAgentEmail || 'Workspace contact'}</span>
                     <div className="flex flex-wrap gap-2">
-                      {client.latestTransactionId ? (
-                        <Button
-                          variant="secondary"
-                          className="min-h-[38px] px-3 py-2"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            navigate(
-                              getMatterPath({
-                                role,
-                                transactionId: latestRow?.transaction?.id || null,
-                                unitId: latestRow?.unit?.id || null,
-                                fallbackSearch: client.name,
-                              }),
-                            )
-                          }}
-                        >
-                          Open Latest Matter
-                        </Button>
-                      ) : null}
+                      <Button variant="secondary" className="min-h-[38px] px-3 py-2" onClick={(event) => handleQuickAction(event, client, 'open')}>
+                        <ExternalLink size={15} />
+                        Open
+                      </Button>
+                      <Button variant="ghost" className="min-h-[38px] px-3 py-2" disabled={!client.phone} onClick={(event) => handleQuickAction(event, client, 'call')} title="Call">
+                        <Phone size={15} />
+                      </Button>
+                      <Button variant="ghost" className="min-h-[38px] px-3 py-2" disabled={!client.email} onClick={(event) => handleQuickAction(event, client, 'email')} title="Email">
+                        <Mail size={15} />
+                      </Button>
+                      <Button variant="ghost" className="min-h-[38px] px-3 py-2" disabled={!client.phone} onClick={(event) => handleQuickAction(event, client, 'whatsapp')} title="WhatsApp">
+                        <MessageCircle size={15} />
+                      </Button>
                       <Button
                         variant="ghost"
                         className="min-h-[38px] px-3 py-2 text-[#244b72] hover:bg-[#eff4f8] hover:text-[#1d3d5f]"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          navigate(`/clients/${client.id}`)
-                        }}
+                        onClick={(event) => handleQuickAction(event, client, 'archive')}
                       >
-                        View Profile
+                        <Archive size={15} />
                       </Button>
                     </div>
                   </div>
@@ -398,17 +566,20 @@ function Clients() {
         </section>
       ) : null}
 
-      {!loading && filteredClients.length && viewMode === 'list' ? (
+      {!loading && filteredClients.length > 0 && viewMode === 'list' ? (
         <DataTable className="rounded-[24px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
           <DataTableInner className="rounded-[24px]">
               <thead>
                 <tr>
                   <th>Name</th>
                   <th>Type</th>
-                  <th>Role</th>
-                  <th>Active Transactions</th>
-                  <th>Last Activity</th>
                   <th>Contact</th>
+                  <th>Source</th>
+                  <th>Linked Record</th>
+                  <th>Status</th>
+                  <th>Assigned Agent</th>
+                  <th>Last Activity</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -416,22 +587,72 @@ function Clients() {
                   <tr
                     key={client.id}
                     className="ui-data-row-clickable"
-                    onClick={() => navigate(`/clients/${client.id}`)}
+                    onClick={() => handleOpenClient(client)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
                         event.preventDefault()
-                        navigate(`/clients/${client.id}`)
+                        handleOpenClient(client)
                       }
                     }}
                     role="button"
                     tabIndex={0}
                   >
-                    <td>{client.name}</td>
-                    <td>{client.typeLabel}</td>
-                    <td>{client.roleLabel}</td>
-                    <td>{client.activeTransactions}</td>
+                    <td>
+                      <div className="flex min-w-[190px] items-center gap-3">
+                        <div className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${getAvatarTone(client.name)} text-sm font-semibold text-white`}>
+                          {getInitials(client.name)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-[#142132]">{client.name}</p>
+                          <p className="truncate text-xs text-[#6b7d93]">{client.latestPropertyLabel || client.linkedRecordLabel || 'Contact record'}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td><TypeBadges client={client} /></td>
+                    <td>
+                      <div className="min-w-[180px]">
+                        <p className="truncate text-sm font-semibold text-[#142132]">{client.phone || 'No phone'}</p>
+                        <p className="truncate text-xs text-[#6b7d93]">{client.email || 'No email'}</p>
+                      </div>
+                    </td>
+                    <td>{client.sourceLabel || 'Manual'}</td>
+                    <td>
+                      <div className="min-w-[180px]">
+                        <p className="truncate text-sm font-semibold text-[#142132]">{client.linkedRecordLabel || 'No linked record'}</p>
+                        <p className="truncate text-xs text-[#6b7d93]">{client.linkedLeadIds?.[0] || client.linkedTransactionIds?.[0] || client.linkedListingIds?.[0] || ''}</p>
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.78rem] font-semibold ${getStatusBadgeClass(client.statusLabel)}`}>
+                        {client.statusLabel}
+                      </span>
+                    </td>
+                    <td>{client.assignedAgentName || client.assignedAgentEmail || '-'}</td>
                     <td>{formatRelativeTime(client.lastActivityAt)}</td>
-                    <td>{client.email || client.phone || '-'}</td>
+                    <td>
+                      <div className="relative flex justify-end">
+                        <button
+                          type="button"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#dbe4ef] bg-white text-[#526a82] hover:bg-[#f6f9fc]"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setOpenActionMenuId((previous) => (previous === client.id ? '' : client.id))
+                          }}
+                          aria-label={`Actions for ${client.name}`}
+                        >
+                          <MoreVertical size={16} />
+                        </button>
+                        {openActionMenuId === client.id ? (
+                          <div className="absolute right-0 top-10 z-20 grid min-w-[160px] gap-1 rounded-[16px] border border-[#dbe4ef] bg-white p-2 text-sm shadow-[0_18px_44px_rgba(15,23,42,0.12)]">
+                            <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc]" onClick={(event) => handleQuickAction(event, client, 'open')}>Open</button>
+                            <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc] disabled:text-[#a8b4c0]" disabled={!client.phone} onClick={(event) => handleQuickAction(event, client, 'call')}>Call</button>
+                            <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc] disabled:text-[#a8b4c0]" disabled={!client.email} onClick={(event) => handleQuickAction(event, client, 'email')}>Email</button>
+                            <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc] disabled:text-[#a8b4c0]" disabled={!client.phone} onClick={(event) => handleQuickAction(event, client, 'whatsapp')}>WhatsApp</button>
+                            <button type="button" className="rounded-[12px] px-3 py-2 text-left text-[#8a4b35] hover:bg-[#faf7f3]" onClick={(event) => handleQuickAction(event, client, 'archive')}>Archive</button>
+                          </div>
+                        ) : null}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
