@@ -1440,25 +1440,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       reloadRequestRef.current = requestId
       const snapshot = getAgencyPipelineSnapshot(orgId)
       let mergedSnapshot = snapshot
-      let listingOptionsForAppointments = buildListingOptionsFromLeads(snapshot.leads)
+      let listingOptionsForAppointments = buildListingOptionsFromLeads(Array.isArray(snapshot?.leads) ? snapshot.leads : [])
       const applySnapshotRecords = (sourceSnapshot, appointmentRows = sourceSnapshot?.appointments || []) => {
-        const scopedLeads = sourceSnapshot.leads
+        const sourceContacts = Array.isArray(sourceSnapshot?.contacts) ? sourceSnapshot.contacts : []
+        const sourceLeads = Array.isArray(sourceSnapshot?.leads) ? sourceSnapshot.leads : []
+        const sourceTasks = Array.isArray(sourceSnapshot?.tasks) ? sourceSnapshot.tasks : []
+        const sourceActivities = Array.isArray(sourceSnapshot?.leadActivities) ? sourceSnapshot.leadActivities : []
+        const sourceDeals = Array.isArray(sourceSnapshot?.deals) ? sourceSnapshot.deals : []
+        const sourceAppointments = Array.isArray(appointmentRows)
+          ? appointmentRows
+          : (Array.isArray(sourceSnapshot?.appointments) ? sourceSnapshot.appointments : [])
+        const scopedLeads = sourceLeads
         const scopedLeadIds = new Set(
           scopedLeads
             .flatMap((lead) => [lead?.leadId, lead?.id])
             .map((value) => normalizeLeadIdentityKey(value))
             .filter(Boolean),
         )
-        const scopedTasks = sourceSnapshot.tasks.filter((task) => scopedLeadIds.has(normalizeLeadIdentityKey(task?.leadId)))
-        const scopedAppointments = appointmentRows.filter((row) => {
+        const scopedTasks = sourceTasks.filter((task) => scopedLeadIds.has(normalizeLeadIdentityKey(task?.leadId)))
+        const scopedAppointments = sourceAppointments.filter((row) => {
           const appointmentOrganisationId = normalizeText(row?.organisationId || row?.organisation_id)
           return !appointmentOrganisationId || !normalizeText(orgId) || appointmentOrganisationId === normalizeText(orgId)
         })
-        const scopedActivities = sourceSnapshot.leadActivities.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
-        const scopedDeals = sourceSnapshot.deals.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
+        const scopedActivities = sourceActivities.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
+        const scopedDeals = sourceDeals.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
 
         setRecords({
-          contacts: sourceSnapshot.contacts,
+          contacts: sourceContacts,
           leads: scopedLeads,
           leadActivities: scopedActivities,
           tasks: scopedTasks,
