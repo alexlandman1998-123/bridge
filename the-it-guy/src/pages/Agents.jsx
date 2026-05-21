@@ -2984,6 +2984,7 @@ export function AgentWorkspacePage() {
           appointments = await listAppointmentsAsync(organisationId, {
             includeAll: canManageSettings,
             agentId: canManageSettings ? '' : String(profile?.id || profile?.email || '').trim(),
+            agentEmail: canManageSettings ? '' : String(profile?.email || '').trim(),
           })
         }
       } catch {

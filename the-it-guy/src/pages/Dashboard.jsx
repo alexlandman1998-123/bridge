@@ -1012,6 +1012,7 @@ function Dashboard() {
         const summary = await getAppointmentsDashboardSummaryAsync(organisationIdForAppointments, {
           includeAll: isPrincipalAgentView,
           agentId: isPrincipalAgentView ? '' : resolvedAgentIdentity,
+          agentEmail: isPrincipalAgentView ? '' : String(profile?.email || '').trim(),
         })
         setAppointmentSummary(summary)
       } catch {

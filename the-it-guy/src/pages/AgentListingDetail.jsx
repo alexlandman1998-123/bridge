@@ -30,11 +30,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
+import { useWorkspace } from '../context/WorkspaceContext'
 import {
   getListingReadinessSummary,
   getRequiredSellerDocuments,
   getSellerRequirementProfile,
 } from '../lib/privateListingRequirementEngine'
+import {
+  createAppointmentAsync,
+  listAppointmentsAsync,
+} from '../lib/agencyPipelineService'
 import {
   generateId,
   readAgentPrivateListings,
@@ -67,6 +72,7 @@ import {
   updatePrivateListingOnboardingFormData,
   uploadPrivateListingMediaAsset,
 } from '../services/privateListingService'
+import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 
 const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
@@ -145,6 +151,88 @@ function firstDraftValue(...values) {
     if (normalized) return value
   }
   return ''
+}
+
+function mapAppointmentStatusToViewingStatus(status) {
+  const normalized = String(status || '').trim().toLowerCase()
+  if (['confirmed', 'accepted'].includes(normalized)) return VIEWING_STATUS.CONFIRMED
+  if (normalized === 'completed') return VIEWING_STATUS.COMPLETED
+  if (normalized === 'cancelled' || normalized === 'canceled') return VIEWING_STATUS.CANCELLED
+  if (normalized === 'declined') return VIEWING_STATUS.DECLINED
+  if (normalized === 'no_show' || normalized === 'no show') return VIEWING_STATUS.NO_SHOW
+  if (normalized.includes('alternative') || normalized.includes('reschedule')) return VIEWING_STATUS.RESCHEDULE_REQUESTED
+  return VIEWING_STATUS.PENDING_APPROVAL
+}
+
+function mapAppointmentParticipantToViewingParticipant(participant = {}) {
+  const rsvpStatus = String(participant?.rsvpStatus || participant?.rsvp_status || '').trim().toLowerCase()
+  return {
+    participant_id: participant?.participantId || participant?.participant_id || participant?.userId || participant?.user_id || participant?.email || participant?.name || '',
+    role: String(participant?.participantRole || participant?.participant_role || participant?.role || 'participant').trim().toLowerCase(),
+    name: participant?.name || participant?.email || 'Participant',
+    response_status:
+      rsvpStatus === 'accepted'
+        ? VIEWING_RESPONSE_STATUS.ACCEPTED
+        : rsvpStatus === 'declined'
+          ? VIEWING_RESPONSE_STATUS.DECLINED
+          : rsvpStatus.includes('proposed')
+            ? VIEWING_RESPONSE_STATUS.PROPOSED_NEW_TIME
+            : VIEWING_RESPONSE_STATUS.PENDING,
+    responded_at: participant?.respondedAt || participant?.responded_at || null,
+  }
+}
+
+function mapAppointmentToViewingRecord(appointment = {}) {
+  const participants = Array.isArray(appointment?.participants) ? appointment.participants : []
+  const clientParticipant = participants.find((participant) => {
+    const role = String(participant?.participantRole || participant?.participant_role || '').trim().toLowerCase()
+    return role && role !== 'agent' && role !== 'principal'
+  }) || participants.find((participant) => participant?.email || participant?.name) || null
+  const dateTime = appointment?.dateTime || appointment?.date_time || ''
+  const proposedDate = appointment?.date || appointment?.appointmentDate || appointment?.appointment_date || (dateTime ? String(dateTime).slice(0, 10) : '')
+  const proposedTime = appointment?.startTime || appointment?.start_time || (dateTime ? String(dateTime).slice(11, 16) : '')
+  return {
+    viewing_id: appointment?.appointmentId || appointment?.appointment_id || appointment?.id,
+    appointment_id: appointment?.appointmentId || appointment?.appointment_id || appointment?.id,
+    listing_id: appointment?.listingId || appointment?.listing_id || '',
+    listing_type: 'appointment',
+    listing_title: appointment?.listingLabel || appointment?.title || 'Appointment',
+    buyer_lead_id: appointment?.leadId || appointment?.lead_id || appointment?.contactId || appointment?.contact_id || '',
+    buyer_name: clientParticipant?.name || clientParticipant?.email || appointment?.title || 'Participant',
+    agent_id: appointment?.assignedAgentId || appointment?.agent_id || '',
+    created_by: appointment?.createdBy || appointment?.created_by || '',
+    created_by_role: 'agent',
+    proposed_date: proposedDate,
+    proposed_time: proposedTime,
+    alternative_times: [],
+    location: appointment?.location || '',
+    notes: appointment?.notes || '',
+    status: mapAppointmentStatusToViewingStatus(appointment?.status),
+    participants: participants.map(mapAppointmentParticipantToViewingParticipant),
+    feedback: appointment?.clientFeedback || appointment?.agentNotes || appointment?.outcomeSummary
+      ? {
+          interest_level: '',
+          feedback_notes: appointment?.clientFeedback || appointment?.agentNotes || '',
+          next_action: appointment?.nextStep || '',
+          created_at: appointment?.updatedAt || appointment?.updated_at || appointment?.createdAt || appointment?.created_at || null,
+        }
+      : null,
+    created_at: appointment?.createdAt || appointment?.created_at || dateTime || '',
+    updated_at: appointment?.updatedAt || appointment?.updated_at || dateTime || '',
+    source: 'appointments',
+  }
+}
+
+function mergeAppointmentAndLocalViewings(appointmentRows = [], localRows = []) {
+  const seen = new Set()
+  const merged = []
+  for (const row of [...appointmentRows, ...localRows]) {
+    const key = String(row?.appointment_id || row?.viewing_id || '').trim()
+    if (key && seen.has(key)) continue
+    if (key) seen.add(key)
+    merged.push(row)
+  }
+  return merged.sort((left, right) => new Date(right?.updated_at || right?.created_at || 0) - new Date(left?.updated_at || left?.created_at || 0))
 }
 
 function normalizeMediaItems(items = []) {
@@ -549,12 +637,14 @@ function buildPropertyDraft(listingRecord) {
 function AgentListingDetail() {
   const navigate = useNavigate()
   const { listingId: encodedListingId } = useParams()
+  const { profile } = useWorkspace()
   const listingId = decodeURIComponent(String(encodedListingId || ''))
 
   const [activeTab, setActiveTab] = useState('overview')
   const [privateListings, setPrivateListings] = useState([])
   const [pipelineLeads, setPipelineLeads] = useState([])
   const [loading, setLoading] = useState(true)
+  const [activeOrganisationId, setActiveOrganisationId] = useState('')
   const [offersRefreshTick, setOffersRefreshTick] = useState(0)
   const [showSendOfferLinkForm, setShowSendOfferLinkForm] = useState(false)
   const [offerInviteDraft, setOfferInviteDraft] = useState({
@@ -635,17 +725,48 @@ function AgentListingDetail() {
     }
   }, [loadListingData])
 
-  useEffect(() => {
-    if (!listingId) return undefined
-    const refreshViewings = () => setViewings(getViewingRequestsForListing(listingId))
-    refreshViewings()
-    window.addEventListener('itg:viewings-updated', refreshViewings)
-    return () => window.removeEventListener('itg:viewings-updated', refreshViewings)
-  }, [listingId])
-
   const listingRecord = useMemo(() => {
     return privateListings.find((item) => String(item.id) === listingId) || null
   }, [listingId, privateListings])
+
+  const listingOrganisationId = useMemo(
+    () => String(listingRecord?.organisationId || listingRecord?.organisation_id || activeOrganisationId || '').trim(),
+    [activeOrganisationId, listingRecord?.organisationId, listingRecord?.organisation_id],
+  )
+
+  const refreshListingViewings = useCallback(async () => {
+    if (!listingId) return
+    const localRows = getViewingRequestsForListing(listingId)
+    let appointmentRows = []
+    if (listingOrganisationId && isSupabaseConfigured) {
+      try {
+        const appointments = await listAppointmentsAsync(listingOrganisationId, {
+          includeAll: true,
+          listingId,
+        })
+        appointmentRows = (Array.isArray(appointments) ? appointments : [])
+          .filter((appointment) => String(appointment?.listingId || appointment?.listing_id || '') === String(listingId))
+          .map(mapAppointmentToViewingRecord)
+      } catch (error) {
+        console.warn('[AgentListingDetail] listing appointments load failed; using local viewing fallback', error)
+      }
+    }
+    setViewings(mergeAppointmentAndLocalViewings(appointmentRows, localRows))
+  }, [listingId, listingOrganisationId])
+
+  useEffect(() => {
+    if (!listingId) return undefined
+    void refreshListingViewings()
+    const refreshViewings = () => {
+      void refreshListingViewings()
+    }
+    window.addEventListener('itg:viewings-updated', refreshViewings)
+    window.addEventListener('itg:agency-crm-updated', refreshViewings)
+    return () => {
+      window.removeEventListener('itg:viewings-updated', refreshViewings)
+      window.removeEventListener('itg:agency-crm-updated', refreshViewings)
+    }
+  }, [listingId, refreshListingViewings])
 
   useEffect(() => {
     if (!listingRecord) return
@@ -655,6 +776,25 @@ function AgentListingDetail() {
       bondOriginator: String(listingRecord?.rolePlayers?.bondOriginator || 'Bridge Finance').trim(),
     })
   }, [listingRecord])
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return undefined
+    let cancelled = false
+    async function loadOrganisationContext() {
+      try {
+        const context = await fetchOrganisationSettings()
+        if (!cancelled) {
+          setActiveOrganisationId(String(context?.organisation?.id || '').trim())
+        }
+      } catch (error) {
+        console.warn('[AgentListingDetail] organisation context load failed for appointments', error)
+      }
+    }
+    void loadOrganisationContext()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   function patchListing(updater) {
     if (!listingRecord) return null
@@ -1355,11 +1495,11 @@ function AgentListingDetail() {
     setViewingForm((previous) => ({ ...previous, [key]: value }))
   }
 
-  function submitViewingRequest(event) {
+  async function submitViewingRequest(event) {
     event.preventDefault()
     if (!listingRecord || !viewingForm.buyerLeadId || !viewingForm.proposedDate || !viewingForm.proposedTime) return
     const lead = listingLeads.find((item) => String(item?.id || '') === String(viewingForm.buyerLeadId))
-    createViewingRequest({
+    const fallbackViewingPayload = {
       listingId: listingRecord.id,
       listingType: 'private_listing',
       listingTitle: listingRecord.listingTitle,
@@ -1374,7 +1514,73 @@ function AgentListingDetail() {
       location: [listingRecord.listingTitle, listingRecord.suburb, listingRecord.city].filter(Boolean).join(', '),
       agentName: 'Agent',
       sellerName: listingRecord?.seller?.name || 'Seller',
-    })
+    }
+    let createdInAppointments = false
+    if (listingOrganisationId && isSupabaseConfigured) {
+      try {
+        const participantSeed = []
+        const buyerEmail = String(lead?.email || lead?.buyerEmail || '').trim().toLowerCase()
+        if (buyerEmail) {
+          participantSeed.push({
+            name: lead?.name || buyerEmail,
+            email: buyerEmail,
+            phone: lead?.phone || '',
+            participantRole: 'Buyer',
+            isRequired: true,
+            rsvpStatus: 'Pending',
+          })
+        }
+        const sellerEmail = String(listingRecord?.seller?.email || '').trim().toLowerCase()
+        if (sellerEmail) {
+          participantSeed.push({
+            name: listingRecord?.seller?.name || sellerEmail,
+            email: sellerEmail,
+            phone: listingRecord?.seller?.phone || '',
+            participantRole: 'Seller',
+            isRequired: false,
+            rsvpStatus: 'Pending',
+          })
+        }
+        const currentAgent = {
+          id: String(profile?.id || '').trim(),
+          name: String(profile?.fullName || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') || profile?.email || 'Agent').trim(),
+          email: String(profile?.email || '').trim().toLowerCase(),
+        }
+        await createAppointmentAsync(
+          listingOrganisationId,
+          {
+            appointmentType: 'viewing',
+            title: `Viewing: ${listingRecord.listingTitle || 'Listing'}`,
+            date: viewingForm.proposedDate,
+            startTime: viewingForm.proposedTime,
+            timezone: 'Africa/Johannesburg',
+            locationType: 'physical_address',
+            location: fallbackViewingPayload.location,
+            status: 'requested',
+            leadId: lead?.leadId || lead?.id || null,
+            contactId: lead?.contactId || null,
+            listingId: listingRecord.id,
+            relatedEntityType: lead?.leadId || lead?.id ? 'lead' : 'listing',
+            relatedEntityId: lead?.leadId || lead?.id || null,
+            notes: viewingForm.notes.trim(),
+            participants: participantSeed,
+            assignedAgent: currentAgent,
+            sendInviteEmails: participantSeed.some((participant) => participant.email),
+            attachCalendarInvite: true,
+          },
+          {
+            actor: currentAgent,
+          },
+        )
+        createdInAppointments = true
+      } catch (error) {
+        console.warn('[AgentListingDetail] appointment module viewing create failed; saving local viewing fallback', error)
+        setDetailError(error?.message || 'Viewing saved locally, but the shared appointment record could not be created.')
+      }
+    }
+    if (!createdInAppointments) {
+      createViewingRequest(fallbackViewingPayload)
+    }
     setViewingForm({
       buyerLeadId: '',
       proposedDate: '',
@@ -1384,6 +1590,7 @@ function AgentListingDetail() {
       notes: '',
     })
     setShowViewingForm(false)
+    await refreshListingViewings()
   }
 
   function saveFeedback(viewingId) {

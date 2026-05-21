@@ -1658,16 +1658,21 @@ function mapParticipantToDbInsert(participant = {}, { appointmentId = '', organi
   }
 }
 
-function applyAppointmentScope(rows = [], { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], from = null, to = null } = {}) {
+function applyAppointmentScope(rows = [], { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], listingId = '', from = null, to = null } = {}) {
   const scopedAgentKeys = new Set(
     [agentId, agentEmail, ...(Array.isArray(agentKeys) ? agentKeys : [])]
       .map((value) => normalizeLowerText(value))
       .filter(Boolean),
   )
+  const scopedListingId = normalizeLowerText(listingId)
   const fromMs = from ? new Date(from).getTime() : null
   const toMs = to ? new Date(to).getTime() : null
 
   return (Array.isArray(rows) ? rows : []).filter((row) => {
+    if (scopedListingId && normalizeLowerText(row?.listingId || row?.listing_id) !== scopedListingId) {
+      return false
+    }
+
     if (!includeAll && scopedAgentKeys.size) {
       const rowKeys = [
         row?.assignedAgentId,
@@ -1698,8 +1703,9 @@ function applyAppointmentScope(rows = [], { includeAll = false, agentId = '', ag
   })
 }
 
-async function listAppointmentsFromSupabase(organisationId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], from = null, to = null } = {}) {
+async function listAppointmentsFromSupabase(organisationId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], listingId = '', from = null, to = null } = {}) {
   const scopedOrganisationId = normalizeText(organisationId)
+  const scopedListingId = normalizeText(listingId)
   const selectModern =
     'appointment_id, organisation_id, lead_id, agent_id, appointment_type, custom_type_label, title, appointment_date, start_time, end_time, date_time, timezone, all_day, location_type, location, meeting_url, contact_id, listing_id, transaction_id, related_entity_type, related_entity_id, linked_workflow, linked_workflow_stage, linked_task_id, linked_transaction_stage, workflow_completion_effect, visibility_scope, completion_behavior, appointment_instructions, required_documents, calendar_event_uid, ics_generated_at, external_calendar_status, external_calendar_provider, external_calendar_event_id, resource_id, allow_outside_business_hours, scheduling_override_reason, status, notes, outcome_summary, client_feedback, agent_notes, next_step, follow_up_date, created_by, created_at, updated_at, completed_at, cancelled_at, cancelled_by, cancellation_reason'
   const selectLegacy =
@@ -1708,11 +1714,15 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
     'appointment_id, organisation_id, lead_id, agent_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, contact_id, listing_id, transaction_id, status, notes, created_by, created_at, updated_at'
 
   const buildQuery = (select) => {
-    return supabase
+    let query = supabase
       .from('appointments')
       .select(select)
       .eq('organisation_id', scopedOrganisationId)
       .order('date_time', { ascending: true })
+    if (scopedListingId) {
+      query = query.eq('listing_id', scopedListingId)
+    }
+    return query
   }
 
   let appointmentRows = []
@@ -1778,7 +1788,7 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
     }
   })
 
-  return applyAppointmentScope(rows, { includeAll, agentId, agentEmail, agentKeys, from, to })
+  return applyAppointmentScope(rows, { includeAll, agentId, agentEmail, agentKeys, listingId: scopedListingId, from, to })
 }
 
 async function replaceAppointmentParticipantsInSupabase({
@@ -2103,13 +2113,19 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
     throw new Error('Appointment scheduling requires the database connection.')
   }
   const assigned = resolveAgentSnapshot(payload?.assignedAgent || payload?.agent || actor || {})
+  const resolvedAssignedAgentId = toNullableUuid(assigned.id)
+    ? assigned.id
+    : (toNullableUuid(actor?.id) ? actor.id : assigned.id)
+  const resolvedCreatedBy = toNullableUuid(actor?.id)
+    ? actor.id
+    : (toNullableUuid(payload?.createdBy || payload?.created_by) ? (payload?.createdBy || payload?.created_by) : null)
   const nextId = createUuid()
   const nowIso = new Date().toISOString()
   const appointment = normalizeAppointmentRecord(
     {
       appointmentId: nextId,
       organisationId: scopedOrganisationId,
-      assignedAgentId: assigned.id || null,
+      assignedAgentId: resolvedAssignedAgentId || null,
       assignedAgentName: assigned.name || null,
       assignedAgentEmail: assigned.email || null,
       appointmentType: payload?.appointmentType || 'other',
@@ -2144,7 +2160,7 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
       schedulingOverrideReason: payload?.schedulingOverrideReason,
       status: payload?.status || 'requested',
       notes: payload?.notes,
-      createdBy: actor?.id || null,
+      createdBy: resolvedCreatedBy,
       createdAt: nowIso,
       updatedAt: nowIso,
     },
@@ -2990,13 +3006,13 @@ export function addAppointmentOutcome(organisationId, appointmentId, payload = {
   return updated
 }
 
-export function listAppointments(organisationId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], from = null, to = null } = {}) {
+export function listAppointments(organisationId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], listingId = '', from = null, to = null } = {}) {
   const store = safeReadStore(organisationId)
   const normalizedRows = attachAppointmentParticipants(
     store,
     store.appointments.map((row) => normalizeAppointmentRecord(row, { organisationId })),
   )
-  return applyAppointmentScope(normalizedRows, { includeAll, agentId, agentEmail, agentKeys, from, to })
+  return applyAppointmentScope(normalizedRows, { includeAll, agentId, agentEmail, agentKeys, listingId, from, to })
 }
 
 export function listLeadAppointments(organisationId, leadId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [] } = {}) {
@@ -3077,22 +3093,22 @@ export function getAppointmentsDashboardSummary(
   return buildAppointmentsDashboardSummary(rows, { now })
 }
 
-export async function listAppointmentsAsync(organisationId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], from = null, to = null } = {}) {
+export async function listAppointmentsAsync(organisationId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], listingId = '', from = null, to = null } = {}) {
   const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
   if (fallbackReason) {
-    return listAppointments(organisationId, { includeAll, agentId, agentEmail, agentKeys, from, to })
+    return listAppointments(organisationId, { includeAll, agentId, agentEmail, agentKeys, listingId, from, to })
   }
   if (!isUuidLike(normalizeText(organisationId))) {
-    return listAppointments(organisationId, { includeAll, agentId, agentEmail, agentKeys, from, to })
+    return listAppointments(organisationId, { includeAll, agentId, agentEmail, agentKeys, listingId, from, to })
   }
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Appointment scheduling requires the database connection.')
   }
   try {
-    return await listAppointmentsFromSupabase(organisationId, { includeAll, agentId, agentEmail, agentKeys, from, to })
+    return await listAppointmentsFromSupabase(organisationId, { includeAll, agentId, agentEmail, agentKeys, listingId, from, to })
   } catch (error) {
     if (isPermissionDeniedError(error)) {
-      return listAppointments(organisationId, { includeAll, agentId, agentEmail, agentKeys, from, to })
+      return listAppointments(organisationId, { includeAll, agentId, agentEmail, agentKeys, listingId, from, to })
     }
     throw error
   }

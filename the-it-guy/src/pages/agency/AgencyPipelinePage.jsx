@@ -373,6 +373,10 @@ function normalizeAppointmentListingOption(listing = {}) {
     status: status || 'active',
     address: normalizeText(listing?.propertyAddress || listing?.address || listing?.addressLine1 || listing?.address_line_1),
     suburb: normalizeText(listing?.suburb),
+    assignedAgentId: normalizeText(listing?.assignedAgentId || listing?.assigned_agent_id || listing?.agentId || listing?.agent_id),
+    assignedAgentEmail: normalizeText(listing?.assignedAgentEmail || listing?.assigned_agent_email || listing?.agentEmail || listing?.agent_email).toLowerCase(),
+    createdBy: normalizeText(listing?.createdBy || listing?.created_by),
+    organisationId: normalizeText(listing?.organisationId || listing?.organisation_id),
     updatedAt: listing?.updatedAt || listing?.updated_at || listing?.createdAt || listing?.created_at || null,
   }
 }
@@ -389,10 +393,106 @@ function buildListingOptionsFromLeads(leads = []) {
       address: lead?.sellerPropertyAddress,
       suburb: lead?.areaInterest,
       estimatedValue: lead?.estimatedValue || lead?.budget,
+      assignedAgentId: lead?.assignedAgentId || lead?.assigned_agent_id,
+      assignedAgentEmail: lead?.assignedAgentEmail || lead?.assigned_agent_email,
+      createdBy: lead?.createdBy || lead?.created_by,
+      organisationId: lead?.organisationId || lead?.organisation_id,
       updatedAt: lead?.updatedAt,
     }))
   }
   return options.filter(Boolean)
+}
+
+function buildScopedListingIdSet({ leads = [], listings = [], currentAgent = {}, includeAll = false } = {}) {
+  const ids = new Set()
+  const agentKeys = new Set(
+    [currentAgent?.id, currentAgent?.email]
+      .map((value) => normalizeKey(value))
+      .filter(Boolean),
+  )
+
+  for (const lead of Array.isArray(leads) ? leads : []) {
+    const listingId = normalizeText(lead?.listingId || lead?.listing_id)
+    if (listingId) ids.add(normalizeKey(listingId))
+  }
+
+  for (const listing of Array.isArray(listings) ? listings : []) {
+    const listingId = normalizeText(listing?.id || listing?.listingId || listing?.listing_id)
+    if (!listingId) continue
+    if (includeAll) {
+      ids.add(normalizeKey(listingId))
+      continue
+    }
+    const listingAgentKeys = [
+      listing?.assignedAgentId,
+      listing?.assignedAgentEmail,
+      listing?.agentId,
+      listing?.agentEmail,
+      listing?.createdBy,
+    ]
+      .map((value) => normalizeKey(value))
+      .filter(Boolean)
+    if (listingAgentKeys.some((key) => agentKeys.has(key))) {
+      ids.add(normalizeKey(listingId))
+    }
+  }
+
+  return ids
+}
+
+function canCurrentAgentSeeAppointment(appointment = {}, context = {}) {
+  const {
+    isPrincipal = false,
+    currentAgent = {},
+    currentOrganisationId = '',
+    scopedLeadIds = new Set(),
+    scopedListingIds = new Set(),
+  } = context
+
+  if (isPrincipal) return true
+
+  const appointmentOrganisationId = normalizeText(appointment?.organisationId || appointment?.organisation_id)
+  if (appointmentOrganisationId && currentOrganisationId && appointmentOrganisationId !== currentOrganisationId) {
+    return false
+  }
+
+  const currentAgentIds = new Set(
+    [currentAgent?.id, currentAgent?.userId]
+      .map((value) => normalizeKey(value))
+      .filter(Boolean),
+  )
+  const currentAgentEmails = new Set(
+    [currentAgent?.email]
+      .map((value) => normalizeKey(value))
+      .filter(Boolean),
+  )
+  const appointmentAgentKeys = [
+    appointment?.assignedAgentId,
+    appointment?.assignedAgentEmail,
+    appointment?.agentId,
+    appointment?.agent_id,
+    appointment?.createdBy,
+    appointment?.created_by,
+  ]
+    .map((value) => normalizeKey(value))
+    .filter(Boolean)
+  if (appointmentAgentKeys.some((key) => currentAgentIds.has(key) || currentAgentEmails.has(key))) return true
+
+  const leadKey = normalizeLeadIdentityKey(appointment?.leadId || appointment?.lead_id)
+  if (leadKey && scopedLeadIds.has(leadKey)) return true
+
+  const listingKey = normalizeKey(appointment?.listingId || appointment?.listing_id)
+  if (listingKey && scopedListingIds.has(listingKey)) return true
+
+  const participants = Array.isArray(appointment?.participants) ? appointment.participants : []
+  for (const participant of participants) {
+    const participantUserKey = normalizeKey(participant?.userId || participant?.user_id)
+    const participantEmailKey = normalizeKey(participant?.email)
+    if (participantUserKey && currentAgentIds.has(participantUserKey)) return true
+    if (participantEmailKey && currentAgentEmails.has(participantEmailKey)) return true
+  }
+
+  return false
 }
 
 function dedupeListingOptions(options = []) {
@@ -843,11 +943,6 @@ function getMonthGridDays(anchorDate) {
 }
 
 function parseAppointmentDate(appointment) {
-  const dateTimeValue = appointment?.dateTime || appointment?.date_time || appointment?.startsAt || appointment?.starts_at
-  const dateTimeCandidate = dateTimeValue ? new Date(dateTimeValue) : null
-  if (dateTimeCandidate && !Number.isNaN(dateTimeCandidate.getTime())) {
-    return dateTimeCandidate
-  }
   const dateValue = appointment?.date || appointment?.appointmentDate || appointment?.appointment_date
   const timeValue = appointment?.startTime || appointment?.start_time || '00:00'
   if (dateValue) {
@@ -857,6 +952,11 @@ function parseAppointmentDate(appointment) {
     if (!Number.isNaN(dateCandidate.getTime())) {
       return dateCandidate
     }
+  }
+  const dateTimeValue = appointment?.dateTime || appointment?.date_time || appointment?.startsAt || appointment?.starts_at
+  const dateTimeCandidate = dateTimeValue ? new Date(dateTimeValue) : null
+  if (dateTimeCandidate && !Number.isNaN(dateTimeCandidate.getTime())) {
+    return dateTimeCandidate
   }
   return null
 }
@@ -1258,34 +1358,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const snapshot = getAgencyPipelineSnapshot(orgId)
       let mergedSnapshot = snapshot
       let listingOptionsForAppointments = buildListingOptionsFromLeads(snapshot.leads)
-      const agentKeys = new Set(
-        [currentAgent.id, currentAgent.email]
-          .map((value) => normalizeKey(value))
-          .filter(Boolean),
-      )
       const applySnapshotRecords = (sourceSnapshot, appointmentRows = []) => {
         const scopedLeads = sourceSnapshot.leads
-        const scopedLeadIds = new Set(scopedLeads.map((lead) => normalizeLeadIdentityKey(lead?.leadId)))
-        const scopedTasks = sourceSnapshot.tasks.filter((task) => scopedLeadIds.has(normalizeLeadIdentityKey(task?.leadId)))
-        const scopedAppointments = appointmentRows.filter((row) => {
-          if (isPrincipal) return true
-          const linkedLeadId = normalizeLeadIdentityKey(row?.leadId)
-          if (linkedLeadId && scopedLeadIds.has(linkedLeadId)) return true
-          const rowAgentKeys = [
-            row?.assignedAgentId,
-            row?.assignedAgentEmail,
-            row?.createdBy,
-            ...(Array.isArray(row?.participants)
-              ? row.participants.flatMap((participant) => [
-                  participant?.userId,
-                  participant?.email,
-                ])
-              : []),
-          ]
-            .map((value) => normalizeKey(value))
-            .filter(Boolean)
-          return rowAgentKeys.some((key) => agentKeys.has(key))
+        const scopedLeadIds = new Set(
+          scopedLeads
+            .flatMap((lead) => [lead?.leadId, lead?.id])
+            .map((value) => normalizeLeadIdentityKey(value))
+            .filter(Boolean),
+        )
+        const scopedListingIds = buildScopedListingIdSet({
+          leads: scopedLeads,
+          listings: listingOptionsForAppointments,
+          currentAgent,
+          includeAll: isPrincipal,
         })
+        const scopedTasks = sourceSnapshot.tasks.filter((task) => scopedLeadIds.has(normalizeLeadIdentityKey(task?.leadId)))
+        const scopedAppointments = appointmentRows.filter((row) =>
+          canCurrentAgentSeeAppointment(row, {
+            isPrincipal,
+            currentAgent,
+            currentOrganisationId: normalizeText(orgId),
+            scopedLeadIds,
+            scopedListingIds,
+          }),
+        )
         const scopedActivities = sourceSnapshot.leadActivities.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
         const scopedDeals = sourceSnapshot.deals.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
 
@@ -1379,7 +1475,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ]))
       applySnapshotRecords(mergedSnapshot, appointmentRows)
     },
-    [currentAgent.email, currentAgent.id, isPrincipal],
+    [currentAgent, isPrincipal],
   )
 
   const scheduleRecordsReload = useCallback(
@@ -1581,7 +1677,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return () => {
       window.removeEventListener('itg:seller-onboarding-submitted', handler)
     }
-  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, organisationId, records.leads, scheduleRecordsReload])
+  }, [currentAgent, currentAgent.email, currentAgent.fullName, currentAgent.id, organisationId, records.leads, scheduleRecordsReload])
 
   useEffect(() => {
     if (!organisationId) return
@@ -1632,7 +1728,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return () => {
       window.removeEventListener('itg:seller-mandate-signed', handler)
     }
-  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, organisationId, records.leads, scheduleRecordsReload])
+  }, [currentAgent, currentAgent.email, currentAgent.fullName, currentAgent.id, organisationId, records.leads, scheduleRecordsReload])
 
   useEffect(() => {
     if (isCalendarMode) return
@@ -2199,6 +2295,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       clearPollTimer()
     }
   }, [
+    currentAgent,
     currentAgent.email,
     currentAgent.fullName,
     currentAgent.id,
