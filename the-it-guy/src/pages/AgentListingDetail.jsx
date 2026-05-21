@@ -81,6 +81,14 @@ const DETAIL_TABS = [
   { key: 'role_players', label: 'Role Players' },
 ]
 
+const SELLER_WORKSPACE_TABS = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'seller', label: 'Seller' },
+  { key: 'documents', label: 'Documents' },
+  { key: 'commission', label: 'Commission' },
+  { key: 'activity', label: 'Activity' },
+]
+
 const ATTORNEY_OPTIONS = [
   'Bridge Conveyancing',
   'Hayley Appel',
@@ -342,6 +350,15 @@ function SnapshotRow({ label, value }) {
   )
 }
 
+function CompactSnapshotRow({ label, value }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-[#edf2f7] py-2 last:border-b-0">
+      <span className="text-[0.72rem] font-semibold text-[#6b7d93]">{label}</span>
+      <span className="min-w-0 truncate text-right text-[0.8rem] font-semibold text-[#142132]">{value || '—'}</span>
+    </div>
+  )
+}
+
 function readPipelineLeads() {
   if (typeof window === 'undefined') return []
   try {
@@ -554,6 +571,7 @@ function AgentListingDetail() {
   const [showFullGallery, setShowFullGallery] = useState(false)
   const [offerNotesDraftById, setOfferNotesDraftById] = useState({})
   const [marketingDraft, setMarketingDraft] = useState(() => buildPropertyDraft(null))
+  const [sellerWorkspaceTab, setSellerWorkspaceTab] = useState('overview')
   const [rolePlayersDraft, setRolePlayersDraft] = useState({
     attorney: 'Bridge Conveyancing',
     bondOriginator: 'Bridge Finance',
@@ -2916,10 +2934,10 @@ function AgentListingDetail() {
       ) : null}
 
       {activeTab === 'seller' ? (
-        <section className="space-y-5">
-          <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.06)]">
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-              <div className="min-w-0">
+        <section className="mx-auto w-full max-w-[1600px] space-y-7 px-1 sm:px-2">
+          <section className="rounded-[22px] border border-[#dde4ee] bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] sm:p-5">
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.85fr)_minmax(320px,1fr)] xl:items-stretch">
+              <div className="flex min-w-0 flex-col justify-between">
                 <button
                   type="button"
                   onClick={() => navigate('/listings')}
@@ -2928,9 +2946,14 @@ function AgentListingDetail() {
                   <ArrowLeft size={13} />
                   Back to Listings
                 </button>
-                <p className="mt-4 text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Mandate Workspace</p>
-                <h3 className="mt-1 text-2xl font-semibold tracking-[-0.035em] text-[#142132]">{listingRecord.listingTitle}</h3>
-                <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
+                <div className="mt-4 min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Mandate Workspace</p>
+                  <h3 className="mt-1 text-2xl font-semibold tracking-[-0.035em] text-[#142132]">{listingRecord.listingTitle}</h3>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-[#607387]">
+                    Seller readiness, mandate status, compliance documents, commission, and listing activation in one operational view.
+                  </p>
+                </div>
+                <div className="mt-5 grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-5">
                   {[
                     ['Listing ID', marketingDraft.listingCode || listingRecord.listingReference || listingRecord.id],
                     ['Property Type', marketingDraft.propertyType || listingRecord.propertyType || 'Pending'],
@@ -2938,19 +2961,19 @@ function AgentListingDetail() {
                     ['Assigned Agent', listingRecord.assignedAgentName || listingRecord.assignedAgent || listingRecord.assignedAgentEmail || 'Unassigned'],
                     ['Location', [marketingDraft.suburb, marketingDraft.city].filter(Boolean).join(', ') || 'Location pending'],
                   ].map(([label, value]) => (
-                    <div key={label} className="rounded-[14px] border border-[#e5edf6] bg-[#fbfdff] px-3 py-2.5">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">{label}</p>
-                      <p className="mt-1 truncate font-semibold text-[#243d56]" title={String(value)}>{value}</p>
+                    <div key={label} className="min-w-0 rounded-[13px] border border-[#e5edf6] bg-[#fbfdff] px-3 py-2.5">
+                      <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">{label}</p>
+                      <p className="mt-1 truncate text-sm font-semibold text-[#243d56]" title={String(value)}>{value}</p>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <aside className="w-full rounded-[20px] border border-[#dfe8f2] bg-[#f8fbff] p-4 xl:max-w-[360px]">
+              <aside className="flex h-full flex-col rounded-[18px] border border-[#dfe8f2] bg-[#f8fbff] p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Mandate Status</p>
-                    <span className={`mt-2 inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${
+                    <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
                       mandateWorkspace.isSigned
                         ? 'border-[#cde8d6] bg-[#eef9f2] text-[#237345]'
                         : mandateWorkspace.isExpired
@@ -2962,10 +2985,10 @@ function AgentListingDetail() {
                   </div>
                   <FileText className="h-5 w-5 text-[#41627f]" />
                 </div>
-                <div className="mt-4 grid gap-2 text-xs">
-                  <SnapshotRow label="Signed Date" value={formatDate(mandateWorkspace.signedDate)} />
-                  <SnapshotRow label="Expiry Date" value={formatDate(mandateWorkspace.expiryDate)} />
-                  <SnapshotRow
+                <div className="mt-4 grid gap-1 text-xs">
+                  <CompactSnapshotRow label="Signed Date" value={formatDate(mandateWorkspace.signedDate)} />
+                  <CompactSnapshotRow label="Expiry Date" value={formatDate(mandateWorkspace.expiryDate)} />
+                  <CompactSnapshotRow
                     label="Days Until Expiry"
                     value={
                       mandateWorkspace.daysUntilExpiry === null
@@ -2975,97 +2998,147 @@ function AgentListingDetail() {
                           : `${mandateWorkspace.daysUntilExpiry} days`
                     }
                   />
-                  <SnapshotRow label="Last Updated" value={formatDate(mandateWorkspace.lastUpdated)} />
+                  <CompactSnapshotRow label="Last Updated" value={formatDate(mandateWorkspace.lastUpdated)} />
                 </div>
-                <div className="mt-4 flex flex-wrap gap-2">
+                <div className="mt-auto grid gap-2 pt-4 sm:grid-cols-2">
                   {mandateWorkspace.signedUrl ? (
-                    <a href={mandateWorkspace.signedUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center justify-center rounded-xl bg-[#123955] px-3 text-xs font-semibold text-white shadow-[0_10px_22px_rgba(18,57,85,0.18)]">
-                      Download Signed Mandate
+                    <a href={mandateWorkspace.signedUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center justify-center rounded-lg bg-[#123955] px-3 text-xs font-semibold text-white shadow-[0_10px_22px_rgba(18,57,85,0.14)]">
+                      Download
                     </a>
                   ) : (
-                    <Button size="sm" disabled title="No signed mandate file is linked yet.">Download Signed Mandate</Button>
+                    <Button size="sm" disabled title="No signed mandate file is linked yet.">Download</Button>
                   )}
                   {mandateWorkspace.viewUrl ? (
-                    <a href={mandateWorkspace.viewUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center justify-center rounded-xl border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#2f4862]">
-                      View Mandate
+                    <a href={mandateWorkspace.viewUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center justify-center rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#2f4862]">
+                      View
                     </a>
                   ) : (
-                    <Button size="sm" variant="secondary" disabled>View Mandate</Button>
+                    <Button size="sm" variant="secondary" disabled>View</Button>
                   )}
-                  <Button size="sm" variant="secondary" disabled title="Resend is available from the mandate generation workflow.">Resend to Seller</Button>
-                  <Button size="sm" variant="secondary" disabled title="Regeneration is available from the mandate generation workflow.">Regenerate Mandate</Button>
-                  <Button size="sm" variant="secondary" disabled>More actions</Button>
+                  <Button size="sm" variant="secondary" disabled title="Resend is available from the mandate generation workflow.">Resend</Button>
+                  <Button size="sm" variant="secondary" disabled title="Regeneration is available from the mandate generation workflow.">Regenerate</Button>
                 </div>
               </aside>
             </div>
           </section>
 
-          <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <div className="space-y-5">
-              <section className="grid gap-5 lg:grid-cols-2">
-                <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-                  <div className="flex items-start gap-4">
-                    <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#eaf3fb] text-[#1f4f78]">
-                      <UserRound size={20} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="text-lg font-semibold text-[#142132]">{listingRecord?.seller?.name || 'Seller pending'}</h4>
-                        <span className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-[0.7rem] font-semibold text-[#35546c]">Primary Seller</span>
-                      </div>
-                      <p className="mt-1 text-sm text-[#607387]">{listingRecord?.seller?.email || 'Email pending'} · {listingRecord?.seller?.phone || 'Phone pending'}</p>
-                    </div>
-                  </div>
-                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                    {[
-                      ['Seller Type', listingRecord?.seller?.sellerType || listingRecord?.seller?.type || 'Individual'],
-                      ['ID / Registration', listingRecord?.seller?.idNumber || listingRecord?.seller?.companyNumber || listingRecord?.seller?.trustNumber || 'Not captured'],
-                      ['FICA Status', sellerDocumentTrackerRows.some((doc) => doc.key === 'fica_documents' && ['uploaded', 'complete', 'approved'].includes(doc.status)) ? 'In progress' : 'Missing'],
-                      ['Address / Suburb', listingRecord?.seller?.address || marketingDraft.suburb || 'Not captured'],
-                    ].map(([label, value]) => (
-                      <div key={label} className="rounded-[14px] border border-[#e5edf6] bg-[#fbfdff] px-3 py-2.5">
-                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">{label}</p>
-                        <p className="mt-1 text-sm font-semibold text-[#243d56]">{value}</p>
-                      </div>
-                    ))}
-                  </div>
-                </article>
+          <nav className="sticky top-0 z-20 rounded-[16px] border border-[#dde4ee] bg-white/95 p-2 shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur" aria-label="Seller mandate workspace tabs">
+            <div className="flex gap-1 overflow-x-auto">
+              {SELLER_WORKSPACE_TABS.map((tab) => {
+                const active = sellerWorkspaceTab === tab.key
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    className={`inline-flex min-h-[36px] shrink-0 items-center rounded-[10px] border px-3 text-sm font-semibold transition ${
+                      active
+                        ? 'border-[#123955] bg-[#123955] text-white shadow-[0_8px_18px_rgba(18,57,85,0.14)]'
+                        : 'border-transparent text-[#5f7288] hover:border-[#dce6f0] hover:bg-[#f8fbfd] hover:text-[#263b4f]'
+                    }`}
+                    onClick={() => setSellerWorkspaceTab(tab.key)}
+                  >
+                    {tab.label}
+                  </button>
+                )
+              })}
+            </div>
+          </nav>
 
-                <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-                  <h4 className="text-lg font-semibold text-[#142132]">Seller Onboarding Timeline</h4>
-                  <div className="mt-5 space-y-3">
-                    {[
-                      ['Contacted', true, listingRecord.createdAt],
-                      ['Appointment', viewings.length > 0, viewings[0]?.proposed_date || viewings[0]?.created_at],
-                      ['Valuation', Boolean(marketingDraft.price || listingRecord.askingPrice), listingRecord.updatedAt],
-                      ['Mandate Sent', ['sent', 'sent_for_signature', 'viewed', 'signed', 'completed'].includes(mandateWorkspace.status), listingRecord?.mandate?.sentAt],
-                      ['Mandate Signed', mandateWorkspace.isSigned, mandateWorkspace.signedDate],
-                      ['Listing Ready', sellerReadinessPercent >= 85, marketingDraft.listingDate],
-                    ].map(([label, done, date], index) => (
-                      <div key={label} className="flex items-center gap-3">
-                        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border text-xs font-semibold ${
-                          done ? 'border-[#cde8d6] bg-[#eef9f2] text-[#237345]' : 'border-[#dbe6f2] bg-[#f7fbff] text-[#7b8ca2]'
-                        }`}>
-                          {done ? <CheckCircle2 size={15} /> : index + 1}
-                        </span>
-                        <div className="min-w-0 flex-1 border-b border-[#edf2f7] py-2">
-                          <p className="text-sm font-semibold text-[#243d56]">{label}</p>
-                          <p className="text-xs text-[#74879d]">{done ? formatDate(date) : 'Pending'}</p>
+          <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
+            <div className="min-w-0 space-y-7">
+              {['overview', 'seller'].includes(sellerWorkspaceTab) ? (
+                <section className="space-y-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Seller Operations</p>
+                    <h4 className="mt-1 text-lg font-semibold tracking-[-0.025em] text-[#142132]">Seller, timeline, and readiness</h4>
+                  </div>
+                  <div className="grid items-stretch gap-4 lg:grid-cols-3 lg:[grid-auto-rows:1fr]">
+                    <article className="flex h-full flex-col rounded-[20px] border border-[#dde4ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+                      <div className="flex items-start gap-3">
+                        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] bg-[#eaf3fb] text-[#1f4f78]">
+                      <UserRound size={20} />
                         </div>
                       </div>
-                    ))}
-                  </div>
-                  <p className="mt-4 rounded-[14px] bg-[#f7fbff] px-3 py-2 text-sm text-[#607387]">
-                    {onboardingStatusLabel === 'Completed' ? 'Seller onboarding completed.' : 'Seller onboarding still has outstanding readiness items.'}
-                  </p>
-                </article>
-              </section>
+                      <div className="mt-4 grid gap-2">
+                        {[
+                          ['Seller Type', listingRecord?.seller?.sellerType || listingRecord?.seller?.type || 'Individual'],
+                          ['ID / Registration', listingRecord?.seller?.idNumber || listingRecord?.seller?.companyNumber || listingRecord?.seller?.trustNumber || 'Not captured'],
+                          ['FICA Status', sellerDocumentTrackerRows.some((doc) => doc.key === 'fica_documents' && ['uploaded', 'complete', 'approved'].includes(doc.status)) ? 'In progress' : 'Missing'],
+                          ['Address / Suburb', listingRecord?.seller?.address || marketingDraft.suburb || 'Not captured'],
+                        ].map(([label, value]) => (
+                          <div key={label} className="min-w-0 rounded-[12px] border border-[#e5edf6] bg-[#fbfdff] px-3 py-2">
+                            <p className="text-[0.64rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">{label}</p>
+                            <p className="mt-1 truncate text-sm font-semibold text-[#243d56]" title={String(value)}>{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </article>
 
-              <section className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
-                <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <article className="flex h-full flex-col rounded-[20px] border border-[#dde4ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+                      <h4 className="text-base font-semibold text-[#142132]">Seller Onboarding Timeline</h4>
+                      <div className="mt-3 space-y-1.5">
+                        {[
+                          ['Contacted', true, listingRecord.createdAt],
+                          ['Appointment', viewings.length > 0, viewings[0]?.proposed_date || viewings[0]?.created_at],
+                          ['Valuation', Boolean(marketingDraft.price || listingRecord.askingPrice), listingRecord.updatedAt],
+                          ['Mandate Sent', ['sent', 'sent_for_signature', 'viewed', 'signed', 'completed'].includes(mandateWorkspace.status), listingRecord?.mandate?.sentAt],
+                          ['Mandate Signed', mandateWorkspace.isSigned, mandateWorkspace.signedDate],
+                          ['Listing Ready', sellerReadinessPercent >= 85, marketingDraft.listingDate],
+                        ].map(([label, done, date], index) => (
+                          <div key={label} className="flex items-center gap-2.5">
+                            <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border text-[0.68rem] font-semibold ${
+                              done ? 'border-[#cde8d6] bg-[#eef9f2] text-[#237345]' : 'border-[#dbe6f2] bg-[#f7fbff] text-[#7b8ca2]'
+                            }`}>
+                              {done ? <CheckCircle2 size={12} /> : index + 1}
+                            </span>
+                            <div className="min-w-0 flex-1 border-b border-[#edf2f7] py-1.5">
+                              <p className="text-sm font-semibold text-[#243d56]">{label}</p>
+                              <p className="text-[0.72rem] text-[#74879d]">{done ? formatDate(date) : 'Pending'}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="mt-auto rounded-[12px] bg-[#f7fbff] px-3 py-2 text-xs font-medium leading-5 text-[#607387]">
+                        {onboardingStatusLabel === 'Completed' ? 'Seller onboarding completed.' : 'Seller onboarding still has outstanding readiness items.'}
+                      </p>
+                    </article>
+
+                    <article className="flex h-full flex-col rounded-[20px] border border-[#dde4ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Listing Readiness</p>
+                          <p className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-[#142132]">{sellerReadinessPercent}%</p>
+                        </div>
+                        <span className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2 py-0.5 text-[0.68rem] font-semibold text-[#35546c]">
+                          {sellerReadinessChecklist.filter((item) => item.complete).length}/{sellerReadinessChecklist.length}
+                        </span>
+                      </div>
+                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#e5edf6]">
+                        <span className="block h-full rounded-full bg-[#1f6f9f]" style={{ width: `${sellerReadinessPercent}%` }} />
+                      </div>
+                      <div className="mt-3 space-y-1.5">
+                        {sellerReadinessChecklist.map((item) => (
+                          <div key={item.key} className="flex items-center justify-between gap-3 rounded-[10px] px-1 py-1 text-sm">
+                            <span className="truncate text-[#52687f]">{item.label}</span>
+                            <span className={`inline-flex shrink-0 rounded-full border px-2 py-0.5 text-[0.66rem] font-semibold ${
+                              item.complete ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]' : 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'
+                            }`}>
+                              {item.complete ? 'Done' : 'Missing'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+                  </div>
+                </section>
+              ) : null}
+
+              {sellerWorkspaceTab === 'documents' ? (
+                <section className="space-y-4">
+                  <div className="flex flex-wrap items-end justify-between gap-3">
                     <div>
-                      <h4 className="text-lg font-semibold text-[#142132]">Seller Document Tracker</h4>
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Documents</p>
+                      <h4 className="mt-1 text-lg font-semibold tracking-[-0.025em] text-[#142132]">Seller Document Tracker</h4>
                       <p className="mt-1 text-sm text-[#607387]">Readiness state from existing seller document requirements.</p>
                     </div>
                     <Button size="sm" variant="secondary" onClick={() => setActiveTab('documents')}>
@@ -3073,150 +3146,149 @@ function AgentListingDetail() {
                       Upload Documents
                     </Button>
                   </div>
-                  <div className="mt-4 overflow-x-auto">
-                    <table className="w-full min-w-[720px] text-left text-sm">
-                      <thead className="text-[0.68rem] uppercase tracking-[0.1em] text-[#7b8ca2]">
-                        <tr className="border-b border-[#e5edf6]">
-                          <th className="py-2 pr-3">Document</th>
-                          <th className="py-2 pr-3">Required</th>
-                          <th className="py-2 pr-3">Uploaded by Seller</th>
-                          <th className="py-2 pr-3">Status</th>
-                          <th className="py-2 pr-3">Uploaded On</th>
-                          <th className="py-2 text-right">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#edf2f7]">
-                        {sellerDocumentTrackerRows.map((doc) => (
-                          <tr key={doc.key} className="text-[#425970]">
-                            <td className="py-3 pr-3 font-semibold text-[#243d56]">{doc.label}</td>
-                            <td className="py-3 pr-3">{doc.required ? 'Yes' : 'No'}</td>
-                            <td className="py-3 pr-3">{doc.uploaded ? 'Yes' : 'No'}</td>
-                            <td className="py-3 pr-3">
-                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusClass(doc.status)}`}>
-                                {formatStatusLabel(doc.status)}
-                              </span>
-                            </td>
-                            <td className="py-3 pr-3">{doc.uploadedOn ? formatDate(doc.uploadedOn) : '—'}</td>
-                            <td className="py-3 text-right">
-                              {doc.url ? (
-                                <a href={doc.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
-                                  <ExternalLink size={13} />
-                                  Open
-                                </a>
-                              ) : (
-                                <span className="text-xs text-[#9aa9b8]">—</span>
-                              )}
-                            </td>
+                  <article className="overflow-hidden rounded-[20px] border border-[#dde4ee] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[680px] table-fixed text-left text-sm">
+                        <thead className="bg-[#f8fbfd] text-[0.64rem] uppercase tracking-[0.1em] text-[#7b8ca2]">
+                          <tr className="border-b border-[#e5edf6]">
+                            <th className="w-[28%] px-3 py-2">Document</th>
+                            <th className="w-[12%] px-3 py-2">Required</th>
+                            <th className="w-[16%] px-3 py-2">Uploaded</th>
+                            <th className="w-[16%] px-3 py-2">Status</th>
+                            <th className="w-[18%] px-3 py-2">Uploaded On</th>
+                            <th className="w-[10%] px-3 py-2 text-right">Action</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </article>
+                        </thead>
+                        <tbody className="divide-y divide-[#edf2f7]">
+                          {sellerDocumentTrackerRows.map((doc) => (
+                            <tr key={doc.key} className="text-[#425970] transition hover:bg-[#fbfdff]">
+                              <td className="truncate px-3 py-2.5 font-semibold text-[#243d56]" title={doc.label}>{doc.label}</td>
+                              <td className="px-3 py-2.5">{doc.required ? 'Yes' : 'No'}</td>
+                              <td className="px-3 py-2.5">{doc.uploaded ? 'Yes' : 'No'}</td>
+                              <td className="px-3 py-2.5">
+                                <span className={`inline-flex rounded-full border px-2 py-0.5 text-[0.66rem] font-semibold ${statusClass(doc.status)}`}>
+                                  {formatStatusLabel(doc.status)}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2.5">{doc.uploadedOn ? formatDate(doc.uploadedOn) : '—'}</td>
+                              <td className="px-3 py-2.5 text-right">
+                                {doc.url ? (
+                                  <a href={doc.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
+                                    <ExternalLink size={13} />
+                                    Open
+                                  </a>
+                                ) : (
+                                  <span className="text-xs text-[#9aa9b8]">—</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </article>
+                </section>
+              ) : null}
 
-                <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-                  <h4 className="text-lg font-semibold text-[#142132]">Commission Structure</h4>
-                  <div className="mt-4 grid gap-3">
-                    <SnapshotRow label="Mandate Type" value={formatStatusLabel(commissionWorkspace.type)} />
-                    <SnapshotRow label="Commission excl. VAT" value={commissionWorkspace.percentage ? `${commissionWorkspace.percentage}%` : formatMoneyValue(commissionWorkspace.amount)} />
-                    <SnapshotRow label="VAT" value={commissionWorkspace.vatIncluded ? 'Included' : 'Excluded / not captured'} />
-                    <SnapshotRow label="Total Commission %" value={commissionWorkspace.percentage ? `${commissionWorkspace.percentage}%` : 'Not captured'} />
-                    <SnapshotRow label="Commission Split" value={commissionWorkspace.split} />
-                    <SnapshotRow label="Co-agent Split" value={commissionWorkspace.coAgentSplit} />
-                    <SnapshotRow label="Referral Split" value={commissionWorkspace.referralSplit} />
-                  </div>
-                  <div className="mt-4 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                    <p className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Estimated Commission Incl. VAT</p>
-                    <p className="mt-2 text-xl font-semibold text-[#142132]">{commissionWorkspace.estimatedInclVat ? formatMoneyValue(commissionWorkspace.estimatedInclVat) : 'Not available'}</p>
-                    <p className="mt-2 text-sm leading-6 text-[#607387]">{commissionWorkspace.notes || 'No special commission notes captured.'}</p>
-                  </div>
-                </article>
-              </section>
-
-              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-                <div className="flex items-center justify-between gap-3">
+              {sellerWorkspaceTab === 'commission' ? (
+                <section className="space-y-4">
                   <div>
-                    <h4 className="text-lg font-semibold text-[#142132]">Recent Activity</h4>
-                    <p className="mt-1 text-sm text-[#607387]">Latest mandate, seller, document, and listing movement.</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Commission</p>
+                    <h4 className="mt-1 text-lg font-semibold tracking-[-0.025em] text-[#142132]">Commission Structure</h4>
                   </div>
-                  <span className="rounded-full bg-[#eef5fb] px-2.5 py-1 text-xs font-semibold text-[#315b7a]">{activityItems.length}</span>
-                </div>
-                <div className="mt-4 space-y-3">
-                  {activityItems.length ? activityItems.map((item) => (
-                    <div key={`${item.title}-${item.timestamp}`} className="flex gap-3 rounded-[16px] border border-[#e5edf6] bg-[#fbfdff] px-4 py-3">
-                      <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#eaf3fb] text-[#1f4f78]">
-                        <FolderKanban size={15} />
-                      </span>
-                      <div>
-                        <p className="text-sm font-semibold text-[#243d56]">{item.title}</p>
-                        <p className="mt-0.5 text-sm text-[#607387]">{item.copy}</p>
-                        <p className="mt-1 text-xs text-[#91a2b5]">{formatDate(item.timestamp)}</p>
-                      </div>
+                  <article className="rounded-[20px] border border-[#dde4ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)] sm:p-5">
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <CompactSnapshotRow label="Mandate Type" value={formatStatusLabel(commissionWorkspace.type)} />
+                      <CompactSnapshotRow label="Commission excl. VAT" value={commissionWorkspace.percentage ? `${commissionWorkspace.percentage}%` : formatMoneyValue(commissionWorkspace.amount)} />
+                      <CompactSnapshotRow label="VAT" value={commissionWorkspace.vatIncluded ? 'Included' : 'Excluded / not captured'} />
+                      <CompactSnapshotRow label="Total Commission %" value={commissionWorkspace.percentage ? `${commissionWorkspace.percentage}%` : 'Not captured'} />
+                      <CompactSnapshotRow label="Commission Split" value={commissionWorkspace.split} />
+                      <CompactSnapshotRow label="Co-agent Split" value={commissionWorkspace.coAgentSplit} />
+                      <CompactSnapshotRow label="Referral Split" value={commissionWorkspace.referralSplit} />
                     </div>
-                  )) : (
-                    <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-5 text-sm text-[#6b7d93]">
-                      No recent activity yet.
+                    <div className="mt-4 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                      <p className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Estimated Commission Incl. VAT</p>
+                      <p className="mt-2 text-xl font-semibold text-[#142132]">{commissionWorkspace.estimatedInclVat ? formatMoneyValue(commissionWorkspace.estimatedInclVat) : 'Not available'}</p>
+                      <p className="mt-2 text-sm leading-6 text-[#607387]">{commissionWorkspace.notes || 'No special commission notes captured.'}</p>
                     </div>
-                  )}
-                </div>
-              </article>
+                  </article>
+                </section>
+              ) : null}
+
+              {sellerWorkspaceTab === 'activity' ? (
+                <section className="space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Activity</p>
+                      <h4 className="mt-1 text-lg font-semibold tracking-[-0.025em] text-[#142132]">Recent Activity</h4>
+                      <p className="mt-1 text-sm text-[#607387]">Latest mandate, seller, document, and listing movement.</p>
+                    </div>
+                    <span className="rounded-full bg-[#eef5fb] px-2.5 py-1 text-xs font-semibold text-[#315b7a]">{activityItems.length}</span>
+                  </div>
+                  <article className="rounded-[20px] border border-[#dde4ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+                    <div className="space-y-2.5">
+                      {activityItems.length ? activityItems.map((item) => (
+                        <div key={`${item.title}-${item.timestamp}`} className="flex gap-3 rounded-[14px] border border-[#e5edf6] bg-[#fbfdff] px-3 py-2.5">
+                          <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-[10px] bg-[#eaf3fb] text-[#1f4f78]">
+                            <FolderKanban size={14} />
+                          </span>
+                          <div>
+                            <p className="text-sm font-semibold text-[#243d56]">{item.title}</p>
+                            <p className="mt-0.5 text-sm text-[#607387]">{item.copy}</p>
+                            <p className="mt-1 text-xs text-[#91a2b5]">{formatDate(item.timestamp)}</p>
+                          </div>
+                        </div>
+                      )) : (
+                        <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-5 text-sm text-[#6b7d93]">
+                          No recent activity yet.
+                        </div>
+                      )}
+                    </div>
+                  </article>
+                </section>
+              ) : null}
             </div>
 
-            <aside className="space-y-5">
-              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Listing Readiness</p>
-                <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[#142132]">{sellerReadinessPercent}%</p>
-                <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[#e5edf6]">
-                  <span className="block h-full rounded-full bg-[#1f6f9f]" style={{ width: `${sellerReadinessPercent}%` }} />
-                </div>
-                <div className="mt-4 space-y-2">
-                  {sellerReadinessChecklist.map((item) => (
-                    <div key={item.key} className="flex items-center justify-between gap-3 text-sm">
-                      <span className="text-[#52687f]">{item.label}</span>
-                      <CompletionBadge complete={item.complete} label={item.complete ? 'Done' : 'Missing'} />
-                    </div>
-                  ))}
-                </div>
-              </article>
-
-              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+            <aside className="space-y-4 xl:sticky xl:top-24">
+              <article className="rounded-[20px] border border-[#dde4ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
                 <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Attention Required</p>
-                <div className="mt-3 space-y-2">
+                <div className="mt-3 space-y-1.5">
                   {sellerAttentionItems.length ? sellerAttentionItems.map((item) => (
-                    <div key={item} className="rounded-[14px] border border-[#f2dfbf] bg-[#fff8ec] px-3 py-2 text-sm font-semibold text-[#8a5b1f]">
-                      {item}
+                    <div key={item} className="flex items-center gap-2 rounded-[10px] border border-[#f2dfbf] border-l-4 border-l-[#d9932f] bg-[#fffaf1] px-3 py-2 text-sm font-semibold text-[#7a551f]">
+                      <CircleAlert size={14} className="shrink-0 text-[#b7791f]" />
+                      <span className="min-w-0 truncate">{item}</span>
                     </div>
                   )) : (
-                    <div className="rounded-[14px] border border-[#d8eddf] bg-[#ecfaf1] px-3 py-2 text-sm font-semibold text-[#1f7d44]">
+                    <div className="rounded-[10px] border border-[#d8eddf] bg-[#ecfaf1] px-3 py-2 text-sm font-semibold text-[#1f7d44]">
                       No major blockers detected.
                     </div>
                   )}
                 </div>
               </article>
 
-              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+              <article className="rounded-[20px] border border-[#dde4ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
                 <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Quick Actions</p>
-                <div className="mt-3 grid gap-2">
+                <div className="mt-3 grid gap-1.5">
                   {listingRecord?.sellerOnboarding?.link ? (
-                    <a href={listingRecord.sellerOnboarding.link} target="_blank" rel="noreferrer" className="inline-flex items-center justify-between rounded-[14px] border border-[#dbe6f2] bg-white px-3 py-2 text-sm font-semibold text-[#2f4862]">
+                    <a href={listingRecord.sellerOnboarding.link} target="_blank" rel="noreferrer" className="inline-flex min-h-[34px] items-center justify-between rounded-[10px] border border-[#dbe6f2] bg-white px-3 py-1.5 text-sm font-semibold text-[#2f4862] transition hover:bg-[#f8fbfd]">
                       Open Seller Onboarding
                       <ExternalLink size={14} />
                     </a>
                   ) : null}
-                  <Button variant="secondary" onClick={() => setActiveTab('documents')}>Upload Document</Button>
-                  <Button variant="secondary" onClick={() => setActiveTab('overview')}>View Listing</Button>
-                  <Button variant="secondary" onClick={() => setActiveTab('property_details')}>Edit Commission</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setActiveTab('documents')}>Upload Document</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setActiveTab('overview')}>View Listing</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setActiveTab('property_details')}>Edit Commission</Button>
                 </div>
               </article>
 
-              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+              <article className="rounded-[20px] border border-[#dde4ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
                 <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Important Dates</p>
                 <div className="mt-3">
-                  <SnapshotRow label="Mandate Signed" value={formatDate(mandateWorkspace.signedDate)} />
-                  <SnapshotRow label="Mandate Expiry" value={formatDate(mandateWorkspace.expiryDate)} />
-                  <SnapshotRow label="Listing Target" value={formatDate(marketingDraft.listingDate)} />
-                  <SnapshotRow label="Last Seller Update" value={formatDate(listingRecord?.sellerOnboarding?.updatedAt || listingRecord?.updatedAt)} />
-                  <SnapshotRow
+                  <CompactSnapshotRow label="Mandate Signed" value={formatDate(mandateWorkspace.signedDate)} />
+                  <CompactSnapshotRow label="Mandate Expiry" value={formatDate(mandateWorkspace.expiryDate)} />
+                  <CompactSnapshotRow label="Listing Target" value={formatDate(marketingDraft.listingDate)} />
+                  <CompactSnapshotRow label="Last Seller Update" value={formatDate(listingRecord?.sellerOnboarding?.updatedAt || listingRecord?.updatedAt)} />
+                  <CompactSnapshotRow
                     label="Last Document Upload"
                     value={formatDate(sellerDocumentTrackerRows.find((doc) => doc.uploadedOn)?.uploadedOn)}
                   />

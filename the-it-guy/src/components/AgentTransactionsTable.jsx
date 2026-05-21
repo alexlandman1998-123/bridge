@@ -1,21 +1,59 @@
-import { ArrowUpRight, BriefcaseBusiness, FileText, Search } from 'lucide-react'
+import { ArrowUpRight, BriefcaseBusiness, FileText, MoreHorizontal, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import Button from './ui/Button'
 import DataTable, { DataTableInner } from './ui/DataTable'
 import StatusBadge from './ui/StatusBadge'
 
-function formatDate(value) {
-  const parsed = new Date(value || 0)
-  if (Number.isNaN(parsed.getTime())) {
-    return '—'
-  }
+const MAIN_STAGE_PROGRESS = {
+  AVAIL: 0,
+  DEP: 20,
+  OTP: 35,
+  FIN: 52,
+  ATTY: 68,
+  XFER: 84,
+  REG: 100,
+}
 
-  return parsed.toLocaleDateString('en-ZA', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
+const WORKFLOW_STEPS = [
+  { key: 'OTP', label: 'OTP' },
+  { key: 'FIN', label: 'Finance' },
+  { key: 'ATTY', label: 'Transfer' },
+  { key: 'XFER', label: 'Lodgement' },
+  { key: 'REG', label: 'Registration' },
+]
+
+const QUICK_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'development', label: 'Development' },
+  { key: 'second_hand', label: 'Second-Hand' },
+  { key: 'commercial', label: 'Commercial' },
+  { key: 'cash', label: 'Cash' },
+  { key: 'bond', label: 'Bond' },
+  { key: 'registered', label: 'Registered' },
+  { key: 'blocked', label: 'Blocked' },
+  { key: 'active', label: 'Active' },
+]
+
+function parseDate(value) {
+  const parsed = new Date(value || 0)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function getDaysSince(value) {
+  const parsed = parseDate(value)
+  if (!parsed) return null
+  const delta = Date.now() - parsed.getTime()
+  if (!Number.isFinite(delta) || delta < 0) return 0
+  return Math.floor(delta / (1000 * 60 * 60 * 24))
+}
+
+function formatRelativeDate(value) {
+  const days = getDaysSince(value)
+  if (days === null) return 'No update'
+  if (days <= 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  return `${days} days ago`
 }
 
 function formatMainStage(row) {
@@ -51,30 +89,6 @@ function formatFinanceStage(row) {
   }
 }
 
-function formatTransferStage(row) {
-  const mainStage = String(row?.mainStage || row?.transaction?.current_main_stage || '').trim().toUpperCase()
-  const stage = String(row?.stage || '').trim().toLowerCase()
-
-  if (mainStage === 'REG' || stage === 'registered') return 'Registered'
-  if (mainStage === 'XFER') return 'Transfer in Progress'
-  if (mainStage === 'ATTY') return 'Attorney Prep'
-  return 'Pre-transfer'
-}
-
-function getWorkflowToneClass(value = '') {
-  const normalized = String(value || '').trim().toLowerCase()
-  if (['registered', 'completed', 'active'].includes(normalized)) {
-    return 'transaction-chip-success'
-  }
-  if (['bond', 'cash', 'combination', 'transfer in progress', 'attorney prep'].includes(normalized)) {
-    return 'transaction-chip-info'
-  }
-  if (['pre-transfer', 'not set', 'unmapped'].includes(normalized)) {
-    return 'transaction-chip-muted'
-  }
-  return 'transaction-chip-watch'
-}
-
 function formatTransactionStatus(row) {
   const lifecycle = String(row?.transaction?.lifecycle_state || '').trim().toLowerCase()
   if (lifecycle === 'registered') return { label: 'Registered', className: 'border border-[#d5eadf] bg-[#edf9f2] text-[#1f7a45]' }
@@ -85,13 +99,6 @@ function formatTransactionStatus(row) {
     return { label: 'Registered', className: 'border border-[#d5eadf] bg-[#edf9f2] text-[#1f7a45]' }
   }
   return { label: 'Active', className: 'border border-[#d8e4f2] bg-[#f3f8fd] text-[#29567f]' }
-}
-
-function getReference(row) {
-  const reference = String(row?.transaction?.transaction_reference || '').trim()
-  if (reference) return reference
-  const id = String(row?.transaction?.id || '').trim()
-  return id ? `TXN-${id.slice(0, 8).toUpperCase()}` : 'Pending'
 }
 
 function getPropertyLabel(row) {
@@ -107,22 +114,37 @@ function getDevelopmentLabel(row) {
   return row?.development?.name || row?.transaction?.property_description || 'Listing / development pending'
 }
 
-function getAssignedAgentLabel(row) {
-  return String(row?.transaction?.assigned_agent || row?.transaction?.assigned_agent_email || 'Unassigned').trim()
+function getProgressPercent(row, mainStageKey = '') {
+  const explicit = Number(row?.workspace?.progressPercent ?? row?.progressPercent)
+  if (Number.isFinite(explicit) && explicit >= 0) {
+    return Math.max(0, Math.min(100, Math.round(explicit)))
+  }
+
+  return MAIN_STAGE_PROGRESS[mainStageKey] ?? (String(row?.stage || '').toLowerCase() === 'registered' ? 100 : 20)
 }
 
-function getOrganisationLabel(row) {
-  const explicit = String(row?.organisation?.name || row?.organisation?.display_name || '').trim()
-  if (explicit) return explicit
-  const id = String(row?.transaction?.organisation_id || '').trim()
-  return id ? `Org ${id.slice(0, 8)}` : 'Organisation pending'
-}
+function getHealth(row, mainStageKey = '') {
+  const status = String(row?.transaction?.status || row?.transaction?.operational_state || '').trim().toLowerCase()
+  const lifecycle = String(row?.transaction?.lifecycle_state || '').trim().toLowerCase()
+  const stage = String(row?.stage || '').trim().toLowerCase()
+  const daysSinceUpdate = getDaysSince(row?.transaction?.updated_at || row?.transaction?.created_at)
 
-function getBranchLabel(row) {
-  const explicit = String(row?.branch?.name || row?.transaction?.assigned_branch_name || '').trim()
-  if (explicit) return explicit
-  const id = String(row?.transaction?.assigned_branch_id || row?.transaction?.branch_id || '').trim()
-  return id ? `Branch ${id.slice(0, 8)}` : ''
+  if (['blocked', 'on_hold', 'on hold'].includes(status) || stage.includes('blocked')) {
+    return { label: 'Blocked', className: 'transaction-health-blocked' }
+  }
+  if (['archived', 'cancelled'].includes(lifecycle)) {
+    return { label: 'Waiting', className: 'transaction-health-waiting' }
+  }
+  if (mainStageKey === 'REG' || lifecycle === 'registered' || lifecycle === 'completed') {
+    return { label: 'On Track', className: 'transaction-health-track' }
+  }
+  if (daysSinceUpdate !== null && daysSinceUpdate >= 10) {
+    return { label: 'Attention', className: 'transaction-health-attention' }
+  }
+  if (!row?.transaction?.updated_at && !row?.transaction?.created_at) {
+    return { label: 'Waiting', className: 'transaction-health-waiting' }
+  }
+  return { label: 'On Track', className: 'transaction-health-track' }
 }
 
 function getEmptyStateCopy(isPrincipalView) {
@@ -148,6 +170,32 @@ function getTableMetrics(rows = []) {
   )
 }
 
+function rowMatchesQuickFilter(row, filterKey) {
+  if (filterKey === 'all') return true
+  const transaction = row?.transaction || {}
+  const financeType = String(transaction.finance_type || '').trim().toLowerCase()
+  const typeText = [
+    transaction.transaction_type,
+    transaction.property_type,
+    transaction.scope,
+    transaction.source_type,
+    row?.development?.id ? 'development' : '',
+  ].join(' ').toLowerCase()
+  const stage = String(row?.stage || transaction.lifecycle_state || '').toLowerCase()
+  const mainStage = formatMainStage(row).key
+  const health = getHealth(row, mainStage).label.toLowerCase()
+
+  if (filterKey === 'development') return Boolean(row?.development?.id) || typeText.includes('development')
+  if (filterKey === 'second_hand') return typeText.includes('second') || typeText.includes('private') || (!row?.development?.id && !typeText.includes('commercial'))
+  if (filterKey === 'commercial') return typeText.includes('commercial')
+  if (filterKey === 'cash') return financeType === 'cash'
+  if (filterKey === 'bond') return financeType === 'bond' || financeType === 'combination'
+  if (filterKey === 'registered') return mainStage === 'REG' || stage.includes('registered')
+  if (filterKey === 'blocked') return health === 'blocked'
+  if (filterKey === 'active') return !['REG'].includes(mainStage) && !['registered', 'completed', 'archived', 'cancelled'].includes(stage)
+  return true
+}
+
 function AgentTransactionsTable({
   rows,
   onRowClick,
@@ -157,18 +205,23 @@ function AgentTransactionsTable({
   isPrincipalView = false,
 }) {
   const [page, setPage] = useState(1)
+  const [quickFilter, setQuickFilter] = useState('all')
   const pageSize = 20
-  const totalPages = Math.max(1, Math.ceil((rows?.length || 0) / pageSize))
+  const filteredRows = useMemo(
+    () => (rows || []).filter((row) => rowMatchesQuickFilter(row, quickFilter)),
+    [quickFilter, rows],
+  )
+  const totalPages = Math.max(1, Math.ceil((filteredRows?.length || 0) / pageSize))
   const currentPage = Math.min(page, totalPages)
   const metrics = useMemo(() => getTableMetrics(rows || []), [rows])
 
   const visibleRows = useMemo(() => {
     const start = (currentPage - 1) * pageSize
-    return (rows || []).slice(start, start + pageSize)
-  }, [currentPage, rows])
+    return (filteredRows || []).slice(start, start + pageSize)
+  }, [currentPage, filteredRows])
 
-  const pageStart = rows.length ? (currentPage - 1) * pageSize + 1 : 0
-  const pageEnd = Math.min(rows.length, currentPage * pageSize)
+  const pageStart = filteredRows.length ? (currentPage - 1) * pageSize + 1 : 0
+  const pageEnd = Math.min(filteredRows.length, currentPage * pageSize)
 
   return (
     <DataTable
@@ -180,26 +233,37 @@ function AgentTransactionsTable({
           <span className="meta-chip">{metrics.active} active</span>
           <span className="meta-chip">{metrics.transfer} transfer</span>
           <span className="meta-chip">{metrics.registered} registered</span>
-          {rows.length > pageSize ? (
+          {filteredRows.length > pageSize ? (
             <span className="meta-chip">Showing {pageStart}-{pageEnd}</span>
           ) : null}
         </div>
       }
       className="table-panel agent-transactions-panel"
     >
-      <DataTableInner className="units-table agent-transactions-table">
+      <div className="transaction-ops-filter-bar" aria-label="Transaction quick filters">
+        {QUICK_FILTERS.map((filter) => (
+          <button
+            key={filter.key}
+            type="button"
+            className={`transaction-ops-filter ${quickFilter === filter.key ? 'is-active' : ''}`.trim()}
+            onClick={() => {
+              setQuickFilter(filter.key)
+              setPage(1)
+            }}
+          >
+            {filter.label}
+          </button>
+        ))}
+      </div>
+
+      <DataTableInner className="units-table agent-transactions-table transaction-ops-table">
         <thead>
           <tr>
-            <th className="agent-transactions-sticky-first">Transaction Reference</th>
-            <th>Buyer / Client</th>
-            <th>Property / Unit</th>
-            <th>Development / Listing</th>
-            {isPrincipalView ? <th>Organisation / Branch</th> : null}
-            <th>Assigned Agent</th>
-            <th>Main Stage</th>
-            <th>Finance Stage</th>
-            <th>Transfer Stage</th>
-            <th>Status</th>
+            <th className="agent-transactions-sticky-first">Property / Development</th>
+            <th>Buyer</th>
+            <th>Progress</th>
+            <th>Health</th>
+            <th>Finance Type</th>
             <th>Last Updated</th>
             <th>Actions</th>
           </tr>
@@ -210,13 +274,12 @@ function AgentTransactionsTable({
             const canOpenRow = Boolean(row?.transaction?.id || row?.unit?.id)
             const mainStage = formatMainStage(row)
             const financeStage = formatFinanceStage(row)
-            const transferStage = formatTransferStage(row)
-            const status = formatTransactionStatus(row)
-            const reference = getReference(row)
+            const health = getHealth(row, mainStage.key)
+            const progressPercent = getProgressPercent(row, mainStage.key)
+            const currentStepIndex = WORKFLOW_STEPS.findIndex((step) => step.key === mainStage.key)
             const buyerName = row?.buyer?.name || 'Buyer pending'
             const propertyLabel = getPropertyLabel(row)
             const developmentLabel = getDevelopmentLabel(row)
-            const agentLabel = getAssignedAgentLabel(row)
 
             return (
               <tr
@@ -235,65 +298,55 @@ function AgentTransactionsTable({
                 tabIndex={canOpenRow ? 0 : -1}
                 role={canOpenRow ? 'button' : undefined}
               >
-                <td className="agent-transactions-sticky-first" data-label="Transaction Reference">
+                <td className="agent-transactions-sticky-first" data-label="Property / Development">
                   <div className="transaction-list-cell">
-                    <strong className="transaction-cell-primary" title={reference}>{reference}</strong>
-                    <small className="transaction-cell-secondary" title={row?.transaction?.id || ''}>
-                      {row?.transaction?.transaction_type ? String(row.transaction.transaction_type).replace(/_/g, ' ') : row?.transaction?.id || 'No id'}
-                    </small>
+                    <strong className="transaction-cell-primary" title={developmentLabel}>{developmentLabel}</strong>
+                    <small className="transaction-cell-secondary" title={propertyLabel}>{propertyLabel}</small>
                   </div>
                 </td>
-                <td data-label="Buyer / Client">
+                <td data-label="Buyer">
                   <div className="transaction-list-cell">
                     <strong className="transaction-cell-primary" title={buyerName}>{buyerName}</strong>
                     <small className="transaction-cell-secondary" title={row?.buyer?.email || ''}>{row?.buyer?.email || row?.buyer?.phone || 'No contact details'}</small>
                   </div>
                 </td>
-                <td data-label="Property / Unit">
-                  <div className="transaction-list-cell">
-                    <strong className="transaction-cell-primary" title={propertyLabel}>{propertyLabel}</strong>
-                    <small className="transaction-cell-secondary" title={row?.transaction?.property_address_line_1 || row?.transaction?.suburb || ''}>
-                      {row?.transaction?.property_address_line_1 || row?.transaction?.suburb || 'Address pending'}
-                    </small>
-                  </div>
-                </td>
-                <td data-label="Development / Listing">
-                  <span className="transaction-cell-primary" title={developmentLabel}>{developmentLabel}</span>
-                </td>
-                {isPrincipalView ? (
-                  <td data-label="Organisation / Branch">
-                    <div className="transaction-list-cell">
-                      <strong className="transaction-cell-primary" title={getOrganisationLabel(row)}>{getOrganisationLabel(row)}</strong>
-                      <small className="transaction-cell-secondary" title={getBranchLabel(row)}>{getBranchLabel(row) || 'All branches'}</small>
+                <td data-label="Progress">
+                  <div className="transaction-progress-cell">
+                    <div className="transaction-progress-summary">
+                      <strong>{progressPercent}%</strong>
+                      <span>{mainStage.label}</span>
                     </div>
-                  </td>
-                ) : null}
-                <td data-label="Assigned Agent">
-                  <span className="transaction-cell-primary" title={agentLabel}>{agentLabel}</span>
-                </td>
-                <td data-label="Main Stage">
-                  <StatusBadge className={`transaction-workflow-chip ${getWorkflowToneClass(mainStage.label)} ${mainStage.tone === 'success' ? 'transaction-chip-success' : mainStage.tone === 'warning' ? 'transaction-chip-watch' : ''}`.trim()}>
-                    {mainStage.label}
-                  </StatusBadge>
-                </td>
-                <td data-label="Finance Stage">
-                  <div className="transaction-list-cell">
-                    <StatusBadge className={`transaction-workflow-chip ${getWorkflowToneClass(financeStage.label)}`}>{financeStage.label}</StatusBadge>
-                    <small className="transaction-cell-secondary" title={financeStage.detail}>{financeStage.detail}</small>
+                    <div className="transaction-progress-track" aria-hidden="true">
+                      <span style={{ width: `${Math.max(progressPercent > 0 ? 8 : 0, progressPercent)}%` }} />
+                    </div>
+                    <div className="transaction-workflow-dots" aria-label={`Current stage: ${mainStage.label}`}>
+                      {WORKFLOW_STEPS.map((step, stepIndex) => (
+                        <span
+                          key={step.key}
+                          className={`transaction-workflow-dot ${
+                            step.key === mainStage.key ? 'is-current' : currentStepIndex >= 0 && stepIndex < currentStepIndex ? 'is-done' : ''
+                          }`.trim()}
+                          title={step.label}
+                        />
+                      ))}
+                    </div>
                   </div>
                 </td>
-                <td data-label="Transfer Stage">
-                  <StatusBadge className={`transaction-workflow-chip ${getWorkflowToneClass(transferStage)}`}>{transferStage}</StatusBadge>
+                <td data-label="Health">
+                  <StatusBadge className={`transaction-workflow-chip transaction-health-chip ${health.className}`}>{health.label}</StatusBadge>
                 </td>
-                <td data-label="Status">
-                  <StatusBadge className={`transaction-workflow-chip ${status.className}`}>{status.label}</StatusBadge>
+                <td data-label="Finance Type">
+                  <StatusBadge className="transaction-workflow-chip transaction-chip-info">{financeStage.label}</StatusBadge>
                 </td>
-                <td data-label="Last Updated">{formatDate(updatedAt)}</td>
+                <td data-label="Last Updated">
+                  <span className="transaction-cell-secondary">{formatRelativeDate(updatedAt)}</span>
+                </td>
                 <td data-label="Actions" onClick={(event) => event.stopPropagation()}>
                   <div className="transaction-row-actions">
                     {row?.transaction?.id ? (
                       <Button
                         variant="secondary"
+                        size="sm"
                         className="table-action-button transaction-row-action-primary"
                         onClick={() => onRowClick(row)}
                       >
@@ -302,14 +355,19 @@ function AgentTransactionsTable({
                       </Button>
                     ) : null}
                     {onDeleteTransaction && row?.transaction?.id ? (
-                      <Button
-                        variant="ghost"
-                        className="ghost-button danger-ghost table-action-button"
-                        onClick={() => onDeleteTransaction(row)}
-                        disabled={deletingTransactionId === row.transaction.id}
-                      >
-                        {deletingTransactionId === row.transaction.id ? 'Deleting...' : 'Delete'}
-                      </Button>
+                      <details className="transaction-row-menu">
+                        <summary aria-label="More transaction actions">
+                          <MoreHorizontal size={16} />
+                        </summary>
+                        <button
+                          type="button"
+                          className="transaction-row-menu-item danger"
+                          onClick={() => onDeleteTransaction(row)}
+                          disabled={deletingTransactionId === row.transaction.id}
+                        >
+                          {deletingTransactionId === row.transaction.id ? 'Deleting...' : 'Delete'}
+                        </button>
+                      </details>
                     ) : null}
                   </div>
                 </td>
@@ -317,9 +375,9 @@ function AgentTransactionsTable({
             )
           })}
 
-          {rows.length === 0 ? (
+          {filteredRows.length === 0 ? (
             <tr>
-              <td className="agent-transactions-empty" colSpan={isPrincipalView ? 12 : 11}>
+              <td className="agent-transactions-empty" colSpan={7}>
                 <div className="agent-transactions-empty-state">
                   <span className="agent-transactions-empty-icon">
                     {isPrincipalView ? <BriefcaseBusiness size={22} /> : <FileText size={22} />}
@@ -334,7 +392,7 @@ function AgentTransactionsTable({
         </tbody>
       </DataTableInner>
 
-      {rows.length > pageSize ? (
+      {filteredRows.length > pageSize ? (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-borderDefault pt-4">
           <p className="text-sm text-textMuted">Page {currentPage} of {totalPages}</p>
           <div className="flex items-center gap-2">

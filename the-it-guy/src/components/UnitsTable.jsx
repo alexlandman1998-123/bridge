@@ -5,6 +5,14 @@ import StageAgingChip from './StageAgingChip'
 import { financeTypeShortLabel } from '../core/transactions/financeType'
 import { getLifecycleStatus } from '../lib/stages'
 
+const WORKFLOW_STEPS = [
+  { key: 'reservation', label: 'OTP' },
+  { key: 'bond', label: 'Finance' },
+  { key: 'transfer', label: 'Transfer' },
+  { key: 'lodgement', label: 'Lodgement' },
+  { key: 'registration', label: 'Registration' },
+]
+
 function formatPurchaserType(value) {
   const normalized = String(value || '')
     .trim()
@@ -90,6 +98,47 @@ function getProgressFillClassName(tone) {
   return 'bg-danger'
 }
 
+function parseDate(value) {
+  const parsed = new Date(value || 0)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function getDaysSince(value) {
+  const parsed = parseDate(value)
+  if (!parsed) return null
+  const delta = Date.now() - parsed.getTime()
+  if (!Number.isFinite(delta) || delta < 0) return 0
+  return Math.floor(delta / (1000 * 60 * 60 * 24))
+}
+
+function formatRelativeDate(value) {
+  const days = getDaysSince(value)
+  if (days === null) return 'No update'
+  if (days <= 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  return `${days} days ago`
+}
+
+function getCompactHealth(row) {
+  const status = String(row?.transaction?.status || row?.transaction?.operational_state || '').trim().toLowerCase()
+  const lifecycle = String(row?.transaction?.lifecycle_state || '').trim().toLowerCase()
+  const stage = String(row?.stage || '').trim().toLowerCase()
+
+  if (['blocked', 'on_hold', 'on hold'].includes(status) || stage.includes('blocked')) {
+    return { label: 'Blocked', className: 'transaction-health-blocked' }
+  }
+  if (row?.workspace?.stageMeta?.key === 'registration' || lifecycle === 'registered' || lifecycle === 'completed' || stage === 'registered') {
+    return { label: 'On Track', className: 'transaction-health-track' }
+  }
+  if (row?.workspace?.stalled || row?.workspace?.atRisk) {
+    return { label: 'Attention', className: 'transaction-health-attention' }
+  }
+  if (!row?.transaction?.updated_at && !row?.transaction?.created_at) {
+    return { label: 'Waiting', className: 'transaction-health-waiting' }
+  }
+  return { label: 'On Track', className: 'transaction-health-track' }
+}
+
 function UnitsTable({
   rows,
   onRowClick,
@@ -113,7 +162,7 @@ function UnitsTable({
   const actionColumnCount = compactOperations ? 0 : hasActions ? 3 : 0
   const optionalOperationalColumns = compactOperations ? 0 : 4
   const dataColumnCount = compactOperations
-    ? (showDevelopment ? 1 : 0) + 6
+    ? 7
     : (showDevelopment ? 1 : 0) + 3 + optionalOperationalColumns + actionColumnCount
 
   function renderSortableHeader(label, key) {
@@ -158,17 +207,18 @@ function UnitsTable({
                 />
               </th>
             ) : null}
-            {showDevelopment ? <th>{compactOperations ? renderSortableHeader('Development', 'development') : 'Development'}</th> : null}
-            <th>Unit</th>
+            {compactOperations ? <th>{renderSortableHeader('Property / Development', 'development')}</th> : showDevelopment ? <th>Development</th> : null}
+            {!compactOperations ? <th>Unit</th> : null}
             {compactOperations ? <th>{renderSortableHeader('Progress', 'progress')}</th> : <th>Phase</th>}
             <th>Buyer</th>
-            {compactOperations ? <th>Buyer Email</th> : null}
             {!compactOperations ? <th>Stage</th> : null}
             {!compactOperations ? <th>Handover</th> : null}
             {!compactOperations ? <th>Snags</th> : null}
             {!compactOperations ? <th>Stage Age</th> : null}
-            {compactOperations ? <th>{renderSortableHeader('Stage', 'stage')}</th> : null}
+            {compactOperations ? <th>{renderSortableHeader('Health', 'stage')}</th> : null}
             {compactOperations ? <th>{renderSortableHeader('Finance Type', 'finance')}</th> : null}
+            {compactOperations ? <th>Last Updated</th> : null}
+            {compactOperations ? <th>Actions</th> : null}
             {hasActions ? <th>Update</th> : null}
             {hasActions ? <th>Onboarding Link</th> : null}
             {hasActions ? <th>Delete</th> : null}
@@ -180,6 +230,12 @@ function UnitsTable({
             const showOnboardingAction = Boolean(row?.transaction?.id)
             const checked = unitId ? selectedUnitIds.includes(unitId) : false
             const progressPercent = Math.max(0, Math.min(100, Math.round(row?.workspace?.progressPercent || 0)))
+            const health = getCompactHealth(row)
+            const currentStepKey = row?.workspace?.stageMeta?.key || 'reservation'
+            const currentStepIndex = WORKFLOW_STEPS.findIndex((step) => step.key === currentStepKey)
+            const developmentLabel = row?.development?.name || 'Unassigned development'
+            const unitLabel = `Unit ${row?.unit?.unit_number || '-'}`
+            const updatedAt = row?.transaction?.updated_at || row?.transaction?.created_at
 
             return (
               <tr
@@ -209,43 +265,63 @@ function UnitsTable({
                   </td>
                 ) : null}
 
-                {showDevelopment ? (
+                {compactOperations ? (
                   <td>
-                    <div className={`transaction-list-cell ${compactOperations ? 'transaction-list-cell-inline' : ''}`.trim()}>
-                      <strong className={compactOperations ? 'inline-block max-w-[220px] truncate' : ''}>
-                        {row?.development?.name || 'Unassigned development'}
+                    <div className="transaction-list-cell">
+                      <strong className="transaction-cell-primary" title={developmentLabel}>{developmentLabel}</strong>
+                      <small className="transaction-cell-secondary" title={unitLabel}>{unitLabel}</small>
+                    </div>
+                  </td>
+                ) : showDevelopment ? (
+                  <td>
+                    <div className="transaction-list-cell">
+                      <strong>
+                        {developmentLabel}
                       </strong>
-                      {!compactOperations && (row?.transaction?.property_address_line_1 || row?.transaction?.suburb) ? (
+                      {row?.transaction?.property_address_line_1 || row?.transaction?.suburb ? (
                         <small>{row?.transaction?.property_address_line_1 || row?.transaction?.suburb}</small>
                       ) : null}
                     </div>
                   </td>
                 ) : null}
 
-                <td>
-                  <div className={`transaction-list-cell ${compactOperations ? 'transaction-list-cell-inline' : ''}`.trim()}>
-                    <strong>Unit {row?.unit?.unit_number || '-'}</strong>
-                    {!compactOperations ? <small>{financeTypeShortLabel(row?.transaction?.finance_type) || 'Finance not set'}</small> : null}
-                    {!compactOperations && row?.transaction?.transaction_reference ? (
-                      <span className="inline-flex w-fit rounded-full border border-borderSoft bg-surfaceAlt px-2.5 py-0.5 text-helper font-semibold uppercase text-textBody">
-                        {row.transaction.transaction_reference}
-                      </span>
-                    ) : null}
-                  </div>
-                </td>
+                {!compactOperations ? (
+                  <td>
+                    <div className="transaction-list-cell">
+                      <strong>{unitLabel}</strong>
+                      <small>{financeTypeShortLabel(row?.transaction?.finance_type) || 'Finance not set'}</small>
+                      {row?.transaction?.transaction_reference ? (
+                        <span className="inline-flex w-fit rounded-full border border-borderSoft bg-surfaceAlt px-2.5 py-0.5 text-helper font-semibold uppercase text-textBody">
+                          {row.transaction.transaction_reference}
+                        </span>
+                      ) : null}
+                    </div>
+                  </td>
+                ) : null}
 
                 {compactOperations ? (
                   <td>
-                    <div className="w-[180px] min-w-[160px]">
-                      <div className="mb-1.5 flex items-center justify-between text-helper font-semibold uppercase text-textMuted">
-                        <span>Milestones</span>
-                        <span>{progressPercent}%</span>
+                    <div className="transaction-progress-cell">
+                      <div className="transaction-progress-summary">
+                        <strong>{progressPercent}%</strong>
+                        <span>{row?.workspace?.stageMeta?.label || 'Reservation'}</span>
                       </div>
-                      <div className="h-2 rounded-full bg-mutedBg">
+                      <div className="transaction-progress-track" aria-hidden="true">
                         <span
-                          className={`block h-full rounded-full ${getProgressFillClassName(row?.workspace?.progressTone)}`}
+                          className={getProgressFillClassName(row?.workspace?.progressTone)}
                           style={{ width: `${Math.max(progressPercent > 0 ? 8 : 0, progressPercent)}%` }}
                         />
+                      </div>
+                      <div className="transaction-workflow-dots" aria-label={`Current stage: ${row?.workspace?.stageMeta?.label || 'Reservation'}`}>
+                        {WORKFLOW_STEPS.map((step, stepIndex) => (
+                          <span
+                            key={step.key}
+                            className={`transaction-workflow-dot ${
+                              step.key === currentStepKey ? 'is-current' : currentStepIndex >= 0 && stepIndex < currentStepIndex ? 'is-done' : ''
+                            }`.trim()}
+                            title={step.label}
+                          />
+                        ))}
                       </div>
                     </div>
                   </td>
@@ -258,19 +334,15 @@ function UnitsTable({
                 )}
 
                 <td>
-                  <div className={`transaction-list-cell ${compactOperations ? 'transaction-list-cell-inline' : ''}`.trim()}>
-                    <strong className={compactOperations ? 'inline-block max-w-[220px] truncate' : ''}>{row?.buyer?.name || 'Buyer pending'}</strong>
-                    {!compactOperations ? (
+                  <div className="transaction-list-cell">
+                    <strong className={compactOperations ? 'transaction-cell-primary' : ''}>{row?.buyer?.name || 'Buyer pending'}</strong>
+                    {compactOperations ? (
+                      <small className="transaction-cell-secondary">{row?.buyer?.email || 'No contact details'}</small>
+                    ) : (
                       <small>{row?.onboarding?.status ? `Onboarding: ${row.onboarding.status}` : formatPurchaserType(row?.transaction?.purchaser_type)}</small>
-                    ) : null}
+                    )}
                   </div>
                 </td>
-
-                {compactOperations ? (
-                  <td>
-                    <span className="inline-block max-w-[230px] truncate text-secondary text-textMuted">{row?.buyer?.email || 'Not provided'}</span>
-                  </td>
-                ) : null}
 
                 {!compactOperations ? (
                   <td>
@@ -305,12 +377,8 @@ function UnitsTable({
 
                 {compactOperations ? (
                   <td>
-                    <span
-                      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-                        row?.workspace?.stageMeta?.chipClassName || 'border border-borderDefault bg-mutedBg text-textMuted'
-                      }`}
-                    >
-                      {row?.workspace?.stageMeta?.label || 'Reservation'}
+                    <span className={`transaction-workflow-chip transaction-health-chip ${health.className}`}>
+                      {health.label}
                     </span>
                   </td>
                 ) : null}
@@ -329,6 +397,30 @@ function UnitsTable({
                         <small className="max-w-[190px] truncate text-helper text-textMuted">{row.workspace.financeMeta.detail}</small>
                       ) : null}
                     </div>
+                  </td>
+                ) : null}
+
+                {compactOperations ? (
+                  <td>
+                    <span className="transaction-cell-secondary">{formatRelativeDate(updatedAt)}</span>
+                  </td>
+                ) : null}
+
+                {compactOperations ? (
+                  <td>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="table-action-button transaction-row-action-primary"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        if (unitId) {
+                          onRowClick(row, unitId, row?.unit?.unit_number)
+                        }
+                      }}
+                    >
+                      Open
+                    </Button>
                   </td>
                 ) : null}
 

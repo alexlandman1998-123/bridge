@@ -1,5 +1,24 @@
 import { Component, useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import {
+  ArrowLeft,
+  BadgeDollarSign,
+  Building2,
+  CalendarClock,
+  ChevronRight,
+  CircleDollarSign,
+  Clock3,
+  FilePlus2,
+  HeartPulse,
+  Landmark,
+  MessageSquare,
+  MoreHorizontal,
+  PhoneCall,
+  Scale,
+  StickyNote,
+  UploadCloud,
+  UserRound,
+} from 'lucide-react'
 import AlterationRequestsPanel from '../components/AlterationRequestsPanel'
 import AttorneyCloseoutPanel from '../components/AttorneyCloseoutPanel'
 import BondWorkflowLane from '../components/BondWorkflowLane'
@@ -75,7 +94,7 @@ const currency = new Intl.NumberFormat('en-ZA', {
 
 const PANEL_SHELL = 'rounded-[28px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]'
 const PANEL_COMPACT = 'rounded-[24px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-5 shadow-[0_16px_34px_rgba(15,23,42,0.05)]'
-const WORKSPACE_MENU_IDS = ['overview', 'onboarding', 'bond', 'documents', 'alterations', 'snags']
+const WORKSPACE_MENU_IDS = ['overview', 'transfer', 'bond', 'cancellation', 'onboarding', 'documents', 'financials', 'tasks', 'activity', 'alterations', 'snags']
 const FINANCE_TYPE_SELECT_OPTIONS = [
   { value: 'cash', label: 'Cash' },
   { value: 'bond', label: 'Bond' },
@@ -4831,17 +4850,151 @@ function UnitDetail() {
     }))
   }
 
-  const workspaceMenus = [
-    { id: 'overview', label: 'Overview', meta: isRegisteredUnit ? 'Unit summary' : 'Transaction summary' },
-    { id: 'onboarding', label: 'Client Information', meta: onboardingStatus },
-    ...(canViewBondWorkspaceTab
-      ? [{ id: 'bond', label: 'Bond', meta: bondApplicationStatus }]
-      : []),
-    { id: 'documents', label: 'Documents', meta: `${documents?.length || 0} files` },
-    { id: 'alterations', label: 'Alterations', meta: developmentSettings?.alteration_requests_enabled ? `${alterationRequests?.length || 0} requests` : 'Module off' },
-    { id: 'snags', label: 'Snags', meta: developmentSettings?.snag_reporting_enabled ? `${clientIssues?.length || 0} logged` : 'Module off' },
+  const isAgentWorkspace = workspaceRole === 'agent'
+  const transactionReference =
+    transaction?.transaction_reference ||
+    transaction?.matter_number ||
+    (transaction?.id ? `TX-${String(transaction.id).slice(0, 8).toUpperCase()}` : `Unit ${unit.unit_number}`)
+  const propertyIdentityTitle = propertyAddressForOtp !== 'Not captured'
+    ? propertyAddressForOtp
+    : [unit.development?.name, unit?.unit_number ? `Unit ${unit.unit_number}` : null].filter(Boolean).join(' • ') || 'Property address pending'
+  const sellerDisplayName = transaction?.seller_name || transaction?.seller || 'Seller pending'
+  const assignedAgentDisplayName =
+    stageForm.assigned_agent ||
+    transaction?.assigned_agent ||
+    transactionParticipants?.find((item) => item.roleType === 'agent')?.participantName ||
+    'Not assigned'
+  const transferAttorneyDisplayName =
+    stageForm.attorney ||
+    transaction?.attorney ||
+    attorneyParticipant?.participantName ||
+    'Not assigned'
+  const bondAttorneyDisplayName =
+    stageForm.bond_originator ||
+    transaction?.bond_originator ||
+    transactionParticipants?.find((item) => item.roleType === 'bond_attorney')?.participantName ||
+    'Not assigned'
+  const targetRegistrationLabel =
+    formatDate(transaction?.expected_transfer_date || transaction?.registration_date || transaction?.registered_at || transaction?.completed_at)
+  const bondAmountLabel = transaction?.bond_amount ? currency.format(Number(transaction.bond_amount || 0)) : 'Not captured'
+  const depositAmountLabel = transaction?.deposit_amount ? currency.format(Number(transaction.deposit_amount || 0)) : 'Not captured'
+  const matterHealthLabel = stageProgressModel.currentStageBlockers.length
+    ? 'Attention'
+    : missingDocumentCount > 0
+      ? 'Waiting'
+      : 'On Track'
+  const matterHealthTone =
+    matterHealthLabel === 'Attention'
+      ? 'border-[#f5d7bc] bg-[#fff7ed] text-[#b85d12]'
+      : matterHealthLabel === 'Waiting'
+        ? 'border-[#d9e3ee] bg-[#f7fafc] text-[#60758c]'
+        : 'border-[#cfe8d8] bg-[#effaf3] text-[#197a45]'
+  const latestUpdatedLabel = formatDateTime(transaction?.updated_at || transaction?.created_at)
+  const nextActionTitle = activeNextActionRecommendation || transaction?.next_action || 'Review transaction progress'
+  const nextActionDescription =
+    stageProgressModel.currentStageBlockers[0] ||
+    transaction?.next_action ||
+    (onboardingComplete ? 'Review the active workflow and keep parties aligned.' : 'Complete the buyer onboarding and supporting document steps.')
+  const nextActionDueLabel = transaction?.expected_transfer_date
+    ? formatDate(transaction.expected_transfer_date)
+    : targetRegistrationLabel !== 'Not set'
+      ? targetRegistrationLabel
+      : 'No due date'
+  const nextActionPriority = matterHealthLabel === 'Attention' ? 'High' : matterHealthLabel === 'Waiting' ? 'Medium' : 'Normal'
+  const agentMetricCards = [
+    { label: 'Purchase Price', value: currency.format(purchasePriceValue || 0), subtext: unit?.status ? toTitleLabel(unit.status) : 'Transaction value', icon: CircleDollarSign },
+    { label: 'Finance Type', value: financeLabel === 'n/a' ? 'Not set' : toTitleLabel(financeLabel), subtext: stageForm.finance_managed_by ? toTitleLabel(stageForm.finance_managed_by) : 'Funding route', icon: Landmark },
+    { label: 'Bond Amount', value: bondAmountLabel, subtext: isBondOrHybridFinance ? 'Bond finance' : 'Cash transaction', icon: BadgeDollarSign },
+    { label: 'Deposit', value: depositAmountLabel, subtext: reservationRequired ? reservationStatusLabel : 'Deposit captured', icon: Building2 },
+    { label: 'Target Registration', value: targetRegistrationLabel, subtext: formatTransactionAge(transaction?.created_at || transaction?.updated_at), icon: CalendarClock },
   ]
-  const activeWorkspaceMenu = workspaceMenus.some((tab) => tab.id === workspaceMenu) ? workspaceMenu : 'overview'
+  const agentQuickActions = [
+    {
+      label: 'Upload Document',
+      icon: UploadCloud,
+      onClick: () => {
+        setActiveWorkspaceDocumentsTab('sales')
+        openDocumentsWorkspace()
+      },
+    },
+    {
+      label: 'Request Document',
+      icon: FilePlus2,
+      onClick: () => {
+        setActiveWorkspaceDocumentsTab('additional')
+        openDocumentsWorkspace()
+      },
+      disabled: !canRequestAdditionalDocuments,
+    },
+    {
+      label: 'Add Note',
+      icon: StickyNote,
+      onClick: () => {
+        setWorkspaceMenu('activity')
+        setDiscussionType('operational')
+      },
+      disabled: !canCommentInWorkspace,
+    },
+    {
+      label: 'Log Call',
+      icon: PhoneCall,
+      onClick: () => {
+        setWorkspaceMenu('activity')
+        setDiscussionType('client')
+        setDiscussionBody((previous) => previous || '[client] Call logged: ')
+      },
+      disabled: !canCommentInWorkspace,
+    },
+    {
+      label: 'Message Parties',
+      icon: MessageSquare,
+      onClick: handleOpenClientPortalLink,
+      disabled: !clientPortalLink?.token,
+    },
+  ]
+  const agentUpcomingActions = suggestedNextActions.slice(0, 3)
+  while (agentUpcomingActions.length < 3) {
+    agentUpcomingActions.push(['Awaiting bond approval', 'Prepare transfer documents', 'Review latest activity'][agentUpcomingActions.length])
+  }
+  const agentKeyDates = [
+    ['Offer Accepted', formatDate(transaction?.sale_date || transaction?.created_at)],
+    ['Mandate Signed', formatDate(transaction?.mandate_signed_at || transaction?.created_at)],
+    ['FICA Completed', onboardingComplete ? formatDate(transaction?.onboarding_completed_at || transaction?.updated_at) : 'Pending'],
+    ['Target Registration', targetRegistrationLabel],
+  ]
+
+  const workspaceMenus = isAgentWorkspace
+    ? [
+        { id: 'overview', label: 'Overview' },
+        { id: 'onboarding', label: 'Parties', meta: onboardingStatus },
+        { id: 'documents', label: 'Documents', meta: `${documents?.length || 0}` },
+        { id: 'financials', label: 'Finance', meta: financeLabel === 'n/a' ? 'Not set' : financeLabel },
+        { id: 'transfer', label: 'Transfer', meta: mainStageLabel },
+        { id: 'tasks', label: 'Tasks', meta: `${agentUpcomingActions.length}` },
+        { id: 'activity', label: 'Activity', meta: `${(transactionDiscussion || []).length}` },
+        ...(developmentSettings?.alteration_requests_enabled
+          ? [{ id: 'alterations', label: 'Alterations', meta: `${alterationRequests?.length || 0}` }]
+          : []),
+        ...(developmentSettings?.snag_reporting_enabled
+          ? [{ id: 'snags', label: 'Snags', meta: `${clientIssues?.length || 0}` }]
+          : []),
+      ]
+    : [
+        { id: 'overview', label: 'Overview', meta: isRegisteredUnit ? 'Unit summary' : 'Transaction summary' },
+        { id: 'onboarding', label: 'Client Information', meta: onboardingStatus },
+        ...(canViewBondWorkspaceTab
+          ? [{ id: 'bond', label: 'Bond', meta: bondApplicationStatus }]
+          : []),
+        { id: 'documents', label: 'Documents', meta: `${documents?.length || 0} files` },
+        { id: 'alterations', label: 'Alterations', meta: developmentSettings?.alteration_requests_enabled ? `${alterationRequests?.length || 0} requests` : 'Module off' },
+        { id: 'snags', label: 'Snags', meta: developmentSettings?.snag_reporting_enabled ? `${clientIssues?.length || 0} logged` : 'Module off' },
+      ]
+  const requestedWorkspaceMenu = isAgentWorkspace && workspaceMenu === 'bond'
+    ? 'financials'
+    : isAgentWorkspace && workspaceMenu === 'cancellation'
+      ? 'transfer'
+      : workspaceMenu
+  const activeWorkspaceMenu = workspaceMenus.some((tab) => tab.id === requestedWorkspaceMenu) ? requestedWorkspaceMenu : 'overview'
   const showOverviewWorkspaceHero = activeWorkspaceMenu === 'overview'
   const workspaceHeaderRole = ['developer', 'attorney', 'agent', 'bond_originator'].includes(effectiveEditorRole)
     ? effectiveEditorRole
@@ -4937,6 +5090,137 @@ function UnitDetail() {
       hidden: workspaceHeaderRole !== 'developer',
     },
   ]
+  const visibleWorkspaceHeaderActions = workspaceHeaderActions.filter((action) => action && !action.hidden)
+  const agentBackLink = isAgentWorkspace ? (
+    <Link
+      to="/transactions"
+      className="no-print inline-flex w-fit items-center gap-2 rounded-[12px] border border-[#d9e3ee] bg-white px-3.5 py-2 text-sm font-semibold text-[#4f647a] shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd] hover:text-[#142132]"
+    >
+      <ArrowLeft size={16} />
+      Back to Transactions
+    </Link>
+  ) : null
+  const agentHeroHeader = isAgentWorkspace ? (
+    <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-5 shadow-[0_18px_38px_rgba(15,23,42,0.06)] md:p-6">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="inline-flex items-center rounded-full border border-[#d9e3ee] bg-[#f8fbfd] px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#65798f]">
+              Transaction Command Center
+            </span>
+            <span className="inline-flex items-center rounded-full border border-[#cfe1d8] bg-[#effaf3] px-3 py-1 text-xs font-semibold text-[#197a45]">
+              {mainStageLabel || 'Active'}
+            </span>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-end gap-3">
+            <h1 className="text-[2rem] font-semibold leading-none tracking-[-0.05em] text-[#142132] md:text-[2.35rem]">
+              {transactionReference}
+            </h1>
+            <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${matterHealthTone}`}>
+              <HeartPulse size={13} />
+              {matterHealthLabel}
+            </span>
+          </div>
+
+          <p className="mt-3 max-w-4xl text-[1.02rem] font-medium leading-7 text-[#294158]">
+            {propertyIdentityTitle}
+          </p>
+
+          <div className="mt-5 grid gap-3 text-sm md:grid-cols-2 2xl:grid-cols-3">
+            {[
+              { label: 'Buyer', value: buyer?.name || 'Buyer pending', icon: UserRound },
+              { label: 'Seller', value: sellerDisplayName, icon: UserRound },
+              { label: 'Assigned Agent', value: assignedAgentDisplayName, icon: Building2 },
+              { label: 'Transfer Attorney', value: transferAttorneyDisplayName, icon: Scale },
+              { label: 'Bond Attorney', value: bondAttorneyDisplayName, icon: Landmark },
+              { label: 'Last Updated', value: latestUpdatedLabel, icon: Clock3 },
+            ].map((item) => {
+              const Icon = item.icon
+              return (
+                <div key={item.label} className="flex min-w-0 items-start gap-2.5 rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2.5">
+                  <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] bg-[#edf4fb] text-[#35546c]">
+                    <Icon size={14} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8496ab]">{item.label}</span>
+                    <strong className="mt-0.5 block truncate text-sm font-semibold text-[#1d3144]">{item.value}</strong>
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <aside className="rounded-[20px] border border-[#dfe8f2] bg-[#f8fbfd] p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7c8ea4]">Matter Health</span>
+              <strong className="mt-1.5 block text-[1.35rem] font-semibold tracking-[-0.035em] text-[#142132]">{matterHealthLabel}</strong>
+              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                {formatTransactionAge(transaction?.created_at || transaction?.updated_at)} • Updated {formatDate(transaction?.updated_at || transaction?.created_at)}
+              </p>
+            </div>
+            <span className={`inline-flex h-10 w-10 items-center justify-center rounded-[14px] border ${matterHealthTone}`}>
+              <HeartPulse size={18} />
+            </span>
+          </div>
+
+          {visibleWorkspaceHeaderActions.length ? (
+            <div className="mt-4 grid gap-2">
+              {visibleWorkspaceHeaderActions.map((action) => {
+                if (action.as === 'badge') {
+                  return (
+                    <span
+                      key={action.id || action.label}
+                      className="inline-flex min-h-[38px] items-center justify-center rounded-[12px] border border-[#cfe8d8] bg-[#effaf3] px-3 py-2 text-sm font-semibold text-[#197a45]"
+                    >
+                      {action.label}
+                    </span>
+                  )
+                }
+
+                return (
+                  <Button
+                    key={action.id || action.label}
+                    type="button"
+                    variant={action.variant || 'secondary'}
+                    size="sm"
+                    className="w-full rounded-[12px]"
+                    onClick={action.onClick}
+                    disabled={Boolean(action.disabled)}
+                  >
+                    {action.label}
+                  </Button>
+                )
+              })}
+            </div>
+          ) : null}
+        </aside>
+      </div>
+    </section>
+  ) : null
+  const agentMetricSection = isAgentWorkspace ? (
+    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      {agentMetricCards.map((card) => {
+        const Icon = card.icon
+        return (
+          <article key={card.label} className="rounded-[18px] border border-[#dfe8f2] bg-white px-4 py-3.5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8496ab]">{card.label}</span>
+                <strong className="mt-1.5 block truncate text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]">{card.value}</strong>
+                <span className="mt-1 block truncate text-xs text-[#7a8fa6]">{card.subtext}</span>
+              </div>
+              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] bg-[#edf4fb] text-[#35546c]">
+                <Icon size={15} />
+              </span>
+            </div>
+          </article>
+        )
+      })}
+    </section>
+  ) : null
   const workspaceNavigationSection = (
     <div ref={workspaceMenuRef}>
       <TransactionWorkspaceMenu
@@ -4945,6 +5229,7 @@ function UnitDetail() {
         onChange={setWorkspaceMenu}
         ariaLabel="Unit workspace tabs"
         sectionLabel="Unit Workspace"
+        compact={isAgentWorkspace}
       />
     </div>
   )
@@ -5272,8 +5557,8 @@ function UnitDetail() {
       printSubtitle={`${unit.development?.name || '-'} • Unit ${unit.unit_number}`}
       printGeneratedAt={reportGeneratedAt}
       errorMessage={error}
-      toolbar={workspaceNavigationSection}
-      headline={(
+      toolbar={isAgentWorkspace ? agentBackLink : workspaceNavigationSection}
+      headline={isAgentWorkspace ? agentHeroHeader : (
         <TransactionWorkspaceHeader
           contextLabel={workspaceHeaderConfig.contextLabel}
           title={workspaceHeaderConfig.title}
@@ -5294,7 +5579,47 @@ function UnitDetail() {
           </section>
         ) : null}
 
-        {showOverviewWorkspaceHero ? (
+        {isAgentWorkspace ? (
+          <>
+            {agentMetricSection}
+            {workspaceNavigationSection}
+            <section className="rounded-[22px] border border-[#dfe8f2] bg-white px-4 py-4 shadow-[0_12px_26px_rgba(15,23,42,0.04)] md:px-5">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8496ab]">Current Stage Progress</span>
+                  <h3 className="mt-1 text-[1.04rem] font-semibold tracking-[-0.025em] text-[#142132]">{mainStageLabel}</h3>
+                </div>
+                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${matterHealthTone}`}>
+                  {stageProgressModel.totalProgressPercent}% complete
+                </span>
+              </div>
+              <div className="overflow-x-auto pb-1">
+                <div className="min-w-[760px]">
+                  <ProgressTimeline
+                    currentStage={mainStage}
+                    stages={MAIN_PROCESS_STAGES}
+                    stageLabelMap={MAIN_STAGE_LABELS}
+                    framed={false}
+                    compact
+                    premium
+                    progressPercent={stageProgressModel.totalProgressPercent}
+                    blockersByStage={stageProgressModel.stepBlockersByStage}
+                    helperText={
+                      stageProgressModel.currentStageBlockers.length
+                        ? `Blockers: ${stageProgressModel.currentStageBlockers.slice(0, 2).join(' • ')}`
+                        : `${mainStageLabel} is currently healthy.`
+                    }
+                    lastUpdatedLabel={stageProgressModel.latestUpdatedLabel}
+                    onStageClick={canEditMainStage ? (stageOption) => openStageEditor(stageOption) : null}
+                    isStageSelectable={(stageOption) => stageOption !== mainStage && stageProgressModel.canMoveTo(stageOption)}
+                  />
+                </div>
+              </div>
+            </section>
+          </>
+        ) : null}
+
+        {!isAgentWorkspace && showOverviewWorkspaceHero ? (
           <section className="rounded-[28px] border border-[#e5e7eb] bg-[#f7f8fa] p-6 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
             <div>
               <div className="rounded-[24px] border border-[#e5e7eb] bg-white px-4 py-5 shadow-[0_8px_18px_rgba(15,23,42,0.04)] md:px-5">
@@ -5376,6 +5701,156 @@ function UnitDetail() {
         ) : null}
 
         {activeWorkspaceMenu === 'overview' ? (
+          isAgentWorkspace ? (
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
+              <main className="min-w-0 space-y-4">
+                <section className="rounded-[22px] border border-[#dfe8f2] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.04)]">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8496ab]">Next Action</span>
+                      <h3 className="mt-2 text-[1.24rem] font-semibold tracking-[-0.035em] text-[#142132]">{nextActionTitle}</h3>
+                      <p className="mt-2 max-w-2xl text-sm leading-6 text-[#63758a]">{nextActionDescription}</p>
+                    </div>
+                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${matterHealthTone}`}>
+                      {matterHealthLabel}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    {[
+                      ['Due Date', nextActionDueLabel],
+                      ['Priority', nextActionPriority],
+                      ['Status', matterHealthLabel],
+                    ].map(([label, value]) => (
+                      <article key={label} className="rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2.5">
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#8496ab]">{label}</span>
+                        <strong className="mt-1 block text-sm font-semibold text-[#1d3144]">{value}</strong>
+                      </article>
+                    ))}
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button type="button" size="sm" onClick={() => setWorkspaceMenu('transfer')}>
+                      View Action
+                    </Button>
+                    <Button type="button" variant="secondary" size="sm" onClick={openDocumentsWorkspace}>
+                      Open Documents
+                    </Button>
+                  </div>
+                </section>
+
+                <section ref={discussionPanelRef} className="rounded-[22px] border border-[#dfe8f2] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.04)]">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8496ab]">Matter Feed</span>
+                      <h3 className="mt-1 text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Latest Updates</h3>
+                    </div>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 rounded-[12px] border border-[#dce6f0] bg-white px-3 py-2 text-xs font-semibold text-[#4f647a] transition hover:bg-[#f8fbfd]"
+                      onClick={() => setWorkspaceMenu('activity')}
+                    >
+                      View all activity
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+
+                  <div className="mt-4 space-y-2.5">
+                    {visibleDiscussionItems.slice(0, 5).map((comment) => {
+                      const commentBody = sanitizeCommentBody(comment.commentBody || comment.commentText, comment, {
+                        buyer,
+                        transactionParticipants,
+                      })
+                      const commentType = comment.discussionType || 'operational'
+                      const isSystemComment = commentType === SYSTEM_DISCUSSION_TYPE
+                      const commentAuthorName = resolveCommentAuthorName(comment, { buyer, transactionParticipants })
+                      const cardData = buildDiscussionCardData({
+                        commentBody,
+                        discussionType: commentType,
+                      })
+
+                      return (
+                        <article key={comment.id} className="rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] px-4 py-3">
+                          <div className="flex items-start gap-3">
+                            <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${isSystemComment ? 'bg-[#d97706]' : 'bg-[#35546c]'}`} />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <strong className="truncate text-sm font-semibold text-[#142132]">{cardData.title}</strong>
+                                <span className="text-xs text-[#8496ab]">{formatDateTime(comment.createdAt)}</span>
+                              </div>
+                              <p className="mt-1 line-clamp-2 text-sm leading-6 text-[#52677d]">{cardData.summary}</p>
+                              <span className="mt-1 block text-xs text-[#8496ab]">{commentAuthorName} • {toTitleLabel(commentType)}</span>
+                            </div>
+                          </div>
+                        </article>
+                      )
+                    })}
+                    {!visibleDiscussionItems.length ? (
+                      <p className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-5 text-sm text-[#6b7d93]">
+                        No updates yet.
+                      </p>
+                    ) : null}
+                  </div>
+                </section>
+              </main>
+
+              <aside className="space-y-4 xl:sticky xl:top-4">
+                <section className="rounded-[22px] border border-[#dfe8f2] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.04)]">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">Next Actions</h3>
+                    <MoreHorizontal size={18} className="text-[#8ca0b6]" />
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {agentUpcomingActions.map((action, index) => (
+                      <button
+                        key={`${action}-${index}`}
+                        type="button"
+                        className="flex w-full items-center justify-between gap-3 rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2.5 text-left transition hover:border-[#d7e4f0] hover:bg-white"
+                        onClick={() => setWorkspaceMenu(index === 1 ? 'financials' : index === 2 ? 'transfer' : 'documents')}
+                      >
+                        <span className="min-w-0">
+                          <strong className="block truncate text-sm font-semibold text-[#1d3144]">{action}</strong>
+                          <span className="mt-0.5 block text-xs text-[#8496ab]">{index === 0 ? nextActionDueLabel : 'Upcoming'}</span>
+                        </span>
+                        <ChevronRight size={15} className="shrink-0 text-[#8ca0b6]" />
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="rounded-[22px] border border-[#dfe8f2] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.04)]">
+                  <h3 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">Quick Actions</h3>
+                  <div className="mt-3 grid gap-2">
+                    {agentQuickActions.map((action) => {
+                      const Icon = action.icon
+                      return (
+                        <button
+                          key={action.label}
+                          type="button"
+                          className="inline-flex min-h-[38px] items-center justify-start gap-2 rounded-[12px] border border-[#dce6f0] bg-white px-3 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd] disabled:cursor-not-allowed disabled:opacity-55"
+                          onClick={action.onClick}
+                          disabled={Boolean(action.disabled)}
+                        >
+                          <Icon size={15} />
+                          {action.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </section>
+
+                <section className="rounded-[22px] border border-[#dfe8f2] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.04)]">
+                  <h3 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">Key Dates</h3>
+                  <dl className="mt-3 space-y-2.5">
+                    {agentKeyDates.map(([label, value]) => (
+                      <div key={label} className="flex items-center justify-between gap-3 border-b border-[#edf2f7] pb-2.5 last:border-b-0 last:pb-0">
+                        <dt className="text-sm text-[#63758a]">{label}</dt>
+                        <dd className="text-right text-sm font-semibold text-[#1d3144]">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+              </aside>
+            </div>
+          ) : (
           <>
             {showReservationDepositOverviewCard ? (
               <WorkspacePanel
@@ -5776,6 +6251,235 @@ function UnitDetail() {
             />
 
           </>
+          )
+        ) : null}
+
+        {activeWorkspaceMenu === 'transfer' ? (
+          <div className="space-y-4">
+            <WorkspacePanel
+              title="Transfer"
+              copy="Transfer workflow status, blockers, and the next operational handoff."
+            >
+              {transferWorkflowSection}
+            </WorkspacePanel>
+            <WorkspacePanel
+              title="Transfer Summary"
+              copy="Compact view of transfer ownership and registration timing."
+            >
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {[
+                  ['Transfer Attorney', transferAttorneyDisplayName],
+                  ['Current Stage', mainStageLabel],
+                  ['Target Registration', targetRegistrationLabel],
+                  ['Matter Health', matterHealthLabel],
+                ].map(([label, value]) => (
+                  <article key={label} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3">
+                    <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.09em] text-[#8ca0b6]">{label}</span>
+                    <strong className="mt-1.5 block text-sm font-semibold text-[#1c2e42]">{value}</strong>
+                  </article>
+                ))}
+              </div>
+            </WorkspacePanel>
+            <WorkspacePanel
+              title="Cancellation"
+              copy="Cancellation status is included here when a transaction cancellation workflow is active."
+            >
+              <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
+                No cancellation workflow is active for this transaction.
+              </div>
+            </WorkspacePanel>
+          </div>
+        ) : null}
+
+        {activeWorkspaceMenu === 'cancellation' ? (
+          <WorkspacePanel
+            title="Cancellation"
+            copy="Cancellation status is shown here when a transaction cancellation workflow is active."
+          >
+            <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
+              No cancellation workflow is active for this transaction.
+            </div>
+          </WorkspacePanel>
+        ) : null}
+
+        {activeWorkspaceMenu === 'financials' ? (
+          <div className="space-y-4">
+            <WorkspacePanel
+              title="Finance"
+              copy="Focused money, funding, bond, deposit, and guarantee readiness summary for the transaction."
+            >
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                {agentMetricCards.map((card) => (
+                  <article key={`financial-${card.label}`} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3">
+                    <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.09em] text-[#8ca0b6]">{card.label}</span>
+                    <strong className="mt-1.5 block text-sm font-semibold text-[#1c2e42]">{card.value}</strong>
+                    <span className="mt-1 block text-xs text-[#7c8ea4]">{card.subtext}</span>
+                  </article>
+                ))}
+              </div>
+            </WorkspacePanel>
+            {showReservationDepositOverviewCard ? (
+              <WorkspacePanel
+                title="Reservation Deposit"
+                copy="Track reservation payment instructions, proof of payment, and verification."
+              >
+                <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_260px]">
+                  <section className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+                    <strong className="block text-sm font-semibold text-[#142132]">
+                      {reservationAmountValue !== null ? currency.format(reservationAmountValue) : 'Amount pending'}
+                    </strong>
+                    <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{reservationPaymentDetails.payment_instructions || 'Reservation payment instructions are not captured yet.'}</p>
+                  </section>
+                  <section className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-4">
+                    <span className="inline-flex rounded-full border border-[#d8e6f5] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#35546c]">{reservationStatusLabel}</span>
+                    <p className="mt-3 text-xs leading-5 text-[#6b7d93]">Requested: {transaction?.reservation_requested_at ? formatDateTime(transaction.reservation_requested_at) : 'Not requested yet'}</p>
+                  </section>
+                </div>
+              </WorkspacePanel>
+            ) : null}
+            {financeWorkflowSection}
+          </div>
+        ) : null}
+
+        {activeWorkspaceMenu === 'tasks' ? (
+          <WorkspacePanel
+            title="Tasks"
+            copy="Outstanding actions, due dates, responsible parties, priority, and linked operational areas."
+            className="no-print"
+          >
+            <div className="divide-y divide-[#e6edf5] overflow-hidden rounded-[18px] border border-[#dfe8f2] bg-white">
+              {agentUpcomingActions.map((action, index) => {
+                const targetMenu = index === 1 ? 'financials' : index === 2 ? 'transfer' : 'documents'
+                const responsibleParty = targetMenu === 'financials'
+                  ? bondAttorneyDisplayName || 'Finance team'
+                  : targetMenu === 'transfer'
+                    ? transferAttorneyDisplayName || 'Transfer team'
+                    : buyer?.name || 'Matter team'
+
+                return (
+                  <article key={`${action}-${index}`} className="px-4 py-4 transition hover:bg-[#f8fbfd]">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <strong className="text-sm font-semibold text-[#142132]">{action}</strong>
+                          <span className="rounded-full border border-[#dce6f0] bg-[#f8fbfd] px-2.5 py-0.5 text-[0.68rem] font-semibold text-[#6b7d93]">
+                            {targetMenu === 'financials' ? 'Finance' : toTitleLabel(targetMenu)}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm leading-6 text-[#63758a]">
+                          {index === 0 ? nextActionDescription : 'Upcoming operational action for this transaction.'}
+                        </p>
+                      </div>
+                      <Button type="button" variant="secondary" size="sm" onClick={() => setWorkspaceMenu(targetMenu)}>
+                        Open
+                      </Button>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-xs sm:grid-cols-4">
+                      {[
+                        ['Due', index === 0 ? nextActionDueLabel : 'Upcoming'],
+                        ['Responsible', responsibleParty],
+                        ['Priority', index === 0 ? nextActionPriority : 'Normal'],
+                        ['Status', matterHealthLabel],
+                      ].map(([label, value]) => (
+                        <div key={label} className="min-w-0 rounded-[12px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2">
+                          <span className="block font-semibold uppercase tracking-[0.08em] text-[#8496ab]">{label}</span>
+                          <strong className="mt-1 block truncate text-[#1d3144]">{value}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          </WorkspacePanel>
+        ) : null}
+
+        {activeWorkspaceMenu === 'activity' ? (
+          <WorkspacePanel
+            title="Activity"
+            copy="Collaborative updates, document events, workflow movement, and agent notes."
+            className="no-print"
+          >
+            <div ref={discussionPanelRef} className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="max-h-[620px] overflow-y-auto pr-1">
+                <div className="space-y-2.5">
+                  {visibleDiscussionItems.map((comment) => {
+                    const commentBody = sanitizeCommentBody(comment.commentBody || comment.commentText, comment, {
+                      buyer,
+                      transactionParticipants,
+                    })
+                    const commentType = comment.discussionType || 'operational'
+                    const isSystemComment = commentType === SYSTEM_DISCUSSION_TYPE
+                    const commentAuthorName = resolveCommentAuthorName(comment, { buyer, transactionParticipants })
+                    const cardData = buildDiscussionCardData({
+                      commentBody,
+                      discussionType: commentType,
+                    })
+
+                    return (
+                      <article
+                        key={comment.id}
+                        className={[
+                          'rounded-[16px] border px-4 py-3.5 shadow-[0_6px_16px_rgba(15,23,42,0.04)]',
+                          isSystemComment ? 'border-[#eadfce] bg-[#fffdf9]' : 'border-[#e3ebf4] bg-white',
+                        ].join(' ')}
+                      >
+                        <header className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h4 className="text-[0.97rem] font-semibold tracking-[-0.02em] text-[#142132]">{cardData.title}</h4>
+                            <p className="mt-1 text-xs text-[#7c8ea4]">
+                              {commentAuthorName} • {comment.authorRoleLabel || TRANSACTION_ROLE_LABELS[comment.authorRole] || 'Participant'}
+                            </p>
+                          </div>
+                          <span className="text-xs text-[#7c8ea4]">{formatDateTime(comment.createdAt)}</span>
+                        </header>
+                        <p className="mt-2.5 text-sm font-semibold leading-6 text-[#24384c]">{cardData.summary}</p>
+                        {cardData.detail && cardData.detail !== cardData.summary ? (
+                          <p className="mt-1.5 text-sm leading-6 text-[#2a3f53]">{cardData.detail}</p>
+                        ) : null}
+                      </article>
+                    )
+                  })}
+                  {!visibleDiscussionItems.length ? (
+                    <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-5 py-6 text-sm text-[#6b7d93]">
+                      No updates match the current filter.
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+
+              <form
+                onSubmit={handleAddDiscussion}
+                className="h-fit rounded-[18px] border border-[#dee7f1] bg-white px-4 py-4 shadow-[0_8px_20px_rgba(15,23,42,0.05)]"
+              >
+                <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                  <span>Update Type</span>
+                  <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)}>
+                    <option value="operational">Operational</option>
+                    <option value="blocker">Blocker</option>
+                    <option value="document">Document</option>
+                    <option value="decision">Decision</option>
+                    <option value="client">Client</option>
+                  </Field>
+                </label>
+                <div className="mt-3 rounded-[14px] border border-[#e3ebf4] bg-[#f9fbff] p-3">
+                  <Field
+                    as="textarea"
+                    rows={5}
+                    value={discussionBody}
+                    onChange={(event) => setDiscussionBody(event.target.value)}
+                    placeholder="Write a concise update for the activity feed..."
+                  />
+                </div>
+                <div className="mt-3 flex justify-end">
+                  <Button type="submit" disabled={saving || !discussionBody.trim() || !canCommentInWorkspace}>
+                    Post Update
+                  </Button>
+                </div>
+                {!canCommentInWorkspace ? <p className="mt-3 text-sm text-[#6b7d93]">Your current role can view updates but cannot post comments.</p> : null}
+              </form>
+            </div>
+          </WorkspacePanel>
         ) : null}
 
         {activeWorkspaceMenu === 'onboarding' ? (
@@ -6401,7 +7105,7 @@ function UnitDetail() {
           </div>
         ) : null}
 
-        {activeWorkspaceMenu === 'bond' ? (
+        {activeWorkspaceMenu === 'bond' || (isAgentWorkspace && activeWorkspaceMenu === 'financials' && canViewBondWorkspaceTab) ? (
           <div className="space-y-4">
             <WorkspacePanel
               title="Bond Application"

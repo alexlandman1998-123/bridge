@@ -4,7 +4,46 @@ function TransactionWorkspaceMenu({
   onChange,
   ariaLabel = 'Transaction workspace tabs',
   sectionLabel = 'Workspace',
+  compact = false,
 }) {
+  if (compact) {
+    return (
+      <section className="no-print rounded-[18px] border border-[#d9e3ee] bg-white px-3 py-2.5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <div
+          className="flex gap-1.5 overflow-x-auto pb-0.5"
+          role="tablist"
+          aria-label={ariaLabel}
+        >
+          {tabs.map((tab) => {
+            const active = activeTab === tab.id
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={[
+                  'inline-flex min-h-[38px] shrink-0 items-center justify-center rounded-[12px] border px-3.5 py-1.5 text-sm font-semibold transition duration-150 ease-out',
+                  active
+                    ? 'border-[#274c69] bg-[#274c69] text-white shadow-[0_8px_18px_rgba(15,23,42,0.12)]'
+                    : 'border-transparent bg-white text-[#5f7288] hover:border-[#dce6f0] hover:bg-[#f8fbfd] hover:text-[#263b4f]',
+                ].join(' ')}
+                onClick={() => onChange?.(tab.id)}
+              >
+                <span>{tab.label}</span>
+                {tab.meta ? (
+                  <em className={`ml-2 rounded-full px-2 py-0.5 text-[0.66rem] not-italic ${active ? 'bg-white/15 text-white/85' : 'bg-[#edf3fa] text-[#7a8fa6]'}`}>
+                    {tab.meta}
+                  </em>
+                ) : null}
+              </button>
+            )
+          })}
+        </div>
+      </section>
+    )
+  }
+
   return (
     <section className="no-print rounded-[24px] border border-[#d9e3ee] bg-[rgba(248,251,254,0.94)] p-4 shadow-[0_14px_28px_rgba(15,23,42,0.1)] backdrop-blur-md md:p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
