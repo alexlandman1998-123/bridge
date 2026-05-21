@@ -95,9 +95,14 @@ const ICON_BY_KEY = {
 }
 
 const BRANDING_REFRESH_EVENT = 'itg:organisation-branding-updated'
+const SIDEBAR_BRANDING_CACHE_KEY = 'itg:sidebar-branding:v1'
 const BRIDGE_BRAND_MARK = 'bridge.'
 const BRIDGE_BRAND_SUBTITLE = 'Property Transaction OS'
 const BRIDGE_POWERED_LABEL = 'Powered by Bridge'
+const EMPTY_SIDEBAR_BRANDING = {
+  logoUrl: '',
+  organisationLabel: '',
+}
 
 function routeMatches(pathname, target = '') {
   return pathname === target || pathname.startsWith(`${target}/`)
@@ -147,11 +152,73 @@ function resolveSidebarBranding(snapshot) {
   }
 }
 
+function getSidebarBrandingOwner(profile) {
+  return normalizeBrandText(profile?.id || profile?.email).toLowerCase()
+}
+
+function normalizeSidebarBranding(value) {
+  return {
+    logoUrl: normalizeBrandText(value?.logoUrl),
+    organisationLabel: normalizeBrandText(value?.organisationLabel),
+  }
+}
+
+function readCachedSidebarBranding(ownerKey) {
+  if (typeof window === 'undefined' || !ownerKey) {
+    return null
+  }
+
+  try {
+    const cached = JSON.parse(window.localStorage.getItem(SIDEBAR_BRANDING_CACHE_KEY) || 'null')
+    if (!cached || cached.ownerKey !== ownerKey) {
+      return null
+    }
+
+    const branding = normalizeSidebarBranding(cached.branding)
+    return branding.logoUrl || branding.organisationLabel ? branding : null
+  } catch {
+    return null
+  }
+}
+
+function writeCachedSidebarBranding(ownerKey, branding) {
+  if (typeof window === 'undefined' || !ownerKey || !branding?.logoUrl) {
+    return
+  }
+
+  try {
+    window.localStorage.setItem(
+      SIDEBAR_BRANDING_CACHE_KEY,
+      JSON.stringify({
+        ownerKey,
+        branding: normalizeSidebarBranding(branding),
+      }),
+    )
+  } catch {
+    // Local storage can be unavailable in private browsing; the live fetch still drives the render.
+  }
+}
+
+function preloadBrandLogo(logoUrl) {
+  if (typeof window === 'undefined' || !logoUrl) {
+    return Promise.resolve(false)
+  }
+
+  return new Promise((resolve) => {
+    const image = new Image()
+    image.onload = () => resolve(true)
+    image.onerror = () => resolve(false)
+    image.src = logoUrl
+  })
+}
+
 function Sidebar() {
   const { workspace, setWorkspace, allWorkspace, role, baseRole, profile } = useWorkspace()
   const location = useLocation()
   const navigate = useNavigate()
   const [membershipRole, setMembershipRole] = useState('viewer')
+  const brandingOwnerKey = getSidebarBrandingOwner(profile)
+  const cachedSidebarBranding = useMemo(() => readCachedSidebarBranding(brandingOwnerKey), [brandingOwnerKey])
   const roleNavItems = useMemo(
     () => getRoleNavItems(role, { baseRole, profile, membershipRole }),
     [baseRole, membershipRole, profile, role],
@@ -163,10 +230,8 @@ function Sidebar() {
   const [expandedMenus, setExpandedMenus] = useState(() => ({
     intelligence_beta: isIntelligencePath,
   }))
-  const [sidebarBranding, setSidebarBranding] = useState(() => ({
-    logoUrl: '',
-    organisationLabel: '',
-  }))
+  const [sidebarBranding, setSidebarBranding] = useState(() => cachedSidebarBranding || EMPTY_SIDEBAR_BRANDING)
+  const [brandingResolved, setBrandingResolved] = useState(() => Boolean(cachedSidebarBranding?.logoUrl))
   const [logoLoadFailed, setLogoLoadFailed] = useState(false)
   const secondaryItems =
     role === 'developer'
@@ -186,7 +251,18 @@ function Sidebar() {
     const snapshot = settings || context
 
     if (snapshot) {
-      setSidebarBranding(resolveSidebarBranding(snapshot))
+      const nextBranding = resolveSidebarBranding(snapshot)
+      const logoReady = nextBranding.logoUrl ? await preloadBrandLogo(nextBranding.logoUrl) : false
+
+      setSidebarBranding(nextBranding)
+      setLogoLoadFailed(Boolean(nextBranding.logoUrl) && !logoReady)
+      setBrandingResolved(true)
+
+      if (logoReady) {
+        writeCachedSidebarBranding(brandingOwnerKey, nextBranding)
+      }
+    } else {
+      setBrandingResolved(true)
     }
 
     setMembershipRole((previous) =>
@@ -194,7 +270,7 @@ function Sidebar() {
         context?.membershipRole || settings?.membershipRole || previous || 'viewer',
       ),
     )
-  }, [])
+  }, [brandingOwnerKey])
 
   useEffect(() => {
     if (role === 'client' || workspace.id === 'all') {
@@ -205,6 +281,7 @@ function Sidebar() {
   }, [allWorkspace, role, setWorkspace, workspace.id])
 
   const showOrganisationBranding = Boolean(sidebarBranding.logoUrl) && !logoLoadFailed
+  const showBrandPlaceholder = !showOrganisationBranding && !brandingResolved
 
   useEffect(() => {
     let active = true
@@ -277,10 +354,18 @@ function Sidebar() {
                   src={sidebarBranding.logoUrl}
                   alt={`${sidebarBranding.organisationLabel || 'Organisation'} logo`}
                   className="ui-sidebar-brand-logo"
-                  loading="lazy"
+                  loading="eager"
+                  decoding="async"
                   onLoad={() => setLogoLoadFailed(false)}
                   onError={() => setLogoLoadFailed(true)}
                 />
+              </div>
+              <p className="ui-sidebar-brand-powered">{BRIDGE_POWERED_LABEL}</p>
+            </div>
+          ) : showBrandPlaceholder ? (
+            <div className="ui-sidebar-brand-org" aria-label="Loading organisation branding">
+              <div className="ui-sidebar-brand-logo-wrap ui-sidebar-brand-logo-wrap-loading">
+                <span className="ui-sidebar-brand-logo-placeholder" />
               </div>
               <p className="ui-sidebar-brand-powered">{BRIDGE_POWERED_LABEL}</p>
             </div>

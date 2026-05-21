@@ -200,11 +200,17 @@ function ModalSkeleton() {
 
 function SidebarSkeleton() {
   return (
-    <aside className="hidden h-screen w-[280px] shrink-0 border-r border-white/10 bg-[#0f2b40] p-6 lg:block">
-      <div className="h-10 w-36 animate-pulse rounded-2xl bg-white/20" />
-      <div className="mt-10 space-y-3">
+    <aside className="fixed left-0 top-0 z-30 hidden h-screen w-[268px] shrink-0 overflow-hidden border-r border-[#e5edf6] bg-white px-4 py-4 shadow-[12px_0_32px_rgba(15,23,42,0.03)] lg:block">
+      <div className="border-b border-[#edf2f7] pb-3 pt-[0.95rem]">
+        <div className="flex min-h-[96px] items-center">
+          <div className="h-16 w-44 animate-pulse rounded-xl bg-slate-100" />
+        </div>
+        <div className="h-3 w-32 animate-pulse rounded-full bg-slate-100" />
+      </div>
+      <div className="mt-4 h-12 animate-pulse rounded-[14px] border border-[#d9e4ef] bg-slate-50" />
+      <div className="mt-6 space-y-3">
         {[0, 1, 2, 3, 4, 5].map((item) => (
-          <div key={item} className="h-11 animate-pulse rounded-2xl bg-white/10" />
+          <div key={item} className="h-11 animate-pulse rounded-[12px] bg-slate-100" />
         ))}
       </div>
     </aside>

@@ -657,6 +657,18 @@
     align-items: center;
   }
 
+  .ui-sidebar-brand-logo-wrap-loading {
+    min-height: 96px;
+  }
+
+  .ui-sidebar-brand-logo-placeholder {
+    display: block;
+    width: min(176px, 76%);
+    height: 64px;
+    border-radius: 12px;
+    background: #f2f6fa;
+  }
+
   .ui-sidebar-brand-logo {
     display: block;
     width: 100%;
