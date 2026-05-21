@@ -36,9 +36,7 @@ const APPOINTMENTS_DEMO_FALLBACK_REASON = {
 export const LEAD_DIRECTIONS = ['Inbound', 'Outbound']
 export const LEAD_CATEGORIES = ['Buyer', 'Seller', 'Landlord', 'Tenant', 'Investor', 'Developer', 'Other']
 export const LEAD_STAGES = [
-  'Canvassing',
   'Lead',
-  'New Lead',
   'Contacted',
   'Onboarding Sent',
   'Onboarding Completed',
@@ -849,8 +847,8 @@ function normalizeLeadRecord(lead = {}, organisationId) {
     leadCategory: normalizeListValue(lead.leadCategory, LEAD_CATEGORIES, 'Buyer'),
     leadDirection: normalizeListValue(lead.leadDirection, LEAD_DIRECTIONS, 'Inbound'),
     leadSource: normalizeText(lead.leadSource) || 'Other',
-    stage: normalizeListValue(lead.stage, LEAD_STAGES, 'New Lead'),
-    status: normalizeText(lead.status || lead.stage || 'New Lead'),
+    stage: normalizeListValue(lead.stage, LEAD_STAGES, 'Lead'),
+    status: normalizeText(lead.status || lead.stage || 'Lead'),
     priority: normalizeListValue(lead.priority, LEAD_PRIORITIES, 'Medium'),
     budget: Number(lead.budget || 0) || 0,
     areaInterest: normalizeText(lead.areaInterest),
@@ -1066,8 +1064,8 @@ export function createAgencyLead(organisationId, payload = {}, { actor = null } 
       leadCategory: leadPayload?.leadCategory || 'Buyer',
       leadDirection: leadPayload?.leadDirection || 'Inbound',
       leadSource: leadPayload?.leadSource || 'Other',
-      stage: leadPayload?.stage || 'New Lead',
-      status: leadPayload?.status || leadPayload?.stage || 'New Lead',
+      stage: leadPayload?.stage || 'Lead',
+      status: leadPayload?.status || leadPayload?.stage || 'Lead',
       priority: leadPayload?.priority || 'Medium',
       budget: leadPayload?.budget || 0,
       areaInterest: leadPayload?.areaInterest || '',
