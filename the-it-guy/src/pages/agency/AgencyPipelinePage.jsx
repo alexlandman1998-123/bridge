@@ -1126,6 +1126,16 @@ function getWeekDays(anchorDate) {
   })
 }
 
+function getCalendarRangeDays(anchorDate, length = 1) {
+  const start = new Date(anchorDate)
+  start.setHours(0, 0, 0, 0)
+  return Array.from({ length }, (_, index) => {
+    const date = new Date(start)
+    date.setDate(start.getDate() + index)
+    return date
+  })
+}
+
 function getMonthGridDays(anchorDate) {
   const monthStart = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1)
   const gridStart = getStartOfWeek(monthStart)
@@ -1156,6 +1166,19 @@ function parseAppointmentDate(appointment) {
 }
 
 function formatCalendarPeriodLabel(view, anchorDate) {
+  if (view === 'day') {
+    return anchorDate.toLocaleDateString('en-ZA', { weekday: 'long', day: '2-digit', month: 'short', year: 'numeric' })
+  }
+  if (view === 'three_day') {
+    const days = getCalendarRangeDays(anchorDate, 3)
+    const start = days[0]
+    const end = days[2]
+    return `${start.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' })} - ${end.toLocaleDateString('en-ZA', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })}`
+  }
   if (view === 'week') {
     const weekDays = getWeekDays(anchorDate)
     const start = weekDays[0]
@@ -2952,8 +2975,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [calendarScopedAppointments])
 
   const weekDays = useMemo(() => getWeekDays(calendarCursorDate), [calendarCursorDate])
+  const dayDays = useMemo(() => getCalendarRangeDays(calendarCursorDate, 1), [calendarCursorDate])
+  const threeDayDays = useMemo(() => getCalendarRangeDays(calendarCursorDate, 3), [calendarCursorDate])
   const monthDays = useMemo(() => getMonthGridDays(calendarCursorDate), [calendarCursorDate])
-  const visibleCalendarDays = calendarView === 'month' ? monthDays : weekDays
+  const visibleCalendarDays = calendarView === 'month'
+    ? monthDays
+    : calendarView === 'three_day'
+      ? threeDayDays
+      : calendarView === 'day'
+        ? dayDays
+        : weekDays
+  const calendarHeaderDays = calendarView === 'month'
+    ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    : visibleCalendarDays.map((day) => day.toLocaleDateString('en-ZA', { weekday: 'short', day: '2-digit', month: 'short' }))
+  const calendarGridTemplateColumns = `repeat(${calendarView === 'month' ? 7 : Math.max(1, visibleCalendarDays.length)}, minmax(0, 1fr))`
   const calendarPeriodLabel = useMemo(
     () => formatCalendarPeriodLabel(calendarView, calendarCursorDate),
     [calendarCursorDate, calendarView],
@@ -4656,6 +4691,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const next = new Date(previous)
       if (calendarView === 'month') {
         next.setMonth(previous.getMonth() + direction)
+      } else if (calendarView === 'three_day') {
+        next.setDate(previous.getDate() + 3 * direction)
+      } else if (calendarView === 'day') {
+        next.setDate(previous.getDate() + direction)
       } else {
         next.setDate(previous.getDate() + 7 * direction)
       }
@@ -5349,6 +5388,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </select>
                 ) : null}
                 {[
+                  { key: 'day', label: 'Day' },
+                  { key: 'three_day', label: '3 Day' },
                   { key: 'week', label: 'Week' },
                   { key: 'month', label: 'Month' },
                 ].map((option) => (
@@ -5425,19 +5466,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
           <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
             <div className="space-y-2">
-              <div className="grid grid-cols-7 gap-2">
-                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label) => (
+              <div className="grid gap-2" style={{ gridTemplateColumns: calendarGridTemplateColumns }}>
+                {calendarHeaderDays.map((label) => (
                   <div key={label} className="rounded-[10px] bg-[#f5f8fc] px-2 py-1 text-center text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#75889d]">
                     {label}
                   </div>
                 ))}
               </div>
 
-              <div className="grid grid-cols-7 gap-2">
+              <div className="grid gap-2" style={{ gridTemplateColumns: calendarGridTemplateColumns }}>
                 {visibleCalendarDays.map((day) => {
                   const key = toDateOnlyIso(day)
                   const rows = calendarAppointmentsByDate.get(key) || []
-                  const inActiveMonth = day.getMonth() === calendarCursorDate.getMonth()
+                  const inActiveMonth = calendarView === 'month' ? day.getMonth() === calendarCursorDate.getMonth() : true
                   const isToday = isSameDay(day, new Date())
                   const shownRows = rows.slice(0, 4)
                   const hiddenCount = Math.max(rows.length - shownRows.length, 0)
