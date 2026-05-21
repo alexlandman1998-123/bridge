@@ -1,4 +1,4 @@
-import { CalendarDays, CheckSquare, Columns3, Filter, MoreHorizontal, Pencil, Plus, Search, Table2, Trash2, TrendingUp, Upload, UserRound, X } from 'lucide-react'
+import { ArrowUpRight, CalendarDays, CheckSquare, Clock3, Columns3, Filter, Home, ImageIcon, Mail, MoreHorizontal, Pencil, Phone, Plus, Search, Table2, Trash2, TrendingUp, Upload, UserRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
@@ -93,6 +93,7 @@ const CANVASSING_STORAGE_PREFIX = 'itg:agency-canvassing:v1'
 const CANVASSING_UPDATED_EVENT = 'itg:agency-canvassing-updated'
 const CANVASSING_KANBAN_CARD_PREFIX = 'canvassing_prospect:'
 const LEAD_WORKSPACE_MAX_RETRIES = 10
+const LEAD_TABLE_PAGE_SIZE = 12
 const QUICK_CREATE_STORAGE_KEY = 'bridge:quick-create-records:v1'
 const APPOINTMENT_CATEGORY_CONFIG = {
   viewing: {
@@ -777,6 +778,129 @@ function getLeadStageTone(value = '') {
   return 'border-[#dce7f2] bg-[#f8fbff] text-[#35546c]'
 }
 
+function getLeadCategoryMeta(lead = {}, contact = {}) {
+  const signal = normalizeText(lead?.leadCategory || lead?.leadDirection || contact?.contactType).toLowerCase()
+  if (signal.includes('tenant')) return { label: 'Tenant', className: 'border-[#d7e4f5] bg-[#f2f7ff] text-[#315f8f]' }
+  if (signal.includes('investor')) return { label: 'Investor', className: 'border-[#ded8f6] bg-[#f5f2ff] text-[#5f4a9b]' }
+  if (signal.includes('seller') || signal.includes('landlord')) return { label: 'Seller Lead', className: 'border-[#f0dfb8] bg-[#fff8eb] text-[#8a641d]' }
+  return { label: 'Buyer Lead', className: 'border-[#cfe8dc] bg-[#effaf3] text-[#2d6b4a]' }
+}
+
+function getLeadStatusMeta(lead = {}, funnelStage = '') {
+  const signal = normalizeText(`${funnelStage} ${lead?.stage || ''} ${lead?.status || ''} ${lead?.priority || ''}`).toLowerCase()
+  if (signal.includes('lost') || signal.includes('archive')) {
+    return { label: 'Archived', score: 1, className: 'border-[#ead4d1] bg-[#fff5f4] text-[#9a4038]', dotClassName: 'bg-[#d96b5f]' }
+  }
+  if (signal.includes('converted') || signal.includes('qualified') || signal.includes('deal') || signal.includes('signed')) {
+    return { label: 'Qualified', score: 4, className: 'border-[#cfe8dc] bg-[#effaf3] text-[#26724c]', dotClassName: 'bg-[#35a66d]' }
+  }
+  if (signal.includes('hot') || signal.includes('offer') || signal.includes('view') || signal.includes('appointment')) {
+    return { label: 'Hot', score: 5, className: 'border-[#cfe8dc] bg-[#effaf3] text-[#26724c]', dotClassName: 'bg-[#35a66d]' }
+  }
+  if (signal.includes('warm') || signal.includes('contact') || signal.includes('follow')) {
+    return { label: 'Warm', score: 3, className: 'border-[#f1dfb8] bg-[#fff8e8] text-[#8a641d]', dotClassName: 'bg-[#d79d3f]' }
+  }
+  return { label: 'Cold', score: 2, className: 'border-[#d4e5fb] bg-[#f1f7ff] text-[#2d659a]', dotClassName: 'bg-[#4f82b8]' }
+}
+
+function getLeadOpportunityPreview(lead = {}, linkedTransaction = null, isSeller = false) {
+  const listingId = normalizeText(lead?.listingId || lead?.listing_id)
+  const transactionTitle = normalizeText(linkedTransaction?.title || linkedTransaction?.transactionReference || linkedTransaction?.propertyAddress)
+  const propertyTitle = normalizeText(lead?.propertyInterest || lead?.sellerPropertyAddress || lead?.areaInterest)
+  const title = transactionTitle || propertyTitle
+  const priceValue = Number(lead?.estimatedValue || lead?.budget || linkedTransaction?.purchasePrice || linkedTransaction?.salesPrice || 0)
+  const area = normalizeText(lead?.areaInterest || lead?.sellerPropertyAddress)
+  const propertyType = normalizeText(lead?.propertyInterest)
+  const hasListing = Boolean(listingId || title || linkedTransaction)
+
+  return {
+    hasListing,
+    title: title || (isSeller ? 'Seller property' : 'Target property'),
+    subtitle: listingId ? `Listing ${listingId}` : (area || (isSeller ? 'Mandate workspace' : 'Buyer brief')),
+    price: priceValue > 0 ? formatCurrency(priceValue) : '',
+    specs: [propertyType && propertyType !== title ? propertyType : '', area && area !== title ? area : ''].filter(Boolean).join(' • '),
+  }
+}
+
+function formatRelativeTime(value) {
+  if (!value) return 'No activity'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'No activity'
+  const diffMs = Date.now() - date.getTime()
+  const absMs = Math.abs(diffMs)
+  const minutes = Math.round(absMs / 60000)
+  if (minutes < 1) return 'Just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.round(hours / 24)
+  if (days < 30) return `${days}d ago`
+  return formatDateShort(value)
+}
+
+function getLeadNextActionMeta(lead = {}, tasks = [], linkedAppointment = null, nextStep = '') {
+  const openTask = (Array.isArray(tasks) ? tasks : [])
+    .filter((task) => normalizeText(task?.status) !== 'Completed')
+    .sort((a, b) => new Date(a?.dueDate || a?.createdAt || 0) - new Date(b?.dueDate || b?.createdAt || 0))[0]
+  const appointmentDate = linkedAppointment?.dateTime || linkedAppointment?.appointmentDate || linkedAppointment?.createdAt
+  const hasAppointment = Boolean(linkedAppointment && appointmentDate)
+  const baseTitle = normalizeText(openTask?.title || nextStep || linkedAppointment?.title) || 'Take action'
+  const detail = normalizeText(openTask?.description || lead?.nextFollowUpNote || lead?.notes || linkedAppointment?.notes) || 'Review the lead and choose the next best step.'
+  const today = new Date()
+  const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+
+  if (openTask?.dueDate) {
+    const due = new Date(openTask.dueDate)
+    if (!Number.isNaN(due.getTime())) {
+      const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime()
+      const dayDiff = Math.round((dueDay - todayDay) / 86400000)
+      if (dayDiff < 0) {
+        return {
+          eyebrow: 'Lead follow-up',
+          title: baseTitle,
+          meta: `Overdue • ${Math.abs(dayDiff)} day${Math.abs(dayDiff) === 1 ? '' : 's'}`,
+          detail,
+          className: 'border-[#f0d6d3] bg-[#fff7f6] text-[#8f3a31]',
+        }
+      }
+      if (dayDiff === 0) {
+        return {
+          eyebrow: 'Lead follow-up',
+          title: baseTitle,
+          meta: 'Due today',
+          detail,
+          className: 'border-[#efdcb7] bg-[#fff9ec] text-[#8a641d]',
+        }
+      }
+      return {
+        eyebrow: 'Lead follow-up',
+        title: baseTitle,
+        meta: formatDateShort(openTask.dueDate),
+        detail,
+        className: 'border-[#d7e7d8] bg-[#f4fbf6] text-[#2d6b4a]',
+      }
+    }
+  }
+
+  if (hasAppointment) {
+    return {
+      eyebrow: 'Upcoming appointment',
+      title: normalizeText(linkedAppointment?.title || getAppointmentTypeLabel(linkedAppointment?.appointmentType)) || baseTitle,
+      meta: formatCompactDate(appointmentDate),
+      detail: normalizeText(linkedAppointment?.location || linkedAppointment?.meetingUrl) || detail,
+      className: 'border-[#efdcb7] bg-[#fff9ec] text-[#8a641d]',
+    }
+  }
+
+  return {
+    eyebrow: 'Next best action',
+    title: baseTitle,
+    meta: 'Healthy',
+    detail,
+    className: 'border-[#d7e7d8] bg-[#f4fbf6] text-[#2d6b4a]',
+  }
+}
+
 function getNextStepStatus(tasks = []) {
   const openTask = (Array.isArray(tasks) ? tasks : [])
     .filter((task) => normalizeText(task?.status) !== 'Completed')
@@ -1374,6 +1498,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const draggingPipelineCardRef = useRef('')
   const [leadWorkspaceTab, setLeadWorkspaceTab] = useState('overview')
   const [leadFilter, setLeadFilter] = useState(DEFAULT_LEAD_FILTER)
+  const [leadTablePage, setLeadTablePage] = useState(1)
   const [showLeadForm, setShowLeadForm] = useState(false)
   const [leadForm, setLeadForm] = useState(NEW_LEAD_DEFAULTS)
   const [isLeadCreating, setIsLeadCreating] = useState(false)
@@ -2122,6 +2247,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return rightTime - leftTime
     })
   }, [canvassingStore.prospects, leadFilter.agent, leadFilter.search, leadFilter.source, leadFilter.sort, leadFilter.stage, leadTypeView, records.contacts, records.leads, records.tasks])
+
+  useEffect(() => {
+    setLeadTablePage(1)
+  }, [leadFilter.agent, leadFilter.search, leadFilter.source, leadFilter.sort, leadFilter.stage, leadTypeView])
+
+  const leadTableTotalPages = Math.max(1, Math.ceil(filteredLeads.length / LEAD_TABLE_PAGE_SIZE))
+  const leadTableCurrentPage = Math.min(leadTablePage, leadTableTotalPages)
+  const leadTableRows = useMemo(() => {
+    const startIndex = (leadTableCurrentPage - 1) * LEAD_TABLE_PAGE_SIZE
+    return filteredLeads.slice(startIndex, startIndex + LEAD_TABLE_PAGE_SIZE)
+  }, [filteredLeads, leadTableCurrentPage])
+  const leadTableStart = filteredLeads.length ? (leadTableCurrentPage - 1) * LEAD_TABLE_PAGE_SIZE + 1 : 0
+  const leadTableEnd = Math.min(filteredLeads.length, leadTableCurrentPage * LEAD_TABLE_PAGE_SIZE)
 
   const canvassingProspectCards = useMemo(() => {
     const categoryValue = leadTypeView === 'seller' ? 'seller' : 'buyer'
@@ -5727,8 +5865,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
           <section className="grid gap-4">
             {!isLeadWorkspaceRoute ? (
-            <article className="min-w-0 overflow-hidden rounded-[26px] border border-[#dfe8f1] bg-white shadow-[0_24px_60px_rgba(24,45,68,0.08)]">
-              <div className="border-b border-[#e6edf5] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-4 py-4 sm:px-5">
+            <article className="min-w-0 overflow-hidden rounded-[24px] border border-[rgba(15,23,42,0.06)] bg-white shadow-[0_18px_50px_rgba(15,23,42,0.05)]">
+              <div className="border-b border-[rgba(15,23,42,0.06)] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-4 py-4 sm:px-5">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div className="min-w-0">
                     <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Lead Pipeline</p>
@@ -5948,23 +6086,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               ) : (
               <>
               <div className="hidden max-w-full overflow-x-auto lg:block">
-                <table className="w-full min-w-[1080px] table-fixed text-sm">
-                  <thead className="sticky top-0 z-[1] bg-[#f7faff] text-left text-[0.68rem] uppercase tracking-[0.12em] text-[#6f839a] shadow-[0_1px_0_#e6edf5]">
+                <table className="w-full min-w-[1516px] table-fixed text-sm">
+                  <thead className="sticky top-0 z-[1] h-[52px] border-b border-[rgba(15,23,42,0.06)] bg-[#FCFCFD] text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                     <tr>
-	                      <th className="w-[14%] px-4 py-3">Lead</th>
-	                      <th className="w-[15%] px-4 py-3">Contact</th>
-	                      <th className="w-[17%] px-4 py-3">Interested Listing</th>
-	                      <th className="w-[10%] px-4 py-3">Source</th>
-	                      <th className="w-[11%] px-4 py-3">Stage</th>
-	                      <th className="w-[13%] px-4 py-3">Next Step</th>
-	                      <th className="w-[11%] px-4 py-3">Owner</th>
-	                      <th className="w-[7%] px-4 py-3">Activity</th>
-	                      <th className="w-[7%] px-4 py-3 text-right">Actions</th>
+                      <th className="w-[56px] px-5 py-4"><span className="sr-only">Select</span></th>
+                      <th className="w-[360px] px-5 py-4">Lead</th>
+                      <th className="w-[300px] px-5 py-4">Opportunity</th>
+                      <th className="w-[160px] px-5 py-4">Status</th>
+                      <th className="w-[260px] px-5 py-4">Next Action</th>
+                      <th className="w-[180px] px-5 py-4">Owner</th>
+                      <th className="w-[140px] px-5 py-4">Activity</th>
+                      <th className="w-[60px] px-5 py-4 text-right"><span className="sr-only">Menu</span></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#edf2f7]">
-                    {filteredLeads.length ? (
-                      filteredLeads.map((lead) => {
+                  <tbody className="divide-y divide-[rgba(15,23,42,0.06)] bg-white">
+                    {leadTableRows.length ? (
+                      leadTableRows.map((lead) => {
                         const leadContact =
                           contactById.get(normalizeText(lead.contactId)) ||
                           buildLeadContactFallback(lead) ||
@@ -5978,11 +6115,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           .sort((a, b) => new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0))[0]
                         const leadTasks = leadTasksByLeadId.get(leadId) || []
                         const leadActivities = leadActivitiesByLeadId.get(leadId) || []
-                        const linkedListingLabel = normalizeText(lead?.listingId || lead?.propertyInterest || lead?.sellerPropertyAddress)
                         const isSeller = normalizeText(lead?.leadCategory).toLowerCase() === 'seller'
-                        const interestedListing = isSeller
-                          ? linkedListingLabel || 'Property not linked yet'
-                          : linkedListingLabel || normalizeText(linkedTransaction?.title) || 'No listing selected yet'
                         const funnelStage = resolveLeadFunnelStage(lead)
                         const nextStep = resolveLeadNextStep(lead, leadTasks)
                         const latestActivity = [...leadActivities]
@@ -5992,106 +6125,153 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const assignedAgent = normalizeText(lead?.assignedAgentName || lead?.assignedAgentEmail || 'Unassigned')
                         const agentColor = getAgentKanbanColor(lead?.assignedAgentId || lead?.assignedAgentEmail || assignedAgent)
                         const leadName = [leadContact?.firstName, leadContact?.lastName].filter(Boolean).join(' ') || 'Unnamed lead'
-                        const nextStepStatus = getNextStepStatus(leadTasks)
                         const isActive = normalizeLeadIdentityKey(selectedLeadId) === leadId && isLeadWorkspaceRoute
+                        const categoryMeta = getLeadCategoryMeta(lead, leadContact)
+                        const statusMeta = getLeadStatusMeta(lead, funnelStage)
+                        const opportunity = getLeadOpportunityPreview(lead, linkedTransaction, isSeller)
+                        const actionMeta = getLeadNextActionMeta(lead, leadTasks, linkedAppointment, nextStep)
+                        const latestActivityTitle = normalizeText(latestActivity?.activityType || latestActivity?.activityNote || linkedAppointment?.title)
 
                         return (
                           <tr
                             key={lead.leadId}
-                            className={`group cursor-pointer text-[#2d4560] transition duration-150 hover:bg-[#f8fbff] ${isActive ? 'bg-[#eef6ff]' : 'bg-white'}`}
+                            className={`group h-[112px] cursor-pointer text-slate-700 transition-all duration-200 hover:bg-slate-50/70 hover:shadow-sm ${isActive ? 'bg-[#f2f7ff]' : 'bg-white'}`}
                             onClick={() => {
                               setSelectedLeadId(lead.leadId)
                               navigate(`/pipeline/leads/${lead.leadId}`)
                             }}
                           >
-	                            <td className="px-4 py-4">
-                                <div className="flex min-w-0 items-center gap-3">
-                                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[0.76rem] font-bold text-white shadow-[0_8px_18px_rgba(24,45,68,0.14)]" style={{ backgroundColor: agentColor }}>
-                                    {getInitials(leadName)}
-                                  </span>
-                                  <div className="min-w-0">
-	                                  <span className="block truncate font-semibold text-[#172b3f]">{leadName}</span>
-                                    <span className="mt-1 inline-flex rounded-full border border-[#dfe8f2] bg-[#f8fbff] px-2 py-0.5 text-[0.64rem] font-bold uppercase tracking-[0.08em] text-[#6f839a]">
-                                      {lead.leadCategory || 'Lead'}
+                            <td className="px-5 py-5 align-middle" onClick={(event) => event.stopPropagation()}>
+                              <input type="checkbox" className="h-4 w-4 rounded-[5px] border-slate-300 text-[#2563eb] shadow-sm focus:ring-2 focus:ring-[#dbeafe]" aria-label={`Select ${leadName}`} />
+                            </td>
+                            <td className="px-5 py-5 align-middle">
+                              <div className="flex min-w-0 items-start gap-3.5">
+                                <span
+                                  className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-[0.78rem] font-bold text-white shadow-[0_10px_22px_rgba(24,45,68,0.14)] ring-1 ring-white/70"
+                                  style={{ backgroundImage: `linear-gradient(135deg, ${agentColor}, #1f4f78)` }}
+                                >
+                                  {getInitials(leadName)}
+                                </span>
+                                <div className="min-w-0">
+                                  <p className="truncate text-[16px] font-semibold leading-6 text-slate-900">{leadName}</p>
+                                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-[0.08em] ${categoryMeta.className}`}>
+                                      {categoryMeta.label}
                                     </span>
                                   </div>
+                                  <div className="mt-2 grid min-w-0 gap-1 text-[13px] font-medium text-slate-500">
+                                    <span className="flex min-w-0 items-center gap-1.5">
+                                      <Phone size={13} className="shrink-0 text-slate-400" />
+                                      <span className="truncate">{leadContact?.phone || 'No phone'}</span>
+                                    </span>
+                                    <span className="flex min-w-0 items-center gap-1.5">
+                                      <Mail size={13} className="shrink-0 text-slate-400" />
+                                      <span className="truncate">{leadContact?.email || 'No email'}</span>
+                                    </span>
+                                  </div>
+                                  <p className="mt-2 truncate text-[0.72rem] font-medium text-slate-400">
+                                    {lead.leadSource || 'Manual'} • {formatDateShort(lead?.createdAt)}
+                                  </p>
                                 </div>
-	                            </td>
-	                            <td className="px-4 py-4">
-	                              <p className="truncate font-medium text-[#263f58]">{leadContact?.phone || '—'}</p>
-	                              <p className="truncate text-xs text-[#7b8ca2]">{leadContact?.email || 'No email'}</p>
-	                            </td>
-	                            <td className="px-4 py-4">
-	                              <span className="line-clamp-2 break-words text-[#4f6782]">{interestedListing}</span>
-	                            </td>
-	                            <td className="px-4 py-4">
-                                <span className="inline-flex rounded-full border border-[#dfe8f2] bg-white px-2.5 py-1 text-[0.7rem] font-semibold text-[#405b75]">
-                                  {lead.leadSource || '—'}
-                                </span>
-                              </td>
-                            <td className="px-4 py-4">
-                              <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${getLeadStageTone(funnelStage)}`}>
-                                {funnelStage}
-                              </span>
-                            </td>
-                            <td className="px-4 py-4">
-	                              <span className="line-clamp-2 break-words font-medium text-[#344d66]">{nextStep}</span>
-                                <span className={`mt-1 inline-flex items-center gap-1.5 text-[0.68rem] font-semibold ${nextStepStatus.text}`}>
-                                  <span className={`h-1.5 w-1.5 rounded-full ${nextStepStatus.tone}`} />
-                                  {nextStepStatus.label}
-                                </span>
-	                            </td>
-	                            <td className="px-4 py-4">
-                                <div className="flex min-w-0 items-center gap-2">
-                                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[0.66rem] font-bold text-white" style={{ backgroundColor: agentColor }}>
-                                    {getInitials(assignedAgent)}
-                                  </span>
-                                  <span className="line-clamp-2 break-words font-medium text-[#344d66]">{assignedAgent}</span>
-                                </div>
-                              </td>
-	                            <td className="px-4 py-4"><span className="line-clamp-2 text-[#60758b]">{lastActivityLabel}</span></td>
-	                            <td className="px-4 py-4">
-	                              <div className="flex items-center justify-end gap-1.5 opacity-90 transition group-hover:opacity-100" onClick={(event) => event.stopPropagation()}>
-                                <button
-                                  type="button"
-                                  className="rounded-full border border-[#dce6f2] bg-white px-3 py-1.5 text-[0.7rem] font-semibold text-[#35546c] shadow-sm transition hover:border-[#c5d7ea] hover:bg-[#f8fbff]"
-                                  onClick={() => {
-                                    setSelectedLeadId(lead.leadId)
-                                    navigate(`/pipeline/leads/${lead.leadId}`)
-                                  }}
-                                >
-                                  Open
-                                </button>
-                                <button
-                                  type="button"
-                                  className="rounded-full border border-[#ead5d2] bg-[#fff8f8] px-3 py-1.5 text-[0.7rem] font-semibold text-[#8a3a33] transition hover:bg-[#fff3f1]"
-                                  onClick={() => openArchiveLeadModal(lead.leadId)}
-                                >
-                                  Archive
-                                </button>
                               </div>
+                            </td>
+                            <td className="px-5 py-5 align-middle">
+                              {opportunity.hasListing ? (
+                                <div className="flex min-w-0 items-center gap-3">
+                                  <div className="grid h-[72px] w-[120px] shrink-0 place-items-center overflow-hidden rounded-[14px] border border-slate-200 bg-slate-100" style={{ backgroundImage: `linear-gradient(135deg, ${agentColor}22, #f8fafc 70%)` }}>
+                                    <Home size={20} className="text-slate-400" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold text-slate-900">{opportunity.title}</p>
+                                    <p className="mt-0.5 truncate text-[13px] font-medium text-slate-500">{opportunity.subtitle}</p>
+                                    {opportunity.price ? <p className="mt-2 text-[13px] font-semibold text-[#1f4f78]">{opportunity.price}</p> : null}
+                                    <p className="mt-0.5 truncate text-[12px] font-medium text-slate-400">{opportunity.specs || 'Property details pending'}</p>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex min-w-0 items-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-3 py-3">
+                                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-slate-400 shadow-sm">
+                                    <ImageIcon size={17} />
+                                  </span>
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold text-slate-700">No listing assigned</p>
+                                    <p className="mt-1 inline-flex items-center gap-1 text-[12px] font-semibold text-[#1f4f78]">Assign listing <ArrowUpRight size={12} /></p>
+                                  </div>
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-5 py-5 align-middle">
+                              <div className="space-y-2">
+                                <span className={`inline-flex rounded-full border px-3 py-1.5 text-[0.68rem] font-bold uppercase tracking-[0.08em] ${statusMeta.className}`}>{statusMeta.label}</span>
+                                <div className="flex items-center gap-1" aria-label={`${statusMeta.label} lead score ${statusMeta.score} out of 5`}>
+                                  {Array.from({ length: 5 }).map((_, dotIndex) => (
+                                    <span key={`${lead.leadId}:score:${dotIndex}`} className={`h-2 w-2 rounded-full ${dotIndex < statusMeta.score ? statusMeta.dotClassName : 'bg-slate-200'}`} />
+                                  ))}
+                                </div>
+                                <p className="truncate text-[12px] font-medium text-slate-400">{funnelStage}</p>
+                              </div>
+                            </td>
+                            <td className="px-5 py-5 align-middle">
+                              <div className={`rounded-2xl border p-4 shadow-[0_10px_24px_rgba(15,23,42,0.035)] ${actionMeta.className}`}>
+                                <p className="text-[0.62rem] font-bold uppercase tracking-[0.08em] opacity-75">{actionMeta.eyebrow}</p>
+                                <p className="mt-1 truncate text-sm font-semibold text-slate-900">{actionMeta.title}</p>
+                                <p className="mt-1 text-[0.68rem] font-bold uppercase tracking-[0.08em]">{actionMeta.meta}</p>
+                                <p className="mt-2 line-clamp-2 text-[12px] font-medium leading-5 text-slate-500">{actionMeta.detail}</p>
+                                <span className="mt-3 inline-flex items-center gap-1 text-[12px] font-semibold text-[#1f4f78]">Take action <ArrowUpRight size={12} /></span>
+                              </div>
+                            </td>
+                            <td className="px-5 py-5 align-middle">
+                              <div className="flex min-w-0 items-center gap-2.5">
+                                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[0.72rem] font-bold text-white shadow-sm" style={{ backgroundColor: agentColor }}>{getInitials(assignedAgent)}</span>
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-slate-800">{assignedAgent}</p>
+                                  <p className="mt-0.5 truncate text-[12px] font-medium text-slate-400">Agent</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-5 py-5 align-middle">
+                              <div className="min-w-0">
+                                <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
+                                  <Clock3 size={13} className="shrink-0 text-slate-400" />
+                                  {formatRelativeTime(activityReference)}
+                                </p>
+                                <p className="mt-1 line-clamp-2 text-[12px] font-medium leading-5 text-slate-500">{latestActivityTitle || lastActivityLabel}</p>
+                              </div>
+                            </td>
+                            <td className="px-5 py-5 text-right align-middle">
+                              <button
+                                type="button"
+                                className="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-full border border-transparent bg-transparent text-slate-400 opacity-0 transition-all duration-200 hover:border-slate-200 hover:bg-white hover:text-slate-700 focus:opacity-100 group-hover:opacity-100"
+                                aria-label={`Open actions for ${leadName}`}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  openArchiveLeadModal(lead.leadId)
+                                }}
+                              >
+                                <MoreHorizontal size={17} />
+                              </button>
                             </td>
                           </tr>
                         )
                       })
                     ) : (
                       <tr>
-                        <td className="px-6 py-12" colSpan={9}>
-                          <div className="mx-auto max-w-lg rounded-[24px] border border-dashed border-[#d6e2ef] bg-[#fbfdff] px-6 py-8 text-center">
-                            <div className="mx-auto grid h-12 w-12 place-items-center rounded-[18px] bg-[#edf4fb] text-[#35546c]">
-                              <UserRound size={22} />
+                        <td className="px-6 py-14" colSpan={8}>
+                          <div className="mx-auto max-w-lg rounded-[28px] border border-dashed border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] px-8 py-10 text-center shadow-[0_18px_44px_rgba(15,23,42,0.05)]">
+                            <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#edf4fb] text-[#35546c]">
+                              <UserRound size={24} />
                             </div>
-                            <h4 className="mt-4 text-[1.05rem] font-semibold tracking-[-0.025em] text-[#142132]">
+                            <h4 className="mt-5 text-[1.1rem] font-semibold tracking-[-0.025em] text-slate-900">
                               {leadTypeView === 'seller' ? 'No seller leads yet' : 'No buyer leads yet'}
                             </h4>
-                            <p className="mt-2 text-sm leading-6 text-[#60758b]">
+                            <p className="mt-2 text-sm leading-6 text-slate-500">
                               {leadTypeView === 'seller'
                                 ? 'Create your first seller lead manually or convert a canvassing prospect when they are ready to sell.'
                                 : 'Create your first buyer lead manually or connect listings to start capturing enquiries automatically.'}
                             </p>
                             <button
                               type="button"
-                              className="mt-5 inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[15px] bg-[#163247] px-4 py-2 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(22,50,71,0.18)]"
+                              className="mt-6 inline-flex min-h-[42px] items-center justify-center gap-2 rounded-2xl bg-[#163247] px-4 py-2 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(22,50,71,0.18)]"
                               onClick={() => openLeadForm(leadTypeView)}
                             >
                               <Plus size={15} />
@@ -6103,6 +6283,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     )}
                   </tbody>
                 </table>
+              </div>
+              <div className="hidden items-center justify-center gap-3 border-t border-[rgba(15,23,42,0.06)] bg-[#FCFCFD] px-5 py-4 lg:flex">
+                <button
+                  type="button"
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-45"
+                  disabled={leadTableCurrentPage <= 1}
+                  onClick={() => setLeadTablePage((page) => Math.max(1, page - 1))}
+                >
+                  Previous
+                </button>
+                <p className="min-w-[220px] text-center text-sm font-medium text-slate-500">
+                  {leadTableStart}-{leadTableEnd} of {filteredLeads.length} leads
+                </p>
+                <button
+                  type="button"
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-45"
+                  disabled={leadTableCurrentPage >= leadTableTotalPages}
+                  onClick={() => setLeadTablePage((page) => Math.min(leadTableTotalPages, page + 1))}
+                >
+                  Next
+                </button>
               </div>
               <div className="space-y-3 p-4 lg:hidden">
                 {filteredLeads.length ? (
