@@ -461,10 +461,14 @@ function mapQuickCreateAppointmentToCalendar(row = {}, { organisationId = '', cu
   const dateTime = normalizeText(row?.dateTime || row?.date_time || row?.startTime || row?.startsAt)
   const date = normalizeText(row?.date) || (dateTime ? dateTime.slice(0, 10) : '')
   const startTime = normalizeText(row?.time || row?.start_time) || (dateTime ? dateTime.slice(11, 16) : '')
+  const rowOrganisationId = normalizeText(row?.organisationId || row?.organisation_id)
+  const resolvedOrganisationId = !rowOrganisationId || rowOrganisationId === 'default'
+    ? normalizeText(organisationId)
+    : rowOrganisationId
   if (!appointmentId || (!date && !dateTime)) return null
   return {
     appointmentId,
-    organisationId: normalizeText(row?.organisationId || row?.organisation_id || organisationId) || null,
+    organisationId: resolvedOrganisationId || null,
     assignedAgentId: normalizeText(row?.assignedAgentId || row?.agentId || currentAgent?.id) || null,
     assignedAgentName: normalizeText(row?.assignedAgent || row?.assignedAgentName || currentAgent?.fullName) || null,
     assignedAgentEmail: normalizeText(row?.assignedAgentEmail || row?.agentEmail || currentAgent?.email).toLowerCase() || null,

@@ -1727,16 +1727,30 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
 
   let appointmentRows = []
   let appointmentError = null
-  for (const select of [selectModern, selectLegacy, selectMinimal]) {
-    const result = await buildQuery(select)
-    if (!result.error) {
-      appointmentRows = Array.isArray(result.data) ? result.data : []
-      appointmentError = null
-      break
+  const rpcResult = await supabase.rpc('bridge_list_calendar_appointments', {
+    p_organisation_id: scopedOrganisationId,
+    p_include_all: includeAll === true,
+    p_listing_id: scopedListingId || null,
+    p_from: from || null,
+    p_to: to || null,
+  })
+  if (!rpcResult.error) {
+    appointmentRows = Array.isArray(rpcResult.data) ? rpcResult.data : []
+  } else {
+    if (!['PGRST202', '42883'].includes(normalizeText(rpcResult.error?.code))) {
+      console.warn('[appointments] calendar RPC failed; falling back to direct appointment query.', rpcResult.error)
     }
-    appointmentError = result.error
-    if (!isMissingColumnError(result.error)) {
-      break
+    for (const select of [selectModern, selectLegacy, selectMinimal]) {
+      const result = await buildQuery(select)
+      if (!result.error) {
+        appointmentRows = Array.isArray(result.data) ? result.data : []
+        appointmentError = null
+        break
+      }
+      appointmentError = result.error
+      if (!isMissingColumnError(result.error)) {
+        break
+      }
     }
   }
   if (appointmentError) throw appointmentError
