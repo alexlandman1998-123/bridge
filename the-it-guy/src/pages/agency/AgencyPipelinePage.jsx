@@ -56,6 +56,7 @@ import {
   generateSellerOnboardingToken,
   LISTING_STATUS,
   SELLER_ONBOARDING_STATUS,
+  readAgentPrivateListings,
   updateAgentSellerLead,
   updateSellerWorkflowRecordByToken,
 } from '../../lib/agentListingStorage'
@@ -563,17 +564,53 @@ function buildAppointmentListingLabel(listing = {}) {
   ].filter(Boolean).join(' — ')
 }
 
+function resolveMediaUrl(media = {}) {
+  if (!media || typeof media !== 'object') return ''
+  return normalizeText(media?.url || media?.signedUrl || media?.publicUrl || media?.fileUrl || media?.src)
+}
+
+function resolveListingImageUrl(listing = {}) {
+  const marketing = listing?.marketing && typeof listing.marketing === 'object' ? listing.marketing : {}
+  const propertyDetails = listing?.propertyDetails && typeof listing.propertyDetails === 'object' ? listing.propertyDetails : {}
+  const onboardingFormData =
+    listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
+      ? listing.sellerOnboarding.formData
+      : {}
+  const gallery = [
+    ...(Array.isArray(marketing.imageGallery) ? marketing.imageGallery : []),
+    ...(Array.isArray(listing?.imageGallery) ? listing.imageGallery : []),
+    ...(Array.isArray(onboardingFormData.imageGallery) ? onboardingFormData.imageGallery : []),
+    ...(Array.isArray(listing?.images) ? listing.images : []),
+  ].filter((item) => resolveMediaUrl(item))
+  const coverImageId = normalizeText(marketing.coverImageId || propertyDetails.coverImageId || onboardingFormData.coverImageId || listing?.coverImageId || listing?.cover_image_id)
+  const coverImage =
+    resolveMediaUrl(listing?.coverImage)
+      ? listing.coverImage
+      : gallery.find((item) => normalizeText(item?.id || item?.path) === coverImageId) || gallery[0] || null
+  return normalizeText(marketing.mediaUrl || listing?.mediaUrl || listing?.coverImageUrl || listing?.thumbnailUrl || resolveMediaUrl(coverImage))
+}
+
 function normalizeAppointmentListingOption(listing = {}) {
   const id = normalizeText(listing?.id || listing?.listingId || listing?.listing_id)
   if (!id) return null
   const status = normalizeText(listing?.status || listing?.listingStatus || listing?.lifecycleStatus || listing?.listing_status).toLowerCase()
   if (['archived', 'deleted', 'withdrawn', 'removed'].some((blocked) => status.includes(blocked))) return null
+  const bedrooms = Number(listing?.bedrooms || listing?.propertyDetails?.bedrooms || 0) || 0
+  const bathrooms = Number(listing?.bathrooms || listing?.propertyDetails?.bathrooms || 0) || 0
+  const parking = Number(listing?.garages || listing?.coveredParking || listing?.openParking || listing?.propertyDetails?.garages || listing?.propertyDetails?.coveredParking || listing?.propertyDetails?.openParking || 0) || 0
+  const askingPrice = Number(listing?.askingPrice || listing?.asking_price || listing?.price || listing?.propertyDetails?.price || listing?.estimatedValue || 0) || 0
   return {
     id,
     label: buildAppointmentListingLabel(listing),
     status: status || 'active',
+    title: normalizeText(listing?.listingTitle || listing?.title || listing?.propertyName || listing?.property_name),
     address: normalizeText(listing?.propertyAddress || listing?.address || listing?.addressLine1 || listing?.address_line_1),
     suburb: normalizeText(listing?.suburb),
+    askingPrice,
+    bedrooms,
+    bathrooms,
+    parking,
+    thumbnailUrl: resolveListingImageUrl(listing),
     assignedAgentId: normalizeText(listing?.assignedAgentId || listing?.assigned_agent_id || listing?.agentId || listing?.agent_id),
     assignedAgentEmail: normalizeText(listing?.assignedAgentEmail || listing?.assigned_agent_email || listing?.agentEmail || listing?.agent_email).toLowerCase(),
     createdBy: normalizeText(listing?.createdBy || listing?.created_by),
@@ -874,22 +911,29 @@ function getLeadStatusMeta(lead = {}, funnelStage = '') {
   return { label: 'Cold', score: 2, className: 'border-[#d4e5fb] bg-[#f1f7ff] text-[#2d659a]', dotClassName: 'bg-[#4f82b8]' }
 }
 
-function getLeadOpportunityPreview(lead = {}, linkedTransaction = null, isSeller = false) {
+function getLeadOpportunityPreview(lead = {}, linkedTransaction = null, isSeller = false, linkedListing = null) {
   const listingId = normalizeText(lead?.listingId || lead?.listing_id)
   const transactionTitle = normalizeText(linkedTransaction?.title || linkedTransaction?.transactionReference || linkedTransaction?.propertyAddress)
+  const listingTitle = normalizeText(linkedListing?.title || linkedListing?.label)
   const propertyTitle = normalizeText(lead?.propertyInterest || lead?.sellerPropertyAddress || lead?.areaInterest)
-  const title = transactionTitle || propertyTitle
-  const priceValue = Number(lead?.estimatedValue || lead?.budget || linkedTransaction?.purchasePrice || linkedTransaction?.salesPrice || 0)
-  const area = normalizeText(lead?.areaInterest || lead?.sellerPropertyAddress)
+  const title = transactionTitle || listingTitle || propertyTitle
+  const priceValue = Number(linkedListing?.askingPrice || lead?.estimatedValue || lead?.budget || linkedTransaction?.purchasePrice || linkedTransaction?.salesPrice || 0)
+  const area = normalizeText(linkedListing?.suburb || linkedListing?.address || lead?.areaInterest || lead?.sellerPropertyAddress)
   const propertyType = normalizeText(lead?.propertyInterest)
-  const hasListing = Boolean(listingId || title || linkedTransaction)
+  const listingSpecs = [
+    linkedListing?.bedrooms ? `${linkedListing.bedrooms} Bed` : '',
+    linkedListing?.bathrooms ? `${linkedListing.bathrooms} Bath` : '',
+    linkedListing?.parking ? `${linkedListing.parking} Parking` : '',
+  ].filter(Boolean).join(' • ')
+  const hasListing = Boolean(listingId || linkedListing || title || linkedTransaction)
 
   return {
     hasListing,
     title: title || (isSeller ? 'Seller property' : 'Target property'),
-    subtitle: listingId ? `Listing ${listingId}` : (area || (isSeller ? 'Mandate workspace' : 'Buyer brief')),
+    subtitle: linkedListing?.address || (listingId && !linkedListing ? `Listing ${listingId}` : (area || (isSeller ? 'Mandate workspace' : 'Buyer brief'))),
     price: priceValue > 0 ? formatCurrency(priceValue) : '',
-    specs: [propertyType && propertyType !== title ? propertyType : '', area && area !== title ? area : ''].filter(Boolean).join(' • '),
+    specs: listingSpecs || [propertyType && propertyType !== title ? propertyType : '', area && area !== title ? area : ''].filter(Boolean).join(' • '),
+    thumbnailUrl: normalizeText(linkedListing?.thumbnailUrl),
   }
 }
 
@@ -1787,7 +1831,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       reloadRequestRef.current = requestId
       const snapshot = getAgencyPipelineSnapshot(orgId)
       let mergedSnapshot = snapshot
-      let listingOptionsForAppointments = buildListingOptionsFromLeads(Array.isArray(snapshot?.leads) ? snapshot.leads : [])
+      let listingOptionsForAppointments = dedupeListingOptions([
+        ...buildListingOptionsFromLeads(Array.isArray(snapshot?.leads) ? snapshot.leads : []),
+        ...readAgentPrivateListings().map((listing) => normalizeAppointmentListingOption(listing)).filter(Boolean),
+      ])
       const applySnapshotRecords = (sourceSnapshot, appointmentRows = sourceSnapshot?.appointments || []) => {
         const sourceContacts = Array.isArray(sourceSnapshot?.contacts) ? sourceSnapshot.contacts : []
         const sourceLeads = Array.isArray(sourceSnapshot?.leads) ? sourceSnapshot.leads : []
@@ -3010,6 +3057,41 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     return map
   }, [appointmentListingOptions])
+
+  const appointmentListingByLabel = useMemo(() => {
+    const map = new Map()
+    for (const option of appointmentListingOptions) {
+      const labels = [
+        option?.label,
+        option?.title,
+        option?.address,
+        [option?.title, option?.address].filter(Boolean).join(' — '),
+      ]
+      for (const label of labels) {
+        const key = normalizeKey(label)
+        if (key && !map.has(key)) map.set(key, option)
+      }
+    }
+    return map
+  }, [appointmentListingOptions])
+
+  const resolveLeadLinkedListing = useCallback(
+    (lead = {}) => {
+      const listingId = normalizeText(lead?.listingId || lead?.listing_id)
+      if (listingId && appointmentListingById.has(listingId)) return appointmentListingById.get(listingId)
+      const possibleLabels = [
+        lead?.propertyInterest,
+        lead?.sellerPropertyAddress,
+        [lead?.propertyInterest, lead?.sellerPropertyAddress].filter(Boolean).join(' — '),
+      ]
+      for (const label of possibleLabels) {
+        const match = appointmentListingByLabel.get(normalizeKey(label))
+        if (match) return match
+      }
+      return null
+    },
+    [appointmentListingById, appointmentListingByLabel],
+  )
 
   const resolveAppointmentListingLabel = useCallback(
     (listingId) => {
@@ -5860,7 +5942,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const isActive = normalizeLeadIdentityKey(selectedLeadId) === leadId && isLeadWorkspaceRoute
                         const categoryMeta = getLeadCategoryMeta(lead, leadContact)
                         const statusMeta = getLeadStatusMeta(lead, funnelStage)
-                        const opportunity = getLeadOpportunityPreview(lead, linkedTransaction, isSeller)
+                        const linkedListing = resolveLeadLinkedListing(lead)
+                        const opportunity = getLeadOpportunityPreview(lead, linkedTransaction, isSeller, linkedListing)
                         const actionMeta = getLeadNextActionMeta(lead, leadTasks, linkedAppointment, nextStep)
                         const latestActivityTitle = normalizeText(latestActivity?.activityType || latestActivity?.activityNote || linkedAppointment?.title)
 
@@ -5910,8 +5993,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             <td className="px-5 py-5 align-middle">
                               {opportunity.hasListing ? (
                                 <div className="flex min-w-0 items-center gap-3">
-                                  <div className="grid h-[72px] w-[120px] shrink-0 place-items-center overflow-hidden rounded-[14px] border border-slate-200 bg-slate-100" style={{ backgroundImage: `linear-gradient(135deg, ${agentColor}22, #f8fafc 70%)` }}>
+                                  <div className="relative grid h-[72px] w-[120px] shrink-0 place-items-center overflow-hidden rounded-[14px] border border-slate-200 bg-slate-100" style={{ backgroundImage: `linear-gradient(135deg, ${agentColor}22, #f8fafc 70%)` }}>
                                     <Home size={20} className="text-slate-400" />
+                                    {opportunity.thumbnailUrl ? (
+                                      <img
+                                        src={opportunity.thumbnailUrl}
+                                        alt=""
+                                        loading="lazy"
+                                        className="absolute inset-0 h-full w-full object-cover"
+                                        onError={(event) => {
+                                          event.currentTarget.style.display = 'none'
+                                        }}
+                                      />
+                                    ) : null}
                                   </div>
                                   <div className="min-w-0">
                                     <p className="truncate text-sm font-semibold text-slate-900">{opportunity.title}</p>
