@@ -17,6 +17,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { createAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
+import { createAppointmentAsync } from '../lib/agencyPipelineService'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import Modal from './ui/Modal'
 
@@ -307,6 +308,7 @@ function saveQuickCreateRecord(type, payload) {
     [collectionKey]: [payload, ...(store[collectionKey] || [])],
   }
   window.localStorage.setItem(QUICK_CREATE_STORAGE_KEY, JSON.stringify(nextStore))
+  window.dispatchEvent(new Event('itg:quick-create-updated'))
   return payload
 }
 
@@ -710,21 +712,62 @@ function QuickCreateDropdown({ className = '' }) {
         })
         setFeedback({ kind: 'success', message: 'Prospect saved to quick-create records.' })
       } else if (activeType === 'appointment') {
-        saveQuickCreateRecord('appointment', {
+        const fallbackRecord = {
           id: createRecordId('appointment'),
           organisationId,
           title: normalizeText(form.title),
           appointmentType: normalizeText(form.appointmentType),
+          date: form.date,
+          time: form.time,
           startTime: `${form.date}T${form.time}`,
           location: normalizeText(form.location),
           relatedRecord: normalizeText(form.relatedRecord),
-          assignedAgent: normalizeText(form.assignedAgent),
+          assignedAgent: normalizeText(form.assignedAgent) || actor.name,
+          assignedAgentId: actor.id,
+          assignedAgentEmail: actor.email,
           notes: normalizeText(form.notes),
-          status: 'scheduled',
+          status: 'requested',
           workspacePath: location.pathname,
           createdAt,
-        })
-        setFeedback({ kind: 'success', message: 'Appointment saved to quick-create records.' })
+        }
+        try {
+          const createdAppointment = await createAppointmentAsync(
+            organisationId,
+            {
+              title: fallbackRecord.title || fallbackRecord.appointmentType || 'Appointment',
+              appointmentType: fallbackRecord.appointmentType,
+              date: form.date,
+              startTime: form.time,
+              locationType: 'physical_address',
+              location: fallbackRecord.location,
+              status: 'requested',
+              notes: [
+                fallbackRecord.relatedRecord ? `Related record: ${fallbackRecord.relatedRecord}` : '',
+                fallbackRecord.notes,
+              ].filter(Boolean).join('\n'),
+              assignedAgent: {
+                id: actor.id,
+                name: fallbackRecord.assignedAgent,
+                email: actor.email,
+              },
+              sendInviteEmails: false,
+              attachCalendarInvite: false,
+            },
+            { actor },
+          )
+          saveQuickCreateRecord('appointment', {
+            ...fallbackRecord,
+            appointmentId: createdAppointment?.appointmentId || fallbackRecord.id,
+            source: 'appointment_module',
+          })
+          setFeedback({ kind: 'success', message: 'Appointment created and added to the calendar.' })
+        } catch {
+          saveQuickCreateRecord('appointment', {
+            ...fallbackRecord,
+            source: 'quick_create_fallback',
+          })
+          setFeedback({ kind: 'success', message: 'Appointment saved locally and will appear on the calendar.' })
+        }
       }
 
       setForm({

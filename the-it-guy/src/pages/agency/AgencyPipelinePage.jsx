@@ -76,6 +76,7 @@ import {
   resolveDocumentPacketStatus,
 } from '../../core/documents/packetStatusResolver'
 import { getAppointmentTypeLabel, getAppointmentTypeOptions } from '../../lib/appointmentTypeDefinitions'
+import { readViewingRequests } from '../../lib/viewingWorkflow'
 import {
   applyAppointmentTemplate,
   getAppointmentRequiredPrep,
@@ -91,6 +92,7 @@ const CANVASSING_STORAGE_PREFIX = 'itg:agency-canvassing:v1'
 const CANVASSING_UPDATED_EVENT = 'itg:agency-canvassing-updated'
 const CANVASSING_KANBAN_CARD_PREFIX = 'canvassing_prospect:'
 const LEAD_WORKSPACE_MAX_RETRIES = 10
+const QUICK_CREATE_STORAGE_KEY = 'bridge:quick-create-records:v1'
 
 function withPipelineTimeout(task, message, timeoutMs = PIPELINE_CONTEXT_TIMEOUT_MS) {
   let timeoutId = null
@@ -401,6 +403,157 @@ function buildListingOptionsFromLeads(leads = []) {
     }))
   }
   return options.filter(Boolean)
+}
+
+function readQuickCreateAppointments() {
+  if (typeof window === 'undefined') return []
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(QUICK_CREATE_STORAGE_KEY) || '{}')
+    return Array.isArray(parsed?.appointments) ? parsed.appointments : []
+  } catch {
+    return []
+  }
+}
+
+function mapLocalStatusToAppointmentStatus(value = '') {
+  const normalized = normalizeKey(value).replace(/\s+/g, '_')
+  if (normalized === 'scheduled') return 'confirmed'
+  if (normalized === 'pending_approval' || normalized === 'viewing_requested') return 'requested'
+  if (normalized === 'reschedule_requested') return 'alternative_requested'
+  if (normalized === 'no_show') return 'no_show'
+  return APPOINTMENT_STATUSES.includes(normalized) ? normalized : 'requested'
+}
+
+function buildAgentLookupKeys(agent = {}) {
+  return [
+    agent?.id,
+    agent?.userId,
+    agent?.email,
+    agent?.fullName,
+    agent?.name,
+  ].map((value) => normalizeKey(value)).filter(Boolean)
+}
+
+function appointmentBelongsToAgent(appointment = {}, agent = {}) {
+  const agentKeys = new Set(buildAgentLookupKeys(agent))
+  if (!agentKeys.size) return false
+  const appointmentKeys = [
+    appointment?.assignedAgentId,
+    appointment?.assignedAgentEmail,
+    appointment?.assignedAgentName,
+    appointment?.agentId,
+    appointment?.agentEmail,
+    appointment?.createdBy,
+    appointment?.createdById,
+    ...(Array.isArray(appointment?.participants)
+      ? appointment.participants.flatMap((participant) => [
+          participant?.userId,
+          participant?.email,
+          participant?.name,
+        ])
+      : []),
+  ].map((value) => normalizeKey(value)).filter(Boolean)
+  return appointmentKeys.some((key) => agentKeys.has(key))
+}
+
+function mapQuickCreateAppointmentToCalendar(row = {}, { organisationId = '', currentAgent = {} } = {}) {
+  const appointmentId = normalizeText(row?.appointmentId || row?.appointment_id || row?.id)
+  const dateTime = normalizeText(row?.dateTime || row?.date_time || row?.startTime || row?.startsAt)
+  const date = normalizeText(row?.date) || (dateTime ? dateTime.slice(0, 10) : '')
+  const startTime = normalizeText(row?.time || row?.start_time) || (dateTime ? dateTime.slice(11, 16) : '')
+  if (!appointmentId || (!date && !dateTime)) return null
+  return {
+    appointmentId,
+    organisationId: normalizeText(row?.organisationId || row?.organisation_id || organisationId) || null,
+    assignedAgentId: normalizeText(row?.assignedAgentId || row?.agentId || currentAgent?.id) || null,
+    assignedAgentName: normalizeText(row?.assignedAgent || row?.assignedAgentName || currentAgent?.fullName) || null,
+    assignedAgentEmail: normalizeText(row?.assignedAgentEmail || row?.agentEmail || currentAgent?.email).toLowerCase() || null,
+    appointmentType: normalizeText(row?.appointmentType || row?.appointment_type) || 'other',
+    title: normalizeText(row?.title) || getAppointmentTypeLabel(row?.appointmentType || 'other'),
+    date: date || null,
+    startTime: startTime || null,
+    endTime: normalizeText(row?.endTime || row?.end_time) || null,
+    dateTime: dateTime || (date ? `${date}T${startTime || '00:00'}` : null),
+    location: normalizeText(row?.location),
+    notes: normalizeText(row?.notes),
+    status: mapLocalStatusToAppointmentStatus(row?.status),
+    relatedEntityType: normalizeText(row?.relatedEntityType || row?.related_entity_type || (row?.relatedRecord ? 'quick_create' : 'none')),
+    relatedEntityId: normalizeText(row?.relatedEntityId || row?.related_entity_id || row?.relatedRecord) || null,
+    createdBy: normalizeText(row?.createdBy || row?.createdById || currentAgent?.id) || null,
+    createdAt: row?.createdAt || row?.created_at || new Date().toISOString(),
+    updatedAt: row?.updatedAt || row?.updated_at || row?.createdAt || row?.created_at || new Date().toISOString(),
+    source: normalizeText(row?.source) || 'quick_create',
+    participants: [],
+  }
+}
+
+function mapViewingRequestToCalendarAppointment(row = {}, { organisationId = '', currentAgent = {} } = {}) {
+  const viewingId = normalizeText(row?.viewing_id || row?.viewingId || row?.id)
+  if (!viewingId) return null
+  const date = normalizeText(row?.proposed_date || row?.proposedDate)
+  const startTime = normalizeText(row?.proposed_time || row?.proposedTime)
+  if (!date && !startTime) return null
+  const agentParticipant = (Array.isArray(row?.participants) ? row.participants : [])
+    .find((participant) => normalizeKey(participant?.role) === 'agent')
+  return {
+    appointmentId: `viewing:${viewingId}`,
+    organisationId: normalizeText(row?.organisationId || row?.organisation_id || organisationId) || null,
+    assignedAgentId: normalizeText(row?.agent_id || row?.agentId || currentAgent?.id) || null,
+    assignedAgentName: normalizeText(row?.agentName || agentParticipant?.name || currentAgent?.fullName) || null,
+    assignedAgentEmail: normalizeText(row?.agentEmail || currentAgent?.email).toLowerCase() || null,
+    appointmentType: 'viewing',
+    title: `Viewing: ${normalizeText(row?.listing_title || row?.listingTitle) || 'Listing'}`,
+    date: date || null,
+    startTime: startTime || null,
+    endTime: null,
+    dateTime: date ? `${date}T${startTime || '00:00'}` : null,
+    location: normalizeText(row?.location),
+    notes: normalizeText(row?.notes),
+    status: mapLocalStatusToAppointmentStatus(row?.status),
+    leadId: normalizeText(row?.buyer_lead_id || row?.buyerLeadId) || null,
+    listingId: normalizeText(row?.listing_id || row?.listingId) || null,
+    relatedEntityType: 'viewing_request',
+    relatedEntityId: viewingId,
+    createdBy: normalizeText(row?.created_by || row?.createdBy || currentAgent?.id) || null,
+    createdAt: row?.created_at || row?.createdAt || new Date().toISOString(),
+    updatedAt: row?.updated_at || row?.updatedAt || row?.created_at || row?.createdAt || new Date().toISOString(),
+    source: 'viewing_request',
+    participants: (Array.isArray(row?.participants) ? row.participants : []).map((participant) => ({
+      participantId: normalizeText(participant?.participant_id || participant?.participantId),
+      name: normalizeText(participant?.name),
+      participantRole: normalizeText(participant?.role),
+      rsvpStatus: normalizeText(participant?.response_status),
+    })),
+  }
+}
+
+function mergeCalendarAppointmentRows(remoteRows = [], localRows = []) {
+  const byId = new Map()
+  for (const row of [...remoteRows, ...localRows]) {
+    const id = normalizeText(row?.appointmentId || row?.appointment_id || row?.id)
+    if (!id) continue
+    if (!byId.has(id)) {
+      byId.set(id, row)
+      continue
+    }
+    const existing = byId.get(id)
+    const existingIsLocal = normalizeText(existing?.source)
+    const rowIsRemote = !normalizeText(row?.source)
+    if (existingIsLocal && rowIsRemote) byId.set(id, row)
+  }
+  return Array.from(byId.values())
+}
+
+function buildLocalCalendarAppointments({ organisationId = '', currentAgent = {}, includeAll = false } = {}) {
+  const quickAppointments = readQuickCreateAppointments()
+    .map((row) => mapQuickCreateAppointmentToCalendar(row, { organisationId, currentAgent }))
+    .filter(Boolean)
+  const viewingAppointments = readViewingRequests()
+    .map((row) => mapViewingRequestToCalendarAppointment(row, { organisationId, currentAgent }))
+    .filter(Boolean)
+  const rows = [...quickAppointments, ...viewingAppointments]
+  if (includeAll) return rows
+  return rows.filter((row) => appointmentBelongsToAgent(row, currentAgent))
 }
 
 function dedupeListingOptions(options = []) {
@@ -1384,6 +1537,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       } catch (appointmentLoadError) {
         console.warn('[PIPELINE] appointment load failed; continuing without appointment rows.', appointmentLoadError)
       }
+      appointmentRows = mergeCalendarAppointmentRows(
+        appointmentRows,
+        buildLocalCalendarAppointments({ organisationId: orgId, currentAgent, includeAll: isPrincipal }),
+      )
 
       if (requestId !== reloadRequestRef.current) return
       setAppointmentListingOptions(dedupeListingOptions([
@@ -1520,8 +1677,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       scheduleRecordsReload(organisationId)
     }
     window.addEventListener(eventName, handler)
+    window.addEventListener('itg:quick-create-updated', handler)
+    window.addEventListener('itg:viewings-updated', handler)
     return () => {
       window.removeEventListener(eventName, handler)
+      window.removeEventListener('itg:quick-create-updated', handler)
+      window.removeEventListener('itg:viewings-updated', handler)
     }
   }, [organisationId, scheduleRecordsReload])
 
