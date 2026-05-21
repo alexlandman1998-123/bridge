@@ -94,6 +94,72 @@ const CANVASSING_UPDATED_EVENT = 'itg:agency-canvassing-updated'
 const CANVASSING_KANBAN_CARD_PREFIX = 'canvassing_prospect:'
 const LEAD_WORKSPACE_MAX_RETRIES = 10
 const QUICK_CREATE_STORAGE_KEY = 'bridge:quick-create-records:v1'
+const APPOINTMENT_CATEGORY_CONFIG = {
+  viewing: {
+    label: 'Viewing',
+    background: '#f0f7ff',
+    border: '#bfdbfe',
+    accent: '#2f6fb3',
+    text: '#1f4f78',
+    badgeBackground: '#e2f0ff',
+  },
+  seller_consultation: {
+    label: 'Seller Consultation',
+    background: '#fff8eb',
+    border: '#f3d59a',
+    accent: '#b7791f',
+    text: '#805317',
+    badgeBackground: '#fff0cf',
+  },
+  buyer_consultation: {
+    label: 'Buyer Consultation',
+    background: '#effaf3',
+    border: '#bfe7cc',
+    accent: '#2f855a',
+    text: '#256348',
+    badgeBackground: '#dcf5e5',
+  },
+  signing: {
+    label: 'Signing Appointment',
+    background: '#f6f1ff',
+    border: '#d8c7f5',
+    accent: '#7856b8',
+    text: '#5b3c93',
+    badgeBackground: '#eee4ff',
+  },
+  valuation: {
+    label: 'Valuation',
+    background: '#eefbfb',
+    border: '#b8e2e1',
+    accent: '#248a8a',
+    text: '#1f6667',
+    badgeBackground: '#d9f4f3',
+  },
+  media: {
+    label: 'Photos / Media',
+    background: '#fff3f2',
+    border: '#f3c4bd',
+    accent: '#c45a44',
+    text: '#95402f',
+    badgeBackground: '#ffe4df',
+  },
+  general: {
+    label: 'General Appointment',
+    background: '#f6f8fb',
+    border: '#d8e2ee',
+    accent: '#60758d',
+    text: '#3d5368',
+    badgeBackground: '#edf2f7',
+  },
+  other: {
+    label: 'Other / Unknown',
+    background: '#f8f7fb',
+    border: '#ddd8e8',
+    accent: '#756b8f',
+    text: '#554b6b',
+    badgeBackground: '#eeebf5',
+  },
+}
 
 function withPipelineTimeout(task, message, timeoutMs = PIPELINE_CONTEXT_TIMEOUT_MS) {
   let timeoutId = null
@@ -242,6 +308,68 @@ function normalizeText(value) {
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function normalizeAppointmentCategorySignal(value) {
+  return normalizeKey(value)
+    .replace(/[_-]+/g, ' ')
+    .replace(/[^a-z0-9\s/]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function resolveAppointmentCategoryKey(appointment = {}) {
+  const primaryType = normalizeAppointmentCategorySignal(appointment?.appointmentType || appointment?.appointment_type)
+  const title = normalizeAppointmentCategorySignal(appointment?.title)
+  const customType = normalizeAppointmentCategorySignal(appointment?.customTypeLabel || appointment?.custom_type_label)
+  const source = normalizeAppointmentCategorySignal(appointment?.source)
+  const related = normalizeAppointmentCategorySignal(
+    [
+      appointment?.category,
+      appointment?.appointmentCategory,
+      appointment?.relatedEntityType,
+      appointment?.related_entity_type,
+      appointment?.linkedWorkflow,
+      appointment?.linked_workflow,
+      appointment?.linkedWorkflowStage,
+      appointment?.linked_workflow_stage,
+      appointment?.completionBehavior,
+      appointment?.completion_behavior,
+    ].filter(Boolean).join(' '),
+  )
+  const label = normalizeAppointmentCategorySignal(getAppointmentTypeLabel(primaryType) || appointment?.appointmentTypeLabel)
+  const signal = [primaryType, customType, label, title, source, related].filter(Boolean).join(' ')
+
+  if (/(viewing|property viewing|viewing request|showing|show day|open house)/.test(signal)) return 'viewing'
+  if (/(seller consultation|seller consult|seller meeting|seller lead|mandate consultation|mandate meeting)/.test(signal)) return 'seller_consultation'
+  if (/(buyer consultation|buyer consult|buyer meeting|buyer lead|buyer appointment)/.test(signal)) return 'buyer_consultation'
+  if (/(signing|signature|sign |otp|offer to purchase|document signing|mandate signing|contract signing)/.test(signal)) return 'signing'
+  if (/(valuation|appraisal|market appraisal|cma|comparative market analysis|price opinion)/.test(signal)) return 'valuation'
+  if (/(photo|photos|photography|media|video|virtual tour|floor plan|floorplan|property photos)/.test(signal)) return 'media'
+  if (primaryType === 'other' || primaryType === 'unknown' || /\b(other|unknown|misc)\b/.test(signal)) return 'other'
+  return 'general'
+}
+
+function getAppointmentCategory(appointment = {}) {
+  const key = resolveAppointmentCategoryKey(appointment)
+  return APPOINTMENT_CATEGORY_CONFIG[key] || APPOINTMENT_CATEGORY_CONFIG.general
+}
+
+function getAppointmentCategoryCardStyle(appointment = {}) {
+  const category = getAppointmentCategory(appointment)
+  return {
+    backgroundColor: category.background,
+    borderColor: category.border,
+    borderLeftColor: category.accent,
+  }
+}
+
+function getAppointmentCategoryBadgeStyle(appointment = {}) {
+  const category = getAppointmentCategory(appointment)
+  return {
+    backgroundColor: category.badgeBackground,
+    color: category.text,
+  }
 }
 
 function isUuidLike(value) {
@@ -5339,21 +5467,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       <div className="space-y-1">
                         {shownRows.map((appointment) => {
                           const listingLabel = resolveAppointmentListingLabel(appointment?.listingId)
+                          const category = getAppointmentCategory(appointment)
                           return (
                             <button
                               key={appointment.appointmentId}
                               type="button"
                               onClick={() => handleOpenAppointmentModal(appointment)}
-                              className="w-full rounded-[8px] border border-[#dce6f2] bg-[#f8fbff] px-2 py-1 text-left transition hover:border-[#c5d7ea]"
+                              className="w-full rounded-[8px] border border-l-[4px] px-2 py-1 text-left shadow-[0_6px_14px_rgba(31,54,78,0.035)] transition hover:brightness-[0.985]"
+                              style={getAppointmentCategoryCardStyle(appointment)}
                             >
                               <p className="truncate text-[0.68rem] font-semibold text-[#203a52]">{formatAppointmentTimeRange(appointment)}</p>
-                              <p className="truncate text-[0.66rem] text-[#5f748d]">{appointment.title || getAppointmentTypeLabel(appointment.appointmentType)}</p>
+                              <div className="mt-1 flex flex-wrap items-center gap-1">
+                                <span
+                                  className="inline-flex rounded-full px-1.5 py-0.5 text-[0.56rem] font-semibold uppercase tracking-[0.055em]"
+                                  style={getAppointmentCategoryBadgeStyle(appointment)}
+                                >
+                                  {category.label}
+                                </span>
+                                <span className="inline-flex rounded-full bg-white/80 px-1.5 py-0.5 text-[0.56rem] font-semibold uppercase tracking-[0.055em] text-[#315a7a]">
+                                  {APPOINTMENT_STATUS_LABELS[appointment.status] || appointment.status || 'Requested'}
+                                </span>
+                              </div>
+                              <p className="mt-1 truncate text-[0.66rem] text-[#5f748d]">{appointment.title || getAppointmentTypeLabel(appointment.appointmentType)}</p>
                               {listingLabel ? (
                                 <p className="truncate text-[0.62rem] text-[#6d8299]">{listingLabel}</p>
                               ) : null}
-                              <span className="mt-1 inline-flex rounded-full bg-white px-1.5 py-0.5 text-[0.58rem] font-semibold uppercase tracking-[0.06em] text-[#315a7a]">
-                                {APPOINTMENT_STATUS_LABELS[appointment.status] || appointment.status || 'Requested'}
-                              </span>
                               <p className="truncate text-[0.62rem] text-[#7a8fa5]">
                                 {(appointment.participants || []).filter((person) => person?.rsvpStatus === 'Accepted').length} accepted · {(appointment.participants || []).filter((person) => person?.rsvpStatus !== 'Accepted').length} pending
                               </p>
@@ -5387,13 +5525,26 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     {calendarAgendaAppointments.map((appointment) => {
                       const parsedDate = parseAppointmentDate(appointment)
                       const listingLabel = resolveAppointmentListingLabel(appointment?.listingId)
+                      const category = getAppointmentCategory(appointment)
                       return (
                         <button
                           key={`agenda:${appointment.appointmentId}`}
                           type="button"
                           onClick={() => handleOpenAppointmentModal(appointment)}
-                          className="min-w-0 rounded-[12px] border border-[#dce6f2] bg-white px-3 py-2 text-left transition hover:border-[#c5d7ea] hover:bg-[#f8fbff]"
+                          className="min-w-0 rounded-[12px] border border-l-[4px] px-3 py-2 text-left shadow-[0_8px_18px_rgba(31,54,78,0.035)] transition hover:brightness-[0.985]"
+                          style={getAppointmentCategoryCardStyle(appointment)}
                         >
+                          <div className="mb-1.5 flex flex-wrap items-center gap-1">
+                            <span
+                              className="inline-flex rounded-full px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-[0.06em]"
+                              style={getAppointmentCategoryBadgeStyle(appointment)}
+                            >
+                              {category.label}
+                            </span>
+                            <span className="inline-flex rounded-full bg-white/80 px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-[0.06em] text-[#315a7a]">
+                              {APPOINTMENT_STATUS_LABELS[appointment.status] || appointment.status || 'Requested'}
+                            </span>
+                          </div>
                           <p className="truncate text-xs font-semibold text-[#203a52]">
                             {appointment.title || getAppointmentTypeLabel(appointment.appointmentType)}
                           </p>
