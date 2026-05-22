@@ -2382,11 +2382,13 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
     },
     { organisationId: scopedOrganisationId },
   )
-  const scheduleChanged =
+  const appointmentTimingChanged =
     normalizeText(current?.date) !== normalizeText(merged?.date) ||
     normalizeText(current?.startTime) !== normalizeText(merged?.startTime) ||
     normalizeText(current?.endTime) !== normalizeText(merged?.endTime) ||
-    normalizeText(current?.dateTime) !== normalizeText(merged?.dateTime) ||
+    normalizeText(current?.dateTime) !== normalizeText(merged?.dateTime)
+  const scheduleChanged =
+    appointmentTimingChanged ||
     normalizeText(current?.location) !== normalizeText(merged?.location) ||
     normalizeText(current?.status) !== normalizeText(merged?.status)
   if (scheduleChanged) {
@@ -2527,46 +2529,27 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
   }
   await runAppointmentNotificationTask('appointment_updated', async () => {
     const currentStatus = normalizeLowerText(updatedRecord?.status)
-    await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_updated', {
-      visibility: updatedRecord.visibility,
-      metadata: {
-        source: 'updateAppointmentAsync',
-        listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
-        listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
-      },
-    })
+    const notificationMetadata = {
+      source: 'updateAppointmentAsync',
+      listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
+      listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
+    }
     if (currentStatus.includes('cancel') || currentStatus.includes('declin')) {
       await cancelAppointmentReminders(updatedRecord.appointmentId)
       await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_cancelled', {
         visibility: updatedRecord.visibility,
-        metadata: {
-          source: 'updateAppointmentAsync',
-          listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
-          listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
-        },
+        metadata: notificationMetadata,
       })
       return
     }
     if (currentStatus.includes('complete')) {
       await cancelAppointmentReminders(updatedRecord.appointmentId)
-      await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_completed', {
-        visibility: updatedRecord.visibility,
-        metadata: {
-          source: 'updateAppointmentAsync',
-          listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
-          listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
-        },
-      })
       return
     }
     if (currentStatus.includes('confirm')) {
       await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_confirmed', {
         visibility: updatedRecord.visibility,
-        metadata: {
-          source: 'updateAppointmentAsync',
-          listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
-          listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
-        },
+        metadata: notificationMetadata,
       })
       return
     }
@@ -2585,14 +2568,16 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
     if (currentStatus.includes('reschedule') || currentStatus.includes('proposed')) {
       await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_rescheduled', {
         visibility: updatedRecord.visibility,
-        metadata: {
-          source: 'updateAppointmentAsync',
-          listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
-          listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
-        },
+        metadata: notificationMetadata,
       })
       await scheduleAppointmentReminders(updatedRecord.appointmentId)
       return
+    }
+    if (appointmentTimingChanged) {
+      await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_updated', {
+        visibility: updatedRecord.visibility,
+        metadata: notificationMetadata,
+      })
     }
     await scheduleAppointmentReminders(updatedRecord.appointmentId)
   })

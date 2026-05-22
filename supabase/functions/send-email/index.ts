@@ -8,8 +8,10 @@ import { handleSellerOnboardingSubmittedEmail } from "./handlers/sellerOnboardin
 import { handleSellerMandateSentEmail } from "./handlers/sellerMandateSent.ts";
 import { handleSellerMandateSignedEmail } from "./handlers/sellerMandateSigned.ts";
 import { handleAppointmentEmail } from "./handlers/appointment.ts";
+import { handleBuyerOfferLinkEmail } from "./handlers/buyerOfferLink.ts";
 import type {
   SendAppointmentEmailPayload,
+  SendBuyerOfferLinkPayload,
   SendClientOnboardingPayload,
   SendLegacyTestPayload,
   SendOnboardingSubmittedPayload,
@@ -155,6 +157,11 @@ Deno.serve(async (req: Request) => {
       return await handleSellerMandateSignedEmail(payload as SendSellerMandateSignedPayload);
     }
 
+    if (["buyer_offer_link", "offer_link", "post_viewing_offer_link"].includes(type)) {
+      console.log("[send-email] routing template", { route: "buyer_offer_link", recipient: recipient || null });
+      return await handleBuyerOfferLinkEmail(payload as SendBuyerOfferLinkPayload);
+    }
+
     if (
       [
         "appointment_scheduled",
@@ -194,6 +201,7 @@ Deno.serve(async (req: Request) => {
           "seller_onboarding_submitted",
           "seller_mandate_sent",
           "seller_mandate_signed",
+          "buyer_offer_link",
           "appointment_scheduled",
           "appointment_confirmed",
           "appointment_updated",
@@ -219,6 +227,7 @@ Deno.serve(async (req: Request) => {
         "seller_onboarding_submitted",
         "seller_mandate_sent",
         "seller_mandate_signed",
+        "buyer_offer_link",
         "appointment_scheduled",
         "appointment_confirmed",
         "appointment_updated",

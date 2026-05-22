@@ -1,5 +1,5 @@
-import { ArrowUpRight, CalendarDays, CheckSquare, Clock3, Columns3, Filter, Home, ImageIcon, Mail, MoreHorizontal, Pencil, Phone, Plus, Search, Table2, Trash2, TrendingUp, Upload, UserRound, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowUpRight, Bold, CalendarDays, CheckSquare, ChevronRight, Clock3, Columns3, Filter, Home, ImageIcon, Italic, Link2, List, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, Search, Smile, Table2, Trash2, TrendingUp, Upload, UserRound, X } from 'lucide-react'
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
 import AppointmentCalendarActions from '../../components/appointments/AppointmentCalendarActions'
@@ -1464,11 +1464,79 @@ const LEAD_DETAIL_DEFAULT_ACTIVITY = {
   outcome: '',
 }
 
+const LEAD_ACTIVITY_OUTCOME_OPTIONS = [
+  '',
+  'Interested',
+  'Not interested',
+  'Needs follow-up',
+  'Wants callback',
+  'Requested OTP',
+  'Completed',
+]
+
+const LEAD_ACTIVITY_SUGGESTION_CHIPS = [
+  'Interested in viewing',
+  'Asked about financing',
+  'Wants callback tomorrow',
+  'Requested OTP',
+]
+
+const LEAD_ACTIVITY_COMPOSER_MODES = [
+  { key: 'activity', label: 'Log Activity' },
+  { key: 'follow_up', label: 'Follow-up' },
+  { key: 'task', label: 'Task' },
+  { key: 'note', label: 'Note' },
+]
+
+const LEAD_ACTIVITY_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'note', label: 'Notes' },
+  { key: 'task', label: 'Tasks' },
+  { key: 'follow_up', label: 'Follow-ups' },
+  { key: 'call', label: 'Calls' },
+  { key: 'appointment', label: 'Appointments' },
+  { key: 'offer', label: 'Offers' },
+  { key: 'system', label: 'System' },
+]
+
+function getLeadActivityPresentation(activityType = '') {
+  const normalized = normalizeText(activityType).toLowerCase()
+  if (normalized.includes('call') || normalized.includes('phone')) {
+    return { Icon: Phone, rail: 'bg-[#e8f2ff] text-[#2563a8]', pill: 'bg-[#e8f2ff] text-[#2563a8]', label: 'Call' }
+  }
+  if (normalized.includes('meeting') || normalized.includes('appointment') || normalized.includes('viewing') || normalized.includes('consultation')) {
+    return { Icon: CalendarDays, rail: 'bg-[#f2eaff] text-[#7056b8]', pill: 'bg-[#f2eaff] text-[#7056b8]', label: 'Meeting' }
+  }
+  if (normalized.includes('whatsapp') || normalized.includes('message') || normalized.includes('sms')) {
+    return { Icon: MessageCircle, rail: 'bg-[#e7f8ef] text-[#218257]', pill: 'bg-[#e7f8ef] text-[#218257]', label: 'Message' }
+  }
+  if (normalized.includes('follow')) {
+    return { Icon: Clock3, rail: 'bg-[#fff4e5] text-[#b76a12]', pill: 'bg-[#fff4e5] text-[#b76a12]', label: 'Follow-up' }
+  }
+  if (normalized.includes('task')) {
+    return { Icon: CheckSquare, rail: 'bg-[#eef5fb] text-[#315b7a]', pill: 'bg-[#eef5fb] text-[#315b7a]', label: 'Task' }
+  }
+  if (normalized.includes('note')) {
+    return { Icon: Pencil, rail: 'bg-[#f2f6fa] text-[#60758b]', pill: 'bg-[#f2f6fa] text-[#60758b]', label: 'Note' }
+  }
+  if (normalized.includes('offer') || normalized.includes('otp') || normalized.includes('mandate')) {
+    return { Icon: CheckSquare, rail: 'bg-[#e8f7f1] text-[#1d7a52]', pill: 'bg-[#e8f7f1] text-[#1d7a52]', label: 'Offer' }
+  }
+  if (normalized.includes('system') || normalized.includes('stage') || normalized.includes('created')) {
+    return { Icon: Columns3, rail: 'bg-[#eef3f7] text-[#687c91]', pill: 'bg-[#eef3f7] text-[#687c91]', label: 'System' }
+  }
+  if (normalized.includes('email') || normalized.includes('mail')) {
+    return { Icon: Mail, rail: 'bg-[#edf7ff] text-[#277499]', pill: 'bg-[#edf7ff] text-[#277499]', label: 'Email' }
+  }
+  return { Icon: MessageCircle, rail: 'bg-[#eef3f7] text-[#597089]', pill: 'bg-[#eef3f7] text-[#597089]', label: 'Activity' }
+}
+
 const LEAD_DETAIL_DEFAULT_TASK = {
   title: '',
   description: '',
   dueDate: getTodayIsoDate(),
   priority: 'Medium',
+  assignedAgentId: '',
 }
 
 const LEAD_DETAIL_DEFAULT_APPOINTMENT = {
@@ -1672,6 +1740,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [leadDetailForm, setLeadDetailForm] = useState(LEAD_DETAIL_DEFAULTS)
   const [isLeadDetailSaving, setIsLeadDetailSaving] = useState(false)
   const [activityForm, setActivityForm] = useState(LEAD_DETAIL_DEFAULT_ACTIVITY)
+  const [activityComposerMode, setActivityComposerMode] = useState('activity')
+  const [activityTimelineFilter, setActivityTimelineFilter] = useState('all')
   const [editingActivityId, setEditingActivityId] = useState('')
   const [taskForm, setTaskForm] = useState(LEAD_DETAIL_DEFAULT_TASK)
   const [editingTaskId, setEditingTaskId] = useState('')
@@ -2307,6 +2377,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [routeLeadId])
 
   useEffect(() => {
+    if (leadWorkspaceTab === 'tasks') {
+      setLeadWorkspaceTab('activity')
+    }
+  }, [leadWorkspaceTab])
+
+  useEffect(() => {
     if (!routeLeadId || !records.leads.length) return
     const routeKey = normalizeLeadIdentityKey(routeLeadId)
     const routeLead = records.leads.find((row) => normalizeLeadIdentityKey(row?.leadId) === routeKey)
@@ -2914,6 +2990,222 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       missing: checks.filter((item) => !item.done),
     }
   }, [mandatePacketStatus?.packet, mandatePacketStatus?.signingStatus, selectedLead, selectedLeadAppointments, selectedLeadLinkedTransaction])
+
+  const selectedLeadUnifiedTimeline = useMemo(() => {
+    const classifyActivity = (activity = {}) => {
+      const type = normalizeText(activity?.activityType).toLowerCase()
+      if (type.includes('call') || type.includes('phone')) return 'call'
+      if (type.includes('appointment') || type.includes('viewing') || type.includes('meeting') || type.includes('consultation')) return 'appointment'
+      if (type.includes('offer') || type.includes('otp') || type.includes('mandate')) return 'offer'
+      if (type.includes('stage') || type.includes('system') || type.includes('created') || type.includes('converted')) return 'system'
+      if (type.includes('follow')) return 'follow_up'
+      if (type.includes('note')) return 'note'
+      return 'activity'
+    }
+
+    const timelineRows = []
+
+    for (const activity of selectedLeadActivities) {
+      const sourceType = classifyActivity(activity)
+      timelineRows.push({
+        id: `activity:${activity.activityId}`,
+        sourceType,
+        sourceLabel: sourceType === 'system' ? 'System Update' : sourceType === 'note' ? 'Note Added' : 'Activity Logged',
+        title: normalizeText(activity.activityType) || 'Lead update',
+        description: normalizeText(activity.activityNote),
+        actorName: normalizeText(activity.agentName || activity.agentEmail) || (sourceType === 'system' ? 'System Update' : currentAgent.fullName || 'Agent'),
+        timestamp: activity.activityDate || activity.createdAt || new Date().toISOString(),
+        outcome: normalizeText(activity.outcome),
+        original: activity,
+      })
+    }
+
+    for (const task of selectedLeadTasks) {
+      const taskText = normalizeText(`${task.title} ${task.description}`).toLowerCase()
+      const isFollowUp = taskText.includes('follow') || normalizeText(task.title).toLowerCase().includes('call')
+      const completed = normalizeText(task.status).toLowerCase() === 'completed'
+      timelineRows.push({
+        id: `task:${task.taskId}`,
+        sourceType: isFollowUp ? 'follow_up' : 'task',
+        sourceLabel: completed ? (isFollowUp ? 'Follow-up Completed' : 'Task Completed') : (isFollowUp ? 'Follow-up Scheduled' : 'Task Created'),
+        title: normalizeText(task.title) || (isFollowUp ? 'Follow-up' : 'Task'),
+        description: normalizeText(task.description),
+        actorName: normalizeText(task.assignedAgentName || task.assignedAgentEmail) || currentAgent.fullName || 'Agent',
+        timestamp: task.createdAt || task.updatedAt || task.dueDate || new Date().toISOString(),
+        dueDate: normalizeText(task.dueDate),
+        priority: normalizeText(task.priority) || 'Medium',
+        status: normalizeText(task.status) || 'Pending',
+        original: task,
+      })
+    }
+
+    for (const appointment of selectedLeadAppointments) {
+      const status = normalizeText(appointment.status || 'requested')
+      timelineRows.push({
+        id: `appointment:${appointment.appointmentId}`,
+        sourceType: 'appointment',
+        sourceLabel: status.toLowerCase() === 'completed' ? 'Appointment Feedback Added' : 'Appointment Booked',
+        title: getAppointmentTypeLabel(appointment.appointmentType) || appointment.title || 'Appointment',
+        description: normalizeText(appointment.outcomeSummary || appointment.clientFeedback || appointment.agentNotes || appointment.notes || appointment.listingLabel || appointment.listingId),
+        actorName: normalizeText(appointment.assignedAgentName || appointment.assignedAgentEmail) || currentAgent.fullName || 'Agent',
+        timestamp: appointment.updatedAt || appointment.createdAt || appointment.dateTime || new Date().toISOString(),
+        dueDate: appointment.dateTime || appointment.date || '',
+        status,
+        original: appointment,
+      })
+    }
+
+    for (const offer of selectedLeadOffers) {
+      timelineRows.push({
+        id: `offer:${offer.id}`,
+        sourceType: 'offer',
+        sourceLabel: normalizeText(offer.status).toLowerCase() === 'submitted' ? 'Offer Submitted' : 'Offer Update',
+        title: normalizeText(offer.status) ? `Offer ${offer.status}` : 'Offer',
+        description: [
+          offer.offerAmount ? `Amount: ${formatCurrency(offer.offerAmount)}` : '',
+          offer.listingId ? `Listing: ${offer.listingLabel || offer.listingId}` : '',
+        ].filter(Boolean).join(' · '),
+        actorName: currentAgent.fullName || 'Agent',
+        timestamp: offer.updatedAt || offer.submittedAt || offer.createdAt || new Date().toISOString(),
+        status: normalizeText(offer.status),
+        original: offer,
+      })
+    }
+
+    if (selectedLeadNotes) {
+      timelineRows.push({
+        id: `lead-note:${selectedLead?.leadId || 'selected'}`,
+        sourceType: 'note',
+        sourceLabel: 'Note Added',
+        title: 'Lead note',
+        description: selectedLeadNotes,
+        actorName: selectedLeadAssignedAgentLabel,
+        timestamp: selectedLead?.updatedAt || selectedLead?.createdAt || new Date().toISOString(),
+        status: 'Internal',
+      })
+    }
+
+    return timelineRows.sort((left, right) => {
+      const leftTime = new Date(left.timestamp || left.dueDate || 0).getTime()
+      const rightTime = new Date(right.timestamp || right.dueDate || 0).getTime()
+      return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0)
+    })
+  }, [
+    currentAgent.fullName,
+    selectedLead,
+    selectedLeadActivities,
+    selectedLeadAppointments,
+    selectedLeadAssignedAgentLabel,
+    selectedLeadNotes,
+    selectedLeadOffers,
+    selectedLeadTasks,
+  ])
+
+  const selectedLeadFilteredTimeline = useMemo(() => {
+    if (activityTimelineFilter === 'all') return selectedLeadUnifiedTimeline
+    return selectedLeadUnifiedTimeline.filter((item) => item.sourceType === activityTimelineFilter)
+  }, [activityTimelineFilter, selectedLeadUnifiedTimeline])
+
+  const selectedLeadActivityGroups = useMemo(() => {
+    const now = new Date()
+    const yesterday = new Date(now)
+    yesterday.setDate(now.getDate() - 1)
+    const groups = [
+      { key: 'today', label: 'Today', rows: [] },
+      { key: 'yesterday', label: 'Yesterday', rows: [] },
+      { key: 'earlier', label: 'Earlier', rows: [] },
+    ]
+
+    for (const item of selectedLeadFilteredTimeline) {
+      const date = new Date(item?.timestamp || item?.dueDate || 0)
+      if (!Number.isFinite(date.getTime())) {
+        groups[2].rows.push(item)
+      } else if (isSameDay(date, now)) {
+        groups[0].rows.push(item)
+      } else if (isSameDay(date, yesterday)) {
+        groups[1].rows.push(item)
+      } else {
+        groups[2].rows.push(item)
+      }
+    }
+
+    return groups.filter((group) => group.rows.length)
+  }, [selectedLeadFilteredTimeline])
+
+  const selectedLeadActivityInsights = useMemo(() => {
+    const rows = Array.isArray(selectedLeadActivities) ? selectedLeadActivities : []
+    const counts = rows.reduce((acc, activity) => {
+      const type = normalizeText(activity?.activityType).toLowerCase()
+      if (type.includes('call') || type.includes('phone')) acc.calls += 1
+      if (type.includes('meeting') || type.includes('appointment') || type.includes('viewing') || type.includes('consultation')) acc.meetings += 1
+      if (type.includes('email') || type.includes('mail')) acc.emails += 1
+      if (type.includes('whatsapp') || type.includes('message') || type.includes('sms')) acc.whatsapps += 1
+      return acc
+    }, { calls: 0, meetings: 0, emails: 0, whatsapps: 0 })
+
+    const now = Date.now()
+    const recentRows = rows.filter((activity) => {
+      const at = new Date(activity?.activityDate || activity?.createdAt || 0).getTime()
+      return Number.isFinite(at) && now - at <= 7 * 24 * 60 * 60 * 1000
+    })
+    const engagementScore = Math.min(100, rows.length * 12 + recentRows.length * 10 + selectedLeadAppointments.length * 8 + selectedLeadOfferSummary.total * 10)
+    const healthLabel = engagementScore >= 70 ? 'Strong Engagement' : engagementScore >= 30 ? 'Warm' : 'Cold'
+    const temperature = engagementScore >= 70 ? 'Hot' : engagementScore >= 30 ? 'Warm' : 'Cool'
+    const responseRate = rows.length ? `${Math.min(96, 48 + recentRows.length * 10 + rows.length * 4)}%` : '0%'
+
+    return {
+      counts,
+      healthLabel,
+      temperature,
+      responseRate,
+      lastContacted: rows[0]?.activityDate || rows[0]?.createdAt || '',
+    }
+  }, [selectedLeadActivities, selectedLeadAppointments.length, selectedLeadOfferSummary.total])
+
+  const selectedLeadOpenActions = useMemo(() => {
+    const now = new Date()
+    now.setHours(0, 0, 0, 0)
+    const pendingTasks = selectedLeadTasks
+      .filter((task) => normalizeText(task.status).toLowerCase() !== 'completed')
+      .map((task) => {
+        const due = new Date(task.dueDate || task.createdAt || 0)
+        const isOverdue = Number.isFinite(due.getTime()) && due < now
+        return {
+          id: task.taskId,
+          label: normalizeText(task.title) || 'Follow-up task',
+          meta: task.dueDate ? `${isOverdue ? 'Overdue' : 'Due'} ${formatDateShort(task.dueDate)} · ${normalizeText(task.priority) || 'Medium'}` : normalizeText(task.priority) || 'Pending',
+          overdue: isOverdue,
+          original: task,
+        }
+      })
+      .sort((left, right) => {
+        const leftTime = new Date(left.original?.dueDate || left.original?.createdAt || 0).getTime()
+        const rightTime = new Date(right.original?.dueDate || right.original?.createdAt || 0).getTime()
+        return (Number.isFinite(leftTime) ? leftTime : 0) - (Number.isFinite(rightTime) ? rightTime : 0)
+      })
+    const upcomingAppointment = selectedLeadAppointments
+      .filter((appointment) => {
+        const status = normalizeText(appointment.status).toLowerCase()
+        const at = new Date(appointment.dateTime || appointment.date || appointment.createdAt || 0).getTime()
+        return !['completed', 'cancelled', 'no_show', 'no-show'].includes(status) && Number.isFinite(at) && at >= Date.now()
+      })
+      .sort((left, right) => new Date(left.dateTime || left.date || 0).getTime() - new Date(right.dateTime || right.date || 0).getTime())[0]
+
+    return {
+      pendingTasks,
+      overdueCount: pendingTasks.filter((item) => item.overdue).length,
+      nextDueAction: pendingTasks[0] || null,
+      upcomingAppointment,
+    }
+  }, [selectedLeadAppointments, selectedLeadTasks])
+
+  const activityOutcomeOptions = useMemo(() => {
+    const currentOutcome = normalizeText(activityForm.outcome)
+    if (currentOutcome && !LEAD_ACTIVITY_OUTCOME_OPTIONS.includes(currentOutcome)) {
+      return [...LEAD_ACTIVITY_OUTCOME_OPTIONS, currentOutcome]
+    }
+    return LEAD_ACTIVITY_OUTCOME_OPTIONS
+  }, [activityForm.outcome])
 
   const leadTasksByLeadId = useMemo(() => {
     const map = new Map()
@@ -3741,9 +4033,38 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }))
   }
 
+  function handleActivityComposerModeChange(nextMode) {
+    const mode = normalizeText(nextMode) || 'activity'
+    setActivityComposerMode(mode)
+    setEditingActivityId('')
+    setEditingTaskId('')
+    setError('')
+    if (mode === 'note') {
+      setActivityForm((previous) => ({ ...previous, activityType: 'Note', outcome: '' }))
+    } else if (mode === 'follow_up') {
+      setTaskForm((previous) => ({
+        ...previous,
+        title: normalizeText(previous.title) || 'Follow up with lead',
+        dueDate: normalizeText(previous.dueDate) || getTodayIsoDate(),
+      }))
+    }
+  }
+
   function resetActivityComposer() {
     setActivityForm(LEAD_DETAIL_DEFAULT_ACTIVITY)
     setEditingActivityId('')
+  }
+
+  function handleAppendActivitySuggestion(text) {
+    const suggestion = normalizeText(text)
+    if (!suggestion) return
+    setActivityForm((previous) => {
+      const currentNote = normalizeText(previous.activityNote)
+      return {
+        ...previous,
+        activityNote: currentNote ? `${currentNote}${currentNote.endsWith('.') ? '' : '.'} ${suggestion}` : suggestion,
+      }
+    })
   }
 
   function resetTaskComposer() {
@@ -3848,25 +4169,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     })
   }
 
-  async function handleAddActivity(event) {
+  async function handleAddActivity(event, overrides = {}) {
     event.preventDefault()
     if (!selectedLead || !organisationId) return
-    if (!normalizeText(activityForm.activityNote)) {
+    const nextActivityType = normalizeText(overrides.activityType ?? activityForm.activityType) || LEAD_DETAIL_DEFAULT_ACTIVITY.activityType
+    const nextActivityNote = normalizeText(overrides.activityNote ?? activityForm.activityNote)
+    const nextOutcome = normalizeText(overrides.outcome ?? activityForm.outcome)
+    if (!nextActivityNote) {
       setError('Add an activity note before saving.')
       return
     }
     if (editingActivityId) {
       await updateAgencyCrmLeadActivity(organisationId, editingActivityId, {
-        activityType: activityForm.activityType,
-        activityNote: activityForm.activityNote,
-        outcome: activityForm.outcome,
+        activityType: nextActivityType,
+        activityNote: nextActivityNote,
+        outcome: nextOutcome,
       })
     } else {
       await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-        activityType: activityForm.activityType,
-        activityNote: activityForm.activityNote,
-        outcome: activityForm.outcome,
+        activityType: nextActivityType,
+        activityNote: nextActivityNote,
+        outcome: nextOutcome,
         activityDate: new Date().toISOString(),
       }, { actor: currentAgent })
     }
@@ -3876,8 +4200,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     void reloadRecords(organisationId)
   }
 
+  async function handleUnifiedActivitySubmit(event) {
+    event.preventDefault()
+    if (activityComposerMode === 'task' || activityComposerMode === 'follow_up') {
+      await handleCreateTask(event)
+      return
+    }
+    if (activityComposerMode === 'note') {
+      await handleAddActivity(event, {
+        activityType: 'Note',
+        activityNote: activityForm.activityNote,
+        outcome: '',
+      })
+      return
+    }
+    await handleAddActivity(event)
+  }
+
   function handleEditActivity(activity) {
     setEditingActivityId(normalizeText(activity?.activityId))
+    setEditingTaskId('')
+    setActivityComposerMode(normalizeText(activity?.activityType).toLowerCase() === 'note' ? 'note' : 'activity')
     setActivityForm({
       activityType: normalizeText(activity?.activityType) || LEAD_DETAIL_DEFAULT_ACTIVITY.activityType,
       activityNote: normalizeText(activity?.activityNote),
@@ -3907,7 +4250,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError('Task title is required.')
       return
     }
-    const assignedAgent = resolveAgentById(selectedLead.assignedAgentId || selectedLead.assignedAgentEmail || currentAgent.id)
+    const assignedAgent = resolveAgentById(taskForm.assignedAgentId || selectedLead.assignedAgentId || selectedLead.assignedAgentEmail || currentAgent.id)
     if (editingTaskId) {
       await updateAgencyCrmLeadTask(
         organisationId,
@@ -3961,11 +4304,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   function handleEditTask(task) {
     setEditingTaskId(normalizeText(task?.taskId))
+    setEditingActivityId('')
+    setActivityComposerMode(normalizeText(task?.title || task?.description).toLowerCase().includes('follow') ? 'follow_up' : 'task')
     setTaskForm({
       title: normalizeText(task?.title),
       description: normalizeText(task?.description),
       dueDate: normalizeText(task?.dueDate).slice(0, 10),
       priority: normalizeText(task?.priority) || LEAD_DETAIL_DEFAULT_TASK.priority,
+      assignedAgentId: normalizeText(task?.assignedAgentId || task?.assignedAgentEmail),
     })
     setError('')
   }
@@ -5557,6 +5903,49 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  async function sendBuyerOfferLinkEmail({
+    link = '',
+    propertyTitle = '',
+    propertyCount = 1,
+  } = {}) {
+    const recipientEmail = normalizeText(offerLinkForm.buyerEmail || selectedLeadContact?.email || selectedLead?.email).toLowerCase()
+    const offerLink = normalizeText(link)
+    if (!recipientEmail || !offerLink) {
+      return {
+        attempted: false,
+        sent: false,
+        reason: recipientEmail ? 'missing_link' : 'missing_email',
+      }
+    }
+
+    try {
+      const emailResponse = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'buyer_offer_link',
+          to: recipientEmail,
+          buyerName: normalizeText(offerLinkForm.buyerName) || selectedLeadContactName,
+          propertyTitle: normalizeText(propertyTitle),
+          propertyCount,
+          offerLink,
+          expiresAt: normalizeText(offerLinkForm.expiryDate),
+          agentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email),
+          note: normalizeText(offerLinkForm.note),
+        },
+      })
+      if (emailResponse?.error || emailResponse?.data?.error) {
+        throw emailResponse.error || new Error(emailResponse.data.error)
+      }
+      return { attempted: true, sent: true }
+    } catch (emailError) {
+      console.warn('[PIPELINE] buyer offer link email failed', emailError)
+      return {
+        attempted: true,
+        sent: false,
+        error: emailError,
+      }
+    }
+  }
+
   async function handleSendOfferLinkFromAppointment(event) {
     event?.preventDefault?.()
     if (!organisationId || !selectedLead) return
@@ -5571,6 +5960,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     try {
       setIsOfferLinkSending(true)
+      setError('')
       const viewingAppointmentId = normalizeText(offerLinkForm.appointmentId) || normalizeText(selectedLeadActiveViewing?.appointmentId)
       if (viewingAppointmentId) {
         let viewedProperties = await listAppointmentViewedListings({
@@ -5651,9 +6041,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         if (portalLink && typeof navigator !== 'undefined') {
           void navigator.clipboard?.writeText(portalLink)
         }
+        const emailResult = await sendBuyerOfferLinkEmail({
+          link: portalLink,
+          propertyTitle: viewedProperties.length > 1 ? '' : resolveAppointmentListingLabel(selectedListingId),
+          propertyCount: viewedProperties.length || 1,
+        })
         setOfferLinkForm((previous) => ({ ...previous, lastOfferLink: portalLink }))
-        setMessage(portalLink ? 'Post-viewing offer portal created and copied. The buyer can offer on any viewed property.' : 'Post-viewing offer portal created.')
-        setError('')
+        setMessage(
+          portalLink
+            ? emailResult.sent
+              ? 'Post-viewing offer portal sent to the buyer. Link copied as backup.'
+              : emailResult.attempted
+                ? 'Post-viewing offer portal created and copied, but the email could not be sent.'
+                : 'Post-viewing offer portal created and copied. Add a buyer email to send it directly.'
+            : 'Post-viewing offer portal created.',
+        )
+        if (emailResult.error) {
+          setError(emailResult.error?.message || 'Offer portal created, but the buyer email could not be sent.')
+        }
         await reloadRecords(organisationId)
         return
       }
@@ -5716,9 +6121,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (offerLink && typeof navigator !== 'undefined') {
         void navigator.clipboard?.writeText(offerLink)
       }
+      const emailResult = await sendBuyerOfferLinkEmail({
+        link: offerLink,
+        propertyTitle: resolveAppointmentListingLabel(selectedListingId) || 'selected property',
+        propertyCount: 1,
+      })
       setOfferLinkForm((previous) => ({ ...previous, lastOfferLink: offerLink }))
-      setMessage(offerLink ? 'Offer link created and copied. Buyer lead stage updated to Offer Draft.' : 'Offer draft created. Buyer lead stage updated to Offer Draft.')
-      setError('')
+      setMessage(
+        offerLink
+          ? emailResult.sent
+            ? 'Offer link sent to the buyer. Link copied as backup.'
+            : emailResult.attempted
+              ? 'Offer link created and copied, but the email could not be sent.'
+              : 'Offer link created and copied. Add a buyer email to send it directly.'
+          : 'Offer draft created. Buyer lead stage updated to Offer Draft.',
+      )
+      if (emailResult.error) {
+        setError(emailResult.error?.message || 'Offer link created, but the buyer email could not be sent.')
+      }
       await reloadRecords(organisationId)
     } catch (offerError) {
       setError(offerError?.message || 'Unable to create the offer link.')
@@ -7091,12 +7511,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     {
                       key: 'activity',
                       label: 'Activity',
-                      meta: selectedLeadActivities.length,
-                    },
-                    {
-                      key: 'tasks',
-                      label: 'Tasks',
-                      meta: selectedLeadTasks.length,
+                      meta: selectedLeadUnifiedTimeline.length,
                     },
                     {
                       key: 'appointments',
@@ -7135,7 +7550,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </div>
               ) : null}
               {selectedLead ? (
-                <div className={`mt-6 grid gap-6 ${leadWorkspaceTab === 'overview' ? 'xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px]' : ''}`}>
+                <div className={`mt-6 grid gap-6 ${leadWorkspaceTab === 'overview' || leadWorkspaceTab === 'activity' ? 'xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px]' : ''}`}>
                   <div className="space-y-6">
                   {leadWorkspaceTab === 'overview' ? (
                   <div className="space-y-6">
@@ -7300,72 +7715,291 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   {leadWorkspaceTab === 'activity' ? (
-                  <div className="space-y-2 rounded-[14px] border border-[#e4ebf4] bg-white p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <h4 className="text-sm font-semibold text-[#28435e]">{editingActivityId ? 'Edit Activity' : 'Activities'}</h4>
-                      {editingActivityId ? (
-                        <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={resetActivityComposer}>
-                          <X className="h-4 w-4" />
-                          Cancel
-                        </Button>
-                      ) : null}
-                    </div>
-                    <form className="grid gap-2" onSubmit={handleAddActivity}>
-                      <Field as="select" value={activityForm.activityType} onChange={(event) => setActivityForm((previous) => ({ ...previous, activityType: event.target.value }))}>
-                        {ACTIVITY_TYPES.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </Field>
-                      <Field
-                        placeholder="Activity note"
-                        value={activityForm.activityNote}
-                        onChange={(event) => setActivityForm((previous) => ({ ...previous, activityNote: event.target.value }))}
-                      />
-                      <Field placeholder="Outcome (optional)" value={activityForm.outcome} onChange={(event) => setActivityForm((previous) => ({ ...previous, outcome: event.target.value }))} />
-                      <Button type="submit">{editingActivityId ? 'Save Activity' : 'Log Activity'}</Button>
-                    </form>
-                    <div className="max-h-44 space-y-2 overflow-auto pt-1">
-                      {selectedLeadActivities.length ? (
-                        selectedLeadActivities.map((row) => (
-                          <div key={row.activityId} className="rounded-[10px] border border-[#e7edf5] bg-[#fbfdff] px-2.5 py-2 text-xs">
-                            <div className="flex items-start justify-between gap-2">
-                              <div>
-                                <p className="font-semibold text-[#29435d]">{row.activityType}</p>
-                                <p className="mt-0.5 text-[#7a8ea5]">{formatDate(row.activityDate || row.createdAt)}</p>
+                  <div className="space-y-6">
+                    <section className="rounded-[28px] bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.06)] sm:p-6">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Activity Composer</p>
+                          <h4 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#102033]">Add to the relationship feed</h4>
+                        </div>
+                        {editingActivityId || editingTaskId ? (
+                          <Button type="button" variant="ghost" size="sm" className="h-9 px-3 text-xs" onClick={() => { resetActivityComposer(); resetTaskComposer() }}>
+                            <X className="h-4 w-4" />
+                            Cancel edit
+                          </Button>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-5 flex gap-1 overflow-x-auto rounded-full bg-[#f3f7fb] p-1">
+                        {LEAD_ACTIVITY_COMPOSER_MODES.map((mode) => {
+                          const active = activityComposerMode === mode.key
+                          return (
+                            <button
+                              key={mode.key}
+                              type="button"
+                              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition ${active ? 'bg-white text-[#123955] shadow-[0_6px_16px_rgba(31,54,78,0.08)]' : 'text-[#60758b] hover:text-[#123955]'}`}
+                              onClick={() => handleActivityComposerModeChange(mode.key)}
+                            >
+                              {mode.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      <form className="mt-5 space-y-4" onSubmit={handleUnifiedActivitySubmit}>
+                        {activityComposerMode === 'activity' ? (
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <Field as="select" value={activityForm.activityType} onChange={(event) => setActivityForm((previous) => ({ ...previous, activityType: event.target.value }))}>
+                              {ACTIVITY_TYPES.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </Field>
+                            <Field as="select" value={activityForm.outcome} onChange={(event) => setActivityForm((previous) => ({ ...previous, outcome: event.target.value }))}>
+                              {activityOutcomeOptions.map((option) => (
+                                <option key={option || 'empty-outcome'} value={option}>
+                                  {option || 'Outcome'}
+                                </option>
+                              ))}
+                            </Field>
+                          </div>
+                        ) : null}
+
+                        {activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? (
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <Field
+                              placeholder={activityComposerMode === 'follow_up' ? 'Follow-up title' : 'Task title'}
+                              value={taskForm.title}
+                              onChange={(event) => setTaskForm((previous) => ({ ...previous, title: event.target.value }))}
+                            />
+                            <Field type="date" value={taskForm.dueDate} onChange={(event) => setTaskForm((previous) => ({ ...previous, dueDate: event.target.value }))} />
+                            {activityComposerMode === 'task' && agentOptions.length ? (
+                              <Field as="select" value={taskForm.assignedAgentId} onChange={(event) => setTaskForm((previous) => ({ ...previous, assignedAgentId: event.target.value }))}>
+                                <option value="">Assigned agent</option>
+                                {agentOptions.map((agent) => (
+                                  <option key={`${agent.id}:${agent.email}:task`} value={agent.id || agent.email}>
+                                    {agent.name}
+                                  </option>
+                                ))}
+                              </Field>
+                            ) : null}
+                            <Field as="select" value={taskForm.priority} onChange={(event) => setTaskForm((previous) => ({ ...previous, priority: event.target.value }))}>
+                              {TASK_PRIORITIES.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </Field>
+                          </div>
+                        ) : null}
+
+                        {activityComposerMode === 'note' ? (
+                          <div className="flex flex-wrap gap-2 text-xs font-semibold text-[#60758b]">
+                            <span className="rounded-full bg-[#eef5fb] px-3 py-1">Internal</span>
+                            <span className="rounded-full bg-[#f3f7fb] px-3 py-1 text-[#8aa0b7]">Shared visibility coming later</span>
+                          </div>
+                        ) : null}
+
+                        {activityComposerMode === 'activity' || activityComposerMode === 'note' ? (
+                          <div className="overflow-hidden rounded-[22px] bg-[#f8fbfd] ring-1 ring-[#e6edf5] transition focus-within:bg-white focus-within:ring-[#b9d5eb]">
+                            <Field
+                              as="textarea"
+                              rows={5}
+                              className="min-h-[150px] border-0 bg-transparent px-4 py-4 text-[15px] leading-6 shadow-none outline-none ring-0 focus:ring-0"
+                              placeholder={activityComposerMode === 'note' ? 'Write an internal note...' : 'What happened with this lead?'}
+                              value={activityForm.activityNote}
+                              onChange={(event) => setActivityForm((previous) => ({ ...previous, activityNote: event.target.value }))}
+                            />
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e8eef5] px-3 py-3">
+                              <div className="flex items-center gap-1 text-[#7d92a8]">
+                                {[
+                                  [Bold, 'Bold'],
+                                  [Italic, 'Italic'],
+                                  [List, 'Bullet list'],
+                                  [Link2, 'Link'],
+                                  [Smile, 'Emoji'],
+                                  [Paperclip, 'Attachment'],
+                                ].map(([icon, label]) => (
+                                  <button key={label} type="button" className="grid h-8 w-8 place-items-center rounded-full transition hover:bg-white hover:text-[#244f70]" title={label}>
+                                    {createElement(icon, { className: 'h-4 w-4' })}
+                                  </button>
+                                ))}
                               </div>
-                              <div className="flex items-center gap-1">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 px-2"
-                                  title="Edit activity"
-                                  onClick={() => handleEditActivity(row)}
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 px-2 text-[#a94442]"
-                                  title="Delete activity"
-                                  onClick={() => void handleDeleteActivity(row)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                              <Button type="submit" size="sm" className="px-4">
+                                {editingActivityId ? 'Save Activity' : activityComposerMode === 'note' ? 'Add Note' : 'Log Activity'}
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="overflow-hidden rounded-[22px] bg-[#f8fbfd] ring-1 ring-[#e6edf5] transition focus-within:bg-white focus-within:ring-[#b9d5eb]">
+                            <Field
+                              as="textarea"
+                              rows={4}
+                              className="min-h-[120px] border-0 bg-transparent px-4 py-4 text-[15px] leading-6 shadow-none outline-none ring-0 focus:ring-0"
+                              placeholder={activityComposerMode === 'follow_up' ? 'Add context for this follow-up...' : 'Add task notes...'}
+                              value={taskForm.description}
+                              onChange={(event) => setTaskForm((previous) => ({ ...previous, description: event.target.value }))}
+                            />
+                            <div className="flex justify-end border-t border-[#e8eef5] px-3 py-3">
+                              <Button type="submit" size="sm" className="px-4">
+                                {editingTaskId ? 'Save Task' : activityComposerMode === 'follow_up' ? 'Create Follow-up' : 'Create Task'}
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </form>
+
+                      {activityComposerMode === 'activity' || activityComposerMode === 'note' ? (
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {LEAD_ACTIVITY_SUGGESTION_CHIPS.map((chip) => (
+                            <button
+                              key={chip}
+                              type="button"
+                              className="rounded-full bg-[#f2f6fa] px-3 py-1.5 text-xs font-semibold text-[#557089] transition hover:bg-[#e7f0f8] hover:text-[#244f70]"
+                              onClick={() => handleAppendActivitySuggestion(chip)}
+                            >
+                              {chip}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </section>
+
+                    <section className="rounded-[28px] bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)] sm:p-6">
+                      <div className="flex flex-wrap items-end justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Relationship Timeline</p>
+                          <h4 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#102033]">Activity history</h4>
+                        </div>
+                        <span className="rounded-full bg-[#eef5fb] px-3 py-1 text-xs font-semibold text-[#315b7a]">
+                          {selectedLeadFilteredTimeline.length} / {selectedLeadUnifiedTimeline.length} records
+                        </span>
+                      </div>
+
+                      <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
+                        {LEAD_ACTIVITY_FILTERS.map((filter) => {
+                          const active = activityTimelineFilter === filter.key
+                          return (
+                            <button
+                              key={filter.key}
+                              type="button"
+                              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition ${active ? 'bg-[#123955] text-white shadow-[0_8px_18px_rgba(18,57,85,0.16)]' : 'bg-[#f3f7fb] text-[#60758b] hover:bg-[#e7f0f8] hover:text-[#123955]'}`}
+                              onClick={() => setActivityTimelineFilter(filter.key)}
+                            >
+                              {filter.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      <div className="mt-6 space-y-8">
+                        {selectedLeadActivityGroups.length ? (
+                          selectedLeadActivityGroups.map((group) => (
+                            <div key={group.key}>
+                              <div className="mb-4 flex items-center gap-3">
+                                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">{group.label}</p>
+                                <span className="h-px flex-1 bg-[#edf2f7]" />
+                              </div>
+                              <div className="space-y-0">
+                                {group.rows.map((item, index) => {
+                                  const presentation = getLeadActivityPresentation(`${item.sourceLabel} ${item.title} ${item.sourceType}`)
+                                  const ActivityIcon = presentation.Icon
+                                  const isSystemActivity = item.sourceType === 'system'
+                                  const note = normalizeText(item.description)
+                                  const isTaskItem = item.sourceType === 'task' || item.sourceType === 'follow_up'
+                                  const taskRecord = isTaskItem ? item.original : null
+                                  return (
+                                    <article key={item.id || `${group.key}-${index}`} className="relative grid grid-cols-[42px_minmax(0,1fr)] gap-4 pb-6 last:pb-0">
+                                      {index < group.rows.length - 1 ? <span className="absolute left-[20px] top-10 bottom-0 w-px bg-[#edf2f7]" /> : null}
+                                      <div className="relative z-10">
+                                        <span className={`grid h-10 w-10 place-items-center rounded-full ${presentation.rail}`}>
+                                          <ActivityIcon className="h-4 w-4" />
+                                        </span>
+                                      </div>
+                                      <div className="min-w-0 border-b border-[#eef3f7] pb-5 last:border-b-0 last:pb-0">
+                                        <div className="flex flex-wrap items-start justify-between gap-3">
+                                          <div className="flex min-w-0 items-center gap-3">
+                                            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#f3f7fb] text-xs font-bold text-[#315b7a]">
+                                              {isSystemActivity ? 'SY' : getInitials(item.actorName)}
+                                            </span>
+                                            <div className="min-w-0">
+                                              <p className="truncate text-sm font-semibold text-[#102033]">{item.actorName}</p>
+                                              <p className="mt-0.5 text-sm font-semibold text-[#29435d]">{item.sourceLabel || 'Lead update'}</p>
+                                              <p className="mt-0.5 text-sm text-[#60758b]">{item.title}</p>
+                                            </div>
+                                          </div>
+                                          <div className="flex items-center gap-1">
+                                            <span className="hidden text-xs font-medium text-[#8aa0b7] sm:inline">{formatRelativeTime(item.timestamp || item.dueDate)}</span>
+                                            {item.original?.activityId ? (
+                                              <>
+                                                <Button type="button" variant="ghost" size="sm" className="h-8 px-2" title="Edit activity" onClick={() => handleEditActivity(item.original)}>
+                                                  <Pencil className="h-4 w-4" />
+                                                </Button>
+                                                <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-[#a94442]" title="Delete activity" onClick={() => void handleDeleteActivity(item.original)}>
+                                                  <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                              </>
+                                            ) : null}
+                                            <Button type="button" variant="ghost" size="sm" className="h-8 px-2" title="More activity actions">
+                                              <MoreHorizontal className="h-4 w-4" />
+                                            </Button>
+                                          </div>
+                                        </div>
+                                        {note ? (
+                                          <p className="mt-3 text-[15px] leading-6 text-[#4f6680]">"{note}"</p>
+                                        ) : (
+                                          <p className="mt-3 text-sm text-[#8aa0b7]">No note captured.</p>
+                                        )}
+                                        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                                          <span className={`rounded-full px-2.5 py-1 font-semibold ${presentation.pill}`}>{presentation.label}</span>
+                                          {normalizeText(item.outcome) ? (
+                                            <span className="rounded-full bg-[#f4f8fb] px-2.5 py-1 font-semibold text-[#637b94]">Outcome: {item.outcome}</span>
+                                          ) : null}
+                                          {normalizeText(item.status) ? (
+                                            <span className="rounded-full bg-[#f4f8fb] px-2.5 py-1 font-semibold text-[#637b94]">Status: {item.status}</span>
+                                          ) : null}
+                                          {normalizeText(item.dueDate) ? (
+                                            <span className="rounded-full bg-[#fff8ec] px-2.5 py-1 font-semibold text-[#9b651a]">Due: {formatDateShort(item.dueDate)}</span>
+                                          ) : null}
+                                          {normalizeText(item.priority) ? (
+                                            <span className="rounded-full bg-[#f4f8fb] px-2.5 py-1 font-semibold text-[#637b94]">{item.priority} Priority</span>
+                                          ) : null}
+                                          <span className="text-[#8aa0b7] sm:hidden">{formatRelativeTime(item.timestamp || item.dueDate)}</span>
+                                          <span className="text-[#8aa0b7]">{formatDate(item.timestamp || item.dueDate)}</span>
+                                        </div>
+                                        {isTaskItem ? (
+                                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                                            <Button type="button" size="sm" variant="secondary" className="h-8 px-2 text-xs" onClick={() => void handleTaskStatusToggle(taskRecord)}>
+                                              <CheckSquare className="h-4 w-4" />
+                                              {normalizeText(taskRecord?.status) === 'Completed' ? 'Reopen' : 'Complete'}
+                                            </Button>
+                                            <Button type="button" variant="ghost" size="sm" className="h-8 px-2" title="Edit task" onClick={() => handleEditTask(taskRecord)}>
+                                              <Pencil className="h-4 w-4" />
+                                            </Button>
+                                            <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-[#a94442]" title="Delete task" onClick={() => void handleDeleteTask(taskRecord)}>
+                                              <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    </article>
+                                  )
+                                })}
                               </div>
                             </div>
-                            <p className="mt-0.5 text-[#587089]">{row.activityNote || 'No note'}</p>
-                            {normalizeText(row.outcome) ? <p className="mt-0.5 text-[#7a8ea5]">Outcome: {row.outcome}</p> : null}
+                          ))
+                        ) : (
+                          <div className="rounded-[22px] bg-[#f8fbfd] px-5 py-10 text-center">
+                            <span className="mx-auto grid h-11 w-11 place-items-center rounded-full bg-[#eaf3fb] text-[#285b7d]">
+                              <MessageCircle className="h-5 w-5" />
+                            </span>
+                            <p className="mt-3 text-sm font-semibold text-[#29435d]">No activity logged yet.</p>
+                            <p className="mt-1 text-sm text-[#6d839b]">Calls, notes, viewings, offers, and system updates will appear here.</p>
                           </div>
-                        ))
-                      ) : (
-                        <p className="text-xs text-[#6d839b]">No activity logged yet.</p>
-                      )}
-                    </div>
+                        )}
+                      </div>
+                    </section>
                   </div>
                   ) : null}
 
@@ -7916,6 +8550,183 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   </div>
+
+                  {leadWorkspaceTab === 'activity' ? (
+                  <aside className="space-y-5 xl:sticky xl:top-6 xl:self-start">
+                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Relationship Health</p>
+                          <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#102033]">{selectedLeadActivityInsights.healthLabel}</h3>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                          selectedLeadActivityInsights.healthLabel === 'Strong Engagement'
+                            ? 'bg-[#e8f7f1] text-[#1d7a52]'
+                            : selectedLeadActivityInsights.healthLabel === 'Warm'
+                              ? 'bg-[#fff4e5] text-[#b76a12]'
+                              : 'bg-[#eef3f7] text-[#687c91]'
+                        }`}>
+                          {selectedLeadActivityInsights.temperature}
+                        </span>
+                      </div>
+                      <div className="mt-5 space-y-4">
+                        {[
+                          ['Last Contacted', selectedLeadActivityInsights.lastContacted ? formatRelativeTime(selectedLeadActivityInsights.lastContacted) : 'No contact yet'],
+                          ['Response Rate', selectedLeadActivityInsights.responseRate],
+                          ['Lead Temperature', selectedLeadActivityInsights.temperature],
+                        ].map(([label, value]) => (
+                          <div key={label} className="flex items-center justify-between gap-4 border-b border-[#eef3f7] pb-3 text-sm last:border-b-0 last:pb-0">
+                            <span className="font-semibold text-[#8aa0b7]">{label}</span>
+                            <span className="font-semibold text-[#20364c]">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="rounded-[28px] bg-[#102033] p-6 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_18px_44px_rgba(16,32,51,0.18)]">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#a8bfd3]">Next Best Action</p>
+                      <h3 className="mt-3 text-xl font-semibold tracking-[-0.03em]">Send OTP before interest cools down.</h3>
+                      <p className="mt-3 text-sm leading-6 text-[#c7d5e2]">
+                        {selectedLeadWorkflowHealth.missing?.[0]?.label
+                          ? `${selectedLeadWorkflowHealth.missing[0].label} is still open in this relationship.`
+                          : 'This lead is moving cleanly. Keep the momentum visible in the timeline.'}
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="mt-5 bg-white text-[#102033] hover:bg-[#edf4fa]"
+                        onClick={() => void handleCreateBuyerOfferDraft()}
+                        disabled={selectedLeadIsSeller}
+                      >
+                        Generate OTP
+                      </Button>
+                    </section>
+
+                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Open Actions</p>
+                          <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#102033]">{selectedLeadOpenActions.pendingTasks.length} pending</h3>
+                        </div>
+                        {selectedLeadOpenActions.overdueCount ? (
+                          <span className="rounded-full bg-[#fff1f0] px-3 py-1 text-xs font-semibold text-[#b42318]">
+                            {selectedLeadOpenActions.overdueCount} overdue
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-[#eef8f2] px-3 py-1 text-xs font-semibold text-[#247345]">On track</span>
+                        )}
+                      </div>
+                      <div className="mt-4 space-y-3">
+                        {selectedLeadOpenActions.pendingTasks.slice(0, 3).length ? (
+                          selectedLeadOpenActions.pendingTasks.slice(0, 3).map((action) => (
+                            <div key={action.id} className="rounded-[18px] bg-[#f8fbfd] px-4 py-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-[#20364c]">{action.label}</p>
+                                  <p className={`mt-1 text-xs font-semibold ${action.overdue ? 'text-[#b42318]' : 'text-[#7b8fa5]'}`}>{action.meta}</p>
+                                </div>
+                                <Button type="button" size="sm" variant="ghost" className="h-8 px-2" onClick={() => void handleTaskStatusToggle(action.original)}>
+                                  <CheckSquare className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="rounded-[18px] bg-[#f8fbfd] px-4 py-4 text-sm text-[#6d839b]">
+                            No pending tasks or follow-ups.
+                          </div>
+                        )}
+                        {selectedLeadOpenActions.upcomingAppointment ? (
+                          <button
+                            type="button"
+                            className="w-full rounded-[18px] bg-[#f3f7fb] px-4 py-3 text-left transition hover:bg-[#e7f0f8]"
+                            onClick={() => handleOpenAppointmentModal(selectedLeadOpenActions.upcomingAppointment)}
+                          >
+                            <p className="text-sm font-semibold text-[#20364c]">Upcoming appointment</p>
+                            <p className="mt-1 text-xs font-semibold text-[#7b8fa5]">
+                              {formatDate(selectedLeadOpenActions.upcomingAppointment.dateTime || selectedLeadOpenActions.upcomingAppointment.date)}
+                            </p>
+                          </button>
+                        ) : null}
+                      </div>
+                    </section>
+
+                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Quick Actions</p>
+                      <div className="mt-4 divide-y divide-[#eef3f7]">
+                        {[
+                          {
+                            label: 'Schedule Viewing',
+                            Icon: CalendarDays,
+                            disabled: false,
+                            onClick: () => handleOpenAppointmentModal(),
+                          },
+                          {
+                            label: 'Generate OTP',
+                            Icon: CheckSquare,
+                            disabled: selectedLeadIsSeller,
+                            onClick: () => void handleCreateBuyerOfferDraft(),
+                          },
+                          {
+                            label: 'Send WhatsApp',
+                            Icon: MessageCircle,
+                            disabled: !normalizeText(selectedLeadContact?.phone || selectedLead?.phone),
+                            onClick: () => {
+                              const phone = normalizeText(selectedLeadContact?.phone || selectedLead?.phone).replace(/[^\d+]/g, '')
+                              if (phone && typeof window !== 'undefined') window.open(`https://wa.me/${phone.replace(/^\+/, '')}`, '_blank', 'noopener,noreferrer')
+                            },
+                          },
+                          {
+                            label: 'Create Offer',
+                            Icon: ArrowUpRight,
+                            disabled: selectedLeadIsSeller,
+                            onClick: () => void handleCreateBuyerOfferDraft(),
+                          },
+                          {
+                            label: 'Assign Agent',
+                            Icon: UserRound,
+                            disabled: true,
+                            onClick: () => {},
+                          },
+                        ].map(({ label, Icon: icon, disabled, onClick }) => (
+                          <button
+                            key={label}
+                            type="button"
+                            disabled={disabled}
+                            onClick={onClick}
+                            className="flex w-full items-center gap-3 py-3 text-left text-sm font-semibold text-[#29435d] transition hover:text-[#16395a] disabled:cursor-not-allowed disabled:opacity-45"
+                          >
+                            <span className="grid h-9 w-9 place-items-center rounded-full bg-[#f3f7fb] text-[#315b7a]">
+                              {createElement(icon, { className: 'h-4 w-4' })}
+                            </span>
+                            <span className="min-w-0 flex-1">{label}</span>
+                            <ChevronRight className="h-4 w-4 text-[#9aacbf]" />
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Communication Snapshot</p>
+                      <div className="mt-5 grid grid-cols-2 gap-3">
+                        {[
+                          ['Calls', selectedLeadActivityInsights.counts.calls, Phone],
+                          ['Meetings', selectedLeadActivityInsights.counts.meetings, CalendarDays],
+                          ['Emails', selectedLeadActivityInsights.counts.emails, Mail],
+                          ['WhatsApps', selectedLeadActivityInsights.counts.whatsapps, MessageCircle],
+                        ].map(([label, value, icon]) => (
+                          <div key={label} className="rounded-[18px] bg-[#f8fbfd] p-4">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">{label}</span>
+                              {createElement(icon, { className: 'h-4 w-4 text-[#7f96ad]' })}
+                            </div>
+                            <p className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-[#102033]">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  </aside>
+                  ) : null}
 
                   {leadWorkspaceTab === 'overview' ? (
                   <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">

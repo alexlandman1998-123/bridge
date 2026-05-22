@@ -93,6 +93,21 @@ export type SendSellerMandateSignedPayload = {
   downloadLink?: string;
 };
 
+export type SendBuyerOfferLinkPayload = {
+  type: "buyer_offer_link" | "offer_link" | "post_viewing_offer_link";
+  to: string;
+  buyerName?: string;
+  propertyTitle?: string;
+  propertyCount?: number;
+  offerLink?: string;
+  expiresAt?: string;
+  agentName?: string;
+  note?: string;
+  organisationName?: string;
+  supportEmail?: string;
+  supportPhone?: string;
+};
+
 export type SendAppointmentEmailPayload = {
   type:
     | "appointment_scheduled"

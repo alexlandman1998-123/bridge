@@ -123,6 +123,18 @@ function isMissingTableError(error, tableName = '') {
   return String(error?.code || '') === '42P01' || (tableName && message.includes(tableName) && /does not exist|schema cache/i.test(message))
 }
 
+function isForeignKeyViolation(error, constraintName = '') {
+  if (String(error?.code || '') !== '23503') return false
+  const constraint = normalizeLower(constraintName)
+  if (!constraint) return true
+  return [
+    error?.message,
+    error?.details,
+    error?.hint,
+    error?.constraint,
+  ].some((value) => normalizeLower(value).includes(constraint))
+}
+
 export function normalizeBuyerStage(stage, fallback = 'New Lead') {
   const normalized = normalizeText(stage)
   return BUYER_LEAD_STAGES.find((candidate) => candidate.toLowerCase() === normalized.toLowerCase()) || fallback
@@ -593,19 +605,53 @@ export async function createCanonicalOffer(payload = {}, { actor = null } = {}) 
     throw new Error('A buyer lead or buyer contact is required before creating an offer.')
   }
 
-  const { data, error } = await supabase
+  let activeInsertPayload = { ...insertPayload }
+  let { data, error } = await supabase
     .from('offers')
-    .insert(insertPayload)
+    .insert(activeInsertPayload)
     .select('*')
     .single()
 
+  if (error && isForeignKeyViolation(error, 'offers_buyer_lead_id_fkey')) {
+    activeInsertPayload = { ...activeInsertPayload, buyer_lead_id: null }
+    const retry = await supabase
+      .from('offers')
+      .insert(activeInsertPayload)
+      .select('*')
+      .single()
+    data = retry.data
+    error = retry.error
+  }
+
+  if (error && isForeignKeyViolation(error, 'offers_buyer_contact_id_fkey')) {
+    activeInsertPayload = { ...activeInsertPayload, buyer_contact_id: null }
+    const retry = await supabase
+      .from('offers')
+      .insert(activeInsertPayload)
+      .select('*')
+      .single()
+    data = retry.data
+    error = retry.error
+  }
+
+  if (error && isForeignKeyViolation(error, 'offers_buyer_lead_id_fkey')) {
+    activeInsertPayload = { ...activeInsertPayload, buyer_lead_id: null }
+    const retry = await supabase
+      .from('offers')
+      .insert(activeInsertPayload)
+      .select('*')
+      .single()
+    data = retry.data
+    error = retry.error
+  }
+
   if (error) throw error
 
-  const event = statusToEvent(insertPayload.status)
-  if (event && insertPayload.buyer_lead_id) {
+  const event = statusToEvent(activeInsertPayload.status)
+  if (event && activeInsertPayload.buyer_lead_id) {
     await applyBuyerLifecycleEvent({
-      organisationId: insertPayload.organisation_id,
-      leadId: insertPayload.buyer_lead_id,
+      organisationId: activeInsertPayload.organisation_id,
+      leadId: activeInsertPayload.buyer_lead_id,
       event,
       offerId: data?.id,
       actor,
@@ -767,6 +813,19 @@ export async function upsertAppointmentViewedListings({
 
   if (error) {
     if (isMissingTableError(error, 'appointment_viewed_listings')) return []
+    if (isForeignKeyViolation(error, 'appointment_viewed_listings_lead_id_fkey')) {
+      const fallbackRows = rows.map((row) => ({ ...row, lead_id: null }))
+      const retry = await supabase
+        .from('appointment_viewed_listings')
+        .upsert(fallbackRows, { onConflict: 'organisation_id,appointment_id,listing_id' })
+        .select('*')
+
+      if (retry.error) {
+        if (isMissingTableError(retry.error, 'appointment_viewed_listings')) return []
+        throw retry.error
+      }
+      return (Array.isArray(retry.data) ? retry.data : []).map(mapAppointmentViewedListingDbRow).filter(Boolean)
+    }
     throw error
   }
   return (Array.isArray(data) ? data : []).map(mapAppointmentViewedListingDbRow).filter(Boolean)
@@ -800,18 +859,52 @@ export async function createOfferPortalSession(payload = {}, { actor = null } = 
     throw new Error('A buyer lead or buyer contact is required before creating an offer portal link.')
   }
 
-  const { data, error } = await supabase
+  let activeInsertPayload = { ...insertPayload }
+  let { data, error } = await supabase
     .from('offer_portal_sessions')
-    .insert(insertPayload)
+    .insert(activeInsertPayload)
     .select('*')
     .single()
 
+  if (error && isForeignKeyViolation(error, 'offer_portal_sessions_buyer_lead_id_fkey')) {
+    activeInsertPayload = { ...activeInsertPayload, buyer_lead_id: null }
+    const retry = await supabase
+      .from('offer_portal_sessions')
+      .insert(activeInsertPayload)
+      .select('*')
+      .single()
+    data = retry.data
+    error = retry.error
+  }
+
+  if (error && isForeignKeyViolation(error, 'offer_portal_sessions_buyer_contact_id_fkey')) {
+    activeInsertPayload = { ...activeInsertPayload, buyer_contact_id: null }
+    const retry = await supabase
+      .from('offer_portal_sessions')
+      .insert(activeInsertPayload)
+      .select('*')
+      .single()
+    data = retry.data
+    error = retry.error
+  }
+
+  if (error && isForeignKeyViolation(error, 'offer_portal_sessions_buyer_lead_id_fkey')) {
+    activeInsertPayload = { ...activeInsertPayload, buyer_lead_id: null }
+    const retry = await supabase
+      .from('offer_portal_sessions')
+      .insert(activeInsertPayload)
+      .select('*')
+      .single()
+    data = retry.data
+    error = retry.error
+  }
+
   if (error) throw error
 
-  if (insertPayload.buyer_lead_id) {
+  if (activeInsertPayload.buyer_lead_id) {
     await applyBuyerLifecycleEvent({
-      organisationId: insertPayload.organisation_id,
-      leadId: insertPayload.buyer_lead_id,
+      organisationId: activeInsertPayload.organisation_id,
+      leadId: activeInsertPayload.buyer_lead_id,
       event: BUYER_LIFECYCLE_EVENTS.OFFER_CREATED,
       actor,
       activityNote: 'Post-viewing offer portal link created.',
