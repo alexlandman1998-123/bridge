@@ -53,6 +53,7 @@ import {
   buildSellerOnboardingLink,
   createAgentSellerLead,
   createListingDraftFromSellerLead,
+  deleteSellerWorkflowRecord,
   generateSellerOnboardingToken,
   LISTING_STATUS,
   SELLER_ONBOARDING_STATUS,
@@ -1263,7 +1264,10 @@ function mapPrivateListingToLeadFallback(listing = {}) {
     sellerOnboardingToken: normalizeText(listing?.sellerOnboarding?.token),
     sellerOnboardingLink: normalizeText(listing?.sellerOnboarding?.link),
     sellerOnboardingStatus: onboardingStatus,
+    sellerLeadId: normalizeText(listing?.sellerLeadId),
     sellerWorkflowLeadId: normalizeText(listing?.sellerLeadId),
+    originatingCrmLeadId: normalizeText(listing?.originatingCrmLeadId),
+    privateListingId: normalizeText(listing?.id),
     listingId: normalizeText(listing?.id),
     sellerOnboarding: listing?.sellerOnboarding || null,
     createdAt,
@@ -6568,11 +6572,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
 
     const leadIdentityKey = normalizeLeadIdentityKey(leadId)
-    const leadForDelete = records.leads.find((row) => normalizeText(row?.leadId) === leadId) || null
+    const leadForDelete = records.leads.find((row) => normalizeLeadIdentityKey(row?.leadId || row?.id) === leadIdentityKey) || null
     const targetOrganisationId = normalizeText(organisationId || leadForDelete?.organisationId || 'default')
     setError('')
     try {
       await deleteAgencyCrmLeadRecord(targetOrganisationId, leadId)
+      if (normalizeText(leadForDelete?.leadCategory).toLowerCase().includes('seller')) {
+        const sellerWorkflowIds = [
+          leadId,
+          normalizeText(leadId).replace(/^lead_/i, ''),
+          leadForDelete?.sellerWorkflowLeadId,
+          leadForDelete?.sellerLeadId,
+          leadForDelete?.originatingCrmLeadId,
+        ].map(normalizeLeadIdentityKey).filter(Boolean)
+        for (const sellerWorkflowId of [...new Set(sellerWorkflowIds)]) {
+          deleteSellerWorkflowRecord(sellerWorkflowId, { removeLinkedListings: false })
+        }
+      }
       setRecords((previous) => ({
         ...previous,
         leads: previous.leads.filter((row) => normalizeLeadIdentityKey(row?.leadId) !== leadIdentityKey),

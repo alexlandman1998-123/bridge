@@ -1184,37 +1184,46 @@ export async function listCanonicalOffersForLead({
     }
   }
 
+  const targetedQueries = []
   if (scopedLeadId) {
-    const { data, error } = await supabase
-      .from('offers')
-      .select('*')
-      .eq('organisation_id', scopedOrganisationId)
-      .eq('buyer_lead_id', scopedLeadId)
-      .order('updated_at', { ascending: false })
-    if (error) throw error
-    addRows(data)
+    targetedQueries.push(
+      supabase
+        .from('offers')
+        .select('*')
+        .eq('organisation_id', scopedOrganisationId)
+        .eq('buyer_lead_id', scopedLeadId)
+        .order('updated_at', { ascending: false }),
+    )
   }
 
   if (scopedContactId) {
-    const { data, error } = await supabase
-      .from('offers')
-      .select('*')
-      .eq('organisation_id', scopedOrganisationId)
-      .eq('buyer_contact_id', scopedContactId)
-      .order('updated_at', { ascending: false })
-    if (error) throw error
-    addRows(data)
+    targetedQueries.push(
+      supabase
+        .from('offers')
+        .select('*')
+        .eq('organisation_id', scopedOrganisationId)
+        .eq('buyer_contact_id', scopedContactId)
+        .order('updated_at', { ascending: false }),
+    )
   }
 
   if (scopedAppointmentIds.length) {
-    const { data, error } = await supabase
-      .from('offers')
-      .select('*')
-      .eq('organisation_id', scopedOrganisationId)
-      .in('viewing_appointment_id', scopedAppointmentIds)
-      .order('updated_at', { ascending: false })
-    if (error) throw error
-    addRows(data)
+    targetedQueries.push(
+      supabase
+        .from('offers')
+        .select('*')
+        .eq('organisation_id', scopedOrganisationId)
+        .in('viewing_appointment_id', scopedAppointmentIds)
+        .order('updated_at', { ascending: false }),
+    )
+  }
+
+  if (targetedQueries.length) {
+    const targetedResults = await Promise.all(targetedQueries)
+    for (const { data, error } of targetedResults) {
+      if (error) throw error
+      addRows(data)
+    }
   }
 
   if (!rowsById.size && scopedListingIds.length && (buyerEmail || buyerPhone || buyerName)) {

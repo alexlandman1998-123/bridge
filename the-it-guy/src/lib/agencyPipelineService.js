@@ -510,7 +510,10 @@ function mergeLeadRowsForStore(localRows = [], incomingRows = [], organisationId
       sellerOnboardingToken: normalizeText(base?.sellerOnboardingToken || local?.sellerOnboardingToken || incoming?.sellerOnboardingToken),
       sellerOnboardingLink: normalizeText(base?.sellerOnboardingLink || local?.sellerOnboardingLink || incoming?.sellerOnboardingLink),
       sellerOnboardingStatus: normalizeText(base?.sellerOnboardingStatus || local?.sellerOnboardingStatus || incoming?.sellerOnboardingStatus),
+      sellerLeadId: normalizeText(base?.sellerLeadId || local?.sellerLeadId || incoming?.sellerLeadId),
       sellerWorkflowLeadId: normalizeText(base?.sellerWorkflowLeadId || local?.sellerWorkflowLeadId || incoming?.sellerWorkflowLeadId),
+      originatingCrmLeadId: normalizeText(base?.originatingCrmLeadId || local?.originatingCrmLeadId || incoming?.originatingCrmLeadId),
+      privateListingId: normalizeText(base?.privateListingId || local?.privateListingId || incoming?.privateListingId),
       sellerName: normalizeText(base?.sellerName || local?.sellerName || incoming?.sellerName),
       sellerSurname: normalizeText(base?.sellerSurname || local?.sellerSurname || incoming?.sellerSurname),
       sellerEmail: normalizeText(base?.sellerEmail || local?.sellerEmail || incoming?.sellerEmail).toLowerCase(),
@@ -534,6 +537,24 @@ function mergeLeadRowsForStore(localRows = [], incomingRows = [], organisationId
 
 function normalizeDeletionKeyPart(value) {
   return normalizeLowerText(value).replace(/\s+/g, ' ')
+}
+
+function addLeadDeletionIdKeys(keys, value) {
+  const raw = normalizeText(value)
+  if (!raw) return
+
+  keys.add(`lead:${normalizeLowerText(raw)}`)
+
+  const identityId = normalizeLeadIdentityKey(raw)
+  if (identityId) keys.add(`lead:${normalizeLowerText(identityId)}`)
+
+  if (/^lead_/i.test(raw)) {
+    const withoutLeadPrefix = raw.replace(/^lead_/i, '')
+    if (withoutLeadPrefix) keys.add(`lead:${normalizeLowerText(withoutLeadPrefix)}`)
+    return
+  }
+
+  keys.add(`lead:${normalizeLowerText(`lead_${raw}`)}`)
 }
 
 function findLeadContact(store = {}, lead = {}) {
@@ -565,18 +586,40 @@ function getDeletedLeadKeySet(store = {}) {
 
 function getLeadDeletionKeys(lead = {}, store = {}) {
   const keys = new Set()
-  const leadId = normalizeText(lead?.leadId || lead?.lead_id || lead?.id)
-  if (leadId) keys.add(`lead:${normalizeLowerText(leadId)}`)
-  const leadIdentityId = normalizeLeadIdentityKey(leadId)
-  if (leadIdentityId) keys.add(`lead:${normalizeLowerText(leadIdentityId)}`)
+  const leadIdCandidates = [
+    lead?.leadId,
+    lead?.lead_id,
+    lead?.id,
+    lead?.sellerWorkflowLeadId,
+    lead?.seller_workflow_lead_id,
+    lead?.sellerLeadId,
+    lead?.seller_lead_id,
+    lead?.originatingCrmLeadId,
+    lead?.originating_crm_lead_id,
+    lead?.listingId,
+    lead?.listing_id,
+    lead?.privateListingId,
+    lead?.private_listing_id,
+  ]
+
+  leadIdCandidates.forEach((candidate) => addLeadDeletionIdKeys(keys, candidate))
 
   const contact = findLeadContact(store, lead) || {}
   const category = normalizeDeletionKeyPart(lead?.leadCategory || lead?.lead_category || 'lead') || 'lead'
-  const email = normalizeDeletionKeyPart(contact.email || lead?.email)
-  const phone = normalizeDeletionKeyPart(contact.phone || lead?.phone).replace(/[^0-9+]/g, '')
-  const firstName = normalizeDeletionKeyPart(contact.firstName || contact.first_name || lead?.firstName || lead?.first_name)
-  const lastName = normalizeDeletionKeyPart(contact.lastName || contact.last_name || lead?.lastName || lead?.last_name)
-  const property = normalizeDeletionKeyPart(lead?.propertyInterest || lead?.property_interest || lead?.sellerPropertyAddress || lead?.seller_property_address)
+  const email = normalizeDeletionKeyPart(contact.email || lead?.email || lead?.sellerEmail || lead?.seller_email)
+  const phone = normalizeDeletionKeyPart(contact.phone || lead?.phone || lead?.sellerPhone || lead?.seller_phone).replace(/[^0-9+]/g, '')
+  const firstName = normalizeDeletionKeyPart(contact.firstName || contact.first_name || lead?.firstName || lead?.first_name || lead?.sellerName || lead?.seller_name)
+  const lastName = normalizeDeletionKeyPart(contact.lastName || contact.last_name || lead?.lastName || lead?.last_name || lead?.sellerSurname || lead?.seller_surname)
+  const property = normalizeDeletionKeyPart(
+    lead?.propertyInterest ||
+      lead?.property_interest ||
+      lead?.sellerPropertyAddress ||
+      lead?.seller_property_address ||
+      lead?.propertyAddress ||
+      lead?.property_address ||
+      lead?.listingTitle ||
+      lead?.listing_title,
+  )
 
   if (email) keys.add(`identity:${category}:email:${email}`)
   if (phone) keys.add(`identity:${category}:phone:${phone}`)
@@ -622,10 +665,25 @@ function pruneDeletedLeadReferences(store = {}, deletedKeys = new Set()) {
   const nextLeads = []
   for (const row of Array.isArray(store.leads) ? store.leads : []) {
     if (leadMatchesDeletedKeys(row, store, deletedKeys)) {
-      const leadId = normalizeText(row?.leadId || row?.lead_id || row?.id)
-      if (leadId) removedLeadIds.add(leadId)
-      const leadIdentityId = normalizeLeadIdentityKey(leadId)
-      if (leadIdentityId) removedLeadIds.add(leadIdentityId)
+      const rowIds = [
+        row?.leadId,
+        row?.lead_id,
+        row?.id,
+        row?.sellerWorkflowLeadId,
+        row?.seller_workflow_lead_id,
+        row?.sellerLeadId,
+        row?.seller_lead_id,
+        row?.originatingCrmLeadId,
+        row?.originating_crm_lead_id,
+      ]
+      rowIds.forEach((rowId) => {
+        const normalized = normalizeText(rowId)
+        if (normalized) removedLeadIds.add(normalized)
+        const identityId = normalizeLeadIdentityKey(normalized)
+        if (identityId) removedLeadIds.add(identityId)
+        if (normalized && !/^lead_/i.test(normalized)) removedLeadIds.add(`lead_${normalized}`)
+        if (/^lead_/i.test(normalized)) removedLeadIds.add(normalized.replace(/^lead_/i, ''))
+      })
       continue
     }
     nextLeads.push(row)
@@ -903,7 +961,10 @@ function normalizeLeadRecord(lead = {}, organisationId) {
     sellerOnboardingLink: normalizeText(lead.sellerOnboardingLink),
     sellerOnboardingStatus: normalizeText(lead.sellerOnboardingStatus),
     sellerOnboarding,
+    sellerLeadId: normalizeText(lead.sellerLeadId || lead.seller_lead_id),
     sellerWorkflowLeadId: normalizeText(lead.sellerWorkflowLeadId),
+    originatingCrmLeadId: normalizeText(lead.originatingCrmLeadId || lead.originating_crm_lead_id),
+    privateListingId: normalizeText(lead.privateListingId || lead.private_listing_id),
     mandatePacketId: normalizeText(lead.mandatePacketId),
     mandateRuntimeDraftId: normalizeText(lead.mandateRuntimeDraftId),
     mandateStatus: normalizeText(lead.mandateStatus),
