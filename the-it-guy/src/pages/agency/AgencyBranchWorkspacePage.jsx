@@ -36,6 +36,10 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function normalizeLower(value) {
+  return normalizeText(value).toLowerCase()
+}
+
 function formatCurrency(value) {
   const amount = Number(value || 0)
   if (!Number.isFinite(amount) || amount <= 0) return 'R 0'
@@ -61,7 +65,7 @@ function getInitials(value = '') {
   return parts.slice(0, 2).map((part) => part[0]).join('').toUpperCase()
 }
 
-function ExecutiveMetric({ label, value, insight, icon, tone = 'blue' }) {
+function KpiCard({ label, value, helper, icon, tone = 'blue' }) {
   const toneClass = {
     blue: 'bg-[#edf5ff] text-[#315f8f]',
     green: 'bg-[#effaf3] text-[#26724c]',
@@ -71,37 +75,47 @@ function ExecutiveMetric({ label, value, insight, icon, tone = 'blue' }) {
   }[tone] || 'bg-[#f5f8fc] text-[#405b75]'
 
   return (
-    <article className="group min-w-[210px] rounded-[22px] border border-white/80 bg-white/88 px-4 py-4 shadow-[0_18px_42px_rgba(24,45,68,0.08)] backdrop-blur transition duration-200 hover:-translate-y-0.5 hover:border-[#cbd9e7]">
+    <article className="rounded-[18px] border border-[#dfe8f1] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(24,45,68,0.04)]">
       <div className="flex items-start justify-between gap-3">
-        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.13em] text-[#7b8ca2]">{label}</span>
-        <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[14px] ${toneClass}`}>
-          {icon ? createElement(icon, { size: 15 }) : null}
+        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{label}</span>
+        <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] ${toneClass}`}>
+          {icon ? createElement(icon, { size: 14 }) : null}
         </span>
       </div>
-      <strong className="mt-4 block text-[2rem] font-semibold leading-none tracking-[-0.055em] text-[#102236] tabular-nums">
+      <strong className="mt-3 block text-[1.45rem] font-semibold leading-none tracking-[-0.04em] text-[#102236] tabular-nums">
         {value}
       </strong>
-      <p className="mt-2 truncate text-[0.78rem] font-medium text-[#667b92]">{insight}</p>
+      <p className="mt-2 text-[0.78rem] font-medium leading-5 text-[#667b92]">{helper}</p>
     </article>
   )
 }
 
 function EmptyState({ title, copy, icon = Building2 }) {
   return (
-    <div className="rounded-[22px] border border-dashed border-[#d6e2ef] bg-[#fbfdff] px-6 py-8 text-center">
-      <div className="mx-auto grid h-12 w-12 place-items-center rounded-[18px] bg-[#edf4fb] text-[#35546c]">
-        {createElement(icon, { size: 22 })}
+    <div className="rounded-[20px] border border-dashed border-[#d6e2ef] bg-[#fbfdff] px-6 py-8 text-center">
+      <div className="mx-auto grid h-11 w-11 place-items-center rounded-[16px] bg-[#edf4fb] text-[#35546c]">
+        {createElement(icon, { size: 20 })}
       </div>
-      <h4 className="mt-4 text-[1.05rem] font-semibold tracking-[-0.025em] text-[#142132]">{title}</h4>
+      <h4 className="mt-4 text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{title}</h4>
       <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#60758b]">{copy}</p>
+    </div>
+  )
+}
+
+function SectionTitle({ eyebrow, title, copy }) {
+  return (
+    <div>
+      {eyebrow ? <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">{eyebrow}</p> : null}
+      <h2 className="mt-1 text-[1.18rem] font-semibold tracking-[-0.03em] text-[#142132]">{title}</h2>
+      {copy ? <p className="mt-1 text-sm leading-6 text-[#60758b]">{copy}</p> : null}
     </div>
   )
 }
 
 function SimpleTable({ columns, rows }) {
   return (
-    <div className="overflow-x-auto rounded-[20px] border border-[#dfe8f1] bg-white shadow-[0_14px_30px_rgba(24,45,68,0.05)]">
-      <table className="min-w-[860px] w-full text-sm">
+    <div className="overflow-x-auto rounded-[18px] border border-[#dfe8f1] bg-white">
+      <table className="min-w-[760px] w-full text-sm">
         <thead className="bg-[#f7faff] text-left text-[0.68rem] uppercase tracking-[0.12em] text-[#6f839a]">
           <tr>
             {columns.map((column) => (
@@ -123,13 +137,21 @@ function SimpleTable({ columns, rows }) {
   )
 }
 
-function SectionTitle({ eyebrow, title, copy }) {
+function ActionButton({ children, icon, variant = 'default', ...props }) {
+  const Icon = icon
+  const className = variant === 'danger'
+    ? 'border-[#ead5d2] bg-[#fff8f8] text-[#8a3a33] hover:bg-[#fff3f1]'
+    : 'border-[#dce6f1] bg-white text-[#263f58] hover:border-[#c7d6e5] hover:bg-[#f8fbff]'
+
   return (
-    <div>
-      {eyebrow ? <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">{eyebrow}</p> : null}
-      <h2 className="mt-1 text-[1.25rem] font-semibold tracking-[-0.035em] text-[#142132]">{title}</h2>
-      {copy ? <p className="mt-1 text-sm leading-6 text-[#60758b]">{copy}</p> : null}
-    </div>
+    <button
+      type="button"
+      className={`inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[14px] border px-3 text-sm font-semibold transition ${className}`}
+      {...props}
+    >
+      {Icon ? <Icon size={15} /> : null}
+      {children}
+    </button>
   )
 }
 
@@ -175,7 +197,7 @@ export default function AgencyBranchWorkspacePage() {
   }, [loadWorkspace])
 
   const activeDeals = useMemo(() => branchTransactions.filter((row) => {
-    const status = normalizeText(row?.lifecycle_state).toLowerCase()
+    const status = normalizeLower(row?.lifecycle_state)
     return status !== 'completed' && status !== 'archived' && status !== 'cancelled'
   }).length, [branchTransactions])
 
@@ -190,11 +212,13 @@ export default function AgencyBranchWorkspacePage() {
   const revenueSecured = pipelineValue * 0.03
   const monthlyPerformance = Math.max(0, Math.round(revenueSecured / 1000))
   const branchName = branch?.name || 'Branch Workspace'
-  const branchLocation = [branch?.city || 'City', branch?.province || 'Province'].filter(Boolean).join(', ')
+  const branchLocation = normalizeText(branch?.location) || [branch?.city, branch?.province].map(normalizeText).filter(Boolean).join(', ') || 'Location pending'
   const activeAgents = Number(branch?.kpis?.activeAgents ?? leaderboard.length ?? 0)
+  const listingCount = Number(branch?.kpis?.activeListings ?? branchListings.length)
+  const conversionRate = Number(branch?.kpis?.conversionRate || closedRate || 0)
 
   const activityItems = useMemo(() => {
-    const transactions = branchTransactions.slice(0, 4).map((row) => ({
+    const transactions = branchTransactions.slice(0, 5).map((row) => ({
       id: `tx-${row.id}`,
       actor: row.assigned_agent || row.assigned_agent_email || 'Branch team',
       title: 'Transaction updated',
@@ -202,7 +226,7 @@ export default function AgencyBranchWorkspacePage() {
       timestamp: row.updated_at || row.created_at,
       icon: ArrowRightLeft,
     }))
-    const listings = branchListings.slice(0, 3).map((listing) => ({
+    const listings = branchListings.slice(0, 4).map((listing) => ({
       id: `listing-${listing.id}`,
       actor: listing.assigned_agent_name || listing.assigned_agent_email || 'Branch team',
       title: 'Listing activity',
@@ -212,8 +236,17 @@ export default function AgencyBranchWorkspacePage() {
     }))
     return [...transactions, ...listings]
       .sort((left, right) => new Date(right.timestamp || 0) - new Date(left.timestamp || 0))
-      .slice(0, 6)
+      .slice(0, 7)
   }, [branchListings, branchTransactions])
+
+  const agentPerformanceRows = useMemo(() => leaderboard.map((agent) => [
+    agent.name,
+    String(agent.listings || 0),
+    String(agent.transactions || 0),
+    String(agent.registered || agent.registeredDeals || 0),
+    formatCurrency(agent.revenue || 0),
+    formatPercent(agent.conversionRate || 0),
+  ]), [leaderboard])
 
   if (loading) {
     return (
@@ -232,170 +265,145 @@ export default function AgencyBranchWorkspacePage() {
   }
 
   return (
-    <section className="flex flex-col gap-5">
-      <section className="relative overflow-hidden rounded-[30px] bg-[#101d2c] p-5 text-white shadow-[0_30px_80px_rgba(16,29,44,0.24)] sm:p-7">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(118,160,205,0.26),transparent_36%),linear-gradient(145deg,rgba(255,255,255,0.1),transparent_44%)]" />
-        <div className="relative z-10">
-          <button type="button" onClick={() => navigate('/agency/branches')} className="inline-flex items-center gap-2 text-[0.78rem] font-semibold uppercase tracking-[0.12em] text-white/62 transition hover:text-white">
-            <ArrowLeft size={14} />
-            Back to Branches
-          </button>
-
-          <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_auto] xl:items-end">
-            <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center">
-              <div className="grid h-20 w-20 shrink-0 place-items-center rounded-[24px] border border-white/12 bg-white/10 text-[1.25rem] font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
+    <section className="flex flex-col gap-4">
+      <section className="rounded-[24px] border border-[#dfe8f1] bg-white px-5 py-4 shadow-[0_14px_34px_rgba(24,45,68,0.06)]">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
+            <button type="button" onClick={() => navigate('/agency/branches')} className="inline-flex items-center gap-2 text-[0.74rem] font-semibold uppercase tracking-[0.12em] text-[#6b7d93] transition hover:text-[#163247]">
+              <ArrowLeft size={14} />
+              Back to Branches
+            </button>
+            <div className="mt-3 flex min-w-0 items-center gap-4">
+              <div className="grid h-14 w-14 shrink-0 place-items-center rounded-[18px] border border-[#dce7f2] bg-[#f4f8fc] text-[1rem] font-bold text-[#163247]">
                 {getInitials(branchName)}
               </div>
               <div className="min-w-0">
-                <p className="text-[0.74rem] font-semibold uppercase tracking-[0.16em] text-white/52">Agency Headquarters</p>
-                <h1 className="mt-2 text-[2.45rem] font-semibold leading-none tracking-[-0.065em] text-white sm:text-[3.1rem]">{branchName}</h1>
-                <div className="mt-4 flex flex-wrap items-center gap-2 text-sm font-medium text-white/72">
-                  <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="truncate text-[1.7rem] font-semibold leading-tight tracking-[-0.045em] text-[#142132]">{branchName}</h1>
+                  <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[0.75rem] font-semibold ${branch?.isActive !== false ? 'border-[#d6ece0] bg-[#edfdf3] text-[#1c7d45]' : 'border-[#f4d7d4] bg-[#fff4f3] text-[#b42318]'}`}>
+                    <span className="h-2 w-2 rounded-full bg-current" />
+                    {branch?.isActive !== false ? 'Active' : 'Suspended'}
+                  </span>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-medium text-[#60758d]">
+                  <span className="inline-flex items-center gap-1.5">
                     <MapPin size={14} />
                     {branchLocation}
                   </span>
-                  <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-1.5">
-                    <span className="h-2 w-2 rounded-full bg-[#5ee29a] shadow-[0_0_0_3px_rgba(94,226,154,0.14)]" />
-                    Operational
-                  </span>
-                  <span className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5">
-                    {activeAgents} Agents - {activeDeals} Active Transactions
-                  </span>
+                  <span>{activeAgents} agents</span>
+                  <span>{activeDeals} active deals</span>
                 </div>
               </div>
             </div>
-
-            <div className="flex flex-col gap-2 sm:flex-row xl:justify-end">
-              <button
-                type="button"
-                className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-[16px] border border-white/10 bg-white px-5 py-2 text-sm font-semibold text-[#102236] shadow-[0_18px_38px_rgba(0,0,0,0.2)] transition hover:-translate-y-0.5"
-                onClick={() => navigate('/new-transaction', { state: { branchId } })}
-              >
-                <Plus size={16} />
-                Add Transaction
-              </button>
-              <button
-                type="button"
-                className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-[16px] border border-white/12 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/14"
-                onClick={() => setActiveTab('agents')}
-              >
-                <UserPlus size={16} />
-                Add Agent
-              </button>
-              <button
-                type="button"
-                className="inline-flex min-h-[46px] items-center justify-center rounded-[16px] border border-white/12 bg-white/10 px-4 py-2 text-white transition hover:bg-white/14"
-                onClick={() => setActiveTab('settings')}
-                aria-label="Branch settings"
-              >
-                <Settings size={17} />
-              </button>
-            </div>
           </div>
 
-          <div className="mt-7 overflow-x-auto pb-1">
-            <div className="grid min-w-[920px] gap-3 xl:grid-cols-6">
-              <ExecutiveMetric label="Agents" value={activeAgents} insight="Active branch users" icon={Users} tone="blue" />
-              <ExecutiveMetric label="Listings" value={branch?.kpis?.activeListings ?? branchListings.length} insight="Live inventory" icon={Building2} tone="slate" />
-              <ExecutiveMetric label="Active Deals" value={activeDeals} insight={`${branchTransactions.length} total tracked`} icon={ArrowRightLeft} tone="gold" />
-              <ExecutiveMetric label="Revenue Secured" value={formatCurrency(revenueSecured)} insight="Estimated commission value" icon={Banknote} tone="green" />
-              <ExecutiveMetric label="Close Rate" value={formatPercent(closedRate)} insight={`${closedDeals} registered deals`} icon={FileCheck2} tone="navy" />
-              <ExecutiveMetric label="Performance Trend" value={`${monthlyPerformance}k`} insight="Monthly revenue signal" icon={TrendingUp} tone="blue" />
-            </div>
+          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+            <button
+              type="button"
+              className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[15px] bg-[#163247] px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(22,50,71,0.2)] transition hover:-translate-y-0.5 hover:bg-[#1d435f]"
+              onClick={() => navigate('/new-transaction', { state: { branchId } })}
+            >
+              <Plus size={16} />
+              Add Transaction
+            </button>
+            <ActionButton icon={UserPlus} onClick={() => setActiveTab('agents')}>Add Agent</ActionButton>
+            <ActionButton icon={Settings} onClick={() => setActiveTab('settings')} aria-label="Branch settings" />
+            <ActionButton aria-label="More branch actions"><MoreHorizontal size={17} /></ActionButton>
           </div>
         </div>
       </section>
 
-      <section className="rounded-[24px] border border-[#dfe8f1] bg-white/88 p-3 shadow-[0_18px_42px_rgba(24,45,68,0.06)] backdrop-blur">
+      <section className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 2xl:grid-cols-6">
+        <KpiCard label="Agents" value={activeAgents} helper="Active branch users" icon={Users} tone="blue" />
+        <KpiCard label="Listings" value={listingCount} helper="Live inventory" icon={Building2} tone="slate" />
+        <KpiCard label="Active Deals" value={activeDeals} helper={`${branchTransactions.length} total tracked`} icon={ArrowRightLeft} tone="gold" />
+        <KpiCard label="Revenue Secured" value={formatCurrency(revenueSecured)} helper="Estimated commission value" icon={Banknote} tone="green" />
+        <KpiCard label="Close Rate" value={formatPercent(closedRate)} helper={`${closedDeals} registered deals`} icon={FileCheck2} tone="navy" />
+        <KpiCard label="Performance Trend" value={`${monthlyPerformance}k`} helper="Monthly revenue signal" icon={TrendingUp} tone="blue" />
+      </section>
+
+      <section className="rounded-[20px] border border-[#dfe8f1] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(24,45,68,0.04)]">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[14px] border border-[#dce6f1] bg-white px-3 text-sm font-semibold text-[#263f58] transition hover:border-[#c7d6e5] hover:bg-[#f8fbff]">
-              <Building2 size={15} />
-              Edit Branch
-            </button>
-            <button type="button" className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[14px] border border-[#dce6f1] bg-white px-3 text-sm font-semibold text-[#263f58] transition hover:border-[#c7d6e5] hover:bg-[#f8fbff]" onClick={() => setActiveTab('agents')}>
-              <UserPlus size={15} />
-              Invite Agent
-            </button>
-            <button type="button" className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[14px] border border-[#dce6f1] bg-white px-3 text-sm font-semibold text-[#263f58] transition hover:border-[#c7d6e5] hover:bg-[#f8fbff]" onClick={() => setActiveTab('settings')}>
-              <Settings size={15} />
-              Branch Settings
-            </button>
+            <ActionButton icon={Building2}>Edit Branch</ActionButton>
+            <ActionButton icon={UserPlus} onClick={() => setActiveTab('agents')}>Invite Agent</ActionButton>
+            <ActionButton icon={Settings} onClick={() => setActiveTab('settings')}>Branch Settings</ActionButton>
           </div>
-          <div className="flex items-center gap-2">
-            <button type="button" className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[14px] border border-[#ead5d2] bg-[#fff8f8] px-3 text-sm font-semibold text-[#8a3a33] transition hover:bg-[#fff3f1]">
-              Archive Branch
-            </button>
-            <button type="button" className="inline-flex min-h-[40px] items-center justify-center rounded-[14px] border border-[#dce6f1] bg-white px-3 text-[#405b75] transition hover:border-[#c7d6e5] hover:bg-[#f8fbff]" aria-label="More branch actions">
-              <MoreHorizontal size={17} />
-            </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <ActionButton variant="danger">Archive Branch</ActionButton>
+            <ActionButton aria-label="More branch actions"><MoreHorizontal size={17} /></ActionButton>
           </div>
         </div>
       </section>
 
-      <section className="rounded-[28px] border border-[#dfe8f1] bg-white p-4 shadow-[0_24px_60px_rgba(24,45,68,0.08)] sm:p-5">
-        <div className="overflow-x-auto pb-1">
-          <div className="inline-flex min-w-max items-center rounded-[18px] border border-[#dfe8f1] bg-[#f6f9fc] p-1">
-            {TABS.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setActiveTab(tab.key)}
-                className={`min-h-[38px] rounded-[14px] px-4 text-sm font-semibold transition ${
-                  activeTab === tab.key
-                    ? 'bg-white text-[#163247] shadow-[0_10px_22px_rgba(24,45,68,0.12)]'
-                    : 'text-[#5f7187] hover:text-[#163247]'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+      <section className="overflow-x-auto pb-1">
+        <div className="inline-flex min-w-max items-center rounded-[18px] border border-[#dfe8f1] bg-white p-1 shadow-[0_10px_24px_rgba(24,45,68,0.04)]">
+          {TABS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={`min-h-[38px] rounded-[14px] px-4 text-sm font-semibold transition ${
+                activeTab === tab.key
+                  ? 'bg-[#163247] text-white shadow-[0_8px_18px_rgba(22,50,71,0.18)]'
+                  : 'text-[#5f7187] hover:bg-[#f6f9fc] hover:text-[#163247]'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
+      </section>
 
-        <div className="mt-5">
-          {activeTab === 'overview' ? (
-            <div className="grid gap-5 xl:grid-cols-[1.55fr_0.95fr]">
-              <section className="relative overflow-hidden rounded-[26px] border border-[#dfe8f1] bg-[linear-gradient(145deg,#ffffff_0%,#f8fbfe_100%)] p-5 shadow-[0_18px_42px_rgba(24,45,68,0.06)] sm:p-6">
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-[radial-gradient(circle_at_18%_0%,rgba(54,94,128,0.12),transparent_40%)]" />
-                <div className="relative z-10">
-                  <SectionTitle eyebrow="Executive Overview" title="Branch Performance Cockpit" copy="Pipeline health, transaction velocity, listing movement, and conversion quality in one operating view." />
-                  <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <ExecutiveMetric label="Pipeline Value" value={formatCurrency(pipelineValue)} insight="Open branch portfolio" icon={BarChart3} tone="blue" />
-                    <ExecutiveMetric label="Conversion" value={formatPercent(branch?.kpis?.conversionRate || closedRate)} insight="Lead to closed signal" icon={TrendingUp} tone="green" />
-                    <ExecutiveMetric label="Velocity" value={`${activeDeals}`} insight="Deals in motion" icon={ArrowRightLeft} tone="gold" />
-                    <ExecutiveMetric label="Listings" value={branchListings.length} insight="Inventory tracked" icon={Building2} tone="slate" />
-                  </div>
-                  <div className="mt-5 rounded-[22px] border border-[#e4edf6] bg-white p-5">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                      <div>
-                        <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Transaction Pipeline</p>
-                        <h3 className="mt-1 text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Closed deal ratio across this branch portfolio</h3>
-                      </div>
-                      <span className="rounded-full border border-[#dce7f2] bg-[#f8fbff] px-3 py-1 text-sm font-semibold text-[#405b75]">{closedRate}% closed</span>
-                    </div>
-                    <div className="mt-4 h-3 w-full overflow-hidden rounded-full bg-[#e7eef6]">
-                      <div className="h-full rounded-full bg-[linear-gradient(90deg,#163247_0%,#4f82b8_70%,#77b8d6_100%)]" style={{ width: `${Math.min(100, Math.max(8, closedRate))}%` }} />
-                    </div>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                      <div className="rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] px-4 py-3">
-                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Registered</p>
-                        <p className="mt-2 text-xl font-semibold text-[#142132]">{closedDeals}</p>
-                      </div>
-                      <div className="rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] px-4 py-3">
-                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Transactions</p>
-                        <p className="mt-2 text-xl font-semibold text-[#142132]">{branchTransactions.length}</p>
-                      </div>
-                      <div className="rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] px-4 py-3">
-                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Revenue Signal</p>
-                        <p className="mt-2 text-xl font-semibold text-[#142132]">{formatCurrency(revenueSecured)}</p>
-                      </div>
-                    </div>
-                  </div>
+      <section>
+        {activeTab === 'overview' ? (
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.85fr)_minmax(300px,0.9fr)]">
+            <div className="min-w-0 space-y-5">
+              <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6">
+                <SectionTitle eyebrow="Executive Overview" title="Branch Performance Cockpit" copy="Pipeline health, transaction velocity, listing movement, and conversion quality in one operating view." />
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <KpiCard label="Pipeline Value" value={formatCurrency(pipelineValue)} helper="Open branch portfolio" icon={BarChart3} tone="blue" />
+                  <KpiCard label="Conversion Quality" value={formatPercent(conversionRate)} helper="Lead to closed signal" icon={TrendingUp} tone="green" />
+                  <KpiCard label="Deal Velocity" value={activeDeals} helper="Deals in motion" icon={ArrowRightLeft} tone="gold" />
+                  <KpiCard label="Listing Movement" value={branchListings.length} helper="Inventory tracked" icon={Building2} tone="slate" />
                 </div>
               </section>
 
-              <section className="rounded-[26px] border border-[#dfe8f1] bg-white p-5 shadow-[0_18px_42px_rgba(24,45,68,0.06)] sm:p-6">
+              <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Transaction Pipeline</p>
+                    <h3 className="mt-1 text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Closed deal ratio across this branch portfolio</h3>
+                  </div>
+                  <span className="w-fit rounded-full border border-[#dce7f2] bg-[#f8fbff] px-3 py-1 text-sm font-semibold text-[#405b75]">{closedRate}% closed</span>
+                </div>
+                <div className="mt-4 h-3 w-full overflow-hidden rounded-full bg-[#e7eef6]">
+                  <div className="h-full rounded-full bg-[linear-gradient(90deg,#163247_0%,#4f82b8_70%,#77b8d6_100%)]" style={{ width: `${closedRate > 0 ? Math.min(100, Math.max(4, closedRate)) : 0}%` }} />
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <KpiCard label="Registered" value={closedDeals} helper="Completed outcomes" icon={FileCheck2} tone="green" />
+                  <KpiCard label="Transactions" value={branchTransactions.length} helper="Total branch deals" icon={ArrowRightLeft} tone="slate" />
+                  <KpiCard label="Revenue Signal" value={formatCurrency(revenueSecured)} helper="Estimated commission" icon={Banknote} tone="blue" />
+                </div>
+              </section>
+
+              <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6">
+                <SectionTitle eyebrow="Team Output" title="Agent Performance Snapshot" copy="Quick visibility into production across listings, active deals, registered outcomes, and revenue signal." />
+                <div className="mt-5">
+                  {agentPerformanceRows.length ? (
+                    <SimpleTable
+                      columns={['Agent', 'Listings', 'Active Deals', 'Registered', 'Revenue Signal', 'Conversion']}
+                      rows={agentPerformanceRows}
+                    />
+                  ) : (
+                    <EmptyState title="Agent performance will appear here" copy="Agent performance will appear here once agents start managing listings and transactions." icon={Users} />
+                  )}
+                </div>
+              </section>
+            </div>
+
+            <aside className="min-w-0 xl:sticky xl:top-5 xl:self-start">
+              <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6">
                 <SectionTitle eyebrow="Live Feed" title="Recent Activity" copy="Agent, transaction, listing, and client movements will appear here in real time." />
                 <div className="mt-5 space-y-3">
                   {activityItems.length ? (
@@ -408,127 +416,128 @@ export default function AgencyBranchWorkspacePage() {
                           </span>
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-semibold text-[#142132]">{item.title}</p>
-                            <p className="mt-1 truncate text-sm text-[#60758b]">{item.actor} - {item.detail}</p>
+                            <p className="mt-1 text-sm leading-5 text-[#60758b]">{item.actor}</p>
+                            <p className="mt-0.5 text-xs leading-5 text-[#7d8fa4]">{item.detail}</p>
                           </div>
-                          <time className="shrink-0 text-[0.72rem] font-semibold text-[#8a9bb0]">{formatDateShort(item.timestamp)}</time>
+                          <time className="shrink-0 text-[0.7rem] font-semibold text-[#8a9bb0]">{formatDateShort(item.timestamp)}</time>
                         </article>
                       )
                     })
                   ) : (
-                    <EmptyState title="Activity will appear here" copy="Activity from agents, transactions, listings and client updates will appear here in real time." icon={CalendarDays} />
+                    <EmptyState title="No activity yet" copy="Recent branch activity will appear here as agents create leads, listings, appointments, and transactions." icon={CalendarDays} />
                   )}
                 </div>
               </section>
+            </aside>
+          </div>
+        ) : null}
+
+        {activeTab === 'agents' ? (
+          leaderboard.length ? (
+            <SimpleTable
+              columns={['Name', 'Role', 'Listings', 'Transactions', 'Revenue', 'Status', 'Last Active']}
+              rows={leaderboard.map((agent) => [
+                agent.name,
+                agent.role,
+                String(agent.listings || 0),
+                String(agent.transactions || 0),
+                formatCurrency(agent.revenue || 0),
+                agent.status || 'active',
+                formatDateShort(agent.lastActive),
+              ])}
+            />
+          ) : (
+            <EmptyState title="No agents yet" copy="Invite branch agents to unlock team performance and deal ownership tracking." icon={Users} />
+          )
+        ) : null}
+
+        {activeTab === 'listings' ? (
+          branchListings.length ? (
+            <SimpleTable
+              columns={['Listing', 'Status', 'Asking Price', 'Assigned Agent', 'Updated']}
+              rows={branchListings.map((listing) => [
+                listing.listing_title || listing.id,
+                listing.listing_status || listing.stage || 'active',
+                formatCurrency(listing.asking_price || 0),
+                listing.assigned_agent_name || listing.assigned_agent_email || 'Unassigned',
+                formatDateShort(listing.updated_at),
+              ])}
+            />
+          ) : (
+            <EmptyState title="No listings yet" copy="Create or assign listings to this branch to start branch-level inventory tracking." icon={Building2} />
+          )
+        ) : null}
+
+        {activeTab === 'transactions' ? (
+          branchTransactions.length ? (
+            <SimpleTable
+              columns={['Reference', 'Stage', 'Agent', 'Value', 'Status', 'Updated']}
+              rows={branchTransactions.map((row) => [
+                row.transaction_reference || row.id,
+                row.stage || 'In progress',
+                row.assigned_agent || row.assigned_agent_email || 'Unassigned',
+                formatCurrency(row.sales_price || row.purchase_price || 0),
+                row.lifecycle_state || 'active',
+                formatDateShort(row.updated_at),
+              ])}
+            />
+          ) : (
+            <EmptyState title="No transactions yet" copy="Branch transactions will appear once deals are created or assigned." icon={ArrowRightLeft} />
+          )
+        ) : null}
+
+        {activeTab === 'clients' ? (
+          <EmptyState title="Client workspace coming next" copy="Client rollups per branch will be wired into the branch operating cockpit." icon={Users} />
+        ) : null}
+
+        {activeTab === 'reporting' ? (
+          <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6">
+            <SectionTitle eyebrow="Reporting" title="Branch Intelligence" copy="Revenue trends, conversion quality, and comparative branch performance." />
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <KpiCard label="Pipeline" value={formatCurrency(pipelineValue)} helper="Open portfolio value" icon={BarChart3} tone="blue" />
+              <KpiCard label="Conversion" value={formatPercent(conversionRate)} helper="Performance quality" icon={TrendingUp} tone="green" />
+              <KpiCard label="Registered" value={branch?.kpis?.registeredDeals || closedDeals} helper="Completed outcomes" icon={FileCheck2} tone="navy" />
             </div>
-          ) : null}
+          </section>
+        ) : null}
 
-          {activeTab === 'agents' ? (
-            leaderboard.length ? (
-              <SimpleTable
-                columns={['Name', 'Role', 'Listings', 'Transactions', 'Revenue', 'Status', 'Last Active']}
-                rows={leaderboard.map((agent) => [
-                  agent.name,
-                  agent.role,
-                  String(agent.listings || 0),
-                  String(agent.transactions || 0),
-                  formatCurrency(agent.revenue || 0),
-                  agent.status || 'active',
-                  formatDateShort(agent.lastActive),
-                ])}
-              />
-            ) : (
-              <EmptyState title="No agents yet" copy="Invite branch agents to unlock team performance and deal ownership tracking." icon={Users} />
-            )
-          ) : null}
-
-          {activeTab === 'listings' ? (
-            branchListings.length ? (
-              <SimpleTable
-                columns={['Listing', 'Status', 'Asking Price', 'Assigned Agent', 'Updated']}
-                rows={branchListings.map((listing) => [
-                  listing.listing_title || listing.id,
-                  listing.listing_status || listing.stage || 'active',
-                  formatCurrency(listing.asking_price || 0),
-                  listing.assigned_agent_name || listing.assigned_agent_email || 'Unassigned',
-                  formatDateShort(listing.updated_at),
-                ])}
-              />
-            ) : (
-              <EmptyState title="No listings yet" copy="Create or assign listings to this branch to start branch-level inventory tracking." icon={Building2} />
-            )
-          ) : null}
-
-          {activeTab === 'transactions' ? (
-            branchTransactions.length ? (
-              <SimpleTable
-                columns={['Reference', 'Stage', 'Agent', 'Value', 'Status', 'Updated']}
-                rows={branchTransactions.map((row) => [
-                  row.transaction_reference || row.id,
-                  row.stage || 'In progress',
-                  row.assigned_agent || row.assigned_agent_email || 'Unassigned',
-                  formatCurrency(row.sales_price || row.purchase_price || 0),
-                  row.lifecycle_state || 'active',
-                  formatDateShort(row.updated_at),
-                ])}
-              />
-            ) : (
-              <EmptyState title="No transactions yet" copy="Branch transactions will appear once deals are created or assigned." icon={ArrowRightLeft} />
-            )
-          ) : null}
-
-          {activeTab === 'clients' ? (
-            <EmptyState title="Client workspace coming next" copy="Client rollups per branch will be wired into the branch operating cockpit." icon={Users} />
-          ) : null}
-
-          {activeTab === 'reporting' ? (
-            <section className="rounded-[24px] border border-[#dfe8f1] bg-[#fbfcfe] p-5">
-              <SectionTitle eyebrow="Reporting" title="Branch Intelligence" copy="Revenue trends, conversion quality, and comparative branch performance." />
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                <ExecutiveMetric label="Pipeline" value={formatCurrency(pipelineValue)} insight="Open portfolio value" icon={BarChart3} tone="blue" />
-                <ExecutiveMetric label="Conversion" value={formatPercent(branch?.kpis?.conversionRate || closedRate)} insight="Performance quality" icon={TrendingUp} tone="green" />
-                <ExecutiveMetric label="Registered" value={branch?.kpis?.registeredDeals || closedDeals} insight="Completed outcomes" icon={FileCheck2} tone="navy" />
-              </div>
-            </section>
-          ) : null}
-
-          {activeTab === 'documents' ? (
-            <section className="rounded-[24px] border border-[#dfe8f1] bg-[#fbfcfe] p-5">
-              <SectionTitle eyebrow="Documents" title="Branch Document Hub" copy="Company docs, compliance files, training assets, and reporting packs." />
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {[
-                  ['Company Docs', Files],
-                  ['Marketing Assets', Building2],
-                  ['Compliance', ShieldCheck],
-                  ['Branch Reports', BarChart3],
-                ].map(([label, Icon]) => (
-                  <article key={label} className="rounded-[20px] border border-[#e4ebf4] bg-white p-4 shadow-[0_12px_26px_rgba(24,45,68,0.05)]">
-                    <span className="grid h-10 w-10 place-items-center rounded-[14px] bg-[#edf4fb] text-[#35546c]">
-                      {createElement(Icon, { size: 16 })}
-                    </span>
-                    <p className="mt-4 text-sm font-semibold text-[#1f3348]">{label}</p>
-                    <p className="mt-2 text-xs leading-5 text-[#6b7d93]">No documents uploaded yet.</p>
-                  </article>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          {activeTab === 'settings' ? (
-            <section className="rounded-[24px] border border-[#dfe8f1] bg-[#fbfcfe] p-5">
-              <SectionTitle eyebrow="Settings" title="Branch Controls" copy="Permissions, branding, notifications, and role boundaries for this office." />
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                <article className="rounded-[20px] border border-[#e4ebf4] bg-white p-5">
-                  <p className="text-sm font-semibold text-[#1f3348]">Permissions</p>
-                  <p className="mt-2 text-sm leading-6 text-[#6b7d93]">Principal, manager, and agent access policies are branch-scoped.</p>
+        {activeTab === 'documents' ? (
+          <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6">
+            <SectionTitle eyebrow="Documents" title="Branch Document Hub" copy="Company docs, compliance files, training assets, and reporting packs." />
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                ['Company Docs', Files],
+                ['Marketing Assets', Building2],
+                ['Compliance', ShieldCheck],
+                ['Branch Reports', BarChart3],
+              ].map(([label, Icon]) => (
+                <article key={label} className="rounded-[18px] border border-[#e4ebf4] bg-[#fbfdff] p-4">
+                  <span className="grid h-10 w-10 place-items-center rounded-[14px] bg-[#edf4fb] text-[#35546c]">
+                    {createElement(Icon, { size: 16 })}
+                  </span>
+                  <p className="mt-4 text-sm font-semibold text-[#1f3348]">{label}</p>
+                  <p className="mt-2 text-xs leading-5 text-[#6b7d93]">No documents uploaded yet.</p>
                 </article>
-                <article className="rounded-[20px] border border-[#e4ebf4] bg-white p-5">
-                  <p className="text-sm font-semibold text-[#1f3348]">Branding</p>
-                  <p className="mt-2 text-sm leading-6 text-[#6b7d93]">Branch logo, cover image, and notification identity settings.</p>
-                </article>
-              </div>
-            </section>
-          ) : null}
-        </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {activeTab === 'settings' ? (
+          <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6">
+            <SectionTitle eyebrow="Settings" title="Branch Controls" copy="Permissions, branding, notifications, and role boundaries for this office." />
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <article className="rounded-[18px] border border-[#e4ebf4] bg-[#fbfdff] p-5">
+                <p className="text-sm font-semibold text-[#1f3348]">Permissions</p>
+                <p className="mt-2 text-sm leading-6 text-[#6b7d93]">Principal, manager, and agent access policies are branch-scoped.</p>
+              </article>
+              <article className="rounded-[18px] border border-[#e4ebf4] bg-[#fbfdff] p-5">
+                <p className="text-sm font-semibold text-[#1f3348]">Branding</p>
+                <p className="mt-2 text-sm leading-6 text-[#6b7d93]">Branch logo, cover image, and notification identity settings.</p>
+              </article>
+            </div>
+          </section>
+        ) : null}
       </section>
     </section>
   )

@@ -317,6 +317,7 @@ const APPOINTMENT_WORKFLOW_DB_FIELDS = [
   'all_day',
   'related_entity_type',
   'related_entity_id',
+  'offer_invite_id',
   'cancelled_at',
   'cancelled_by',
   'cancellation_reason',
@@ -1454,6 +1455,7 @@ function normalizeAppointmentRecord(appointment = {}, { organisationId = '', fal
     agentNotes: normalizeText(appointment?.agentNotes) || null,
     nextStep: normalizeText(appointment?.nextStep) || null,
     followUpDate: normalizeText(appointment?.followUpDate) || null,
+    offerInviteId: normalizeText(appointment?.offerInviteId || appointment?.offer_invite_id) || null,
     createdBy: normalizeText(appointment?.createdBy) || null,
     createdAt: appointment?.createdAt || new Date().toISOString(),
     updatedAt: appointment?.updatedAt || new Date().toISOString(),
@@ -1542,6 +1544,7 @@ function mapDbAppointmentRow(row = {}, organisationId = '') {
       agentNotes: row?.agent_notes,
       nextStep: row?.next_step,
       followUpDate: row?.follow_up_date,
+      offerInviteId: row?.offer_invite_id,
       createdBy: row?.created_by,
       createdAt: row?.created_at,
       updatedAt: row?.updated_at,
@@ -1634,6 +1637,7 @@ function mapAppointmentToDbInsert(appointment = {}, organisationId = '') {
     agent_notes: normalizeText(normalized.agentNotes) || null,
     next_step: normalizeText(normalized.nextStep) || null,
     follow_up_date: normalizeText(normalized.followUpDate) || null,
+    offer_invite_id: toNullableUuid(normalized.offerInviteId),
     created_by: toNullableUuid(normalized.createdBy),
     completed_at: normalized.status === 'completed' ? normalized.completedAt || new Date().toISOString() : normalized.completedAt || null,
     cancelled_at: normalizeText(normalized.status).toLowerCase().includes('cancel') ? normalized.cancelledAt || new Date().toISOString() : normalized.cancelledAt || null,
@@ -1713,7 +1717,7 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
   const scopedOrganisationId = normalizeText(organisationId)
   const scopedListingId = normalizeText(listingId)
   const selectModern =
-    'appointment_id, organisation_id, lead_id, agent_id, appointment_type, custom_type_label, title, appointment_date, start_time, end_time, date_time, timezone, all_day, location_type, location, meeting_url, contact_id, listing_id, transaction_id, related_entity_type, related_entity_id, linked_workflow, linked_workflow_stage, linked_task_id, linked_transaction_stage, workflow_completion_effect, visibility_scope, completion_behavior, appointment_instructions, required_documents, calendar_event_uid, ics_generated_at, external_calendar_status, external_calendar_provider, external_calendar_event_id, resource_id, allow_outside_business_hours, scheduling_override_reason, status, notes, outcome_summary, client_feedback, agent_notes, next_step, follow_up_date, created_by, created_at, updated_at, completed_at, cancelled_at, cancelled_by, cancellation_reason'
+    'appointment_id, organisation_id, lead_id, agent_id, appointment_type, custom_type_label, title, appointment_date, start_time, end_time, date_time, timezone, all_day, location_type, location, meeting_url, contact_id, listing_id, transaction_id, related_entity_type, related_entity_id, linked_workflow, linked_workflow_stage, linked_task_id, linked_transaction_stage, workflow_completion_effect, visibility_scope, completion_behavior, appointment_instructions, required_documents, calendar_event_uid, ics_generated_at, external_calendar_status, external_calendar_provider, external_calendar_event_id, resource_id, allow_outside_business_hours, scheduling_override_reason, status, notes, outcome_summary, client_feedback, agent_notes, next_step, follow_up_date, offer_invite_id, created_by, created_at, updated_at, completed_at, cancelled_at, cancelled_by, cancellation_reason'
   const selectLegacy =
     'appointment_id, organisation_id, lead_id, agent_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, contact_id, listing_id, transaction_id, status, notes, outcome_summary, client_feedback, agent_notes, next_step, follow_up_date, created_by, created_at, updated_at, completed_at'
   const selectMinimal =

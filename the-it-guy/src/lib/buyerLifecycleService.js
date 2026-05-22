@@ -1,6 +1,5 @@
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 import { createTransactionFromLeadOverride } from './transactionLifecycleService'
-import { runWorkflowAutomations } from './workflowEngine'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -99,6 +98,13 @@ function jsonObject(value) {
 function normalizeDate(value) {
   const normalized = normalizeText(value)
   return normalized || null
+}
+
+function createOfferAccessToken() {
+  const randomValue = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID().replaceAll('-', '')
+    : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 14)}`
+  return `offer-${randomValue}`
 }
 
 function isMissingColumnError(error) {
@@ -233,6 +239,7 @@ export async function applyBuyerLifecycleEvent({
     outcome: nextStage,
     extra,
   })
+  const { runWorkflowAutomations } = await import('./workflowEngine')
   await runWorkflowAutomations({
     organisationId,
     event: normalizedEvent,
@@ -251,6 +258,7 @@ function mapOfferDbRow(row = {}) {
   return {
     id: row.id,
     offerId: row.id,
+    offerToken: row.offer_token,
     organisationId: row.organisation_id,
     buyerLeadId: row.buyer_lead_id,
     buyerContactId: row.buyer_contact_id,
@@ -280,6 +288,7 @@ function buildOfferInsert(payload = {}) {
   const nowIso = new Date().toISOString()
   return {
     organisation_id: toNullableUuid(payload?.organisationId),
+    offer_token: normalizeText(payload?.offerToken) || createOfferAccessToken(),
     buyer_lead_id: toNullableUuid(payload?.buyerLeadId),
     buyer_contact_id: toNullableUuid(payload?.buyerContactId),
     listing_id: toNullableUuid(payload?.listingId),
@@ -299,6 +308,115 @@ function buildOfferInsert(payload = {}) {
     rejected_at: status === 'rejected' ? (normalizeDate(payload?.rejectedAt) || nowIso) : normalizeDate(payload?.rejectedAt),
     transaction_id: toNullableUuid(payload?.transactionId),
   }
+}
+
+function mapListingDbRow(row = {}) {
+  if (!row) return null
+  const propertyDetails = row.property_details && typeof row.property_details === 'object' ? row.property_details : {}
+  const marketing = row.marketing && typeof row.marketing === 'object' ? row.marketing : {}
+  return {
+    id: row.id,
+    listingTitle: row.listing_title || marketing.title || propertyDetails.title || 'Listing',
+    propertyAddress: row.property_address || propertyDetails.address || propertyDetails.addressLine1 || '',
+    suburb: row.suburb || propertyDetails.suburb || '',
+    city: row.city || propertyDetails.city || '',
+    askingPrice: row.asking_price || row.price || propertyDetails.askingPrice || 0,
+  }
+}
+
+export async function getCanonicalOfferInviteContext(token = '') {
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken || !isSupabaseConfigured || !supabase) {
+    return { ok: false, reason: 'not_found', invite: null, listing: null, offers: [] }
+  }
+
+  let query = supabase.from('offers').select('*')
+  if (isUuidLike(normalizedToken)) {
+    query = query.or(`id.eq.${normalizedToken},offer_token.eq.${normalizedToken}`)
+  } else {
+    query = query.eq('offer_token', normalizedToken)
+  }
+  const { data, error } = await query.maybeSingle()
+  if (error || !data) return { ok: false, reason: 'not_found', invite: null, listing: null, offers: [] }
+
+  const offer = mapOfferDbRow(data)
+  if (offer?.status === 'expired') return { ok: false, reason: 'expired', invite: null, listing: null, offers: [] }
+  if (offer?.status === 'withdrawn') return { ok: false, reason: 'withdrawn', invite: null, listing: null, offers: [] }
+  if (offer?.expiryDate && new Date(offer.expiryDate).getTime() < Date.now()) return { ok: false, reason: 'expired', invite: null, listing: null, offers: [] }
+
+  let listing = null
+  if (offer?.listingId) {
+    const listingResult = await supabase.from('private_listings').select('*').eq('id', offer.listingId).maybeSingle()
+    if (!listingResult.error) listing = mapListingDbRow(listingResult.data)
+  }
+
+  const buyerName = normalizeText(offer?.conditions?.buyerName) || 'Prospect'
+  return {
+    ok: true,
+    source: 'canonical',
+    reason: '',
+    canonicalOffer: offer,
+    invite: {
+      token: offer.offerToken || offer.id,
+      buyerLeadName: buyerName,
+      expiresAt: offer.expiryDate,
+      agentName: 'Assigned agent',
+      status: offer.status,
+    },
+    listing,
+    offers: offer.status === 'submitted'
+      ? [{
+          id: offer.id,
+          status: offer.status,
+          submittedAt: offer.submittedAt,
+          offer: { offerAmount: offer.offerAmount },
+        }]
+      : [],
+  }
+}
+
+export async function submitCanonicalBuyerOffer({ token = '', submission = {} } = {}) {
+  const context = await getCanonicalOfferInviteContext(token)
+  if (!context.ok || !context.canonicalOffer?.id) {
+    throw new Error(context.reason === 'expired' ? 'Offer link has expired.' : 'Offer link is not valid.')
+  }
+  const fullName = normalizeText(submission?.fullName)
+  const email = normalizeText(submission?.email)
+  const phone = normalizeText(submission?.phone)
+  const offerAmount = money(submission?.offerAmount)
+  if (!fullName || !email || !phone || !offerAmount || offerAmount <= 0) {
+    throw new Error('Buyer details and offer amount are required.')
+  }
+  return updateCanonicalOfferStatus(context.canonicalOffer.id, 'submitted', {
+    organisationId: context.canonicalOffer.organisationId,
+    patch: {
+      offer_amount: offerAmount,
+      deposit_amount: money(submission?.depositAmount),
+      finance_type: normalizeText(submission?.financeType) || null,
+      cash_component: money(submission?.cashContribution),
+      bond_component: money(submission?.bondAmount),
+      conditions_json: {
+        ...(context.canonicalOffer.conditions || {}),
+        buyerName: fullName,
+        buyerEmail: email,
+        buyerPhone: phone,
+        buyerIdNumber: normalizeText(submission?.idNumber),
+        proofOfFundsUrl: normalizeText(submission?.proofOfFundsUrl),
+        suspensiveConditions: normalizeText(submission?.suspensiveConditions),
+        subjectToSale: submission?.subjectToSale === true,
+        subjectSaleProperty: normalizeText(submission?.subjectSaleProperty),
+        subjectSaleTimeline: normalizeText(submission?.subjectSaleTimeline),
+        occupationDate: normalizeText(submission?.occupationDate),
+        occupationalRent: money(submission?.occupationalRent),
+        includedFixtures: normalizeText(submission?.includedFixtures),
+        excludedFixtures: normalizeText(submission?.excludedFixtures),
+        specialConditions: normalizeText(submission?.specialConditions),
+        buyerSubmittedAt: new Date().toISOString(),
+        verification: submission?.verification || {},
+      },
+      submitted_at: new Date().toISOString(),
+    },
+  })
 }
 
 function statusToEvent(status) {

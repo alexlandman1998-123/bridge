@@ -1,8 +1,12 @@
 import { AlertTriangle, Building2, CheckCircle2, Clock3, ShieldCheck } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
+import {
+  getCanonicalOfferInviteContext,
+  submitCanonicalBuyerOffer,
+} from '../lib/buyerLifecycleService'
 import {
   getOfferInviteContext,
   OFFER_WORKFLOW_STATUS,
@@ -32,6 +36,8 @@ function statusLabel(value) {
 function BuyerOfferSubmission() {
   const { token = '' } = useParams()
   const [refreshKey, setRefreshKey] = useState(0)
+  const [canonicalContext, setCanonicalContext] = useState(null)
+  const [canonicalLoading, setCanonicalLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [verificationMethod, setVerificationMethod] = useState('email')
@@ -67,10 +73,34 @@ function BuyerOfferSubmission() {
     acknowledgeInfoAccuracy: false,
   })
 
-  const context = useMemo(() => {
+  const legacyContext = useMemo(() => {
     void refreshKey
     return getOfferInviteContext(token)
   }, [token, refreshKey])
+  useEffect(() => {
+    let active = true
+    if (legacyContext?.ok) {
+      setCanonicalContext(null)
+      return () => {
+        active = false
+      }
+    }
+    setCanonicalLoading(true)
+    getCanonicalOfferInviteContext(token)
+      .then((nextContext) => {
+        if (active) setCanonicalContext(nextContext)
+      })
+      .catch(() => {
+        if (active) setCanonicalContext({ ok: false, reason: 'not_found', invite: null, listing: null, offers: [] })
+      })
+      .finally(() => {
+        if (active) setCanonicalLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [legacyContext?.ok, refreshKey, token])
+  const context = legacyContext?.ok ? legacyContext : (canonicalContext || legacyContext)
   const listing = context?.listing || null
   const invite = context?.invite || null
   const existingOffers = Array.isArray(context?.offers) ? context.offers : []
@@ -127,17 +157,30 @@ function BuyerOfferSubmission() {
 
     try {
       setSubmitting(true)
-      await submitBuyerOffer({
-        token,
-        mode: counterPendingBuyer ? 'counter_response' : 'new',
-        submission: {
-          ...form,
-          verification: {
-            verified: true,
-            method: verificationMethod,
+      if (context?.source === 'canonical') {
+        await submitCanonicalBuyerOffer({
+          token,
+          submission: {
+            ...form,
+            verification: {
+              verified: true,
+              method: verificationMethod,
+            },
           },
-        },
-      })
+        })
+      } else {
+        await submitBuyerOffer({
+          token,
+          mode: counterPendingBuyer ? 'counter_response' : 'new',
+          submission: {
+            ...form,
+            verification: {
+              verified: true,
+              method: verificationMethod,
+            },
+          },
+        })
+      }
       setSuccessMessage('Offer submitted successfully. The agent will review and forward it to the seller.')
       setRefreshKey((value) => value + 1)
     } catch (error) {
@@ -145,6 +188,16 @@ function BuyerOfferSubmission() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  if (canonicalLoading && !context?.ok) {
+    return (
+      <main className="mx-auto w-full max-w-[860px] px-4 py-8">
+        <section className="rounded-[22px] border border-[#e3eaf4] bg-white p-6 text-sm text-[#5f738a] shadow-[0_14px_30px_rgba(15,23,42,0.08)]">
+          Loading secure offer link...
+        </section>
+      </main>
+    )
   }
 
   if (!context?.ok) {

@@ -12,6 +12,7 @@ const SEED_VERSION = '2026-04-30-agent-demo-v3'
 const KEY_META = 'itg:agent-demo-seed:meta'
 const KEY_AGENT_DIRECTORY = 'itg:agent-directory:v1'
 const KEY_PRIVATE_LISTINGS = 'itg:agent-private-listings:v1'
+const KEY_DELETED_LISTINGS = 'itg:agent-deleted-listings:v1'
 const KEY_PIPELINE = 'itg:pipeline-leads:v1'
 const KEY_AGENT_DEMO_TRANSACTIONS = 'itg:agent-demo-transactions:v1'
 
@@ -96,6 +97,11 @@ function writeJson(key, value) {
 function clearJson(key) {
   if (typeof window === 'undefined') return
   window.localStorage.removeItem(key)
+}
+
+function readDeletedListingIds() {
+  const rows = readJson(KEY_DELETED_LISTINGS, [])
+  return new Set((Array.isArray(rows) ? rows : []).map((value) => String(value || '').trim()).filter(Boolean))
 }
 
 function isSeededListingRecord(record = {}) {
@@ -498,7 +504,8 @@ export function ensureAgentModuleDemoSeed({ profileEmail = '' } = {}) {
     }
   }
 
-  const privateListings = buildPrivateListings()
+  const deletedListingIds = readDeletedListingIds()
+  const privateListings = buildPrivateListings().filter((listing) => !deletedListingIds.has(String(listing?.id || '').trim()))
   const pipelineLeads = buildPipelineLeads(privateListings)
   const transactionRows = buildDemoTransactions()
   const directory = buildAgentDirectory()

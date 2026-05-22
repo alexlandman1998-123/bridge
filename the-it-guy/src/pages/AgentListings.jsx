@@ -1,4 +1,4 @@
-import { ArrowRight, Building2, FolderKanban, Plus, Search } from 'lucide-react'
+import { ArrowRight, Building2, FolderKanban, Loader2, Plus, Search, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -17,6 +17,7 @@ import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
   buildSellerOnboardingLink,
   createAgentSellerLead,
+  deleteAgentPrivateListingCascade,
   createListingDraftFromSellerLead,
   generateId,
   generateSellerOnboardingToken,
@@ -33,7 +34,7 @@ import {
   getPrivateListingLifecycleState,
   getPrivateListingStatusGroup,
 } from '../lib/privateListingLifecycle'
-import { createPrivateListing, getAgentPrivateListings } from '../services/privateListingService'
+import { createPrivateListing, deletePrivateListing, getAgentPrivateListings } from '../services/privateListingService'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 import {
   getPropertyCategoryLabel,
@@ -60,6 +61,29 @@ function formatCurrency(value) {
     currency: 'ZAR',
     maximumFractionDigits: 0,
   }).format(amount)
+}
+
+function isUuidLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(String(value || '').trim())
+}
+
+function rowMatchesDeletedListing(row = {}, deletedIds = new Set()) {
+  if (!deletedIds.size) return false
+  return [
+    row.id,
+    row.listingId,
+    row.listing_id,
+    row.privateListingId,
+    row.private_listing_id,
+    row.sourceDraftId,
+    row.source_draft_id,
+    row.listingDraftId,
+    row.listing_draft_id,
+    row.sellerLeadId,
+    row.seller_lead_id,
+    row.originatingCrmLeadId,
+    row.originating_crm_lead_id,
+  ].some((value) => deletedIds.has(String(value || '').trim()))
 }
 
 function getListingStatusLabel(key) {
@@ -319,6 +343,7 @@ function AgentListings({ initialTab = null } = {}) {
   const [assignedDevelopmentIds, setAssignedDevelopmentIds] = useState([])
   const [privateListings, setPrivateListings] = useState([])
   const [organisationId, setOrganisationId] = useState('')
+  const [deletingListingId, setDeletingListingId] = useState('')
   const [filters, setFilters] = useState({
     statusGroup: 'all',
     search: '',
@@ -417,6 +442,13 @@ function AgentListings({ initialTab = null } = {}) {
     setShowNewListingModal(true)
     navigate(location.pathname, { replace: true, state: {} })
   }, [agencyWorkflowMode, location.pathname, location.state, navigate])
+
+  useEffect(() => {
+    const message = String(location.state?.message || '').trim()
+    if (!message) return
+    setWorkflowMessage(message)
+    navigate(location.pathname, { replace: true, state: {} })
+  }, [location.pathname, location.state, navigate])
 
   function updateForm(key, value) {
     setForm((previous) => ({ ...previous, [key]: value }))
@@ -748,6 +780,39 @@ function AgentListings({ initialTab = null } = {}) {
         : 'Seller lead created. Onboarding link generated. The listing now appears in Listings in Progress under seller onboarding pending.',
     )
     window.dispatchEvent(new Event('itg:listings-updated'))
+  }
+
+  async function handleDeleteListing(card, event) {
+    event.stopPropagation()
+    const listingId = String(card?.id || '').trim()
+    if (!listingId) return
+
+    const listingTitle = String(card?.title || 'this listing').trim()
+    const confirmed = window.confirm(
+      `Permanently delete "${listingTitle}"?\n\nThis removes the listing from Bridge, local fallback storage, seller workflow drafts, onboarding-linked listing records, documents, and activity. This cannot be undone.`,
+    )
+    if (!confirmed) return
+
+    setDeletingListingId(listingId)
+    setError('')
+    setWorkflowMessage('')
+
+    try {
+      if (isSupabaseConfigured && isUuidLike(listingId)) {
+        await deletePrivateListing(listingId)
+      }
+
+      const localDelete = deleteAgentPrivateListingCascade(card?.listingRecord || listingId)
+      const deletedIds = new Set([listingId, ...(localDelete.deletedIds || [])].map((value) => String(value || '').trim()).filter(Boolean))
+      setPrivateListings((rows) => rows.filter((row) => !rowMatchesDeletedListing(row, deletedIds)))
+      window.dispatchEvent(new Event('itg:listings-updated'))
+      await loadData()
+      setWorkflowMessage(`"${listingTitle}" was permanently deleted.`)
+    } catch (deleteError) {
+      setError(deleteError?.message || 'Unable to delete this listing.')
+    } finally {
+      setDeletingListingId('')
+    }
   }
 
   const privateListingCards = useMemo(() => {
@@ -1130,17 +1195,28 @@ function AgentListings({ initialTab = null } = {}) {
 
                     <div className="flex items-center justify-between gap-3 text-[0.8rem] text-[#6b7d93]">
                       <span className="truncate">{card.agentName || 'Assigned Agent'}</span>
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          navigate(`/agent/listings/${encodeURIComponent(card.id)}`)
-                        }}
-                        className="inline-flex items-center gap-1 rounded-full border border-[#c6d8ea] bg-white px-3 py-1.5 font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff]"
-                      >
-                        Go to Listing
-                        <ArrowRight size={14} />
-                      </button>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={(event) => handleDeleteListing(card, event)}
+                          disabled={deletingListingId === card.id}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#f0c8c5] bg-[#fff7f7] text-[#a13b35] transition hover:border-[#e2a7a2] hover:bg-[#fff1f0] disabled:cursor-not-allowed disabled:opacity-60"
+                          aria-label={`Delete ${card.title}`}
+                        >
+                          {deletingListingId === card.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            navigate(`/agent/listings/${encodeURIComponent(card.id)}`)
+                          }}
+                          className="inline-flex items-center gap-1 rounded-full border border-[#c6d8ea] bg-white px-3 py-1.5 font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff]"
+                        >
+                          Open
+                          <ArrowRight size={14} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </article>

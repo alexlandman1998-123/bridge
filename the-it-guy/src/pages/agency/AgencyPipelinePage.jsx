@@ -1511,6 +1511,35 @@ const LEAD_DETAIL_DEFAULT_APPOINTMENT = {
 
 const APPOINTMENT_TYPE_OPTIONS = getAppointmentTypeOptions()
 
+const VIEWING_OUTCOME_OPTIONS = [
+  'Interested',
+  'Not interested',
+  'Needs follow-up',
+  'Wants to offer',
+  'Viewed multiple properties',
+]
+
+const VIEWING_NEXT_STEP_OPTIONS = [
+  { value: 'send_offer_link', label: 'Send offer link' },
+  { value: 'schedule_another_viewing', label: 'Schedule another viewing' },
+  { value: 'move_to_nurture', label: 'Move to nurture' },
+  { value: 'mark_lost', label: 'Mark lost' },
+]
+
+function getAppointmentStatusTone(status) {
+  const normalized = normalizeText(status).toLowerCase()
+  if (normalized === 'completed') return 'border-[#bfe7d0] bg-[#edf9f1] text-[#25764a]'
+  if (normalized === 'confirmed' || normalized === 'accepted') return 'border-[#c4d9ff] bg-[#eef5ff] text-[#285f9e]'
+  if (normalized === 'cancelled' || normalized === 'declined') return 'border-[#f3cfcb] bg-[#fff4f2] text-[#a13b31]'
+  if (normalized === 'no_show') return 'border-[#ead0a2] bg-[#fff8e8] text-[#8a5a12]'
+  return 'border-[#dde7f2] bg-[#f7fbff] text-[#4c6680]'
+}
+
+function getAppointmentStatusLabel(status) {
+  const normalized = normalizeText(status).toLowerCase()
+  return APPOINTMENT_STATUS_LABELS[normalized] || status || 'Requested'
+}
+
 const MANUAL_LEAD_SOURCE_OPTIONS = [
   'Property24',
   'Private Property',
@@ -1652,6 +1681,25 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     nextStep: '',
     followUpDate: '',
   })
+  const [leadCompletionAppointmentId, setLeadCompletionAppointmentId] = useState('')
+  const [leadViewingCompletionForm, setLeadViewingCompletionForm] = useState({
+    outcome: VIEWING_OUTCOME_OPTIONS[0],
+    agentNotes: '',
+    buyerFeedback: '',
+    followUpDate: '',
+    nextStep: VIEWING_NEXT_STEP_OPTIONS[0].value,
+  })
+  const [offerLinkForm, setOfferLinkForm] = useState({
+    appointmentId: '',
+    listingId: '',
+    expiryDate: '',
+    buyerName: '',
+    buyerEmail: '',
+    buyerPhone: '',
+    note: '',
+    lastOfferLink: '',
+  })
+  const [isOfferLinkSending, setIsOfferLinkSending] = useState(false)
   const [appointmentResources, setAppointmentResources] = useState([])
   const [appointmentListingOptions, setAppointmentListingOptions] = useState([])
   const [appointmentSchedulingIntegrity, setAppointmentSchedulingIntegrity] = useState(null)
@@ -3102,6 +3150,98 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     },
     [appointmentListingById],
   )
+
+  const selectedLeadViewingAppointments = useMemo(
+    () =>
+      selectedLeadAppointments.filter((appointment) => {
+        const type = normalizeText(appointment?.appointmentType || appointment?.title).toLowerCase()
+        return type.includes('viewing') || getAppointmentTypeLabel(appointment?.appointmentType).toLowerCase().includes('viewing')
+      }),
+    [selectedLeadAppointments],
+  )
+
+  const selectedLeadActiveViewing = useMemo(() => {
+    const activeStatuses = new Set(['draft', 'requested', 'accepted', 'alternative_requested', 'alternative_proposed', 'confirmed'])
+    return (
+      selectedLeadViewingAppointments.find((appointment) => activeStatuses.has(normalizeText(appointment?.status).toLowerCase())) ||
+      selectedLeadViewingAppointments[0] ||
+      null
+    )
+  }, [selectedLeadViewingAppointments])
+
+  const selectedLeadContactName = useMemo(() => {
+    if (!selectedLead && !selectedLeadContact) return 'Buyer'
+    const contactName = [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim()
+    return contactName || selectedLead?.name || selectedLead?.buyerName || selectedLead?.sellerName || 'Buyer'
+  }, [selectedLead, selectedLeadContact])
+
+  const leadAppointmentOfferListingOptions = useMemo(() => {
+    const byId = new Map()
+    const addOption = (id, label, source = '') => {
+      const normalizedId = normalizeText(id)
+      if (!normalizedId || byId.has(normalizedId)) return
+      byId.set(normalizedId, {
+        id: normalizedId,
+        label: normalizeText(label) || resolveAppointmentListingLabel(normalizedId) || `Listing ${normalizedId}`,
+        source,
+      })
+    }
+    for (const appointment of selectedLeadViewingAppointments) {
+      addOption(appointment?.listingId, resolveAppointmentListingLabel(appointment?.listingId), 'Viewed')
+    }
+    addOption(selectedLead?.listingId, resolveAppointmentListingLabel(selectedLead?.listingId), 'Lead')
+    const possibleListingRefs = [
+      selectedLead?.interestedListings,
+      selectedLead?.interestedListingIds,
+      selectedLead?.recentlyViewedListings,
+      selectedLead?.viewedListings,
+      selectedLead?.listingIds,
+    ].flatMap((value) => (Array.isArray(value) ? value : []))
+    for (const item of possibleListingRefs) {
+      if (typeof item === 'string') addOption(item, resolveAppointmentListingLabel(item), 'Lead interest')
+      if (item && typeof item === 'object') addOption(item.id || item.listingId, item.label || item.title || item.address, 'Lead interest')
+    }
+    for (const option of appointmentListingOptions) {
+      addOption(option?.id, option?.label, 'Active listings')
+    }
+    return Array.from(byId.values())
+  }, [appointmentListingOptions, resolveAppointmentListingLabel, selectedLead, selectedLeadViewingAppointments])
+
+  useEffect(() => {
+    if (leadWorkspaceTab !== 'appointments' || !selectedLead) return
+    const leadId = normalizeText(selectedLead.leadId)
+    const contactId = normalizeText(selectedLead.contactId || selectedLeadContact?.contactId)
+    const listingId = normalizeText(selectedLeadActiveViewing?.listingId || selectedLead.listingId || leadAppointmentOfferListingOptions[0]?.id)
+    setAppointmentForm((previous) => {
+      if (normalizeText(previous.relatedEntityId) === leadId && normalizeText(previous.appointmentType) === 'viewing') return previous
+      return buildDefaultAppointmentFormForType('viewing', {
+        ...previous,
+        appointmentType: 'viewing',
+        title: normalizeText(previous.title) || 'Viewing',
+        date: normalizeText(previous.date) || getTomorrowIsoDate(),
+        startTime: normalizeText(previous.startTime) || getCurrentTimeValue(),
+        contactId,
+        listingId,
+        relatedEntityType: 'lead',
+        relatedEntityId: leadId,
+        recipientEmail: normalizeText(selectedLeadContact?.email || selectedLead?.email) || '',
+        location: normalizeText(previous.location) || resolveAppointmentListingLabel(listingId),
+        status: normalizeText(previous.status) || 'requested',
+      })
+    })
+  }, [leadAppointmentOfferListingOptions, leadWorkspaceTab, resolveAppointmentListingLabel, selectedLead, selectedLeadActiveViewing, selectedLeadContact])
+
+  useEffect(() => {
+    if (!selectedLead) return
+    setOfferLinkForm((previous) => ({
+      ...previous,
+      appointmentId: normalizeText(previous.appointmentId) || normalizeText(selectedLeadActiveViewing?.appointmentId),
+      listingId: normalizeText(previous.listingId) || normalizeText(selectedLeadActiveViewing?.listingId || selectedLead?.listingId || leadAppointmentOfferListingOptions[0]?.id),
+      buyerName: normalizeText(previous.buyerName) || selectedLeadContactName,
+      buyerEmail: normalizeText(previous.buyerEmail) || normalizeText(selectedLeadContact?.email || selectedLead?.email),
+      buyerPhone: normalizeText(previous.buyerPhone) || normalizeText(selectedLeadContact?.phone || selectedLead?.phone),
+    }))
+  }, [leadAppointmentOfferListingOptions, selectedLead, selectedLeadActiveViewing, selectedLeadContact, selectedLeadContactName])
 
   const selectedAppointmentTemplate = useMemo(
     () => getAppointmentTypeTemplate(appointmentForm.appointmentType || 'other'),
@@ -5123,6 +5263,195 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  function handleOpenLeadCompletionPanel(appointment) {
+    if (!appointment) return
+    setLeadCompletionAppointmentId(appointment.appointmentId)
+    setLeadViewingCompletionForm({
+      outcome: normalizeText(appointment.outcomeSummary) || VIEWING_OUTCOME_OPTIONS[0],
+      agentNotes: normalizeText(appointment.agentNotes),
+      buyerFeedback: normalizeText(appointment.clientFeedback),
+      followUpDate: normalizeText(appointment.followUpDate),
+      nextStep: normalizeText(appointment.nextStep) || VIEWING_NEXT_STEP_OPTIONS[0].value,
+    })
+    setError('')
+  }
+
+  async function handleCompleteLeadViewing() {
+    if (!organisationId || !selectedLead || !leadCompletionAppointmentId) return
+    const targetAppointment = selectedLeadAppointments.find((appointment) => normalizeText(appointment?.appointmentId) === normalizeText(leadCompletionAppointmentId))
+    if (!targetAppointment) {
+      setError('Select a viewing before saving the outcome.')
+      return
+    }
+    const outcome = normalizeText(leadViewingCompletionForm.outcome) || VIEWING_OUTCOME_OPTIONS[0]
+    const nextStepLabel = VIEWING_NEXT_STEP_OPTIONS.find((option) => option.value === leadViewingCompletionForm.nextStep)?.label || leadViewingCompletionForm.nextStep
+    try {
+      await addAppointmentOutcomeAsync(
+        organisationId,
+        targetAppointment.appointmentId,
+        {
+          status: 'completed',
+          outcomeSummary: outcome,
+          clientFeedback: leadViewingCompletionForm.buyerFeedback,
+          agentNotes: leadViewingCompletionForm.agentNotes,
+          nextStep: nextStepLabel,
+          followUpDate: leadViewingCompletionForm.followUpDate,
+        },
+        {
+          actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        },
+      )
+      if (normalizeText(leadViewingCompletionForm.followUpDate)) {
+        await createAgencyCrmLeadTask(
+          organisationId,
+          selectedLead.leadId,
+          {
+            assignedAgent: resolveAgentById(selectedLead.assignedAgentId || selectedLead.assignedAgentEmail || currentAgent.id),
+            title: nextStepLabel || 'Viewing follow-up',
+            description: normalizeText(leadViewingCompletionForm.agentNotes || leadViewingCompletionForm.buyerFeedback || outcome),
+            dueDate: leadViewingCompletionForm.followUpDate,
+            status: 'Pending',
+            priority: 'Medium',
+          },
+          {
+            actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          },
+        )
+      }
+      setLeadCompletionAppointmentId('')
+      setMessage('Viewing completed. Buyer stage moved to Viewing Completed.')
+      setError('')
+      await reloadRecords(organisationId)
+      if (leadViewingCompletionForm.nextStep === 'send_offer_link') {
+        setOfferLinkForm((previous) => ({
+          ...previous,
+          appointmentId: targetAppointment.appointmentId,
+          listingId: normalizeText(targetAppointment.listingId || previous.listingId || selectedLead.listingId),
+        }))
+      }
+    } catch (completionError) {
+      setError(completionError?.message || 'Unable to complete this viewing right now.')
+    }
+  }
+
+  async function handleCancelLeadViewing(appointment) {
+    if (!organisationId || !appointment?.appointmentId) return
+    try {
+      const updated = await updateAppointmentAsync(
+        organisationId,
+        appointment.appointmentId,
+        {
+          status: 'cancelled',
+          cancellationReason: 'Cancelled from lead appointment workspace.',
+        },
+        {
+          actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        },
+      )
+      if (selectedLead?.leadId) {
+        await createAgencyCrmLeadActivity(
+          organisationId,
+          selectedLead.leadId,
+          {
+            agent: currentAgent,
+            activityType: 'Appointment Cancelled',
+            activityNote: `${updated?.appointmentTypeLabel || getAppointmentTypeLabel(appointment.appointmentType)} cancelled from the lead workspace.`,
+            outcome: 'cancelled',
+            activityDate: new Date().toISOString(),
+          },
+          { actor: currentAgent },
+        )
+      }
+      setMessage('Viewing cancelled.')
+      await reloadRecords(organisationId)
+    } catch (cancelError) {
+      setError(cancelError?.message || 'Unable to cancel this viewing right now.')
+    }
+  }
+
+  async function handleSendOfferLinkFromAppointment(event) {
+    event?.preventDefault?.()
+    if (!organisationId || !selectedLead) return
+    const selectedListingId = normalizeText(offerLinkForm.listingId)
+    if (!selectedListingId) {
+      setError('Select the property before sending the offer link.')
+      return
+    }
+    if (!normalizeText(offerLinkForm.buyerEmail) && !normalizeText(offerLinkForm.buyerPhone)) {
+      setError('Add buyer email or phone before sending the offer link.')
+      return
+    }
+    try {
+      setIsOfferLinkSending(true)
+      const offer = await createCanonicalOffer(
+        {
+          organisationId,
+          buyerLeadId: selectedLead.leadId,
+          buyerContactId: selectedLead.contactId,
+          listingId: selectedListingId,
+          agentId: currentAgent.id,
+          viewingAppointmentId: normalizeText(offerLinkForm.appointmentId) || normalizeText(selectedLeadActiveViewing?.appointmentId),
+          status: 'draft',
+          financeType: selectedLead.financeType || selectedLead.preferredFinanceType || '',
+          expiryDate: normalizeText(offerLinkForm.expiryDate),
+          conditionsJson: {
+            source: 'lead_appointment_tab',
+            buyerName: normalizeText(offerLinkForm.buyerName),
+            buyerEmail: normalizeText(offerLinkForm.buyerEmail),
+            buyerPhone: normalizeText(offerLinkForm.buyerPhone),
+            agentNoteToBuyer: normalizeText(offerLinkForm.note),
+          },
+        },
+        {
+          actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        },
+      )
+      if (offer?.id && normalizeText(offerLinkForm.appointmentId)) {
+        await updateAppointmentAsync(
+          organisationId,
+          offerLinkForm.appointmentId,
+          {
+            offerInviteId: offer.id,
+            nextStep: 'Offer link sent',
+          },
+          {
+            actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          },
+        ).catch(() => null)
+      }
+      const offerLinkToken = normalizeText(offer?.offerToken || offer?.id)
+      const offerLink = offerLinkToken && typeof window !== 'undefined'
+        ? `${window.location.origin}/offers/${encodeURIComponent(offerLinkToken)}`
+        : ''
+      await createAgencyCrmLeadActivity(
+        organisationId,
+        selectedLead.leadId,
+        {
+          agent: currentAgent,
+          activityType: 'Offer Link Sent',
+          activityNote: [
+            `Offer draft created for ${resolveAppointmentListingLabel(selectedListingId) || 'selected property'}.`,
+            offerLink ? `Link: ${offerLink}` : '',
+          ].filter(Boolean).join(' '),
+          outcome: 'Offer Draft',
+          activityDate: new Date().toISOString(),
+        },
+        { actor: currentAgent },
+      )
+      if (offerLink && typeof navigator !== 'undefined') {
+        void navigator.clipboard?.writeText(offerLink)
+      }
+      setOfferLinkForm((previous) => ({ ...previous, lastOfferLink: offerLink }))
+      setMessage(offerLink ? 'Offer link created and copied. Buyer lead stage updated to Offer Draft.' : 'Offer draft created. Buyer lead stage updated to Offer Draft.')
+      setError('')
+      await reloadRecords(organisationId)
+    } catch (offerError) {
+      setError(offerError?.message || 'Unable to create the offer link.')
+    } finally {
+      setIsOfferLinkSending(false)
+    }
+  }
+
   async function handleCancelAppointment() {
     if (!organisationId || !selectedAppointmentId) return
     try {
@@ -6761,62 +7090,224 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   {leadWorkspaceTab === 'appointments' ? (
-                  <div className="space-y-2 rounded-[14px] border border-[#e4ebf4] bg-white p-3">
-                    <h4 className="text-sm font-semibold text-[#28435e]">Appointments</h4>
-                    <form className="grid gap-2" onSubmit={handleCreateAppointment}>
-                      <Field
-                        placeholder="Appointment title"
-                        value={appointmentForm.title}
-                        onChange={(event) => setAppointmentForm((previous) => ({ ...previous, title: event.target.value }))}
-                      />
-                      <Field
-                        as="select"
-                        value={appointmentForm.appointmentType}
-                        onChange={(event) => handleAppointmentTypeChange(event.target.value)}
-                      >
-                        {APPOINTMENT_TYPE_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Field>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <Field type="date" value={appointmentForm.date} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, date: event.target.value }))} />
-                        <Field type="time" value={appointmentForm.startTime} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, startTime: event.target.value }))} />
+                  <div className="space-y-4">
+                    <section className="rounded-[18px] border border-[#e1eaf4] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Viewing Workspace</p>
+                          <h4 className="mt-1 text-lg font-semibold text-[#18324b]">Appointment Summary</h4>
+                          <p className="mt-1 text-sm text-[#6a8098]">Book viewings, record outcomes, and move the buyer into offer flow from one place.</p>
+                        </div>
+                        {selectedLeadActiveViewing ? (
+                          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${getAppointmentStatusTone(selectedLeadActiveViewing.status)}`}>
+                            {getAppointmentStatusLabel(selectedLeadActiveViewing.status)}
+                          </span>
+                        ) : null}
                       </div>
-                      <Field placeholder="Location" value={appointmentForm.location} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, location: event.target.value }))} />
-                      <Field as="select" value={appointmentForm.status} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, status: event.target.value }))}>
-                        {APPOINTMENT_STATUSES.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </Field>
-                      <Field placeholder="Notes" value={appointmentForm.notes} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, notes: event.target.value }))} />
-                      <div className="flex flex-wrap gap-2">
-                        <Button type="submit">Book Appointment</Button>
-                        <Button type="button" variant="secondary" onClick={() => handleOpenAppointmentModal()}>
-                          Open Full Form
-                        </Button>
-                      </div>
-                    </form>
-                    <div className="max-h-36 space-y-2 overflow-auto pt-1">
-                      {selectedLeadAppointments.length ? (
-                        selectedLeadAppointments.map((appointment) => (
-                          <button
-                            key={appointment.appointmentId}
-                            type="button"
-                            onClick={() => handleOpenAppointmentModal(appointment)}
-                            className="w-full rounded-[10px] border border-[#e7edf5] bg-[#fbfdff] px-2.5 py-2 text-left text-xs"
-                          >
-                            <p className="font-semibold text-[#29435d]">{getAppointmentTypeLabel(appointment.appointmentType)}</p>
-                            <p className="mt-0.5 text-[#587089]">{formatDate(appointment.dateTime)} • {appointment.status}</p>
-                          </button>
-                        ))
+
+                      {selectedLeadActiveViewing ? (
+                        <div className="mt-4 rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] p-3">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-[#243f5a]">{getAppointmentTypeLabel(selectedLeadActiveViewing.appointmentType) || 'Viewing'}</p>
+                              <p className="mt-1 text-xs text-[#607891]">{resolveAppointmentListingLabel(selectedLeadActiveViewing.listingId) || 'No property selected'}</p>
+                              <p className="mt-1 text-xs text-[#607891]">{formatDate(selectedLeadActiveViewing.dateTime)} · {formatAppointmentTimeRange(selectedLeadActiveViewing)}</p>
+                            </div>
+                            <div className="text-right text-xs text-[#607891]">
+                              <p className="font-semibold text-[#243f5a]">{selectedLeadContactName}</p>
+                              <p>{selectedLeadContact?.phone || selectedLead?.phone || 'No phone'}</p>
+                              <p>{selectedLeadContact?.email || selectedLead?.email || 'No email'}</p>
+                            </div>
+                          </div>
+                          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                            {[
+                              ['Assigned agent', resolveAgentById(selectedLeadActiveViewing.assignedAgentId || selectedLeadActiveViewing.assignedAgentEmail || currentAgent.id)?.name || currentAgent.fullName],
+                              ['Location', selectedLeadActiveViewing.location || 'To be confirmed'],
+                              ['Outcome', selectedLeadActiveViewing.outcomeSummary || 'Pending'],
+                              ['Last activity', formatRelativeTime(selectedLeadActiveViewing.updatedAt || selectedLeadActiveViewing.createdAt)],
+                            ].map(([label, value]) => (
+                              <div key={label} className="rounded-[12px] border border-[#e6eef7] bg-white px-3 py-2">
+                                <p className="text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[#8496aa]">{label}</p>
+                                <p className="mt-1 text-sm font-semibold text-[#253f59]">{value}</p>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Button type="button" size="sm" onClick={() => handleOpenLeadCompletionPanel(selectedLeadActiveViewing)} disabled={normalizeText(selectedLeadActiveViewing.status).toLowerCase() === 'completed'}>
+                              <CheckSquare className="h-4 w-4" />
+                              Mark as Completed
+                            </Button>
+                            <Button type="button" size="sm" variant="secondary" onClick={() => handleOpenAppointmentModal(selectedLeadActiveViewing)}>
+                              <CalendarDays className="h-4 w-4" />
+                              Reschedule
+                            </Button>
+                            <Button type="button" size="sm" variant="secondary" onClick={() => void handleCancelLeadViewing(selectedLeadActiveViewing)}>
+                              Cancel
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => setOfferLinkForm((previous) => ({
+                                ...previous,
+                                appointmentId: selectedLeadActiveViewing.appointmentId,
+                                listingId: normalizeText(selectedLeadActiveViewing.listingId || previous.listingId),
+                              }))}
+                            >
+                              <Mail className="h-4 w-4" />
+                              Send Offer Link
+                            </Button>
+                          </div>
+                        </div>
                       ) : (
-                        <p className="text-xs text-[#6d839b]">No appointments yet.</p>
+                        <div className="mt-4 rounded-[14px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-4 text-sm text-[#6a8098]">
+                          No viewing has been booked for this lead yet.
+                        </div>
                       )}
-                    </div>
+
+                      <form className="mt-4 rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] p-3" onSubmit={handleCreateAppointment}>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-[#243f5a]">Book a Viewing</p>
+                            <p className="text-xs text-[#6f849a]">A new viewing updates the buyer stage to Viewing Scheduled.</p>
+                          </div>
+                          <Button type="button" size="sm" variant="secondary" onClick={() => handleOpenAppointmentModal()}>
+                            Open Full Form
+                          </Button>
+                        </div>
+                        <div className="mt-3 grid gap-2 md:grid-cols-2">
+                          <Field as="select" value={appointmentForm.listingId} onChange={(event) => handleAppointmentListingChange(event.target.value)}>
+                            <option value="">Select property</option>
+                            {leadAppointmentOfferListingOptions.map((listing) => (
+                              <option key={listing.id} value={listing.id}>{listing.label}</option>
+                            ))}
+                          </Field>
+                          <Field placeholder="Location" value={appointmentForm.location} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, location: event.target.value }))} />
+                          <Field type="date" value={appointmentForm.date} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, date: event.target.value }))} />
+                          <Field type="time" value={appointmentForm.startTime} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, startTime: event.target.value }))} />
+                        </div>
+                        <Field className="mt-2" placeholder="Viewing notes" value={appointmentForm.notes} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, notes: event.target.value, appointmentType: 'viewing', title: previous.title || 'Viewing' }))} />
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button type="submit">Book Viewing</Button>
+                        </div>
+                      </form>
+                    </section>
+
+                    {leadCompletionAppointmentId ? (
+                      <section className="rounded-[18px] border border-[#dfe9f4] bg-white p-4 shadow-[0_10px_24px_rgba(31,54,78,0.04)]">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Post Viewing</p>
+                            <h4 className="mt-1 text-lg font-semibold text-[#18324b]">Complete Viewing Outcome</h4>
+                          </div>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => setLeadCompletionAppointmentId('')}>Close</Button>
+                        </div>
+                        <div className="mt-3 grid gap-2 md:grid-cols-2">
+                          <Field as="select" value={leadViewingCompletionForm.outcome} onChange={(event) => setLeadViewingCompletionForm((previous) => ({ ...previous, outcome: event.target.value }))}>
+                            {VIEWING_OUTCOME_OPTIONS.map((option) => (
+                              <option key={option} value={option}>{option}</option>
+                            ))}
+                          </Field>
+                          <Field as="select" value={leadViewingCompletionForm.nextStep} onChange={(event) => setLeadViewingCompletionForm((previous) => ({ ...previous, nextStep: event.target.value }))}>
+                            {VIEWING_NEXT_STEP_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </Field>
+                          <Field type="date" value={leadViewingCompletionForm.followUpDate} onChange={(event) => setLeadViewingCompletionForm((previous) => ({ ...previous, followUpDate: event.target.value }))} />
+                        </div>
+                        <div className="mt-2 grid gap-2 md:grid-cols-2">
+                          <Field as="textarea" rows={3} placeholder="Agent notes" value={leadViewingCompletionForm.agentNotes} onChange={(event) => setLeadViewingCompletionForm((previous) => ({ ...previous, agentNotes: event.target.value }))} />
+                          <Field as="textarea" rows={3} placeholder="Buyer feedback" value={leadViewingCompletionForm.buyerFeedback} onChange={(event) => setLeadViewingCompletionForm((previous) => ({ ...previous, buyerFeedback: event.target.value }))} />
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button type="button" onClick={() => void handleCompleteLeadViewing()}>Save Completion</Button>
+                          <Button type="button" variant="secondary" onClick={() => setLeadCompletionAppointmentId('')}>Cancel</Button>
+                        </div>
+                      </section>
+                    ) : null}
+
+                    <section className="rounded-[18px] border border-[#dfe9f4] bg-white p-4 shadow-[0_10px_24px_rgba(31,54,78,0.04)]">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Offer CTA</p>
+                          <h4 className="mt-1 text-lg font-semibold text-[#18324b]">Ready to make an offer?</h4>
+                          <p className="mt-1 text-sm text-[#6a8098]">Choose the correct property before sending. Buyers may have viewed more than one.</p>
+                        </div>
+                      </div>
+                      <form className="mt-3 grid gap-2" onSubmit={handleSendOfferLinkFromAppointment}>
+                        <div className="grid gap-2 md:grid-cols-2">
+                          <Field as="select" value={offerLinkForm.listingId} onChange={(event) => setOfferLinkForm((previous) => ({ ...previous, listingId: event.target.value }))}>
+                            <option value="">Select property/listing</option>
+                            {leadAppointmentOfferListingOptions.map((listing) => (
+                              <option key={listing.id} value={listing.id}>{listing.label}</option>
+                            ))}
+                          </Field>
+                          <Field type="date" value={offerLinkForm.expiryDate} onChange={(event) => setOfferLinkForm((previous) => ({ ...previous, expiryDate: event.target.value }))} />
+                          <Field placeholder="Buyer name" value={offerLinkForm.buyerName} onChange={(event) => setOfferLinkForm((previous) => ({ ...previous, buyerName: event.target.value }))} />
+                          <Field placeholder="Buyer email" value={offerLinkForm.buyerEmail} onChange={(event) => setOfferLinkForm((previous) => ({ ...previous, buyerEmail: event.target.value }))} />
+                          <Field placeholder="Buyer phone" value={offerLinkForm.buyerPhone} onChange={(event) => setOfferLinkForm((previous) => ({ ...previous, buyerPhone: event.target.value }))} />
+                          <Field as="select" value={offerLinkForm.appointmentId} onChange={(event) => setOfferLinkForm((previous) => ({ ...previous, appointmentId: event.target.value }))}>
+                            <option value="">Link to appointment</option>
+                            {selectedLeadViewingAppointments.map((appointment) => (
+                              <option key={appointment.appointmentId} value={appointment.appointmentId}>
+                                {formatDate(appointment.dateTime)} · {resolveAppointmentListingLabel(appointment.listingId) || 'Viewing'}
+                              </option>
+                            ))}
+                          </Field>
+                        </div>
+                        <Field as="textarea" rows={2} placeholder="Optional note to buyer" value={offerLinkForm.note} onChange={(event) => setOfferLinkForm((previous) => ({ ...previous, note: event.target.value }))} />
+                        {offerLinkForm.lastOfferLink ? (
+                          <div className="rounded-[12px] border border-[#cde7d5] bg-[#f2fbf5] px-3 py-2 text-xs text-[#286b43]">
+                            Offer link ready: {offerLinkForm.lastOfferLink}
+                          </div>
+                        ) : null}
+                        <div className="flex flex-wrap gap-2">
+                          <Button type="submit" disabled={isOfferLinkSending}>{isOfferLinkSending ? 'Creating...' : 'Send Offer Link'}</Button>
+                        </div>
+                      </form>
+                    </section>
+
+                    <section className="rounded-[18px] border border-[#dfe9f4] bg-white p-4 shadow-[0_10px_24px_rgba(31,54,78,0.04)]">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">History</p>
+                          <h4 className="mt-1 text-lg font-semibold text-[#18324b]">Appointment History</h4>
+                        </div>
+                        <span className="rounded-full bg-[#f3f7fb] px-3 py-1 text-xs font-semibold text-[#607891]">{selectedLeadAppointments.length} records</span>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {selectedLeadAppointments.length ? (
+                          selectedLeadAppointments.map((appointment) => (
+                            <button
+                              key={appointment.appointmentId}
+                              type="button"
+                              onClick={() => handleOpenAppointmentModal(appointment)}
+                              className="w-full rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-3 text-left transition hover:border-[#cbd9e8] hover:bg-white"
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-[#243f5a]">{resolveAppointmentListingLabel(appointment.listingId) || getAppointmentTypeLabel(appointment.appointmentType)}</p>
+                                  <p className="mt-1 text-xs text-[#607891]">{formatDate(appointment.dateTime)} · {formatAppointmentTimeRange(appointment)}</p>
+                                  <p className="mt-1 line-clamp-1 text-xs text-[#7b8ea4]">{appointment.outcomeSummary || appointment.notes || 'Outcome pending'}</p>
+                                </div>
+                                <div className="flex flex-col items-end gap-1">
+                                  <span className={`rounded-full border px-2.5 py-0.5 text-[0.68rem] font-semibold ${getAppointmentStatusTone(appointment.status)}`}>
+                                    {getAppointmentStatusLabel(appointment.status)}
+                                  </span>
+                                  {appointment.offerInviteId ? (
+                                    <span className="text-[0.68rem] font-semibold text-[#2f7b9e]">Offer link sent</span>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="rounded-[14px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-4 text-sm text-[#6a8098]">
+                            Previous viewings and appointments will appear here.
+                          </div>
+                        )}
+                      </div>
+                    </section>
                   </div>
                   ) : null}
 

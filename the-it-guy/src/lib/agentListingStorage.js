@@ -1,6 +1,7 @@
 const AGENT_PRIVATE_LISTINGS_STORAGE_KEY = 'itg:agent-private-listings:v1'
 const AGENT_SELLER_LEADS_STORAGE_KEY = 'itg:agent-seller-leads:v1'
 const AGENT_LISTING_DRAFTS_STORAGE_KEY = 'itg:agent-listing-drafts:v1'
+const AGENT_DELETED_LISTINGS_STORAGE_KEY = 'itg:agent-deleted-listings:v1'
 const DEMO_DEAL_ELIGIBILITY_OVERRIDE = true
 
 export const SELLER_ONBOARDING_STATUS = {
@@ -135,11 +136,13 @@ export function buildSellerClientPortalLink(token, baseUrl = '') {
 }
 
 export function readAgentPrivateListings() {
-  return readRows(AGENT_PRIVATE_LISTINGS_STORAGE_KEY)
+  const deletedIds = readDeletedListingIds()
+  return readRows(AGENT_PRIVATE_LISTINGS_STORAGE_KEY).filter((row) => !listingMatchesDeletedIds(row, deletedIds))
 }
 
 export function writeAgentPrivateListings(rows) {
-  writeRows(AGENT_PRIVATE_LISTINGS_STORAGE_KEY, rows)
+  const deletedIds = readDeletedListingIds()
+  writeRows(AGENT_PRIVATE_LISTINGS_STORAGE_KEY, (Array.isArray(rows) ? rows : []).filter((row) => !listingMatchesDeletedIds(row, deletedIds)))
 }
 
 export function readAgentSellerLeads() {
@@ -156,6 +159,113 @@ export function readAgentListingDrafts() {
 
 export function writeAgentListingDrafts(rows) {
   writeRows(AGENT_LISTING_DRAFTS_STORAGE_KEY, rows)
+}
+
+function normalizeRecordId(value) {
+  return String(value || '').trim()
+}
+
+export function readDeletedListingIds() {
+  return new Set(readRows(AGENT_DELETED_LISTINGS_STORAGE_KEY).map(normalizeRecordId).filter(Boolean))
+}
+
+function writeDeletedListingIds(ids = []) {
+  writeRows(AGENT_DELETED_LISTINGS_STORAGE_KEY, Array.from(new Set(ids)).map(normalizeRecordId).filter(Boolean))
+}
+
+function collectListingDeleteIds(recordOrId = {}) {
+  if (typeof recordOrId === 'string') return new Set([normalizeRecordId(recordOrId)].filter(Boolean))
+  const record = recordOrId && typeof recordOrId === 'object' ? recordOrId : {}
+  return new Set([
+    record.id,
+    record.listingId,
+    record.listing_id,
+    record.privateListingId,
+    record.private_listing_id,
+    record.sourceDraftId,
+    record.source_draft_id,
+    record.listingDraftId,
+    record.listing_draft_id,
+    record.sellerLeadId,
+    record.seller_lead_id,
+    record.originatingCrmLeadId,
+    record.originating_crm_lead_id,
+  ].map(normalizeRecordId).filter(Boolean))
+}
+
+function listingMatchesDeletedIds(record = {}, deletedIds = new Set()) {
+  if (!record || !deletedIds?.size) return false
+  return Array.from(collectListingDeleteIds(record)).some((id) => deletedIds.has(id))
+}
+
+export function rememberDeletedListingIds(ids = []) {
+  const existingIds = readDeletedListingIds()
+  for (const id of ids) {
+    const normalized = normalizeRecordId(id)
+    if (normalized) existingIds.add(normalized)
+  }
+  writeDeletedListingIds(existingIds)
+  return existingIds
+}
+
+export function deleteAgentPrivateListingCascade(recordOrId = {}) {
+  const deleteIds = collectListingDeleteIds(recordOrId)
+  if (!deleteIds.size) {
+    return {
+      removedListings: 0,
+      removedDrafts: 0,
+      removedLeads: 0,
+      deletedIds: [],
+    }
+  }
+
+  const listingRows = readRows(AGENT_PRIVATE_LISTINGS_STORAGE_KEY)
+  const nextListingRows = []
+  for (const listing of listingRows) {
+    const matches = listingMatchesDeletedIds(listing, deleteIds)
+    if (matches) {
+      for (const id of collectListingDeleteIds(listing)) deleteIds.add(id)
+    } else {
+      nextListingRows.push(listing)
+    }
+  }
+  const removedListings = listingRows.length - nextListingRows.length
+  if (removedListings > 0) writeRows(AGENT_PRIVATE_LISTINGS_STORAGE_KEY, nextListingRows)
+
+  const draftRows = readAgentListingDrafts()
+  const nextDraftRows = []
+  for (const draft of draftRows) {
+    const draftIds = collectListingDeleteIds(draft)
+    const matches = Array.from(draftIds).some((id) => deleteIds.has(id))
+    if (matches) {
+      for (const id of draftIds) deleteIds.add(id)
+    } else {
+      nextDraftRows.push(draft)
+    }
+  }
+  const removedDrafts = draftRows.length - nextDraftRows.length
+  if (removedDrafts > 0) writeAgentListingDrafts(nextDraftRows)
+
+  const leadRows = readAgentSellerLeads()
+  const nextLeadRows = leadRows.filter((lead) => {
+    const leadIds = collectListingDeleteIds(lead)
+    const matches = Array.from(leadIds).some((id) => deleteIds.has(id))
+    if (matches) {
+      for (const id of leadIds) deleteIds.add(id)
+    }
+    return !matches
+  })
+  const removedLeads = leadRows.length - nextLeadRows.length
+  if (removedLeads > 0) writeAgentSellerLeads(nextLeadRows)
+
+  rememberDeletedListingIds(deleteIds)
+
+  return {
+    removedListings,
+    removedDrafts,
+    removedLeads,
+    deletedIds: Array.from(deleteIds),
+  }
 }
 
 export function createAgentSellerLead(payload = {}) {

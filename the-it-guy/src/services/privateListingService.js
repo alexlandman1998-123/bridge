@@ -1068,6 +1068,31 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
   return mapPrivateListingRow(updateQuery.data, onboardingMap, requirementsMap, documentsMap)
 }
 
+export async function deletePrivateListing(listingId) {
+  const client = requireClient()
+  const normalizedId = normalizeUuid(listingId)
+  if (!normalizedId) throw new Error('Listing id is required.')
+
+  const result = await client
+    .from('private_listings')
+    .delete()
+    .eq('id', normalizedId)
+    .select('id, organisation_id, seller_lead_id, originating_crm_lead_id, listing_reference, title')
+    .maybeSingle()
+
+  if (result.error) {
+    if (isMissingTableError(result.error, 'private_listings')) {
+      throw new Error('Private listings table is unavailable in this Supabase project.')
+    }
+    throw result.error
+  }
+
+  return {
+    deleted: Boolean(result.data?.id),
+    listing: result.data || null,
+  }
+}
+
 export async function updatePrivateListingOnboardingFormData(listingId, formData = {}, options = {}) {
   const client = requireClient()
   const normalizedId = normalizeUuid(listingId)

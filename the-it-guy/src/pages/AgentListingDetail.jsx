@@ -21,6 +21,7 @@ import {
   Link2,
   ShieldCheck,
   Star,
+  Trash2,
   TrendingUp,
   Upload,
   UserRound,
@@ -41,6 +42,7 @@ import {
   listAppointmentsAsync,
 } from '../lib/agencyPipelineService'
 import {
+  deleteAgentPrivateListingCascade,
   generateId,
   readAgentPrivateListings,
   writeAgentPrivateListings,
@@ -68,6 +70,7 @@ import { createCanonicalOffer } from '../lib/buyerLifecycleService'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import {
   getPrivateListing,
+  deletePrivateListing,
   updatePrivateListing,
   updatePrivateListingOnboardingFormData,
   uploadPrivateListingMediaAsset,
@@ -94,6 +97,10 @@ const SELLER_WORKSPACE_TABS = [
   { key: 'commission', label: 'Commission' },
   { key: 'activity', label: 'Activity' },
 ]
+
+function isUuidLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(String(value || '').trim())
+}
 
 const ATTORNEY_OPTIONS = [
   'Bridge Conveyancing',
@@ -657,6 +664,7 @@ function AgentListingDetail() {
   const [copiedOfferToken, setCopiedOfferToken] = useState('')
   const [detailMessage, setDetailMessage] = useState('')
   const [detailError, setDetailError] = useState('')
+  const [deletingListing, setDeletingListing] = useState(false)
   const [gallerySaving, setGallerySaving] = useState(false)
   const [showFullGallery, setShowFullGallery] = useState(false)
   const [offerNotesDraftById, setOfferNotesDraftById] = useState({})
@@ -1784,6 +1792,34 @@ function AgentListingDetail() {
     }))
   }
 
+  async function handleDeleteListing() {
+    const listingTitle = String(listingRecord?.listingTitle || 'this listing').trim()
+    const confirmed = window.confirm(
+      `Permanently delete "${listingTitle}"?\n\nThis removes the listing from Bridge, local fallback storage, seller workflow drafts, onboarding-linked listing records, documents, and activity. This cannot be undone.`,
+    )
+    if (!confirmed) return
+
+    setDeletingListing(true)
+    setDetailError('')
+    setDetailMessage('')
+
+    try {
+      if (isSupabaseConfigured && isUuidLike(listingId)) {
+        await deletePrivateListing(listingId)
+      }
+      deleteAgentPrivateListingCascade(listingRecord || listingId)
+      window.dispatchEvent(new Event('itg:listings-updated'))
+      navigate('/listings', {
+        replace: true,
+        state: { message: `"${listingTitle}" was permanently deleted.` },
+      })
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to delete this listing.')
+    } finally {
+      setDeletingListing(false)
+    }
+  }
+
   if (loading || listingId.startsWith('development-')) {
     return (
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
@@ -1844,6 +1880,10 @@ function AgentListingDetail() {
               <p className="mt-3 text-[1.45rem] font-semibold text-[#1f4f78]">{formatCurrency(listingRecord.askingPrice)}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <Button variant="secondary" onClick={handleDeleteListing} disabled={deletingListing}>
+                {deletingListing ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                Delete Listing
+              </Button>
               <Button variant="secondary" onClick={() => setActiveTab('property_details')}>
                 Edit Listing
               </Button>
