@@ -2522,6 +2522,26 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     )
   }, [canvassingProspectById, records.contacts, selectedLead])
 
+  const selectedLeadDisplayName = useMemo(() => {
+    if (!selectedLead && !selectedLeadContact) return 'Lead Workspace'
+    return [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() ||
+      selectedLead?.name ||
+      selectedLead?.buyerName ||
+      selectedLead?.sellerName ||
+      'Unnamed Lead'
+  }, [selectedLead, selectedLeadContact])
+
+  const selectedLeadPropertyLabel = useMemo(() => {
+    if (!selectedLead) return 'No property linked'
+    return normalizeText(selectedLead?.sellerPropertyAddress || selectedLead?.propertyInterest || selectedLead?.areaInterest || selectedLead?.listingId) ||
+      'No property linked'
+  }, [selectedLead])
+
+  const selectedLeadAssignedAgentLabel = useMemo(() => {
+    if (!selectedLead) return 'Unassigned'
+    return normalizeText(selectedLead.assignedAgentName || selectedLead.assignedAgentEmail || currentAgent.fullName) || 'Unassigned'
+  }, [currentAgent.fullName, selectedLead])
+
   const selectedLeadActivities = useMemo(() => {
     if (!selectedLead) return []
     const leadKey = normalizeLeadIdentityKey(selectedLead.leadId)
@@ -2661,12 +2681,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedLeadOnboardingCompleted =
     selectedLeadStageKey.includes('onboarding completed') ||
     selectedLeadOnboardingStatusKey === 'completed'
-  const selectedLeadOnboardingTimestamp = normalizeText(
-    selectedLead?.sellerOnboarding?.completedAt ||
-      selectedLead?.sellerOnboarding?.submittedAt ||
-      selectedLead?.sellerOnboarding?.updatedAt ||
-      selectedLead?.updatedAt,
-  )
 
   useEffect(() => {
     if (!selectedLead || !selectedLeadIsSeller || selectedLeadOnboardingCompleted || !organisationId) return
@@ -6949,83 +6963,58 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             ) : null}
 
             {isLeadWorkspaceRoute ? (
-            <article className="space-y-4">
-              <div className="rounded-[24px] border border-[#dfe8f2] bg-white p-5 shadow-[0_18px_44px_rgba(31,54,78,0.08)]">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="min-w-0 space-y-3">
+            <article className="mx-auto w-full max-w-[1680px] space-y-6">
+              <section className="rounded-[28px] bg-white px-6 py-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_18px_48px_rgba(31,54,78,0.07)] sm:px-8 sm:py-8">
+                <div className="flex flex-col gap-8 xl:flex-row xl:items-start xl:justify-between">
+                  <div className="min-w-0">
                     <button
                       type="button"
-                      className="text-xs font-semibold uppercase tracking-[0.08em] text-[#5f7894] transition hover:text-[#1f4f78]"
+                      className="inline-flex items-center text-sm font-semibold text-[#60758b] transition hover:text-[#163247]"
                       onClick={() => navigate('/pipeline/leads')}
                     >
                       ← Back to Leads
                     </button>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8da3]">Lead Workspace</p>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <h3 className="text-2xl font-semibold tracking-[-0.035em] text-[#102033]">
-                          {[selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ') || 'Seller Lead'}
-                        </h3>
-                        {selectedLead ? (
-                          <span className="rounded-full border border-[#d8e5f2] bg-[#f5f9fd] px-3 py-1 text-xs font-semibold text-[#294c6e]">
-                            {selectedLeadIsSeller ? 'Seller' : 'Buyer'} Lead
+                    {selectedLead ? (
+                      <>
+                        <div className="mt-6 flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-[#edf4fb] px-3 py-1 text-xs font-semibold text-[#244f70]">
+                            {selectedLeadIsSeller ? 'Seller Lead' : 'Buyer Lead'}
                           </span>
-                        ) : null}
-                        {selectedLead ? (
-                          <span className="rounded-full border border-[#d9e7f5] bg-[#eef6fd] px-3 py-1 text-xs font-semibold text-[#1f5f8a]">
+                          <span className="rounded-full bg-[#eef8f2] px-3 py-1 text-xs font-semibold text-[#247345]">
                             {resolveLeadFunnelStage(selectedLead)}
                           </span>
-                        ) : null}
-                      </div>
-                    </div>
-                    {selectedLead ? (
-                      <div className="grid gap-3 text-sm text-[#526b84] md:grid-cols-2 xl:grid-cols-4">
-                        <div>
-                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7c8fa5]">Assigned Agent</p>
-                          <p className="mt-1 font-semibold text-[#203a54]">{selectedLead.assignedAgentName || selectedLead.assignedAgentEmail || 'Unassigned'}</p>
                         </div>
-                        <div>
-                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7c8fa5]">Contact</p>
-                          <p className="mt-1 font-semibold text-[#203a54]">{selectedLeadContact?.phone || 'No phone'} · {selectedLeadContact?.email || 'No email'}</p>
+                        <h1 className="mt-3 text-[2.6rem] font-bold leading-[0.98] tracking-[-0.05em] text-[#102033] sm:text-[3.25rem]">
+                          {selectedLeadDisplayName}
+                        </h1>
+                        <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-medium text-[#60758b]">
+                          <span className="inline-flex items-center gap-2">
+                            <Home className="h-4 w-4 text-[#8aa0b7]" />
+                            {selectedLeadPropertyLabel}
+                          </span>
+                          <span className="hidden h-1 w-1 rounded-full bg-[#c8d4e0] sm:block" />
+                          <span className="inline-flex items-center gap-2">
+                            <UserRound className="h-4 w-4 text-[#8aa0b7]" />
+                            {selectedLeadAssignedAgentLabel}
+                          </span>
+                          <span className="hidden h-1 w-1 rounded-full bg-[#c8d4e0] sm:block" />
+                          <span>{selectedLeadIsSeller ? 'Seller relationship' : 'Buyer relationship'}</span>
                         </div>
-                        <div>
-                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7c8fa5]">Property / Listing</p>
-                          <p className="mt-1 truncate font-semibold text-[#203a54]">
-                            {selectedLead.listingId || selectedLead.sellerPropertyAddress || selectedLead.propertyInterest || 'Not linked yet'}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7c8fa5]">Next Step</p>
-                          <p className="mt-1 truncate font-semibold text-[#203a54]">{selectedLeadNextStep || 'No next step set'}</p>
-                        </div>
-                      </div>
-                    ) : null}
+                      </>
+                    ) : (
+                      <h1 className="mt-5 text-[2.6rem] font-bold leading-[0.98] tracking-[-0.05em] text-[#102033] sm:text-[3.25rem]">
+                        Lead Workspace
+                      </h1>
+                    )}
                   </div>
-                  {selectedLeadIsSeller ? (
-                    <div className={`rounded-[16px] border px-3 py-2 text-xs ${
-                      selectedLeadOnboardingCompleted
-                        ? 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
-                        : 'border-[#f1d8d0] bg-[#fff5f3] text-[#973824]'
-                    }`}>
-                      <p className="font-semibold">
-                        Seller onboarding: {selectedLeadOnboardingStatusKey.replace(/_/g, ' ')}
-                      </p>
-                      <p className="mt-0.5 max-w-[260px]">
-                        {selectedLeadOnboardingCompleted
-                          ? 'Complete. Mandate generation is available.'
-                          : 'Not complete yet. Mandate generation can still continue.'}
-                      </p>
-                      {selectedLeadOnboardingTimestamp ? (
-                        <p className="mt-1 font-semibold">{formatDate(selectedLeadOnboardingTimestamp)}</p>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
 
-                {selectedLead ? (
-                  <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-[#e8eef5] pt-4">
+                  {selectedLead ? (
+                    <div className="flex flex-wrap items-center gap-2 xl:justify-end">
                     {selectedLeadIsSeller ? (
                       <>
+                        <Button type="button" size="sm" className="bg-[#123955] shadow-[0_10px_24px_rgba(18,57,85,0.18)]" onClick={handleCreateListingFromSellerLead}>
+                          {selectedLeadMandateSigned ? 'Convert to Listing' : 'Create Listing'}
+                        </Button>
                         <Button
                           type="button"
                           variant="secondary"
@@ -7042,7 +7031,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                : 'Resend Seller Onboarding'}
                         </Button>
                         <Button type="button" variant="secondary" size="sm" onClick={handleScheduleSellerAppointment}>
-                          Schedule Appointment
+                          Schedule
                         </Button>
                         <Button
                           type="button"
@@ -7062,21 +7051,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               ? 'Sending…'
                               : selectedLeadMandateActionState.label}
                         </Button>
-                        <Button type="button" size="sm" className="bg-[#123955] shadow-[0_10px_24px_rgba(18,57,85,0.18)]" onClick={handleCreateListingFromSellerLead}>
-                          {selectedLeadMandateSigned ? 'Convert to Listing' : 'Convert to Listing (Override)'}
-                        </Button>
                         <Button type="button" variant="secondary" size="sm" onClick={() => openArchiveLeadModal(selectedLead.leadId)}>
                           Archive Lead
                         </Button>
-                        <Button type="button" variant="secondary" size="sm" className="border-[#f1d0ca] text-[#9f3a2f] hover:bg-[#fff6f4]" onClick={() => openDeleteLeadModal(selectedLead.leadId)}>
-                          Delete Lead
+                        <Button type="button" variant="ghost" size="sm" title="More lead actions" onClick={() => openDeleteLeadModal(selectedLead.leadId)}>
+                          <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </>
                     ) : (
                       <>
-                        <Button type="button" variant="secondary" size="sm" onClick={() => handleOpenAppointmentModal()}>
-                          Schedule Appointment
-                        </Button>
                         <Button
                           type="button"
                           size="sm"
@@ -7085,25 +7068,26 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         >
                           {selectedLead.convertedTransactionId || selectedLead.convertedDealId ? 'Transaction Created' : 'Create Offer'}
                         </Button>
-                        <Button type="button" variant="secondary" size="sm" disabled title="OTP generation is available once a transaction is linked.">
-                          Generate OTP
+                        <Button type="button" variant="secondary" size="sm" onClick={() => handleOpenAppointmentModal()}>
+                          Schedule
                         </Button>
                         <Button type="button" variant="secondary" size="sm" onClick={() => openArchiveLeadModal(selectedLead.leadId)}>
                           Archive Lead
                         </Button>
-                        <Button type="button" variant="secondary" size="sm" className="border-[#f1d0ca] text-[#9f3a2f] hover:bg-[#fff6f4]" onClick={() => openDeleteLeadModal(selectedLead.leadId)}>
-                          Delete Lead
+                        <Button type="button" variant="ghost" size="sm" title="More lead actions" onClick={() => openDeleteLeadModal(selectedLead.leadId)}>
+                          <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </>
                     )}
-                  </div>
-                ) : null}
-              </div>
+	                  </div>
+	                ) : null}
+                </div>
+              </section>
               {selectedLead ? (
-                <div className="overflow-x-auto rounded-[18px] border border-[#dfe8f2] bg-white p-1.5 shadow-[0_10px_28px_rgba(31,54,78,0.05)]" role="tablist" aria-label="Lead workspace sections">
-                  <div className="flex min-w-max items-center gap-1">
+                <div className="overflow-x-auto rounded-[24px] bg-white px-5 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_10px_28px_rgba(31,54,78,0.05)]" role="tablist" aria-label="Lead workspace sections">
+                  <div className="flex min-w-max items-stretch gap-8">
                   {[
-                    { key: 'overview', label: 'Overview', meta: 'Summary' },
+                    { key: 'overview', label: 'Overview', meta: '' },
                     {
                       key: 'activity',
                       label: 'Activity',
@@ -7133,18 +7117,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         onClick={() => setLeadWorkspaceTab(tab.key)}
                         role="tab"
                         aria-selected={isActive}
-                        className={`rounded-[14px] px-4 py-2.5 text-left transition ${
+                        className={`relative flex min-h-[76px] items-center gap-2 whitespace-nowrap text-sm transition ${
                           isActive
-                            ? 'bg-[#eaf3fb] text-[#123955]'
-                            : 'text-[#536a83] hover:bg-[#f7faff] hover:text-[#1f4f78]'
+                            ? 'font-semibold text-[#123955]'
+                            : 'font-medium text-[#60758b] hover:text-[#163247]'
                         }`}
                       >
-                        <span className="block text-sm font-semibold leading-tight">
-                          {tab.label}
-                        </span>
-                        <span className={`mt-0.5 block text-[0.7rem] font-semibold leading-tight ${isActive ? 'text-[#2b6c99]' : 'text-[#90a2b6]'}`}>
-                          {tab.key === 'overview' ? tab.meta : `${tab.label} · ${tab.meta}`}
-                        </span>
+                        <span>{tab.label}</span>
+                        {tab.meta !== '' ? (
+                          <span className={`rounded-full px-2 py-0.5 text-[0.72rem] ${isActive ? 'bg-[#e8f2fb] text-[#1f5f8a]' : 'bg-[#f2f5f8] text-[#8aa0b7]'}`}>{tab.meta}</span>
+                        ) : null}
+                        <span className={`absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-[#2f7b9e] transition ${isActive ? 'opacity-100' : 'opacity-0'}`} />
                       </button>
                     )
                   })}
@@ -7152,19 +7135,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </div>
               ) : null}
               {selectedLead ? (
-                <div className={`mt-3 grid gap-4 ${leadWorkspaceTab === 'overview' ? 'xl:grid-cols-[1.65fr_0.95fr]' : ''}`}>
-                  <div className="space-y-4">
+                <div className={`mt-6 grid gap-6 ${leadWorkspaceTab === 'overview' ? 'xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px]' : ''}`}>
+                  <div className="space-y-6">
                   {leadWorkspaceTab === 'overview' ? (
-                  <div className="space-y-4">
-                    <div className="rounded-[20px] border border-[#e0e8f2] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.06)]">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-6">
+                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.06)] sm:p-8">
+                      <div className="flex flex-wrap items-start justify-between gap-6">
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ea4]">Lead Summary</p>
-                          <h4 className="mt-1 text-base font-semibold text-[#172b3f]">
-                            {[selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ') || 'Lead Contact'}
-                          </h4>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Lead Summary</p>
+                          <h2 className="mt-2 text-[1.45rem] font-semibold tracking-[-0.035em] text-[#102033]">Relationship Overview</h2>
                         </div>
-                        <div className="w-full sm:w-56">
+                        <div className="w-full sm:w-60">
                           <Field as="select" value={selectedLead.stage} onChange={(event) => handleUpdateLeadStage(selectedLead.leadId, event.target.value)}>
                             {LEAD_STAGES.map((stage) => (
                               <option key={stage} value={stage}>
@@ -7174,18 +7155,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </Field>
                         </div>
                       </div>
-                      <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <div className="mt-8 grid gap-x-10 gap-y-8 md:grid-cols-2">
                         {[
-                          ['Seller name', [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ') || 'Lead Contact'],
+                          ['Name', selectedLeadDisplayName],
                           ['Phone', selectedLeadContact?.phone || 'No phone'],
                           ['Email', selectedLeadContact?.email || 'No email'],
                           ['Lead source', selectedLead.leadSource || 'Not captured'],
                           ['Lead channel', selectedLead.leadDirection || 'Not captured'],
-                          ['Pipeline value', formatCurrency(selectedLead.estimatedValue || selectedLead.budget)],
-                          ['Property type', selectedLead.propertyInterest || 'Not captured'],
-                          ['Budget', formatCurrency(selectedLead.budget)],
-                          ['Preferred area', selectedLead.areaInterest || selectedLead.sellerPropertyAddress || 'Not captured'],
-                          ['Linked listing/property', selectedLead.listingId || selectedLead.sellerPropertyAddress || selectedLead.propertyInterest || 'Not linked yet'],
+                          ['Property', selectedLeadPropertyLabel],
+                          ['Budget', selectedLead.budget ? formatCurrency(selectedLead.budget) : 'Not captured'],
+                          ['Pipeline value', selectedLead.estimatedValue ? formatCurrency(selectedLead.estimatedValue) : formatCurrency(selectedLead.budget)],
+                          ['Lead score', selectedLead.priority || selectedLead.leadScore || 'Standard'],
+                          ['Follow up', selectedLeadNextStep || 'No next action'],
+                          ['Lifecycle stage', selectedLead.stage || resolveLeadFunnelStage(selectedLead)],
                           [
                             'Linked appointment',
                             selectedLeadLinkedAppointment
@@ -7194,21 +7176,34 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           ],
                           ['Linked transaction', selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not linked yet'],
                         ].map(([label, value]) => (
-                          <div key={label} className="rounded-[14px] border border-[#e6edf5] bg-[#fbfdff] px-3 py-2.5">
-                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8395aa]">{label}</p>
-                            <p className="mt-1 truncate text-sm font-semibold text-[#263f58]" title={String(value)}>
+                          <div key={label} className="border-b border-[#eef3f7] pb-4">
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">{label}</p>
+                            <p className="mt-2 truncate text-[1rem] font-semibold text-[#20364c]" title={String(value)}>
                               {value}
                             </p>
                           </div>
                         ))}
                       </div>
-                    </div>
+                      <div className="mt-6 grid gap-4 rounded-[20px] bg-[#f8fbfd] p-4 text-sm sm:grid-cols-4">
+                        {[
+                          ['Status', resolveLeadFunnelStage(selectedLead)],
+                          ['Last Activity', formatRelativeTime(selectedLeadActivities[0]?.activityDate || selectedLeadActivities[0]?.createdAt || selectedLead.updatedAt || selectedLead.createdAt)],
+                          ['Created', formatDate(selectedLead.createdAt)],
+                          ['Stage', selectedLead.stage || 'Not set'],
+                        ].map(([label, value]) => (
+                          <div key={label}>
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">{label}</p>
+                            <p className="mt-1 font-semibold text-[#20364c]">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
 
-                    <form className="rounded-[20px] border border-[#e0e8f2] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.05)]" onSubmit={handleSaveLeadDetails}>
+                    <form className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)] sm:p-8" onSubmit={handleSaveLeadDetails}>
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <h4 className="text-base font-semibold text-[#172b3f]">Lead Details</h4>
-                          <p className="mt-1 text-xs text-[#6d839b]">Update the contact and property basics for this lead.</p>
+                          <h4 className="text-xl font-semibold tracking-[-0.025em] text-[#172b3f]">Editable Details</h4>
+                          <p className="mt-1 text-sm text-[#6d839b]">Operational edits stay here, away from the executive summary.</p>
                         </div>
                         <Button type="submit" size="sm" disabled={isLeadDetailSaving}>
                           {isLeadDetailSaving ? 'Saving...' : 'Save Details'}
@@ -7923,87 +7918,132 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </div>
 
                   {leadWorkspaceTab === 'overview' ? (
-                  <aside className="space-y-3">
-                    <div className="rounded-[20px] border border-[#e0e8f2] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
-                      <div className="flex items-start justify-between gap-3">
+                  <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
+                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.06)]">
+                      <div className="flex items-start justify-between gap-4">
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ea4]">Workflow Health</p>
-                          <p className="mt-1 text-lg font-semibold text-[#172b3f]">
-                            {selectedLeadWorkflowHealth.completed}/{selectedLeadWorkflowHealth.total} steps complete
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Workflow Health</p>
+                          <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[#102033]">
+                            {selectedLeadWorkflowHealth.percent}%
                           </p>
+                          <p className="mt-1 text-sm text-[#60758b]">{selectedLeadWorkflowHealth.completed}/{selectedLeadWorkflowHealth.total} lifecycle steps complete</p>
                         </div>
-                        <span className="rounded-full bg-[#eef7f1] px-2.5 py-1 text-xs font-semibold text-[#247345]">
-                          {selectedLeadWorkflowHealth.percent}%
+                        <span className="rounded-full bg-[#eef7f1] px-3 py-1 text-xs font-semibold text-[#247345]">
+                          {resolveLeadFunnelStage(selectedLead)}
                         </span>
                       </div>
-                      <div className="mt-3 h-2 rounded-full bg-[#e3ebf4]">
-                        <span className="block h-full rounded-full bg-[#2f7b9e]" style={{ width: `${selectedLeadWorkflowHealth.percent}%` }} />
+                      <div className="mt-5 h-2 overflow-hidden rounded-full bg-[#e3ebf4]">
+                        <span className="block h-full rounded-full bg-[linear-gradient(90deg,#2f7b9e,#48a78d)] transition-all duration-500" style={{ width: `${selectedLeadWorkflowHealth.percent}%` }} />
                       </div>
-                      <div className="mt-3 space-y-2">
-                        {selectedLeadWorkflowHealth.items?.map((item) => (
-                          <div key={item.key} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e7eef6] bg-[#fbfdff] px-3 py-2 text-xs">
-                            <span className="font-medium text-[#435b74]">{item.label}</span>
-                            <span className={`rounded-full px-2 py-0.5 font-semibold ${
-                              item.done ? 'bg-[#eaf7ef] text-[#1e7a46]' : 'bg-[#fff6e8] text-[#a35f14]'
-                            }`}>
-                              {item.done ? 'Done' : 'Missing'}
-                            </span>
+                    </section>
+
+                    <section className="rounded-[28px] bg-[#102033] p-6 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_18px_44px_rgba(16,32,51,0.18)]">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#a8bfd3]">Next Recommended Action</p>
+                      <h3 className="mt-3 text-xl font-semibold tracking-[-0.03em]">
+                        {selectedLeadWorkflowHealth.missing?.[0]?.label || selectedLeadNextStep || 'Keep relationship warm'}
+                      </h3>
+                      <p className="mt-3 text-sm leading-6 text-[#c7d5e2]">
+                        {selectedLeadWorkflowHealth.missing?.[0]?.label
+                          ? `${selectedLeadWorkflowHealth.missing[0].label} is the next unlock for this lifecycle.`
+                          : selectedLeadNextStep || 'No blocker detected. Continue with the next relationship action.'}
+                      </p>
+                    </section>
+
+                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Linked Contact</p>
+                      <div className="mt-5 flex items-center gap-4">
+                        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#eaf3fb] text-sm font-bold text-[#244f70]">
+                          {getInitials(selectedLeadDisplayName)}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-base font-semibold text-[#102033]">{selectedLeadDisplayName}</p>
+                          <p className="mt-1 text-sm text-[#60758b]">{selectedLeadIsSeller ? 'Seller contact' : 'Buyer contact'}</p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {selectedLeadContact?.phone ? (
+                            <a href={`tel:${selectedLeadContact.phone}`} className="grid h-9 w-9 place-items-center rounded-full bg-[#f3f7fb] text-[#315b7a] transition hover:bg-[#e7f0f8]" title="Call contact">
+                              <Phone className="h-4 w-4" />
+                            </a>
+                          ) : null}
+                          {selectedLeadContact?.email ? (
+                            <a href={`mailto:${selectedLeadContact.email}`} className="grid h-9 w-9 place-items-center rounded-full bg-[#f3f7fb] text-[#315b7a] transition hover:bg-[#e7f0f8]" title="Email contact">
+                              <Mail className="h-4 w-4" />
+                            </a>
+                          ) : null}
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Lifecycle Timeline</p>
+                      <div className="mt-5 space-y-4">
+                        {selectedLeadWorkflowHealth.items?.map((item, index) => (
+                          <div key={item.key} className="flex gap-3">
+                            <span className={`mt-1 h-2.5 w-2.5 rounded-full ${item.done ? 'bg-[#2f9b69]' : index === selectedLeadWorkflowHealth.completed ? 'bg-[#2f7b9e]' : 'bg-[#d7e1ea]'}`} />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="text-sm font-semibold text-[#20364c]">{item.label}</p>
+                                <span className={`rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${item.done ? 'bg-[#eaf7ef] text-[#1e7a46]' : 'bg-[#f3f6f9] text-[#7b8fa5]'}`}>
+                                  {item.done ? 'Done' : 'Open'}
+                                </span>
+                              </div>
+                            </div>
                           </div>
                         ))}
                       </div>
-                    </div>
+                    </section>
 
-                    <div className="rounded-[20px] border border-[#e0e8f2] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
-                      <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ea4]">Linked Records</p>
-                      <div className="mt-3 space-y-2">
+                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Linked Records</p>
+                      <div className="mt-5 space-y-4">
                         {[
                           ['Listing', selectedLead.listingId || selectedLead.propertyInterest || selectedLead.sellerPropertyAddress || 'Not linked yet'],
                           ['Transaction', selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not linked yet'],
                           ['Appointment', selectedLeadLinkedAppointment ? getAppointmentTypeLabel(selectedLeadLinkedAppointment.appointmentType) : 'Not linked yet'],
                         ].map(([label, value]) => (
-                          <div key={label} className="flex items-start justify-between gap-3 rounded-[12px] border border-[#e7eef6] bg-[#fbfdff] px-3 py-2 text-xs">
-                            <span className="font-semibold text-[#7b8ea4]">{label}</span>
-                            <span className="max-w-[62%] text-right font-semibold text-[#263f58]">{value}</span>
+                          <div key={label} className="flex items-start justify-between gap-4 border-b border-[#eef3f7] pb-3 text-sm last:border-b-0 last:pb-0">
+                            <span className="font-semibold text-[#8aa0b7]">{label}</span>
+                            <span className="max-w-[62%] text-right font-semibold text-[#20364c]">{value}</span>
                           </div>
                         ))}
                       </div>
-                    </div>
+                    </section>
 
-                    <div className="rounded-[20px] border border-[#e0e8f2] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
-                      <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ea4]">
+                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">
                         {normalizeText(selectedLead.leadCategory).toLowerCase() === 'seller' ? 'Mandate / Listing' : 'Offers / Transaction'}
                       </p>
                       {normalizeText(selectedLead.leadCategory).toLowerCase() === 'seller' ? (
-                        <div className="mt-3 space-y-2 text-xs">
-                          <div className="rounded-[12px] bg-[#fbfdff] px-3 py-2">
-                            <p className="font-semibold text-[#7b8ea4]">Mandate ID</p>
-                            <p className="mt-1 break-all font-semibold text-[#263f58]">{normalizeText(selectedLead?.mandatePacketId || selectedLead?.mandatePacket?.id) || 'Not generated yet'}</p>
+                        <div className="mt-5 space-y-4 text-sm">
+                          <div>
+                            <p className="font-semibold text-[#8aa0b7]">Mandate ID</p>
+                            <p className="mt-1 break-all font-semibold text-[#20364c]">{normalizeText(selectedLead?.mandatePacketId || selectedLead?.mandatePacket?.id) || 'Not generated yet'}</p>
                           </div>
-                          <div className="rounded-[12px] bg-[#fbfdff] px-3 py-2">
-                            <p className="font-semibold text-[#7b8ea4]">Listing ID</p>
-                            <p className="mt-1 break-all font-semibold text-[#263f58]">{normalizeText(selectedLead?.listingId || selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress) || 'Not linked yet'}</p>
+                          <div>
+                            <p className="font-semibold text-[#8aa0b7]">Listing ID</p>
+                            <p className="mt-1 break-all font-semibold text-[#20364c]">{normalizeText(selectedLead?.listingId || selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress) || 'Not linked yet'}</p>
                           </div>
                         </div>
                       ) : (
-                        <div className="mt-3 space-y-2 text-xs">
-                          <div className="rounded-[12px] bg-[#fbfdff] px-3 py-2">
-                            <p className="font-semibold text-[#7b8ea4]">Offers</p>
-                            <p className="mt-1 font-semibold text-[#263f58]">{selectedLeadLinkedTransaction ? 'Offer linked to transaction' : 'No accepted offer linked yet'}</p>
+                        <div className="mt-5 space-y-4 text-sm">
+                          <div>
+                            <p className="font-semibold text-[#8aa0b7]">Offers</p>
+                            <p className="mt-1 font-semibold text-[#20364c]">{selectedLeadLinkedTransaction ? 'Offer linked to transaction' : 'No accepted offer linked yet'}</p>
                           </div>
-                          <div className="rounded-[12px] bg-[#fbfdff] px-3 py-2">
-                            <p className="font-semibold text-[#7b8ea4]">Transaction</p>
-                            <p className="mt-1 font-semibold text-[#263f58]">{selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not created yet'}</p>
+                          <div>
+                            <p className="font-semibold text-[#8aa0b7]">Transaction</p>
+                            <p className="mt-1 font-semibold text-[#20364c]">{selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not created yet'}</p>
                           </div>
                         </div>
                       )}
-                    </div>
+                    </section>
 
-                    <div className="rounded-[20px] border border-[#e0e8f2] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
-                      <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ea4]">Notes / Comments</p>
-                      <div className="mt-3 rounded-[14px] border border-[#e7eef6] bg-[#fbfdff] px-3 py-3 text-sm text-[#5f7590]">
+                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Notes / Comments</p>
+                      <div className="mt-4 text-sm leading-6 text-[#5f7590]">
                         {selectedLeadNotes || 'No notes yet.'}
                       </div>
-                    </div>
+                    </section>
                   </aside>
                   ) : null}
                 </div>
