@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Clock3, Home, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, Home, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -45,13 +45,14 @@ const initialForm = {
   financeType: 'bond',
   bondAmount: '',
   cashContribution: '',
+  needsBondAssistance: false,
   proofOfFundsUrl: '',
   suspensiveConditions: '',
   subjectToSale: false,
   subjectSaleProperty: '',
   subjectSaleTimeline: '',
   occupationDate: '',
-  occupationalRent: '',
+  occupationalRent: false,
   includedFixtures: '',
   excludedFixtures: '',
   specialConditions: '',
@@ -69,11 +70,6 @@ function PostViewingOfferPortal() {
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [selectedListingId, setSelectedListingId] = useState('')
-  const [verificationMethod, setVerificationMethod] = useState('email')
-  const [generatedOtp, setGeneratedOtp] = useState('')
-  const [otpInput, setOtpInput] = useState('')
-  const [otpSent, setOtpSent] = useState(false)
-  const [otpVerified, setOtpVerified] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState(initialForm)
 
@@ -111,9 +107,22 @@ function PostViewingOfferPortal() {
     return properties.find((item) => String(item?.viewedListing?.listingId || item?.listing?.id || '') === String(selectedListingId || '')) || properties[0] || null
   }, [properties, selectedListingId])
   const submittedCount = properties.reduce((count, item) => count + (Array.isArray(item.offers) ? item.offers.length : 0), 0)
+  const financeType = String(form.financeType || '').toLowerCase()
+  const showHybridFinanceFields = financeType === 'hybrid'
+  const showBondAssistance = ['bond', 'hybrid'].includes(financeType)
 
   function updateForm(key, value) {
     setForm((previous) => ({ ...previous, [key]: value }))
+  }
+
+  function updateFinanceType(value) {
+    setForm((previous) => ({
+      ...previous,
+      financeType: value,
+      bondAmount: value === 'hybrid' ? previous.bondAmount : '',
+      cashContribution: value === 'hybrid' ? previous.cashContribution : '',
+      needsBondAssistance: ['bond', 'hybrid'].includes(value) ? previous.needsBondAssistance : false,
+    }))
   }
 
   function handleSelectProperty(listingId) {
@@ -122,44 +131,12 @@ function PostViewingOfferPortal() {
     setSuccessMessage('')
   }
 
-  function handleSendOtp() {
-    setErrorMessage('')
-    const target = verificationMethod === 'email' ? form.email : form.phone
-    if (!String(target || '').trim()) {
-      setErrorMessage(`Add your ${verificationMethod === 'email' ? 'email address' : 'mobile number'} first.`)
-      return
-    }
-    const otp = String(Math.floor(100000 + Math.random() * 900000))
-    setGeneratedOtp(otp)
-    setOtpSent(true)
-    setOtpVerified(false)
-    setSuccessMessage(`Verification code sent via ${verificationMethod}. Demo code: ${otp}`)
-  }
-
-  function handleVerifyOtp() {
-    setErrorMessage('')
-    if (!otpSent) {
-      setErrorMessage('Send a verification code first.')
-      return
-    }
-    if (String(otpInput || '').trim() !== String(generatedOtp || '').trim()) {
-      setErrorMessage('Verification code is incorrect.')
-      return
-    }
-    setOtpVerified(true)
-    setSuccessMessage('Verification successful. You can now submit your offer.')
-  }
-
   async function handleSubmitOffer(event) {
     event.preventDefault()
     setErrorMessage('')
     setSuccessMessage('')
     if (!selectedListingId) {
       setErrorMessage('Select a property before submitting an offer.')
-      return
-    }
-    if (!otpVerified) {
-      setErrorMessage('Verify your email or phone number before submitting.')
       return
     }
     if (!form.acknowledgeSellerReview || !form.acknowledgeLegalDisclaimer || !form.acknowledgeInfoAccuracy) {
@@ -175,17 +152,9 @@ function PostViewingOfferPortal() {
         submission: {
           ...form,
           selectedProperty: propertyLabel(selectedProperty),
-          verification: {
-            verified: true,
-            method: verificationMethod,
-          },
         },
       })
       setSuccessMessage('Offer submitted successfully. The agent will review and forward it to the seller.')
-      setOtpInput('')
-      setOtpSent(false)
-      setOtpVerified(false)
-      setGeneratedOtp('')
       setRefreshKey((value) => value + 1)
     } catch (error) {
       setErrorMessage(error?.message || 'Unable to submit offer right now.')
@@ -351,7 +320,7 @@ function PostViewingOfferPortal() {
               </label>
               <label className="text-sm font-semibold text-[#334155]">
                 Finance type
-                <Field as="select" className="mt-1" value={form.financeType} onChange={(event) => updateForm('financeType', event.target.value)}>
+                <Field as="select" className="mt-1" value={form.financeType} onChange={(event) => updateFinanceType(event.target.value)}>
                   <option value="bond">Bond</option>
                   <option value="cash">Cash</option>
                   <option value="hybrid">Hybrid</option>
@@ -361,14 +330,24 @@ function PostViewingOfferPortal() {
                 Offer expiry
                 <Field className="mt-1" type="date" value={form.expiryDate} onChange={(event) => updateForm('expiryDate', event.target.value)} />
               </label>
-              <label className="text-sm font-semibold text-[#334155]">
-                Bond amount
-                <Field className="mt-1" type="number" min="0" step="1000" value={form.bondAmount} onChange={(event) => updateForm('bondAmount', event.target.value)} />
-              </label>
-              <label className="text-sm font-semibold text-[#334155]">
-                Cash contribution
-                <Field className="mt-1" type="number" min="0" step="1000" value={form.cashContribution} onChange={(event) => updateForm('cashContribution', event.target.value)} />
-              </label>
+              {showHybridFinanceFields ? (
+                <label className="text-sm font-semibold text-[#334155]">
+                  Bond amount
+                  <Field className="mt-1" type="number" min="0" step="1000" value={form.bondAmount} onChange={(event) => updateForm('bondAmount', event.target.value)} />
+                </label>
+              ) : null}
+              {showHybridFinanceFields ? (
+                <label className="text-sm font-semibold text-[#334155]">
+                  Cash contribution
+                  <Field className="mt-1" type="number" min="0" step="1000" value={form.cashContribution} onChange={(event) => updateForm('cashContribution', event.target.value)} />
+                </label>
+              ) : null}
+              {showBondAssistance ? (
+                <label className="flex items-center gap-2 rounded-2xl border border-[#e1e9f3] bg-[#f9fbfd] px-3 py-3 text-sm text-[#44566c] sm:col-span-2">
+                  <input type="checkbox" className="shrink-0" checked={form.needsBondAssistance} onChange={(event) => updateForm('needsBondAssistance', event.target.checked)} />
+                  <span>Do you need help sorting out your bond?</span>
+                </label>
+              ) : null}
             </div>
 
             <label className="text-sm font-semibold text-[#334155]">
@@ -378,12 +357,12 @@ function PostViewingOfferPortal() {
 
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="text-sm font-semibold text-[#334155]">
-                Occupation date
+                When would you like to move in ideally?
                 <Field className="mt-1" type="date" value={form.occupationDate} onChange={(event) => updateForm('occupationDate', event.target.value)} />
               </label>
-              <label className="text-sm font-semibold text-[#334155]">
-                Occupational rent
-                <Field className="mt-1" type="number" min="0" step="500" value={form.occupationalRent} onChange={(event) => updateForm('occupationalRent', event.target.value)} />
+              <label className="flex items-center gap-2 rounded-2xl border border-[#e1e9f3] bg-[#f9fbfd] px-3 py-3 text-sm text-[#44566c]">
+                <input type="checkbox" className="shrink-0" checked={form.occupationalRent} onChange={(event) => updateForm('occupationalRent', event.target.checked)} />
+                <span>Occupational rent</span>
               </label>
             </div>
 
@@ -409,30 +388,6 @@ function PostViewingOfferPortal() {
               Special conditions
               <Field as="textarea" className="mt-1" value={form.specialConditions} onChange={(event) => updateForm('specialConditions', event.target.value)} />
             </label>
-
-            <div className="rounded-2xl border border-[#e1e9f3] bg-[#f9fbfd] p-4">
-              <div className="flex items-center gap-2 text-sm font-semibold text-[#102033]">
-                <Clock3 className="h-4 w-4 text-[#1f5b78]" />
-                Verify before submitting
-              </div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
-                <Field as="select" value={verificationMethod} onChange={(event) => setVerificationMethod(event.target.value)}>
-                  <option value="email">Email</option>
-                  <option value="sms">SMS</option>
-                </Field>
-                <Button type="button" variant="secondary" onClick={handleSendOtp}>Send code</Button>
-                <Button type="button" variant="secondary" onClick={handleVerifyOtp}>Verify</Button>
-              </div>
-              {otpSent ? (
-                <Field className="mt-3" value={otpInput} onChange={(event) => setOtpInput(event.target.value)} placeholder="Enter verification code" />
-              ) : null}
-              {otpVerified ? (
-                <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-[#17643a]">
-                  <CheckCircle2 className="h-4 w-4" />
-                  Verified
-                </p>
-              ) : null}
-            </div>
 
             <div className="space-y-2 rounded-2xl border border-[#e1e9f3] bg-white p-4">
               <label className="flex items-start gap-2 text-sm text-[#44566c]">

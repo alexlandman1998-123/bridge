@@ -1,4 +1,4 @@
-import { AlertTriangle, Building2, CheckCircle2, Clock3, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, Clock3, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -40,11 +40,6 @@ function BuyerOfferSubmission() {
   const [canonicalLoading, setCanonicalLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
-  const [verificationMethod, setVerificationMethod] = useState('email')
-  const [generatedOtp, setGeneratedOtp] = useState('')
-  const [otpInput, setOtpInput] = useState('')
-  const [otpSent, setOtpSent] = useState(false)
-  const [otpVerified, setOtpVerified] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState({
     fullName: '',
@@ -56,6 +51,7 @@ function BuyerOfferSubmission() {
     financeType: 'bond',
     bondAmount: '',
     cashContribution: '',
+    needsBondAssistance: false,
     proofOfFundsUrl: '',
     suspensiveConditions: '',
     subjectToSale: false,
@@ -63,7 +59,7 @@ function BuyerOfferSubmission() {
     subjectSaleTimeline: '',
     subjectSaleAgentInvolved: false,
     occupationDate: '',
-    occupationalRent: '',
+    occupationalRent: false,
     includedFixtures: '',
     excludedFixtures: '',
     specialConditions: '',
@@ -109,47 +105,28 @@ function BuyerOfferSubmission() {
     .sort((left, right) => new Date(right?.submittedAt || 0) - new Date(left?.submittedAt || 0))[0] || null
   const latestStatus = normalizeOfferWorkflowStatus(latestOffer?.status || '')
   const counterPendingBuyer = latestStatus === OFFER_WORKFLOW_STATUS.BUYER_REVIEW_COUNTER || latestStatus === OFFER_WORKFLOW_STATUS.COUNTERED
+  const financeType = String(form.financeType || '').toLowerCase()
+  const showHybridFinanceFields = financeType === 'hybrid'
+  const showBondAssistance = ['bond', 'hybrid'].includes(financeType)
 
   function updateForm(key, value) {
     setForm((previous) => ({ ...previous, [key]: value }))
   }
 
-  function handleSendOtp() {
-    setErrorMessage('')
-    const target = verificationMethod === 'email' ? form.email : form.phone
-    if (!String(target || '').trim()) {
-      setErrorMessage(`Add your ${verificationMethod === 'email' ? 'email address' : 'mobile number'} first.`)
-      return
-    }
-    const otp = String(Math.floor(100000 + Math.random() * 900000))
-    setGeneratedOtp(otp)
-    setOtpSent(true)
-    setOtpVerified(false)
-    setSuccessMessage(`Verification code sent via ${verificationMethod}. Demo code: ${otp}`)
-  }
-
-  function handleVerifyOtp() {
-    setErrorMessage('')
-    if (!otpSent) {
-      setErrorMessage('Send a verification code first.')
-      return
-    }
-    if (String(otpInput || '').trim() !== String(generatedOtp || '').trim()) {
-      setErrorMessage('Verification code is incorrect.')
-      return
-    }
-    setOtpVerified(true)
-    setSuccessMessage('Verification successful. You can now submit your offer.')
+  function updateFinanceType(value) {
+    setForm((previous) => ({
+      ...previous,
+      financeType: value,
+      bondAmount: value === 'hybrid' ? previous.bondAmount : '',
+      cashContribution: value === 'hybrid' ? previous.cashContribution : '',
+      needsBondAssistance: ['bond', 'hybrid'].includes(value) ? previous.needsBondAssistance : false,
+    }))
   }
 
   async function handleSubmitOffer(event) {
     event.preventDefault()
     setErrorMessage('')
     setSuccessMessage('')
-    if (!otpVerified) {
-      setErrorMessage('Verify your email or phone number before submitting.')
-      return
-    }
     if (!form.acknowledgeSellerReview || !form.acknowledgeLegalDisclaimer || !form.acknowledgeInfoAccuracy) {
       setErrorMessage('Confirm all required declarations before submitting.')
       return
@@ -160,25 +137,13 @@ function BuyerOfferSubmission() {
       if (context?.source === 'canonical') {
         await submitCanonicalBuyerOffer({
           token,
-          submission: {
-            ...form,
-            verification: {
-              verified: true,
-              method: verificationMethod,
-            },
-          },
+          submission: form,
         })
       } else {
         await submitBuyerOffer({
           token,
           mode: counterPendingBuyer ? 'counter_response' : 'new',
-          submission: {
-            ...form,
-            verification: {
-              verified: true,
-              method: verificationMethod,
-            },
-          },
+          submission: form,
         })
       }
       setSuccessMessage('Offer submitted successfully. The agent will review and forward it to the seller.')
@@ -273,8 +238,8 @@ function BuyerOfferSubmission() {
 
       <form onSubmit={handleSubmitOffer} className="space-y-5">
         <section className="rounded-[24px] border border-[#e1e9f4] bg-white p-5 shadow-[0_14px_28px_rgba(15,23,42,0.07)]">
-          <h2 className="text-[1rem] font-semibold text-[#142132]">Buyer Verification</h2>
-          <p className="mt-1 text-sm text-[#607387]">Verify your contact details before final offer submission.</p>
+          <h2 className="text-[1rem] font-semibold text-[#142132]">Buyer Details</h2>
+          <p className="mt-1 text-sm text-[#607387]">Confirm the contact details the agent and seller should use for this offer.</p>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <label className="grid gap-2">
               <span className="text-sm font-semibold text-[#2d445e]">Full name</span>
@@ -293,24 +258,6 @@ function BuyerOfferSubmission() {
               <Field value={form.phone} onChange={(event) => updateForm('phone', event.target.value)} placeholder="082..." />
             </label>
           </div>
-          <div className="mt-4 grid gap-3 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4 md:grid-cols-[1fr_auto_auto_auto] md:items-end">
-            <label className="grid gap-2">
-              <span className="text-sm font-semibold text-[#2d445e]">Verification method</span>
-              <Field as="select" value={verificationMethod} onChange={(event) => setVerificationMethod(event.target.value)}>
-                <option value="email">Email OTP</option>
-                <option value="phone">Phone OTP</option>
-              </Field>
-            </label>
-            <Button type="button" variant="secondary" onClick={handleSendOtp}>Send OTP</Button>
-            <Field value={otpInput} onChange={(event) => setOtpInput(event.target.value)} placeholder="Enter OTP" />
-            <Button type="button" onClick={handleVerifyOtp} disabled={!otpSent}>Verify</Button>
-          </div>
-          {otpVerified ? (
-            <p className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[#1f7d44]">
-              <CheckCircle2 size={14} />
-              Verification completed
-            </p>
-          ) : null}
         </section>
 
         <section className="rounded-[24px] border border-[#e1e9f4] bg-white p-5 shadow-[0_14px_28px_rgba(15,23,42,0.07)]">
@@ -326,7 +273,7 @@ function BuyerOfferSubmission() {
             </label>
             <label className="grid gap-2">
               <span className="text-sm font-semibold text-[#2d445e]">Finance type</span>
-              <Field as="select" value={form.financeType} onChange={(event) => updateForm('financeType', event.target.value)}>
+              <Field as="select" value={form.financeType} onChange={(event) => updateFinanceType(event.target.value)}>
                 <option value="cash">Cash</option>
                 <option value="bond">Bond</option>
                 <option value="hybrid">Hybrid</option>
@@ -336,16 +283,24 @@ function BuyerOfferSubmission() {
               <span className="text-sm font-semibold text-[#2d445e]">Offer expiry date</span>
               <Field type="date" value={form.expiryDate} onChange={(event) => updateForm('expiryDate', event.target.value)} />
             </label>
-            {form.financeType !== 'cash' ? (
+            {showHybridFinanceFields ? (
               <label className="grid gap-2">
                 <span className="text-sm font-semibold text-[#2d445e]">Bond amount</span>
                 <Field type="number" min="0" step="1000" value={form.bondAmount} onChange={(event) => updateForm('bondAmount', event.target.value)} placeholder="2000000" />
               </label>
             ) : null}
-            <label className="grid gap-2">
-              <span className="text-sm font-semibold text-[#2d445e]">Cash contribution</span>
-              <Field type="number" min="0" step="1000" value={form.cashContribution} onChange={(event) => updateForm('cashContribution', event.target.value)} placeholder="500000" />
-            </label>
+            {showHybridFinanceFields ? (
+              <label className="grid gap-2">
+                <span className="text-sm font-semibold text-[#2d445e]">Cash contribution</span>
+                <Field type="number" min="0" step="1000" value={form.cashContribution} onChange={(event) => updateForm('cashContribution', event.target.value)} placeholder="500000" />
+              </label>
+            ) : null}
+            {showBondAssistance ? (
+              <label className="flex items-center gap-2 rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-3 text-sm text-[#35546c] md:col-span-2">
+                <input type="checkbox" checked={form.needsBondAssistance} onChange={(event) => updateForm('needsBondAssistance', event.target.checked)} />
+                Do you need help sorting out your bond?
+              </label>
+            ) : null}
             <label className="grid gap-2 md:col-span-2">
               <span className="text-sm font-semibold text-[#2d445e]">Proof of funds / pre-approval URL (optional)</span>
               <Field value={form.proofOfFundsUrl} onChange={(event) => updateForm('proofOfFundsUrl', event.target.value)} placeholder="https://..." />
@@ -381,12 +336,12 @@ function BuyerOfferSubmission() {
               </>
             ) : null}
             <label className="grid gap-2">
-              <span className="text-sm font-semibold text-[#2d445e]">Occupation date</span>
+              <span className="text-sm font-semibold text-[#2d445e]">When would you like to move in ideally?</span>
               <Field type="date" value={form.occupationDate} onChange={(event) => updateForm('occupationDate', event.target.value)} />
             </label>
-            <label className="grid gap-2">
-              <span className="text-sm font-semibold text-[#2d445e]">Occupational rent</span>
-              <Field value={form.occupationalRent} onChange={(event) => updateForm('occupationalRent', event.target.value)} placeholder="Optional amount/details" />
+            <label className="flex items-center gap-2 rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-3 text-sm text-[#35546c]">
+              <input type="checkbox" checked={form.occupationalRent} onChange={(event) => updateForm('occupationalRent', event.target.checked)} />
+              Occupational rent
             </label>
             <label className="grid gap-2 md:col-span-2">
               <span className="text-sm font-semibold text-[#2d445e]">Included fixtures</span>
@@ -436,9 +391,6 @@ function BuyerOfferSubmission() {
         </section>
       ) : null}
 
-      <section className="rounded-[16px] border border-[#dbe6f2] bg-[#f7fbff] px-4 py-3 text-xs text-[#5f738a]">
-        Demo mode: OTP delivery is simulated for this environment.
-      </section>
     </main>
   )
 }

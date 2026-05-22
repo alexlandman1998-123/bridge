@@ -364,10 +364,6 @@ export async function submitBuyerOffer({ token, submission, mode = 'new' } = {})
   if (!fullName || !email || !phone || !idNumber || offerAmount <= 0) {
     throw new Error('Buyer details and offer amount are required.')
   }
-  if (!submission?.verification?.verified) {
-    throw new Error('Buyer verification is required before submitting the offer.')
-  }
-
   const records = getOfferRecords()
   const existingForInvite = records
     .filter((row) => String(row?.inviteToken || '') === String(token || ''))
@@ -390,9 +386,9 @@ export async function submitBuyerOffer({ token, submission, mode = 'new' } = {})
     source: mode === 'counter_response' ? 'buyer_counter_response' : 'buyer_offer_link',
     status: OFFER_WORKFLOW_STATUS.SUBMITTED,
     verification: {
-      verified: true,
-      method: submission?.verification?.method || 'otp',
-      verifiedAt: new Date().toISOString(),
+      verified: false,
+      method: 'not_required',
+      verifiedAt: '',
       email,
       phone,
     },
@@ -408,6 +404,7 @@ export async function submitBuyerOffer({ token, submission, mode = 'new' } = {})
       financeType: String(submission?.financeType || 'unknown').trim().toLowerCase(),
       bondAmount: money(submission?.bondAmount),
       cashContribution: money(submission?.cashContribution),
+      needsBondAssistance: Boolean(submission?.needsBondAssistance),
       proofOfFundsUrl: String(submission?.proofOfFundsUrl || '').trim(),
       suspensiveConditions: String(submission?.suspensiveConditions || '').trim(),
       subjectToSale: Boolean(submission?.subjectToSale),
@@ -415,7 +412,7 @@ export async function submitBuyerOffer({ token, submission, mode = 'new' } = {})
       subjectSaleTimeline: String(submission?.subjectSaleTimeline || '').trim(),
       subjectSaleAgentInvolved: Boolean(submission?.subjectSaleAgentInvolved),
       occupationDate: String(submission?.occupationDate || '').trim(),
-      occupationalRent: String(submission?.occupationalRent || '').trim(),
+      occupationalRent: Boolean(submission?.occupationalRent),
       includedFixtures: String(submission?.includedFixtures || '').trim(),
       excludedFixtures: String(submission?.excludedFixtures || '').trim(),
       specialConditions: String(submission?.specialConditions || '').trim(),
@@ -471,6 +468,8 @@ export async function submitBuyerOffer({ token, submission, mode = 'new' } = {})
           subjectSaleTimeline: nextRecord.offer.subjectSaleTimeline,
           occupationDate: nextRecord.offer.occupationDate,
           occupationalRent: nextRecord.offer.occupationalRent,
+          occupationalRentPayable: nextRecord.offer.occupationalRent,
+          needsBondAssistance: nextRecord.offer.needsBondAssistance,
           includedFixtures: nextRecord.offer.includedFixtures,
           excludedFixtures: nextRecord.offer.excludedFixtures,
           specialConditions: nextRecord.offer.specialConditions,
