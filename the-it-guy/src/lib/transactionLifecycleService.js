@@ -720,7 +720,10 @@ export async function createTransactionFromLeadOverride({
       stage: normalize(payload?.stage || 'Reserved') || 'Reserved',
       current_main_stage: nextMainStage,
       next_action: 'Buyer onboarding pending',
-      comment: 'Transaction created from lead with manual override (accepted offer missing).',
+      comment: acceptedOfferId
+        ? 'Transaction created from accepted buyer offer. Buyer onboarding pending.'
+        : 'Transaction created from lead with manual override (accepted offer missing).',
+      onboarding_status: 'awaiting_client_onboarding',
       assigned_agent: normalize(payload?.assignedAgentName || lead?.assignedAgentName || actor?.name) || null,
       assigned_agent_email: nextAssignedAgentEmail || null,
       assigned_agent_id: isUuidLike(nextAssignedAgentId) ? nextAssignedAgentId : null,
@@ -763,6 +766,7 @@ export async function createTransactionFromLeadOverride({
         delete fallback.cash_amount
         delete fallback.bond_amount
         delete fallback.deposit_amount
+        delete fallback.onboarding_status
         delete fallback.gross_commission_percentage
         delete fallback.gross_commission_amount
         delete fallback.agent_split_percentage_snapshot

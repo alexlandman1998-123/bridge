@@ -70,6 +70,7 @@ import {
   createOfferSellerReviewSession,
   createTransactionFromAcceptedCanonicalOffer,
   listCanonicalOffersForListing,
+  recordBuyerLeadActivity,
   updateCanonicalOfferStatus,
 } from '../lib/buyerLifecycleService'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
@@ -1232,7 +1233,11 @@ function AgentListingDetail() {
     setOfferActionMessage('')
     try {
       setCanonicalOfferActionId(`${offerRow.id}:convert`)
-      const acceptedOffer = normalizeOfferWorkflowStatus(canonicalOffer?.status || offerRow.status) === OFFER_WORKFLOW_STATUS.ACCEPTED
+      const currentStatus = normalizeOfferWorkflowStatus(canonicalOffer?.status || offerRow.status)
+      const acceptedOffer = [
+          OFFER_WORKFLOW_STATUS.ACCEPTED,
+          OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION,
+        ].includes(currentStatus)
         ? canonicalOffer
         : await updateCanonicalOfferStatus(offerRow.canonicalOfferId, 'accepted', {
             organisationId: listingOrganisationId,
@@ -1265,6 +1270,7 @@ function AgentListingDetail() {
         },
       })
       const transactionId = String(createdTransaction?.transactionId || createdTransaction?.transactionRow?.transaction?.id || '').trim()
+      const reusedTransaction = Boolean(createdTransaction?.alreadyConverted || (createdTransaction?.existing && transactionId))
       let onboardingSendWarning = ''
       if (transactionId && isSupabaseConfigured) {
         const onboardingEmail = await invokeEdgeFunction('send-email', {
@@ -1278,10 +1284,24 @@ function AgentListingDetail() {
           onboardingSendWarning = onboardingEmail.error?.message || 'Buyer onboarding email could not be sent.'
         }
       }
+      if (transactionId) {
+        await recordBuyerLeadActivity({
+          organisationId: listingOrganisationId,
+          leadId: acceptedOffer?.buyerLeadId || canonicalOffer?.buyerLeadId || linkedLead?.leadId,
+          activityType: reusedTransaction ? 'Buyer Onboarding Resent' : 'Buyer Onboarding Sent',
+          activityNote: onboardingSendWarning
+            ? `Buyer onboarding email attempted for transaction ${transactionId}, but delivery needs attention: ${onboardingSendWarning}`
+            : `${reusedTransaction ? 'Buyer onboarding resent' : 'Buyer onboarding sent'} for transaction ${transactionId}.`,
+          outcome: onboardingSendWarning ? 'Delivery Warning' : 'Sent',
+          actor: getCanonicalOfferActor(),
+        }).catch(() => null)
+      }
       setOfferNotesDraftById((previous) => ({ ...previous, [offerRow.id]: '' }))
       setOfferActionMessage(onboardingSendWarning
-        ? `Transaction created from accepted canonical offer. ${onboardingSendWarning}`
-        : 'Transaction created from accepted canonical offer and buyer onboarding was sent.')
+        ? `${reusedTransaction ? 'Buyer onboarding resend attempted' : 'Transaction created from accepted canonical offer'}. ${onboardingSendWarning}`
+        : reusedTransaction
+          ? 'Buyer onboarding was resent for the existing transaction.'
+          : 'Transaction created from accepted canonical offer and buyer onboarding was sent.')
       setOffersRefreshTick((value) => value + 1)
     } catch (error) {
       setOfferActionError(error?.message || 'Unable to create a transaction from this offer.')
@@ -3502,14 +3522,18 @@ function AgentListingDetail() {
                             </Button>
                           </>
                         ) : null}
-                        {normalizeOfferWorkflowStatus(offer.status) === OFFER_WORKFLOW_STATUS.ACCEPTED ? (
+                        {normalizeOfferWorkflowStatus(offer.status) === OFFER_WORKFLOW_STATUS.ACCEPTED || (
+                          normalizeOfferWorkflowStatus(offer.status) === OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION && offer.transactionId
+                        ) ? (
                           <Button
                             size="sm"
                             type="button"
                             disabled={canonicalOfferActionId === `${offer.id}:convert`}
                             onClick={() => void handleCanonicalListingOfferConversion(offer)}
                           >
-                            Create Transaction & Send Onboarding
+                            {normalizeOfferWorkflowStatus(offer.status) === OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION
+                              ? 'Resend Buyer Onboarding'
+                              : 'Create Transaction & Send Onboarding'}
                           </Button>
                         ) : null}
                         {offer.buyerLeadId ? (

@@ -90,6 +90,7 @@ import {
   createTransactionFromAcceptedCanonicalOffer,
   listAppointmentViewedListings,
   listCanonicalOffersForLead,
+  recordBuyerLeadActivity,
   updateCanonicalOfferStatus,
   upsertAppointmentViewedListings,
 } from '../../lib/buyerLifecycleService'
@@ -6250,7 +6251,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!organisationId || !offer?.id || !selectedLead) return
     try {
       setCanonicalOfferActionId(`${offer.id}:convert`)
-      const acceptedOffer = normalizeText(offer.status).toLowerCase() === 'accepted'
+      const currentStatus = normalizeText(offer.status).toLowerCase()
+      const acceptedOffer = ['accepted', 'converted_to_transaction'].includes(currentStatus)
         ? offer
         : await updateCanonicalOfferStatus(offer.id, 'accepted', {
             organisationId,
@@ -6286,6 +6288,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         },
       })
       const transactionId = normalizeText(createdTransaction?.transactionId || createdTransaction?.transactionRow?.transaction?.id)
+      const reusedTransaction = Boolean(createdTransaction?.alreadyConverted || (createdTransaction?.existing && transactionId))
       let onboardingSendWarning = ''
       if (transactionId && isSupabaseConfigured) {
         const onboardingEmail = await invokeEdgeFunction('send-email', {
@@ -6299,11 +6302,25 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           onboardingSendWarning = onboardingEmail.error?.message || 'Buyer onboarding email could not be sent.'
         }
       }
+      if (transactionId) {
+        await recordBuyerLeadActivity({
+          organisationId,
+          leadId: acceptedOffer?.buyerLeadId || offer?.buyerLeadId || selectedLead?.leadId,
+          activityType: reusedTransaction ? 'Buyer Onboarding Resent' : 'Buyer Onboarding Sent',
+          activityNote: onboardingSendWarning
+            ? `Buyer onboarding email attempted for transaction ${transactionId}, but delivery needs attention: ${onboardingSendWarning}`
+            : `${reusedTransaction ? 'Buyer onboarding resent' : 'Buyer onboarding sent'} for transaction ${transactionId}.`,
+          outcome: onboardingSendWarning ? 'Delivery Warning' : 'Sent',
+          actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        }).catch(() => null)
+      }
       setCanonicalOfferNotesById((previous) => ({ ...previous, [offer.id]: '' }))
       setSelectedLeadOffersRefreshTick((value) => value + 1)
       setMessage(onboardingSendWarning
-        ? `Transaction created from accepted offer. ${onboardingSendWarning}`
-        : 'Transaction created from accepted offer and buyer onboarding was sent.')
+        ? `${reusedTransaction ? 'Buyer onboarding resend attempted' : 'Transaction created from accepted offer'}. ${onboardingSendWarning}`
+        : reusedTransaction
+          ? 'Buyer onboarding was resent for the existing transaction.'
+          : 'Transaction created from accepted offer and buyer onboarding was sent.')
       setError('')
       await reloadRecords(organisationId)
     } catch (conversionError) {
@@ -8526,6 +8543,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         Copy Link
                                       </Button>
                                     ) : null}
+                                    {offer.transactionId ? (
+                                      <Button type="button" size="sm" onClick={() => navigate(`/transactions/${offer.transactionId}`)}>
+                                        Open Transaction
+                                      </Button>
+                                    ) : null}
                                   </div>
                                 </div>
                                 <div className="mt-3 grid gap-2 sm:grid-cols-3">
@@ -8601,14 +8623,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         </Button>
                                       </>
                                     ) : null}
-                                    {statusKey === 'accepted' ? (
+                                    {statusKey === 'accepted' || (statusKey === 'converted_to_transaction' && offer.transactionId) ? (
                                       <Button
                                         type="button"
                                         size="sm"
                                         disabled={canonicalOfferActionId === `${offer.id}:convert`}
                                         onClick={() => void handleLeadCanonicalOfferConversion(offer)}
                                       >
-                                        Create Transaction & Send Onboarding
+                                        {statusKey === 'converted_to_transaction' ? 'Resend Buyer Onboarding' : 'Create Transaction & Send Onboarding'}
                                       </Button>
                                     ) : null}
                                   </div>

@@ -136,6 +136,56 @@ function normalizeDate(value) {
   return normalized || null
 }
 
+function splitFullName(value = '') {
+  const parts = normalizeText(value).split(/\s+/).filter(Boolean)
+  if (!parts.length) return { firstName: '', lastName: '' }
+  if (parts.length === 1) return { firstName: parts[0], lastName: '' }
+  return { firstName: parts[0], lastName: parts.slice(1).join(' ') }
+}
+
+function normalizePurchaserType(value = '') {
+  const key = normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
+  if (['company', 'pty', 'pty_ltd', 'business'].includes(key)) return 'company'
+  if (['trust', 'family_trust'].includes(key)) return 'trust'
+  return 'individual'
+}
+
+function buildAcceptedOfferOnboardingPrefill(offer = {}, payload = {}) {
+  const conditions = jsonObject(offer?.conditions)
+  const fullName = normalizeText(
+    payload?.buyerName ||
+      conditions.buyerName ||
+      conditions.fullName ||
+      [conditions.firstName, conditions.lastName].filter(Boolean).join(' '),
+  )
+  const split = splitFullName(fullName)
+  const purchaserType = normalizePurchaserType(conditions.buyerType || conditions.purchaserType || payload?.purchaserType)
+  const financeType = normalizeText(offer?.financeType || conditions.financeType || payload?.financeType || 'cash').toLowerCase()
+
+  return Object.fromEntries(Object.entries({
+    purchaser_type: purchaserType,
+    first_name: normalizeText(conditions.firstName) || split.firstName,
+    last_name: normalizeText(conditions.lastName) || split.lastName,
+    email: normalizeText(payload?.buyerEmail || conditions.buyerEmail || conditions.email).toLowerCase(),
+    phone: normalizeText(payload?.buyerPhone || conditions.buyerPhone || conditions.phone),
+    identity_number: normalizeText(conditions.buyerIdNumber || conditions.identityNumber || conditions.idNumber),
+    purchase_finance_type: financeType || 'cash',
+    purchase_price: offer?.offerAmount ? String(offer.offerAmount) : '',
+    cash_amount: offer?.cashComponent ? String(offer.cashComponent) : '',
+    bond_amount: offer?.bondComponent ? String(offer.bondComponent) : '',
+    deposit_amount: offer?.depositAmount ? String(offer.depositAmount) : '',
+    source_of_funds: normalizeText(conditions.sourceOfFunds),
+    occupation_date: normalizeText(conditions.occupationDate),
+    occupational_rent: conditions.occupationalRent ? String(conditions.occupationalRent) : '',
+    special_conditions: normalizeText(conditions.specialConditions || conditions.suspensiveConditions),
+    subject_to_sale: conditions.subjectToSale === true ? 'yes' : '',
+    subject_sale_property: normalizeText(conditions.subjectSaleProperty),
+    subject_sale_timeline: normalizeText(conditions.subjectSaleTimeline),
+    bridge_prefill_source: 'accepted_offer',
+    bridge_prefilled_at: new Date().toISOString(),
+  }).filter(([, value]) => value !== null && value !== undefined && value !== ''))
+}
+
 function createOfferAccessToken() {
   const randomValue = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID().replaceAll('-', '')
@@ -1328,7 +1378,52 @@ export async function createTransactionFromAcceptedCanonicalOffer({
   if (!canonicalOffer) {
     throw new Error('Accepted offer not found.')
   }
-  if (normalizeOfferStatus(canonicalOffer.status) !== 'accepted') {
+  const canonicalOfferStatus = normalizeOfferStatus(canonicalOffer.status)
+  const linkedTransactionId = toNullableUuid(canonicalOffer.transactionId || canonicalOffer.transaction_id)
+
+  if (linkedTransactionId) {
+    await upsertAcceptedOfferOnboardingPrefill({
+      transactionId: linkedTransactionId,
+      offer: canonicalOffer,
+      payload,
+    }).catch(() => null)
+
+    if (canonicalOfferStatus !== 'converted_to_transaction') {
+      await updateCanonicalOfferStatus(scopedOfferId, 'converted_to_transaction', {
+        organisationId: scopedOrganisationId,
+        actor,
+        patch: { transaction_id: linkedTransactionId },
+      }).catch(() => null)
+    }
+
+    if (canonicalOffer.buyerLeadId) {
+      await recordBuyerLeadActivity({
+        organisationId: scopedOrganisationId,
+        leadId: canonicalOffer.buyerLeadId,
+        activityType: 'Transaction Reused',
+        activityNote: 'Existing transaction reused for this accepted buyer offer.',
+        outcome: 'Transaction Linked',
+        actor,
+      }).catch(() => null)
+    }
+
+    return {
+      transactionId: linkedTransactionId,
+      existing: true,
+      alreadyConverted: true,
+      persisted: true,
+      transactionRow: {
+        transaction: {
+          id: linkedTransactionId,
+          organisation_id: scopedOrganisationId,
+          accepted_offer_id: scopedOfferId,
+        },
+      },
+      warning: 'existing_offer_transaction_reused',
+    }
+  }
+
+  if (canonicalOfferStatus !== 'accepted') {
     throw new Error('Only an accepted offer can be converted to a transaction.')
   }
 
@@ -1368,6 +1463,12 @@ export async function createTransactionFromAcceptedCanonicalOffer({
 
   const transactionId = normalizeText(created?.transactionId || created?.transactionRow?.transaction?.id)
   if (transactionId) {
+    await upsertAcceptedOfferOnboardingPrefill({
+      transactionId,
+      offer: canonicalOffer,
+      payload,
+    }).catch(() => null)
+
     await updateCanonicalOfferStatus(scopedOfferId, 'converted_to_transaction', {
       organisationId: scopedOrganisationId,
       actor,
@@ -1376,4 +1477,50 @@ export async function createTransactionFromAcceptedCanonicalOffer({
   }
 
   return created
+}
+
+export async function upsertAcceptedOfferOnboardingPrefill({ transactionId = '', offer = null, payload = {} } = {}) {
+  const scopedTransactionId = toNullableUuid(transactionId)
+  if (!scopedTransactionId || !offer || !isSupabaseConfigured || !supabase) return null
+
+  const prefill = buildAcceptedOfferOnboardingPrefill(offer, payload)
+  if (!Object.keys(prefill).length) return null
+
+  const existingQuery = await supabase
+    .from('onboarding_form_data')
+    .select('id, form_data, purchaser_type')
+    .eq('transaction_id', scopedTransactionId)
+    .maybeSingle()
+
+  if (existingQuery.error && !isMissingTableError(existingQuery.error, 'onboarding_form_data')) {
+    throw existingQuery.error
+  }
+  if (existingQuery.error && isMissingTableError(existingQuery.error, 'onboarding_form_data')) {
+    return null
+  }
+
+  const existingFormData = jsonObject(existingQuery.data?.form_data)
+  const mergedFormData = {
+    ...prefill,
+    ...existingFormData,
+  }
+  const purchaserType = normalizePurchaserType(existingFormData.purchaser_type || prefill.purchaser_type)
+
+  const { data, error } = await supabase
+    .from('onboarding_form_data')
+    .upsert({
+      transaction_id: scopedTransactionId,
+      purchaser_type: purchaserType,
+      form_data: mergedFormData,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'transaction_id' })
+    .select('id, transaction_id, purchaser_type, form_data, updated_at')
+    .maybeSingle()
+
+  if (error) {
+    if (isMissingTableError(error, 'onboarding_form_data')) return null
+    throw error
+  }
+
+  return data
 }
