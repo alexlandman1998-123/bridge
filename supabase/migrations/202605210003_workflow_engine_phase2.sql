@@ -225,19 +225,11 @@ create policy workflow_templates_org_members
   for all
   using (
     organisation_id is null
-    or exists (
-      select 1 from public.organisation_memberships om
-      where om.organisation_id = workflow_templates.organisation_id
-        and om.user_id = auth.uid()
-    )
+    or public.bridge_is_active_member(organisation_id)
   )
   with check (
     organisation_id is null
-    or exists (
-      select 1 from public.organisation_memberships om
-      where om.organisation_id = workflow_templates.organisation_id
-        and om.user_id = auth.uid()
-    )
+    or public.bridge_is_active_member(organisation_id)
   );
 
 drop policy if exists workflow_stages_template_members on public.workflow_stages;
@@ -250,11 +242,7 @@ create policy workflow_stages_template_members
       where wt.id = workflow_stages.workflow_template_id
         and (
           wt.organisation_id is null
-          or exists (
-            select 1 from public.organisation_memberships om
-            where om.organisation_id = wt.organisation_id
-              and om.user_id = auth.uid()
-          )
+          or public.bridge_is_active_member(wt.organisation_id)
         )
     )
   )
@@ -264,11 +252,7 @@ create policy workflow_stages_template_members
       where wt.id = workflow_stages.workflow_template_id
         and (
           wt.organisation_id is null
-          or exists (
-            select 1 from public.organisation_memberships om
-            where om.organisation_id = wt.organisation_id
-              and om.user_id = auth.uid()
-          )
+          or public.bridge_is_active_member(wt.organisation_id)
         )
     )
   );
@@ -285,11 +269,7 @@ create policy workflow_stage_requirements_template_members
       where ws.id = workflow_stage_requirements.workflow_stage_id
         and (
           wt.organisation_id is null
-          or exists (
-            select 1 from public.organisation_memberships om
-            where om.organisation_id = wt.organisation_id
-              and om.user_id = auth.uid()
-          )
+          or public.bridge_is_active_member(wt.organisation_id)
         )
     )
   )
@@ -301,11 +281,7 @@ create policy workflow_stage_requirements_template_members
       where ws.id = workflow_stage_requirements.workflow_stage_id
         and (
           wt.organisation_id is null
-          or exists (
-            select 1 from public.organisation_memberships om
-            where om.organisation_id = wt.organisation_id
-              and om.user_id = auth.uid()
-          )
+          or public.bridge_is_active_member(wt.organisation_id)
         )
     )
   );
@@ -326,20 +302,10 @@ begin
     execute format('drop policy if exists %I_org_members on public.%I', table_name, table_name);
     execute format(
       'create policy %I_org_members on public.%I for all using (
-        organisation_id is null or exists (
-          select 1 from public.organisation_memberships om
-          where om.organisation_id = %I.organisation_id
-            and om.user_id = auth.uid()
-        )
+        organisation_id is null or public.bridge_is_active_member(organisation_id)
       ) with check (
-        organisation_id is null or exists (
-          select 1 from public.organisation_memberships om
-          where om.organisation_id = %I.organisation_id
-            and om.user_id = auth.uid()
-        )
+        organisation_id is null or public.bridge_is_active_member(organisation_id)
       )',
-      table_name,
-      table_name,
       table_name,
       table_name
     );

@@ -71,6 +71,7 @@ const BridgeLanding = lazy(() => import('./pages/BridgeLanding'))
 const BridgeProductPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeProductPage')
 const BridgeSolutionsPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeSolutionsPage')
 const BuyerOfferSubmission = lazy(() => import('./pages/BuyerOfferSubmission'))
+const PostViewingOfferPortal = lazy(() => import('./pages/PostViewingOfferPortal'))
 const ClientModulePage = lazy(() => import('./pages/ClientModulePage'))
 const ClientOnboarding = lazy(() => import('./pages/ClientOnboarding'))
 const ClientOtpSigning = lazy(() => import('./pages/ClientOtpSigning'))
@@ -1813,6 +1814,7 @@ function AppRoutes() {
           <Route path="/client/:token/documents" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/otp-signing" element={<TokenRouteGate><AppErrorBoundary scope="client-otp-route" title="OTP signing failed to load"><ClientOtpSigning /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/offer/:token" element={<BuyerOfferSubmission />} />
+          <Route path="/offers/session/:token" element={<PostViewingOfferPortal />} />
           <Route path="/offers/:token" element={<BuyerOfferSubmission />} />
           <Route
             path="/agent/invite/:token"

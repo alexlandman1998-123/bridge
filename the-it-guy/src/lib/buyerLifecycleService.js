@@ -107,8 +107,20 @@ function createOfferAccessToken() {
   return `offer-${randomValue}`
 }
 
+function createOfferPortalAccessToken() {
+  const randomValue = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID().replaceAll('-', '')
+    : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 14)}`
+  return `portal-${randomValue}`
+}
+
 function isMissingColumnError(error) {
   return String(error?.code || '') === '42703' || /column .* does not exist/i.test(String(error?.message || ''))
+}
+
+function isMissingTableError(error, tableName = '') {
+  const message = String(error?.message || '')
+  return String(error?.code || '') === '42P01' || (tableName && message.includes(tableName) && /does not exist|schema cache/i.test(message))
 }
 
 export function normalizeBuyerStage(stage, fallback = 'New Lead') {
@@ -280,6 +292,147 @@ function mapOfferDbRow(row = {}) {
     transactionId: row.transaction_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  }
+}
+
+function mapAppointmentViewedListingDbRow(row = {}) {
+  if (!row) return null
+  return {
+    id: row.id,
+    organisationId: row.organisation_id,
+    appointmentId: row.appointment_id,
+    leadId: row.lead_id,
+    listingId: row.listing_id,
+    agentId: row.agent_id,
+    viewedAt: row.viewed_at,
+    outcome: row.outcome,
+    buyerFeedback: row.buyer_feedback,
+    agentNotes: row.agent_notes,
+    metadata: row.metadata_json || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function mapOfferPortalSessionDbRow(row = {}) {
+  if (!row) return null
+  return {
+    id: row.id,
+    sessionId: row.id,
+    organisationId: row.organisation_id,
+    buyerLeadId: row.buyer_lead_id,
+    buyerContactId: row.buyer_contact_id,
+    appointmentId: row.appointment_id,
+    agentId: row.agent_id,
+    token: row.token,
+    status: row.status,
+    expiresAt: row.expires_at,
+    sentAt: row.sent_at,
+    metadata: row.metadata_json || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function mapOfferPortalSessionPayload(session = {}) {
+  if (!session) return null
+  return {
+    id: session.id,
+    sessionId: session.id,
+    organisationId: session.organisationId || session.organisation_id,
+    buyerLeadId: session.buyerLeadId || session.buyer_lead_id,
+    buyerContactId: session.buyerContactId || session.buyer_contact_id,
+    appointmentId: session.appointmentId || session.appointment_id,
+    agentId: session.agentId || session.agent_id,
+    token: session.token,
+    status: session.status,
+    expiresAt: session.expiresAt || session.expires_at,
+    sentAt: session.sentAt || session.sent_at,
+    metadata: session.metadata || session.metadata_json || {},
+    createdAt: session.createdAt || session.created_at,
+    updatedAt: session.updatedAt || session.updated_at,
+  }
+}
+
+function mapOfferPortalPropertyPayload(item = {}) {
+  const listing = item?.listing || {}
+  const viewedListing = item?.viewedListing || item?.viewed_listing || {}
+  return {
+    viewedListing: {
+      id: viewedListing.id,
+      organisationId: viewedListing.organisationId || viewedListing.organisation_id,
+      appointmentId: viewedListing.appointmentId || viewedListing.appointment_id,
+      leadId: viewedListing.leadId || viewedListing.lead_id,
+      listingId: viewedListing.listingId || viewedListing.listing_id,
+      agentId: viewedListing.agentId || viewedListing.agent_id,
+      viewedAt: viewedListing.viewedAt || viewedListing.viewed_at,
+      outcome: viewedListing.outcome,
+      buyerFeedback: viewedListing.buyerFeedback || viewedListing.buyer_feedback,
+      agentNotes: viewedListing.agentNotes || viewedListing.agent_notes,
+      metadata: viewedListing.metadata || viewedListing.metadata_json || {},
+      createdAt: viewedListing.createdAt || viewedListing.created_at,
+      updatedAt: viewedListing.updatedAt || viewedListing.updated_at,
+    },
+    listing: {
+      id: listing.id,
+      listingTitle: listing.listingTitle || listing.listing_title || listing.title || 'Listing',
+      propertyAddress: listing.propertyAddress || listing.property_address || listing.address || '',
+      suburb: listing.suburb || '',
+      city: listing.city || '',
+      askingPrice: money(listing.askingPrice || listing.asking_price || listing.price),
+      raw: listing.raw || {},
+    },
+    offers: (Array.isArray(item?.offers) ? item.offers : []).map((offer) => ({
+      id: offer.id,
+      offerToken: offer.offerToken || offer.offer_token,
+      status: offer.status,
+      offerAmount: offer.offerAmount || offer.offer_amount,
+      depositAmount: offer.depositAmount || offer.deposit_amount,
+      financeType: offer.financeType || offer.finance_type,
+      submittedAt: offer.submittedAt || offer.submitted_at,
+      acceptedAt: offer.acceptedAt || offer.accepted_at,
+      rejectedAt: offer.rejectedAt || offer.rejected_at,
+      transactionId: offer.transactionId || offer.transaction_id,
+      createdAt: offer.createdAt || offer.created_at,
+      updatedAt: offer.updatedAt || offer.updated_at,
+    })),
+  }
+}
+
+function mapOfferPortalContextPayload(payload = {}) {
+  const response = payload && typeof payload === 'object' ? payload : {}
+  if (!response.ok) {
+    return {
+      ok: false,
+      reason: normalizeText(response.reason) || 'not_found',
+      session: null,
+      properties: [],
+      source: 'offer_portal_session',
+    }
+  }
+  return {
+    ok: true,
+    reason: '',
+    source: 'offer_portal_session',
+    session: mapOfferPortalSessionPayload(response.session),
+    properties: (Array.isArray(response.properties) ? response.properties : [])
+      .map(mapOfferPortalPropertyPayload)
+      .filter((item) => item?.viewedListing?.listingId || item?.listing?.id),
+  }
+}
+
+function buildAppointmentViewedListingUpsert(payload = {}) {
+  return {
+    organisation_id: toNullableUuid(payload?.organisationId),
+    appointment_id: toNullableUuid(payload?.appointmentId),
+    lead_id: toNullableUuid(payload?.leadId),
+    listing_id: toNullableUuid(payload?.listingId),
+    agent_id: toNullableUuid(payload?.agentId),
+    viewed_at: normalizeDate(payload?.viewedAt) || new Date().toISOString(),
+    outcome: normalizeText(payload?.outcome) || null,
+    buyer_feedback: normalizeText(payload?.buyerFeedback) || null,
+    agent_notes: normalizeText(payload?.agentNotes) || null,
+    metadata_json: jsonObject(payload?.metadata || payload?.metadataJson),
   }
 }
 
@@ -531,6 +684,181 @@ export async function listCanonicalOffersForListing({ organisationId = '', listi
     .order('updated_at', { ascending: false })
   if (error) throw error
   return (Array.isArray(data) ? data : []).map(mapOfferDbRow).filter(Boolean)
+}
+
+export async function listAppointmentViewedListings({
+  organisationId = '',
+  appointmentId = '',
+  leadId = '',
+  listingId = '',
+} = {}) {
+  const scopedOrganisationId = toNullableUuid(organisationId)
+  if (!scopedOrganisationId || !isSupabaseConfigured || !supabase) return []
+
+  let query = supabase
+    .from('appointment_viewed_listings')
+    .select('*')
+    .eq('organisation_id', scopedOrganisationId)
+    .order('viewed_at', { ascending: false })
+    .order('updated_at', { ascending: false })
+
+  const scopedAppointmentId = toNullableUuid(appointmentId)
+  const scopedLeadId = toNullableUuid(leadId)
+  const scopedListingId = toNullableUuid(listingId)
+  if (scopedAppointmentId) query = query.eq('appointment_id', scopedAppointmentId)
+  if (scopedLeadId) query = query.eq('lead_id', scopedLeadId)
+  if (scopedListingId) query = query.eq('listing_id', scopedListingId)
+
+  const { data, error } = await query
+  if (error) {
+    if (isMissingTableError(error, 'appointment_viewed_listings')) return []
+    throw error
+  }
+  return (Array.isArray(data) ? data : []).map(mapAppointmentViewedListingDbRow).filter(Boolean)
+}
+
+export async function upsertAppointmentViewedListings({
+  organisationId = '',
+  appointmentId = '',
+  leadId = '',
+  agentId = '',
+  viewedListings = [],
+  replaceExisting = false,
+} = {}) {
+  const scopedOrganisationId = toNullableUuid(organisationId)
+  const scopedAppointmentId = toNullableUuid(appointmentId)
+  if (!scopedOrganisationId || !scopedAppointmentId || !isSupabaseConfigured || !supabase) return []
+
+  const rows = (Array.isArray(viewedListings) ? viewedListings : [])
+    .map((item) => {
+      const source = typeof item === 'string' ? { listingId: item } : (item || {})
+      return buildAppointmentViewedListingUpsert({
+        ...source,
+        organisationId: scopedOrganisationId,
+        appointmentId: scopedAppointmentId,
+        leadId: source.leadId || leadId,
+        agentId: source.agentId || agentId,
+      })
+    })
+    .filter((row) => row.organisation_id && row.appointment_id && row.listing_id)
+
+  if (!rows.length) return []
+
+  if (replaceExisting) {
+    const listingIds = rows.map((row) => row.listing_id).filter(Boolean)
+    let deleteQuery = supabase
+      .from('appointment_viewed_listings')
+      .delete()
+      .eq('organisation_id', scopedOrganisationId)
+      .eq('appointment_id', scopedAppointmentId)
+    if (listingIds.length) {
+      deleteQuery = deleteQuery.not('listing_id', 'in', `(${listingIds.join(',')})`)
+    }
+    const deleteResult = await deleteQuery
+    if (deleteResult.error && !isMissingTableError(deleteResult.error, 'appointment_viewed_listings')) {
+      throw deleteResult.error
+    }
+  }
+
+  const { data, error } = await supabase
+    .from('appointment_viewed_listings')
+    .upsert(rows, { onConflict: 'organisation_id,appointment_id,listing_id' })
+    .select('*')
+
+  if (error) {
+    if (isMissingTableError(error, 'appointment_viewed_listings')) return []
+    throw error
+  }
+  return (Array.isArray(data) ? data : []).map(mapAppointmentViewedListingDbRow).filter(Boolean)
+}
+
+export async function createOfferPortalSession(payload = {}, { actor = null } = {}) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Offer portal sessions require Supabase.')
+  }
+
+  const insertPayload = {
+    organisation_id: toNullableUuid(payload?.organisationId),
+    buyer_lead_id: toNullableUuid(payload?.buyerLeadId),
+    buyer_contact_id: toNullableUuid(payload?.buyerContactId),
+    appointment_id: toNullableUuid(payload?.appointmentId),
+    agent_id: toNullableUuid(payload?.agentId || actor?.id),
+    token: normalizeText(payload?.token) || createOfferPortalAccessToken(),
+    status: normalizeText(payload?.status) || 'sent',
+    expires_at: normalizeDate(payload?.expiresAt),
+    sent_at: normalizeDate(payload?.sentAt) || new Date().toISOString(),
+    metadata_json: jsonObject(payload?.metadata || payload?.metadataJson),
+  }
+
+  if (!insertPayload.organisation_id) {
+    throw new Error('Organisation id is required before creating an offer portal link.')
+  }
+  if (!insertPayload.appointment_id) {
+    throw new Error('A viewing appointment is required before creating an offer portal link.')
+  }
+  if (!insertPayload.buyer_lead_id && !insertPayload.buyer_contact_id) {
+    throw new Error('A buyer lead or buyer contact is required before creating an offer portal link.')
+  }
+
+  const { data, error } = await supabase
+    .from('offer_portal_sessions')
+    .insert(insertPayload)
+    .select('*')
+    .single()
+
+  if (error) throw error
+
+  if (insertPayload.buyer_lead_id) {
+    await applyBuyerLifecycleEvent({
+      organisationId: insertPayload.organisation_id,
+      leadId: insertPayload.buyer_lead_id,
+      event: BUYER_LIFECYCLE_EVENTS.OFFER_CREATED,
+      actor,
+      activityNote: 'Post-viewing offer portal link created.',
+    }).catch(() => null)
+  }
+
+  return mapOfferPortalSessionDbRow(data)
+}
+
+export async function getOfferPortalSessionContext(token = '') {
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken || !isSupabaseConfigured || !supabase) {
+    return { ok: false, reason: 'not_found', session: null, properties: [], source: 'offer_portal_session' }
+  }
+  const { data, error } = await supabase.rpc('bridge_get_offer_portal_session', {
+    p_token: normalizedToken,
+  })
+  if (error) {
+    if (isMissingTableError(error, 'offer_portal_sessions')) {
+      return { ok: false, reason: 'not_found', session: null, properties: [], source: 'offer_portal_session' }
+    }
+    throw error
+  }
+  return mapOfferPortalContextPayload(data)
+}
+
+export async function submitOfferPortalOffer({ token = '', listingId = '', submission = {} } = {}) {
+  const normalizedToken = normalizeText(token)
+  const scopedListingId = toNullableUuid(listingId)
+  if (!normalizedToken || !scopedListingId || !isSupabaseConfigured || !supabase) {
+    throw new Error('Offer portal link and selected property are required.')
+  }
+  const { data, error } = await supabase.rpc('bridge_submit_offer_portal_offer', {
+    p_token: normalizedToken,
+    p_listing_id: scopedListingId,
+    p_submission: jsonObject(submission),
+  })
+  if (error) throw error
+  if (!data?.ok) {
+    const reason = normalizeText(data?.reason)
+    if (reason === 'expired') throw new Error('This offer portal link has expired. Ask the agent to send a new link.')
+    if (reason === 'listing_not_in_session') throw new Error('This property is not part of the viewing session.')
+    if (reason === 'offer_amount_required') throw new Error('Add an offer amount before submitting.')
+    if (reason === 'buyer_details_required') throw new Error('Buyer name, email, and phone are required.')
+    throw new Error('Unable to submit this offer right now.')
+  }
+  return data
 }
 
 export async function createTransactionFromAcceptedCanonicalOffer({

@@ -31,7 +31,7 @@ create table if not exists public.bridge_intelligence_signals (
   entity_type text not null,
   entity_id uuid,
   lead_id uuid references public.leads(lead_id) on delete set null,
-  contact_id uuid references public.contacts(id) on delete set null,
+  contact_id uuid references public.contacts(contact_id) on delete set null,
   transaction_id uuid references public.transactions(id) on delete set null,
   offer_id uuid references public.offers(id) on delete set null,
   score_delta numeric(8, 2) not null default 0,
@@ -49,7 +49,7 @@ create table if not exists public.buyer_intelligence_profiles (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid not null references public.organisations(id) on delete cascade,
   buyer_lead_id uuid references public.leads(lead_id) on delete cascade,
-  contact_id uuid references public.contacts(id) on delete set null,
+  contact_id uuid references public.contacts(contact_id) on delete set null,
   buyer_identity_id uuid,
   heat_score numeric(6, 2) not null default 0,
   heat_category text not null default 'Cold',
@@ -89,7 +89,7 @@ create table if not exists public.bridge_recommendations (
   entity_type text not null,
   entity_id uuid,
   lead_id uuid references public.leads(lead_id) on delete set null,
-  contact_id uuid references public.contacts(id) on delete set null,
+  contact_id uuid references public.contacts(contact_id) on delete set null,
   transaction_id uuid references public.transactions(id) on delete cascade,
   offer_id uuid references public.offers(id) on delete set null,
   priority text not null default 'medium',
@@ -111,7 +111,7 @@ create table if not exists public.bridge_recommendations (
 create table if not exists public.bridge_identity_profiles (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid references public.organisations(id) on delete cascade,
-  contact_id uuid references public.contacts(id) on delete set null,
+  contact_id uuid references public.contacts(contact_id) on delete set null,
   identity_type text not null default 'buyer',
   primary_email text,
   primary_phone text,
@@ -231,20 +231,10 @@ begin
     execute format('drop policy if exists %I_org_members on public.%I', table_name, table_name);
     execute format(
       'create policy %I_org_members on public.%I for all using (
-        organisation_id is null or exists (
-          select 1 from public.organisation_memberships om
-          where om.organisation_id = %I.organisation_id
-            and om.user_id = auth.uid()
-        )
+        organisation_id is null or public.bridge_is_active_member(organisation_id)
       ) with check (
-        organisation_id is null or exists (
-          select 1 from public.organisation_memberships om
-          where om.organisation_id = %I.organisation_id
-            and om.user_id = auth.uid()
-        )
+        organisation_id is null or public.bridge_is_active_member(organisation_id)
       )',
-      table_name,
-      table_name,
       table_name,
       table_name
     );

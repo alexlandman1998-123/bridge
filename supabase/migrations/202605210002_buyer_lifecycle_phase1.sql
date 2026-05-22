@@ -6,7 +6,7 @@ create table if not exists public.offers (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid not null references public.organisations(id) on delete cascade,
   buyer_lead_id uuid references public.leads(lead_id) on delete set null,
-  buyer_contact_id uuid references public.contacts(id) on delete set null,
+  buyer_contact_id uuid references public.contacts(contact_id) on delete set null,
   listing_id uuid,
   seller_lead_id uuid references public.leads(lead_id) on delete set null,
   agent_id uuid references public.profiles(id) on delete set null,
@@ -83,7 +83,7 @@ alter table if exists public.leads
 alter table if exists public.transactions
   add column if not exists accepted_offer_id uuid references public.offers(id) on delete set null,
   add column if not exists originating_buyer_lead_id uuid references public.leads(lead_id) on delete set null,
-  add column if not exists buyer_contact_id uuid references public.contacts(id) on delete set null,
+  add column if not exists buyer_contact_id uuid references public.contacts(contact_id) on delete set null,
   add column if not exists listing_id uuid;
 
 alter table if exists public.offers enable row level security;
@@ -92,45 +92,17 @@ drop policy if exists offers_org_members_select on public.offers;
 create policy offers_org_members_select
   on public.offers
   for select
-  using (
-    exists (
-      select 1
-      from public.organisation_memberships om
-      where om.organisation_id = offers.organisation_id
-        and om.user_id = auth.uid()
-    )
-  );
+  using (public.bridge_is_active_member(organisation_id));
 
 drop policy if exists offers_org_members_insert on public.offers;
 create policy offers_org_members_insert
   on public.offers
   for insert
-  with check (
-    exists (
-      select 1
-      from public.organisation_memberships om
-      where om.organisation_id = offers.organisation_id
-        and om.user_id = auth.uid()
-    )
-  );
+  with check (public.bridge_is_active_member(organisation_id));
 
 drop policy if exists offers_org_members_update on public.offers;
 create policy offers_org_members_update
   on public.offers
   for update
-  using (
-    exists (
-      select 1
-      from public.organisation_memberships om
-      where om.organisation_id = offers.organisation_id
-        and om.user_id = auth.uid()
-    )
-  )
-  with check (
-    exists (
-      select 1
-      from public.organisation_memberships om
-      where om.organisation_id = offers.organisation_id
-        and om.user_id = auth.uid()
-    )
-  );
+  using (public.bridge_is_active_member(organisation_id))
+  with check (public.bridge_is_active_member(organisation_id));

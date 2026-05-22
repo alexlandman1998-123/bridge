@@ -83,7 +83,15 @@ import {
   getAppointmentTemplateInstructions,
   getAppointmentTypeTemplate,
 } from '../../services/appointmentTemplateService'
-import { createCanonicalOffer } from '../../lib/buyerLifecycleService'
+import {
+  createCanonicalOffer,
+  createOfferPortalSession,
+  createTransactionFromAcceptedCanonicalOffer,
+  listAppointmentViewedListings,
+  listCanonicalOffersForLead,
+  updateCanonicalOfferStatus,
+  upsertAppointmentViewedListings,
+} from '../../lib/buyerLifecycleService'
 import { isBuyerWorkflowStage, transitionBuyerLeadStage } from '../../lib/workflowEngine'
 
 const PIPELINE_CONTEXT_TIMEOUT_MS = 3500
@@ -1688,6 +1696,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     buyerFeedback: '',
     followUpDate: '',
     nextStep: VIEWING_NEXT_STEP_OPTIONS[0].value,
+    propertyDraftListingId: '',
+    viewedListings: [],
   })
   const [offerLinkForm, setOfferLinkForm] = useState({
     appointmentId: '',
@@ -1700,6 +1710,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     lastOfferLink: '',
   })
   const [isOfferLinkSending, setIsOfferLinkSending] = useState(false)
+  const [selectedLeadOffers, setSelectedLeadOffers] = useState([])
+  const [selectedLeadOffersLoading, setSelectedLeadOffersLoading] = useState(false)
+  const [selectedLeadOffersError, setSelectedLeadOffersError] = useState('')
+  const [selectedLeadOffersRefreshTick, setSelectedLeadOffersRefreshTick] = useState(0)
+  const [canonicalOfferActionId, setCanonicalOfferActionId] = useState('')
+  const [canonicalOfferNotesById, setCanonicalOfferNotesById] = useState({})
   const [appointmentResources, setAppointmentResources] = useState([])
   const [appointmentListingOptions, setAppointmentListingOptions] = useState([])
   const [appointmentSchedulingIntegrity, setAppointmentSchedulingIntegrity] = useState(null)
@@ -2546,6 +2562,53 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         .sort((a, b) => new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0))[0] || null
     )
   }, [records.deals, selectedLead])
+
+  useEffect(() => {
+    const leadId = normalizeText(selectedLead?.leadId)
+    if (!organisationId || !leadId) {
+      setSelectedLeadOffers([])
+      setSelectedLeadOffersError('')
+      setSelectedLeadOffersLoading(false)
+      return
+    }
+    let cancelled = false
+    setSelectedLeadOffersLoading(true)
+    setSelectedLeadOffersError('')
+    listCanonicalOffersForLead({ organisationId, leadId })
+      .then((offers) => {
+        if (!cancelled) setSelectedLeadOffers(Array.isArray(offers) ? offers : [])
+      })
+      .catch((offerError) => {
+        if (!cancelled) {
+          setSelectedLeadOffers([])
+          setSelectedLeadOffersError(offerError?.message || 'Unable to load offers for this lead.')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSelectedLeadOffersLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [organisationId, selectedLead?.leadId, selectedLeadOffersRefreshTick])
+
+  const selectedLeadOfferSummary = useMemo(() => {
+    const rows = Array.isArray(selectedLeadOffers) ? selectedLeadOffers : []
+    const statusCount = (status) => rows.filter((offer) => normalizeText(offer?.status).toLowerCase() === status).length
+    const activeRows = rows.filter((offer) => !['rejected', 'withdrawn', 'expired'].includes(normalizeText(offer?.status).toLowerCase()))
+    const highestOffer = rows.reduce((highest, offer) => {
+      const value = Number(offer?.offerAmount || 0)
+      return Number.isFinite(value) && value > highest ? value : highest
+    }, 0)
+    return {
+      total: rows.length,
+      active: activeRows.length,
+      drafts: statusCount('draft'),
+      submitted: statusCount('submitted'),
+      accepted: statusCount('accepted'),
+      highestOffer,
+    }
+  }, [selectedLeadOffers])
 
   const selectedLeadNotes = useMemo(() => {
     if (!selectedLead) return ''
@@ -5263,17 +5326,106 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  function handleOpenLeadCompletionPanel(appointment) {
+  function buildLeadViewingCompletionListingRows(appointment, existingRows = []) {
+    const mappedExistingRows = (Array.isArray(existingRows) ? existingRows : [])
+      .map((row) => {
+        const listingId = normalizeText(row?.listingId)
+        if (!listingId) return null
+        return {
+          listingId,
+          outcome: normalizeText(row?.outcome) || VIEWING_OUTCOME_OPTIONS[0],
+          buyerFeedback: normalizeText(row?.buyerFeedback),
+          agentNotes: normalizeText(row?.agentNotes),
+          viewedAt: normalizeText(row?.viewedAt) || normalizeText(appointment?.dateTime) || new Date().toISOString(),
+        }
+      })
+      .filter(Boolean)
+    if (mappedExistingRows.length) return mappedExistingRows
+    const defaultListingId = normalizeText(appointment?.listingId || selectedLead?.listingId || leadAppointmentOfferListingOptions[0]?.id)
+    return defaultListingId
+      ? [{
+          listingId: defaultListingId,
+          outcome: VIEWING_OUTCOME_OPTIONS[0],
+          buyerFeedback: '',
+          agentNotes: '',
+          viewedAt: normalizeText(appointment?.dateTime) || new Date().toISOString(),
+        }]
+      : []
+  }
+
+  function handleAddViewedListingToCompletion() {
+    const listingId = normalizeText(leadViewingCompletionForm.propertyDraftListingId)
+    if (!listingId) return
+    setLeadViewingCompletionForm((previous) => {
+      if ((previous.viewedListings || []).some((row) => normalizeText(row?.listingId) === listingId)) {
+        return { ...previous, propertyDraftListingId: '' }
+      }
+      return {
+        ...previous,
+        propertyDraftListingId: '',
+        viewedListings: [
+          ...(previous.viewedListings || []),
+          {
+            listingId,
+            outcome: previous.outcome || VIEWING_OUTCOME_OPTIONS[0],
+            buyerFeedback: previous.buyerFeedback || '',
+            agentNotes: previous.agentNotes || '',
+            viewedAt: new Date().toISOString(),
+          },
+        ],
+      }
+    })
+  }
+
+  function handleUpdateViewedListingCompletion(listingId, patch = {}) {
+    const targetListingId = normalizeText(listingId)
+    setLeadViewingCompletionForm((previous) => ({
+      ...previous,
+      viewedListings: (previous.viewedListings || []).map((row) =>
+        normalizeText(row?.listingId) === targetListingId
+          ? { ...row, ...patch }
+          : row,
+      ),
+    }))
+  }
+
+  function handleRemoveViewedListingFromCompletion(listingId) {
+    const targetListingId = normalizeText(listingId)
+    setLeadViewingCompletionForm((previous) => ({
+      ...previous,
+      viewedListings: (previous.viewedListings || []).filter((row) => normalizeText(row?.listingId) !== targetListingId),
+    }))
+  }
+
+  async function handleOpenLeadCompletionPanel(appointment) {
     if (!appointment) return
     setLeadCompletionAppointmentId(appointment.appointmentId)
+    const initialViewedListings = buildLeadViewingCompletionListingRows(appointment)
     setLeadViewingCompletionForm({
       outcome: normalizeText(appointment.outcomeSummary) || VIEWING_OUTCOME_OPTIONS[0],
       agentNotes: normalizeText(appointment.agentNotes),
       buyerFeedback: normalizeText(appointment.clientFeedback),
       followUpDate: normalizeText(appointment.followUpDate),
       nextStep: normalizeText(appointment.nextStep) || VIEWING_NEXT_STEP_OPTIONS[0].value,
+      propertyDraftListingId: '',
+      viewedListings: initialViewedListings,
     })
     setError('')
+    if (!organisationId || !appointment?.appointmentId) return
+    try {
+      const existingRows = await listAppointmentViewedListings({
+        organisationId,
+        appointmentId: appointment.appointmentId,
+      })
+      if (existingRows.length) {
+        setLeadViewingCompletionForm((previous) => ({
+          ...previous,
+          viewedListings: buildLeadViewingCompletionListingRows(appointment, existingRows),
+        }))
+      }
+    } catch {
+      // Existing viewed listings are helpful context, but the completion flow can still continue without them.
+    }
   }
 
   async function handleCompleteLeadViewing() {
@@ -5285,6 +5437,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     const outcome = normalizeText(leadViewingCompletionForm.outcome) || VIEWING_OUTCOME_OPTIONS[0]
     const nextStepLabel = VIEWING_NEXT_STEP_OPTIONS.find((option) => option.value === leadViewingCompletionForm.nextStep)?.label || leadViewingCompletionForm.nextStep
+    const viewedListings = (leadViewingCompletionForm.viewedListings || [])
+      .map((row) => ({
+        ...row,
+        listingId: normalizeText(row?.listingId),
+        outcome: normalizeText(row?.outcome) || outcome,
+        buyerFeedback: normalizeText(row?.buyerFeedback || leadViewingCompletionForm.buyerFeedback),
+        agentNotes: normalizeText(row?.agentNotes || leadViewingCompletionForm.agentNotes),
+        viewedAt: normalizeText(row?.viewedAt || targetAppointment.dateTime) || new Date().toISOString(),
+      }))
+      .filter((row) => row.listingId)
+    if (!viewedListings.length) {
+      setError('Select at least one viewed property before completing the viewing.')
+      return
+    }
     try {
       await addAppointmentOutcomeAsync(
         organisationId,
@@ -5301,6 +5467,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         },
       )
+      await upsertAppointmentViewedListings({
+        organisationId,
+        appointmentId: targetAppointment.appointmentId,
+        leadId: selectedLead.leadId,
+        agentId: targetAppointment.assignedAgentId || selectedLead.assignedAgentId || currentAgent.id,
+        viewedListings,
+        replaceExisting: true,
+      })
       if (normalizeText(leadViewingCompletionForm.followUpDate)) {
         await createAgencyCrmLeadTask(
           organisationId,
@@ -5324,10 +5498,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       await reloadRecords(organisationId)
       if (leadViewingCompletionForm.nextStep === 'send_offer_link') {
         setOfferLinkForm((previous) => ({
-          ...previous,
-          appointmentId: targetAppointment.appointmentId,
-          listingId: normalizeText(targetAppointment.listingId || previous.listingId || selectedLead.listingId),
-        }))
+	          ...previous,
+	          appointmentId: targetAppointment.appointmentId,
+	          listingId: normalizeText(targetAppointment.listingId || viewedListings[0]?.listingId || previous.listingId || selectedLead.listingId),
+	        }))
       }
     } catch (completionError) {
       setError(completionError?.message || 'Unable to complete this viewing right now.')
@@ -5383,6 +5557,93 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     try {
       setIsOfferLinkSending(true)
+      const viewingAppointmentId = normalizeText(offerLinkForm.appointmentId) || normalizeText(selectedLeadActiveViewing?.appointmentId)
+      if (viewingAppointmentId) {
+        let viewedProperties = await listAppointmentViewedListings({
+          organisationId,
+          appointmentId: viewingAppointmentId,
+        }).catch(() => [])
+        const selectedAlreadyLinked = viewedProperties.some((item) => normalizeText(item?.listingId) === selectedListingId)
+        if (!selectedAlreadyLinked) {
+          await upsertAppointmentViewedListings({
+            organisationId,
+            appointmentId: viewingAppointmentId,
+            leadId: selectedLead.leadId,
+            agentId: currentAgent.id,
+            viewedListings: [{
+              listingId: selectedListingId,
+              outcome: 'Interested',
+              buyerFeedback: '',
+              agentNotes: normalizeText(offerLinkForm.note),
+              viewedAt: new Date().toISOString(),
+              metadata: { source: 'offer_link_bootstrap' },
+            }],
+          }).catch(() => viewedProperties)
+          viewedProperties = await listAppointmentViewedListings({
+            organisationId,
+            appointmentId: viewingAppointmentId,
+          }).catch(() => viewedProperties)
+        }
+        const session = await createOfferPortalSession(
+          {
+            organisationId,
+            buyerLeadId: selectedLead.leadId,
+            buyerContactId: selectedLead.contactId,
+            appointmentId: viewingAppointmentId,
+            agentId: currentAgent.id,
+            expiresAt: normalizeText(offerLinkForm.expiryDate),
+            metadata: {
+              source: 'lead_appointment_tab',
+              buyerName: normalizeText(offerLinkForm.buyerName),
+              buyerEmail: normalizeText(offerLinkForm.buyerEmail),
+              buyerPhone: normalizeText(offerLinkForm.buyerPhone),
+              agentNoteToBuyer: normalizeText(offerLinkForm.note),
+              selectedListingId,
+              viewedListingIds: viewedProperties.map((item) => item?.listingId).filter(Boolean),
+            },
+          },
+          {
+            actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          },
+        )
+        await updateAppointmentAsync(
+          organisationId,
+          viewingAppointmentId,
+          {
+            nextStep: 'Post-viewing offer portal sent',
+          },
+          {
+            actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          },
+        ).catch(() => null)
+        const portalLink = session?.token && typeof window !== 'undefined'
+          ? `${window.location.origin}/offers/session/${encodeURIComponent(session.token)}`
+          : ''
+        await createAgencyCrmLeadActivity(
+          organisationId,
+          selectedLead.leadId,
+          {
+            agent: currentAgent,
+            activityType: 'Post-Viewing Offer Portal Sent',
+            activityNote: [
+              `Offer portal created for ${viewedProperties.length || 1} viewed ${viewedProperties.length === 1 ? 'property' : 'properties'}.`,
+              portalLink ? `Link: ${portalLink}` : '',
+            ].filter(Boolean).join(' '),
+            outcome: 'Offer Draft',
+            activityDate: new Date().toISOString(),
+          },
+          { actor: currentAgent },
+        )
+        if (portalLink && typeof navigator !== 'undefined') {
+          void navigator.clipboard?.writeText(portalLink)
+        }
+        setOfferLinkForm((previous) => ({ ...previous, lastOfferLink: portalLink }))
+        setMessage(portalLink ? 'Post-viewing offer portal created and copied. The buyer can offer on any viewed property.' : 'Post-viewing offer portal created.')
+        setError('')
+        await reloadRecords(organisationId)
+        return
+      }
+
       const offer = await createCanonicalOffer(
         {
           organisationId,
@@ -5390,7 +5651,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           buyerContactId: selectedLead.contactId,
           listingId: selectedListingId,
           agentId: currentAgent.id,
-          viewingAppointmentId: normalizeText(offerLinkForm.appointmentId) || normalizeText(selectedLeadActiveViewing?.appointmentId),
+          viewingAppointmentId,
           status: 'draft',
           financeType: selectedLead.financeType || selectedLead.preferredFinanceType || '',
           expiryDate: normalizeText(offerLinkForm.expiryDate),
@@ -5449,6 +5710,99 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError(offerError?.message || 'Unable to create the offer link.')
     } finally {
       setIsOfferLinkSending(false)
+    }
+  }
+
+  function buildCanonicalOfferActionPatch(offer, actionLabel, note = '') {
+    const trimmedNote = normalizeText(note)
+    return {
+      conditions_json: {
+        ...(offer?.conditions || {}),
+        agentActionHistory: [
+          ...(Array.isArray(offer?.conditions?.agentActionHistory) ? offer.conditions.agentActionHistory : []),
+          {
+            action: actionLabel,
+            note: trimmedNote,
+            at: new Date().toISOString(),
+            actorId: currentAgent.id,
+            actorName: currentAgent.fullName,
+          },
+        ],
+        latestAgentNote: trimmedNote || offer?.conditions?.latestAgentNote || '',
+      },
+    }
+  }
+
+  async function handleLeadCanonicalOfferStatus(offer, nextStatus, actionLabel) {
+    if (!organisationId || !offer?.id) return
+    const note = canonicalOfferNotesById[offer.id] || ''
+    try {
+      setCanonicalOfferActionId(`${offer.id}:${nextStatus}`)
+      await updateCanonicalOfferStatus(offer.id, nextStatus, {
+        organisationId,
+        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        patch: buildCanonicalOfferActionPatch(offer, actionLabel || nextStatus, note),
+      })
+      setCanonicalOfferNotesById((previous) => ({ ...previous, [offer.id]: '' }))
+      setSelectedLeadOffersRefreshTick((value) => value + 1)
+      setMessage(`Offer moved to ${nextStatus.replaceAll('_', ' ')}.`)
+      setError('')
+      await reloadRecords(organisationId)
+    } catch (statusError) {
+      setError(statusError?.message || 'Unable to update this offer.')
+    } finally {
+      setCanonicalOfferActionId('')
+    }
+  }
+
+  async function handleLeadCanonicalOfferConversion(offer) {
+    if (!organisationId || !offer?.id || !selectedLead) return
+    try {
+      setCanonicalOfferActionId(`${offer.id}:convert`)
+      const acceptedOffer = normalizeText(offer.status).toLowerCase() === 'accepted'
+        ? offer
+        : await updateCanonicalOfferStatus(offer.id, 'accepted', {
+            organisationId,
+            actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+            patch: buildCanonicalOfferActionPatch(offer, 'Accepted for transaction conversion', canonicalOfferNotesById[offer.id] || ''),
+          })
+      const listingId = normalizeText(acceptedOffer?.listingId || offer?.listingId || selectedLead?.listingId)
+      await createTransactionFromAcceptedCanonicalOffer({
+        organisationId,
+        offerId: acceptedOffer?.id || offer.id,
+        offer: acceptedOffer || offer,
+        lead: {
+          ...selectedLead,
+          email: selectedLeadContact?.email || selectedLead?.email,
+          phone: selectedLeadContact?.phone || selectedLead?.phone,
+          firstName: selectedLeadContact?.firstName || selectedLead?.firstName,
+          lastName: selectedLeadContact?.lastName || selectedLead?.lastName,
+        },
+        listing: listingId
+          ? {
+              id: listingId,
+              organisationId,
+              listingTitle: resolveAppointmentListingLabel(listingId) || selectedLead?.propertyInterest || 'Listing',
+              propertyAddress: selectedLead?.sellerPropertyAddress || selectedLead?.areaInterest || '',
+            }
+          : null,
+        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        payload: {
+          listingId,
+          buyerName: selectedLeadContactName,
+          buyerEmail: selectedLeadContact?.email || selectedLead?.email,
+          buyerPhone: selectedLeadContact?.phone || selectedLead?.phone,
+        },
+      })
+      setCanonicalOfferNotesById((previous) => ({ ...previous, [offer.id]: '' }))
+      setSelectedLeadOffersRefreshTick((value) => value + 1)
+      setMessage('Transaction created from accepted offer.')
+      setError('')
+      await reloadRecords(organisationId)
+    } catch (conversionError) {
+      setError(conversionError?.message || 'Unable to create a transaction from this offer.')
+    } finally {
+      setCanonicalOfferActionId('')
     }
   }
 
@@ -6765,6 +7119,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       label: 'Appointments',
                       meta: selectedLeadAppointments.length,
                     },
+                    {
+                      key: 'offers',
+                      label: 'Offers',
+                      meta: selectedLeadOfferSummary.total,
+                    },
                   ].map((tab) => {
                     const isActive = leadWorkspaceTab === tab.key
                     return (
@@ -7133,7 +7492,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             ))}
                           </div>
                           <div className="mt-3 flex flex-wrap gap-2">
-                            <Button type="button" size="sm" onClick={() => handleOpenLeadCompletionPanel(selectedLeadActiveViewing)} disabled={normalizeText(selectedLeadActiveViewing.status).toLowerCase() === 'completed'}>
+                            <Button type="button" size="sm" onClick={() => void handleOpenLeadCompletionPanel(selectedLeadActiveViewing)} disabled={normalizeText(selectedLeadActiveViewing.status).toLowerCase() === 'completed'}>
                               <CheckSquare className="h-4 w-4" />
                               Mark as Completed
                             </Button>
@@ -7195,16 +7554,88 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                     {leadCompletionAppointmentId ? (
                       <section className="rounded-[18px] border border-[#dfe9f4] bg-white p-4 shadow-[0_10px_24px_rgba(31,54,78,0.04)]">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Post Viewing</p>
-                            <h4 className="mt-1 text-lg font-semibold text-[#18324b]">Complete Viewing Outcome</h4>
-                          </div>
-                          <Button type="button" size="sm" variant="ghost" onClick={() => setLeadCompletionAppointmentId('')}>Close</Button>
-                        </div>
-                        <div className="mt-3 grid gap-2 md:grid-cols-2">
-                          <Field as="select" value={leadViewingCompletionForm.outcome} onChange={(event) => setLeadViewingCompletionForm((previous) => ({ ...previous, outcome: event.target.value }))}>
-                            {VIEWING_OUTCOME_OPTIONS.map((option) => (
+	                        <div className="flex flex-wrap items-start justify-between gap-3">
+	                          <div>
+	                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Post Viewing</p>
+	                            <h4 className="mt-1 text-lg font-semibold text-[#18324b]">Complete Viewing Outcome</h4>
+	                          </div>
+	                          <Button type="button" size="sm" variant="ghost" onClick={() => setLeadCompletionAppointmentId('')}>Close</Button>
+	                        </div>
+	                        <div className="mt-4 rounded-[14px] border border-[#e5edf6] bg-[#fbfdff] p-3">
+	                          <div className="flex flex-wrap items-center justify-between gap-2">
+	                            <div>
+	                              <p className="text-sm font-semibold text-[#243f5a]">Viewed Properties</p>
+	                              <p className="text-xs text-[#6f849a]">{(leadViewingCompletionForm.viewedListings || []).length} selected for this viewing</p>
+	                            </div>
+	                            <div className="flex min-w-[260px] flex-1 flex-wrap items-center justify-end gap-2">
+	                              <Field
+	                                as="select"
+	                                className="min-w-[220px] flex-1"
+	                                value={leadViewingCompletionForm.propertyDraftListingId}
+	                                onChange={(event) => setLeadViewingCompletionForm((previous) => ({ ...previous, propertyDraftListingId: event.target.value }))}
+	                              >
+	                                <option value="">Add viewed property</option>
+	                                {leadAppointmentOfferListingOptions
+	                                  .filter((listing) => !(leadViewingCompletionForm.viewedListings || []).some((row) => normalizeText(row?.listingId) === normalizeText(listing.id)))
+	                                  .map((listing) => (
+	                                    <option key={listing.id} value={listing.id}>{listing.label}</option>
+	                                  ))}
+	                              </Field>
+	                              <Button type="button" size="sm" variant="secondary" onClick={handleAddViewedListingToCompletion}>
+	                                Add Property
+	                              </Button>
+	                            </div>
+	                          </div>
+	                          <div className="mt-3 space-y-2">
+	                            {(leadViewingCompletionForm.viewedListings || []).length ? (
+	                              (leadViewingCompletionForm.viewedListings || []).map((row) => (
+	                                <div key={row.listingId} className="rounded-[13px] border border-[#e5edf6] bg-white p-3">
+	                                  <div className="flex flex-wrap items-start justify-between gap-2">
+	                                    <div>
+	                                      <p className="text-sm font-semibold text-[#243f5a]">{resolveAppointmentListingLabel(row.listingId) || `Listing ${row.listingId}`}</p>
+	                                      <p className="mt-0.5 text-xs text-[#7b8ea4]">Viewed {formatDate(row.viewedAt)}</p>
+	                                    </div>
+	                                    <Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-[#9f3a2f]" onClick={() => handleRemoveViewedListingFromCompletion(row.listingId)}>
+	                                      Remove
+	                                    </Button>
+	                                  </div>
+	                                  <div className="mt-3 grid gap-2 md:grid-cols-3">
+	                                    <Field
+	                                      as="select"
+	                                      value={row.outcome || leadViewingCompletionForm.outcome}
+	                                      onChange={(event) => handleUpdateViewedListingCompletion(row.listingId, { outcome: event.target.value })}
+	                                    >
+	                                      {VIEWING_OUTCOME_OPTIONS.map((option) => (
+	                                        <option key={option} value={option}>{option}</option>
+	                                      ))}
+	                                    </Field>
+	                                    <Field
+	                                      as="textarea"
+	                                      rows={2}
+	                                      placeholder="Buyer feedback for this property"
+	                                      value={row.buyerFeedback || ''}
+	                                      onChange={(event) => handleUpdateViewedListingCompletion(row.listingId, { buyerFeedback: event.target.value })}
+	                                    />
+	                                    <Field
+	                                      as="textarea"
+	                                      rows={2}
+	                                      placeholder="Agent notes for this property"
+	                                      value={row.agentNotes || ''}
+	                                      onChange={(event) => handleUpdateViewedListingCompletion(row.listingId, { agentNotes: event.target.value })}
+	                                    />
+	                                  </div>
+	                                </div>
+	                              ))
+	                            ) : (
+	                              <div className="rounded-[12px] border border-dashed border-[#d8e4f0] bg-white px-3 py-3 text-sm text-[#6a8098]">
+	                                Select at least one property viewed during this appointment.
+	                              </div>
+	                            )}
+	                          </div>
+	                        </div>
+	                        <div className="mt-3 grid gap-2 md:grid-cols-2">
+	                          <Field as="select" value={leadViewingCompletionForm.outcome} onChange={(event) => setLeadViewingCompletionForm((previous) => ({ ...previous, outcome: event.target.value }))}>
+	                            {VIEWING_OUTCOME_OPTIONS.map((option) => (
                               <option key={option} value={option}>{option}</option>
                             ))}
                           </Field>
@@ -7304,6 +7735,184 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         ) : (
                           <div className="rounded-[14px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-4 text-sm text-[#6a8098]">
                             Previous viewings and appointments will appear here.
+                          </div>
+                        )}
+                      </div>
+                    </section>
+                  </div>
+                  ) : null}
+
+                  {leadWorkspaceTab === 'offers' ? (
+                  <div className="space-y-4">
+                    <section className="rounded-[18px] border border-[#e1eaf4] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Canonical Offers</p>
+                          <h4 className="mt-1 text-lg font-semibold text-[#18324b]">Buyer Offer History</h4>
+                          <p className="mt-1 text-sm text-[#6a8098]">Every offer submitted by this buyer lead across listings and viewing sessions.</p>
+                        </div>
+                        <Button type="button" size="sm" variant="secondary" onClick={() => setLeadWorkspaceTab('appointments')}>
+                          <Mail className="h-4 w-4" />
+                          Send Offer Link
+                        </Button>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        {[
+                          ['Total Offers', selectedLeadOfferSummary.total, 'All canonical rows'],
+                          ['Active', selectedLeadOfferSummary.active, 'Not rejected/expired'],
+                          ['Submitted', selectedLeadOfferSummary.submitted, 'Buyer submitted'],
+                          ['Highest', formatCurrency(selectedLeadOfferSummary.highestOffer), 'Best current signal'],
+                        ].map(([label, value, helper]) => (
+                          <div key={label} className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-3">
+                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#8496aa]">{label}</p>
+                            <p className="mt-1 text-lg font-semibold text-[#203a54]">{value}</p>
+                            <p className="mt-0.5 text-xs text-[#7a8ea5]">{helper}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {selectedLeadOffersError ? (
+                        <div className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">{selectedLeadOffersError}</div>
+                      ) : null}
+
+                      <div className="mt-4 space-y-3">
+                        {selectedLeadOffersLoading ? (
+                          <div className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] p-4 text-sm text-[#6a8098]">Loading offers...</div>
+                        ) : selectedLeadOffers.length ? (
+                          selectedLeadOffers.map((offer) => {
+                            const statusKey = normalizeText(offer.status).toLowerCase()
+                            const statusTone = statusKey === 'accepted'
+                              ? 'border-[#cfe8dc] bg-[#eefbf4] text-[#17643a]'
+                              : statusKey === 'rejected' || statusKey === 'withdrawn' || statusKey === 'expired'
+                                ? 'border-[#f4d4d4] bg-[#fff5f5] text-[#b42318]'
+                                : statusKey === 'submitted' || statusKey === 'under_review'
+                                  ? 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]'
+                                  : 'border-[#dbe6f2] bg-white text-[#35546c]'
+                            const offerToken = normalizeText(offer.offerToken || offer.id)
+                            const offerLink = offerToken && typeof window !== 'undefined' ? `${window.location.origin}/offers/${encodeURIComponent(offerToken)}` : ''
+                            return (
+                              <article key={offer.id} className="rounded-[16px] border border-[#dce6f2] bg-white p-4 shadow-[0_8px_18px_rgba(31,54,78,0.04)]">
+                                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                  <div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <p className="text-base font-semibold text-[#203a54]">{formatCurrency(offer.offerAmount)}</p>
+                                      <span className={`rounded-full border px-2.5 py-0.5 text-[0.7rem] font-semibold ${statusTone}`}>
+                                        {statusKey.replaceAll('_', ' ') || 'draft'}
+                                      </span>
+                                    </div>
+                                    <p className="mt-1 text-sm text-[#607891]">
+                                      {resolveAppointmentListingLabel(offer.listingId) || offer.listingId || 'Listing not linked'} · {offer.financeType || 'Finance type pending'}
+                                    </p>
+                                    <p className="mt-1 text-xs text-[#7b8ea4]">
+                                      Submitted {formatDate(offer.submittedAt)} · Expires {formatDate(offer.expiryDate)}
+                                    </p>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {offer.listingId ? (
+                                      <Button type="button" size="sm" variant="secondary" onClick={() => navigate(`/listings/${offer.listingId}`)}>
+                                        Open Listing
+                                      </Button>
+                                    ) : null}
+                                    {offerLink ? (
+                                      <Button type="button" size="sm" variant="secondary" onClick={() => {
+                                        if (typeof navigator !== 'undefined') void navigator.clipboard?.writeText(offerLink)
+                                        setMessage('Offer link copied.')
+                                      }}>
+                                        Copy Link
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                                  <div className="rounded-[12px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-2">
+                                    <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#8496aa]">Deposit</p>
+                                    <p className="mt-1 text-sm font-semibold text-[#253f59]">{formatCurrency(offer.depositAmount)}</p>
+                                  </div>
+                                  <div className="rounded-[12px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-2">
+                                    <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#8496aa]">Viewing</p>
+                                    <p className="mt-1 truncate text-sm font-semibold text-[#253f59]">{offer.viewingAppointmentId || 'Not linked'}</p>
+                                  </div>
+                                  <div className="rounded-[12px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-2">
+                                    <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#8496aa]">Transaction</p>
+                                    <p className="mt-1 truncate text-sm font-semibold text-[#253f59]">{offer.transactionId || 'Not converted'}</p>
+                                  </div>
+                                </div>
+                                {normalizeText(offer.conditions?.specialConditions || offer.conditions?.suspensiveConditions) ? (
+                                  <p className="mt-3 rounded-[12px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-2 text-sm text-[#607891]">
+                                    {offer.conditions?.specialConditions || offer.conditions?.suspensiveConditions}
+                                  </p>
+                                ) : null}
+                                <div className="mt-3 rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] p-3">
+                                  <label className="grid gap-1">
+                                    <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8496aa]">Agent action note</span>
+                                    <Field
+                                      value={canonicalOfferNotesById[offer.id] || ''}
+                                      onChange={(event) => setCanonicalOfferNotesById((previous) => ({ ...previous, [offer.id]: event.target.value }))}
+                                      placeholder="Optional note for the offer timeline"
+                                    />
+                                  </label>
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {['submitted', 'draft'].includes(statusKey) ? (
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="secondary"
+                                        disabled={canonicalOfferActionId === `${offer.id}:under_review`}
+                                        onClick={() => void handleLeadCanonicalOfferStatus(offer, 'under_review', 'Marked under review')}
+                                      >
+                                        Mark Under Review
+                                      </Button>
+                                    ) : null}
+                                    {!['accepted', 'converted_to_transaction', 'rejected', 'withdrawn', 'expired'].includes(statusKey) ? (
+                                      <>
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="secondary"
+                                          disabled={canonicalOfferActionId === `${offer.id}:countered`}
+                                          onClick={() => void handleLeadCanonicalOfferStatus(offer, 'countered', 'Counter offer requested')}
+                                        >
+                                          Counter
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          disabled={canonicalOfferActionId === `${offer.id}:accepted`}
+                                          onClick={() => void handleLeadCanonicalOfferStatus(offer, 'accepted', 'Offer accepted')}
+                                        >
+                                          Accept
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="secondary"
+                                          className="border-[#f1d0ca] text-[#9f3a2f] hover:bg-[#fff6f4]"
+                                          disabled={canonicalOfferActionId === `${offer.id}:rejected`}
+                                          onClick={() => void handleLeadCanonicalOfferStatus(offer, 'rejected', 'Offer rejected')}
+                                        >
+                                          Reject
+                                        </Button>
+                                      </>
+                                    ) : null}
+                                    {statusKey === 'accepted' ? (
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        disabled={canonicalOfferActionId === `${offer.id}:convert`}
+                                        onClick={() => void handleLeadCanonicalOfferConversion(offer)}
+                                      >
+                                        Create Transaction
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </article>
+                            )
+                          })
+                        ) : (
+                          <div className="rounded-[16px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-5 text-sm text-[#6a8098]">
+                            No offers have been submitted by this lead yet. Send a post-viewing offer portal from the Appointments tab when the buyer is ready.
                           </div>
                         )}
                       </div>
