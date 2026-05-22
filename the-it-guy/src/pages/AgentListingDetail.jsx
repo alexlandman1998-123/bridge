@@ -67,6 +67,7 @@ import {
 } from '../lib/listingOffersService'
 import {
   createCanonicalOffer,
+  createOfferSellerReviewSession,
   createTransactionFromAcceptedCanonicalOffer,
   listCanonicalOffersForListing,
   updateCanonicalOfferStatus,
@@ -378,9 +379,10 @@ function formatStatusLabel(value) {
 function statusClass(status) {
   const key = String(status || '').trim().toLowerCase()
   if (key === 'approved' || key === 'completed' || key === 'accepted') return 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
-  if (key === 'uploaded' || key === 'under_review' || key === 'reviewed' || key === 'in_progress') {
+  if (key === 'uploaded' || key === 'under_review' || key === 'agent_review' || key === 'sent_to_seller' || key === 'seller_viewed' || key === 'reviewed' || key === 'in_progress') {
     return 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]'
   }
+  if (key === 'changes_requested' || key === 'countered') return 'border-[#f1dfb8] bg-[#fff8e8] text-[#8a641d]'
   if (key === 'rejected' || key === 'expired') return 'border-[#f6d7d7] bg-[#fff5f5] text-[#b42318]'
   if (key === 'submitted') return 'border-[#e6dcf7] bg-[#faf7ff] text-[#6d46a1]'
   return 'border-[#dbe4ef] bg-[#f8fbff] text-[#48627f]'
@@ -1179,6 +1181,46 @@ function AgentListingDetail() {
     }
   }
 
+  async function handleCanonicalListingOfferSendToSeller(offerRow) {
+    if (!listingOrganisationId || !offerRow?.canonicalOfferId || !listingRecord) return
+    const canonicalOffer = canonicalListingOffers.find((offer) => String(offer.id) === String(offerRow.canonicalOfferId))
+    const note = offerNotesDraftById?.[offerRow.id] || ''
+    setOfferActionError('')
+    setOfferActionMessage('')
+    try {
+      setCanonicalOfferActionId(`${offerRow.id}:sent_to_seller`)
+      const { session } = await createOfferSellerReviewSession({
+        organisationId: listingOrganisationId,
+        offerId: offerRow.canonicalOfferId,
+        offer: canonicalOffer,
+        listingId: listingRecord.id,
+        sellerLeadId: canonicalOffer?.sellerLeadId || listingRecord?.sellerLeadId || listingRecord?.leadId,
+        sellerContactId: canonicalOffer?.sellerContactId || listingRecord?.sellerContactId,
+        agentId: getCanonicalOfferActor().id,
+        agentReviewNotes: note,
+        metadata: {
+          source: 'listing_offer_review',
+          listingId: listingRecord.id,
+        },
+      }, {
+        actor: getCanonicalOfferActor(),
+      })
+      const reviewLink = session?.token && typeof window !== 'undefined'
+        ? `${window.location.origin}/seller/offers/review/${encodeURIComponent(session.token)}`
+        : ''
+      if (reviewLink && typeof navigator !== 'undefined') {
+        void navigator.clipboard?.writeText(reviewLink)
+      }
+      setOfferNotesDraftById((previous) => ({ ...previous, [offerRow.id]: '' }))
+      setOfferActionMessage(reviewLink ? 'Offer sent to seller review. Seller link copied.' : 'Offer sent to seller review.')
+      setOffersRefreshTick((value) => value + 1)
+    } catch (error) {
+      setOfferActionError(error?.message || 'Unable to send this offer to seller review.')
+    } finally {
+      setCanonicalOfferActionId('')
+    }
+  }
+
   async function handleCanonicalListingOfferConversion(offerRow) {
     if (!listingOrganisationId || !offerRow?.canonicalOfferId || !listingRecord) return
     const canonicalOffer = canonicalListingOffers.find((offer) => String(offer.id) === String(offerRow.canonicalOfferId))
@@ -1197,7 +1239,7 @@ function AgentListingDetail() {
             actor: getCanonicalOfferActor(),
             patch: buildCanonicalListingOfferPatch(offerRow, 'Accepted for transaction conversion', note),
           })
-      await createTransactionFromAcceptedCanonicalOffer({
+      const createdTransaction = await createTransactionFromAcceptedCanonicalOffer({
         organisationId: listingOrganisationId,
         offerId: offerRow.canonicalOfferId,
         offer: acceptedOffer || canonicalOffer,
@@ -1222,8 +1264,24 @@ function AgentListingDetail() {
           buyerPhone: linkedLead?.phone || acceptedOffer?.conditions?.buyerPhone || canonicalOffer?.conditions?.buyerPhone,
         },
       })
+      const transactionId = String(createdTransaction?.transactionId || createdTransaction?.transactionRow?.transaction?.id || '').trim()
+      let onboardingSendWarning = ''
+      if (transactionId && isSupabaseConfigured) {
+        const onboardingEmail = await invokeEdgeFunction('send-email', {
+          body: {
+            type: 'client_onboarding',
+            transactionId,
+            source: 'accepted_offer_conversion',
+          },
+        })
+        if (onboardingEmail?.error) {
+          onboardingSendWarning = onboardingEmail.error?.message || 'Buyer onboarding email could not be sent.'
+        }
+      }
       setOfferNotesDraftById((previous) => ({ ...previous, [offerRow.id]: '' }))
-      setOfferActionMessage('Transaction created from accepted canonical offer.')
+      setOfferActionMessage(onboardingSendWarning
+        ? `Transaction created from accepted canonical offer. ${onboardingSendWarning}`
+        : 'Transaction created from accepted canonical offer and buyer onboarding was sent.')
       setOffersRefreshTick((value) => value + 1)
     } catch (error) {
       setOfferActionError(error?.message || 'Unable to create a transaction from this offer.')
@@ -3388,15 +3446,16 @@ function AgentListingDetail() {
                         {[
                           OFFER_WORKFLOW_STATUS.SUBMITTED,
                           OFFER_WORKFLOW_STATUS.DRAFT,
+                          OFFER_WORKFLOW_STATUS.BUYER_VIEWED,
                         ].includes(normalizeOfferWorkflowStatus(offer.status)) ? (
                           <Button
                             size="sm"
                             type="button"
                             variant="secondary"
-                            disabled={canonicalOfferActionId === `${offer.id}:under_review`}
-                            onClick={() => void handleCanonicalListingOfferStatus(offer, 'under_review', 'Marked under review')}
+                            disabled={canonicalOfferActionId === `${offer.id}:agent_review`}
+                            onClick={() => void handleCanonicalListingOfferStatus(offer, 'agent_review', 'Agent review started')}
                           >
-                            Mark Under Review
+                            Start Agent Review
                           </Button>
                         ) : null}
                         {![
@@ -3407,22 +3466,29 @@ function AgentListingDetail() {
                           OFFER_WORKFLOW_STATUS.EXPIRED,
                         ].includes(normalizeOfferWorkflowStatus(offer.status)) ? (
                           <>
+                            {[
+                              OFFER_WORKFLOW_STATUS.SUBMITTED,
+                              OFFER_WORKFLOW_STATUS.AGENT_REVIEW,
+                              OFFER_WORKFLOW_STATUS.CHANGES_REQUESTED,
+                              OFFER_WORKFLOW_STATUS.COUNTERED,
+                            ].includes(normalizeOfferWorkflowStatus(offer.status)) ? (
+                              <Button
+                                size="sm"
+                                type="button"
+                                disabled={canonicalOfferActionId === `${offer.id}:sent_to_seller`}
+                                onClick={() => void handleCanonicalListingOfferSendToSeller(offer)}
+                              >
+                                Send to Seller
+                              </Button>
+                            ) : null}
                             <Button
                               size="sm"
                               type="button"
                               variant="secondary"
-                              disabled={canonicalOfferActionId === `${offer.id}:countered`}
-                              onClick={() => void handleCanonicalListingOfferStatus(offer, 'countered', 'Counter offer requested')}
+                              disabled={canonicalOfferActionId === `${offer.id}:changes_requested`}
+                              onClick={() => void handleCanonicalListingOfferStatus(offer, 'changes_requested', 'Buyer changes requested')}
                             >
-                              Counter
-                            </Button>
-                            <Button
-                              size="sm"
-                              type="button"
-                              disabled={canonicalOfferActionId === `${offer.id}:accepted`}
-                              onClick={() => void handleCanonicalListingOfferStatus(offer, 'accepted', 'Offer accepted')}
-                            >
-                              Accept
+                              Request Buyer Changes
                             </Button>
                             <Button
                               size="sm"
@@ -3443,7 +3509,7 @@ function AgentListingDetail() {
                             disabled={canonicalOfferActionId === `${offer.id}:convert`}
                             onClick={() => void handleCanonicalListingOfferConversion(offer)}
                           >
-                            Create Transaction
+                            Create Transaction & Send Onboarding
                           </Button>
                         ) : null}
                         {offer.buyerLeadId ? (

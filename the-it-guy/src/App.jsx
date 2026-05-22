@@ -72,6 +72,7 @@ const BridgeProductPage = lazyNamed(() => import('./pages/BridgeLanding'), 'Brid
 const BridgeSolutionsPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeSolutionsPage')
 const BuyerOfferSubmission = lazy(() => import('./pages/BuyerOfferSubmission'))
 const PostViewingOfferPortal = lazy(() => import('./pages/PostViewingOfferPortal'))
+const SellerOfferReviewPage = lazy(() => import('./pages/SellerOfferReviewPage'))
 const ClientModulePage = lazy(() => import('./pages/ClientModulePage'))
 const ClientOnboarding = lazy(() => import('./pages/ClientOnboarding'))
 const ClientOtpSigning = lazy(() => import('./pages/ClientOtpSigning'))
@@ -1816,6 +1817,7 @@ function AppRoutes() {
           <Route path="/client/offer/:token" element={<BuyerOfferSubmission />} />
           <Route path="/offers/session/:token" element={<PostViewingOfferPortal />} />
           <Route path="/offers/:token" element={<BuyerOfferSubmission />} />
+          <Route path="/seller/offers/review/:token" element={<SellerOfferReviewPage />} />
           <Route
             path="/agent/invite/:token"
             element={FEATURE_FLAGS.enableInviteOnboarding ? <TokenRouteGate><AgentInviteOnboarding /></TokenRouteGate> : <Navigate to="/auth" replace />}

@@ -108,6 +108,24 @@ export type SendBuyerOfferLinkPayload = {
   supportPhone?: string;
 };
 
+export type SendOfferDecisionNotificationPayload = {
+  type: "offer_decision_notification" | "seller_offer_decision" | "offer_accepted_notification";
+  to: string;
+  recipientName?: string;
+  recipientRole?: "agent" | "buyer" | "seller" | string;
+  decision?: "accepted" | "rejected" | "countered" | string;
+  propertyTitle?: string;
+  buyerName?: string;
+  sellerName?: string;
+  agentName?: string;
+  offerAmount?: string;
+  decisionNotes?: string;
+  nextStep?: string;
+  organisationName?: string;
+  supportEmail?: string;
+  supportPhone?: string;
+};
+
 export type SendAppointmentEmailPayload = {
   type:
     | "appointment_scheduled"

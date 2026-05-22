@@ -86,6 +86,7 @@ import {
 import {
   createCanonicalOffer,
   createOfferPortalSession,
+  createOfferSellerReviewSession,
   createTransactionFromAcceptedCanonicalOffer,
   listAppointmentViewedListings,
   listCanonicalOffersForLead,
@@ -816,7 +817,26 @@ function dedupeListingOptions(options = []) {
     }
     const existingTime = new Date(existing.updatedAt || 0).getTime()
     const optionTime = new Date(option.updatedAt || 0).getTime()
-    if (optionTime >= existingTime) byId.set(option.id, option)
+    const newerOption = optionTime >= existingTime ? option : existing
+    const olderOption = optionTime >= existingTime ? existing : option
+    byId.set(option.id, {
+      ...olderOption,
+      ...newerOption,
+      label: normalizeText(newerOption.label) || normalizeText(olderOption.label),
+      title: normalizeText(newerOption.title) || normalizeText(olderOption.title),
+      address: normalizeText(newerOption.address) || normalizeText(olderOption.address),
+      suburb: normalizeText(newerOption.suburb) || normalizeText(olderOption.suburb),
+      thumbnailUrl: normalizeText(newerOption.thumbnailUrl) || normalizeText(olderOption.thumbnailUrl),
+      askingPrice: Number(newerOption.askingPrice || 0) || Number(olderOption.askingPrice || 0) || 0,
+      bedrooms: Number(newerOption.bedrooms || 0) || Number(olderOption.bedrooms || 0) || 0,
+      bathrooms: Number(newerOption.bathrooms || 0) || Number(olderOption.bathrooms || 0) || 0,
+      parking: Number(newerOption.parking || 0) || Number(olderOption.parking || 0) || 0,
+      assignedAgentId: normalizeText(newerOption.assignedAgentId) || normalizeText(olderOption.assignedAgentId),
+      assignedAgentEmail: normalizeText(newerOption.assignedAgentEmail) || normalizeText(olderOption.assignedAgentEmail),
+      createdBy: normalizeText(newerOption.createdBy) || normalizeText(olderOption.createdBy),
+      organisationId: normalizeText(newerOption.organisationId) || normalizeText(olderOption.organisationId),
+      updatedAt: newerOption.updatedAt || olderOption.updatedAt || null,
+    })
   }
   return Array.from(byId.values()).sort((left, right) => left.label.localeCompare(right.label))
 }
@@ -6071,7 +6091,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           listingId: selectedListingId,
           agentId: currentAgent.id,
           viewingAppointmentId,
-          status: 'draft',
+          status: 'sent_to_buyer',
           financeType: selectedLead.financeType || selectedLead.preferredFinanceType || '',
           expiryDate: normalizeText(offerLinkForm.expiryDate),
           conditionsJson: {
@@ -6189,6 +6209,43 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  async function handleLeadCanonicalOfferSendToSeller(offer) {
+    if (!organisationId || !offer?.id) return
+    const note = canonicalOfferNotesById[offer.id] || ''
+    try {
+      setCanonicalOfferActionId(`${offer.id}:sent_to_seller`)
+      const { session } = await createOfferSellerReviewSession({
+        organisationId,
+        offerId: offer.id,
+        offer,
+        listingId: offer.listingId || selectedLead?.listingId,
+        agentId: currentAgent.id,
+        agentReviewNotes: note,
+        metadata: {
+          source: 'lead_workspace_offer_review',
+          leadId: selectedLead?.leadId || offer.buyerLeadId,
+        },
+      }, {
+        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+      })
+      const reviewLink = session?.token && typeof window !== 'undefined'
+        ? `${window.location.origin}/seller/offers/review/${encodeURIComponent(session.token)}`
+        : ''
+      if (reviewLink && typeof navigator !== 'undefined') {
+        void navigator.clipboard?.writeText(reviewLink)
+      }
+      setCanonicalOfferNotesById((previous) => ({ ...previous, [offer.id]: '' }))
+      setSelectedLeadOffersRefreshTick((value) => value + 1)
+      setMessage(reviewLink ? 'Offer sent to seller review. Seller link copied.' : 'Offer sent to seller review.')
+      setError('')
+      await reloadRecords(organisationId)
+    } catch (sendError) {
+      setError(sendError?.message || 'Unable to send this offer to the seller.')
+    } finally {
+      setCanonicalOfferActionId('')
+    }
+  }
+
   async function handleLeadCanonicalOfferConversion(offer) {
     if (!organisationId || !offer?.id || !selectedLead) return
     try {
@@ -6201,7 +6258,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             patch: buildCanonicalOfferActionPatch(offer, 'Accepted for transaction conversion', canonicalOfferNotesById[offer.id] || ''),
           })
       const listingId = normalizeText(acceptedOffer?.listingId || offer?.listingId || selectedLead?.listingId)
-      await createTransactionFromAcceptedCanonicalOffer({
+      const createdTransaction = await createTransactionFromAcceptedCanonicalOffer({
         organisationId,
         offerId: acceptedOffer?.id || offer.id,
         offer: acceptedOffer || offer,
@@ -6228,9 +6285,25 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           buyerPhone: selectedLeadContact?.phone || selectedLead?.phone,
         },
       })
+      const transactionId = normalizeText(createdTransaction?.transactionId || createdTransaction?.transactionRow?.transaction?.id)
+      let onboardingSendWarning = ''
+      if (transactionId && isSupabaseConfigured) {
+        const onboardingEmail = await invokeEdgeFunction('send-email', {
+          body: {
+            type: 'client_onboarding',
+            transactionId,
+            source: 'accepted_offer_conversion',
+          },
+        })
+        if (onboardingEmail?.error) {
+          onboardingSendWarning = onboardingEmail.error?.message || 'Buyer onboarding email could not be sent.'
+        }
+      }
       setCanonicalOfferNotesById((previous) => ({ ...previous, [offer.id]: '' }))
       setSelectedLeadOffersRefreshTick((value) => value + 1)
-      setMessage('Transaction created from accepted offer.')
+      setMessage(onboardingSendWarning
+        ? `Transaction created from accepted offer. ${onboardingSendWarning}`
+        : 'Transaction created from accepted offer and buyer onboarding was sent.')
       setError('')
       await reloadRecords(organisationId)
     } catch (conversionError) {
@@ -8411,12 +8484,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         ) : selectedLeadOffers.length ? (
                           selectedLeadOffers.map((offer) => {
                             const statusKey = normalizeText(offer.status).toLowerCase()
-                            const statusTone = statusKey === 'accepted'
+                            const statusTone = statusKey === 'accepted' || statusKey === 'converted_to_transaction'
                               ? 'border-[#cfe8dc] bg-[#eefbf4] text-[#17643a]'
                               : statusKey === 'rejected' || statusKey === 'withdrawn' || statusKey === 'expired'
                                 ? 'border-[#f4d4d4] bg-[#fff5f5] text-[#b42318]'
-                                : statusKey === 'submitted' || statusKey === 'under_review'
+                                : ['submitted', 'agent_review', 'under_review', 'sent_to_seller', 'seller_viewed'].includes(statusKey)
                                   ? 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]'
+                                  : statusKey === 'changes_requested' || statusKey === 'countered'
+                                    ? 'border-[#f1dfb8] bg-[#fff8e8] text-[#8a641d]'
                                   : 'border-[#dbe6f2] bg-white text-[#35546c]'
                             const offerToken = normalizeText(offer.offerToken || offer.id)
                             const offerLink = offerToken && typeof window !== 'undefined' ? `${window.location.origin}/offers/${encodeURIComponent(offerToken)}` : ''
@@ -8482,35 +8557,37 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     />
                                   </label>
                                   <div className="mt-3 flex flex-wrap gap-2">
-                                    {['submitted', 'draft'].includes(statusKey) ? (
+                                    {['submitted', 'draft', 'buyer_viewed'].includes(statusKey) ? (
                                       <Button
                                         type="button"
                                         size="sm"
                                         variant="secondary"
-                                        disabled={canonicalOfferActionId === `${offer.id}:under_review`}
-                                        onClick={() => void handleLeadCanonicalOfferStatus(offer, 'under_review', 'Marked under review')}
+                                        disabled={canonicalOfferActionId === `${offer.id}:agent_review`}
+                                        onClick={() => void handleLeadCanonicalOfferStatus(offer, 'agent_review', 'Agent review started')}
                                       >
-                                        Mark Under Review
+                                        Start Agent Review
                                       </Button>
                                     ) : null}
                                     {!['accepted', 'converted_to_transaction', 'rejected', 'withdrawn', 'expired'].includes(statusKey) ? (
                                       <>
+                                        {['submitted', 'agent_review', 'changes_requested', 'countered'].includes(statusKey) ? (
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            disabled={canonicalOfferActionId === `${offer.id}:sent_to_seller`}
+                                            onClick={() => void handleLeadCanonicalOfferSendToSeller(offer)}
+                                          >
+                                            Send to Seller
+                                          </Button>
+                                        ) : null}
                                         <Button
                                           type="button"
                                           size="sm"
                                           variant="secondary"
-                                          disabled={canonicalOfferActionId === `${offer.id}:countered`}
-                                          onClick={() => void handleLeadCanonicalOfferStatus(offer, 'countered', 'Counter offer requested')}
+                                          disabled={canonicalOfferActionId === `${offer.id}:changes_requested`}
+                                          onClick={() => void handleLeadCanonicalOfferStatus(offer, 'changes_requested', 'Buyer changes requested')}
                                         >
-                                          Counter
-                                        </Button>
-                                        <Button
-                                          type="button"
-                                          size="sm"
-                                          disabled={canonicalOfferActionId === `${offer.id}:accepted`}
-                                          onClick={() => void handleLeadCanonicalOfferStatus(offer, 'accepted', 'Offer accepted')}
-                                        >
-                                          Accept
+                                          Request Buyer Changes
                                         </Button>
                                         <Button
                                           type="button"
@@ -8531,7 +8608,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         disabled={canonicalOfferActionId === `${offer.id}:convert`}
                                         onClick={() => void handleLeadCanonicalOfferConversion(offer)}
                                       >
-                                        Create Transaction
+                                        Create Transaction & Send Onboarding
                                       </Button>
                                     ) : null}
                                   </div>

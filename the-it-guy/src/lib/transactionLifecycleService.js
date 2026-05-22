@@ -90,6 +90,13 @@ function normalizeFinanceType(value) {
   return 'unknown'
 }
 
+function normalizePurchaserType(value) {
+  const key = normalize(value).toLowerCase().replace(/[\s-]+/g, '_')
+  if (['company', 'pty_ltd', 'pty', 'business'].includes(key)) return 'company'
+  if (['trust', 'family_trust'].includes(key)) return 'trust'
+  return 'individual'
+}
+
 function resolveInitialMainStage(stageValue) {
   const normalized = normalize(stageValue).toLowerCase()
   if (!normalized || normalized === 'available') return 'AVAIL'
@@ -426,6 +433,20 @@ async function findBuyerForTransaction({ buyerName = '', buyerEmail = '', buyerP
       throw byEmail.error
     }
     if (byEmail.data?.id) {
+      const patch = {}
+      const nextName = normalize(buyerName)
+      const nextPhone = normalize(buyerPhone)
+      if (nextName && (!normalize(byEmail.data.name) || normalizeLower(byEmail.data.name) === 'buyer pending')) patch.name = nextName
+      if (nextPhone && !normalize(byEmail.data.phone)) patch.phone = nextPhone
+      if (Object.keys(patch).length) {
+        const updated = await supabase
+          .from('buyers')
+          .update(patch)
+          .eq('id', byEmail.data.id)
+          .select('id, name, phone, email')
+          .maybeSingle()
+        if (!updated.error && updated.data?.id) return updated.data
+      }
       return byEmail.data
     }
   }
@@ -692,7 +713,10 @@ export async function createTransactionFromLeadOverride({
       sales_price: money(payload?.dealValue || payload?.purchasePrice || lead?.estimatedValue || lead?.budget || 0),
       purchase_price: money(payload?.dealValue || payload?.purchasePrice || lead?.estimatedValue || lead?.budget || 0),
       finance_type: normalizeFinanceType(payload?.financeType || 'cash'),
-      purchaser_type: 'individual',
+      cash_amount: asNumber(payload?.cashAmount ?? payload?.cash_amount),
+      bond_amount: asNumber(payload?.bondAmount ?? payload?.bond_amount),
+      deposit_amount: asNumber(payload?.depositAmount ?? payload?.deposit_amount),
+      purchaser_type: normalizePurchaserType(payload?.purchaserType || payload?.purchaser_type),
       stage: normalize(payload?.stage || 'Reserved') || 'Reserved',
       current_main_stage: nextMainStage,
       next_action: 'Buyer onboarding pending',
@@ -736,6 +760,9 @@ export async function createTransactionFromLeadOverride({
         delete fallback.otp_packet_id
         delete fallback.mandate_packet_id
         delete fallback.commission_snapshot_id
+        delete fallback.cash_amount
+        delete fallback.bond_amount
+        delete fallback.deposit_amount
         delete fallback.gross_commission_percentage
         delete fallback.gross_commission_amount
         delete fallback.agent_split_percentage_snapshot

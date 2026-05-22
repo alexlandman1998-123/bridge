@@ -30,10 +30,10 @@ function pickText(...values) {
 
 function normalizeOfferStatus(value = '') {
   const normalized = normalizeKey(value)
-  if (['new', 'submitted', 'seller_review', 'sent_to_seller', 'awaiting_seller_review', 'awaiting_review'].includes(normalized)) {
+  if (['new', 'submitted', 'seller_review', 'sent_to_seller', 'seller_viewed', 'awaiting_seller_review', 'awaiting_review'].includes(normalized)) {
     return 'new'
   }
-  if (['under_review', 'agent_review', 'review', 'countered', 'buyer_review_counter', 'negotiation'].includes(normalized)) {
+  if (['under_review', 'agent_review', 'changes_requested', 'review', 'countered', 'buyer_review_counter', 'negotiation'].includes(normalized)) {
     return 'under_review'
   }
   if (['conditionally_accepted', 'conditional_acceptance', 'accepted_with_conditions', 'conditional'].includes(normalized)) {

@@ -257,12 +257,23 @@ async function evaluateRequirement({ organisationId = '', leadId = '', transacti
   }
 
   if (requirement.type === 'offer') {
-    const expectedStatus = requirement.key === 'accepted_offer' ? 'accepted' : 'submitted'
+    const acceptedStatuses = ['accepted', 'converted_to_transaction']
+    const submittedStatuses = [
+      'submitted',
+      'agent_review',
+      'changes_requested',
+      'sent_to_seller',
+      'seller_viewed',
+      'countered',
+      'accepted',
+      'converted_to_transaction',
+    ]
+    const expectedStatuses = requirement.key === 'accepted_offer' ? acceptedStatuses : submittedStatuses
     const result = await queryExists('offers', (query) =>
       query
         .eq('organisation_id', scopedOrganisationId)
         .eq('buyer_lead_id', scopedLeadId)
-        .eq('status', expectedStatus)
+        .in('status', expectedStatuses)
     )
     return { ...result, requirement, stage }
   }

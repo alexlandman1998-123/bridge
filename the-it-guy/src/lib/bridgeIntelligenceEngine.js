@@ -206,7 +206,15 @@ export function computeBuyerHeatScore({
     normalizeLower(appointment?.appointment_type || appointment?.appointmentType).includes('viewing') &&
     ['requested', 'pending', 'confirmed', 'accepted'].some((status) => normalizeLower(appointment?.status).includes(status))
   ).length
-  const submittedOffers = offers.filter((offer) => ['submitted', 'under_review', 'countered'].includes(normalizeLower(offer?.status))).length
+  const submittedOffers = offers.filter((offer) => [
+    'submitted',
+    'under_review',
+    'agent_review',
+    'changes_requested',
+    'sent_to_seller',
+    'seller_viewed',
+    'countered',
+  ].includes(normalizeLower(offer?.status))).length
   const acceptedOffers = offers.filter((offer) => ['accepted', 'converted_to_transaction'].includes(normalizeLower(offer?.status))).length
   const financeReady = offers.some((offer) => ['cash', 'bond', 'hybrid'].includes(normalizeLower(offer?.finance_type || offer?.financeType)))
   const openCriticalTasks = tasks.filter((task) =>

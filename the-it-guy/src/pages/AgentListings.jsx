@@ -351,9 +351,9 @@ function AgentListings({ initialTab = null } = {}) {
 
   const [form, setForm] = useState(() => buildInitialListingLeadForm(profile, workspace))
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async ({ showLoading = true } = {}) => {
     try {
-      setLoading(true)
+      if (showLoading) setLoading(true)
       setError('')
       let participantRows = []
       let options = []
@@ -399,7 +399,7 @@ function AgentListings({ initialTab = null } = {}) {
       setAssignedDevelopmentIds([])
       setPrivateListings(readAgentPrivateListings())
     } finally {
-      setLoading(false)
+      if (showLoading) setLoading(false)
     }
   }, [profile?.email, profile?.id])
 
@@ -805,8 +805,7 @@ function AgentListings({ initialTab = null } = {}) {
       const localDelete = deleteAgentPrivateListingCascade(card?.listingRecord || listingId)
       const deletedIds = new Set([listingId, ...(localDelete.deletedIds || [])].map((value) => String(value || '').trim()).filter(Boolean))
       setPrivateListings((rows) => rows.filter((row) => !rowMatchesDeletedListing(row, deletedIds)))
-      window.dispatchEvent(new Event('itg:listings-updated'))
-      await loadData()
+      await loadData({ showLoading: false })
       setWorkflowMessage(`"${listingTitle}" was permanently deleted.`)
     } catch (deleteError) {
       setError(deleteError?.message || 'Unable to delete this listing.')

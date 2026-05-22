@@ -20,17 +20,53 @@ export const BUYER_LEAD_STAGES = [
   'Lost',
 ]
 
-export const OFFER_STATUSES = [
-  'draft',
-  'submitted',
-  'under_review',
-  'countered',
-  'accepted',
-  'rejected',
-  'withdrawn',
-  'expired',
-  'converted_to_transaction',
-]
+export const OFFER_STATUS = {
+  DRAFT: 'draft',
+  SENT_TO_BUYER: 'sent_to_buyer',
+  BUYER_VIEWED: 'buyer_viewed',
+  SUBMITTED: 'submitted',
+  AGENT_REVIEW: 'agent_review',
+  CHANGES_REQUESTED: 'changes_requested',
+  SENT_TO_SELLER: 'sent_to_seller',
+  SELLER_VIEWED: 'seller_viewed',
+  COUNTERED: 'countered',
+  ACCEPTED: 'accepted',
+  REJECTED: 'rejected',
+  WITHDRAWN: 'withdrawn',
+  EXPIRED: 'expired',
+  CONVERTED_TO_TRANSACTION: 'converted_to_transaction',
+}
+
+export const OFFER_STATUSES = Object.values(OFFER_STATUS)
+
+const OFFER_STATUS_ALIASES = {
+  pending: OFFER_STATUS.SUBMITTED,
+  under_review: OFFER_STATUS.AGENT_REVIEW,
+  review: OFFER_STATUS.AGENT_REVIEW,
+  agent_review: OFFER_STATUS.AGENT_REVIEW,
+  seller_review: OFFER_STATUS.SENT_TO_SELLER,
+  awaiting_seller_review: OFFER_STATUS.SENT_TO_SELLER,
+  buyer_review_counter: OFFER_STATUS.COUNTERED,
+  negotiation: OFFER_STATUS.COUNTERED,
+  approved: OFFER_STATUS.ACCEPTED,
+  declined: OFFER_STATUS.REJECTED,
+}
+
+const OFFER_STATUS_TIMESTAMP_FIELDS = {
+  [OFFER_STATUS.SENT_TO_BUYER]: 'sent_to_buyer_at',
+  [OFFER_STATUS.BUYER_VIEWED]: 'buyer_viewed_at',
+  [OFFER_STATUS.SUBMITTED]: 'submitted_at',
+  [OFFER_STATUS.AGENT_REVIEW]: 'agent_reviewed_at',
+  [OFFER_STATUS.CHANGES_REQUESTED]: 'changes_requested_at',
+  [OFFER_STATUS.SENT_TO_SELLER]: 'sent_to_seller_at',
+  [OFFER_STATUS.SELLER_VIEWED]: 'seller_viewed_at',
+  [OFFER_STATUS.COUNTERED]: 'countered_at',
+  [OFFER_STATUS.ACCEPTED]: 'accepted_at',
+  [OFFER_STATUS.REJECTED]: 'rejected_at',
+  [OFFER_STATUS.WITHDRAWN]: 'withdrawn_at',
+  [OFFER_STATUS.EXPIRED]: 'expired_at',
+  [OFFER_STATUS.CONVERTED_TO_TRANSACTION]: 'converted_to_transaction_at',
+}
 
 export const BUYER_LIFECYCLE_EVENTS = {
   VIEWING_CREATED: 'viewing_created',
@@ -114,6 +150,13 @@ function createOfferPortalAccessToken() {
   return `portal-${randomValue}`
 }
 
+function createSellerOfferReviewAccessToken() {
+  const randomValue = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID().replaceAll('-', '')
+    : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 14)}`
+  return `seller-offer-${randomValue}`
+}
+
 function isMissingColumnError(error) {
   return String(error?.code || '') === '42703' || /column .* does not exist/i.test(String(error?.message || ''))
 }
@@ -142,7 +185,8 @@ export function normalizeBuyerStage(stage, fallback = 'New Lead') {
 
 export function normalizeOfferStatus(status, fallback = 'draft') {
   const normalized = normalizeLower(status)
-  return OFFER_STATUSES.includes(normalized) ? normalized : fallback
+  const aliased = OFFER_STATUS_ALIASES[normalized] || normalized
+  return OFFER_STATUSES.includes(aliased) ? aliased : fallback
 }
 
 export function isBuyerLifecycleAppointment(appointment = {}) {
@@ -288,6 +332,7 @@ function mapOfferDbRow(row = {}) {
     buyerContactId: row.buyer_contact_id,
     listingId: row.listing_id,
     sellerLeadId: row.seller_lead_id,
+    sellerContactId: row.seller_contact_id,
     agentId: row.agent_id,
     viewingAppointmentId: row.viewing_appointment_id,
     status: row.status,
@@ -298,9 +343,20 @@ function mapOfferDbRow(row = {}) {
     bondComponent: row.bond_component,
     conditions: row.conditions_json || {},
     expiryDate: row.expiry_date,
+    sentToBuyerAt: row.sent_to_buyer_at,
+    buyerViewedAt: row.buyer_viewed_at,
+    buyerSubmittedAt: row.buyer_submitted_at,
+    agentReviewedAt: row.agent_reviewed_at,
+    changesRequestedAt: row.changes_requested_at,
+    sentToSellerAt: row.sent_to_seller_at,
+    sellerViewedAt: row.seller_viewed_at,
     submittedAt: row.submitted_at,
+    counteredAt: row.countered_at,
     acceptedAt: row.accepted_at,
     rejectedAt: row.rejected_at,
+    withdrawnAt: row.withdrawn_at,
+    expiredAt: row.expired_at,
+    convertedToTransactionAt: row.converted_to_transaction_at,
     transactionId: row.transaction_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -340,6 +396,8 @@ function mapOfferPortalSessionDbRow(row = {}) {
     status: row.status,
     expiresAt: row.expires_at,
     sentAt: row.sent_at,
+    viewedAt: row.viewed_at,
+    submittedAt: row.submitted_at,
     metadata: row.metadata_json || {},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -360,9 +418,83 @@ function mapOfferPortalSessionPayload(session = {}) {
     status: session.status,
     expiresAt: session.expiresAt || session.expires_at,
     sentAt: session.sentAt || session.sent_at,
+    viewedAt: session.viewedAt || session.viewed_at,
+    submittedAt: session.submittedAt || session.submitted_at,
     metadata: session.metadata || session.metadata_json || {},
     createdAt: session.createdAt || session.created_at,
     updatedAt: session.updatedAt || session.updated_at,
+  }
+}
+
+function mapOfferSellerReviewSessionDbRow(row = {}) {
+  if (!row) return null
+  return {
+    id: row.id,
+    sessionId: row.id,
+    organisationId: row.organisation_id,
+    offerId: row.offer_id,
+    sellerLeadId: row.seller_lead_id,
+    sellerContactId: row.seller_contact_id,
+    listingId: row.listing_id,
+    agentId: row.agent_id,
+    token: row.token,
+    status: row.status,
+    sentAt: row.sent_at,
+    viewedAt: row.viewed_at,
+    acceptedAt: row.accepted_at,
+    rejectedAt: row.rejected_at,
+    counteredAt: row.countered_at,
+    expiresAt: row.expires_at,
+    decisionNotes: row.decision_notes,
+    metadata: row.metadata_json || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function mapSellerOfferReviewPayload(payload = {}) {
+  const response = payload && typeof payload === 'object' ? payload : {}
+  if (!response.ok) {
+    return {
+      ok: false,
+      reason: normalizeText(response.reason) || 'not_found',
+      session: null,
+      offer: null,
+      listing: null,
+    }
+  }
+  const offer = response.offer || {}
+  const conditions = offer.conditionsJson || offer.conditions_json || offer.conditions || {}
+  return {
+    ok: true,
+    reason: '',
+    session: response.session || null,
+    listing: response.listing || null,
+    seller: response.seller || null,
+    buyer: response.buyer || null,
+    agent: response.agent || null,
+    offer: {
+      id: offer.id,
+      offerId: offer.id,
+      organisationId: offer.organisationId || offer.organisation_id,
+      buyerLeadId: offer.buyerLeadId || offer.buyer_lead_id,
+      buyerContactId: offer.buyerContactId || offer.buyer_contact_id,
+      listingId: offer.listingId || offer.listing_id,
+      status: offer.status,
+      offerAmount: money(offer.offerAmount || offer.offer_amount),
+      depositAmount: money(offer.depositAmount || offer.deposit_amount),
+      financeType: offer.financeType || offer.finance_type,
+      cashComponent: money(offer.cashComponent || offer.cash_component),
+      bondComponent: money(offer.bondComponent || offer.bond_component),
+      conditions,
+      expiryDate: offer.expiryDate || offer.expiry_date,
+      submittedAt: offer.submittedAt || offer.submitted_at,
+      buyerSubmittedAt: offer.buyerSubmittedAt || offer.buyer_submitted_at,
+      sentToSellerAt: offer.sentToSellerAt || offer.sent_to_seller_at,
+      sellerViewedAt: offer.sellerViewedAt || offer.seller_viewed_at,
+      createdAt: offer.createdAt || offer.created_at,
+      updatedAt: offer.updatedAt || offer.updated_at,
+    },
   }
 }
 
@@ -401,9 +533,20 @@ function mapOfferPortalPropertyPayload(item = {}) {
       offerAmount: offer.offerAmount || offer.offer_amount,
       depositAmount: offer.depositAmount || offer.deposit_amount,
       financeType: offer.financeType || offer.finance_type,
+      sentToBuyerAt: offer.sentToBuyerAt || offer.sent_to_buyer_at,
+      buyerViewedAt: offer.buyerViewedAt || offer.buyer_viewed_at,
+      buyerSubmittedAt: offer.buyerSubmittedAt || offer.buyer_submitted_at,
+      agentReviewedAt: offer.agentReviewedAt || offer.agent_reviewed_at,
+      changesRequestedAt: offer.changesRequestedAt || offer.changes_requested_at,
+      sentToSellerAt: offer.sentToSellerAt || offer.sent_to_seller_at,
+      sellerViewedAt: offer.sellerViewedAt || offer.seller_viewed_at,
       submittedAt: offer.submittedAt || offer.submitted_at,
+      counteredAt: offer.counteredAt || offer.countered_at,
       acceptedAt: offer.acceptedAt || offer.accepted_at,
       rejectedAt: offer.rejectedAt || offer.rejected_at,
+      withdrawnAt: offer.withdrawnAt || offer.withdrawn_at,
+      expiredAt: offer.expiredAt || offer.expired_at,
+      convertedToTransactionAt: offer.convertedToTransactionAt || offer.converted_to_transaction_at,
       transactionId: offer.transactionId || offer.transaction_id,
       createdAt: offer.createdAt || offer.created_at,
       updatedAt: offer.updatedAt || offer.updated_at,
@@ -458,6 +601,7 @@ function buildOfferInsert(payload = {}) {
     buyer_contact_id: toNullableUuid(payload?.buyerContactId),
     listing_id: toNullableUuid(payload?.listingId),
     seller_lead_id: toNullableUuid(payload?.sellerLeadId),
+    seller_contact_id: toNullableUuid(payload?.sellerContactId),
     agent_id: toNullableUuid(payload?.agentId),
     viewing_appointment_id: toNullableUuid(payload?.viewingAppointmentId),
     status,
@@ -468,9 +612,20 @@ function buildOfferInsert(payload = {}) {
     bond_component: money(payload?.bondComponent),
     conditions_json: jsonObject(payload?.conditions || payload?.conditionsJson),
     expiry_date: normalizeDate(payload?.expiryDate),
-    submitted_at: status === 'submitted' ? (normalizeDate(payload?.submittedAt) || nowIso) : normalizeDate(payload?.submittedAt),
-    accepted_at: status === 'accepted' ? (normalizeDate(payload?.acceptedAt) || nowIso) : normalizeDate(payload?.acceptedAt),
-    rejected_at: status === 'rejected' ? (normalizeDate(payload?.rejectedAt) || nowIso) : normalizeDate(payload?.rejectedAt),
+    sent_to_buyer_at: status === OFFER_STATUS.SENT_TO_BUYER ? (normalizeDate(payload?.sentToBuyerAt) || nowIso) : normalizeDate(payload?.sentToBuyerAt),
+    buyer_viewed_at: status === OFFER_STATUS.BUYER_VIEWED ? (normalizeDate(payload?.buyerViewedAt) || nowIso) : normalizeDate(payload?.buyerViewedAt),
+    buyer_submitted_at: status === OFFER_STATUS.SUBMITTED ? (normalizeDate(payload?.buyerSubmittedAt || payload?.submittedAt) || nowIso) : normalizeDate(payload?.buyerSubmittedAt),
+    agent_reviewed_at: status === OFFER_STATUS.AGENT_REVIEW ? (normalizeDate(payload?.agentReviewedAt) || nowIso) : normalizeDate(payload?.agentReviewedAt),
+    changes_requested_at: status === OFFER_STATUS.CHANGES_REQUESTED ? (normalizeDate(payload?.changesRequestedAt) || nowIso) : normalizeDate(payload?.changesRequestedAt),
+    sent_to_seller_at: status === OFFER_STATUS.SENT_TO_SELLER ? (normalizeDate(payload?.sentToSellerAt) || nowIso) : normalizeDate(payload?.sentToSellerAt),
+    seller_viewed_at: status === OFFER_STATUS.SELLER_VIEWED ? (normalizeDate(payload?.sellerViewedAt) || nowIso) : normalizeDate(payload?.sellerViewedAt),
+    submitted_at: status === OFFER_STATUS.SUBMITTED ? (normalizeDate(payload?.submittedAt) || nowIso) : normalizeDate(payload?.submittedAt),
+    countered_at: status === OFFER_STATUS.COUNTERED ? (normalizeDate(payload?.counteredAt) || nowIso) : normalizeDate(payload?.counteredAt),
+    accepted_at: status === OFFER_STATUS.ACCEPTED ? (normalizeDate(payload?.acceptedAt) || nowIso) : normalizeDate(payload?.acceptedAt),
+    rejected_at: status === OFFER_STATUS.REJECTED ? (normalizeDate(payload?.rejectedAt) || nowIso) : normalizeDate(payload?.rejectedAt),
+    withdrawn_at: status === OFFER_STATUS.WITHDRAWN ? (normalizeDate(payload?.withdrawnAt) || nowIso) : normalizeDate(payload?.withdrawnAt),
+    expired_at: status === OFFER_STATUS.EXPIRED ? (normalizeDate(payload?.expiredAt) || nowIso) : normalizeDate(payload?.expiredAt),
+    converted_to_transaction_at: status === OFFER_STATUS.CONVERTED_TO_TRANSACTION ? (normalizeDate(payload?.convertedToTransactionAt) || nowIso) : normalizeDate(payload?.convertedToTransactionAt),
     transaction_id: toNullableUuid(payload?.transactionId),
   }
 }
@@ -501,13 +656,29 @@ export async function getCanonicalOfferInviteContext(token = '') {
   } else {
     query = query.eq('offer_token', normalizedToken)
   }
-  const { data, error } = await query.maybeSingle()
+  let { data, error } = await query.maybeSingle()
   if (error || !data) return { ok: false, reason: 'not_found', invite: null, listing: null, offers: [] }
 
-  const offer = mapOfferDbRow(data)
+  let offer = mapOfferDbRow(data)
   if (offer?.status === 'expired') return { ok: false, reason: 'expired', invite: null, listing: null, offers: [] }
   if (offer?.status === 'withdrawn') return { ok: false, reason: 'withdrawn', invite: null, listing: null, offers: [] }
   if (offer?.expiryDate && new Date(offer.expiryDate).getTime() < Date.now()) return { ok: false, reason: 'expired', invite: null, listing: null, offers: [] }
+
+  if ([OFFER_STATUS.DRAFT, OFFER_STATUS.SENT_TO_BUYER].includes(normalizeOfferStatus(offer?.status))) {
+    const viewedResult = await supabase
+      .from('offers')
+      .update({
+        status: OFFER_STATUS.BUYER_VIEWED,
+        buyer_viewed_at: new Date().toISOString(),
+      })
+      .eq('id', offer.id)
+      .select('*')
+      .maybeSingle()
+    if (!viewedResult.error && viewedResult.data) {
+      data = viewedResult.data
+      offer = mapOfferDbRow(data)
+    }
+  }
 
   let listing = null
   if (offer?.listingId) {
@@ -529,11 +700,22 @@ export async function getCanonicalOfferInviteContext(token = '') {
       status: offer.status,
     },
     listing,
-    offers: offer.status === 'submitted'
+    offers: [
+      OFFER_STATUS.SUBMITTED,
+      OFFER_STATUS.AGENT_REVIEW,
+      OFFER_STATUS.CHANGES_REQUESTED,
+      OFFER_STATUS.SENT_TO_SELLER,
+      OFFER_STATUS.SELLER_VIEWED,
+      OFFER_STATUS.COUNTERED,
+      OFFER_STATUS.ACCEPTED,
+      OFFER_STATUS.REJECTED,
+      OFFER_STATUS.CONVERTED_TO_TRANSACTION,
+    ].includes(normalizeOfferStatus(offer.status))
       ? [{
           id: offer.id,
           status: offer.status,
           submittedAt: offer.submittedAt,
+          buyerSubmittedAt: offer.buyerSubmittedAt,
           offer: { offerAmount: offer.offerAmount },
         }]
       : [],
@@ -579,17 +761,29 @@ export async function submitCanonicalBuyerOffer({ token = '', submission = {} } 
         buyerSubmittedAt: new Date().toISOString(),
         verification: submission?.verification || {},
       },
+      buyer_submitted_at: new Date().toISOString(),
       submitted_at: new Date().toISOString(),
     },
   })
 }
 
 function statusToEvent(status) {
-  if (status === 'draft') return BUYER_LIFECYCLE_EVENTS.OFFER_CREATED
-  if (status === 'submitted' || status === 'under_review') return BUYER_LIFECYCLE_EVENTS.OFFER_SUBMITTED
-  if (status === 'countered') return BUYER_LIFECYCLE_EVENTS.OFFER_COUNTERED
-  if (status === 'accepted') return BUYER_LIFECYCLE_EVENTS.OFFER_ACCEPTED
-  if (status === 'converted_to_transaction') return BUYER_LIFECYCLE_EVENTS.TRANSACTION_CREATED
+  const normalized = normalizeOfferStatus(status)
+  if ([OFFER_STATUS.DRAFT, OFFER_STATUS.SENT_TO_BUYER, OFFER_STATUS.BUYER_VIEWED].includes(normalized)) {
+    return BUYER_LIFECYCLE_EVENTS.OFFER_CREATED
+  }
+  if ([
+    OFFER_STATUS.SUBMITTED,
+    OFFER_STATUS.AGENT_REVIEW,
+    OFFER_STATUS.CHANGES_REQUESTED,
+    OFFER_STATUS.SENT_TO_SELLER,
+    OFFER_STATUS.SELLER_VIEWED,
+  ].includes(normalized)) {
+    return BUYER_LIFECYCLE_EVENTS.OFFER_SUBMITTED
+  }
+  if (normalized === OFFER_STATUS.COUNTERED) return BUYER_LIFECYCLE_EVENTS.OFFER_COUNTERED
+  if (normalized === OFFER_STATUS.ACCEPTED) return BUYER_LIFECYCLE_EVENTS.OFFER_ACCEPTED
+  if (normalized === OFFER_STATUS.CONVERTED_TO_TRANSACTION) return BUYER_LIFECYCLE_EVENTS.TRANSACTION_CREATED
   return ''
 }
 
@@ -675,9 +869,16 @@ export async function updateCanonicalOfferStatus(offerId, status, { organisation
     status: nextStatus,
     ...patch,
   }
-  if (nextStatus === 'submitted' && !updatePayload.submitted_at) updatePayload.submitted_at = nowIso
-  if (nextStatus === 'accepted' && !updatePayload.accepted_at) updatePayload.accepted_at = nowIso
-  if (nextStatus === 'rejected' && !updatePayload.rejected_at) updatePayload.rejected_at = nowIso
+  const statusTimestampField = OFFER_STATUS_TIMESTAMP_FIELDS[nextStatus]
+  if (statusTimestampField && !updatePayload[statusTimestampField]) {
+    updatePayload[statusTimestampField] = nowIso
+  }
+  if (nextStatus === OFFER_STATUS.SUBMITTED) {
+    if (!updatePayload.submitted_at) updatePayload.submitted_at = nowIso
+    if (!updatePayload.buyer_submitted_at) updatePayload.buyer_submitted_at = updatePayload.submitted_at
+  }
+  if (nextStatus === OFFER_STATUS.ACCEPTED && !updatePayload.accepted_at) updatePayload.accepted_at = nowIso
+  if (nextStatus === OFFER_STATUS.REJECTED && !updatePayload.rejected_at) updatePayload.rejected_at = nowIso
 
   const { data, error } = await supabase
     .from('offers')
@@ -702,6 +903,146 @@ export async function updateCanonicalOfferStatus(offerId, status, { organisation
   }
 
   return mapOfferDbRow(data)
+}
+
+export async function createOfferSellerReviewSession(payload = {}, { actor = null } = {}) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Seller offer review requires Supabase.')
+  }
+
+  const scopedOrganisationId = toNullableUuid(payload?.organisationId || payload?.offer?.organisationId)
+  const scopedOfferId = toNullableUuid(payload?.offerId || payload?.offer?.id || payload?.offer?.offerId)
+  if (!scopedOrganisationId || !scopedOfferId) {
+    throw new Error('Organisation and offer are required before sending an offer to the seller.')
+  }
+
+  let offer = payload?.offer || null
+  if (!offer?.id) {
+    const { data, error } = await supabase
+      .from('offers')
+      .select('*')
+      .eq('id', scopedOfferId)
+      .eq('organisation_id', scopedOrganisationId)
+      .maybeSingle()
+    if (error) throw error
+    offer = mapOfferDbRow(data)
+  }
+
+  const insertPayload = {
+    organisation_id: scopedOrganisationId,
+    offer_id: scopedOfferId,
+    seller_lead_id: toNullableUuid(payload?.sellerLeadId || offer?.sellerLeadId),
+    seller_contact_id: toNullableUuid(payload?.sellerContactId || offer?.sellerContactId),
+    listing_id: toNullableUuid(payload?.listingId || offer?.listingId),
+    agent_id: toNullableUuid(payload?.agentId || offer?.agentId || actor?.id),
+    token: normalizeText(payload?.token) || createSellerOfferReviewAccessToken(),
+    status: 'sent',
+    sent_at: normalizeDate(payload?.sentAt) || new Date().toISOString(),
+    expires_at: normalizeDate(payload?.expiresAt),
+    metadata_json: jsonObject(payload?.metadata || payload?.metadataJson),
+  }
+
+  let activeInsertPayload = { ...insertPayload }
+  let { data, error } = await supabase
+    .from('offer_seller_review_sessions')
+    .insert(activeInsertPayload)
+    .select('*')
+    .single()
+
+  if (error && isForeignKeyViolation(error, 'offer_seller_review_sessions_seller_lead_id_fkey')) {
+    activeInsertPayload = { ...activeInsertPayload, seller_lead_id: null }
+    const retry = await supabase
+      .from('offer_seller_review_sessions')
+      .insert(activeInsertPayload)
+      .select('*')
+      .single()
+    data = retry.data
+    error = retry.error
+  }
+
+  if (error && isForeignKeyViolation(error, 'offer_seller_review_sessions_seller_contact_id_fkey')) {
+    activeInsertPayload = { ...activeInsertPayload, seller_contact_id: null }
+    const retry = await supabase
+      .from('offer_seller_review_sessions')
+      .insert(activeInsertPayload)
+      .select('*')
+      .single()
+    data = retry.data
+    error = retry.error
+  }
+
+  if (error) throw error
+
+  const session = mapOfferSellerReviewSessionDbRow(data)
+  const conditions = jsonObject(offer?.conditions)
+  const nextConditions = {
+    ...conditions,
+    sellerReviewSessionToken: session.token,
+    sellerReviewSentAt: session.sentAt,
+    agentReviewNotes: normalizeText(payload?.agentReviewNotes) || conditions.agentReviewNotes || conditions.latestAgentNote || '',
+  }
+
+  const updatedOffer = await updateCanonicalOfferStatus(scopedOfferId, OFFER_STATUS.SENT_TO_SELLER, {
+    organisationId: scopedOrganisationId,
+    actor,
+    patch: {
+      seller_review_session_id: session.id,
+      seller_lead_id: activeInsertPayload.seller_lead_id || offer?.sellerLeadId || null,
+      seller_contact_id: activeInsertPayload.seller_contact_id || offer?.sellerContactId || null,
+      conditions_json: nextConditions,
+    },
+  })
+
+  await recordBuyerLeadActivity({
+    organisationId: scopedOrganisationId,
+    leadId: updatedOffer?.buyerLeadId || offer?.buyerLeadId,
+    activityType: 'Offer Sent To Seller',
+    activityNote: 'Agent reviewed the buyer offer and sent it to the seller for review.',
+    outcome: 'Sent To Seller',
+    actor,
+  }).catch(() => null)
+
+  return { session, offer: updatedOffer }
+}
+
+export async function getSellerOfferReviewContext(token = '') {
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken || !isSupabaseConfigured || !supabase) {
+    return { ok: false, reason: 'not_found', session: null, offer: null, listing: null }
+  }
+
+  const { data, error } = await supabase.rpc('bridge_get_seller_offer_review_session', {
+    p_token: normalizedToken,
+  })
+  if (error) {
+    if (isMissingTableError(error, 'offer_seller_review_sessions')) {
+      return { ok: false, reason: 'not_found', session: null, offer: null, listing: null }
+    }
+    throw error
+  }
+  return mapSellerOfferReviewPayload(data)
+}
+
+export async function submitSellerOfferDecision({ token = '', decision = '', notes = '' } = {}) {
+  const normalizedToken = normalizeText(token)
+  const normalizedDecision = normalizeLower(decision)
+  if (!normalizedToken || !['accepted', 'rejected', 'countered'].includes(normalizedDecision) || !isSupabaseConfigured || !supabase) {
+    throw new Error('A valid seller offer decision is required.')
+  }
+  const { data, error } = await supabase.rpc('bridge_submit_seller_offer_decision', {
+    p_token: normalizedToken,
+    p_decision: normalizedDecision,
+    p_notes: normalizeText(notes) || null,
+  })
+  if (error) throw error
+  if (!data?.ok) {
+    const reason = normalizeText(data?.reason)
+    if (reason === 'already_decided') throw new Error(`This offer has already been ${normalizeText(data?.status) || 'decided'}.`)
+    if (reason === 'expired') throw new Error('This seller offer review link has expired.')
+    if (reason === 'invalid_decision') throw new Error('Choose accept, reject, or counter before submitting.')
+    throw new Error('Unable to submit this offer decision.')
+  }
+  return mapSellerOfferReviewPayload(data)
 }
 
 export async function listCanonicalOffersForLead({ organisationId = '', leadId = '' } = {}) {
@@ -1015,7 +1356,10 @@ export async function createTransactionFromAcceptedCanonicalOffer({
       purchasePrice: canonicalOffer.offerAmount || payload?.purchasePrice,
       dealValue: canonicalOffer.offerAmount || payload?.dealValue,
       depositAmount: canonicalOffer.depositAmount || payload?.depositAmount,
+      cashAmount: canonicalOffer.cashComponent || payload?.cashAmount,
+      bondAmount: canonicalOffer.bondComponent || payload?.bondAmount,
       financeType: canonicalOffer.financeType || payload?.financeType,
+      purchaserType: canonicalOffer.conditions?.buyerType || canonicalOffer.conditions?.purchaserType || payload?.purchaserType || 'individual',
       assignedAgentId: canonicalOffer.agentId || payload?.assignedAgentId || actor?.id,
       assignedAgentName: payload?.assignedAgentName || actor?.name,
       assignedAgentEmail: payload?.assignedAgentEmail || actor?.email,
