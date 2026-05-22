@@ -47,7 +47,6 @@ import {
 } from '../lib/agentListingStorage'
 import {
   completeViewingRequest,
-  createViewingRequest,
   formatViewingStatusLabel,
   getViewingRequestsForListing,
   rescheduleViewingRequest,
@@ -65,6 +64,7 @@ import {
   normalizeOfferWorkflowStatus,
   OFFER_WORKFLOW_STATUS,
 } from '../lib/listingOffersService'
+import { createCanonicalOffer } from '../lib/buyerLifecycleService'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import {
   getPrivateListing,
@@ -983,6 +983,20 @@ function AgentListingDetail() {
 
     try {
       setSendingOfferLink(true)
+      const canonicalOffer = await createCanonicalOffer({
+        organisationId: listingOrganisationId,
+        buyerLeadId: selectedLead.leadId || selectedLead.id,
+        buyerContactId: selectedLead.contactId,
+        listingId: listingRecord.id,
+        agentId: profile?.id || listingRecord?.agentId,
+        status: 'draft',
+      }, {
+        actor: {
+          id: profile?.id || listingRecord?.agentId || '',
+          name: String(profile?.fullName || listingRecord?.assignedAgentName || listingRecord?.assignedAgent || 'Agent').trim(),
+          email: String(profile?.email || listingRecord?.assignedAgentEmail || '').trim(),
+        },
+      })
       const { invite, link } = createOfferInvite({
         listingId: listingRecord.id,
         buyerLeadId: selectedLead.id,
@@ -992,6 +1006,8 @@ function AgentListingDetail() {
         agentEmail: String(listingRecord?.assignedAgentEmail || '').trim(),
         agencyName: String(listingRecord?.agencyOrganisation || '').trim(),
         sellerToken: String(listingRecord?.sellerOnboarding?.token || '').trim(),
+        organisationId: listingOrganisationId,
+        canonicalOfferId: canonicalOffer?.offerId || canonicalOffer?.id || '',
         expiresInDays: Math.max(1, Number(offerInviteDraft.expiresInDays || 7)),
       })
 
@@ -1065,6 +1081,7 @@ function AgentListingDetail() {
   }
 
   const offerRows = useMemo(() => {
+    void offersRefreshTick
     if (!listingRecord?.id) return []
     return getOffersForListing(listingRecord.id).map((record) => ({
       ...record,
@@ -1082,11 +1099,13 @@ function AgentListingDetail() {
   }, [listingRecord?.id, offersRefreshTick])
 
   const offerInviteRows = useMemo(() => {
+    void offersRefreshTick
     if (!listingRecord?.id) return []
     return getOfferInvitesForListing(listingRecord.id)
   }, [listingRecord?.id, offersRefreshTick])
 
   const offerSummary = useMemo(() => {
+    void offersRefreshTick
     if (!listingRecord?.id) {
       return { total: 0, submitted: 0, sellerReview: 0, accepted: 0, countered: 0, highest: 0 }
     }
@@ -1574,12 +1593,13 @@ function AgentListingDetail() {
         )
         createdInAppointments = true
       } catch (error) {
-        console.warn('[AgentListingDetail] appointment module viewing create failed; saving local viewing fallback', error)
-        setDetailError(error?.message || 'Viewing saved locally, but the shared appointment record could not be created.')
+        console.warn('[AgentListingDetail] appointment module viewing create failed', error)
+        setDetailError(error?.message || 'Viewing could not be created in the canonical appointment system.')
       }
     }
     if (!createdInAppointments) {
-      createViewingRequest(fallbackViewingPayload)
+      setDetailError('Viewing scheduling now requires the canonical appointment system. Please try again when the workspace database is available.')
+      return
     }
     setViewingForm({
       buyerLeadId: '',

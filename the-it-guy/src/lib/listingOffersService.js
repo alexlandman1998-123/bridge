@@ -1,4 +1,5 @@
 import { generateId, readAgentPrivateListings, writeAgentPrivateListings } from './agentListingStorage'
+import { updateCanonicalOfferStatus } from './buyerLifecycleService'
 import { createTransactionFromAcceptedOffer } from './transactionLifecycleService'
 
 const KEY_OFFER_INVITES = 'itg:listing-offer-invites:v1'
@@ -70,12 +71,6 @@ function upsertListing(listingId, updater) {
   return nextRows.find((row) => String(row?.id || '') === String(listingId || '')) || null
 }
 
-function formatStageLabel(status) {
-  const key = normalize(status)
-  if (!key) return 'Draft'
-  return key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
-}
-
 function money(value) {
   const amount = Number(value || 0)
   return Number.isFinite(amount) ? Math.max(0, amount) : 0
@@ -138,12 +133,6 @@ function getOfferInvites() {
 
 function writeOfferInvites(rows) {
   writeJson(KEY_OFFER_INVITES, Array.isArray(rows) ? rows : [])
-}
-
-function getLatestOfferInThread(records, threadId) {
-  return records
-    .filter((row) => String(row?.threadId || '') === String(threadId || ''))
-    .sort((left, right) => (Number(right?.version || 0) - Number(left?.version || 0)) || (new Date(right?.submittedAt || 0) - new Date(left?.submittedAt || 0)))[0] || null
 }
 
 function listingFromId(listingId) {
@@ -265,6 +254,8 @@ export function createOfferInvite({
   agencyName = '',
   sellerToken = '',
   viewingId = '',
+  organisationId = '',
+  canonicalOfferId = '',
   expiresInDays = 7,
 } = {}) {
   if (!String(listingId || '').trim()) {
@@ -292,6 +283,8 @@ export function createOfferInvite({
     agencyName: String(agencyName || '').trim(),
     sellerToken: String(sellerToken || listing?.sellerOnboarding?.token || '').trim(),
     viewingId: String(viewingId || '').trim(),
+    organisationId: String(organisationId || listing?.organisationId || listing?.organisation_id || '').trim(),
+    canonicalOfferId: String(canonicalOfferId || '').trim(),
     status: OFFER_WORKFLOW_STATUS.DRAFT,
     createdAt: new Date().toISOString(),
     expiresAt: expiryIso(expiresInDays),
@@ -347,7 +340,7 @@ export function getOffersForListing(listingId) {
   return rows
 }
 
-export function submitBuyerOffer({ token, submission, mode = 'new' } = {}) {
+export async function submitBuyerOffer({ token, submission, mode = 'new' } = {}) {
   const context = getOfferInviteContext(token)
   if (!context.ok) {
     throw new Error(context.reason === 'expired' ? 'Offer link has expired.' : 'Offer link is not valid.')
@@ -383,6 +376,8 @@ export function submitBuyerOffer({ token, submission, mode = 'new' } = {}) {
     version,
     listingId: invite.listingId,
     buyerLeadId: invite.buyerLeadId,
+    canonicalOfferId: invite.canonicalOfferId || '',
+    organisationId: invite.organisationId || listing?.organisationId || listing?.organisation_id || '',
     viewingId: invite.viewingId || '',
     sellerToken: invite.sellerToken || '',
     inviteToken: token,
@@ -453,6 +448,32 @@ export function submitBuyerOffer({ token, submission, mode = 'new' } = {}) {
       : row,
   )
   writeOfferInvites(invites)
+
+  if (nextRecord.canonicalOfferId && nextRecord.organisationId) {
+    await updateCanonicalOfferStatus(nextRecord.canonicalOfferId, 'submitted', {
+      organisationId: nextRecord.organisationId,
+      patch: {
+        offer_amount: nextRecord.offer.offerAmount,
+        deposit_amount: nextRecord.offer.depositAmount,
+        finance_type: nextRecord.offer.financeType,
+        bond_component: nextRecord.offer.bondAmount,
+        cash_component: nextRecord.offer.cashContribution,
+        conditions_json: {
+          suspensiveConditions: nextRecord.offer.suspensiveConditions,
+          subjectToSale: nextRecord.offer.subjectToSale,
+          subjectSaleProperty: nextRecord.offer.subjectSaleProperty,
+          subjectSaleTimeline: nextRecord.offer.subjectSaleTimeline,
+          occupationDate: nextRecord.offer.occupationDate,
+          occupationalRent: nextRecord.offer.occupationalRent,
+          includedFixtures: nextRecord.offer.includedFixtures,
+          excludedFixtures: nextRecord.offer.excludedFixtures,
+          specialConditions: nextRecord.offer.specialConditions,
+          proofOfFundsUrl: nextRecord.offer.proofOfFundsUrl,
+        },
+        expiry_date: nextRecord.offer.expiryDate || null,
+      },
+    })
+  }
 
   syncListingOffers(invite.listingId)
   notifyUpdates()

@@ -24,6 +24,12 @@ import {
   notifyAppointmentParticipants,
   scheduleAppointmentReminders,
 } from '../services/appointmentNotificationService'
+import {
+  applyBuyerLifecycleEvent,
+  BUYER_LEAD_STAGES,
+  BUYER_LIFECYCLE_EVENTS,
+  isBuyerLifecycleAppointment,
+} from './buyerLifecycleService'
 
 const STORAGE_PREFIX = 'itg:agency-crm:v1'
 const CRM_UPDATED_EVENT = 'itg:agency-crm-updated'
@@ -36,6 +42,7 @@ const APPOINTMENTS_DEMO_FALLBACK_REASON = {
 export const LEAD_DIRECTIONS = ['Inbound', 'Outbound']
 export const LEAD_CATEGORIES = ['Buyer', 'Seller', 'Landlord', 'Tenant', 'Investor', 'Developer', 'Other']
 export const LEAD_STAGES = [
+  ...BUYER_LEAD_STAGES,
   'Lead',
   'Contacted',
   'Onboarding Sent',
@@ -59,7 +66,7 @@ export const LEAD_STAGES = [
   'Registered / Closed',
   'Lost',
   'Nurture / Follow-up Later',
-]
+].filter((stage, index, stages) => stages.indexOf(stage) === index)
 export const LEAD_PRIORITIES = ['Low', 'Medium', 'High', 'Urgent']
 
 export const ACTIVITY_TYPES = [
@@ -2255,6 +2262,15 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
     } catch {
       // Appointments should still save if timeline write fails for legacy/unlinked lead rows.
     }
+    if (isBuyerLifecycleAppointment(appointment)) {
+      await applyBuyerLifecycleEvent({
+        organisationId: scopedOrganisationId,
+        leadId: appointment.leadId,
+        event: BUYER_LIFECYCLE_EVENTS.VIEWING_CREATED,
+        actor: actor || assigned,
+        activityNote: `${appointment.appointmentTypeLabel || getAppointmentTypeLabel(appointment.appointmentType)} scheduled.`,
+      }).catch(() => null)
+    }
   }
 
   if (normalizeText(appointment.transactionId)) {
@@ -2447,6 +2463,15 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
       )
     } catch {
       // Non-blocking for legacy data where lead linkage is local/demo only.
+    }
+    if (merged.status === 'completed' && isBuyerLifecycleAppointment(merged)) {
+      await applyBuyerLifecycleEvent({
+        organisationId: scopedOrganisationId,
+        leadId: merged.leadId,
+        event: BUYER_LIFECYCLE_EVENTS.VIEWING_COMPLETED,
+        actor: actor || {},
+        activityNote: `${merged.appointmentTypeLabel || getAppointmentTypeLabel(merged.appointmentType)} completed.`,
+      }).catch(() => null)
     }
   }
 

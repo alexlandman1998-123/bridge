@@ -67,7 +67,10 @@ function BuyerOfferSubmission() {
     acknowledgeInfoAccuracy: false,
   })
 
-  const context = useMemo(() => getOfferInviteContext(token), [token, refreshKey])
+  const context = useMemo(() => {
+    void refreshKey
+    return getOfferInviteContext(token)
+  }, [token, refreshKey])
   const listing = context?.listing || null
   const invite = context?.invite || null
   const existingOffers = Array.isArray(context?.offers) ? context.offers : []
@@ -124,7 +127,7 @@ function BuyerOfferSubmission() {
 
     try {
       setSubmitting(true)
-      submitBuyerOffer({
+      await submitBuyerOffer({
         token,
         mode: counterPendingBuyer ? 'counter_response' : 'new',
         submission: {

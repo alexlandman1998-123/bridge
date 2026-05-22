@@ -23,8 +23,6 @@ import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { getOrganisationPrivateListings } from '../services/privateListingService'
 import Modal from './ui/Modal'
 
-const QUICK_CREATE_STORAGE_KEY = 'bridge:quick-create-records:v1'
-
 const RESIDENTIAL_QUICK_CREATE_GROUPS = [
   {
     label: 'Leads',
@@ -284,13 +282,6 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
 
-function createRecordId(prefix) {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return `${prefix}-${crypto.randomUUID()}`
-  }
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
 function splitName(fullName) {
   const parts = normalizeText(fullName).split(/\s+/).filter(Boolean)
   return {
@@ -350,38 +341,6 @@ function dedupeListingOptions(listings = []) {
       seen.add(key)
       return true
     })
-}
-
-function readQuickCreateStore() {
-  if (typeof window === 'undefined') {
-    return { prospects: [], appointments: [] }
-  }
-
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(QUICK_CREATE_STORAGE_KEY) || '{}')
-    return {
-      prospects: Array.isArray(parsed.prospects) ? parsed.prospects : [],
-      appointments: Array.isArray(parsed.appointments) ? parsed.appointments : [],
-    }
-  } catch {
-    return { prospects: [], appointments: [] }
-  }
-}
-
-function saveQuickCreateRecord(type, payload) {
-  if (typeof window === 'undefined') {
-    return payload
-  }
-
-  const store = readQuickCreateStore()
-  const collectionKey = type === 'appointment' ? 'appointments' : 'prospects'
-  const nextStore = {
-    ...store,
-    [collectionKey]: [payload, ...(store[collectionKey] || [])],
-  }
-  window.localStorage.setItem(QUICK_CREATE_STORAGE_KEY, JSON.stringify(nextStore))
-  window.dispatchEvent(new Event('itg:quick-create-updated'))
-  return payload
 }
 
 async function resolveOrganisationId() {
@@ -832,8 +791,8 @@ function QuickCreateDropdown({ className = '' }) {
               leadCategory: normalizeText(form.leadType) || 'Buyer',
               leadDirection: 'Inbound',
               leadSource: normalizeLeadSource(form.source),
-              stage: 'Lead',
-              status: 'Lead',
+              stage: 'New Lead',
+              status: 'New Lead',
               priority: 'Medium',
               listingId: normalizeText(selectedListing?.id),
               propertyInterest: normalizeText(selectedListing?.label),
@@ -844,24 +803,40 @@ function QuickCreateDropdown({ className = '' }) {
         )
         setFeedback({ kind: 'success', message: 'Lead created. It is ready in the pipeline workspace.' })
       } else if (activeType === 'prospect') {
-        saveQuickCreateRecord('prospect', {
-          id: createRecordId('prospect'),
+        const nameParts = splitName(form.name)
+        const prospectType = normalizeText(form.prospectType) || 'Buyer'
+        const leadCategory = prospectType.toLowerCase().includes('seller') ? 'Seller' : 'Buyer'
+        await createAgencyCrmLeadRecord(
           organisationId,
-          name: normalizeText(form.name),
-          phone: normalizeText(form.phone),
-          email: normalizeText(form.email).toLowerCase(),
-          prospectType: normalizeText(form.prospectType),
-          interest: normalizeText(form.interest),
-          timeline: normalizeText(form.timeline),
-          notes: normalizeText(form.notes),
-          assignedAgent: normalizeText(form.assignedAgent),
-          workspacePath: location.pathname,
-          createdAt,
-        })
-        setFeedback({ kind: 'success', message: 'Prospect saved to quick-create records.' })
+          {
+            assignedAgent: actor,
+            contact: {
+              firstName: nameParts.firstName,
+              lastName: nameParts.lastName,
+              phone: normalizeText(form.phone),
+              email: normalizeText(form.email).toLowerCase(),
+              contactType: 'Prospect',
+              notes: normalizeText(form.notes),
+            },
+            lead: {
+              leadCategory,
+              leadDirection: 'Inbound',
+              leadSource: 'Manual',
+              stage: 'New Lead',
+              status: 'New Lead',
+              priority: 'Medium',
+              propertyInterest: normalizeText(form.interest),
+              notes: [
+                normalizeText(form.timeline) ? `Timeline: ${normalizeText(form.timeline)}` : '',
+                normalizeText(form.notes),
+              ].filter(Boolean).join('\n'),
+            },
+          },
+          { actor },
+        )
+        setFeedback({ kind: 'success', message: 'Prospect created as a canonical lead.' })
       } else if (activeType === 'appointment') {
         const fallbackRecord = {
-          id: createRecordId('appointment'),
           organisationId,
           title: normalizeText(form.title),
           appointmentType: normalizeText(form.appointmentType),
@@ -878,44 +853,31 @@ function QuickCreateDropdown({ className = '' }) {
           workspacePath: location.pathname,
           createdAt,
         }
-        try {
-          const createdAppointment = await createAppointmentAsync(
-            organisationId,
-            {
-              title: fallbackRecord.title || fallbackRecord.appointmentType || 'Appointment',
-              appointmentType: fallbackRecord.appointmentType,
-              date: form.date,
-              startTime: form.time,
-              locationType: 'physical_address',
-              location: fallbackRecord.location,
-              status: 'requested',
-              notes: [
-                fallbackRecord.relatedRecord ? `Related record: ${fallbackRecord.relatedRecord}` : '',
-                fallbackRecord.notes,
-              ].filter(Boolean).join('\n'),
-              assignedAgent: {
-                id: actor.id,
-                name: fallbackRecord.assignedAgent,
-                email: actor.email,
-              },
-              sendInviteEmails: false,
-              attachCalendarInvite: false,
+        await createAppointmentAsync(
+          organisationId,
+          {
+            title: fallbackRecord.title || fallbackRecord.appointmentType || 'Appointment',
+            appointmentType: fallbackRecord.appointmentType,
+            date: form.date,
+            startTime: form.time,
+            locationType: 'physical_address',
+            location: fallbackRecord.location,
+            status: 'requested',
+            notes: [
+              fallbackRecord.relatedRecord ? `Related record: ${fallbackRecord.relatedRecord}` : '',
+              fallbackRecord.notes,
+            ].filter(Boolean).join('\n'),
+            assignedAgent: {
+              id: actor.id,
+              name: fallbackRecord.assignedAgent,
+              email: actor.email,
             },
-            { actor },
-          )
-          saveQuickCreateRecord('appointment', {
-            ...fallbackRecord,
-            appointmentId: createdAppointment?.appointmentId || fallbackRecord.id,
-            source: 'appointment_module',
-          })
-          setFeedback({ kind: 'success', message: 'Appointment created and added to the calendar.' })
-        } catch {
-          saveQuickCreateRecord('appointment', {
-            ...fallbackRecord,
-            source: 'quick_create_fallback',
-          })
-          setFeedback({ kind: 'success', message: 'Appointment saved locally and will appear on the calendar.' })
-        }
+            sendInviteEmails: false,
+            attachCalendarInvite: false,
+          },
+          { actor },
+        )
+        setFeedback({ kind: 'success', message: 'Appointment created and added to the calendar.' })
       }
 
       setForm({

@@ -558,18 +558,33 @@ async function updateLeadConversionLinkage({
   if (!supabase || !transactionId || !isUuidLike(leadId)) return { updated: false }
   const updatePayload = {
     converted_transaction_id: transactionId,
-    stage: 'Converted to Transaction',
-    status: 'Converted to Transaction',
+    converted_at: new Date().toISOString(),
+    current_stage: 'Finance',
+    stage: 'Finance',
+    status: 'Finance',
     updated_at: new Date().toISOString(),
   }
 
-  const result = await supabase
+  let result = await supabase
     .from('leads')
     .update(updatePayload)
-    .eq('id', leadId)
+    .eq('lead_id', leadId)
     .eq('organisation_id', organisationId)
-    .select('id')
+    .select('lead_id')
     .maybeSingle()
+
+  if (result.error && isMissingColumnError(result.error)) {
+    const fallbackPayload = { ...updatePayload }
+    delete fallbackPayload.current_stage
+    delete fallbackPayload.converted_at
+    result = await supabase
+      .from('leads')
+      .update(fallbackPayload)
+      .eq('lead_id', leadId)
+      .eq('organisation_id', organisationId)
+      .select('lead_id')
+      .maybeSingle()
+  }
 
   if (result.error) {
     if (isMissingTableError(result.error, 'leads') || isMissingColumnError(result.error)) {
@@ -578,7 +593,7 @@ async function updateLeadConversionLinkage({
     throw result.error
   }
 
-  return { updated: Boolean(result.data?.id) }
+  return { updated: Boolean(result.data?.lead_id) }
 }
 
 export async function createTransactionFromLeadOverride({
@@ -606,6 +621,8 @@ export async function createTransactionFromLeadOverride({
   const nextAssignedAgentId = normalize(payload?.assignedAgentId || lead?.assignedAgentId || actor?.id)
   const nextAssignedAgentEmail = normalize(payload?.assignedAgentEmail || lead?.assignedAgentEmail || actor?.email).toLowerCase()
   const nextListingId = normalize(payload?.listingId || listing?.id || created?.transactionRow?.transaction?.unit_id)
+  const acceptedOfferId = normalize(payload?.acceptedOfferId || payload?.accepted_offer_id || options?.acceptedOfferId)
+  const allowDirectLeadConversion = options?.allowDirectLeadConversion === true
   const explicitMockMode = payload?.mockMode === true || options?.mockMode === true
   const allowRuntimeFallback = Boolean(options?.allowRuntimeFallback || explicitMockMode || !isSupabaseConfigured || !supabase)
   const canPersistToSupabase = Boolean(isSupabaseConfigured && supabase && !explicitMockMode)
@@ -618,6 +635,9 @@ export async function createTransactionFromLeadOverride({
   }
   if (!nextListingId) {
     throw new Error('A listing or property context is required for manual override transaction creation.')
+  }
+  if (!acceptedOfferId && !allowDirectLeadConversion) {
+    throw new Error('Buyer transactions must be created from an accepted offer. Create and accept an offer before conversion.')
   }
 
   if (!canPersistToSupabase) {
@@ -686,7 +706,7 @@ export async function createTransactionFromLeadOverride({
       listing_id: nextListingId || null,
       originating_lead_id: nextLeadId || null,
       originating_buyer_lead_id: nextLeadId || null,
-      accepted_offer_id: normalize(payload?.acceptedOfferId) || null,
+      accepted_offer_id: acceptedOfferId || null,
       buyer_contact_id: normalize(payload?.buyerContactId) || null,
       seller_contact_id: normalize(payload?.sellerContactId) || null,
       otp_packet_id: normalize(payload?.otpPacketId) || null,

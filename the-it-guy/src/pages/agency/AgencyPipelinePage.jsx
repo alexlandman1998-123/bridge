@@ -20,7 +20,6 @@ import {
   buildAppointmentsDashboardSummary,
   buildPipelineMetrics,
   buildPrincipalReporting,
-  convertLeadToDealRecord,
   createAppointmentAsync,
   filterDeletedAgencyLeadRows,
   getAgencyCrmUpdatedEventName,
@@ -84,6 +83,8 @@ import {
   getAppointmentTemplateInstructions,
   getAppointmentTypeTemplate,
 } from '../../services/appointmentTemplateService'
+import { createCanonicalOffer } from '../../lib/buyerLifecycleService'
+import { isBuyerWorkflowStage, transitionBuyerLeadStage } from '../../lib/workflowEngine'
 
 const PIPELINE_CONTEXT_TIMEOUT_MS = 3500
 const PIPELINE_RECORDS_TIMEOUT_MS = 3500
@@ -3446,8 +3447,45 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleUpdateLeadStage(leadId, stage, options = {}) {
     if (!organisationId || !leadId) return
+    const targetLead = records.leads.find((lead) => normalizeText(lead?.leadId) === normalizeText(leadId)) || selectedLead || null
     const nextStage = normalizeText(stage)
     const movedAt = new Date().toISOString()
+    const leadCategoryKey = normalizeKey(targetLead?.leadCategory)
+    const isBuyerLead = !leadCategoryKey.includes('seller') && !leadCategoryKey.includes('landlord')
+    const isBuyerStageMove = isBuyerLead && (isBuyerWorkflowStage(targetLead?.stage || targetLead?.status) || isBuyerWorkflowStage(nextStage))
+
+    if (isBuyerStageMove) {
+      try {
+        const result = await transitionBuyerLeadStage({
+          organisationId,
+          lead: targetLead,
+          leadId,
+          toStage: nextStage,
+          actor: { ...currentAgent, role: membershipRole || role, isPrincipal },
+          options,
+        })
+        setRecords((previous) => ({
+          ...previous,
+          leads: (Array.isArray(previous.leads) ? previous.leads : []).map((lead) => (
+            normalizeText(lead?.leadId) === normalizeText(leadId)
+              ? {
+                  ...lead,
+                  stage: result.stage,
+                  status: result.stage,
+                  updatedAt: movedAt,
+                }
+              : lead
+          )),
+        }))
+        scheduleRecordsReload(organisationId, 850)
+        if (options.successMessage) setMessage(options.successMessage)
+      } catch (transitionError) {
+        setError(transitionError?.message || 'Workflow rules blocked this stage move.')
+        scheduleRecordsReload(organisationId, 250)
+      }
+      return
+    }
+
     setRecords((previous) => ({
       ...previous,
       leads: (Array.isArray(previous.leads) ? previous.leads : []).map((lead) => (
@@ -5170,25 +5208,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     void reloadRecords(organisationId)
   }
 
-  async function handleConvertLeadToDeal() {
+  async function handleCreateBuyerOfferDraft() {
     if (!selectedLead || !organisationId) return
     try {
-      await convertLeadToDealRecord(
+      await createCanonicalOffer({
         organisationId,
-        selectedLead.leadId,
-        {
-          title: `${selectedLead.leadCategory} Opportunity`,
-          dealValue: Number(selectedLead.estimatedValue || selectedLead.budget || 0) || 0,
-        },
-        {
-          actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-        },
-      )
+        buyerLeadId: selectedLead.leadId,
+        buyerContactId: selectedLead.contactId,
+        listingId: selectedLead.listingId,
+        agentId: currentAgent.id,
+        status: 'draft',
+        offerAmount: Number(selectedLead.estimatedValue || selectedLead.budget || 0) || null,
+        financeType: selectedLead.financeType || selectedLead.preferredFinanceType || '',
+      }, {
+        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+      })
       setError('')
-      setMessage('Lead converted to transaction.')
+      setMessage('Offer draft created. Buyer lead stage updated to Offer Draft.')
+      setLeadWorkspaceTab('overview')
       await reloadRecords(organisationId)
-    } catch (convertError) {
-      setError(convertError?.message || 'Unable to convert lead.')
+    } catch (offerError) {
+      setError(offerError?.message || 'Unable to create offer draft.')
     }
   }
 
@@ -6357,10 +6397,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         <Button
                           type="button"
                           size="sm"
-                          onClick={handleConvertLeadToDeal}
+                          onClick={() => void handleCreateBuyerOfferDraft()}
                           disabled={Boolean(selectedLead.convertedTransactionId || selectedLead.convertedDealId)}
                         >
-                          {selectedLead.convertedTransactionId || selectedLead.convertedDealId ? 'Transaction Created' : 'Convert to Transaction'}
+                          {selectedLead.convertedTransactionId || selectedLead.convertedDealId ? 'Transaction Created' : 'Create Offer'}
                         </Button>
                         <Button type="button" variant="secondary" size="sm" disabled title="OTP generation is available once a transaction is linked.">
                           Generate OTP
