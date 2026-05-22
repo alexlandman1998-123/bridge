@@ -761,6 +761,36 @@ export function recoverAgencyPipelineStoreForOrganisation(organisationId) {
   }
 }
 
+export function resolveAgencyPipelineStorageScope(preferredOrganisationId = '') {
+  const preferred = normalizeText(preferredOrganisationId)
+  if (preferred && preferred !== 'default') return preferred
+  if (typeof window === 'undefined' || !window.localStorage) return preferred || 'default'
+
+  const prefix = `${STORAGE_PREFIX}:`
+  const candidates = []
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index)
+    if (!key || !key.startsWith(prefix)) continue
+    const scopedOrg = normalizeText(key.slice(prefix.length))
+    if (!scopedOrg || scopedOrg === 'default') continue
+    const snapshot = safeReadStore(scopedOrg)
+    const score = getStoreRecordScore(snapshot)
+    if (score <= 0) continue
+    candidates.push({
+      org: scopedOrg,
+      score,
+      updatedAt: new Date(snapshot?.updatedAt || snapshot?.createdAt || 0).getTime(),
+    })
+  }
+
+  candidates.sort((left, right) => {
+    if (right.updatedAt !== left.updatedAt) return right.updatedAt - left.updatedAt
+    return right.score - left.score
+  })
+
+  return candidates[0]?.org || preferred || 'default'
+}
+
 function emitAgencyCrmUpdated() {
   if (typeof window === 'undefined') return
   window.dispatchEvent(new Event(CRM_UPDATED_EVENT))

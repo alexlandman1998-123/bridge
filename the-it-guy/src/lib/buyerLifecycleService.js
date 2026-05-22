@@ -1098,18 +1098,137 @@ export async function submitSellerOfferDecision({ token = '', decision = '', not
   return mapSellerOfferReviewPayload(data)
 }
 
-export async function listCanonicalOffersForLead({ organisationId = '', leadId = '' } = {}) {
+function normalizeIdList(values = []) {
+  return [...new Set((Array.isArray(values) ? values : [values]).map(toNullableUuid).filter(Boolean))]
+}
+
+function normalizePhoneKey(value) {
+  return normalizeText(value).replace(/[^\d+]/g, '')
+}
+
+function normalizeNameKey(value) {
+  return normalizeLower(value).replace(/\s+/g, ' ')
+}
+
+function offerMatchesLeadContext(offer = {}, context = {}) {
+  const leadId = toNullableUuid(context.leadId)
+  const contactId = toNullableUuid(context.contactId)
+  if (leadId && offer.buyerLeadId === leadId) return true
+  if (contactId && offer.buyerContactId === contactId) return true
+
+  const appointmentIds = new Set(normalizeIdList(context.appointmentIds))
+  if (offer.viewingAppointmentId && appointmentIds.has(offer.viewingAppointmentId)) return true
+
+  const listingIds = new Set(normalizeIdList(context.listingIds))
+  const hasListingContext = offer.listingId && listingIds.has(offer.listingId)
+  const conditions = offer.conditions || {}
+  const buyerEmail = normalizeLower(context.buyerEmail)
+  const buyerPhone = normalizePhoneKey(context.buyerPhone)
+  const buyerName = normalizeNameKey(context.buyerName)
+  const offerEmails = [
+    conditions.buyerEmail,
+    conditions.email,
+  ].map(normalizeLower).filter(Boolean)
+  const offerPhones = [
+    conditions.buyerPhone,
+    conditions.phone,
+  ].map(normalizePhoneKey).filter(Boolean)
+  const offerNames = [
+    conditions.buyerName,
+    conditions.fullName,
+    conditions.name,
+  ].map(normalizeNameKey).filter(Boolean)
+
+  if (hasListingContext && buyerEmail && offerEmails.includes(buyerEmail)) return true
+  if (hasListingContext && buyerPhone && offerPhones.includes(buyerPhone)) return true
+  if (hasListingContext && buyerName && offerNames.includes(buyerName)) return true
+  return false
+}
+
+function sortOffersByLatest(left = {}, right = {}) {
+  return new Date(right.updatedAt || right.submittedAt || right.createdAt || 0).getTime() -
+    new Date(left.updatedAt || left.submittedAt || left.createdAt || 0).getTime()
+}
+
+export async function listCanonicalOffersForLead({
+  organisationId = '',
+  leadId = '',
+  contactId = '',
+  appointmentIds = [],
+  listingIds = [],
+  buyerEmail = '',
+  buyerPhone = '',
+  buyerName = '',
+} = {}) {
   const scopedOrganisationId = toNullableUuid(organisationId)
   const scopedLeadId = toNullableUuid(leadId)
-  if (!scopedOrganisationId || !scopedLeadId || !isSupabaseConfigured || !supabase) return []
-  const { data, error } = await supabase
-    .from('offers')
-    .select('*')
-    .eq('organisation_id', scopedOrganisationId)
-    .eq('buyer_lead_id', scopedLeadId)
-    .order('updated_at', { ascending: false })
-  if (error) throw error
-  return (Array.isArray(data) ? data : []).map(mapOfferDbRow).filter(Boolean)
+  const scopedContactId = toNullableUuid(contactId)
+  const scopedAppointmentIds = normalizeIdList(appointmentIds)
+  const scopedListingIds = normalizeIdList(listingIds)
+  if (!scopedOrganisationId || !isSupabaseConfigured || !supabase) return []
+
+  const rowsById = new Map()
+  const addRows = (rows = []) => {
+    for (const offer of (Array.isArray(rows) ? rows : []).map(mapOfferDbRow).filter(Boolean)) {
+      if (!offer?.id) continue
+      if (!offerMatchesLeadContext(offer, {
+        leadId: scopedLeadId,
+        contactId: scopedContactId,
+        appointmentIds: scopedAppointmentIds,
+        listingIds: scopedListingIds,
+        buyerEmail,
+        buyerPhone,
+        buyerName,
+      })) continue
+      rowsById.set(offer.id, offer)
+    }
+  }
+
+  if (scopedLeadId) {
+    const { data, error } = await supabase
+      .from('offers')
+      .select('*')
+      .eq('organisation_id', scopedOrganisationId)
+      .eq('buyer_lead_id', scopedLeadId)
+      .order('updated_at', { ascending: false })
+    if (error) throw error
+    addRows(data)
+  }
+
+  if (scopedContactId) {
+    const { data, error } = await supabase
+      .from('offers')
+      .select('*')
+      .eq('organisation_id', scopedOrganisationId)
+      .eq('buyer_contact_id', scopedContactId)
+      .order('updated_at', { ascending: false })
+    if (error) throw error
+    addRows(data)
+  }
+
+  if (scopedAppointmentIds.length) {
+    const { data, error } = await supabase
+      .from('offers')
+      .select('*')
+      .eq('organisation_id', scopedOrganisationId)
+      .in('viewing_appointment_id', scopedAppointmentIds)
+      .order('updated_at', { ascending: false })
+    if (error) throw error
+    addRows(data)
+  }
+
+  if (!rowsById.size && scopedListingIds.length && (buyerEmail || buyerPhone || buyerName)) {
+    const { data, error } = await supabase
+      .from('offers')
+      .select('*')
+      .eq('organisation_id', scopedOrganisationId)
+      .in('listing_id', scopedListingIds)
+      .order('updated_at', { ascending: false })
+    if (error) throw error
+    addRows(data)
+  }
+
+  return [...rowsById.values()].sort(sortOffersByLatest)
 }
 
 export async function listCanonicalOffersForListing({ organisationId = '', listingId = '' } = {}) {

@@ -28,6 +28,7 @@ import {
   listAppointmentsAsync,
   listAppointmentResourcesAsync,
   recoverAgencyPipelineStoreForOrganisation,
+  resolveAgencyPipelineStorageScope,
   updateAppointmentAsync,
   updateAppointmentParticipantRsvpAsync,
 } from '../../lib/agencyPipelineService'
@@ -419,6 +420,32 @@ function normalizeText(value) {
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
+}
+
+const TERMINAL_LEAD_STAGE_KEYWORDS = [
+  'archived',
+  'closed',
+  'converted to listing',
+  'converted to transaction',
+  'deal created',
+  'lost',
+  'registered',
+]
+
+function isTerminalPipelineLead(lead = {}) {
+  const stageSignal = [
+    lead?.stage,
+    lead?.currentStage,
+    lead?.current_stage,
+    lead?.pipelineStage,
+    lead?.pipeline_stage,
+    lead?.status,
+    lead?.dealStatus,
+    lead?.deal_status,
+  ].map(normalizeKey).join(' ')
+
+  if (!stageSignal) return false
+  return TERMINAL_LEAD_STAGE_KEYWORDS.some((keyword) => stageSignal.includes(keyword))
 }
 
 function normalizeAppointmentCategorySignal(value) {
@@ -2193,15 +2220,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const organisationUsers = usersResult.status === 'fulfilled' ? usersResult.value : []
       const rawOrganisationId = normalizeText(context?.organisation?.id)
       const resolvedOrgId = isUuidLike(rawOrganisationId) ? rawOrganisationId : ''
-      const storageOrgId = resolvedOrgId || 'default'
+      const storageOrgId = resolveAgencyPipelineStorageScope(resolvedOrgId)
+      const effectiveOrgId = resolvedOrgId || (isUuidLike(storageOrgId) ? storageOrgId : '')
       const fallbackMembershipRole = role === 'agent' ? 'agent' : 'viewer'
       const resolvedMembershipRole = normalizeText(context?.membershipRole || fallbackMembershipRole) || fallbackMembershipRole
 
-      setOrganisationId(resolvedOrgId)
+      setOrganisationId(effectiveOrgId)
       setOrganisationName(normalizeText(context?.organisation?.display_name || context?.organisation?.displayName || context?.organisation?.name))
       setMembershipRole(resolvedMembershipRole)
-      if (resolvedOrgId) {
-        const recovery = recoverAgencyPipelineStoreForOrganisation(resolvedOrgId)
+      if (!resolvedOrgId && effectiveOrgId) {
+        console.warn('[PIPELINE] using scoped CRM store because organisation context did not resolve an id', {
+          storageOrgId,
+        })
+      }
+      if (effectiveOrgId) {
+        const recovery = recoverAgencyPipelineStoreForOrganisation(effectiveOrgId)
         if (recovery?.migrated) {
           console.warn('[PIPELINE] recovered scoped CRM store', recovery)
           setMessage(`Recovered ${recovery.leads || 0} lead(s) from legacy workspace scope.`)
@@ -2499,13 +2532,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ? true
         : normalizeText(lead?.stage) === leadFilter.stage ||
           normalizeLeadKanbanStage(lead?.stage || lead?.status) === normalizeKey(leadFilter.stage)
+      const activeStageMatch = leadFilter.stage === 'all' ? !isTerminalPipelineLead(lead) : true
       const agentMatch =
         leadFilter.agent === 'all'
           ? true
           : normalizeKey(lead?.assignedAgentId) === normalizeKey(leadFilter.agent) ||
             normalizeKey(lead?.assignedAgentEmail) === normalizeKey(leadFilter.agent)
 
-      return categoryMatch && searchMatch && sourceMatch && stageMatch && agentMatch
+      return categoryMatch && searchMatch && sourceMatch && stageMatch && activeStageMatch && agentMatch
     })
 
     return visibleRows.sort((left, right) => {
@@ -2691,7 +2725,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     let cancelled = false
     setSelectedLeadOffersLoading(true)
     setSelectedLeadOffersError('')
-    listCanonicalOffersForLead({ organisationId, leadId })
+    const selectedAppointmentIds = selectedLeadAppointments
+      .map((appointment) => normalizeText(appointment?.appointmentId || appointment?.id))
+      .filter(Boolean)
+    const selectedListingIds = [
+      selectedLead?.listingId,
+      selectedLead?.listing_id,
+      ...selectedLeadAppointments.map((appointment) => appointment?.listingId || appointment?.listing_id),
+    ].map(normalizeText).filter(Boolean)
+    const selectedBuyerName = [
+      selectedLeadContact?.firstName,
+      selectedLeadContact?.lastName,
+    ].map(normalizeText).filter(Boolean).join(' ') ||
+      normalizeText(selectedLead?.buyerName || selectedLead?.name)
+
+    listCanonicalOffersForLead({
+      organisationId,
+      leadId,
+      contactId: normalizeText(selectedLead?.contactId || selectedLeadContact?.contactId),
+      appointmentIds: selectedAppointmentIds,
+      listingIds: selectedListingIds,
+      buyerEmail: normalizeText(selectedLeadContact?.email || selectedLead?.email),
+      buyerPhone: normalizeText(selectedLeadContact?.phone || selectedLead?.phone),
+      buyerName: selectedBuyerName,
+    })
       .then((offers) => {
         if (!cancelled) setSelectedLeadOffers(Array.isArray(offers) ? offers : [])
       })
@@ -2707,7 +2764,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return () => {
       cancelled = true
     }
-  }, [organisationId, selectedLead?.leadId, selectedLeadOffersRefreshTick])
+  }, [
+    organisationId,
+    selectedLead?.buyerName,
+    selectedLead?.contactId,
+    selectedLead?.email,
+    selectedLead?.leadId,
+    selectedLead?.listingId,
+    selectedLead?.listing_id,
+    selectedLead?.name,
+    selectedLead?.phone,
+    selectedLeadAppointments,
+    selectedLeadContact?.contactId,
+    selectedLeadContact?.email,
+    selectedLeadContact?.firstName,
+    selectedLeadContact?.lastName,
+    selectedLeadContact?.phone,
+    selectedLeadOffersRefreshTick,
+  ])
 
   const selectedLeadOfferSummary = useMemo(() => {
     const rows = Array.isArray(selectedLeadOffers) ? selectedLeadOffers : []
@@ -6019,6 +6093,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             expiresAt: normalizeText(offerLinkForm.expiryDate),
             metadata: {
               source: 'lead_appointment_tab',
+              localBuyerLeadId: selectedLead.leadId,
+              localBuyerContactId: normalizeText(selectedLead.contactId),
               buyerName: normalizeText(offerLinkForm.buyerName),
               buyerEmail: normalizeText(offerLinkForm.buyerEmail),
               buyerPhone: normalizeText(offerLinkForm.buyerPhone),
