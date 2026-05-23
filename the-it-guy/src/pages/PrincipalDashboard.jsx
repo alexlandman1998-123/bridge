@@ -873,7 +873,7 @@ function RecentActivityFeed({ rows }) {
   )
 }
 
-function PrincipalDashboard({ agencyId = '', workspaceId = '' }) {
+function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransactions: canViewAllTransactionsOverride }) {
   const { profile } = useWorkspace()
   const [dateRange, setDateRange] = useState('this_month')
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => String(workspaceId || 'all').trim() || 'all')
@@ -882,7 +882,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '' }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const canViewAllTransactions = useMemo(
+  const profileCanViewAllTransactions = useMemo(
     () =>
       canAccessPrincipalExperience({
         appRole: profile?.role,
@@ -890,6 +890,8 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '' }) {
       }),
     [profile?.membershipRole, profile?.organisationRole, profile?.role],
   )
+  const canViewAllTransactions =
+    typeof canViewAllTransactionsOverride === 'boolean' ? canViewAllTransactionsOverride : profileCanViewAllTransactions
 
   useEffect(() => {
     let active = true

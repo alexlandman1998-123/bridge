@@ -3256,6 +3256,7 @@ function renderActiveTransactionsBlock({
       <PrincipalDashboard
         agencyId={organisationIdForAppointments}
         workspaceId={workspace.id}
+        canViewAllTransactions={isPrincipalAgentView}
       />
     )
   }

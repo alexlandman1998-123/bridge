@@ -151,19 +151,49 @@ function isMissingSourceError(error) {
   )
 }
 
+function getMissingColumnName(error) {
+  const message = normalizeText(error?.message)
+  if (!message) return ''
+  return (
+    message.match(/column\s+\S+\.([a-zA-Z0-9_]+)\s+does not exist/i)?.[1] ||
+    message.match(/could not find the ['"]?([a-zA-Z0-9_]+)['"]?\s+column/i)?.[1] ||
+    ''
+  )
+}
+
+function removeColumnFromSelect(fields, columnName) {
+  if (!fields || fields === '*' || !columnName) return fields
+  const normalizedColumn = normalizeKey(columnName)
+  const parts = String(fields).split(',').map((part) => part.trim()).filter(Boolean)
+  const nextParts = parts.filter((part) => normalizeKey(part.split(/\s+as\s+/i)[0]) !== normalizedColumn)
+  return nextParts.length === parts.length ? fields : nextParts.join(', ')
+}
+
 async function safeSelect(table, selectVariants, { agencyId = '', agencyColumn = 'organisation_id', order = 'updated_at', ascending = false, limit = 1000 } = {}) {
   if (!isSupabaseConfigured || !supabase) return []
   const variants = Array.isArray(selectVariants) ? selectVariants : [selectVariants || '*']
   let lastError = null
-  for (const fields of variants) {
-    let query = supabase.from(table).select(fields)
-    if (agencyId && agencyColumn) query = query.eq(agencyColumn, agencyId)
-    if (order) query = query.order(order, { ascending })
-    if (limit) query = query.limit(limit)
-    const { data, error } = await query
-    if (!error) return data || []
-    lastError = error
-    if (!isMissingSourceError(error)) throw error
+  for (const selectFields of variants) {
+    let fields = selectFields
+    const removedColumns = new Set()
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      let query = supabase.from(table).select(fields)
+      if (agencyId && agencyColumn) query = query.eq(agencyColumn, agencyId)
+      if (order) query = query.order(order, { ascending })
+      if (limit) query = query.limit(limit)
+      const { data, error } = await query
+      if (!error) return data || []
+      lastError = error
+      const missingColumn = getMissingColumnName(error)
+      const nextFields = removeColumnFromSelect(fields, missingColumn)
+      if (missingColumn && nextFields !== fields && !removedColumns.has(missingColumn)) {
+        removedColumns.add(missingColumn)
+        fields = nextFields
+        continue
+      }
+      if (!isMissingSourceError(error)) throw error
+      break
+    }
   }
   console.debug('[PrincipalDashboard] Source unavailable; using empty result.', { table, message: lastError?.message })
   return []
@@ -175,14 +205,26 @@ async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'tr
   if (!normalizedIds.length) return []
   const variants = Array.isArray(selectVariants) ? selectVariants : [selectVariants || '*']
   let lastError = null
-  for (const fields of variants) {
-    let query = supabase.from(table).select(fields).in(idColumn, normalizedIds)
-    if (order) query = query.order(order, { ascending })
-    if (limit) query = query.limit(limit)
-    const { data, error } = await query
-    if (!error) return data || []
-    lastError = error
-    if (!isMissingSourceError(error)) throw error
+  for (const selectFields of variants) {
+    let fields = selectFields
+    const removedColumns = new Set()
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      let query = supabase.from(table).select(fields).in(idColumn, normalizedIds)
+      if (order) query = query.order(order, { ascending })
+      if (limit) query = query.limit(limit)
+      const { data, error } = await query
+      if (!error) return data || []
+      lastError = error
+      const missingColumn = getMissingColumnName(error)
+      const nextFields = removeColumnFromSelect(fields, missingColumn)
+      if (missingColumn && nextFields !== fields && !removedColumns.has(missingColumn)) {
+        removedColumns.add(missingColumn)
+        fields = nextFields
+        continue
+      }
+      if (!isMissingSourceError(error)) throw error
+      break
+    }
   }
   console.debug('[PrincipalDashboard] Scoped source unavailable; using empty result.', { table, message: lastError?.message })
   return []
@@ -209,7 +251,9 @@ function isRegisteredTransaction(row = {}) {
 
 function isExcludedTransaction(row = {}) {
   const status = getTransactionStatusText(row)
-  if (row.is_active === false) return true
+  // Principal transaction tables include legacy rows where is_active=false but
+  // lifecycle/stage still represent an open transaction. Keep the dashboard
+  // aligned with that visible transaction workspace and exclude by stage state.
   return ACTIVE_EXCLUDED_STATES.some((state) => status.includes(state))
 }
 
