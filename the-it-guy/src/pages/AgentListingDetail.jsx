@@ -328,6 +328,46 @@ function formatMoneyValue(value) {
   }).format(amount)
 }
 
+function toCleanText(value) {
+  return String(value || '').trim()
+}
+
+function isValidEmail(value) {
+  const text = toCleanText(value)
+  if (!text) return false
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)
+}
+
+function getListingSellerFormData(listing = {}) {
+  return listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
+    ? listing.sellerOnboarding.formData
+    : {}
+}
+
+function resolveSellerEmailFromListing(listing = {}) {
+  const formData = getListingSellerFormData(listing)
+  return toCleanText(
+    formData.sellerEmail ||
+      formData.email ||
+      formData.contactEmail ||
+      listing?.sellerEmail ||
+      listing?.seller_email ||
+      listing?.seller?.email,
+  ).toLowerCase()
+}
+
+function resolveSellerNameFromListing(listing = {}) {
+  const formData = getListingSellerFormData(listing)
+  return toCleanText(
+    [formData.sellerFirstName || formData.firstName, formData.sellerSurname || formData.lastName].filter(Boolean).join(' ') ||
+      formData.sellerName ||
+      formData.fullName ||
+      listing?.sellerName ||
+      listing?.seller_name ||
+      listing?.seller?.name,
+  )
+}
+
 function CompactActionButton({ active = false, disabled = false, className = '', children, ...props }) {
   return (
     <button
@@ -1186,10 +1226,16 @@ function AgentListingDetail() {
     if (!listingOrganisationId || !offerRow?.canonicalOfferId || !listingRecord) return
     const canonicalOffer = canonicalListingOffers.find((offer) => String(offer.id) === String(offerRow.canonicalOfferId))
     const note = offerNotesDraftById?.[offerRow.id] || ''
+    let createdReviewSession = null
     setOfferActionError('')
     setOfferActionMessage('')
     try {
       setCanonicalOfferActionId(`${offerRow.id}:sent_to_seller`)
+      const sellerEmail = resolveSellerEmailFromListing(listingRecord)
+      if (!isValidEmail(sellerEmail)) {
+        throw new Error('No seller email is linked to this listing yet. Add the seller email before sending the offer for review.')
+      }
+      const sellerName = resolveSellerNameFromListing(listingRecord) || 'Seller'
       const { session } = await createOfferSellerReviewSession({
         organisationId: listingOrganisationId,
         offerId: offerRow.canonicalOfferId,
@@ -1197,25 +1243,70 @@ function AgentListingDetail() {
         listingId: listingRecord.id,
         sellerLeadId: canonicalOffer?.sellerLeadId || listingRecord?.sellerLeadId || listingRecord?.leadId,
         sellerContactId: canonicalOffer?.sellerContactId || listingRecord?.sellerContactId,
+        sellerEmail,
+        sellerName,
         agentId: getCanonicalOfferActor().id,
         agentReviewNotes: note,
         metadata: {
           source: 'listing_offer_review',
           listingId: listingRecord.id,
+          sellerEmail,
+          sellerName,
         },
       }, {
         actor: getCanonicalOfferActor(),
       })
+      createdReviewSession = session
       const reviewLink = session?.token && typeof window !== 'undefined'
         ? `${window.location.origin}/seller/offers/review/${encodeURIComponent(session.token)}`
         : ''
       if (reviewLink && typeof navigator !== 'undefined') {
         void navigator.clipboard?.writeText(reviewLink)
       }
+      const emailResponse = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'seller_offer_review',
+          to: sellerEmail,
+          sellerName,
+          propertyTitle: listingRecord?.listingTitle || listingRecord?.title || listingRecord?.propertyAddress || 'your property',
+          buyerName: offerRow.buyerName || canonicalOffer?.conditions?.buyerName || 'Buyer',
+          offerAmount: formatCurrency(offerRow.offerPrice || canonicalOffer?.offerAmount),
+          reviewLink,
+          expiresAt: session?.expiresAt || '',
+          agentName: getCanonicalOfferActor().name,
+          note,
+        },
+      })
+      if (emailResponse?.error || emailResponse?.data?.error) {
+        throw emailResponse.error || new Error(emailResponse.data.error)
+      }
       setOfferNotesDraftById((previous) => ({ ...previous, [offerRow.id]: '' }))
-      setOfferActionMessage(reviewLink ? 'Offer sent to seller review. Seller link copied.' : 'Offer sent to seller review.')
+      setOfferActionMessage(reviewLink ? `Offer emailed to ${sellerEmail}. Seller link copied.` : `Offer emailed to ${sellerEmail}.`)
       setOffersRefreshTick((value) => value + 1)
     } catch (error) {
+      if (createdReviewSession?.id) {
+        await updateCanonicalOfferStatus(offerRow.canonicalOfferId, 'agent_review', {
+          organisationId: listingOrganisationId,
+          actor: getCanonicalOfferActor(),
+          patch: {
+            conditions_json: {
+              ...(canonicalOffer?.conditions || {}),
+              latestAgentNote: error?.message || 'Seller email failed after review link creation.',
+              agentActionHistory: [
+                ...(Array.isArray(canonicalOffer?.conditions?.agentActionHistory) ? canonicalOffer.conditions.agentActionHistory : []),
+                {
+                  action: 'Seller email failed',
+                  note: error?.message || 'Seller email failed after review link creation.',
+                  at: new Date().toISOString(),
+                  actorId: getCanonicalOfferActor().id,
+                  actorName: getCanonicalOfferActor().name,
+                },
+              ],
+            },
+          },
+        }).catch(() => null)
+        setOffersRefreshTick((value) => value + 1)
+      }
       setOfferActionError(error?.message || 'Unable to send this offer to seller review.')
     } finally {
       setCanonicalOfferActionId('')
@@ -1280,8 +1371,11 @@ function AgentListingDetail() {
             source: 'accepted_offer_conversion',
           },
         })
-        if (onboardingEmail?.error) {
-          onboardingSendWarning = onboardingEmail.error?.message || 'Buyer onboarding email could not be sent.'
+        const onboardingEmailError = onboardingEmail?.error || onboardingEmail?.data?.error
+        if (onboardingEmailError) {
+          onboardingSendWarning = typeof onboardingEmailError === 'string'
+            ? onboardingEmailError
+            : onboardingEmailError?.message || 'Buyer onboarding email could not be sent.'
         }
       }
       if (transactionId) {

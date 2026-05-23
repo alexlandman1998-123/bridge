@@ -7,6 +7,7 @@ import {
   getCanonicalOfferInviteContext,
   submitCanonicalBuyerOffer,
 } from '../lib/buyerLifecycleService'
+import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
   getOfferInviteContext,
   OFFER_WORKFLOW_STATUS,
@@ -31,6 +32,17 @@ function statusLabel(value) {
   return String(value || '')
     .replaceAll('_', ' ')
     .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function normalizeText(value) {
+  return String(value || '').trim()
+}
+
+function formatDateTime(value) {
+  if (!value) return ''
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return ''
+  return parsed.toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 function BuyerOfferSubmission() {
@@ -64,9 +76,9 @@ function BuyerOfferSubmission() {
     excludedFixtures: '',
     specialConditions: '',
     expiryDate: '',
-    acknowledgeSellerReview: false,
-    acknowledgeLegalDisclaimer: false,
-    acknowledgeInfoAccuracy: false,
+    acknowledgeSellerReview: true,
+    acknowledgeLegalDisclaimer: true,
+    acknowledgeInfoAccuracy: true,
   })
 
   const legacyContext = useMemo(() => {
@@ -127,25 +139,24 @@ function BuyerOfferSubmission() {
     event.preventDefault()
     setErrorMessage('')
     setSuccessMessage('')
-    if (!form.acknowledgeSellerReview || !form.acknowledgeLegalDisclaimer || !form.acknowledgeInfoAccuracy) {
-      setErrorMessage('Confirm all required declarations before submitting.')
-      return
-    }
-
     try {
       setSubmitting(true)
+      let submittedOffer = null
       if (context?.source === 'canonical') {
-        await submitCanonicalBuyerOffer({
+        submittedOffer = await submitCanonicalBuyerOffer({
           token,
           submission: form,
         })
       } else {
-        await submitBuyerOffer({
+        submittedOffer = await submitBuyerOffer({
           token,
           mode: counterPendingBuyer ? 'counter_response' : 'new',
           submission: form,
         })
       }
+      await sendAgentOfferSubmittedNotification(submittedOffer).catch((notificationError) => {
+        console.warn('[BUYER OFFER] agent offer submission notification failed', notificationError)
+      })
       setSuccessMessage('Offer submitted successfully. The agent will review and forward it to the seller.')
       setRefreshKey((value) => value + 1)
     } catch (error) {
@@ -153,6 +164,31 @@ function BuyerOfferSubmission() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  async function sendAgentOfferSubmittedNotification(offer = {}) {
+    const conditions = context?.canonicalOffer?.conditions || offer?.conditions || {}
+    const agentEmail = normalizeText(conditions.agentEmail || context?.invite?.agentEmail).toLowerCase()
+    if (!agentEmail) return null
+
+    const response = await invokeEdgeFunction('send-email', {
+      body: {
+        type: 'buyer_offer_submitted_agent',
+        to: agentEmail,
+        agentName: normalizeText(conditions.agentName || context?.invite?.agentName),
+        buyerName: normalizeText(form.fullName || conditions.buyerName || context?.invite?.buyerLeadName),
+        propertyTitle: listing?.listingTitle || listing?.propertyAddress || 'Listing',
+        offerAmount: formatCurrency(offer?.offerAmount || form.offerAmount),
+        financeType: normalizeText(offer?.financeType || form.financeType),
+        offerSubmittedAt: formatDateTime(offer?.buyerSubmittedAt || offer?.submittedAt || new Date().toISOString()),
+        agentReviewUrl: normalizeText(conditions.agentReviewUrl),
+        note: normalizeText(form.specialConditions || form.suspensiveConditions),
+      },
+    })
+    if (response?.error || response?.data?.error) {
+      throw response.error || new Error(response.data.error)
+    }
+    return response?.data || null
   }
 
   if (canonicalLoading && !context?.ok) {
@@ -359,21 +395,9 @@ function BuyerOfferSubmission() {
         </section>
 
         <section className="rounded-[24px] border border-[#e1e9f4] bg-white p-5 shadow-[0_14px_28px_rgba(15,23,42,0.07)]">
-          <h2 className="text-[1rem] font-semibold text-[#142132]">Declarations</h2>
-          <div className="mt-3 space-y-2 text-sm text-[#35546c]">
-            <label className="flex items-start gap-2">
-              <input type="checkbox" checked={form.acknowledgeSellerReview} onChange={(event) => updateForm('acknowledgeSellerReview', event.target.checked)} />
-              <span>I understand this offer is subject to seller review.</span>
-            </label>
-            <label className="flex items-start gap-2">
-              <input type="checkbox" checked={form.acknowledgeLegalDisclaimer} onChange={(event) => updateForm('acknowledgeLegalDisclaimer', event.target.checked)} />
-              <span>I understand this does not replace formal legal documentation.</span>
-            </label>
-            <label className="flex items-start gap-2">
-              <input type="checkbox" checked={form.acknowledgeInfoAccuracy} onChange={(event) => updateForm('acknowledgeInfoAccuracy', event.target.checked)} />
-              <span>I confirm the information provided is accurate.</span>
-            </label>
-          </div>
+          <p className="text-sm leading-6 text-[#35546c]">
+            Your agent will review the offer before sending it to the seller. Formal legal documentation will follow if the offer is accepted.
+          </p>
           <div className="mt-5 flex justify-end">
             <Button type="submit" disabled={submitting}>{submitting ? 'Submitting offer...' : 'Submit Offer'}</Button>
           </div>

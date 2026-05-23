@@ -10,6 +10,8 @@ const MONEY_FORMATTER = new Intl.NumberFormat('en-ZA', {
   currency: 'ZAR',
   maximumFractionDigits: 0,
 })
+const BUYER_LIFECYCLE_REFRESH_STORAGE_KEY = 'bridge:buyer-lifecycle-refresh:v1'
+const BUYER_LIFECYCLE_REFRESH_EVENT = 'bridge:buyer-lifecycle-refresh'
 
 function toText(value, fallback = '') {
   const normalized = String(value || '').trim()
@@ -69,6 +71,21 @@ function EmptyState({ title, body }) {
   )
 }
 
+function publishBuyerLifecycleRefresh(payload = {}) {
+  if (typeof window === 'undefined') return
+  const eventPayload = {
+    ...payload,
+    source: payload.source || 'seller_offer_review',
+    timestamp: new Date().toISOString(),
+  }
+  try {
+    window.localStorage.setItem(BUYER_LIFECYCLE_REFRESH_STORAGE_KEY, JSON.stringify(eventPayload))
+  } catch {
+    // Non-critical: the current page still shows the persisted result.
+  }
+  window.dispatchEvent(new CustomEvent(BUYER_LIFECYCLE_REFRESH_EVENT, { detail: eventPayload }))
+}
+
 function SellerOfferReviewPage() {
   const { token } = useParams()
   const [context, setContext] = useState(null)
@@ -77,6 +94,7 @@ function SellerOfferReviewPage() {
   const [decisionNotes, setDecisionNotes] = useState('')
   const [decisionSaving, setDecisionSaving] = useState('')
   const [decisionMessage, setDecisionMessage] = useState('')
+  const [decisionWarning, setDecisionWarning] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -109,62 +127,180 @@ function SellerOfferReviewPage() {
   const propertyTitle = listingLabel(listing)
   const buyerName = toText(conditions.buyerName, contactName(buyer, 'Buyer'))
   const sellerStatus = toText(context?.session?.status, 'viewed').replaceAll('_', ' ')
+  const sellerName = toText(conditions.sellerReviewRecipientName || conditions.sellerName, contactName(context?.seller || {}, 'Seller'))
   const isDecided = ['accepted', 'rejected', 'countered'].includes(toText(context?.session?.status).toLowerCase())
 
   async function sendDecisionNotification(payload = {}, recipient = {}) {
     const to = toText(recipient.email)
-    if (!to) return null
-    return invokeEdgeFunction('send-email', {
-      body: {
-        type: 'offer_decision_notification',
-        to,
-        recipientName: recipient.name,
+    if (!to) {
+      return {
+        attempted: false,
+        sent: false,
         recipientRole: recipient.role,
-        decision: payload.decision,
-        propertyTitle,
-        buyerName,
-        sellerName: contactName(context?.seller || {}, 'Seller'),
-        agentName: contactName(agent, 'Assigned agent'),
-        offerAmount: toMoney(offer.offerAmount),
-        decisionNotes: decisionNotes,
-        nextStep: recipient.nextStep,
-      },
-    }).catch(() => null)
+        reason: `${recipient.label || recipient.role || 'Recipient'} email is missing.`,
+      }
+    }
+    try {
+      const response = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'offer_decision_notification',
+          to,
+          recipientName: recipient.name,
+          recipientRole: recipient.role,
+          decision: payload.decision,
+          propertyTitle: payload.propertyTitle || propertyTitle,
+          buyerName: payload.buyerName || buyerName,
+          sellerName: payload.sellerName || sellerName,
+          agentName: payload.agentName || contactName(agent, 'Assigned agent'),
+          offerAmount: payload.offerAmount || toMoney(offer.offerAmount),
+          decisionNotes: payload.decisionNotes,
+          nextStep: recipient.nextStep,
+        },
+      })
+      const responseError = response?.error || response?.data?.error
+      if (responseError) {
+        return {
+          attempted: true,
+          sent: false,
+          recipientRole: recipient.role,
+          to,
+          reason: typeof responseError === 'string' ? responseError : responseError?.message || 'Email send failed.',
+        }
+      }
+      return { attempted: true, sent: true, recipientRole: recipient.role, to }
+    } catch (notificationError) {
+      return {
+        attempted: true,
+        sent: false,
+        recipientRole: recipient.role,
+        to,
+        reason: notificationError?.message || 'Email send failed.',
+      }
+    }
+  }
+
+  async function sendBuyerOnboardingEmail(transactionId = '') {
+    const scopedTransactionId = toText(transactionId)
+    if (!scopedTransactionId) {
+      return {
+        attempted: false,
+        sent: false,
+        recipientRole: 'buyer',
+        reason: 'Transaction was not created, so buyer onboarding could not be sent.',
+      }
+    }
+    try {
+      const response = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'client_onboarding',
+          transactionId: scopedTransactionId,
+          source: 'seller_accepted_offer',
+        },
+      })
+      const responseError = response?.error || response?.data?.error
+      if (responseError) {
+        return {
+          attempted: true,
+          sent: false,
+          recipientRole: 'buyer',
+          reason: typeof responseError === 'string' ? responseError : responseError?.message || 'Buyer onboarding email failed.',
+        }
+      }
+      return {
+        attempted: true,
+        sent: true,
+        recipientRole: 'buyer',
+        to: response?.data?.recipientEmail || '',
+      }
+    } catch (onboardingError) {
+      return {
+        attempted: true,
+        sent: false,
+        recipientRole: 'buyer',
+        reason: onboardingError?.message || 'Buyer onboarding email failed.',
+      }
+    }
   }
 
   async function handleSellerDecision(decision) {
     if (decisionSaving || isDecided) return
     setDecisionSaving(decision)
     setDecisionMessage('')
+    setDecisionWarning('')
     setError('')
     try {
       const result = await submitSellerOfferDecision({ token, decision, notes: decisionNotes })
-      setContext((previous) => ({ ...(previous || {}), ...(result || {}) }))
-      const notificationPayload = { decision }
-      await Promise.all([
+      const nextContext = { ...(context || {}), ...(result || {}) }
+      const nextOffer = nextContext.offer || offer
+      const nextConditions = nextOffer.conditions || conditions
+      const nextBuyer = nextContext.buyer || buyer
+      const nextAgent = nextContext.agent || agent
+      const nextSeller = nextContext.seller || context?.seller || {}
+      const nextTransactionId = toText(nextContext.transactionId || nextOffer.transactionId || nextOffer.transaction_id)
+      publishBuyerLifecycleRefresh({
+        organisationId: toText(nextOffer.organisationId),
+        leadId: toText(nextOffer.buyerLeadId),
+        offerId: toText(nextOffer.id),
+        listingId: toText(nextOffer.listingId),
+        transactionId: nextTransactionId,
+        decision,
+      })
+      const nextPropertyTitle = listingLabel(nextContext.listing || listing)
+      const nextBuyerName = toText(nextConditions.buyerName, contactName(nextBuyer, buyerName))
+      const nextSellerName = toText(
+        nextConditions.sellerReviewRecipientName || nextConditions.sellerName,
+        contactName(nextSeller, sellerName),
+      )
+      const notificationPayload = {
+        decision,
+        propertyTitle: nextPropertyTitle,
+        buyerName: nextBuyerName,
+        sellerName: nextSellerName,
+        agentName: contactName(nextAgent, 'Assigned agent'),
+        offerAmount: toMoney(nextOffer.offerAmount),
+        decisionNotes,
+      }
+      const notificationResults = await Promise.all([
         sendDecisionNotification(notificationPayload, {
-          email: toText(agent.email),
-          name: contactName(agent, 'Agent'),
+          email: toText(nextAgent.email),
+          name: contactName(nextAgent, 'Agent'),
           role: 'agent',
+          label: 'Agent',
           nextStep: decision === 'accepted'
             ? 'Create the transaction from the accepted offer and send buyer onboarding.'
             : 'Open the buyer lead to manage the next negotiation step.',
         }),
         decision === 'accepted'
-          ? sendDecisionNotification(notificationPayload, {
-              email: toText(conditions.buyerEmail || buyer.email),
-              name: buyerName,
-              role: 'buyer',
-              nextStep: 'Your agent will confirm the accepted offer and send the buyer onboarding link.',
-            })
+          ? nextTransactionId
+            ? sendBuyerOnboardingEmail(nextTransactionId)
+            : sendDecisionNotification(notificationPayload, {
+                email: toText(nextConditions.buyerEmail || nextBuyer.email),
+                name: nextBuyerName,
+                role: 'buyer',
+                label: 'Buyer',
+                nextStep: 'Your agent will confirm the accepted offer and send the buyer onboarding link.',
+              })
           : null,
       ])
+      setContext(nextContext)
+      const notificationFailures = notificationResults
+        .filter(Boolean)
+        .filter((notificationResult) => !notificationResult.sent)
+      if (notificationFailures.length) {
+        setDecisionWarning(
+          `Decision saved, but ${notificationFailures
+            .map((notificationResult) => notificationResult.reason || `${notificationResult.recipientRole || 'recipient'} notification failed`)
+            .join(' ')}`,
+        )
+      }
       setDecisionMessage(
         decision === 'accepted'
-          ? 'Offer accepted. The agent and buyer notification flow has been triggered.'
+          ? nextTransactionId
+            ? 'Offer accepted. The transaction was created and buyer onboarding was triggered.'
+            : 'Offer accepted. The canonical offer and buyer lead have been updated.'
           : decision === 'countered'
             ? 'Counter request submitted. Your agent will continue the negotiation.'
-            : 'Offer rejected. Your agent has been notified.',
+            : 'Offer rejected. The canonical offer and buyer lead have been updated.',
       )
     } catch (decisionError) {
       setError(decisionError?.message || 'Unable to submit this decision.')
@@ -274,6 +410,11 @@ function SellerOfferReviewPage() {
               {decisionMessage ? (
                 <div className="mt-4 rounded-2xl border border-[#cde8d8] bg-[#effaf3] px-4 py-3 text-sm font-medium text-[#26724c]">
                   {decisionMessage}
+                </div>
+              ) : null}
+              {decisionWarning ? (
+                <div className="mt-3 rounded-2xl border border-[#f5d6a8] bg-[#fff8ed] px-4 py-3 text-sm font-medium text-[#9a5b11]">
+                  {decisionWarning}
                 </div>
               ) : null}
               {isDecided ? (

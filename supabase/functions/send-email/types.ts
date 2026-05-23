@@ -108,6 +108,38 @@ export type SendBuyerOfferLinkPayload = {
   supportPhone?: string;
 };
 
+export type SendBuyerOfferSubmittedAgentPayload = {
+  type: "buyer_offer_submitted_agent" | "buyer_offer_submitted" | "offer_submitted_agent";
+  to: string;
+  agentName?: string;
+  buyerName?: string;
+  propertyTitle?: string;
+  offerAmount?: string;
+  financeType?: string;
+  offerSubmittedAt?: string;
+  agentReviewUrl?: string;
+  note?: string;
+  organisationName?: string;
+  supportEmail?: string;
+  supportPhone?: string;
+};
+
+export type SendSellerOfferReviewPayload = {
+  type: "seller_offer_review" | "offer_seller_review";
+  to: string;
+  sellerName?: string;
+  propertyTitle?: string;
+  buyerName?: string;
+  offerAmount?: string;
+  reviewLink?: string;
+  expiresAt?: string;
+  agentName?: string;
+  note?: string;
+  organisationName?: string;
+  supportEmail?: string;
+  supportPhone?: string;
+};
+
 export type SendOfferDecisionNotificationPayload = {
   type: "offer_decision_notification" | "seller_offer_decision" | "offer_accepted_notification";
   to: string;

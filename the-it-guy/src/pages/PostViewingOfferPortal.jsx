@@ -7,6 +7,7 @@ import {
   getOfferPortalSessionContext,
   submitOfferPortalOffer,
 } from '../lib/buyerLifecycleService'
+import { invokeEdgeFunction } from '../lib/supabaseClient'
 
 function formatCurrency(value) {
   const amount = Number(value || 0)
@@ -25,6 +26,17 @@ function statusLabel(value) {
   return String(value || '')
     .replaceAll('_', ' ')
     .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function normalizeText(value) {
+  return String(value || '').trim()
+}
+
+function formatDateTime(value) {
+  if (!value) return ''
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return ''
+  return parsed.toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 function propertyLabel(item = {}) {
@@ -57,9 +69,9 @@ const initialForm = {
   excludedFixtures: '',
   specialConditions: '',
   expiryDate: '',
-  acknowledgeSellerReview: false,
-  acknowledgeLegalDisclaimer: false,
-  acknowledgeInfoAccuracy: false,
+  acknowledgeSellerReview: true,
+  acknowledgeLegalDisclaimer: true,
+  acknowledgeInfoAccuracy: true,
 }
 
 function PostViewingOfferPortal() {
@@ -139,20 +151,18 @@ function PostViewingOfferPortal() {
       setErrorMessage('Select a property before submitting an offer.')
       return
     }
-    if (!form.acknowledgeSellerReview || !form.acknowledgeLegalDisclaimer || !form.acknowledgeInfoAccuracy) {
-      setErrorMessage('Confirm all required declarations before submitting.')
-      return
-    }
-
     try {
       setSubmitting(true)
-      await submitOfferPortalOffer({
+      const result = await submitOfferPortalOffer({
         token,
         listingId: selectedListingId,
         submission: {
           ...form,
           selectedProperty: propertyLabel(selectedProperty),
         },
+      })
+      await sendAgentOfferSubmittedNotification(result?.offer).catch((notificationError) => {
+        console.warn('[OFFER PORTAL] agent offer submission notification failed', notificationError)
       })
       setSuccessMessage('Offer submitted successfully. The agent will review and forward it to the seller.')
       setRefreshKey((value) => value + 1)
@@ -161,6 +171,36 @@ function PostViewingOfferPortal() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  async function sendAgentOfferSubmittedNotification(offer = {}) {
+    const metadata = context?.session?.metadata || {}
+    const agent = context?.agent || {}
+    const agentEmail = normalizeText(agent.email || metadata.agentEmail).toLowerCase()
+    if (!agentEmail) return null
+
+    const agentReviewUrl = normalizeText(metadata.agentReviewUrl) ||
+      (typeof window !== 'undefined' && context?.session?.buyerLeadId
+        ? `${window.location.origin}/pipeline/leads/${encodeURIComponent(context.session.buyerLeadId)}`
+        : '')
+    const response = await invokeEdgeFunction('send-email', {
+      body: {
+        type: 'buyer_offer_submitted_agent',
+        to: agentEmail,
+        agentName: normalizeText(agent.name || metadata.agentName),
+        buyerName: normalizeText(form.fullName || metadata.buyerName),
+        propertyTitle: propertyLabel(selectedProperty),
+        offerAmount: formatCurrency(offer?.offerAmount || form.offerAmount),
+        financeType: normalizeText(offer?.financeType || form.financeType),
+        offerSubmittedAt: formatDateTime(offer?.buyerSubmittedAt || offer?.submittedAt || new Date().toISOString()),
+        agentReviewUrl,
+        note: normalizeText(form.specialConditions || form.suspensiveConditions),
+      },
+    })
+    if (response?.error || response?.data?.error) {
+      throw response.error || new Error(response.data.error)
+    }
+    return response?.data || null
   }
 
   if (loading && !context) {
@@ -389,20 +429,9 @@ function PostViewingOfferPortal() {
               <Field as="textarea" className="mt-1" value={form.specialConditions} onChange={(event) => updateForm('specialConditions', event.target.value)} />
             </label>
 
-            <div className="space-y-2 rounded-2xl border border-[#e1e9f3] bg-white p-4">
-              <label className="flex items-start gap-2 text-sm text-[#44566c]">
-                <input type="checkbox" className="mt-1" checked={form.acknowledgeSellerReview} onChange={(event) => updateForm('acknowledgeSellerReview', event.target.checked)} />
-                <span>I understand this offer will be reviewed by the agent and seller.</span>
-              </label>
-              <label className="flex items-start gap-2 text-sm text-[#44566c]">
-                <input type="checkbox" className="mt-1" checked={form.acknowledgeLegalDisclaimer} onChange={(event) => updateForm('acknowledgeLegalDisclaimer', event.target.checked)} />
-                <span>I understand this submission is not a signed deed of sale.</span>
-              </label>
-              <label className="flex items-start gap-2 text-sm text-[#44566c]">
-                <input type="checkbox" className="mt-1" checked={form.acknowledgeInfoAccuracy} onChange={(event) => updateForm('acknowledgeInfoAccuracy', event.target.checked)} />
-                <span>I confirm the information above is accurate.</span>
-              </label>
-            </div>
+            <p className="rounded-2xl border border-[#e1e9f3] bg-[#f9fbfd] px-4 py-3 text-sm leading-6 text-[#44566c]">
+              Your agent will review the offer before sending it to the seller. Formal legal documentation will follow if the offer is accepted.
+            </p>
 
             <Button type="submit" className="w-full justify-center" disabled={submitting || !selectedListingId || !properties.length}>
               {submitting ? 'Submitting offer...' : 'Submit offer'}

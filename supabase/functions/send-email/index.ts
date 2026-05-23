@@ -9,10 +9,13 @@ import { handleSellerMandateSentEmail } from "./handlers/sellerMandateSent.ts";
 import { handleSellerMandateSignedEmail } from "./handlers/sellerMandateSigned.ts";
 import { handleAppointmentEmail } from "./handlers/appointment.ts";
 import { handleBuyerOfferLinkEmail } from "./handlers/buyerOfferLink.ts";
+import { handleBuyerOfferSubmittedAgentEmail } from "./handlers/buyerOfferSubmittedAgent.ts";
 import { handleOfferDecisionNotificationEmail } from "./handlers/offerDecisionNotification.ts";
+import { handleSellerOfferReviewEmail } from "./handlers/sellerOfferReview.ts";
 import type {
   SendAppointmentEmailPayload,
   SendBuyerOfferLinkPayload,
+  SendBuyerOfferSubmittedAgentPayload,
   SendClientOnboardingPayload,
   SendLegacyTestPayload,
   SendOnboardingSubmittedPayload,
@@ -21,6 +24,7 @@ import type {
   SendReservationDepositReceivedPayload,
   SendSellerMandateSignedPayload,
   SendSellerMandateSentPayload,
+  SendSellerOfferReviewPayload,
   SendSellerOnboardingPayload,
   SendSellerOnboardingSubmittedPayload,
 } from "./types.ts";
@@ -164,6 +168,16 @@ Deno.serve(async (req: Request) => {
       return await handleBuyerOfferLinkEmail(payload as SendBuyerOfferLinkPayload);
     }
 
+    if (["buyer_offer_submitted_agent", "buyer_offer_submitted", "offer_submitted_agent"].includes(type)) {
+      console.log("[send-email] routing template", { route: "buyer_offer_submitted_agent", recipient: recipient || null });
+      return await handleBuyerOfferSubmittedAgentEmail(payload as SendBuyerOfferSubmittedAgentPayload);
+    }
+
+    if (["seller_offer_review", "offer_seller_review"].includes(type)) {
+      console.log("[send-email] routing template", { route: "seller_offer_review", recipient: recipient || null });
+      return await handleSellerOfferReviewEmail(payload as SendSellerOfferReviewPayload);
+    }
+
     if (["offer_decision_notification", "seller_offer_decision", "offer_accepted_notification"].includes(type)) {
       console.log("[send-email] routing template", { route: "offer_decision_notification", recipient: recipient || null });
       return await handleOfferDecisionNotificationEmail(payload as SendOfferDecisionNotificationPayload);
@@ -209,6 +223,8 @@ Deno.serve(async (req: Request) => {
           "seller_mandate_sent",
           "seller_mandate_signed",
           "buyer_offer_link",
+          "buyer_offer_submitted_agent",
+          "seller_offer_review",
           "offer_decision_notification",
           "appointment_scheduled",
           "appointment_confirmed",
@@ -236,6 +252,8 @@ Deno.serve(async (req: Request) => {
         "seller_mandate_sent",
         "seller_mandate_signed",
         "buyer_offer_link",
+        "buyer_offer_submitted_agent",
+        "seller_offer_review",
         "offer_decision_notification",
         "appointment_scheduled",
         "appointment_confirmed",

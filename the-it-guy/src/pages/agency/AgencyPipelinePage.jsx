@@ -1,4 +1,4 @@
-import { ArrowUpRight, Bold, CalendarDays, CheckSquare, ChevronRight, Clock3, Columns3, Filter, Home, ImageIcon, Italic, Link2, List, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, Search, Smile, Table2, Trash2, TrendingUp, Upload, UserRound, X } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, Bold, CalendarDays, CheckSquare, ChevronRight, Clock3, Columns3, Filter, Home, ImageIcon, Italic, Link2, List, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Search, Smile, Table2, Trash2, TrendingUp, Upload, UserRound, X } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
@@ -40,6 +40,7 @@ import {
   deleteAgencyCrmLeadActivity,
   deleteAgencyCrmLeadRecord,
   deleteAgencyCrmLeadTask,
+  ensureAgencyCrmLeadRecordPersisted,
   listAgencyCrmLeadContacts,
   updateAgencyCrmLeadActivity,
   updateAgencyCrmLeadRecord,
@@ -90,6 +91,7 @@ import {
   createOfferPortalSession,
   createOfferSellerReviewSession,
   createTransactionFromAcceptedCanonicalOffer,
+  getBuyerLeadLifecycleDiagnostic,
   listAppointmentViewedListings,
   listCanonicalOffersForLead,
   recordBuyerLeadActivity,
@@ -105,6 +107,8 @@ const SELLER_ONBOARDING_COMPLETION_POLL_MS = 7000
 const LEAD_WORKSPACE_RETRY_MS = 2500
 const CANVASSING_STORAGE_PREFIX = 'itg:agency-canvassing:v1'
 const CANVASSING_UPDATED_EVENT = 'itg:agency-canvassing-updated'
+const BUYER_LIFECYCLE_REFRESH_STORAGE_KEY = 'bridge:buyer-lifecycle-refresh:v1'
+const BUYER_LIFECYCLE_REFRESH_EVENT = 'bridge:buyer-lifecycle-refresh'
 const LEAD_WORKSPACE_MAX_RETRIES = 10
 const LEAD_TABLE_PAGE_SIZE = 12
 const QUICK_CREATE_STORAGE_KEY = 'bridge:quick-create-records:v1'
@@ -1120,6 +1124,43 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)
 }
 
+function getListingSellerFormData(listing = {}) {
+  const onboardingFormData = listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
+    ? listing.sellerOnboarding.formData
+    : {}
+  const rawOnboardingFormData = listing?.sellerOnboarding?.form_data && typeof listing.sellerOnboarding.form_data === 'object'
+    ? listing.sellerOnboarding.form_data
+    : {}
+  return {
+    ...rawOnboardingFormData,
+    ...onboardingFormData,
+  }
+}
+
+function resolveSellerEmailFromListing(listing = {}) {
+  const formData = getListingSellerFormData(listing)
+  return normalizeText(
+    formData.sellerEmail ||
+      formData.email ||
+      formData.contactEmail ||
+      listing?.sellerEmail ||
+      listing?.seller_email ||
+      listing?.seller?.email,
+  ).toLowerCase()
+}
+
+function resolveSellerNameFromListing(listing = {}) {
+  const formData = getListingSellerFormData(listing)
+  return normalizeText(
+    [formData.sellerFirstName || formData.firstName, formData.sellerSurname || formData.lastName].filter(Boolean).join(' ') ||
+      formData.sellerName ||
+      formData.fullName ||
+      listing?.sellerName ||
+      listing?.seller_name ||
+      listing?.seller?.name,
+  )
+}
+
 function isPermissionDeniedError(error) {
   const status = Number(error?.status || error?.statusCode || 0)
   const code = String(error?.code || '').trim()
@@ -1836,6 +1877,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [selectedLeadOffersLoading, setSelectedLeadOffersLoading] = useState(false)
   const [selectedLeadOffersError, setSelectedLeadOffersError] = useState('')
   const [selectedLeadOffersRefreshTick, setSelectedLeadOffersRefreshTick] = useState(0)
+  const [selectedLeadLifecycleDiagnostic, setSelectedLeadLifecycleDiagnostic] = useState(null)
+  const [selectedLeadLifecycleDiagnosticLoading, setSelectedLeadLifecycleDiagnosticLoading] = useState(false)
+  const [selectedLeadLifecycleDiagnosticError, setSelectedLeadLifecycleDiagnosticError] = useState('')
   const [canonicalOfferActionId, setCanonicalOfferActionId] = useState('')
   const [canonicalOfferNotesById, setCanonicalOfferNotesById] = useState({})
   const [appointmentResources, setAppointmentResources] = useState([])
@@ -2291,6 +2335,41 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [organisationId, scheduleRecordsReload])
 
   useEffect(() => {
+    if (!organisationId || typeof window === 'undefined') return undefined
+
+    const refreshBuyerLifecycle = (payload = {}) => {
+      const eventOrgId = normalizeText(payload?.organisationId)
+      if (eventOrgId && eventOrgId !== organisationId) return
+      const eventLeadId = normalizeLeadIdentityKey(payload?.leadId)
+      if (eventLeadId && selectedLead?.leadId && eventLeadId !== normalizeLeadIdentityKey(selectedLead.leadId)) {
+        scheduleRecordsReload(organisationId, 0)
+        return
+      }
+      setSelectedLeadOffersRefreshTick((value) => value + 1)
+      scheduleRecordsReload(organisationId, 0)
+    }
+
+    const handleBuyerLifecycleRefresh = (event) => {
+      refreshBuyerLifecycle(event?.detail || {})
+    }
+    const handleStorageRefresh = (event) => {
+      if (event?.key !== BUYER_LIFECYCLE_REFRESH_STORAGE_KEY || !event?.newValue) return
+      try {
+        refreshBuyerLifecycle(JSON.parse(event.newValue))
+      } catch {
+        refreshBuyerLifecycle({})
+      }
+    }
+
+    window.addEventListener(BUYER_LIFECYCLE_REFRESH_EVENT, handleBuyerLifecycleRefresh)
+    window.addEventListener('storage', handleStorageRefresh)
+    return () => {
+      window.removeEventListener(BUYER_LIFECYCLE_REFRESH_EVENT, handleBuyerLifecycleRefresh)
+      window.removeEventListener('storage', handleStorageRefresh)
+    }
+  }, [organisationId, scheduleRecordsReload, selectedLead?.leadId])
+
+  useEffect(() => {
     if (!organisationId || !isCalendarMode || typeof window === 'undefined') return undefined
 
     const refreshCalendarAppointments = () => {
@@ -2657,6 +2736,54 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     )
   }, [canvassingProspectById, records.contacts, selectedLead])
 
+  const selectedLeadSyncStatus = normalizeText(selectedLead?.syncStatus || selectedLead?.sync_status)
+  const selectedLeadSyncError = normalizeText(selectedLead?.syncError || selectedLead?.sync_error)
+  const selectedLeadHasSyncIssue = Boolean(
+    selectedLead &&
+    !normalizeText(selectedLead?.leadCategory).toLowerCase().includes('seller') &&
+    (selectedLeadSyncStatus === 'pending_remote_sync' || selectedLeadSyncError),
+  )
+
+  async function ensureBuyerLeadPersistedForLifecycle(lead = selectedLead, contact = selectedLeadContact) {
+    if (!lead) {
+      throw new Error('Select a buyer lead before continuing.')
+    }
+    const isSeller = normalizeText(lead?.leadCategory).toLowerCase().includes('seller')
+    if (isSeller) return { ok: true, skipped: true }
+    const result = await ensureAgencyCrmLeadRecordPersisted(
+      organisationId,
+      lead,
+      contact || buildLeadContactFallback(lead),
+      {
+        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+      },
+    )
+    if (result?.repaired) {
+      setRecords((previous) => ({
+        ...previous,
+        leads: previous.leads.map((row) =>
+          normalizeLeadIdentityKey(row?.leadId || row?.id) === normalizeLeadIdentityKey(lead?.leadId || lead?.id)
+            ? { ...row, syncStatus: '', syncError: '', leadId: result.leadId || row.leadId, contactId: result.contactId || row.contactId }
+            : row,
+        ),
+      }))
+      setMessage('Lead was repaired and synced to Supabase before continuing.')
+    }
+    return result
+  }
+
+  async function handleRepairSelectedLeadSync() {
+    if (!selectedLead) return
+    try {
+      setError('')
+      await ensureBuyerLeadPersistedForLifecycle(selectedLead, selectedLeadContact)
+      await reloadRecords(organisationId)
+      setMessage('Lead synced to Supabase. Buyer lifecycle actions can continue.')
+    } catch (repairError) {
+      setError(repairError?.message || 'Unable to repair this lead sync right now.')
+    }
+  }
+
   const selectedLeadDisplayName = useMemo(() => {
     if (!selectedLead && !selectedLeadContact) return 'Lead Workspace'
     return [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() ||
@@ -2711,12 +2838,45 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const selectedLeadLinkedTransaction = useMemo(() => {
     if (!selectedLead) return null
-    return (
-      records.deals
-        .filter((row) => normalizeLeadIdentityKey(row?.leadId) === normalizeLeadIdentityKey(selectedLead?.leadId))
-        .sort((a, b) => new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0))[0] || null
+    const leadKey = normalizeLeadIdentityKey(selectedLead?.leadId)
+    const explicitTransactionId = normalizeText(selectedLead?.convertedTransactionId || selectedLead?.convertedDealId)
+    const convertedOffer = (Array.isArray(selectedLeadOffers) ? selectedLeadOffers : [])
+      .find((offer) => normalizeText(offer?.transactionId))
+    const offerTransactionId = normalizeText(convertedOffer?.transactionId)
+    const targetTransactionId = explicitTransactionId || offerTransactionId
+    const dealRows = Array.isArray(records.deals) ? records.deals : []
+    const dealMatchesTransaction = (row) => {
+      const rowTransactionId = normalizeText(row?.transactionId || row?.dealId || row?.id)
+      return targetTransactionId && rowTransactionId === targetTransactionId
+    }
+    const linkedDeal = (
+      (targetTransactionId ? dealRows.find(dealMatchesTransaction) : null) ||
+      dealRows
+        .filter((row) => normalizeLeadIdentityKey(row?.leadId) === leadKey)
+        .sort((a, b) => new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0))[0] ||
+      null
     )
-  }, [records.deals, selectedLead])
+    if (linkedDeal) return linkedDeal
+    if (targetTransactionId) {
+      return {
+        id: targetTransactionId,
+        transactionId: targetTransactionId,
+        dealId: targetTransactionId,
+        leadId: selectedLead.leadId,
+        stage: 'Finance',
+        status: 'Finance',
+        source: offerTransactionId ? 'canonical_offer' : 'lead_conversion_link',
+        acceptedOfferId: normalizeText(convertedOffer?.id),
+        createdAt: normalizeText(convertedOffer?.convertedToTransactionAt || convertedOffer?.updatedAt || selectedLead?.updatedAt),
+        updatedAt: normalizeText(convertedOffer?.updatedAt || selectedLead?.updatedAt),
+      }
+    }
+    return null
+  }, [records.deals, selectedLead, selectedLeadOffers])
+  const selectedLeadLinkedTransactionId = useMemo(
+    () => normalizeText(selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || selectedLeadLinkedTransaction?.id),
+    [selectedLeadLinkedTransaction],
+  )
 
   useEffect(() => {
     const leadId = normalizeText(selectedLead?.leadId)
@@ -2804,6 +2964,56 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       highestOffer,
     }
   }, [selectedLeadOffers])
+  const selectedLeadLifecycleDiagnosticOffer = useMemo(() => {
+    const rows = Array.isArray(selectedLeadOffers) ? selectedLeadOffers : []
+    return rows.find((offer) => normalizeText(offer?.transactionId)) ||
+      rows.find((offer) => normalizeText(offer?.status).toLowerCase() === 'accepted') ||
+      rows[0] ||
+      null
+  }, [selectedLeadOffers])
+
+  useEffect(() => {
+    const leadId = normalizeText(selectedLead?.leadId)
+    const offerId = normalizeText(selectedLeadLifecycleDiagnosticOffer?.id)
+    if (!organisationId || !leadId || (!offerId && !selectedLeadLinkedTransactionId)) {
+      setSelectedLeadLifecycleDiagnostic(null)
+      setSelectedLeadLifecycleDiagnosticError('')
+      setSelectedLeadLifecycleDiagnosticLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setSelectedLeadLifecycleDiagnosticLoading(true)
+    setSelectedLeadLifecycleDiagnosticError('')
+    getBuyerLeadLifecycleDiagnostic({
+      organisationId,
+      leadId,
+      offerId,
+      transactionId: selectedLeadLinkedTransactionId,
+    })
+      .then((diagnostic) => {
+        if (!cancelled) setSelectedLeadLifecycleDiagnostic(diagnostic)
+      })
+      .catch((diagnosticError) => {
+        if (!cancelled) {
+          setSelectedLeadLifecycleDiagnostic(null)
+          setSelectedLeadLifecycleDiagnosticError(diagnosticError?.message || 'Unable to load lifecycle diagnostic.')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSelectedLeadLifecycleDiagnosticLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    organisationId,
+    selectedLead?.leadId,
+    selectedLeadLifecycleDiagnosticOffer?.id,
+    selectedLeadLinkedTransactionId,
+    selectedLeadOffersRefreshTick,
+  ])
 
   const selectedLeadNotes = useMemo(() => {
     if (!selectedLead) return ''
@@ -3052,7 +3262,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const hasAppointment = appointments.length > 0
     const hasCompletedAppointment = appointments.some((row) => normalizeText(row?.status).toLowerCase() === 'completed')
     const hasTransaction = Boolean(selectedLeadLinkedTransaction)
-    const hasOffer = stage.includes('offer') || hasTransaction
+    const hasOffer = stage.includes('offer') || hasTransaction || selectedLeadOfferSummary.total > 0
     const hasListing = Boolean(
       normalizeText(selectedLead?.listingId || selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
     )
@@ -3088,7 +3298,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       items: checks,
       missing: checks.filter((item) => !item.done),
     }
-  }, [mandatePacketStatus?.packet, mandatePacketStatus?.signingStatus, selectedLead, selectedLeadAppointments, selectedLeadLinkedTransaction])
+  }, [mandatePacketStatus?.packet, mandatePacketStatus?.signingStatus, selectedLead, selectedLeadAppointments, selectedLeadLinkedTransaction, selectedLeadOfferSummary.total])
 
   const selectedLeadUnifiedTimeline = useMemo(() => {
     const classifyActivity = (activity = {}) => {
@@ -3155,18 +3365,32 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
 
     for (const offer of selectedLeadOffers) {
+      const statusKey = normalizeText(offer.status).toLowerCase()
+      const linkedTransactionId = normalizeText(offer.transactionId)
       timelineRows.push({
         id: `offer:${offer.id}`,
         sourceType: 'offer',
-        sourceLabel: normalizeText(offer.status).toLowerCase() === 'submitted' ? 'Offer Submitted' : 'Offer Update',
-        title: normalizeText(offer.status) ? `Offer ${offer.status}` : 'Offer',
+        sourceLabel: statusKey === 'converted_to_transaction'
+          ? 'Transaction Created'
+          : statusKey === 'accepted'
+            ? 'Offer Accepted'
+            : statusKey === 'submitted'
+              ? 'Offer Submitted'
+              : 'Offer Update',
+        title: statusKey === 'converted_to_transaction'
+          ? 'Accepted offer converted to transaction'
+          : normalizeText(offer.status)
+            ? `Offer ${offer.status}`
+            : 'Offer',
         description: [
           offer.offerAmount ? `Amount: ${formatCurrency(offer.offerAmount)}` : '',
           offer.listingId ? `Listing: ${offer.listingLabel || offer.listingId}` : '',
+          linkedTransactionId ? `Transaction: ${linkedTransactionId}` : '',
         ].filter(Boolean).join(' · '),
         actorName: currentAgent.fullName || 'Agent',
         timestamp: offer.updatedAt || offer.submittedAt || offer.createdAt || new Date().toISOString(),
         status: normalizeText(offer.status),
+        transactionId: linkedTransactionId,
         original: offer,
       })
     }
@@ -3464,7 +3688,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const loadPacketStatus = async () => {
       const leadUuid = normalizeLeadUuid(selectedLeadRecordId)
       const mandatePacketId = selectedLeadMandatePacketId
-      const transactionId = normalizeText(selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId)
+      const transactionId = selectedLeadLinkedTransactionId
       const hasResolvablePacketContext =
         (mandatePacketId && isUuidLike(mandatePacketId)) ||
         Boolean(leadUuid) ||
@@ -3517,8 +3741,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadRecordId,
     selectedLeadMandatePacketId,
     selectedLeadIsSeller,
-    selectedLeadLinkedTransaction?.transactionId,
-    selectedLeadLinkedTransaction?.dealId,
+    selectedLeadLinkedTransactionId,
   ])
 
   const calendarScopedAppointments = useMemo(() => {
@@ -4589,6 +4812,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       notifyCreatorOnRsvp: appointmentForm.notifyCreatorOnRsvp !== false,
     })
     try {
+      if (linkedLead && normalizeText(linkedLead.leadCategory).toLowerCase() !== 'seller') {
+        const linkedContact =
+          records.contacts.find((contact) => normalizeText(contact?.contactId) === normalizeText(linkedLead.contactId)) ||
+          buildLeadContactFallback(linkedLead)
+        const persistedLinkedLead = await ensureBuyerLeadPersistedForLifecycle(linkedLead, linkedContact)
+        appointmentPayload.leadId = normalizeText(persistedLinkedLead?.leadId || appointmentPayload.leadId) || null
+        appointmentPayload.contactId = normalizeText(persistedLinkedLead?.contactId || appointmentPayload.contactId) || null
+        appointmentPayload.relatedEntityId = normalizeText(persistedLinkedLead?.leadId || appointmentPayload.relatedEntityId) || null
+      }
       const created = await createAppointmentAsync(
         organisationId,
         appointmentPayload,
@@ -5715,7 +5947,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     const actionKey = normalizeText(selectedLeadMandateActionState?.actionKey).toLowerCase()
     const workspaceMode = resolveWorkspaceModeFromAction(actionKey)
-    const transactionId = normalizeText(selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId)
+    const transactionId = selectedLeadLinkedTransactionId
     const params = new URLSearchParams()
     params.set('mode', workspaceMode)
     params.set('leadId', normalizeText(selectedLead.leadId))
@@ -5911,6 +6143,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     try {
+      const persistedLead = await ensureBuyerLeadPersistedForLifecycle(selectedLead, selectedLeadContact)
+      const canonicalBuyerLeadId = normalizeText(persistedLead?.leadId || selectedLead.leadId)
       await addAppointmentOutcomeAsync(
         organisationId,
         targetAppointment.appointmentId,
@@ -5929,7 +6163,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       await upsertAppointmentViewedListings({
         organisationId,
         appointmentId: targetAppointment.appointmentId,
-        leadId: selectedLead.leadId,
+        leadId: canonicalBuyerLeadId,
         agentId: targetAppointment.assignedAgentId || selectedLead.assignedAgentId || currentAgent.id,
         viewedListings,
         replaceExisting: true,
@@ -6060,6 +6294,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     try {
       setIsOfferLinkSending(true)
       setError('')
+      const persistedLead = await ensureBuyerLeadPersistedForLifecycle(selectedLead, selectedLeadContact)
+      const canonicalBuyerLeadId = normalizeText(persistedLead?.leadId || selectedLead.leadId)
+      const canonicalBuyerContactId = normalizeText(persistedLead?.contactId || selectedLead.contactId)
       const viewingAppointmentId = normalizeText(offerLinkForm.appointmentId) || normalizeText(selectedLeadActiveViewing?.appointmentId)
       if (viewingAppointmentId) {
         let viewedProperties = await listAppointmentViewedListings({
@@ -6071,7 +6308,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           await upsertAppointmentViewedListings({
             organisationId,
             appointmentId: viewingAppointmentId,
-            leadId: selectedLead.leadId,
+            leadId: canonicalBuyerLeadId,
             agentId: currentAgent.id,
             viewedListings: [{
               listingId: selectedListingId,
@@ -6090,8 +6327,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         const session = await createOfferPortalSession(
           {
             organisationId,
-            buyerLeadId: selectedLead.leadId,
-            buyerContactId: selectedLead.contactId,
+            buyerLeadId: canonicalBuyerLeadId,
+            buyerContactId: canonicalBuyerContactId,
             appointmentId: viewingAppointmentId,
             agentId: currentAgent.id,
             expiresAt: normalizeText(offerLinkForm.expiryDate),
@@ -6099,9 +6336,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               source: 'lead_appointment_tab',
               localBuyerLeadId: selectedLead.leadId,
               localBuyerContactId: normalizeText(selectedLead.contactId),
+              canonicalBuyerLeadId,
+              canonicalBuyerContactId,
               buyerName: normalizeText(offerLinkForm.buyerName),
               buyerEmail: normalizeText(offerLinkForm.buyerEmail),
               buyerPhone: normalizeText(offerLinkForm.buyerPhone),
+              agentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email),
+              agentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email).toLowerCase(),
+              agentReviewUrl: typeof window !== 'undefined'
+                ? `${window.location.origin}/pipeline/leads/${encodeURIComponent(canonicalBuyerLeadId)}`
+                : '',
               agentNoteToBuyer: normalizeText(offerLinkForm.note),
               selectedListingId,
               viewedListingIds: viewedProperties.map((item) => item?.listingId).filter(Boolean),
@@ -6126,7 +6370,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           : ''
         await createAgencyCrmLeadActivity(
           organisationId,
-          selectedLead.leadId,
+          canonicalBuyerLeadId,
           {
             agent: currentAgent,
             activityType: 'Post-Viewing Offer Portal Sent',
@@ -6167,8 +6411,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const offer = await createCanonicalOffer(
         {
           organisationId,
-          buyerLeadId: selectedLead.leadId,
-          buyerContactId: selectedLead.contactId,
+          buyerLeadId: canonicalBuyerLeadId,
+          buyerContactId: canonicalBuyerContactId,
           listingId: selectedListingId,
           agentId: currentAgent.id,
           viewingAppointmentId,
@@ -6180,6 +6424,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             buyerName: normalizeText(offerLinkForm.buyerName),
             buyerEmail: normalizeText(offerLinkForm.buyerEmail),
             buyerPhone: normalizeText(offerLinkForm.buyerPhone),
+            agentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email),
+            agentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email).toLowerCase(),
+            agentReviewUrl: typeof window !== 'undefined'
+              ? `${window.location.origin}/pipeline/leads/${encodeURIComponent(canonicalBuyerLeadId)}`
+              : '',
             agentNoteToBuyer: normalizeText(offerLinkForm.note),
           },
         },
@@ -6206,7 +6455,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         : ''
       await createAgencyCrmLeadActivity(
         organisationId,
-        selectedLead.leadId,
+        canonicalBuyerLeadId,
         {
           agent: currentAgent,
           activityType: 'Offer Link Sent',
@@ -6290,37 +6539,106 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  async function resolveLeadOfferSellerRecipient(offer = {}) {
+    const listingId = normalizeText(offer?.listingId || selectedLead?.listingId)
+    const localListing = listingId
+      ? readAgentPrivateListings().find((listing) => normalizeText(listing?.id || listing?.listingId || listing?.listing_id) === listingId)
+      : null
+    let remoteListing = null
+    if (!resolveSellerEmailFromListing(localListing) && listingId && organisationId && isSupabaseConfigured) {
+      try {
+        const privateListings = await getOrganisationPrivateListings(organisationId, { includeRequirementsAndDocuments: false })
+        remoteListing = (Array.isArray(privateListings) ? privateListings : [])
+          .find((listing) => normalizeText(listing?.id || listing?.listingId || listing?.listing_id) === listingId) || null
+      } catch (listingError) {
+        console.warn('[PIPELINE] seller offer review listing lookup failed', listingError)
+      }
+    }
+
+    const listing = remoteListing || localListing || null
+    const sellerEmail = resolveSellerEmailFromListing(listing)
+    const sellerName = resolveSellerNameFromListing(listing) || 'Seller'
+    return {
+      sellerEmail,
+      sellerName,
+      listing,
+      sellerLeadId: normalizeText(listing?.sellerLeadId || listing?.seller_lead_id || listing?.leadId || listing?.lead_id),
+      sellerContactId: normalizeText(listing?.sellerContactId || listing?.seller_contact_id),
+    }
+  }
+
   async function handleLeadCanonicalOfferSendToSeller(offer) {
     if (!organisationId || !offer?.id) return
     const note = canonicalOfferNotesById[offer.id] || ''
+    let createdReviewSession = null
     try {
       setCanonicalOfferActionId(`${offer.id}:sent_to_seller`)
+      const sellerRecipient = await resolveLeadOfferSellerRecipient(offer)
+      if (!isValidEmail(sellerRecipient.sellerEmail)) {
+        throw new Error('No seller email is linked to this listing yet. Add the seller email before sending the offer for review.')
+      }
       const { session } = await createOfferSellerReviewSession({
         organisationId,
         offerId: offer.id,
         offer,
         listingId: offer.listingId || selectedLead?.listingId,
+        sellerLeadId: offer.sellerLeadId || sellerRecipient.sellerLeadId,
+        sellerContactId: offer.sellerContactId || sellerRecipient.sellerContactId,
+        sellerEmail: sellerRecipient.sellerEmail,
+        sellerName: sellerRecipient.sellerName,
         agentId: currentAgent.id,
         agentReviewNotes: note,
         metadata: {
           source: 'lead_workspace_offer_review',
           leadId: selectedLead?.leadId || offer.buyerLeadId,
+          sellerEmail: sellerRecipient.sellerEmail,
+          sellerName: sellerRecipient.sellerName,
         },
       }, {
         actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
       })
+      createdReviewSession = session
       const reviewLink = session?.token && typeof window !== 'undefined'
         ? `${window.location.origin}/seller/offers/review/${encodeURIComponent(session.token)}`
         : ''
       if (reviewLink && typeof navigator !== 'undefined') {
         void navigator.clipboard?.writeText(reviewLink)
       }
+      const emailResponse = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'seller_offer_review',
+          to: sellerRecipient.sellerEmail,
+          sellerName: sellerRecipient.sellerName,
+          propertyTitle: resolveAppointmentListingLabel(offer.listingId || selectedLead?.listingId) || selectedLeadPropertyLabel,
+          buyerName: selectedLeadDisplayName,
+          offerAmount: formatCurrency(offer.offerAmount),
+          reviewLink,
+          expiresAt: session?.expiresAt || '',
+          agentName: currentAgent.fullName,
+          note,
+        },
+      })
+      if (emailResponse?.error || emailResponse?.data?.error) {
+        throw emailResponse.error || new Error(emailResponse.data.error)
+      }
       setCanonicalOfferNotesById((previous) => ({ ...previous, [offer.id]: '' }))
       setSelectedLeadOffersRefreshTick((value) => value + 1)
-      setMessage(reviewLink ? 'Offer sent to seller review. Seller link copied.' : 'Offer sent to seller review.')
+      setMessage(reviewLink ? `Offer emailed to ${sellerRecipient.sellerEmail}. Seller link copied.` : `Offer emailed to ${sellerRecipient.sellerEmail}.`)
       setError('')
       await reloadRecords(organisationId)
     } catch (sendError) {
+      if (createdReviewSession?.id) {
+        await updateCanonicalOfferStatus(offer.id, 'agent_review', {
+          organisationId,
+          actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          patch: buildCanonicalOfferActionPatch(
+            offer,
+            'Seller email failed',
+            sendError?.message || 'Seller email failed after review link creation.',
+          ),
+        }).catch(() => null)
+        setSelectedLeadOffersRefreshTick((value) => value + 1)
+      }
       setError(sendError?.message || 'Unable to send this offer to the seller.')
     } finally {
       setCanonicalOfferActionId('')
@@ -6378,8 +6696,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             source: 'accepted_offer_conversion',
           },
         })
-        if (onboardingEmail?.error) {
-          onboardingSendWarning = onboardingEmail.error?.message || 'Buyer onboarding email could not be sent.'
+        const onboardingEmailError = onboardingEmail?.error || onboardingEmail?.data?.error
+        if (onboardingEmailError) {
+          onboardingSendWarning = typeof onboardingEmailError === 'string'
+            ? onboardingEmailError
+            : onboardingEmailError?.message || 'Buyer onboarding email could not be sent.'
         }
       }
       if (transactionId) {
@@ -6498,15 +6819,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   async function handleCreateBuyerOfferDraft() {
     if (!selectedLead || !organisationId) return
     try {
+      const persistedLead = await ensureBuyerLeadPersistedForLifecycle(selectedLead, selectedLeadContact)
       await createCanonicalOffer({
         organisationId,
-        buyerLeadId: selectedLead.leadId,
-        buyerContactId: selectedLead.contactId,
+        buyerLeadId: normalizeText(persistedLead?.leadId || selectedLead.leadId),
+        buyerContactId: normalizeText(persistedLead?.contactId || selectedLead.contactId),
         listingId: selectedLead.listingId,
         agentId: currentAgent.id,
         status: 'draft',
         offerAmount: Number(selectedLead.estimatedValue || selectedLead.budget || 0) || null,
         financeType: selectedLead.financeType || selectedLead.preferredFinanceType || '',
+        conditionsJson: {
+          agentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email),
+          agentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email).toLowerCase(),
+          agentReviewUrl: typeof window !== 'undefined'
+            ? `${window.location.origin}/pipeline/leads/${encodeURIComponent(normalizeText(persistedLead?.leadId || selectedLead.leadId))}`
+            : '',
+        },
       }, {
         actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
       })
@@ -7685,6 +8014,26 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                ) : null}
                 </div>
               </section>
+              {selectedLeadHasSyncIssue ? (
+                <section className="flex flex-col gap-4 rounded-[24px] border border-[#f3d7a4] bg-[#fff8ea] px-5 py-4 text-[#5d4618] shadow-[0_1px_2px_rgba(15,23,42,0.03)] sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#ffe7b4] text-[#9a6416]">
+                      <AlertTriangle className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[#4f3a13]">Lead sync needs attention</p>
+                      <p className="mt-1 text-sm leading-6 text-[#755b25]">
+                        This buyer lead is not fully linked to Supabase yet. Viewings, offer portals, and submitted offers will be blocked until the lead is repaired.
+                        {selectedLeadSyncError ? ` ${selectedLeadSyncError}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <Button type="button" variant="secondary" size="sm" className="shrink-0 border-[#e6c984] bg-white text-[#5d4618] hover:bg-[#fffdf7]" onClick={() => void handleRepairSelectedLeadSync()}>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Retry Sync
+                  </Button>
+                </section>
+              ) : null}
               {selectedLead ? (
                 <div className="overflow-x-auto rounded-[24px] bg-white px-5 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_10px_28px_rgba(31,54,78,0.05)]" role="tablist" aria-label="Lead workspace sections">
                   <div className="flex min-w-max items-stretch gap-8">
@@ -7771,7 +8120,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               ? `${getAppointmentTypeLabel(selectedLeadLinkedAppointment?.appointmentType) || 'Appointment'} · ${formatDate(selectedLeadLinkedAppointment?.dateTime || selectedLeadLinkedAppointment?.createdAt)}`
                               : 'Not linked yet',
                           ],
-                          ['Linked transaction', selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not linked yet'],
+                          ['Linked transaction', selectedLeadLinkedTransactionId || 'Not linked yet'],
                         ].map(([label, value]) => (
                           <div key={label} className="border-b border-[#eef3f7] pb-4">
                             <p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">{label}</p>
@@ -8587,6 +8936,57 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         <div className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">{selectedLeadOffersError}</div>
                       ) : null}
 
+                      <div className="mt-4 rounded-[16px] border border-[#e1eaf4] bg-[#fbfdff] p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Lifecycle Diagnostic</p>
+                            <h5 className="mt-1 text-base font-semibold text-[#18324b]">
+                              {selectedLeadLifecycleDiagnostic?.ok ? 'Offer handoff is complete' : 'Offer handoff needs verification'}
+                            </h5>
+                            <p className="mt-1 text-sm text-[#6a8098]">
+                              Checks the accepted offer, linked transaction, onboarding record, prefill data, and audit trail.
+                            </p>
+                          </div>
+                          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                            selectedLeadLifecycleDiagnosticLoading
+                              ? 'border-[#dbe6f2] bg-white text-[#607891]'
+                              : selectedLeadLifecycleDiagnostic?.ok
+                                ? 'border-[#cfe8dc] bg-[#eefbf4] text-[#17643a]'
+                                : 'border-[#f1dfb8] bg-[#fff8e8] text-[#8a641d]'
+                          }`}>
+                            {selectedLeadLifecycleDiagnosticLoading ? 'Checking' : selectedLeadLifecycleDiagnostic?.ok ? 'Complete' : 'Needs review'}
+                          </span>
+                        </div>
+                        {selectedLeadLifecycleDiagnosticError ? (
+                          <div className="mt-3 rounded-[12px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">
+                            {selectedLeadLifecycleDiagnosticError}
+                          </div>
+                        ) : null}
+                        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                          {[
+                            ['Offer converted', selectedLeadLifecycleDiagnostic?.checks?.offerConverted],
+                            ['Transaction linked', selectedLeadLifecycleDiagnostic?.checks?.transactionLinked],
+                            ['Lead linked', selectedLeadLifecycleDiagnostic?.checks?.leadLinked],
+                            ['Onboarding ready', selectedLeadLifecycleDiagnostic?.checks?.onboardingReady],
+                            ['Prefill saved', selectedLeadLifecycleDiagnostic?.checks?.prefillReady],
+                            ['Event logged', selectedLeadLifecycleDiagnostic?.checks?.transactionEventLogged],
+                            ['Audit logged', selectedLeadLifecycleDiagnostic?.checks?.workflowAuditLogged],
+                          ].map(([label, isDone]) => (
+                            <div key={label} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e6eef7] bg-white px-3 py-2">
+                              <span className="text-xs font-semibold text-[#607891]">{label}</span>
+                              <span className={`rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${isDone ? 'bg-[#eaf7ef] text-[#1e7a46]' : 'bg-[#f3f6f9] text-[#7b8fa5]'}`}>
+                                {isDone ? 'OK' : 'Open'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        {selectedLeadLifecycleDiagnostic?.warnings?.length ? (
+                          <div className="mt-3 rounded-[12px] border border-[#f1dfb8] bg-[#fff8e8] px-3 py-2 text-sm text-[#8a641d]">
+                            {selectedLeadLifecycleDiagnostic.warnings.join(' ')}
+                          </div>
+                        ) : null}
+                      </div>
+
                       <div className="mt-4 space-y-3">
                         {selectedLeadOffersLoading ? (
                           <div className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] p-4 text-sm text-[#6a8098]">Loading offers...</div>
@@ -9000,7 +9400,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       <div className="mt-5 space-y-4">
                         {[
                           ['Listing', selectedLead.listingId || selectedLead.propertyInterest || selectedLead.sellerPropertyAddress || 'Not linked yet'],
-                          ['Transaction', selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not linked yet'],
+                          ['Transaction', selectedLeadLinkedTransactionId || 'Not linked yet'],
                           ['Appointment', selectedLeadLinkedAppointment ? getAppointmentTypeLabel(selectedLeadLinkedAppointment.appointmentType) : 'Not linked yet'],
                         ].map(([label, value]) => (
                           <div key={label} className="flex items-start justify-between gap-4 border-b border-[#eef3f7] pb-3 text-sm last:border-b-0 last:pb-0">
@@ -9034,7 +9434,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </div>
                           <div>
                             <p className="font-semibold text-[#8aa0b7]">Transaction</p>
-                            <p className="mt-1 font-semibold text-[#20364c]">{selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not created yet'}</p>
+                            <p className="mt-1 break-all font-semibold text-[#20364c]">{selectedLeadLinkedTransactionId || 'Not created yet'}</p>
+                            {selectedLeadLinkedTransactionId ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                className="mt-3"
+                                onClick={() => navigate(`/transactions/${selectedLeadLinkedTransactionId}`)}
+                              >
+                                Open Transaction
+                                <ArrowUpRight className="h-4 w-4" />
+                              </Button>
+                            ) : null}
                           </div>
                         </div>
                       )}
@@ -9697,7 +10109,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       <LegalDocumentWorkspace
         open={legalWorkspaceOpen}
         onClose={() => setLegalWorkspaceOpen(false)}
-        transactionId={normalizeText(selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId)}
+        transactionId={selectedLeadLinkedTransactionId}
         transactionReference={
           [
             normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),

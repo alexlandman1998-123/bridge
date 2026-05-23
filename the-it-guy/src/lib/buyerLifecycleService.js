@@ -519,6 +519,7 @@ function mapSellerOfferReviewPayload(payload = {}) {
   return {
     ok: true,
     reason: '',
+    transactionId: response.transactionId || response.transaction_id || null,
     session: response.session || null,
     listing: response.listing || null,
     seller: response.seller || null,
@@ -543,6 +544,10 @@ function mapSellerOfferReviewPayload(payload = {}) {
       buyerSubmittedAt: offer.buyerSubmittedAt || offer.buyer_submitted_at,
       sentToSellerAt: offer.sentToSellerAt || offer.sent_to_seller_at,
       sellerViewedAt: offer.sellerViewedAt || offer.seller_viewed_at,
+      acceptedAt: offer.acceptedAt || offer.accepted_at,
+      rejectedAt: offer.rejectedAt || offer.rejected_at,
+      counteredAt: offer.counteredAt || offer.countered_at,
+      transactionId: offer.transactionId || offer.transaction_id,
       createdAt: offer.createdAt || offer.created_at,
       updatedAt: offer.updatedAt || offer.updated_at,
     },
@@ -621,6 +626,8 @@ function mapOfferPortalContextPayload(payload = {}) {
     reason: '',
     source: 'offer_portal_session',
     session: mapOfferPortalSessionPayload(response.session),
+    agent: response.agent || null,
+    buyer: response.buyer || null,
     properties: (Array.isArray(response.properties) ? response.properties : [])
       .map(mapOfferPortalPropertyPayload)
       .filter((item) => item?.viewedListing?.listingId || item?.listing?.id),
@@ -738,6 +745,7 @@ export async function getCanonicalOfferInviteContext(token = '') {
   }
 
   const buyerName = normalizeText(offer?.conditions?.buyerName) || 'Prospect'
+  const agentName = normalizeText(offer?.conditions?.agentName) || 'Assigned agent'
   return {
     ok: true,
     source: 'canonical',
@@ -747,7 +755,8 @@ export async function getCanonicalOfferInviteContext(token = '') {
       token: offer.offerToken || offer.id,
       buyerLeadName: buyerName,
       expiresAt: offer.expiryDate,
-      agentName: 'Assigned agent',
+      agentName,
+      agentEmail: normalizeText(offer?.conditions?.agentEmail).toLowerCase(),
       status: offer.status,
     },
     listing,
@@ -1028,10 +1037,16 @@ export async function createOfferSellerReviewSession(payload = {}, { actor = nul
 
   const session = mapOfferSellerReviewSessionDbRow(data)
   const conditions = jsonObject(offer?.conditions)
+  const sellerReviewRecipientEmail = normalizeText(payload?.sellerEmail || payload?.sellerRecipientEmail || conditions.sellerReviewRecipientEmail)
+  const sellerReviewRecipientName = normalizeText(payload?.sellerName || payload?.sellerRecipientName || conditions.sellerReviewRecipientName)
   const nextConditions = {
     ...conditions,
     sellerReviewSessionToken: session.token,
     sellerReviewSentAt: session.sentAt,
+    sellerReviewRecipientEmail,
+    sellerReviewRecipientName,
+    sellerEmail: sellerReviewRecipientEmail || conditions.sellerEmail || '',
+    sellerName: sellerReviewRecipientName || conditions.sellerName || '',
     agentReviewNotes: normalizeText(payload?.agentReviewNotes) || conditions.agentReviewNotes || conditions.latestAgentNote || '',
   }
 
@@ -1238,6 +1253,209 @@ export async function listCanonicalOffersForLead({
   }
 
   return [...rowsById.values()].sort(sortOffersByLatest)
+}
+
+export async function getBuyerLeadLifecycleDiagnostic({
+  organisationId = '',
+  leadId = '',
+  offerId = '',
+  transactionId = '',
+} = {}) {
+  const scopedOrganisationId = toNullableUuid(organisationId)
+  const scopedLeadId = toNullableUuid(leadId)
+  const scopedOfferId = toNullableUuid(offerId)
+  const scopedTransactionId = toNullableUuid(transactionId)
+
+  const emptyDiagnostic = {
+    ok: false,
+    lead: null,
+    offer: null,
+    offers: [],
+    transaction: null,
+    onboarding: null,
+    onboardingPrefill: null,
+    transactionEvents: [],
+    workflowAudit: [],
+    checks: {
+      offerConverted: false,
+      transactionLinked: false,
+      leadLinked: false,
+      onboardingReady: false,
+      prefillReady: false,
+      transactionEventLogged: false,
+      workflowAuditLogged: false,
+    },
+    warnings: [],
+  }
+
+  if (!scopedOrganisationId || !isSupabaseConfigured || !supabase) {
+    return {
+      ...emptyDiagnostic,
+      warnings: ['Supabase is not available for lifecycle diagnostics.'],
+    }
+  }
+
+  const warnings = []
+  let lead = null
+  let offers = []
+  let offer = null
+  let transaction = null
+  let onboarding = null
+  let onboardingPrefill = null
+  let transactionEvents = []
+  let workflowAudit = []
+
+  if (scopedLeadId) {
+    const leadQuery = await supabase
+      .from('leads')
+      .select('lead_id, organisation_id, contact_id, converted_transaction_id, converted_at, current_stage, stage, status, updated_at')
+      .eq('organisation_id', scopedOrganisationId)
+      .eq('lead_id', scopedLeadId)
+      .maybeSingle()
+    if (leadQuery.error && !isMissingTableError(leadQuery.error, 'leads') && !isMissingColumnError(leadQuery.error)) {
+      throw leadQuery.error
+    }
+    lead = leadQuery.data || null
+  }
+
+  if (scopedOfferId) {
+    const offerQuery = await supabase
+      .from('offers')
+      .select('*')
+      .eq('organisation_id', scopedOrganisationId)
+      .eq('id', scopedOfferId)
+      .maybeSingle()
+    if (offerQuery.error && !isMissingTableError(offerQuery.error, 'offers')) throw offerQuery.error
+    offer = mapOfferDbRow(offerQuery.data)
+    offers = offer ? [offer] : []
+  } else if (scopedLeadId) {
+    offers = await listCanonicalOffersForLead({
+      organisationId: scopedOrganisationId,
+      leadId: scopedLeadId,
+    })
+    offer = offers.find((row) => normalizeText(row?.transactionId || row?.transaction_id)) ||
+      offers.find((row) => normalizeOfferStatus(row?.status) === OFFER_STATUS.ACCEPTED) ||
+      offers[0] ||
+      null
+  }
+
+  const resolvedTransactionId = toNullableUuid(
+    scopedTransactionId ||
+      offer?.transactionId ||
+      offer?.transaction_id ||
+      lead?.converted_transaction_id,
+  )
+
+  if (resolvedTransactionId) {
+    let transactionQuery = await supabase
+      .from('transactions')
+      .select('id, organisation_id, buyer_id, accepted_offer_id, originating_lead_id, originating_buyer_lead_id, buyer_contact_id, listing_id, onboarding_status, stage, current_main_stage, next_action, updated_at, created_at')
+      .eq('id', resolvedTransactionId)
+      .maybeSingle()
+
+    if (transactionQuery.error && isMissingColumnError(transactionQuery.error)) {
+      transactionQuery = await supabase
+        .from('transactions')
+        .select('id, organisation_id, buyer_id, stage, updated_at, created_at')
+        .eq('id', resolvedTransactionId)
+        .maybeSingle()
+    }
+    if (transactionQuery.error && !isMissingTableError(transactionQuery.error, 'transactions')) {
+      throw transactionQuery.error
+    }
+    transaction = transactionQuery.data || null
+
+    const onboardingQuery = await supabase
+      .from('transaction_onboarding')
+      .select('id, transaction_id, token, status, purchaser_type, is_active, submitted_at, created_at, updated_at')
+      .eq('transaction_id', resolvedTransactionId)
+      .eq('is_active', true)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+    if (onboardingQuery.error && !isMissingTableError(onboardingQuery.error, 'transaction_onboarding')) {
+      throw onboardingQuery.error
+    }
+    onboarding = (onboardingQuery.data || [])[0] || null
+
+    const prefillQuery = await supabase
+      .from('onboarding_form_data')
+      .select('id, transaction_id, purchaser_type, form_data, updated_at')
+      .eq('transaction_id', resolvedTransactionId)
+      .maybeSingle()
+    if (prefillQuery.error && !isMissingTableError(prefillQuery.error, 'onboarding_form_data')) {
+      throw prefillQuery.error
+    }
+    onboardingPrefill = prefillQuery.data || null
+
+    const eventQuery = await supabase
+      .from('transaction_events')
+      .select('id, transaction_id, event_type, event_data, created_at')
+      .eq('transaction_id', resolvedTransactionId)
+      .order('created_at', { ascending: false })
+      .limit(10)
+    if (eventQuery.error && !isMissingTableError(eventQuery.error, 'transaction_events')) {
+      throw eventQuery.error
+    }
+    transactionEvents = eventQuery.data || []
+
+    const auditQuery = await supabase
+      .from('workflow_audit_log')
+      .select('id, transaction_id, offer_id, event_type, from_stage, to_stage, metadata_json, created_at')
+      .eq('transaction_id', resolvedTransactionId)
+      .order('created_at', { ascending: false })
+      .limit(10)
+    if (auditQuery.error && !isMissingTableError(auditQuery.error, 'workflow_audit_log')) {
+      throw auditQuery.error
+    }
+    workflowAudit = auditQuery.data || []
+  }
+
+  const offerStatus = normalizeOfferStatus(offer?.status)
+  const offerTransactionId = normalizeText(offer?.transactionId || offer?.transaction_id)
+  const transactionRowId = normalizeText(transaction?.id || resolvedTransactionId)
+  const prefill = jsonObject(onboardingPrefill?.form_data)
+  const checks = {
+    offerConverted: offerStatus === OFFER_STATUS.CONVERTED_TO_TRANSACTION && Boolean(offerTransactionId),
+    transactionLinked: Boolean(transactionRowId),
+    leadLinked: Boolean(
+      scopedLeadId &&
+        transactionRowId &&
+        (
+          normalizeText(lead?.converted_transaction_id) === transactionRowId ||
+          normalizeText(transaction?.originating_buyer_lead_id) === scopedLeadId ||
+          normalizeText(transaction?.originating_lead_id) === scopedLeadId
+        ),
+    ),
+    onboardingReady: Boolean(onboarding?.token),
+    prefillReady: Boolean(prefill.bridge_prefill_source === 'accepted_offer' || Object.keys(prefill).length >= 3),
+    transactionEventLogged: transactionEvents.some((event) =>
+      normalizeText(event?.event_type) === 'TransactionCreated' &&
+      jsonObject(event?.event_data).source === 'accepted_offer_conversion',
+    ),
+    workflowAuditLogged: workflowAudit.some((event) => normalizeText(event?.event_type) === 'offer_converted_to_transaction'),
+  }
+
+  if (offer && !checks.offerConverted) warnings.push('Offer is not marked converted_to_transaction yet.')
+  if (offer && !checks.transactionLinked) warnings.push('Offer does not have a linked transaction.')
+  if (transactionRowId && !checks.leadLinked) warnings.push('Lead-to-transaction linkage is incomplete.')
+  if (transactionRowId && !checks.onboardingReady) warnings.push('Buyer onboarding record is missing.')
+  if (transactionRowId && !checks.prefillReady) warnings.push('Buyer onboarding prefill data is missing or incomplete.')
+  if (transactionRowId && !checks.transactionEventLogged) warnings.push('Transaction event audit row is missing.')
+  if (transactionRowId && !checks.workflowAuditLogged) warnings.push('Workflow audit row is missing.')
+
+  return {
+    ok: Object.values(checks).every(Boolean),
+    lead,
+    offer,
+    offers,
+    transaction,
+    onboarding,
+    onboardingPrefill,
+    transactionEvents,
+    workflowAudit,
+    checks,
+    warnings,
+  }
 }
 
 export async function listCanonicalOffersForListing({ organisationId = '', listingId = '' } = {}) {

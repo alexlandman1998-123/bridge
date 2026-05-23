@@ -361,8 +361,11 @@ export async function listAgencyCrmLeadContacts(organisationId) {
   }
 }
 
-export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { actor = null } = {}) {
+export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { actor = null, requireRemote = false } = {}) {
   if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) {
+    if (requireRemote) {
+      throw new Error('A database-backed organisation is required before this buyer lifecycle action can continue.')
+    }
     return createAgencyLead(organisationId, payload, { actor })
   }
 
@@ -413,10 +416,17 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
 
     const reconciled = reconcileAgencyPipelineSnapshot(organisationId, {
       contacts: [contact],
-      leads: [lead],
+      leads: [{
+        ...lead,
+        syncStatus: '',
+        syncError: '',
+      }],
     })
     return (Array.isArray(reconciled.leads) ? reconciled.leads : []).find((row) => normalizeText(row?.leadId) === normalizeText(lead.leadId)) || lead
   } catch (error) {
+    if (requireRemote) {
+      throw error
+    }
     console.warn('[agencyCrmRepository] create lead fell back to local store', error)
     return createAgencyLead(organisationId, {
       ...payload,
@@ -431,6 +441,122 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
         syncError: normalizeText(error?.message || error?.code || 'remote_create_failed'),
       },
     }, { actor })
+  }
+}
+
+export async function ensureAgencyCrmLeadRecordPersisted(organisationId, lead = {}, contact = {}, { actor = null } = {}) {
+  const normalizedOrganisationId = normalizeText(organisationId)
+  const normalizedLeadId = normalizeLeadUuid(lead?.leadId || lead?.lead_id || lead?.id)
+  if (!normalizedOrganisationId || !isUuidLike(normalizedOrganisationId)) {
+    throw new Error('A database-backed organisation is required before this buyer lifecycle action can continue.')
+  }
+  if (!normalizedLeadId) {
+    throw new Error('This lead is using a legacy local id. Repair the lead before continuing with viewings or offers.')
+  }
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Supabase is required before this buyer lifecycle action can continue.')
+  }
+
+  const assignedAgent = {
+    id: normalizeText(lead?.assignedAgentId || lead?.assigned_agent_id || actor?.id),
+    name: normalizeText(lead?.assignedAgentName || lead?.assigned_agent_name || actor?.name || actor?.fullName),
+    email: normalizeText(lead?.assignedAgentEmail || lead?.assigned_agent_email || actor?.email).toLowerCase(),
+  }
+  const contactId = normalizeNullableUuid(contact?.contactId || contact?.contact_id || lead?.contactId || lead?.contact_id) || createUuid()
+  const firstName = normalizeText(contact?.firstName || contact?.first_name || lead?.firstName || lead?.first_name || lead?.sellerName)
+  const lastName = normalizeText(contact?.lastName || contact?.last_name || lead?.lastName || lead?.last_name || lead?.sellerSurname)
+  const email = normalizeText(contact?.email || lead?.email || lead?.sellerEmail).toLowerCase()
+  const phone = normalizeText(contact?.phone || lead?.phone || lead?.sellerPhone)
+
+  const existing = await supabase
+    .from('leads')
+    .select('lead_id, contact_id')
+    .eq('organisation_id', normalizedOrganisationId)
+    .eq('lead_id', normalizedLeadId)
+    .maybeSingle()
+
+  if (existing.error && !isMissingSchemaOrTableError(existing.error) && !isPermissionDeniedError(existing.error)) {
+    throw existing.error
+  }
+  if (existing.data?.lead_id) {
+    const resolvedContactId = normalizeNullableUuid(existing.data.contact_id) || contactId
+    const contactResult = await supabase.from('contacts').upsert({
+      contact_id: resolvedContactId,
+      organisation_id: normalizedOrganisationId,
+      assigned_agent_id: normalizeNullableUuid(assignedAgent.id),
+      first_name: firstName || 'Lead',
+      last_name: lastName || null,
+      phone: phone || null,
+      email: email || null,
+      contact_type: normalizeText(contact?.contactType || contact?.contact_type || lead?.leadCategory || lead?.lead_category) || 'Lead',
+      notes: normalizeText(contact?.notes) || null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'contact_id' })
+    if (contactResult.error) throw contactResult.error
+
+    if (normalizeText(existing.data.contact_id) !== resolvedContactId) {
+      const leadLinkResult = await supabase
+        .from('leads')
+        .update({ contact_id: resolvedContactId, updated_at: new Date().toISOString() })
+        .eq('organisation_id', normalizedOrganisationId)
+        .eq('lead_id', normalizedLeadId)
+      if (leadLinkResult.error) throw leadLinkResult.error
+    }
+
+    if (normalizeText(lead?.syncStatus || lead?.sync_status)) {
+      updateAgencyLead(normalizedOrganisationId, normalizedLeadId, {
+        syncStatus: '',
+        syncError: '',
+        contactId: resolvedContactId,
+      })
+    }
+    return {
+      ok: true,
+      repaired: false,
+      leadId: existing.data.lead_id,
+      contactId: resolvedContactId,
+    }
+  }
+
+  const repairedLead = await createAgencyCrmLeadRecord(
+    normalizedOrganisationId,
+    {
+      assignedAgent,
+      contact: {
+        contactId,
+        firstName: firstName || 'Lead',
+        lastName,
+        email,
+        phone,
+        contactType: normalizeText(contact?.contactType || contact?.contact_type || lead?.leadCategory || lead?.lead_category) || 'Lead',
+        notes: normalizeText(contact?.notes),
+      },
+      lead: {
+        leadId: normalizedLeadId,
+        contactId,
+        leadCategory: normalizeText(lead?.leadCategory || lead?.lead_category) || 'Buyer',
+        leadDirection: normalizeText(lead?.leadDirection || lead?.lead_direction) || 'Inbound',
+        leadSource: normalizeText(lead?.leadSource || lead?.lead_source) || 'Other',
+        stage: normalizeText(lead?.stage || lead?.currentStage || lead?.current_stage) || 'New Lead',
+        status: normalizeText(lead?.status || lead?.stage || lead?.currentStage || lead?.current_stage) || 'New Lead',
+        priority: normalizeText(lead?.priority) || 'Medium',
+        budget: Number(lead?.budget || 0) || 0,
+        areaInterest: normalizeText(lead?.areaInterest || lead?.area_interest),
+        propertyInterest: normalizeText(lead?.propertyInterest || lead?.property_interest),
+        sellerPropertyAddress: normalizeText(lead?.sellerPropertyAddress || lead?.seller_property_address),
+        estimatedValue: Number(lead?.estimatedValue || lead?.estimated_value || 0) || 0,
+        listingId: normalizeText(lead?.listingId || lead?.listing_id),
+        notes: normalizeText(lead?.notes),
+      },
+    },
+    { actor, requireRemote: true },
+  )
+
+  return {
+    ok: true,
+    repaired: true,
+    leadId: normalizeText(repairedLead?.leadId || normalizedLeadId),
+    contactId: normalizeText(repairedLead?.contactId || contactId),
   }
 }
 
