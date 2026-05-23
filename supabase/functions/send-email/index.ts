@@ -12,21 +12,27 @@ import { handleBuyerOfferLinkEmail } from "./handlers/buyerOfferLink.ts";
 import { handleBuyerOfferSubmittedAgentEmail } from "./handlers/buyerOfferSubmittedAgent.ts";
 import { handleOfferDecisionNotificationEmail } from "./handlers/offerDecisionNotification.ts";
 import { handleSellerOfferReviewEmail } from "./handlers/sellerOfferReview.ts";
+import {
+  handleTransactionRoleplayerHandoffEmail,
+  handleTransactionRoleplayerIntroEmail,
+} from "./handlers/transactionRoleplayerIntro.ts";
 import type {
   SendAppointmentEmailPayload,
   SendBuyerOfferLinkPayload,
   SendBuyerOfferSubmittedAgentPayload,
   SendClientOnboardingPayload,
   SendLegacyTestPayload,
-  SendOnboardingSubmittedPayload,
   SendOfferDecisionNotificationPayload,
+  SendOnboardingSubmittedPayload,
   SendReservationDepositPayload,
   SendReservationDepositReceivedPayload,
-  SendSellerMandateSignedPayload,
   SendSellerMandateSentPayload,
+  SendSellerMandateSignedPayload,
   SendSellerOfferReviewPayload,
   SendSellerOnboardingPayload,
   SendSellerOnboardingSubmittedPayload,
+  SendTransactionRoleplayerHandoffPayload,
+  SendTransactionRoleplayerIntroPayload,
 } from "./types.ts";
 import { corsHeaders, jsonResponse } from "./utils/http.ts";
 import { normalizeText } from "./utils/text.ts";
@@ -95,8 +101,14 @@ Deno.serve(async (req: Request) => {
       payloadKeys,
     });
 
-    if (["client_onboarding", "onboarding", "onboarding_email"].includes(type)) {
-      console.log("[send-email] routing template", { route: "client_onboarding", recipient: recipient || null, transactionId: transactionId || null });
+    if (
+      ["client_onboarding", "onboarding", "onboarding_email"].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "client_onboarding",
+        recipient: recipient || null,
+        transactionId: transactionId || null,
+      });
       return await handleClientOnboardingEmail(
         req,
         {
@@ -107,8 +119,14 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    if (["reservation_deposit", "deposit_request", "reservation"].includes(type)) {
-      console.log("[send-email] routing template", { route: "reservation_deposit", recipient: recipient || null, transactionId: transactionId || null });
+    if (
+      ["reservation_deposit", "deposit_request", "reservation"].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "reservation_deposit",
+        recipient: recipient || null,
+        transactionId: transactionId || null,
+      });
       return await handleReservationDepositEmail(
         req,
         {
@@ -120,7 +138,11 @@ Deno.serve(async (req: Request) => {
     }
 
     if (["reservation_deposit_received", "deposit_received"].includes(type)) {
-      console.log("[send-email] routing template", { route: "reservation_deposit_received", recipient: recipient || null, transactionId: transactionId || null });
+      console.log("[send-email] routing template", {
+        route: "reservation_deposit_received",
+        recipient: recipient || null,
+        transactionId: transactionId || null,
+      });
       return await handleReservationDepositReceivedEmail(
         req,
         {
@@ -131,8 +153,14 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    if (["onboarding_submitted", "client_onboarding_submitted"].includes(type)) {
-      console.log("[send-email] routing template", { route: "onboarding_submitted", recipient: recipient || null, transactionId: transactionId || null });
+    if (
+      ["onboarding_submitted", "client_onboarding_submitted"].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "onboarding_submitted",
+        recipient: recipient || null,
+        transactionId: transactionId || null,
+      });
       return await handleOnboardingSubmittedEmail(
         req,
         {
@@ -144,43 +172,137 @@ Deno.serve(async (req: Request) => {
     }
 
     if (["seller_onboarding", "seller_onboarding_link"].includes(type)) {
-      console.log("[send-email] routing template", { route: "seller_onboarding", recipient: recipient || null });
-      return await handleSellerOnboardingEmail(payload as SendSellerOnboardingPayload);
+      console.log("[send-email] routing template", {
+        route: "seller_onboarding",
+        recipient: recipient || null,
+      });
+      return await handleSellerOnboardingEmail(
+        payload as SendSellerOnboardingPayload,
+      );
     }
 
     if (["seller_onboarding_submitted"].includes(type)) {
-      console.log("[send-email] routing template", { route: "seller_onboarding_submitted", recipient: recipient || null });
-      return await handleSellerOnboardingSubmittedEmail(payload as SendSellerOnboardingSubmittedPayload);
+      console.log("[send-email] routing template", {
+        route: "seller_onboarding_submitted",
+        recipient: recipient || null,
+      });
+      return await handleSellerOnboardingSubmittedEmail(
+        payload as SendSellerOnboardingSubmittedPayload,
+      );
     }
 
     if (["seller_mandate_sent", "seller_mandate"].includes(type)) {
-      console.log("[send-email] routing template", { route: "seller_mandate_sent", recipient: recipient || null });
-      return await handleSellerMandateSentEmail(payload as SendSellerMandateSentPayload);
+      console.log("[send-email] routing template", {
+        route: "seller_mandate_sent",
+        recipient: recipient || null,
+      });
+      return await handleSellerMandateSentEmail(
+        payload as SendSellerMandateSentPayload,
+      );
     }
 
     if (["seller_mandate_signed"].includes(type)) {
-      console.log("[send-email] routing template", { route: "seller_mandate_signed", recipient: recipient || null });
-      return await handleSellerMandateSignedEmail(payload as SendSellerMandateSignedPayload);
+      console.log("[send-email] routing template", {
+        route: "seller_mandate_signed",
+        recipient: recipient || null,
+      });
+      return await handleSellerMandateSignedEmail(
+        payload as SendSellerMandateSignedPayload,
+      );
     }
 
-    if (["buyer_offer_link", "offer_link", "post_viewing_offer_link"].includes(type)) {
-      console.log("[send-email] routing template", { route: "buyer_offer_link", recipient: recipient || null });
-      return await handleBuyerOfferLinkEmail(payload as SendBuyerOfferLinkPayload);
+    if (
+      ["buyer_offer_link", "offer_link", "post_viewing_offer_link"].includes(
+        type,
+      )
+    ) {
+      console.log("[send-email] routing template", {
+        route: "buyer_offer_link",
+        recipient: recipient || null,
+      });
+      return await handleBuyerOfferLinkEmail(
+        payload as SendBuyerOfferLinkPayload,
+      );
     }
 
-    if (["buyer_offer_submitted_agent", "buyer_offer_submitted", "offer_submitted_agent"].includes(type)) {
-      console.log("[send-email] routing template", { route: "buyer_offer_submitted_agent", recipient: recipient || null });
-      return await handleBuyerOfferSubmittedAgentEmail(payload as SendBuyerOfferSubmittedAgentPayload);
+    if (
+      [
+        "buyer_offer_submitted_agent",
+        "buyer_offer_submitted",
+        "offer_submitted_agent",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "buyer_offer_submitted_agent",
+        recipient: recipient || null,
+      });
+      return await handleBuyerOfferSubmittedAgentEmail(
+        payload as SendBuyerOfferSubmittedAgentPayload,
+      );
     }
 
     if (["seller_offer_review", "offer_seller_review"].includes(type)) {
-      console.log("[send-email] routing template", { route: "seller_offer_review", recipient: recipient || null });
-      return await handleSellerOfferReviewEmail(payload as SendSellerOfferReviewPayload);
+      console.log("[send-email] routing template", {
+        route: "seller_offer_review",
+        recipient: recipient || null,
+      });
+      return await handleSellerOfferReviewEmail(
+        payload as SendSellerOfferReviewPayload,
+      );
     }
 
-    if (["offer_decision_notification", "seller_offer_decision", "offer_accepted_notification"].includes(type)) {
-      console.log("[send-email] routing template", { route: "offer_decision_notification", recipient: recipient || null });
-      return await handleOfferDecisionNotificationEmail(payload as SendOfferDecisionNotificationPayload);
+    if (
+      [
+        "offer_decision_notification",
+        "seller_offer_decision",
+        "offer_accepted_notification",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "offer_decision_notification",
+        recipient: recipient || null,
+      });
+      return await handleOfferDecisionNotificationEmail(
+        payload as SendOfferDecisionNotificationPayload,
+      );
+    }
+
+    if (
+      [
+        "transaction_roleplayer_intro",
+        "roleplayer_intro",
+        "transaction_handoff_intro",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "transaction_roleplayer_intro",
+        recipient: recipient || null,
+        transactionId: transactionId || null,
+      });
+      return await handleTransactionRoleplayerIntroEmail({
+        ...(payload as SendTransactionRoleplayerIntroPayload),
+        type: "transaction_roleplayer_intro",
+        transactionId,
+      });
+    }
+
+    if (
+      [
+        "transaction_roleplayer_handoff",
+        "roleplayer_handoff",
+        "transaction_team_handoff",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "transaction_roleplayer_handoff",
+        recipient: recipient || null,
+        transactionId: transactionId || null,
+      });
+      return await handleTransactionRoleplayerHandoffEmail({
+        ...(payload as SendTransactionRoleplayerHandoffPayload),
+        type: "transaction_roleplayer_handoff",
+        transactionId,
+      });
     }
 
     if (
@@ -196,8 +318,15 @@ Deno.serve(async (req: Request) => {
         "appointment_documents_required",
       ].includes(type)
     ) {
-      const routedType = type === "seller_appointment_scheduled" ? "appointment_scheduled" : type;
-      console.log("[send-email] routing template", { route: "appointment", type: routedType, recipient: recipient || null, transactionId: transactionId || null });
+      const routedType = type === "seller_appointment_scheduled"
+        ? "appointment_scheduled"
+        : type;
+      console.log("[send-email] routing template", {
+        route: "appointment",
+        type: routedType,
+        recipient: recipient || null,
+        transactionId: transactionId || null,
+      });
       return await handleAppointmentEmail({
         ...(payload as SendAppointmentEmailPayload),
         type: routedType as SendAppointmentEmailPayload["type"],
@@ -205,14 +334,21 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    if (["legacy_test", "test_email", "bridge_email_test"].includes(type) && (payload as SendLegacyTestPayload).to) {
-      console.log("[send-email] routing template", { route: "legacy_test", recipient: recipient || null });
+    if (
+      ["legacy_test", "test_email", "bridge_email_test"].includes(type) &&
+      (payload as SendLegacyTestPayload).to
+    ) {
+      console.log("[send-email] routing template", {
+        route: "legacy_test",
+        recipient: recipient || null,
+      });
       return await handleLegacyTestEmail(payload as SendLegacyTestPayload);
     }
 
     if (!type) {
       return jsonResponse(400, {
-        error: "Missing email type. The send-email function requires an explicit template type.",
+        error:
+          "Missing email type. The send-email function requires an explicit template type.",
         supportedTypes: [
           "client_onboarding",
           "onboarding_submitted",
@@ -226,6 +362,8 @@ Deno.serve(async (req: Request) => {
           "buyer_offer_submitted_agent",
           "seller_offer_review",
           "offer_decision_notification",
+          "transaction_roleplayer_intro",
+          "transaction_roleplayer_handoff",
           "appointment_scheduled",
           "appointment_confirmed",
           "appointment_updated",
@@ -240,7 +378,8 @@ Deno.serve(async (req: Request) => {
     }
 
     return jsonResponse(400, {
-      error: "Unknown email request type. Legacy test fallback is disabled for untyped/unknown requests.",
+      error:
+        "Unknown email request type. Legacy test fallback is disabled for untyped/unknown requests.",
       receivedType: type,
       supportedTypes: [
         "client_onboarding",
@@ -255,6 +394,8 @@ Deno.serve(async (req: Request) => {
         "buyer_offer_submitted_agent",
         "seller_offer_review",
         "offer_decision_notification",
+        "transaction_roleplayer_intro",
+        "transaction_roleplayer_handoff",
         "appointment_scheduled",
         "appointment_confirmed",
         "appointment_updated",

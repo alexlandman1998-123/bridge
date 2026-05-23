@@ -11,7 +11,11 @@ import type {
   SendClientOnboardingPayload,
   TransactionOnboardingRow,
 } from "../types.ts";
-import { isMissingColumnError, isMissingSchemaError, isMissingTableError } from "../utils/db.ts";
+import {
+  isMissingColumnError,
+  isMissingSchemaError,
+  isMissingTableError,
+} from "../utils/db.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText, pickMostRecentOnboardingRow } from "../utils/text.ts";
 import { resolveAppBaseUrl } from "../utils/url.ts";
@@ -22,11 +26,15 @@ export async function handleClientOnboardingEmail(
 ) {
   const transactionId = normalizeText(payload.transactionId);
   if (!transactionId) {
-    return jsonResponse(400, { error: "Missing required field: transactionId" });
+    return jsonResponse(400, {
+      error: "Missing required field: transactionId",
+    });
   }
 
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
-  const serviceRoleKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceRoleKey = normalizeText(
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+  );
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
 
   if (!supabaseUrl || !serviceRoleKey) {
@@ -42,7 +50,8 @@ export async function handleClientOnboardingEmail(
   const appBaseUrl = resolveAppBaseUrl(req);
   if (!appBaseUrl) {
     return jsonResponse(500, {
-      error: "Unable to resolve app URL. Set CLIENT_APP_URL (or PUBLIC_APP_URL) in function secrets.",
+      error:
+        "Unable to resolve app URL. Set CLIENT_APP_URL (or PUBLIC_APP_URL) in function secrets.",
     });
   }
 
@@ -51,12 +60,17 @@ export async function handleClientOnboardingEmail(
   });
 
   const nowIso = new Date().toISOString();
+  const onboardingSource = normalizeText(payload.source).toLowerCase();
+  const acceptedOfferOnboarding = onboardingSource.includes("accepted_offer") ||
+    onboardingSource === "seller_accepted_offer";
 
   console.log("Loading transaction", transactionId);
 
   let transactionQuery = await supabase
     .from("transactions")
-    .select("id, buyer_id, development_id, unit_id, transaction_reference, purchase_price, sales_price, purchaser_type, organisation_id, assigned_agent, assigned_agent_email")
+    .select(
+      "id, buyer_id, development_id, unit_id, transaction_reference, purchase_price, sales_price, purchaser_type, organisation_id, assigned_agent, assigned_agent_email",
+    )
     .eq("id", transactionId)
     .maybeSingle();
 
@@ -70,7 +84,9 @@ export async function handleClientOnboardingEmail(
   ) {
     transactionQuery = await supabase
       .from("transactions")
-      .select("id, buyer_id, development_id, unit_id, transaction_reference, purchase_price, sales_price, purchaser_type")
+      .select(
+        "id, buyer_id, development_id, unit_id, transaction_reference, purchase_price, sales_price, purchaser_type",
+      )
       .eq("id", transactionId)
       .maybeSingle();
   }
@@ -103,7 +119,9 @@ export async function handleClientOnboardingEmail(
   const transactionData = transaction as Record<string, unknown>;
   const organisationId = normalizeText(transactionData?.organisation_id);
   const assignedAgentName = normalizeText(transactionData?.assigned_agent);
-  const assignedAgentEmail = normalizeText(transactionData?.assigned_agent_email);
+  const assignedAgentEmail = normalizeText(
+    transactionData?.assigned_agent_email,
+  );
   const agentName = assignedAgentName || assignedAgentEmail;
 
   let organisationName = defaultOrganisationName;
@@ -114,7 +132,9 @@ export async function handleClientOnboardingEmail(
   if (organisationId) {
     const organisationQuery = await supabase
       .from("organisations")
-      .select("id, name, display_name, support_email, support_phone, company_email, company_phone")
+      .select(
+        "id, name, display_name, support_email, support_phone, company_email, company_phone",
+      )
       .eq("id", organisationId)
       .maybeSingle();
 
@@ -123,16 +143,13 @@ export async function handleClientOnboardingEmail(
       isMissingTableError(organisationQuery.error, "organisations") ||
       isMissingSchemaError(organisationQuery.error)
     ) {
-      organisationName =
-        normalizeText(organisationQuery.data?.display_name) ||
+      organisationName = normalizeText(organisationQuery.data?.display_name) ||
         normalizeText(organisationQuery.data?.name) ||
         organisationName;
-      supportEmail =
-        normalizeText(organisationQuery.data?.support_email) ||
+      supportEmail = normalizeText(organisationQuery.data?.support_email) ||
         normalizeText(organisationQuery.data?.company_email) ||
         supportEmail;
-      supportPhone =
-        normalizeText(organisationQuery.data?.support_phone) ||
+      supportPhone = normalizeText(organisationQuery.data?.support_phone) ||
         normalizeText(organisationQuery.data?.company_phone) ||
         supportPhone;
     }
@@ -140,7 +157,9 @@ export async function handleClientOnboardingEmail(
     templateOverrides = await fetchOrganisationEmailTemplateOverride(
       supabase,
       organisationId,
-      "client_onboarding",
+      acceptedOfferOnboarding
+        ? "client_onboarding_accepted_offer"
+        : "client_onboarding",
     );
   }
 
@@ -148,14 +167,17 @@ export async function handleClientOnboardingEmail(
 
   const onboardingQuery = await supabase
     .from("transaction_onboarding")
-    .select("id, transaction_id, token, status, purchaser_type, submitted_at, is_active, created_at, updated_at")
+    .select(
+      "id, transaction_id, token, status, purchaser_type, submitted_at, is_active, created_at, updated_at",
+    )
     .eq("transaction_id", transaction.id)
     .eq("is_active", true);
 
   if (onboardingQuery.error) {
     console.error("Onboarding query failed", onboardingQuery.error);
     return jsonResponse(500, {
-      error: onboardingQuery.error.message || "Failed to load onboarding record.",
+      error: onboardingQuery.error.message ||
+        "Failed to load onboarding record.",
       code: onboardingQuery.error.code || null,
     });
   }
@@ -177,13 +199,16 @@ export async function handleClientOnboardingEmail(
         purchaser_type: transaction.purchaser_type || "individual",
         is_active: true,
       })
-      .select("id, transaction_id, token, status, purchaser_type, submitted_at, is_active, created_at, updated_at")
+      .select(
+        "id, transaction_id, token, status, purchaser_type, submitted_at, is_active, created_at, updated_at",
+      )
       .single();
 
     if (insertResult.error) {
       console.error("Onboarding insert failed", insertResult.error);
       return jsonResponse(500, {
-        error: insertResult.error.message || "Failed to create onboarding record.",
+        error: insertResult.error.message ||
+          "Failed to create onboarding record.",
         code: insertResult.error.code || null,
       });
     }
@@ -218,7 +243,8 @@ export async function handleClientOnboardingEmail(
 
   if (!buyerEmail) {
     return jsonResponse(400, {
-      error: "Buyer email is missing. Capture buyer email before sending onboarding.",
+      error:
+        "Buyer email is missing. Capture buyer email before sending onboarding.",
     });
   }
 
@@ -248,20 +274,22 @@ export async function handleClientOnboardingEmail(
     }
   }
 
-  const onboardingUrl = `${appBaseUrl}/client/onboarding/${resolvedOnboarding.token}`;
-  const sender =
-    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+  const onboardingUrl =
+    `${appBaseUrl}/client/onboarding/${resolvedOnboarding.token}`;
+  const sender = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
     "Bridge <onboarding@resend.dev>";
 
   const transactionReference = normalizeText(transaction.transaction_reference);
-  const purchasePriceRaw = Number(transaction.purchase_price ?? transaction.sales_price ?? 0);
+  const purchasePriceRaw = Number(
+    transaction.purchase_price ?? transaction.sales_price ?? 0,
+  );
   const purchasePrice =
     Number.isFinite(purchasePriceRaw) && purchasePriceRaw > 0
       ? new Intl.NumberFormat("en-ZA", {
-          style: "currency",
-          currency: "ZAR",
-          maximumFractionDigits: 0,
-        }).format(purchasePriceRaw)
+        style: "currency",
+        currency: "ZAR",
+        maximumFractionDigits: 0,
+      }).format(purchasePriceRaw)
       : "";
 
   console.log("Sending onboarding email", buyerEmail);
@@ -270,9 +298,8 @@ export async function handleClientOnboardingEmail(
     apiKey: resendApiKey,
     from: sender,
     to: buyerEmail,
-    subject:
-      normalizeText(templateOverrides?.subject) ||
-      buildOnboardingSubject(transactionReference),
+    subject: normalizeText(templateOverrides?.subject) ||
+      buildOnboardingSubject(transactionReference, acceptedOfferOnboarding),
     html: buildOnboardingEmailHtml({
       buyerName,
       clientName: buyerName,
@@ -287,6 +314,7 @@ export async function handleClientOnboardingEmail(
       organisationName,
       supportEmail,
       supportPhone,
+      acceptedOffer: acceptedOfferOnboarding,
       templateOverrides: templateOverrides || undefined,
     }),
     text: buildOnboardingEmailText({
@@ -303,6 +331,7 @@ export async function handleClientOnboardingEmail(
       organisationName,
       supportEmail,
       supportPhone,
+      acceptedOffer: acceptedOfferOnboarding,
       templateOverrides: templateOverrides || undefined,
     }),
   });
@@ -315,8 +344,9 @@ export async function handleClientOnboardingEmail(
     });
   }
 
-  const nextOnboardingStatus =
-    resolvedOnboarding.status === "Not Started" ? "In Progress" : resolvedOnboarding.status;
+  const nextOnboardingStatus = resolvedOnboarding.status === "Not Started"
+    ? "In Progress"
+    : resolvedOnboarding.status;
 
   const onboardingUpdate = await supabase
     .from("transaction_onboarding")
@@ -329,7 +359,8 @@ export async function handleClientOnboardingEmail(
   if (onboardingUpdate.error) {
     console.error("Onboarding update failed", onboardingUpdate.error);
     return jsonResponse(500, {
-      error: onboardingUpdate.error.message || "Failed to update onboarding status after send.",
+      error: onboardingUpdate.error.message ||
+        "Failed to update onboarding status after send.",
       code: onboardingUpdate.error.code || null,
     });
   }

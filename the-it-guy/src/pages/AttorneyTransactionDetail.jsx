@@ -56,15 +56,18 @@ import {
   undoTransactionRegistration,
   unarchiveTransactionLifecycle,
   updateTransactionAccessControl,
+  updateTransactionStakeholderContacts,
   uploadDocument,
 } from '../lib/api'
 import { canAccessAttorneyMatter } from '../lib/attorneyPermissions'
+import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
-import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 
 const ATTORNEY_WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'parties', label: 'Parties' },
+  { id: 'stakeholders', label: 'Roleplayers' },
   { id: 'documents', label: 'Documents' },
   { id: 'finance', label: 'Finance' },
   { id: 'transfer', label: 'Transfer' },
@@ -357,6 +360,10 @@ function formatDateTime(value) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function normalizeComparableContact(value) {
+  return String(value || '').trim().toLowerCase()
 }
 
 function formatShortDayMonth(value) {
@@ -811,6 +818,19 @@ function humanizeTransactionEvent(event = {}) {
     category = 'notes'
     title = 'Client update published'
     detail = detail || 'A client-visible update was published.'
+  } else if (lowerType.includes('roleplayerintro')) {
+    category = 'notes'
+    title = 'Buyer intro email sent'
+    detail = eventData.recipientEmail
+      ? `Roleplayer introduction sent to ${eventData.recipientEmail}.`
+      : 'Roleplayer introduction sent to the buyer.'
+  } else if (lowerType.includes('roleplayerhandoff')) {
+    category = 'notes'
+    title = 'Team handoff email sent'
+    const recipients = Array.isArray(eventData.recipients) ? eventData.recipients : []
+    detail = recipients.length
+      ? `Handoff sent to ${recipients.map((item) => item.email).filter(Boolean).join(', ')}.`
+      : 'Handoff sent to the transaction roleplayers.'
   }
 
   const meta = getActivityCategoryMeta(category)
@@ -1535,6 +1555,23 @@ function AttorneyTransactionDetail() {
   })
   const [stakeholderMessage, setStakeholderMessage] = useState('')
   const [inviteLinkResult, setInviteLinkResult] = useState('')
+  const [roleplayerIntroBusy, setRoleplayerIntroBusy] = useState(false)
+  const [roleplayerHandoffBusy, setRoleplayerHandoffBusy] = useState(false)
+  const [roleplayerForm, setRoleplayerForm] = useState({
+    buyerName: '',
+    buyerEmail: '',
+    buyerPhone: '',
+    sellerName: '',
+    sellerEmail: '',
+    sellerPhone: '',
+    agentName: '',
+    agentEmail: '',
+    attorneyName: '',
+    attorneyEmail: '',
+    bondOriginatorName: '',
+    bondOriginatorEmail: '',
+    matterOwner: '',
+  })
   const [accessControlForm, setAccessControlForm] = useState({
     ownerUserId: '',
     accessLevel: 'shared',
@@ -1799,6 +1836,7 @@ function AttorneyTransactionDetail() {
   const mainStageLabel = MAIN_STAGE_LABELS[mainStage] || toTitle(transaction?.stage || 'Available')
   const matterTypeLabel = isPrivateMatter ? 'Private Matter' : 'Development Matter'
   const financeTypeLabel = toTitle(normalizeFinanceType(transaction?.finance_type || 'cash'))
+  const financeRequiresBondSupport = ['bond', 'combination', 'hybrid'].includes(normalizeFinanceType(transaction?.finance_type || 'cash'))
   const purchasePriceValue = Number(transaction?.purchase_price || transaction?.sales_price || unit?.price || 0)
   const propertyAddress = buildPropertyAddress(transaction)
   const matterHeadline = !isPrivateMatter
@@ -1932,6 +1970,10 @@ function AttorneyTransactionDetail() {
     () => activeStakeholders.find((item) => item?.roleType === 'agent') || null,
     [activeStakeholders],
   )
+  const assignedBondOriginator = useMemo(
+    () => activeStakeholders.find((item) => item?.roleType === 'bond_originator') || null,
+    [activeStakeholders],
+  )
   const legalRoleAssignmentNote = useMemo(() => {
     if (transferAttorney && bondAttorney) {
       const transferIdentity = String(transferAttorney.participantEmail || transferAttorney.participantName || '').trim().toLowerCase()
@@ -1973,6 +2015,266 @@ function AttorneyTransactionDetail() {
       ].sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime()),
     [transactionEvents, visibleTransactionDiscussion],
   )
+  const roleplayerIntroEvents = useMemo(
+    () =>
+      [...transactionEvents]
+        .filter((event) => String(event?.eventType || event?.event_type || '').toLowerCase() === 'roleplayerintroemailsent')
+        .sort((left, right) => new Date(right?.createdAt || right?.created_at || 0).getTime() - new Date(left?.createdAt || left?.created_at || 0).getTime()),
+    [transactionEvents],
+  )
+  const latestRoleplayerIntroEvent = roleplayerIntroEvents[0] || null
+  const roleplayerHandoffEvents = useMemo(
+    () =>
+      [...transactionEvents]
+        .filter((event) => String(event?.eventType || event?.event_type || '').toLowerCase() === 'roleplayerhandoffemailsent')
+        .sort((left, right) => new Date(right?.createdAt || right?.created_at || 0).getTime() - new Date(left?.createdAt || left?.created_at || 0).getTime()),
+    [transactionEvents],
+  )
+  const latestRoleplayerHandoffEvent = roleplayerHandoffEvents[0] || null
+  const roleplayerReadiness = useMemo(() => {
+    const hasBuyerEmail = Boolean(roleplayerForm.buyerEmail.trim())
+    const hasBuyerName = Boolean(roleplayerForm.buyerName.trim())
+    const hasAgentContact = Boolean(roleplayerForm.agentName.trim() || roleplayerForm.agentEmail.trim() || assignedAgent)
+    const hasTransferAttorney = Boolean(roleplayerForm.attorneyName.trim() || roleplayerForm.attorneyEmail.trim() || transferAttorney)
+    const hasTransferAttorneyEmail = Boolean(roleplayerForm.attorneyEmail.trim() || transferAttorney?.participantEmail)
+    const hasBondOriginator = Boolean(roleplayerForm.bondOriginatorName.trim() || roleplayerForm.bondOriginatorEmail.trim() || assignedBondOriginator)
+    const hasBondOriginatorEmail = Boolean(roleplayerForm.bondOriginatorEmail.trim() || assignedBondOriginator?.participantEmail)
+    const hasCancellationAttorney = Boolean(cancellationAttorney)
+    const currentTransferAttorneyName = roleplayerForm.attorneyName.trim() || transferAttorney?.participantName || ''
+    const currentTransferAttorneyEmail = roleplayerForm.attorneyEmail.trim() || transferAttorney?.participantEmail || ''
+    const currentBondOriginatorName = roleplayerForm.bondOriginatorName.trim() || assignedBondOriginator?.participantName || ''
+    const currentBondOriginatorEmail = roleplayerForm.bondOriginatorEmail.trim() || assignedBondOriginator?.participantEmail || ''
+    const currentAgentName = roleplayerForm.agentName.trim() || assignedAgent?.participantName || ''
+    const currentAgentEmail = roleplayerForm.agentEmail.trim() || assignedAgent?.participantEmail || ''
+    const latestIntroData = latestRoleplayerIntroEvent ? getActivityEventData(latestRoleplayerIntroEvent) : {}
+    const latestHandoffData = latestRoleplayerHandoffEvent ? getActivityEventData(latestRoleplayerHandoffEvent) : {}
+    const handoffRecipients = Array.isArray(latestHandoffData.recipients) ? latestHandoffData.recipients : []
+    const handoffTransferEmail = latestHandoffData.transferAttorneyEmail ||
+      handoffRecipients.find((item) => item?.role === 'transfer_attorney')?.email ||
+      ''
+    const handoffBondEmail = latestHandoffData.bondOriginatorEmail ||
+      handoffRecipients.find((item) => item?.role === 'bond_originator')?.email ||
+      ''
+    const introOutdated = Boolean(
+      latestRoleplayerIntroEvent &&
+        [
+          [latestIntroData.transferAttorneyName, currentTransferAttorneyName],
+          [latestIntroData.transferAttorneyEmail, currentTransferAttorneyEmail],
+          [latestIntroData.bondOriginatorName, currentBondOriginatorName],
+          [latestIntroData.bondOriginatorEmail, currentBondOriginatorEmail],
+          [latestIntroData.agentName, currentAgentName],
+          [latestIntroData.agentEmail, currentAgentEmail],
+        ].some(([previous, current]) => normalizeComparableContact(previous) !== normalizeComparableContact(current)),
+    )
+    const handoffOutdated = Boolean(
+      latestRoleplayerHandoffEvent &&
+        [
+          [latestHandoffData.transferAttorneyName, currentTransferAttorneyName],
+          [handoffTransferEmail, currentTransferAttorneyEmail],
+          [latestHandoffData.bondOriginatorName, currentBondOriginatorName],
+          [handoffBondEmail, currentBondOriginatorEmail],
+          [latestHandoffData.agentName, currentAgentName],
+          [latestHandoffData.agentEmail, currentAgentEmail],
+        ].some(([previous, current]) => normalizeComparableContact(previous) !== normalizeComparableContact(current)),
+    )
+    const items = [
+      {
+        key: 'buyer_email',
+        label: 'Buyer email captured',
+        description: 'Required before Bridge can send the introduction email.',
+        complete: hasBuyerEmail,
+        required: true,
+      },
+      {
+        key: 'transfer_attorney',
+        label: 'Transfer attorney selected',
+        description: 'Required because every sale needs a clear transfer owner.',
+        complete: hasTransferAttorney,
+        required: true,
+      },
+      financeRequiresBondSupport
+        ? {
+            key: 'bond_originator',
+            label: 'Bond originator selected',
+            description: 'Required because this buyer is using bond or hybrid finance support.',
+            complete: hasBondOriginator,
+            required: true,
+          }
+        : {
+            key: 'cash_finance',
+            label: 'Finance path noted',
+            description: 'Cash transactions do not need a bond originator before the buyer intro.',
+            complete: true,
+            required: false,
+          },
+      transaction?.seller_has_existing_bond
+        ? {
+            key: 'cancellation_attorney',
+            label: 'Cancellation attorney assigned',
+            description: 'Required before transfer handoff because the seller has an existing bond.',
+            complete: hasCancellationAttorney,
+            required: true,
+          }
+        : {
+            key: 'cancellation_not_required',
+            label: 'Cancellation attorney not required yet',
+            description: 'Only needed if an existing seller bond is confirmed.',
+            complete: true,
+            required: false,
+          },
+      {
+        key: 'agent_contact',
+        label: 'Agent contact available',
+        description: 'Recommended so the buyer knows who coordinates sale-related questions.',
+        complete: hasAgentContact,
+        required: false,
+      },
+      {
+        key: 'buyer_name',
+        label: 'Buyer name captured',
+        description: 'Recommended for a warmer email greeting and cleaner transaction record.',
+        complete: hasBuyerName,
+        required: false,
+      },
+      {
+        key: 'buyer_intro_sent',
+        label: introOutdated ? 'Buyer intro needs resend' : 'Buyer intro sent',
+        description: introOutdated
+          ? 'Roleplayer details changed after the buyer introduction was sent.'
+          : 'Shows whether the transaction team has already been introduced to the buyer.',
+        complete: Boolean(latestRoleplayerIntroEvent) && !introOutdated,
+        required: false,
+      },
+      {
+        key: 'team_handoff_sent',
+        label: handoffOutdated ? 'Team handoff needs resend' : 'Team handoff sent',
+        description: handoffOutdated
+          ? 'Provider details changed after the team handoff was sent.'
+          : 'Shows whether the transfer and finance roleplayers have received the transaction context.',
+        complete: Boolean(latestRoleplayerHandoffEvent) && !handoffOutdated,
+        required: false,
+      },
+    ].filter(Boolean)
+    const requiredItems = items.filter((item) => item.required)
+    const completedRequired = requiredItems.filter((item) => item.complete).length
+    const completedAll = items.filter((item) => item.complete).length
+    const percent = items.length ? Math.round((completedAll / items.length) * 100) : 100
+    const blockers = requiredItems.filter((item) => !item.complete)
+    const recommended = items.filter((item) => !item.required && !item.complete)
+    const canSendIntro = blockers.length === 0
+    const teamHandoffBlockers = [
+      !hasTransferAttorneyEmail ? 'Transfer attorney email' : '',
+      financeRequiresBondSupport && !hasBondOriginatorEmail ? 'Bond originator email' : '',
+    ].filter(Boolean)
+    const canSendTeamHandoff = teamHandoffBlockers.length === 0
+    return {
+      items,
+      blockers,
+      recommended,
+      teamHandoffBlockers,
+      percent,
+      completedRequired,
+      requiredCount: requiredItems.length,
+      canSendIntro,
+      canSendTeamHandoff,
+      introOutdated,
+      handoffOutdated,
+      statusLabel: blockers.length ? 'Needs attention' : introOutdated || handoffOutdated ? 'Needs resend' : latestRoleplayerIntroEvent ? 'Intro sent' : 'Ready to send',
+    }
+  }, [
+    assignedAgent,
+    assignedBondOriginator,
+    cancellationAttorney,
+    financeRequiresBondSupport,
+    latestRoleplayerHandoffEvent,
+    latestRoleplayerIntroEvent,
+    roleplayerForm.agentEmail,
+    roleplayerForm.agentName,
+    roleplayerForm.attorneyEmail,
+    roleplayerForm.attorneyName,
+    roleplayerForm.bondOriginatorEmail,
+    roleplayerForm.bondOriginatorName,
+    roleplayerForm.buyerEmail,
+    roleplayerForm.buyerName,
+    transaction?.seller_has_existing_bond,
+    transferAttorney,
+  ])
+  const roleplayerCommunicationHistory = useMemo(() => {
+    const currentSnapshot = {
+      transferAttorneyName: roleplayerForm.attorneyName.trim() || transferAttorney?.participantName || '',
+      transferAttorneyEmail: roleplayerForm.attorneyEmail.trim() || transferAttorney?.participantEmail || '',
+      bondOriginatorName: roleplayerForm.bondOriginatorName.trim() || assignedBondOriginator?.participantName || '',
+      bondOriginatorEmail: roleplayerForm.bondOriginatorEmail.trim() || assignedBondOriginator?.participantEmail || '',
+      agentName: roleplayerForm.agentName.trim() || assignedAgent?.participantName || '',
+      agentEmail: roleplayerForm.agentEmail.trim() || assignedAgent?.participantEmail || '',
+    }
+    const isSnapshotOutdated = (eventData = {}) =>
+      [
+        [eventData.transferAttorneyName, currentSnapshot.transferAttorneyName],
+        [eventData.transferAttorneyEmail, currentSnapshot.transferAttorneyEmail],
+        [eventData.bondOriginatorName, currentSnapshot.bondOriginatorName],
+        [eventData.bondOriginatorEmail, currentSnapshot.bondOriginatorEmail],
+        [eventData.agentName, currentSnapshot.agentName],
+        [eventData.agentEmail, currentSnapshot.agentEmail],
+      ].some(([previous, current]) => normalizeComparableContact(previous) !== normalizeComparableContact(current))
+    const mapIntroEvent = (event) => {
+      const eventData = getActivityEventData(event)
+      const isLatest = event?.id && event.id === latestRoleplayerIntroEvent?.id
+      const outdated = isSnapshotOutdated(eventData)
+      return {
+        id: `intro-${event.id || event.createdAt || event.created_at}`,
+        type: 'Buyer Intro',
+        sentAt: event.createdAt || event.created_at,
+        recipients: [eventData.recipientEmail].filter(Boolean),
+        state: isLatest ? (outdated ? 'Needs resend' : 'Current') : 'Superseded',
+        summary: outdated && isLatest ? 'Roleplayer details changed after this buyer intro was sent.' : 'Buyer received the transaction team introduction.',
+      }
+    }
+    const mapHandoffEvent = (event) => {
+      const eventData = getActivityEventData(event)
+      const recipients = Array.isArray(eventData.recipients)
+        ? eventData.recipients.map((item) => item?.email).filter(Boolean)
+        : []
+      const fallbackTransferEmail = recipients[0] || ''
+      const fallbackBondEmail = recipients[1] || ''
+      const comparableData = {
+        ...eventData,
+        transferAttorneyEmail: eventData.transferAttorneyEmail || fallbackTransferEmail,
+        bondOriginatorEmail: eventData.bondOriginatorEmail || fallbackBondEmail,
+      }
+      const isLatest = event?.id && event.id === latestRoleplayerHandoffEvent?.id
+      const outdated = isSnapshotOutdated(comparableData)
+      return {
+        id: `handoff-${event.id || event.createdAt || event.created_at}`,
+        type: 'Team Handoff',
+        sentAt: event.createdAt || event.created_at,
+        recipients,
+        state: isLatest ? (outdated ? 'Needs resend' : 'Current') : 'Superseded',
+        summary: outdated && isLatest ? 'Provider details changed after this team handoff was sent.' : 'Roleplayers received the transaction handoff context.',
+      }
+    }
+    return [
+      ...roleplayerIntroEvents.map(mapIntroEvent),
+      ...roleplayerHandoffEvents.map(mapHandoffEvent),
+    ].sort((left, right) => new Date(right.sentAt || 0).getTime() - new Date(left.sentAt || 0).getTime())
+  }, [
+    assignedAgent?.participantEmail,
+    assignedAgent?.participantName,
+    assignedBondOriginator?.participantEmail,
+    assignedBondOriginator?.participantName,
+    latestRoleplayerHandoffEvent?.id,
+    latestRoleplayerIntroEvent?.id,
+    roleplayerForm.agentEmail,
+    roleplayerForm.agentName,
+    roleplayerForm.attorneyEmail,
+    roleplayerForm.attorneyName,
+    roleplayerForm.bondOriginatorEmail,
+    roleplayerForm.bondOriginatorName,
+    roleplayerHandoffEvents,
+    roleplayerIntroEvents,
+    transferAttorney?.participantEmail,
+    transferAttorney?.participantName,
+  ])
   const workflowLanes = useMemo(
     () => (Array.isArray(workflowOperations?.lanes) ? workflowOperations.lanes : EMPTY_ARRAY),
     [workflowOperations?.lanes],
@@ -2502,6 +2804,32 @@ function AttorneyTransactionDetail() {
     })
   }, [profile?.id, transaction])
 
+  useEffect(() => {
+    if (!transaction) return
+    setRoleplayerForm({
+      buyerName: buyer?.name || '',
+      buyerEmail: buyer?.email || '',
+      buyerPhone: buyer?.phone || '',
+      sellerName: transaction?.seller_name || '',
+      sellerEmail: transaction?.seller_email || '',
+      sellerPhone: transaction?.seller_phone || '',
+      agentName: transaction?.assigned_agent || '',
+      agentEmail: transaction?.assigned_agent_email || '',
+      attorneyName: transaction?.attorney || transferAttorney?.participantName || '',
+      attorneyEmail: transaction?.assigned_attorney_email || transferAttorney?.participantEmail || '',
+      bondOriginatorName: transaction?.bond_originator || '',
+      bondOriginatorEmail: transaction?.assigned_bond_originator_email || '',
+      matterOwner: transaction?.matter_owner || '',
+    })
+  }, [
+    buyer?.email,
+    buyer?.name,
+    buyer?.phone,
+    transaction,
+    transferAttorney?.participantEmail,
+    transferAttorney?.participantName,
+  ])
+
   function openPrintDocument(content, popupErrorMessage) {
     const blob = new Blob([content], { type: 'text/html;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -2591,6 +2919,151 @@ function AttorneyTransactionDetail() {
       setError(sendError?.message || 'Unable to prepare onboarding send action right now.')
     } finally {
       setOnboardingActionBusy(false)
+    }
+  }
+
+  function updateRoleplayerFormField(field, value) {
+    setRoleplayerForm((previous) => ({
+      ...previous,
+      [field]: value,
+    }))
+  }
+
+  async function persistRoleplayerContacts() {
+    if (!transaction?.id) return
+
+    const refreshed = await updateTransactionStakeholderContacts({
+      transactionId: transaction.id,
+      buyerName: roleplayerForm.buyerName,
+      buyerEmail: roleplayerForm.buyerEmail,
+      buyerPhone: roleplayerForm.buyerPhone,
+      sellerName: roleplayerForm.sellerName,
+      sellerEmail: roleplayerForm.sellerEmail,
+      sellerPhone: roleplayerForm.sellerPhone,
+      agentName: roleplayerForm.agentName,
+      agentEmail: roleplayerForm.agentEmail,
+      attorneyName: roleplayerForm.attorneyName,
+      attorneyEmail: roleplayerForm.attorneyEmail,
+      bondOriginatorName: roleplayerForm.bondOriginatorName,
+      bondOriginatorEmail: roleplayerForm.bondOriginatorEmail,
+      matterOwner: roleplayerForm.matterOwner,
+      actorRole: workspaceRole,
+    })
+    if (refreshed) {
+      setData(refreshed)
+    } else {
+      await loadData()
+    }
+    window.dispatchEvent(new Event('itg:transaction-updated'))
+    return refreshed
+  }
+
+  async function handleSaveRoleplayerContacts(event) {
+    event.preventDefault()
+    if (!transaction?.id) return
+
+    try {
+      setSaving(true)
+      setError('')
+      setStakeholderMessage('')
+      setInviteLinkResult('')
+      await persistRoleplayerContacts()
+      setStakeholderMessage('Current roleplayers updated and transaction participants synced.')
+    } catch (saveRoleplayersError) {
+      setError(saveRoleplayersError.message || 'Unable to update roleplayers.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleSendRoleplayerIntro() {
+    if (!transaction?.id) return
+    if (!roleplayerForm.buyerEmail.trim()) {
+      setError('Buyer email is required before sending the roleplayer introduction.')
+      return
+    }
+    if (!roleplayerForm.attorneyName.trim() && !roleplayerForm.attorneyEmail.trim()) {
+      setError('Capture the transfer attorney before sending the roleplayer introduction.')
+      return
+    }
+    if (financeRequiresBondSupport && !roleplayerForm.bondOriginatorName.trim() && !roleplayerForm.bondOriginatorEmail.trim()) {
+      setError('Capture the bond originator before sending the roleplayer introduction for this finance transaction.')
+      return
+    }
+    if (!roleplayerReadiness.canSendIntro) {
+      setError((roleplayerReadiness.blockers || []).map((item) => item.label).join(' • ') || 'Complete the required handoff items before sending the roleplayer introduction.')
+      return
+    }
+
+    try {
+      setRoleplayerIntroBusy(true)
+      setError('')
+      setStakeholderMessage('')
+      setInviteLinkResult('')
+      await persistRoleplayerContacts()
+      const response = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'transaction_roleplayer_intro',
+          transactionId: transaction.id,
+          to: roleplayerForm.buyerEmail,
+          recipientName: roleplayerForm.buyerName,
+          resend: true,
+        },
+      })
+      const responseError = response?.error || response?.data?.error
+      if (responseError) {
+        const parsedMessage = response?.error
+          ? await parseEdgeFunctionError(response.error, 'Unable to send roleplayer introduction.')
+          : typeof responseError === 'string'
+            ? responseError
+            : responseError?.message || 'Unable to send roleplayer introduction.'
+        throw new Error(parsedMessage)
+      }
+      setStakeholderMessage(`Roleplayer introduction sent to ${roleplayerForm.buyerEmail}.`)
+      await loadData({ background: true })
+    } catch (introError) {
+      setError(introError.message || 'Unable to send roleplayer introduction.')
+    } finally {
+      setRoleplayerIntroBusy(false)
+    }
+  }
+
+  async function handleSendRoleplayerHandoff() {
+    if (!transaction?.id) return
+    if (!roleplayerReadiness.canSendTeamHandoff) {
+      setError(`${roleplayerReadiness.teamHandoffBlockers.join(' and ')} required before sending the team handoff.`)
+      return
+    }
+
+    try {
+      setRoleplayerHandoffBusy(true)
+      setError('')
+      setStakeholderMessage('')
+      setInviteLinkResult('')
+      await persistRoleplayerContacts()
+      const response = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'transaction_roleplayer_handoff',
+          transactionId: transaction.id,
+          resend: true,
+        },
+      })
+      const responseError = response?.error || response?.data?.error
+      if (responseError) {
+        const parsedMessage = response?.error
+          ? await parseEdgeFunctionError(response.error, 'Unable to send team handoff.')
+          : typeof responseError === 'string'
+            ? responseError
+            : responseError?.message || 'Unable to send team handoff.'
+        throw new Error(parsedMessage)
+      }
+      const sentCount = Array.isArray(response?.data?.sentRecipients) ? response.data.sentRecipients.length : 0
+      setStakeholderMessage(`Team handoff sent to ${sentCount || 'the'} roleplayer${sentCount === 1 ? '' : 's'}.`)
+      await loadData({ background: true })
+    } catch (handoffError) {
+      setError(handoffError.message || 'Unable to send team handoff.')
+    } finally {
+      setRoleplayerHandoffBusy(false)
     }
   }
 
@@ -4092,6 +4565,343 @@ function AttorneyTransactionDetail() {
 
         {activeWorkspaceMenu === 'stakeholders' ? (
           <section className="space-y-5">
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h3 className="text-section-title font-semibold text-textStrong">Roleplayer Handoff</h3>
+                  <p className="mt-1 text-secondary text-textMuted">
+                    Capture the current transaction team before the buyer onboarding and transfer handoff starts.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <span className={`inline-flex items-center rounded-full border px-3 py-1 text-helper font-semibold ${
+                    roleplayerForm.attorneyName || roleplayerForm.attorneyEmail || transferAttorney
+                      ? 'border-success/30 bg-successSoft text-success'
+                      : 'border-warning/30 bg-warningSoft text-warning'
+                  }`}>
+                    Transfer attorney {roleplayerForm.attorneyName || roleplayerForm.attorneyEmail || transferAttorney ? 'set' : 'missing'}
+                  </span>
+                  <span className={`inline-flex items-center rounded-full border px-3 py-1 text-helper font-semibold ${
+                    !financeRequiresBondSupport
+                      ? 'border-borderDefault bg-mutedBg text-textMuted'
+                      : roleplayerForm.bondOriginatorName || roleplayerForm.bondOriginatorEmail || assignedBondOriginator
+                        ? 'border-success/30 bg-successSoft text-success'
+                        : 'border-warning/30 bg-warningSoft text-warning'
+                  }`}>
+                    {financeRequiresBondSupport ? 'Bond originator' : 'Cash finance'} {financeRequiresBondSupport ? (roleplayerForm.bondOriginatorName || roleplayerForm.bondOriginatorEmail || assignedBondOriginator ? 'set' : 'missing') : ''}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                {[
+                  {
+                    title: 'Transfer Attorney',
+                    body: 'Selected by the agent or agency before the transfer instruction goes out.',
+                    state: roleplayerForm.attorneyName || roleplayerForm.attorneyEmail || transferAttorney ? 'Ready' : 'Needs selection',
+                  },
+                  {
+                    title: 'Bond Originator',
+                    body: financeRequiresBondSupport ? 'Capture the originator if the buyer opted into finance support.' : 'Not required for a cash transaction unless finance support is added later.',
+                    state: financeRequiresBondSupport
+                      ? roleplayerForm.bondOriginatorName || roleplayerForm.bondOriginatorEmail || assignedBondOriginator
+                        ? 'Ready'
+                        : 'Needs selection'
+                      : 'Optional',
+                  },
+                  {
+                    title: 'Bond Attorney',
+                    body: 'Usually confirmed by the bank after bond approval or instruction. Invite them once known.',
+                    state: bondAttorney ? 'Assigned' : 'Later',
+                  },
+                  {
+                    title: 'Cancellation Attorney',
+                    body: transaction?.seller_has_existing_bond ? 'Required because the seller has an existing bond flagged.' : 'Only required when the seller has an existing bond.',
+                    state: cancellationAttorney ? 'Assigned' : transaction?.seller_has_existing_bond ? 'Needs selection' : 'Optional',
+                  },
+                  {
+                    title: 'Buyer Intro',
+                    body: roleplayerReadiness.introOutdated
+                      ? 'Roleplayer details changed after the last buyer intro. Resend the updated introduction.'
+                      : latestRoleplayerIntroEvent
+                      ? `Last sent ${formatDateTime(latestRoleplayerIntroEvent.createdAt || latestRoleplayerIntroEvent.created_at)}${
+                          getActivityEventData(latestRoleplayerIntroEvent).recipientEmail ? ` to ${getActivityEventData(latestRoleplayerIntroEvent).recipientEmail}` : ''
+                        }.`
+                      : 'Send once roleplayers are confirmed so the buyer knows who will contact them.',
+                    state: roleplayerReadiness.introOutdated ? 'Needs resend' : latestRoleplayerIntroEvent ? 'Sent' : 'Not sent',
+                  },
+                  {
+                    title: 'Team Handoff',
+                    body: roleplayerReadiness.handoffOutdated
+                      ? 'Provider details changed after the last team handoff. Resend the updated context.'
+                      : latestRoleplayerHandoffEvent
+                      ? `Last sent ${formatDateTime(latestRoleplayerHandoffEvent.createdAt || latestRoleplayerHandoffEvent.created_at)}.`
+                      : roleplayerReadiness.teamHandoffBlockers.length
+                        ? `${roleplayerReadiness.teamHandoffBlockers.join(' and ')} required before sending.`
+                        : 'Send transaction context to the transfer and finance roleplayers.',
+                    state: roleplayerReadiness.handoffOutdated ? 'Needs resend' : latestRoleplayerHandoffEvent ? 'Sent' : roleplayerReadiness.canSendTeamHandoff ? 'Ready' : 'Blocked',
+                  },
+                ].map((item) => (
+                  <article key={item.title} className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <strong className="text-body font-semibold text-textStrong">{item.title}</strong>
+                      <span className="rounded-full border border-borderDefault bg-surface px-2 py-0.5 text-[0.68rem] font-semibold text-textMuted">
+                        {item.state}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-helper leading-5 text-textMuted">{item.body}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <form onSubmit={handleSaveRoleplayerContacts} className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-section-title font-semibold text-textStrong">Current Roleplayers</h3>
+                  <p className="mt-1 text-secondary text-textMuted">
+                    These details update the transaction record and sync into transaction participants for workflow visibility.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="submit" disabled={saving || roleplayerIntroBusy || roleplayerHandoffBusy || hydratingDetail}>
+                    {saving ? 'Saving…' : hydratingDetail ? 'Refreshing…' : 'Save Roleplayers'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={
+                      saving ||
+                      roleplayerIntroBusy ||
+                      roleplayerHandoffBusy ||
+                      hydratingDetail ||
+                      !roleplayerReadiness.canSendIntro
+                    }
+                    onClick={() => void handleSendRoleplayerIntro()}
+                  >
+                    <Send size={14} />
+                    {roleplayerIntroBusy ? 'Sending…' : roleplayerReadiness.introOutdated ? 'Resend Updated Buyer Intro' : latestRoleplayerIntroEvent ? 'Resend Buyer Intro' : 'Send Buyer Intro'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={
+                      saving ||
+                      roleplayerIntroBusy ||
+                      roleplayerHandoffBusy ||
+                      hydratingDetail ||
+                      !roleplayerReadiness.canSendTeamHandoff
+                    }
+                    onClick={() => void handleSendRoleplayerHandoff()}
+                  >
+                    <Send size={14} />
+                    {roleplayerHandoffBusy ? 'Sending…' : roleplayerReadiness.handoffOutdated ? 'Resend Updated Team Handoff' : latestRoleplayerHandoffEvent ? 'Resend Team Handoff' : 'Send Team Handoff'}
+                  </Button>
+                </div>
+              </div>
+
+              <section className="mb-5 rounded-control border border-borderSoft bg-surfaceAlt p-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="text-base font-semibold text-textStrong">Handoff Readiness</h4>
+                      <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase ${
+                        roleplayerReadiness.blockers.length
+                          ? 'border-warning/30 bg-warningSoft text-warning'
+                          : roleplayerReadiness.introOutdated || roleplayerReadiness.handoffOutdated
+                            ? 'border-warning/30 bg-warningSoft text-warning'
+                            : latestRoleplayerIntroEvent
+                            ? 'border-success/30 bg-successSoft text-success'
+                            : 'border-primary/20 bg-primarySoft text-primary'
+                      }`}>
+                        {roleplayerReadiness.statusLabel}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-helper leading-5 text-textMuted">
+                      {roleplayerReadiness.blockers.length
+                        ? `${roleplayerReadiness.blockers.length} required item${roleplayerReadiness.blockers.length === 1 ? '' : 's'} still block the buyer intro.`
+                        : roleplayerReadiness.introOutdated || roleplayerReadiness.handoffOutdated
+                          ? 'Roleplayer details changed after a previous send. Resend the updated handoff emails.'
+                        : latestRoleplayerIntroEvent
+                          ? 'The buyer has already received the transaction team introduction. Resend it if roleplayers changed.'
+                          : 'All required roleplayers are ready for the buyer introduction.'}
+                    </p>
+                  </div>
+                  <div className="min-w-[160px] rounded-[14px] border border-borderDefault bg-surface px-4 py-3">
+                    <span className="block text-label font-semibold uppercase text-textMuted">Completion</span>
+                    <strong className="mt-1 block text-2xl font-semibold text-textStrong">{roleplayerReadiness.percent}%</strong>
+                    <span className="mt-1 block text-helper text-textMuted">
+                      {roleplayerReadiness.completedRequired}/{roleplayerReadiness.requiredCount} required ready
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {roleplayerReadiness.items.map((item) => (
+                    <article key={item.key} className="rounded-[14px] border border-borderDefault bg-surface px-3 py-3">
+                      <div className="flex items-start gap-2">
+                        <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${item.complete ? 'bg-success' : item.required ? 'bg-warning' : 'bg-slate-300'}`} />
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <strong className="text-sm font-semibold text-textStrong">{item.label}</strong>
+                            <span className="rounded-full border border-borderSoft bg-mutedBg px-2 py-0.5 text-[0.64rem] font-semibold uppercase text-textMuted">
+                              {item.required ? 'Required' : 'Recommended'}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-helper leading-5 text-textMuted">{item.description}</p>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+
+                {roleplayerReadiness.blockers.length || roleplayerReadiness.teamHandoffBlockers.length || roleplayerReadiness.recommended.length ? (
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    {roleplayerReadiness.blockers.length ? (
+                      <div className="rounded-[14px] border border-warning/30 bg-warningSoft px-3 py-3">
+                        <span className="block text-label font-semibold uppercase text-warning">Blocking before send</span>
+                        <ul className="mt-2 space-y-1 text-helper leading-5 text-warning">
+                          {roleplayerReadiness.blockers.map((item) => (
+                            <li key={item.key}>{item.label}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                    {roleplayerReadiness.teamHandoffBlockers.length ? (
+                      <div className="rounded-[14px] border border-warning/30 bg-warningSoft px-3 py-3">
+                        <span className="block text-label font-semibold uppercase text-warning">Blocking team handoff</span>
+                        <ul className="mt-2 space-y-1 text-helper leading-5 text-warning">
+                          {roleplayerReadiness.teamHandoffBlockers.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                    {roleplayerReadiness.recommended.length ? (
+                      <div className="rounded-[14px] border border-borderDefault bg-surface px-3 py-3">
+                        <span className="block text-label font-semibold uppercase text-textMuted">Nice to complete</span>
+                        <ul className="mt-2 space-y-1 text-helper leading-5 text-textMuted">
+                          {roleplayerReadiness.recommended.map((item) => (
+                            <li key={item.key}>{item.label}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </section>
+
+              <div className="grid gap-5 xl:grid-cols-2">
+                <section className="rounded-control border border-borderSoft bg-surfaceAlt p-4">
+                  <h4 className="text-base font-semibold text-textStrong">Client & Agent Context</h4>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-label font-semibold uppercase text-textMuted">Buyer Name</span>
+                      <Field value={roleplayerForm.buyerName} onChange={(event) => updateRoleplayerFormField('buyerName', event.target.value)} />
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-label font-semibold uppercase text-textMuted">Buyer Email</span>
+                      <Field type="email" value={roleplayerForm.buyerEmail} onChange={(event) => updateRoleplayerFormField('buyerEmail', event.target.value)} />
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-label font-semibold uppercase text-textMuted">Seller Name</span>
+                      <Field value={roleplayerForm.sellerName} onChange={(event) => updateRoleplayerFormField('sellerName', event.target.value)} />
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-label font-semibold uppercase text-textMuted">Seller Email</span>
+                      <Field type="email" value={roleplayerForm.sellerEmail} onChange={(event) => updateRoleplayerFormField('sellerEmail', event.target.value)} />
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-label font-semibold uppercase text-textMuted">Agent Name</span>
+                      <Field value={roleplayerForm.agentName} onChange={(event) => updateRoleplayerFormField('agentName', event.target.value)} />
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-label font-semibold uppercase text-textMuted">Agent Email</span>
+                      <Field type="email" value={roleplayerForm.agentEmail} onChange={(event) => updateRoleplayerFormField('agentEmail', event.target.value)} />
+                    </label>
+                  </div>
+                </section>
+
+                <section className="rounded-control border border-borderSoft bg-surfaceAlt p-4">
+                  <h4 className="text-base font-semibold text-textStrong">Transfer & Finance Team</h4>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-label font-semibold uppercase text-textMuted">Transfer Attorney</span>
+                      <Field value={roleplayerForm.attorneyName} onChange={(event) => updateRoleplayerFormField('attorneyName', event.target.value)} placeholder="Firm or contact name" />
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-label font-semibold uppercase text-textMuted">Transfer Attorney Email</span>
+                      <Field type="email" value={roleplayerForm.attorneyEmail} onChange={(event) => updateRoleplayerFormField('attorneyEmail', event.target.value)} />
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-label font-semibold uppercase text-textMuted">Bond Originator</span>
+                      <Field value={roleplayerForm.bondOriginatorName} onChange={(event) => updateRoleplayerFormField('bondOriginatorName', event.target.value)} placeholder="Originator or company" />
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-label font-semibold uppercase text-textMuted">Bond Originator Email</span>
+                      <Field type="email" value={roleplayerForm.bondOriginatorEmail} onChange={(event) => updateRoleplayerFormField('bondOriginatorEmail', event.target.value)} />
+                    </label>
+                    <label className="flex flex-col gap-1.5 md:col-span-2">
+                      <span className="text-label font-semibold uppercase text-textMuted">Matter Owner</span>
+                      <Field value={roleplayerForm.matterOwner} onChange={(event) => updateRoleplayerFormField('matterOwner', event.target.value)} placeholder="Primary internal owner or coordinator" />
+                    </label>
+                  </div>
+                </section>
+              </div>
+            </form>
+
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h3 className="text-section-title font-semibold text-textStrong">Handoff History</h3>
+                  <p className="mt-1 text-secondary text-textMuted">
+                    A focused audit trail for buyer introductions and roleplayer handoff emails.
+                  </p>
+                </div>
+                <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
+                  {roleplayerCommunicationHistory.length} send{roleplayerCommunicationHistory.length === 1 ? '' : 's'}
+                </span>
+              </div>
+
+              {roleplayerCommunicationHistory.length ? (
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                  {roleplayerCommunicationHistory.map((entry) => (
+                    <article key={entry.id} className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <span className="text-label font-semibold uppercase text-textMuted">{entry.type}</span>
+                          <strong className="mt-1 block text-body font-semibold text-textStrong">{formatDateTime(entry.sentAt)}</strong>
+                        </div>
+                        <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase ${
+                          entry.state === 'Current'
+                            ? 'border-success/30 bg-successSoft text-success'
+                            : entry.state === 'Needs resend'
+                              ? 'border-warning/30 bg-warningSoft text-warning'
+                              : 'border-borderDefault bg-mutedBg text-textMuted'
+                        }`}>
+                          {entry.state}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-helper leading-5 text-textMuted">{entry.summary}</p>
+                      {entry.recipients.length ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {entry.recipients.map((recipient) => (
+                            <span key={`${entry.id}-${recipient}`} className="rounded-full border border-borderDefault bg-surface px-2.5 py-1 text-[0.7rem] font-semibold text-textMuted">
+                              {recipient}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-4 rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-4 text-sm text-textMuted">
+                  No buyer introductions or team handoffs have been sent yet.
+                </div>
+              )}
+            </section>
+
             <AttorneyAssignmentSection
               transactionId={transaction?.id}
               financeType={transaction?.finance_type || 'cash'}

@@ -2,6 +2,7 @@ import type { SendOfferDecisionNotificationPayload } from "../types.ts";
 import {
   renderBridgeEmailLayout,
   renderBridgeIntroParagraphs,
+  renderBridgeSteps,
   renderBridgeSummaryCard,
 } from "../content/bridgeEmailLayout.ts";
 import { sendViaResendApi } from "../services/resend.ts";
@@ -16,7 +17,9 @@ function formatDecision(value: string) {
   return "Updated";
 }
 
-export async function handleOfferDecisionNotificationEmail(payload: SendOfferDecisionNotificationPayload) {
+export async function handleOfferDecisionNotificationEmail(
+  payload: SendOfferDecisionNotificationPayload,
+) {
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
   if (!resendApiKey) {
     return jsonResponse(500, { error: "Missing RESEND_API_KEY secret." });
@@ -27,9 +30,13 @@ export async function handleOfferDecisionNotificationEmail(payload: SendOfferDec
     return jsonResponse(400, { error: "Missing required field: to" });
   }
 
-  const decisionLabel = formatDecision(normalizeText(payload.decision));
+  const decisionKey = normalizeText(payload.decision).toLowerCase();
+  const decisionLabel = formatDecision(decisionKey);
   const recipientName = normalizeText(payload.recipientName) || "there";
   const recipientRole = normalizeText(payload.recipientRole).toLowerCase();
+  const isBuyerRecipient = recipientRole === "buyer";
+  const isAcceptedBuyerNotification = isBuyerRecipient &&
+    decisionKey === "accepted";
   const propertyTitle = normalizeText(payload.propertyTitle) || "the property";
   const buyerName = normalizeText(payload.buyerName) || "the buyer";
   const sellerName = normalizeText(payload.sellerName) || "the seller";
@@ -40,39 +47,54 @@ export async function handleOfferDecisionNotificationEmail(payload: SendOfferDec
     (recipientRole === "buyer"
       ? "Your agent will contact you with the next step."
       : "Open Bridge to continue the offer workflow.");
-  const organisationName =
-    normalizeText(payload.organisationName) ||
+  const organisationName = normalizeText(payload.organisationName) ||
     normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
     normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
     "Bridge";
-  const supportEmail =
-    normalizeText(payload.supportEmail) ||
+  const supportEmail = normalizeText(payload.supportEmail) ||
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_EMAIL")) ||
     normalizeText(Deno.env.get("SUPPORT_EMAIL"));
-  const supportPhone =
-    normalizeText(payload.supportPhone) ||
+  const supportPhone = normalizeText(payload.supportPhone) ||
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
-  const sender =
-    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+  const sender = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
     "Bridge <onboarding@resend.dev>";
 
-  const subject = `Offer ${decisionLabel}: ${propertyTitle}`;
-  const intro = recipientRole === "buyer"
+  const subject = isAcceptedBuyerNotification
+    ? `Congratulations, the seller accepted your offer: ${propertyTitle}`
+    : `Offer ${decisionLabel}: ${propertyTitle}`;
+  const intro = isAcceptedBuyerNotification
     ? [
-        `${sellerName} has accepted your offer for ${propertyTitle}.`,
-        "Your agent will confirm the accepted offer and send the buyer onboarding link.",
-      ]
+      `Congratulations, ${sellerName} has accepted your offer for ${propertyTitle}.`,
+      "This is an exciting step. Bridge will help keep the next part of the journey clear, coordinated, and easy to follow.",
+    ]
+    : isBuyerRecipient
+    ? [
+      `The seller decision for your offer on ${propertyTitle} is: ${decisionLabel}.`,
+      nextStep,
+    ]
     : [
-        `${sellerName} has marked the offer from ${buyerName} as ${decisionLabel.toLowerCase()}.`,
-        nextStep,
-      ];
+      `${sellerName} has marked the offer from ${buyerName} as ${decisionLabel.toLowerCase()}.`,
+      nextStep,
+    ];
+  const acceptedBuyerSteps = [
+    "Your accepted offer moves into the formal transaction workflow.",
+    "Your agent will send or confirm your buyer onboarding link so you can complete your details and upload supporting documents.",
+    "If your offer depends on finance, expect follow-up from the bond originator or finance team.",
+    "Transfer attorney details and any other confirmed roleplayers will be shared with you as the transaction is set up.",
+  ];
 
   const contentHtml = [
     renderBridgeIntroParagraphs([
       ...intro,
       decisionNotes ? `Seller note: ${decisionNotes}` : "",
     ]),
+    isAcceptedBuyerNotification
+      ? `<div style="margin: 0 0 16px; padding: 14px; border: 1px solid #dbe6f2; border-radius: 12px; background: #ffffff;">
+           <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">What happens next</p>
+           ${renderBridgeSteps(acceptedBuyerSteps)}
+         </div>`
+      : "",
     renderBridgeSummaryCard(
       [
         { label: "Property", value: propertyTitle },
@@ -86,13 +108,23 @@ export async function handleOfferDecisionNotificationEmail(payload: SendOfferDec
   ].join("");
 
   const html = renderBridgeEmailLayout({
-    preheader: `Seller decision recorded: ${decisionLabel} for ${propertyTitle}.`,
-    title: `Offer ${decisionLabel}`,
+    preheader: isAcceptedBuyerNotification
+      ? `Congratulations, the seller has accepted your offer for ${propertyTitle}.`
+      : `Seller decision recorded: ${decisionLabel} for ${propertyTitle}.`,
+    title: isAcceptedBuyerNotification
+      ? "Offer Accepted"
+      : `Offer ${decisionLabel}`,
     greeting: `Hi ${recipientName},`,
     contentHtml,
-    securityTitle: "Offer Workflow Updated",
-    securityBody: "This decision was recorded through Bridge and linked to the canonical buyer offer record.",
-    helpBody: nextStep,
+    securityTitle: isAcceptedBuyerNotification
+      ? "Secure Transaction Workflow"
+      : "Offer Workflow Updated",
+    securityBody: isAcceptedBuyerNotification
+      ? "Your accepted offer and next steps are handled through Bridge and shared only with authorised parties involved in your transaction."
+      : "This decision was recorded through Bridge and linked to the canonical buyer offer record.",
+    helpBody: isAcceptedBuyerNotification
+      ? "Your agent will guide you through the next step. You can reply to this email if you need help."
+      : nextStep,
     organisationName,
     supportEmail,
     supportPhone,
@@ -109,8 +141,15 @@ export async function handleOfferDecisionNotificationEmail(payload: SendOfferDec
     offerAmount ? `Offer amount: ${offerAmount}` : null,
     agentName ? `Agent: ${agentName}` : null,
     decisionNotes ? `Seller note: ${decisionNotes}` : null,
+    isAcceptedBuyerNotification ? "" : null,
+    isAcceptedBuyerNotification ? "What happens next:" : null,
+    ...(isAcceptedBuyerNotification
+      ? acceptedBuyerSteps.map((line, index) => `${index + 1}. ${line}`)
+      : []),
     "",
-    nextStep,
+    isAcceptedBuyerNotification
+      ? "Your agent will guide you through the next step. You can reply to this email if you need help."
+      : nextStep,
     "",
     organisationName,
     "Powered by Bridge",
@@ -127,7 +166,8 @@ export async function handleOfferDecisionNotificationEmail(payload: SendOfferDec
 
   if (!emailResult.ok) {
     return jsonResponse(500, {
-      error: emailResult.error?.message || "Failed to send offer decision notification.",
+      error: emailResult.error?.message ||
+        "Failed to send offer decision notification.",
       details: emailResult.error,
     });
   }

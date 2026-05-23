@@ -15,14 +15,6 @@ const MAIN_STAGE_PROGRESS = {
   REG: 100,
 }
 
-const WORKFLOW_STEPS = [
-  { key: 'OTP', label: 'OTP' },
-  { key: 'FIN', label: 'Finance' },
-  { key: 'ATTY', label: 'Transfer' },
-  { key: 'XFER', label: 'Lodgement' },
-  { key: 'REG', label: 'Registration' },
-]
-
 const QUICK_FILTERS = [
   { key: 'all', label: 'All' },
   { key: 'development', label: 'Development' },
@@ -229,38 +221,52 @@ function AgentTransactionsTable({
       copy={isPrincipalView ? 'Organisation-wide transaction oversight across agents, stages, and bottlenecks.' : 'Your assigned transaction workload, stages, and next operational actions.'}
       actions={
         <div className="agent-transactions-metrics">
-          <span className="meta-chip">{metrics.total} transactions</span>
-          <span className="meta-chip">{metrics.active} active</span>
-          <span className="meta-chip">{metrics.transfer} transfer</span>
-          <span className="meta-chip">{metrics.registered} registered</span>
-          {filteredRows.length > pageSize ? (
-            <span className="meta-chip">Showing {pageStart}-{pageEnd}</span>
-          ) : null}
+          <div className="agent-transaction-metric">
+            <strong>{metrics.total}</strong>
+            <span>Transactions</span>
+          </div>
+          <div className="agent-transaction-metric">
+            <strong>{metrics.active}</strong>
+            <span>Active</span>
+          </div>
+          <div className="agent-transaction-metric">
+            <strong>{metrics.transfer}</strong>
+            <span>Transfer</span>
+          </div>
+          <div className="agent-transaction-metric">
+            <strong>{metrics.registered}</strong>
+            <span>Registered</span>
+          </div>
         </div>
       }
       className="table-panel agent-transactions-panel"
     >
       <div className="transaction-ops-filter-bar" aria-label="Transaction quick filters">
-        {QUICK_FILTERS.map((filter) => (
-          <button
-            key={filter.key}
-            type="button"
-            className={`transaction-ops-filter ${quickFilter === filter.key ? 'is-active' : ''}`.trim()}
-            onClick={() => {
-              setQuickFilter(filter.key)
-              setPage(1)
-            }}
-          >
-            {filter.label}
-          </button>
-        ))}
+        <div className="transaction-ops-filter-list">
+          {QUICK_FILTERS.map((filter) => (
+            <button
+              key={filter.key}
+              type="button"
+              className={`transaction-ops-filter ${quickFilter === filter.key ? 'is-active' : ''}`.trim()}
+              onClick={() => {
+                setQuickFilter(filter.key)
+                setPage(1)
+              }}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+        {filteredRows.length > pageSize ? (
+          <span className="transaction-ops-count">Showing {pageStart}-{pageEnd}</span>
+        ) : null}
       </div>
 
       <DataTableInner className="units-table agent-transactions-table transaction-ops-table">
         <thead>
           <tr>
-            <th className="agent-transactions-sticky-first">Property / Development</th>
-            <th>Buyer</th>
+            <th className="agent-transactions-sticky-first">Listing / Development</th>
+            <th>Client</th>
             <th>Progress</th>
             <th>Health</th>
             <th>Finance Type</th>
@@ -276,7 +282,6 @@ function AgentTransactionsTable({
             const financeStage = formatFinanceStage(row)
             const health = getHealth(row, mainStage.key)
             const progressPercent = getProgressPercent(row, mainStage.key)
-            const currentStepIndex = WORKFLOW_STEPS.findIndex((step) => step.key === mainStage.key)
             const buyerName = row?.buyer?.name || 'Buyer pending'
             const propertyLabel = getPropertyLabel(row)
             const developmentLabel = getDevelopmentLabel(row)
@@ -298,13 +303,13 @@ function AgentTransactionsTable({
                 tabIndex={canOpenRow ? 0 : -1}
                 role={canOpenRow ? 'button' : undefined}
               >
-                <td className="agent-transactions-sticky-first" data-label="Property / Development">
+                <td className="agent-transactions-sticky-first" data-label="Listing / Development">
                   <div className="transaction-list-cell">
                     <strong className="transaction-cell-primary" title={developmentLabel}>{developmentLabel}</strong>
                     <small className="transaction-cell-secondary" title={propertyLabel}>{propertyLabel}</small>
                   </div>
                 </td>
-                <td data-label="Buyer">
+                <td data-label="Client">
                   <div className="transaction-list-cell">
                     <strong className="transaction-cell-primary" title={buyerName}>{buyerName}</strong>
                     <small className="transaction-cell-secondary" title={row?.buyer?.email || ''}>{row?.buyer?.email || row?.buyer?.phone || 'No contact details'}</small>
@@ -314,22 +319,11 @@ function AgentTransactionsTable({
                   <div className="transaction-progress-cell">
                     <div className="transaction-progress-summary">
                       <strong>{progressPercent}%</strong>
-                      <span>{mainStage.label}</span>
                     </div>
                     <div className="transaction-progress-track" aria-hidden="true">
                       <span style={{ width: `${Math.max(progressPercent > 0 ? 8 : 0, progressPercent)}%` }} />
                     </div>
-                    <div className="transaction-workflow-dots" aria-label={`Current stage: ${mainStage.label}`}>
-                      {WORKFLOW_STEPS.map((step, stepIndex) => (
-                        <span
-                          key={step.key}
-                          className={`transaction-workflow-dot ${
-                            step.key === mainStage.key ? 'is-current' : currentStepIndex >= 0 && stepIndex < currentStepIndex ? 'is-done' : ''
-                          }`.trim()}
-                          title={step.label}
-                        />
-                      ))}
-                    </div>
+                    <span className="transaction-progress-stage">{mainStage.label}</span>
                   </div>
                 </td>
                 <td data-label="Health">

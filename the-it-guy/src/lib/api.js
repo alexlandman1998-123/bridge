@@ -26978,6 +26978,7 @@ export async function fetchClientPortalByToken(token) {
     documents,
     additionalDocumentRequests,
     discussion: transactionDiscussion,
+    events: transactionEvents,
     issues,
     alterations,
     reviews,

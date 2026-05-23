@@ -4,6 +4,7 @@ export type SendClientOnboardingPayload = {
   type: "client_onboarding";
   transactionId: string;
   resend?: boolean;
+  source?: string;
 };
 
 export type SendOnboardingSubmittedPayload = {
@@ -109,7 +110,10 @@ export type SendBuyerOfferLinkPayload = {
 };
 
 export type SendBuyerOfferSubmittedAgentPayload = {
-  type: "buyer_offer_submitted_agent" | "buyer_offer_submitted" | "offer_submitted_agent";
+  type:
+    | "buyer_offer_submitted_agent"
+    | "buyer_offer_submitted"
+    | "offer_submitted_agent";
   to: string;
   agentName?: string;
   buyerName?: string;
@@ -141,7 +145,10 @@ export type SendSellerOfferReviewPayload = {
 };
 
 export type SendOfferDecisionNotificationPayload = {
-  type: "offer_decision_notification" | "seller_offer_decision" | "offer_accepted_notification";
+  type:
+    | "offer_decision_notification"
+    | "seller_offer_decision"
+    | "offer_accepted_notification";
   to: string;
   recipientName?: string;
   recipientRole?: "agent" | "buyer" | "seller" | string;
@@ -156,6 +163,26 @@ export type SendOfferDecisionNotificationPayload = {
   organisationName?: string;
   supportEmail?: string;
   supportPhone?: string;
+};
+
+export type SendTransactionRoleplayerIntroPayload = {
+  type:
+    | "transaction_roleplayer_intro"
+    | "roleplayer_intro"
+    | "transaction_handoff_intro";
+  transactionId: string;
+  to?: string;
+  recipientName?: string;
+  resend?: boolean;
+};
+
+export type SendTransactionRoleplayerHandoffPayload = {
+  type:
+    | "transaction_roleplayer_handoff"
+    | "roleplayer_handoff"
+    | "transaction_team_handoff";
+  transactionId: string;
+  resend?: boolean;
 };
 
 export type SendAppointmentEmailPayload = {

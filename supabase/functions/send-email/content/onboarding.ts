@@ -7,7 +7,15 @@ import {
   renderBridgeSummaryCard,
 } from "./bridgeEmailLayout.ts";
 
-export function buildOnboardingSubject(transactionReference: string) {
+export function buildOnboardingSubject(
+  transactionReference: string,
+  acceptedOffer = false,
+) {
+  if (acceptedOffer) {
+    return transactionReference
+      ? `Congratulations, the seller accepted your offer (${transactionReference})`
+      : "Congratulations, the seller accepted your offer";
+  }
   return transactionReference
     ? `Complete your Bridge onboarding (${transactionReference})`
     : "Complete your Bridge onboarding";
@@ -39,6 +47,7 @@ export function buildOnboardingEmailHtml({
   organisationName,
   supportEmail,
   supportPhone,
+  acceptedOffer = false,
   templateOverrides,
 }: {
   buyerName: string;
@@ -54,6 +63,7 @@ export function buildOnboardingEmailHtml({
   organisationName?: string;
   supportEmail?: string;
   supportPhone?: string;
+  acceptedOffer?: boolean;
   templateOverrides?: {
     title?: string;
     preheader?: string;
@@ -67,26 +77,48 @@ export function buildOnboardingEmailHtml({
   };
 }) {
   const greetingName = clientName || buyerName || "there";
-  const summaryProperty = propertyName || [developmentName, unitLabel].filter(Boolean).join(" • ");
+  const summaryProperty = propertyName ||
+    [developmentName, unitLabel].filter(Boolean).join(" • ");
   const summaryUnit = unitNumber || unitLabel;
 
-  const introParagraphs = pickLines(templateOverrides?.introParagraphs, [
-    "Your property transaction has been added to Bridge and your onboarding process is now ready to begin.",
-    "Bridge is a property transaction platform that keeps buyers, sellers, agents, attorneys, and bond originators connected throughout the process.",
-  ]);
+  const introParagraphs = pickLines(
+    templateOverrides?.introParagraphs,
+    acceptedOffer
+      ? [
+        "Congratulations, the seller has accepted your offer. This is an exciting step, and Bridge is here to help keep the next part of the journey clear and coordinated.",
+        "Your accepted offer is now moving into the formal transaction workflow. Your agent and transaction team will guide you through onboarding, documents, finance where applicable, and the transfer process.",
+      ]
+      : [
+        "Your property transaction has been added to Bridge and your onboarding process is now ready to begin.",
+        "Bridge is a property transaction platform that keeps buyers, sellers, agents, attorneys, and bond originators connected throughout the process.",
+      ],
+  );
   const capabilityBullets = pickLines(templateOverrides?.capabilityBullets, [
     "Complete your onboarding information",
     "Upload required documents securely",
     "Track transaction progress",
     "Receive updates and next steps from your team",
   ]);
-  const processSteps = pickLines(templateOverrides?.processSteps, [
-    "Complete your onboarding information.",
-    "Upload the required documents.",
-    "Your team reviews and prepares the next steps.",
-    "Progress and updates appear in your client portal.",
-  ]);
-  const ctaLabel = pickText(templateOverrides?.ctaLabel, "Open Onboarding");
+  const processSteps = pickLines(
+    templateOverrides?.processSteps,
+    acceptedOffer
+      ? [
+        "Complete your buyer onboarding details so the transaction record is ready for the transfer team.",
+        "Upload the requested FICA and supporting documents securely in Bridge.",
+        "If your offer depends on finance, expect follow-up from your bond originator or finance team.",
+        "Your transfer attorney details and other roleplayers will be shared as they are confirmed.",
+      ]
+      : [
+        "Complete your onboarding information.",
+        "Upload the required documents.",
+        "Your team reviews and prepares the next steps.",
+        "Progress and updates appear in your client portal.",
+      ],
+  );
+  const ctaLabel = pickText(
+    templateOverrides?.ctaLabel,
+    acceptedOffer ? "Start Buyer Onboarding" : "Open Onboarding",
+  );
 
   const contentHtml = [
     renderBridgeIntroParagraphs(introParagraphs),
@@ -112,16 +144,30 @@ export function buildOnboardingEmailHtml({
   ].join("");
 
   return renderBridgeEmailLayout({
-    preheader: pickText(templateOverrides?.preheader, "Your Bridge onboarding is ready. Complete your details and documents to continue."),
-    title: pickText(templateOverrides?.title, "Client Onboarding"),
+    preheader: pickText(
+      templateOverrides?.preheader,
+      acceptedOffer
+        ? "The seller has accepted your offer. Start buyer onboarding to continue."
+        : "Your Bridge onboarding is ready. Complete your details and documents to continue.",
+    ),
+    title: pickText(
+      templateOverrides?.title,
+      acceptedOffer ? "Offer Accepted" : "Client Onboarding",
+    ),
     greeting: `Hi ${greetingName},`,
     contentHtml,
-    securityTitle: pickText(templateOverrides?.securityTitle, "Security & Privacy"),
+    securityTitle: pickText(
+      templateOverrides?.securityTitle,
+      "Security & Privacy",
+    ),
     securityBody: pickText(
       templateOverrides?.securityBody,
       "Your information and documents are handled securely through Bridge. Only authorised parties involved in your transaction can access your onboarding details.",
     ),
-    helpBody: pickText(templateOverrides?.helpBody, "Need help? Reply to this email or contact your property representative directly."),
+    helpBody: pickText(
+      templateOverrides?.helpBody,
+      "Need help? Reply to this email or contact your property representative directly.",
+    ),
     organisationName: organisationName || "Bridge",
     supportEmail: supportEmail || "",
     supportPhone: supportPhone || "",
@@ -142,6 +188,7 @@ export function buildOnboardingEmailText({
   organisationName,
   supportEmail,
   supportPhone,
+  acceptedOffer = false,
   templateOverrides,
 }: {
   buyerName: string;
@@ -157,6 +204,7 @@ export function buildOnboardingEmailText({
   organisationName?: string;
   supportEmail?: string;
   supportPhone?: string;
+  acceptedOffer?: boolean;
   templateOverrides?: {
     introParagraphs?: string[];
     capabilityBullets?: string[];
@@ -167,26 +215,48 @@ export function buildOnboardingEmailText({
   };
 }) {
   const greetingName = clientName || buyerName || "there";
-  const propertyLine = propertyName || [developmentName, unitLabel].filter(Boolean).join(" • ");
+  const propertyLine = propertyName ||
+    [developmentName, unitLabel].filter(Boolean).join(" • ");
   const supportLine = [supportEmail, supportPhone].filter(Boolean).join(" | ");
 
-  const introParagraphs = pickLines(templateOverrides?.introParagraphs, [
-    "Your property transaction has been added to Bridge and your onboarding process is now ready.",
-    "Bridge helps keep buyers, sellers, agents, attorneys, and bond originators connected throughout your transaction.",
-  ]);
+  const introParagraphs = pickLines(
+    templateOverrides?.introParagraphs,
+    acceptedOffer
+      ? [
+        "Congratulations, the seller has accepted your offer.",
+        "Your accepted offer is now moving into the formal transaction workflow. Your agent and transaction team will guide you through onboarding, documents, finance where applicable, and the transfer process.",
+      ]
+      : [
+        "Your property transaction has been added to Bridge and your onboarding process is now ready.",
+        "Bridge helps keep buyers, sellers, agents, attorneys, and bond originators connected throughout your transaction.",
+      ],
+  );
   const capabilityBullets = pickLines(templateOverrides?.capabilityBullets, [
     "Complete your onboarding information",
     "Upload required documents securely",
     "Track transaction progress",
     "Receive updates and next steps from your team",
   ]);
-  const processSteps = pickLines(templateOverrides?.processSteps, [
-    "Complete your onboarding information.",
-    "Upload the required documents.",
-    "Your team reviews and prepares the next steps.",
-    "Progress and updates appear in your client portal.",
-  ]);
-  const ctaLabel = pickText(templateOverrides?.ctaLabel, "Open Onboarding");
+  const processSteps = pickLines(
+    templateOverrides?.processSteps,
+    acceptedOffer
+      ? [
+        "Complete your buyer onboarding details.",
+        "Upload the requested FICA and supporting documents.",
+        "If your offer depends on finance, expect follow-up from your bond originator or finance team.",
+        "Your transfer attorney details and other roleplayers will be shared as they are confirmed.",
+      ]
+      : [
+        "Complete your onboarding information.",
+        "Upload the required documents.",
+        "Your team reviews and prepares the next steps.",
+        "Progress and updates appear in your client portal.",
+      ],
+  );
+  const ctaLabel = pickText(
+    templateOverrides?.ctaLabel,
+    acceptedOffer ? "Start Buyer Onboarding" : "Open Onboarding",
+  );
 
   return [
     `Hi ${greetingName},`,
@@ -198,7 +268,9 @@ export function buildOnboardingEmailText({
     propertyLine ? `Property: ${propertyLine}` : null,
     unitNumber || unitLabel ? `Unit: ${unitNumber || unitLabel}` : null,
     purchasePrice ? `Purchase Price: ${purchasePrice}` : null,
-    transactionReference ? `Transaction Reference: ${transactionReference}` : null,
+    transactionReference
+      ? `Transaction Reference: ${transactionReference}`
+      : null,
     agentName ? `Agent: ${agentName}` : null,
     "",
     "How onboarding works:",
@@ -213,7 +285,10 @@ export function buildOnboardingEmailText({
       "Your information and documents are handled securely through Bridge and shared only with authorised parties in your transaction.",
     ),
     "",
-    pickText(templateOverrides?.helpBody, "Need help? Reply to this email or contact your property representative directly."),
+    pickText(
+      templateOverrides?.helpBody,
+      "Need help? Reply to this email or contact your property representative directly.",
+    ),
     "",
     organisationName || "Bridge",
     "Powered by Bridge",

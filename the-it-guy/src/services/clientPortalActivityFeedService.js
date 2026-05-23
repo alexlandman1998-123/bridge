@@ -55,6 +55,7 @@ function getTitleForType(type = '', metadata = {}) {
     finance_approved: 'Finance approved',
     attorney_assigned: 'Attorney assigned',
     bond_originator_assigned: 'Bond originator assigned',
+    roleplayer_intro_sent: 'Transaction team introduced',
     guarantees_received: 'Guarantees received',
     lodgement_submitted: 'Lodgement submitted',
     registration_completed: 'Registration completed',
@@ -103,6 +104,7 @@ function getDescriptionForType(type = '', metadata = {}) {
     finance_approved: 'Finance approval has been received.',
     attorney_assigned: 'An attorney has been assigned to your transaction.',
     bond_originator_assigned: 'A bond originator has been assigned to your transaction.',
+    roleplayer_intro_sent: 'Your transaction team details were shared with you by email.',
     guarantees_received: 'Guarantee requirements have been received.',
     lodgement_submitted: 'Transfer documents were submitted to the Deeds Office.',
     registration_completed: 'Registration has been completed.',
@@ -149,6 +151,9 @@ function getActionForEvent(type = '', metadata = {}) {
   if (['appointment_scheduled', 'appointment_reschedule_requested', 'appointment_reschedule_proposed', 'appointment_reschedule_rejected', 'appointment_confirmed', 'appointment_rescheduled', 'appointment_cancelled', 'appointment_completed', 'appointment_reminder_due', 'appointment_documents_required'].includes(type)) {
     return { label: 'View Appointment', route: 'overview' }
   }
+  if (type === 'roleplayer_intro_sent') {
+    return { label: 'View Team', route: 'team' }
+  }
   return metadata?.actionLabel && metadata?.actionRoute
     ? { label: metadata.actionLabel, route: metadata.actionRoute }
     : null
@@ -159,7 +164,7 @@ export function getActivityFeedDisplayType(event = {}) {
   if (['document_rejected', 'additional_document_requested', 'document_requested', 'otp_ready', 'mandate_sent', 'appointment_documents_required'].includes(type)) {
     return 'action_required'
   }
-  if (['document_uploaded', 'finance_submitted', 'lodgement_submitted', 'transaction_stage_changed', 'appointment_scheduled', 'appointment_reschedule_requested', 'appointment_reschedule_proposed', 'appointment_confirmed', 'appointment_rescheduled', 'appointment_reminder_due'].includes(type)) {
+  if (['document_uploaded', 'finance_submitted', 'lodgement_submitted', 'transaction_stage_changed', 'appointment_scheduled', 'appointment_reschedule_requested', 'appointment_reschedule_proposed', 'appointment_confirmed', 'appointment_rescheduled', 'appointment_reminder_due', 'roleplayer_intro_sent'].includes(type)) {
     return 'progress'
   }
   if (['document_approved', 'finance_approved', 'registration_completed', 'mandate_signed', 'otp_signed', 'appointment_completed'].includes(type)) {
@@ -482,6 +487,37 @@ function buildAppointmentEvents(portalData = {}, clientRole = 'buyer') {
   })
 }
 
+function buildTransactionEventActivityEvents(portalData = {}, clientRole = 'buyer') {
+  const events = Array.isArray(portalData?.events) ? portalData.events : []
+  return events.map((event) => {
+    const rawType = normalize(event?.eventType || event?.event_type || event?.type)
+    const eventData =
+      event?.eventData && typeof event.eventData === 'object'
+        ? event.eventData
+        : event?.event_data && typeof event.event_data === 'object'
+          ? event.event_data
+          : event?.metadata && typeof event.metadata === 'object'
+            ? event.metadata
+            : {}
+    const normalizedType = rawType === 'roleplayerintroemailsent'
+      ? 'roleplayer_intro_sent'
+      : rawType || 'note_shared_with_client'
+
+    return {
+      id: toText(event?.id || `${normalizedType}_${event?.createdAt || event?.created_at || ''}`),
+      type: normalizedType,
+      timestamp: event?.createdAt || event?.created_at || event?.timestamp || event?.updatedAt || event?.updated_at,
+      actor: toText(eventData?.actorName || eventData?.createdByName, 'Bridge'),
+      actorRole: event?.createdByRole || event?.created_by_role || eventData?.actorRole || 'System',
+      visibility: normalizeVisibility(eventData?.visibility || event?.visibility || event?.visibility_scope || 'internal_only'),
+      metadata: {
+        ...eventData,
+        audience: normalize(eventData?.audience || eventData?.requestedFrom || clientRole),
+      },
+    }
+  })
+}
+
 function buildWorkflowProjectionEvents(context = {}, clientRole = 'buyer') {
   const workflowSummary = context?.workflowSummary || {}
   const milestones = Array.isArray(workflowSummary?.clientVisibleMilestones) ? workflowSummary.clientVisibleMilestones : []
@@ -540,7 +576,7 @@ export function getClientPortalActivityFeed(transactionIdOrContext, clientRole =
     ...buildAppointmentEvents(portalData, resolvedClientRole),
     ...buildStageEvents(portalData),
     ...buildDiscussionEvents(portalData),
-    ...(Array.isArray(portalData?.events) ? portalData.events : []),
+    ...buildTransactionEventActivityEvents(portalData, resolvedClientRole),
   ]
 
   const filtered = filterClientVisibleActivity(allEvents, resolvedClientRole)
