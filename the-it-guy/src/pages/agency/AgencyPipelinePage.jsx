@@ -1390,6 +1390,52 @@ function getTomorrowIsoDate() {
   return date.toISOString().slice(0, 10)
 }
 
+const LEAD_DETAIL_DEFAULT_APPOINTMENT = {
+  appointmentType: '',
+  customTypeLabel: '',
+  title: '',
+  date: '',
+  startTime: '',
+  endTime: '',
+  timezone: 'Africa/Johannesburg',
+  allDay: false,
+  locationType: 'physical_address',
+  location: '',
+  meetingUrl: '',
+  relatedEntityType: 'lead',
+  relatedEntityId: '',
+  visibility: 'shared_role_players',
+  linkedWorkflow: '',
+  linkedWorkflowStage: '',
+  completionBehavior: '',
+  instructions: '',
+  internalInstructions: '',
+  requiredDocuments: [],
+  reminderRules: [],
+  workflowCompletionEffect: {},
+  status: 'requested',
+  listingId: '',
+  transactionId: '',
+  contactId: '',
+  resourceId: '',
+  allowOutsideBusinessHours: false,
+  schedulingOverrideReason: '',
+  notes: '',
+  recipientEmail: '',
+  sendInviteEmails: true,
+  attachCalendarInvite: true,
+  notifyCreatorOnRsvp: true,
+  participants: [],
+  participantDraft: {
+    name: '',
+    email: '',
+    phone: '',
+    participantRole: 'Buyer',
+    isRequired: true,
+    rsvpStatus: 'Pending',
+  },
+}
+
 function parseTimeToMinutes(value) {
   const normalized = normalizeText(value)
   const match = normalized.match(/^(\d{1,2}):(\d{2})/)
@@ -1630,52 +1676,6 @@ const LEAD_DETAIL_DEFAULT_TASK = {
   dueDate: getTodayIsoDate(),
   priority: 'Medium',
   assignedAgentId: '',
-}
-
-const LEAD_DETAIL_DEFAULT_APPOINTMENT = {
-  appointmentType: '',
-  customTypeLabel: '',
-  title: '',
-  date: '',
-  startTime: '',
-  endTime: '',
-  timezone: 'Africa/Johannesburg',
-  allDay: false,
-  locationType: 'physical_address',
-  location: '',
-  meetingUrl: '',
-  relatedEntityType: 'lead',
-  relatedEntityId: '',
-  visibility: 'shared_role_players',
-  linkedWorkflow: '',
-  linkedWorkflowStage: '',
-  completionBehavior: '',
-  instructions: '',
-  internalInstructions: '',
-  requiredDocuments: [],
-  reminderRules: [],
-  workflowCompletionEffect: {},
-  status: 'requested',
-  listingId: '',
-  transactionId: '',
-  contactId: '',
-  resourceId: '',
-  allowOutsideBusinessHours: false,
-  schedulingOverrideReason: '',
-  notes: '',
-  recipientEmail: '',
-  sendInviteEmails: true,
-  attachCalendarInvite: true,
-  notifyCreatorOnRsvp: true,
-  participants: [],
-  participantDraft: {
-    name: '',
-    email: '',
-    phone: '',
-    participantRole: 'Buyer',
-    isRequired: true,
-    rsvpStatus: 'Pending',
-  },
 }
 
 const APPOINTMENT_TYPE_OPTIONS = getAppointmentTypeOptions()
@@ -2341,7 +2341,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const eventOrgId = normalizeText(payload?.organisationId)
       if (eventOrgId && eventOrgId !== organisationId) return
       const eventLeadId = normalizeLeadIdentityKey(payload?.leadId)
-      if (eventLeadId && selectedLead?.leadId && eventLeadId !== normalizeLeadIdentityKey(selectedLead.leadId)) {
+      if (eventLeadId && selectedLeadId && eventLeadId !== normalizeLeadIdentityKey(selectedLeadId)) {
         scheduleRecordsReload(organisationId, 0)
         return
       }
@@ -2367,7 +2367,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       window.removeEventListener(BUYER_LIFECYCLE_REFRESH_EVENT, handleBuyerLifecycleRefresh)
       window.removeEventListener('storage', handleStorageRefresh)
     }
-  }, [organisationId, scheduleRecordsReload, selectedLead?.leadId])
+  }, [organisationId, scheduleRecordsReload, selectedLeadId])
 
   useEffect(() => {
     if (!organisationId || !isCalendarMode || typeof window === 'undefined') return undefined
