@@ -42,6 +42,7 @@ import {
   listAppointmentsAsync,
 } from '../lib/agencyPipelineService'
 import {
+  buildSellerClientPortalLink,
   deleteAgentPrivateListingCascade,
   generateId,
   readAgentPrivateListings,
@@ -73,7 +74,7 @@ import {
   recordBuyerLeadActivity,
   updateCanonicalOfferStatus,
 } from '../lib/buyerLifecycleService'
-import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
+import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import {
   getPrivateListing,
   deletePrivateListing,
@@ -366,6 +367,23 @@ function resolveSellerNameFromListing(listing = {}) {
       listing?.seller_name ||
       listing?.seller?.name,
   )
+}
+
+function extractSellerPortalTokenFromLink(link = '') {
+  const text = toCleanText(link)
+  if (!text) return ''
+  const path = (() => {
+    try {
+      return new URL(text, typeof window !== 'undefined' ? window.location.origin : 'https://app.bridgenine.co.za').pathname
+    } catch {
+      return text
+    }
+  })()
+  const clientMatch = path.match(/\/client\/([^/]+)/i)
+  if (clientMatch?.[1]) return decodeURIComponent(clientMatch[1])
+  const onboardingMatch = path.match(/\/seller\/onboarding\/([^/]+)/i)
+  if (onboardingMatch?.[1]) return decodeURIComponent(onboardingMatch[1])
+  return ''
 }
 
 function CompactActionButton({ active = false, disabled = false, className = '', children, ...props }) {
@@ -717,6 +735,7 @@ function AgentListingDetail() {
   const [detailError, setDetailError] = useState('')
   const [deletingListing, setDeletingListing] = useState(false)
   const [gallerySaving, setGallerySaving] = useState(false)
+  const [resendingSellerPortalLink, setResendingSellerPortalLink] = useState(false)
   const [showFullGallery, setShowFullGallery] = useState(false)
   const [offerNotesDraftById, setOfferNotesDraftById] = useState({})
   const [marketingDraft, setMarketingDraft] = useState(() => buildPropertyDraft(null))
@@ -1170,6 +1189,121 @@ function AgentListingDetail() {
     }
   }
 
+  async function resolveSellerClientPortalInviteContext() {
+    if (!listingRecord?.id) throw new Error('Listing is not available yet.')
+
+    let token = toCleanText(
+      listingRecord?.sellerOnboarding?.token ||
+        listingRecord?.sellerOnboardingToken ||
+        listingRecord?.seller_onboarding_token,
+    )
+    token = token || extractSellerPortalTokenFromLink(listingRecord?.sellerOnboarding?.clientPortalLink)
+    token = token || extractSellerPortalTokenFromLink(listingRecord?.sellerOnboarding?.link)
+
+    let sellerEmail = resolveSellerEmailFromListing(listingRecord)
+    let sellerName = resolveSellerNameFromListing(listingRecord)
+    let onboardingRow = null
+
+    if (isSupabaseConfigured && supabase && (!token || !sellerEmail)) {
+      const onboardingQuery = await supabase
+        .from('private_listing_seller_onboarding')
+        .select('token, status, form_data, updated_at')
+        .eq('private_listing_id', listingRecord.id)
+        .maybeSingle()
+
+      if (onboardingQuery.error && String(onboardingQuery.error?.code || '') !== '42P01') {
+        throw onboardingQuery.error
+      }
+
+      onboardingRow = onboardingQuery.data || null
+      const formData = onboardingRow?.form_data && typeof onboardingRow.form_data === 'object' ? onboardingRow.form_data : {}
+      token = token || toCleanText(onboardingRow?.token)
+      sellerEmail = sellerEmail || toCleanText(formData.sellerEmail || formData.email || formData.contactEmail).toLowerCase()
+      sellerName = sellerName || toCleanText(
+        [formData.sellerFirstName || formData.firstName, formData.sellerSurname || formData.lastName].filter(Boolean).join(' ') ||
+          formData.sellerName ||
+          formData.fullName,
+      )
+    }
+
+    if (!token) {
+      throw new Error('No seller client portal token is linked to this listing yet. Send seller onboarding first so Bridge can create the portal link.')
+    }
+    if (!isValidEmail(sellerEmail)) {
+      throw new Error('No seller email is linked to this listing yet. Add the seller email before resending the client portal link.')
+    }
+
+    const portalLink = buildSellerClientPortalLink(token)
+    if (!portalLink) throw new Error('Seller client portal link could not be built from the saved token.')
+
+    if (onboardingRow) {
+      const existingFormData = onboardingRow.form_data && typeof onboardingRow.form_data === 'object' ? onboardingRow.form_data : {}
+      setPrivateListings((rows) => upsertListingRecord(rows, {
+        ...listingRecord,
+        sellerOnboarding: {
+          ...(listingRecord?.sellerOnboarding || {}),
+          token,
+          status: onboardingRow.status || listingRecord?.sellerOnboarding?.status,
+          updatedAt: onboardingRow.updated_at || listingRecord?.sellerOnboarding?.updatedAt,
+          link: listingRecord?.sellerOnboarding?.link || portalLink,
+          clientPortalLink: portalLink,
+          formData: {
+            ...getListingSellerFormData(listingRecord),
+            ...existingFormData,
+          },
+        },
+      }))
+    }
+
+    return {
+      token,
+      portalLink,
+      sellerEmail,
+      sellerName: sellerName || 'Seller',
+    }
+  }
+
+  async function handleResendSellerClientPortalLink() {
+    setDetailError('')
+    setDetailMessage('')
+    try {
+      setResendingSellerPortalLink(true)
+      if (!isSupabaseConfigured) {
+        throw new Error('Email sending requires Supabase to be configured.')
+      }
+      const { portalLink, sellerEmail, sellerName } = await resolveSellerClientPortalInviteContext()
+      const agent = getCanonicalOfferActor()
+      const emailResponse = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'seller_mandate_sent',
+          to: sellerEmail,
+          organisationId: listingOrganisationId,
+          recipientRole: 'seller',
+          recipientName: sellerName,
+          sellerName,
+          propertyTitle: listingRecord?.listingTitle || listingRecord?.title || listingRecord?.propertyAddress || 'your property',
+          mandateType: 'Mandate',
+          mandateStartDate: marketingDraft.listingDate || '',
+          mandateEndDate: marketingDraft.expiryDate || '',
+          askingPrice: formatCurrency(marketingDraft.price || listingRecord?.askingPrice || listingRecord?.estimatedValue),
+          portalLink,
+          agentName: agent.name,
+        },
+      })
+      if (emailResponse?.error || emailResponse?.data?.error) {
+        throw emailResponse.error || new Error(emailResponse.data.error)
+      }
+      if (typeof navigator !== 'undefined') {
+        void navigator.clipboard?.writeText(portalLink)
+      }
+      setDetailMessage(`Seller client portal link resent to ${sellerEmail}. Link copied.`)
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to resend the seller client portal link.')
+    } finally {
+      setResendingSellerPortalLink(false)
+    }
+  }
+
   function getCanonicalOfferActor() {
     return {
       id: String(profile?.id || listingRecord?.agentId || '').trim(),
@@ -1443,6 +1577,10 @@ function AgentListingDetail() {
       agentNotes: offer.conditions?.agentNotes || offer.conditions?.agentNoteToBuyer || '',
       viewingAppointmentId: offer.viewingAppointmentId,
       transactionId: offer.transactionId,
+      sentToSellerAt: offer.sentToSellerAt,
+      sellerViewedAt: offer.sellerViewedAt,
+      sellerReviewSession: offer.sellerReviewSession,
+      conditionsJson: offer.conditions || {},
     }))
   }, [canonicalListingOffers])
 
@@ -3502,7 +3640,26 @@ function AgentListingDetail() {
           <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
             <div className="space-y-3">
               {offerRows.length ? (
-                offerRows.map((offer) => (
+                offerRows.map((offer) => {
+                  const statusKey = normalizeOfferWorkflowStatus(offer.status)
+                  const sellerReviewSession = offer.sellerReviewSession || {}
+                  const sellerReviewToken = String(sellerReviewSession.token || offer.conditionsJson?.sellerReviewSessionToken || '').trim()
+                  const sellerReviewLink = sellerReviewToken && typeof window !== 'undefined'
+                    ? `${window.location.origin}/seller/offers/review/${encodeURIComponent(sellerReviewToken)}`
+                    : ''
+                  const sellerReviewRecipient = String(
+                    offer.conditionsJson?.sellerReviewRecipientEmail ||
+                      offer.conditionsJson?.sellerEmail ||
+                      sellerReviewSession.metadata?.sellerEmail ||
+                      '',
+                  ).trim()
+                  const sellerReviewSentAt = String(sellerReviewSession.sentAt || offer.sentToSellerAt || offer.conditionsJson?.sellerReviewSentAt || '').trim()
+                  const sellerReviewViewedAt = String(sellerReviewSession.viewedAt || offer.sellerViewedAt || '').trim()
+                  const hasSellerReview = Boolean(sellerReviewToken || sellerReviewSentAt || [
+                    OFFER_WORKFLOW_STATUS.SELLER_REVIEW,
+                    OFFER_WORKFLOW_STATUS.SELLER_VIEWED,
+                  ].includes(statusKey))
+                  return (
                   <article key={offer.id} className="rounded-[18px] border border-[#dce6f2] bg-white p-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                       <div>
@@ -3537,6 +3694,30 @@ function AgentListingDetail() {
                       </span>
                     </div>
                     <p className="mt-3 text-sm text-[#607387]">{offer.agentNotes || 'No agent notes logged yet.'}</p>
+                    {hasSellerReview ? (
+                      <div className="mt-3 grid gap-2 rounded-[14px] border border-[#d8e6f6] bg-[#f6faff] p-3 text-sm text-[#35546c] md:grid-cols-[1fr_1fr_1fr_auto]">
+                        <div>
+                          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#7d91a8]">Seller review</p>
+                          <p className="mt-1 font-semibold text-[#203a54]">{sellerReviewViewedAt ? 'Viewed by seller' : 'Sent to seller'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#7d91a8]">Recipient</p>
+                          <p className="mt-1 truncate font-semibold text-[#203a54]">{sellerReviewRecipient || 'Seller email pending'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#7d91a8]">{sellerReviewViewedAt ? 'Viewed' : 'Sent'}</p>
+                          <p className="mt-1 font-semibold text-[#203a54]">{formatDate(sellerReviewViewedAt || sellerReviewSentAt)}</p>
+                        </div>
+                        {sellerReviewLink ? (
+                          <Button size="sm" type="button" variant="secondary" onClick={() => {
+                            if (typeof navigator !== 'undefined') void navigator.clipboard?.writeText(sellerReviewLink)
+                            setOfferActionMessage('Seller review link copied.')
+                          }}>
+                            Copy Seller Link
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <label className="mt-3 grid gap-1">
                       <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Internal note</span>
                       <Field
@@ -3585,6 +3766,8 @@ function AgentListingDetail() {
                               OFFER_WORKFLOW_STATUS.AGENT_REVIEW,
                               OFFER_WORKFLOW_STATUS.CHANGES_REQUESTED,
                               OFFER_WORKFLOW_STATUS.COUNTERED,
+                              OFFER_WORKFLOW_STATUS.SELLER_REVIEW,
+                              OFFER_WORKFLOW_STATUS.SELLER_VIEWED,
                             ].includes(normalizeOfferWorkflowStatus(offer.status)) ? (
                               <Button
                                 size="sm"
@@ -3592,7 +3775,7 @@ function AgentListingDetail() {
                                 disabled={canonicalOfferActionId === `${offer.id}:sent_to_seller`}
                                 onClick={() => void handleCanonicalListingOfferSendToSeller(offer)}
                               >
-                                Send to Seller
+                                {[OFFER_WORKFLOW_STATUS.SELLER_REVIEW, OFFER_WORKFLOW_STATUS.SELLER_VIEWED].includes(statusKey) ? 'Resend to Seller' : 'Send to Seller'}
                               </Button>
                             ) : null}
                             <Button
@@ -3639,7 +3822,8 @@ function AgentListingDetail() {
                       </div>
                     ) : null}
                   </article>
-                ))
+                  )
+                })
               ) : (
                 <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-5 text-sm text-[#6b7d93]">
                   No offers captured for this listing yet.
@@ -3744,7 +3928,15 @@ function AgentListingDetail() {
                   ) : (
                     <Button size="sm" variant="secondary" disabled>View</Button>
                   )}
-                  <Button size="sm" variant="secondary" disabled title="Resend is available from the mandate generation workflow.">Resend</Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void handleResendSellerClientPortalLink()}
+                    disabled={resendingSellerPortalLink}
+                    title="Resend the seller client portal login link for this mandate workflow."
+                  >
+                    {resendingSellerPortalLink ? 'Sending...' : 'Resend Portal Link'}
+                  </Button>
                   <Button size="sm" variant="secondary" disabled title="Regeneration is available from the mandate generation workflow.">Regenerate</Button>
                 </div>
               </aside>
@@ -4004,6 +4196,14 @@ function AgentListingDetail() {
                       <ExternalLink size={14} />
                     </a>
                   ) : null}
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void handleResendSellerClientPortalLink()}
+                    disabled={resendingSellerPortalLink}
+                  >
+                    {resendingSellerPortalLink ? 'Sending...' : 'Resend Portal Link'}
+                  </Button>
                   <Button size="sm" variant="secondary" onClick={() => setActiveTab('documents')}>Upload Document</Button>
                   <Button size="sm" variant="secondary" onClick={() => setActiveTab('overview')}>View Listing</Button>
                   <Button size="sm" variant="secondary" onClick={() => setActiveTab('property_details')}>Edit Commission</Button>

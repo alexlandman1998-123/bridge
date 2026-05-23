@@ -409,6 +409,7 @@ function mapOfferDbRow(row = {}) {
     expiredAt: row.expired_at,
     convertedToTransactionAt: row.converted_to_transaction_at,
     transactionId: row.transaction_id,
+    sellerReviewSessionId: row.seller_review_session_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -1252,7 +1253,34 @@ export async function listCanonicalOffersForLead({
     addRows(data)
   }
 
-  return [...rowsById.values()].sort(sortOffersByLatest)
+  const offers = [...rowsById.values()]
+  const offerIds = offers.map((offer) => toNullableUuid(offer?.id)).filter(Boolean)
+
+  if (offerIds.length) {
+    const { data, error } = await supabase
+      .from('offer_seller_review_sessions')
+      .select('*')
+      .eq('organisation_id', scopedOrganisationId)
+      .in('offer_id', offerIds)
+      .order('updated_at', { ascending: false })
+
+    if (error && !isMissingTableError(error, 'offer_seller_review_sessions')) throw error
+
+    const latestSessionByOfferId = new Map()
+    for (const session of (Array.isArray(data) ? data : []).map(mapOfferSellerReviewSessionDbRow).filter(Boolean)) {
+      if (!session?.offerId || latestSessionByOfferId.has(session.offerId)) continue
+      latestSessionByOfferId.set(session.offerId, session)
+    }
+
+    for (const offer of offers) {
+      const session = latestSessionByOfferId.get(offer.id) || null
+      if (!session) continue
+      offer.sellerReviewSession = session
+      offer.sellerReviewSessionId = offer.sellerReviewSessionId || session.id
+    }
+  }
+
+  return offers.sort(sortOffersByLatest)
 }
 
 export async function getBuyerLeadLifecycleDiagnostic({
@@ -1469,7 +1497,34 @@ export async function listCanonicalOffersForListing({ organisationId = '', listi
     .eq('listing_id', scopedListingId)
     .order('updated_at', { ascending: false })
   if (error) throw error
-  return (Array.isArray(data) ? data : []).map(mapOfferDbRow).filter(Boolean)
+  const offers = (Array.isArray(data) ? data : []).map(mapOfferDbRow).filter(Boolean)
+  const offerIds = offers.map((offer) => toNullableUuid(offer?.id)).filter(Boolean)
+
+  if (offerIds.length) {
+    const sessionsResult = await supabase
+      .from('offer_seller_review_sessions')
+      .select('*')
+      .eq('organisation_id', scopedOrganisationId)
+      .in('offer_id', offerIds)
+      .order('updated_at', { ascending: false })
+
+    if (sessionsResult.error && !isMissingTableError(sessionsResult.error, 'offer_seller_review_sessions')) throw sessionsResult.error
+
+    const latestSessionByOfferId = new Map()
+    for (const session of (Array.isArray(sessionsResult.data) ? sessionsResult.data : []).map(mapOfferSellerReviewSessionDbRow).filter(Boolean)) {
+      if (!session?.offerId || latestSessionByOfferId.has(session.offerId)) continue
+      latestSessionByOfferId.set(session.offerId, session)
+    }
+
+    for (const offer of offers) {
+      const session = latestSessionByOfferId.get(offer.id) || null
+      if (!session) continue
+      offer.sellerReviewSession = session
+      offer.sellerReviewSessionId = offer.sellerReviewSessionId || session.id
+    }
+  }
+
+  return offers
 }
 
 export async function listAppointmentViewedListings({

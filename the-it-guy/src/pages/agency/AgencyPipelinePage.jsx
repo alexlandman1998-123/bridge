@@ -9004,6 +9004,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   : 'border-[#dbe6f2] bg-white text-[#35546c]'
                             const offerToken = normalizeText(offer.offerToken || offer.id)
                             const offerLink = offerToken && typeof window !== 'undefined' ? `${window.location.origin}/offers/${encodeURIComponent(offerToken)}` : ''
+                            const sellerReviewSession = offer.sellerReviewSession || {}
+                            const sellerReviewToken = normalizeText(sellerReviewSession.token || offer.conditions?.sellerReviewSessionToken)
+                            const sellerReviewLink = sellerReviewToken && typeof window !== 'undefined' ? `${window.location.origin}/seller/offers/review/${encodeURIComponent(sellerReviewToken)}` : ''
+                            const sellerReviewRecipient = normalizeText(
+                              offer.conditions?.sellerReviewRecipientEmail ||
+                                offer.conditions?.sellerEmail ||
+                                sellerReviewSession.metadata?.sellerEmail,
+                            )
+                            const sellerReviewSentAt = normalizeText(sellerReviewSession.sentAt || offer.sentToSellerAt || offer.conditions?.sellerReviewSentAt)
+                            const sellerReviewViewedAt = normalizeText(sellerReviewSession.viewedAt || offer.sellerViewedAt)
+                            const hasSellerReview = Boolean(sellerReviewToken || sellerReviewSentAt || ['sent_to_seller', 'seller_viewed'].includes(statusKey))
                             return (
                               <article key={offer.id} className="rounded-[16px] border border-[#dce6f2] bg-white p-4 shadow-[0_8px_18px_rgba(31,54,78,0.04)]">
                                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -9040,6 +9051,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         Open Transaction
                                       </Button>
                                     ) : null}
+                                    {sellerReviewLink ? (
+                                      <Button type="button" size="sm" variant="secondary" onClick={() => {
+                                        if (typeof navigator !== 'undefined') void navigator.clipboard?.writeText(sellerReviewLink)
+                                        setMessage('Seller review link copied.')
+                                      }}>
+                                        Copy Seller Link
+                                      </Button>
+                                    ) : null}
                                   </div>
                                 </div>
                                 <div className="mt-3 grid gap-2 sm:grid-cols-3">
@@ -9060,6 +9079,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   <p className="mt-3 rounded-[12px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-2 text-sm text-[#607891]">
                                     {offer.conditions?.specialConditions || offer.conditions?.suspensiveConditions}
                                   </p>
+                                ) : null}
+                                {hasSellerReview ? (
+                                  <div className="mt-3 grid gap-2 rounded-[14px] border border-[#d8e6f6] bg-[#f6faff] p-3 text-sm text-[#35546c] md:grid-cols-3">
+                                    <div>
+                                      <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#7d91a8]">Seller review</p>
+                                      <p className="mt-1 font-semibold text-[#203a54]">{statusKey === 'seller_viewed' || sellerReviewViewedAt ? 'Viewed by seller' : 'Sent to seller'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#7d91a8]">Recipient</p>
+                                      <p className="mt-1 truncate font-semibold text-[#203a54]">{sellerReviewRecipient || 'Seller email pending'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#7d91a8]">{sellerReviewViewedAt ? 'Viewed' : 'Sent'}</p>
+                                      <p className="mt-1 font-semibold text-[#203a54]">{formatDate(sellerReviewViewedAt || sellerReviewSentAt)}</p>
+                                    </div>
+                                  </div>
                                 ) : null}
                                 <div className="mt-3 rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] p-3">
                                   <label className="grid gap-1">
@@ -9084,14 +9119,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     ) : null}
                                     {!['accepted', 'converted_to_transaction', 'rejected', 'withdrawn', 'expired'].includes(statusKey) ? (
                                       <>
-                                        {['submitted', 'agent_review', 'changes_requested', 'countered'].includes(statusKey) ? (
+                                        {['submitted', 'agent_review', 'changes_requested', 'countered', 'sent_to_seller', 'seller_viewed'].includes(statusKey) ? (
                                           <Button
                                             type="button"
                                             size="sm"
                                             disabled={canonicalOfferActionId === `${offer.id}:sent_to_seller`}
                                             onClick={() => void handleLeadCanonicalOfferSendToSeller(offer)}
                                           >
-                                            Send to Seller
+                                            {['sent_to_seller', 'seller_viewed'].includes(statusKey) ? 'Resend to Seller' : 'Send to Seller'}
                                           </Button>
                                         ) : null}
                                         <Button
