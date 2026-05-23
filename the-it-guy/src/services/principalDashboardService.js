@@ -388,6 +388,71 @@ function isScopedToWorkspace(row = {}, selectedWorkspaceId = ALL_WORKSPACES_ID, 
   return normalizeText(row?.[branchColumn] || row?.branchId) === selectedWorkspaceId
 }
 
+function dedupeRowsById(rows = []) {
+  const seen = new Set()
+  const deduped = []
+  for (const row of rows || []) {
+    const id = normalizeText(row?.id)
+    if (!id) {
+      deduped.push(row)
+      continue
+    }
+    if (seen.has(id)) continue
+    seen.add(id)
+    deduped.push(row)
+  }
+  return deduped
+}
+
+function buildAgencyTransactionScope({ branches = [], users = [], developments = [] } = {}) {
+  return {
+    branchIds: new Set(branches.map((row) => normalizeText(row?.id)).filter(Boolean)),
+    developmentIds: new Set(developments.map((row) => normalizeText(row?.id)).filter(Boolean)),
+    userIds: new Set(users.flatMap((row) => [row?.user_id, row?.id]).map(normalizeText).filter(Boolean)),
+    emails: new Set(users.map((row) => normalizeText(row?.email).toLowerCase()).filter(Boolean)),
+  }
+}
+
+function isTransactionInAgencyScope(row = {}, agencyId = '', scope = {}) {
+  const resolvedAgencyId = normalizeText(agencyId)
+  if (!resolvedAgencyId) return true
+
+  const organisationId = normalizeText(row.organisation_id)
+  if (organisationId) return organisationId === resolvedAgencyId
+
+  const branchId = normalizeText(row.assigned_branch_id)
+  if (branchId && scope.branchIds?.has(branchId)) return true
+
+  const developmentId = normalizeText(row.development_id)
+  if (developmentId && scope.developmentIds?.has(developmentId)) return true
+
+  const assignedUserId = normalizeText(row.assigned_user_id || row.owner_user_id)
+  if (assignedUserId && scope.userIds?.has(assignedUserId)) return true
+
+  const assignedEmail = normalizeText(row.assigned_agent_email).toLowerCase()
+  if (assignedEmail && scope.emails?.has(assignedEmail)) return true
+
+  return false
+}
+
+function scopeTransactionsToAgency(rows = [], agencyId = '', scope = {}) {
+  const resolvedAgencyId = normalizeText(agencyId)
+  const allRows = dedupeRowsById(rows)
+  if (!resolvedAgencyId) return allRows
+
+  const scopedRows = allRows.filter((row) => isTransactionInAgencyScope(row, resolvedAgencyId, scope))
+  const hasExplicitOrganisationData = allRows.some((row) => normalizeText(row?.organisation_id))
+
+  // Legacy transaction rows created before tenant columns were backfilled may have no
+  // organisation_id at all. In that single-tenant legacy shape, mirror the Transactions
+  // page instead of presenting an empty executive dashboard.
+  if (!scopedRows.length && allRows.length && !hasExplicitOrganisationData) {
+    return allRows
+  }
+
+  return scopedRows
+}
+
 function getCommissionAmount(row = {}, commissionByTransaction = new Map()) {
   return toNumber(row.agency_commission_amount || row.gross_commission_amount) || commissionByTransaction.get(normalizeText(row.id)) || 0
 }
@@ -563,15 +628,16 @@ export async function getPrincipalDashboardData({
   ]
 
   const [
-    allTransactions,
+    rawTransactions,
     allLeads,
     allDocumentPackets,
     allPacketEvents,
     allOrganisationUsers,
     allTransactionCommissions,
     organisationBranches,
+    organisationDevelopments,
   ] = await Promise.all([
-    safeSelect('transactions', transactionFields, { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
+    safeSelect('transactions', transactionFields, { order: 'updated_at', limit: 1200 }),
     safeSelect('leads', [
       'lead_id, organisation_id, branch_id, assigned_agent_id, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
       'lead_id, organisation_id, assigned_agent_id, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
@@ -584,10 +650,20 @@ export async function getPrincipalDashboardData({
     ], { agencyId: resolvedAgencyId, order: 'updated_at', limit: 500 }),
     safeSelect('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
     safeSelect('organisation_branches', 'id, organisation_id, name, location, city, is_head_office, is_active, updated_at, created_at', { agencyId: resolvedAgencyId, order: 'name', ascending: true, limit: 200 }),
+    safeSelect('developments', [
+      'id, organisation_id, name, location, updated_at, created_at',
+      'id, name, location, updated_at, created_at',
+    ], { agencyId: resolvedAgencyId, order: 'name', ascending: true, limit: 500 }),
   ])
 
   const availableWorkspaces = buildAvailableWorkspaces(organisationBranches)
   const selectedWorkspaceId = getSelectedWorkspaceId(workspaceId, availableWorkspaces)
+  const agencyTransactionScope = buildAgencyTransactionScope({
+    branches: organisationBranches,
+    users: allOrganisationUsers,
+    developments: organisationDevelopments,
+  })
+  const allTransactions = scopeTransactionsToAgency(rawTransactions, resolvedAgencyId, agencyTransactionScope)
   const scopedActorId = normalizeText(actorId).toLowerCase()
   const scopedActorEmail = normalizeText(actorEmail).toLowerCase()
   const scopedAllTransactions = canViewAllTransactions
@@ -611,16 +687,26 @@ export async function getPrincipalDashboardData({
   })
   const packetIds = new Set(documentPackets.map((packet) => normalizeText(packet.id)).filter(Boolean))
   const packetEvents = allPacketEvents.filter((event) => selectedWorkspaceId === ALL_WORKSPACES_ID || packetIds.has(normalizeText(event.packet_id)))
-  const transactionCommissions = allTransactionCommissions.filter((row) => selectedWorkspaceId === ALL_WORKSPACES_ID || transactionIds.has(normalizeText(row.transaction_id)))
   const [
     documentRequests,
     documents,
     subprocesses,
+    linkedDocumentPackets,
+    linkedTransactionCommissions,
   ] = await Promise.all([
     safeSelectByIds('document_requests', 'id, transaction_id, status, assigned_to_role, document_type, title, created_at, updated_at, completed_at', [...transactionIds], { order: 'updated_at', limit: 1500 }),
     safeSelectByIds('documents', 'id, transaction_id, name, category, uploaded_by_email, uploaded_by_role, created_at', [...transactionIds], { order: 'created_at', limit: 300 }),
     safeSelectByIds('transaction_subprocesses', 'id, transaction_id, process_type, owner_type, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200 }),
+    safeSelectByIds('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1000 }),
+    safeSelectByIds('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200 }),
   ])
+  const effectiveDocumentPackets = dedupeRowsById([...documentPackets, ...linkedDocumentPackets])
+  const effectivePacketIds = new Set(effectiveDocumentPackets.map((packet) => normalizeText(packet.id)).filter(Boolean))
+  const linkedPacketEvents = await safeSelectByIds('document_packet_events', 'id, packet_id, organisation_id, event_type, event_payload_json, created_by, created_at', [...effectivePacketIds], { idColumn: 'packet_id', order: 'created_at', limit: 300 })
+  const effectivePacketEvents = dedupeRowsById([...packetEvents, ...linkedPacketEvents])
+    .filter((event) => selectedWorkspaceId === ALL_WORKSPACES_ID || effectivePacketIds.has(normalizeText(event.packet_id)))
+  const transactionCommissions = dedupeRowsById([...allTransactionCommissions, ...linkedTransactionCommissions])
+    .filter((row) => selectedWorkspaceId === ALL_WORKSPACES_ID || transactionIds.has(normalizeText(row.transaction_id)))
   const scopedDocumentRequests = documentRequests.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
   const scopedDocuments = documents.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
   const scopedSubprocesses = subprocesses.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
@@ -795,13 +881,13 @@ export async function getPrincipalDashboardData({
   const now = new Date()
   const stuckTransactions = activeTransactions.filter((row) => daysBetween(row.last_meaningful_activity_at || row.updated_at || row.created_at, now) > 14).length
   const unsignedMandates =
-    documentPackets.filter((packet) => normalizeKey(packet.packet_type) === 'mandate' && OPEN_PACKET_STATUSES.includes(normalizeKey(packet.status))).length +
+    effectiveDocumentPackets.filter((packet) => normalizeKey(packet.packet_type) === 'mandate' && OPEN_PACKET_STATUSES.includes(normalizeKey(packet.status))).length +
     leads.filter((lead) => ['sent', 'in_progress', 'viewed'].includes(normalizeKey(lead.seller_onboarding_status))).length
   const missingDocuments = scopedDocumentRequests.filter((request) => {
     const status = normalizeKey(request.status)
     return RISK_DOCUMENT_STATUSES.includes(status) && !DONE_DOCUMENT_STATUSES.includes(status)
   }).length
-  const otpAwaitingSignature = documentPackets.filter((packet) => normalizeKey(packet.packet_type) === 'otp' && OPEN_PACKET_STATUSES.includes(normalizeKey(packet.status))).length
+  const otpAwaitingSignature = effectiveDocumentPackets.filter((packet) => normalizeKey(packet.packet_type) === 'otp' && OPEN_PACKET_STATUSES.includes(normalizeKey(packet.status))).length
   const financeApprovalsPending = scopedSubprocesses.filter((row) => FINANCE_PROCESS_KEYS.some((key) => normalizeKey(row.process_type).includes(key)) && !COMPLETED_STATES.includes(normalizeKey(row.status))).length
   const attorneyDelays = scopedSubprocesses.filter((row) => ATTORNEY_PROCESS_KEYS.some((key) => normalizeKey(row.process_type).includes(key)) && !COMPLETED_STATES.includes(normalizeKey(row.status)) && daysBetween(row.updated_at, now) > 7).length
 
@@ -876,7 +962,7 @@ export async function getPrincipalDashboardData({
         transactionId: row.id,
         createdAt: getTransactionCompletedAt(row),
       })),
-    ...documentPackets
+    ...effectiveDocumentPackets
       .filter((packet) => normalizeKey(packet.status).includes('signed') || normalizeKey(packet.status).includes('completed'))
       .map((packet) => buildActivityItem({
         id: `packet-${packet.id}`,
@@ -887,7 +973,7 @@ export async function getPrincipalDashboardData({
         transactionId: packet.transaction_id,
         createdAt: packet.completed_at || packet.updated_at || packet.created_at,
       })),
-    ...packetEvents.map((event) => buildActivityItem({
+    ...effectivePacketEvents.map((event) => buildActivityItem({
       id: `packet-event-${event.id}`,
       type: normalizeKey(event.event_type),
       title: normalizeText(event.event_payload_json?.title) || normalizeText(event.event_type).replaceAll('_', ' '),
