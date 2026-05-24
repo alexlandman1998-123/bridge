@@ -32,6 +32,7 @@ function getPageTitle(pathname, stateTitle, role) {
     return stateTitle
   }
 
+  if (pathname === '/setup' || pathname.startsWith('/setup/')) return ''
   if (pathname === '/dashboard' || pathname === '/') return 'Dashboard'
   if (pathname === '/developments') return 'Developments'
   if (pathname === '/units') return role === 'developer' ? 'Units' : role === 'bond_originator' ? 'Applications' : 'Transactions'
@@ -283,7 +284,7 @@ function HeaderBar({ onLogout, user }) {
       location.pathname.startsWith('/pipeline/')
     )
   const settingsHideTitle = location.pathname === '/settings' || location.pathname.startsWith('/settings/')
-  const hideTitle = developerHideTitle || attorneyHideTitle || bondHideTitle || clientHideTitle || agentHideTitle || settingsHideTitle
+  const hideTitle = !title || developerHideTitle || attorneyHideTitle || bondHideTitle || clientHideTitle || agentHideTitle || settingsHideTitle
   const isClientRole = role === 'client'
   const hideSearchInHeader = role === 'attorney' && (location.pathname === '/dashboard' || location.pathname === '/')
   const developerDashboardHeaderOnly = role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/')

@@ -22,24 +22,24 @@ export default function OnboardingProgressLayout({
   const activeIndex = resolveIndex(steps, activeStep)
 
   return (
-    <section className="page">
-      <article className="panel card-tier-standard" style={{ display: 'grid', gap: '1rem' }}>
-        <div className="grid gap-2">
-          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#60758d]">Onboarding</p>
-          <h1 className="text-[1.35rem] font-semibold tracking-[-0.02em] text-[#142132]">{title}</h1>
-          {description ? <p className="max-w-3xl text-sm leading-6 text-[#60758d]">{description}</p> : null}
+    <section className="page onboarding-progress-page">
+      <article className="panel card-tier-standard onboarding-progress-panel">
+        <div className="onboarding-progress-heading">
+          <p>Onboarding</p>
+          <h1>{title}</h1>
+          {description ? <span>{description}</span> : null}
         </div>
-        <ol className="grid gap-2 sm:grid-cols-4">
+        <ol className="onboarding-progress-steps" style={{ '--step-count': steps.length }}>
           {steps.map((step, index) => {
             const isDone = index < activeIndex
             const isActive = index === activeIndex
             const className = isActive
-              ? 'border-[#2f6f9f] bg-[#f0f7fc] text-[#163b5a]'
+              ? 'is-active'
               : isDone
-                ? 'border-[#cfe8d8] bg-[#effaf3] text-[#236340]'
-                : 'border-[#dde4ee] bg-white text-[#60758d]'
+                ? 'is-done'
+                : ''
             return (
-              <li key={step.key} className={`rounded-[12px] border px-3 py-2 text-sm font-semibold ${className}`}>
+              <li key={step.key} className={className}>
                 {step.label}
               </li>
             )
