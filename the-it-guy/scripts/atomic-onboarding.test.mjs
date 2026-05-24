@@ -3,10 +3,12 @@ import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '../..')
 const migrationPath = resolve(root, 'supabase/migrations/202605240010_atomic_workspace_onboarding.sql')
+const auditColumnsMigrationPath = resolve(root, 'supabase/migrations/202605240014_organisation_users_onboarding_audit_columns.sql')
 const settingsApiPath = resolve(root, 'the-it-guy/src/lib/settingsApi.js')
 const workspaceServicePath = resolve(root, 'the-it-guy/src/services/workspaceService.js')
 
 const migration = readFileSync(migrationPath, 'utf8')
+const auditColumnsMigration = readFileSync(auditColumnsMigrationPath, 'utf8')
 const settingsApi = readFileSync(settingsApiPath, 'utf8')
 const workspaceService = readFileSync(workspaceServicePath, 'utf8')
 
@@ -44,8 +46,13 @@ assertIncludes(migration, 'resumed_duplicate_workspace', 'duplicate resume resul
 assertIncludes(migration, 'recoverable', 'unrelated duplicate remains a structured non-recoverable error')
 assertIncludes(migration, "workspace_role = excluded.workspace_role", 'canonical workspace role write')
 assertIncludes(migration, 'is_primary_owner = true', 'primary owner membership flag')
+assertIncludes(migration, 'invited_by_user_id uuid', 'organisation_users invite audit column bootstrap')
+assertIncludes(migration, 'permissions_json jsonb', 'organisation_users permissions json bootstrap')
 assertIncludes(migration, 'is_default', 'real default branch flag')
 assertIncludes(migration, "onboarding_completed = true", 'profile completion flag')
+assertIncludes(auditColumnsMigration, 'invited_by_user_id uuid', 'forward migration for existing databases')
+assertIncludes(auditColumnsMigration, 'last_active_at timestamptz', 'last active audit forward migration')
+assertIncludes(auditColumnsMigration, 'permissions_json jsonb', 'permissions json forward migration')
 
 for (const table of requiredTables) {
   assertIncludes(migration, table, `write or reference to ${table}`)

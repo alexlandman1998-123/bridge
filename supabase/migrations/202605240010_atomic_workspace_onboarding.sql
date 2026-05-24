@@ -39,6 +39,12 @@ alter table if exists public.organisation_users
   add column if not exists primary_branch_id uuid references public.organisation_branches(id) on delete set null,
   add column if not exists branch_scope text not null default 'own',
   add column if not exists is_primary_owner boolean not null default false,
+  add column if not exists permissions_json jsonb not null default '{}'::jsonb,
+  add column if not exists invited_by_user_id uuid references auth.users(id) on delete set null,
+  add column if not exists invited_at timestamptz,
+  add column if not exists joined_at timestamptz,
+  add column if not exists accepted_at timestamptz,
+  add column if not exists last_active_at timestamptz,
   add column if not exists created_by uuid references auth.users(id) on delete set null;
 
 update public.organisation_users
