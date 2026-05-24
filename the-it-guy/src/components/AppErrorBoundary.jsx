@@ -13,6 +13,7 @@ function isStaleChunkLoadError(error) {
     error?.message,
     error?.stack,
   ].filter(Boolean).join(' ')
+  const normalizedText = text.toLowerCase()
 
   return [
     'Failed to fetch dynamically imported module',
@@ -20,7 +21,9 @@ function isStaleChunkLoadError(error) {
     'error loading dynamically imported module',
     'Load failed for module',
     'dynamically imported module',
-  ].some((pattern) => text.includes(pattern)) || (/\/assets\/.+\.js/.test(text) && /module|import|fetch|load/i.test(text))
+  ].some((pattern) => text.includes(pattern)) ||
+    (/\/assets\/.+\.js/.test(text) && /module|import|fetch|load/i.test(text)) ||
+    (normalizedText.includes('javascript mime type') && normalizedText.includes('text/html'))
 }
 
 function getChunkReloadKey(scope) {
