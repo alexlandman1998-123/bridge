@@ -1,4 +1,4 @@
-import { ArrowUpRight, BriefcaseBusiness, FileText, MoreHorizontal, Search } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, BriefcaseBusiness, CheckCircle2, MoreHorizontal, Plus, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import Button from './ui/Button'
@@ -141,9 +141,9 @@ function getHealth(row, mainStageKey = '') {
 
 function getEmptyStateCopy(isPrincipalView) {
   if (isPrincipalView) {
-    return "No transactions yet. Once leads are converted into deals, they’ll appear here across your organisation scope."
+    return 'Transactions will appear here once leads are converted, offers are accepted, or a deal is created directly.'
   }
-  return "No transactions yet. Once your assigned leads are converted into deals, they’ll appear here automatically."
+  return 'Your assigned transactions will appear here once a lead is converted, an offer is accepted, or a deal is allocated to you.'
 }
 
 function getTableMetrics(rows = []) {
@@ -195,6 +195,8 @@ function AgentTransactionsTable({
   deletingTransactionId = null,
   title = 'Transactions',
   isPrincipalView = false,
+  onCreateTransaction = null,
+  onOpenPipeline = null,
 }) {
   const [page, setPage] = useState(1)
   const [quickFilter, setQuickFilter] = useState('all')
@@ -206,6 +208,8 @@ function AgentTransactionsTable({
   const totalPages = Math.max(1, Math.ceil((filteredRows?.length || 0) / pageSize))
   const currentPage = Math.min(page, totalPages)
   const metrics = useMemo(() => getTableMetrics(rows || []), [rows])
+  const hasAnyRows = Boolean((rows || []).length)
+  const hasActiveFilter = quickFilter !== 'all'
 
   const visibleRows = useMemo(() => {
     const start = (currentPage - 1) * pageSize
@@ -220,62 +224,122 @@ function AgentTransactionsTable({
       title={title}
       copy={isPrincipalView ? 'Organisation-wide transaction oversight across agents, stages, and bottlenecks.' : 'Your assigned transaction workload, stages, and next operational actions.'}
       actions={
-        <div className="agent-transactions-metrics">
-          <div className="agent-transaction-metric">
-            <strong>{metrics.total}</strong>
-            <span>Transactions</span>
+        hasAnyRows ? (
+          <div className="agent-transactions-metrics">
+            <div className="agent-transaction-metric">
+              <strong>{metrics.total}</strong>
+              <span>Transactions</span>
+            </div>
+            <div className="agent-transaction-metric">
+              <strong>{metrics.active}</strong>
+              <span>Active</span>
+            </div>
+            <div className="agent-transaction-metric">
+              <strong>{metrics.transfer}</strong>
+              <span>Transfer</span>
+            </div>
+            <div className="agent-transaction-metric">
+              <strong>{metrics.registered}</strong>
+              <span>Registered</span>
+            </div>
           </div>
-          <div className="agent-transaction-metric">
-            <strong>{metrics.active}</strong>
-            <span>Active</span>
+        ) : (
+          <div className="agent-transactions-empty-summary">
+            <span>Waiting for first deal</span>
+            <strong>0 live transactions</strong>
           </div>
-          <div className="agent-transaction-metric">
-            <strong>{metrics.transfer}</strong>
-            <span>Transfer</span>
-          </div>
-          <div className="agent-transaction-metric">
-            <strong>{metrics.registered}</strong>
-            <span>Registered</span>
-          </div>
-        </div>
+        )
       }
       className="table-panel agent-transactions-panel"
     >
-      <div className="transaction-ops-filter-bar" aria-label="Transaction quick filters">
-        <div className="transaction-ops-filter-list">
-          {QUICK_FILTERS.map((filter) => (
-            <button
-              key={filter.key}
-              type="button"
-              className={`transaction-ops-filter ${quickFilter === filter.key ? 'is-active' : ''}`.trim()}
-              onClick={() => {
-                setQuickFilter(filter.key)
-                setPage(1)
-              }}
-            >
-              {filter.label}
-            </button>
-          ))}
+      {hasAnyRows ? (
+        <div className="transaction-ops-filter-bar" aria-label="Transaction quick filters">
+          <div className="transaction-ops-filter-list">
+            {QUICK_FILTERS.map((filter) => (
+              <button
+                key={filter.key}
+                type="button"
+                className={`transaction-ops-filter ${quickFilter === filter.key ? 'is-active' : ''}`.trim()}
+                onClick={() => {
+                  setQuickFilter(filter.key)
+                  setPage(1)
+                }}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+          {filteredRows.length > pageSize ? (
+            <span className="transaction-ops-count">Showing {pageStart}-{pageEnd}</span>
+          ) : null}
         </div>
-        {filteredRows.length > pageSize ? (
-          <span className="transaction-ops-count">Showing {pageStart}-{pageEnd}</span>
-        ) : null}
-      </div>
+      ) : null}
 
-      <DataTableInner className="units-table agent-transactions-table transaction-ops-table">
-        <thead>
-          <tr>
-            <th className="agent-transactions-sticky-first">Listing / Development</th>
-            <th>Client</th>
-            <th>Progress</th>
-            <th>Health</th>
-            <th>Finance Type</th>
-            <th>Last Updated</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {visibleRows.map((row, index) => {
+      {filteredRows.length === 0 ? (
+        <div className={`agent-transactions-empty-state ${hasAnyRows ? 'is-filtered' : 'is-first-run'}`.trim()}>
+          <span className="agent-transactions-empty-icon">
+            {hasAnyRows ? <Search size={22} /> : <BriefcaseBusiness size={24} />}
+          </span>
+          <div className="agent-transactions-empty-copy">
+            <span className="agent-transactions-empty-kicker">{hasAnyRows ? 'Nothing matched' : 'Transactions workspace'}</span>
+            <strong>{hasAnyRows ? 'No transactions match this view' : 'No transactions yet'}</strong>
+            <p>
+              {hasAnyRows
+                ? 'Clear the selected filter to return to all transaction activity.'
+                : getEmptyStateCopy(isPrincipalView)}
+            </p>
+          </div>
+
+          {hasAnyRows ? (
+            <Button type="button" variant="secondary" onClick={() => setQuickFilter('all')}>
+              Clear filters
+            </Button>
+          ) : (
+            <>
+              <div className="agent-transactions-empty-actions">
+                {onCreateTransaction ? (
+                  <Button type="button" onClick={onCreateTransaction}>
+                    <Plus size={16} />
+                    Create transaction
+                  </Button>
+                ) : null}
+                {onOpenPipeline ? (
+                  <Button type="button" variant="secondary" onClick={onOpenPipeline}>
+                    Open pipeline
+                    <ArrowRight size={16} />
+                  </Button>
+                ) : null}
+              </div>
+              <div className="agent-transactions-empty-steps" aria-label="How transactions start">
+                {[
+                  'Convert a qualified lead',
+                  'Capture buyer and seller details',
+                  'Track finance, transfer, and registration',
+                ].map((step) => (
+                  <span key={step}>
+                    <CheckCircle2 size={15} />
+                    {step}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      ) : (
+        <DataTableInner className="units-table agent-transactions-table transaction-ops-table">
+          <thead>
+            <tr>
+              <th className="agent-transactions-sticky-first">Listing / Development</th>
+              <th>Client</th>
+              <th>Progress</th>
+              <th>Health</th>
+              <th>Finance Type</th>
+              <th>Last Updated</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleRows.map((row, index) => {
             const updatedAt = row?.transaction?.updated_at || row?.transaction?.created_at || null
             const canOpenRow = Boolean(row?.transaction?.id || row?.unit?.id)
             const mainStage = formatMainStage(row)
@@ -368,23 +432,9 @@ function AgentTransactionsTable({
               </tr>
             )
           })}
-
-          {filteredRows.length === 0 ? (
-            <tr>
-              <td className="agent-transactions-empty" colSpan={7}>
-                <div className="agent-transactions-empty-state">
-                  <span className="agent-transactions-empty-icon">
-                    {isPrincipalView ? <BriefcaseBusiness size={22} /> : <FileText size={22} />}
-                  </span>
-                  <strong>No transactions yet.</strong>
-                  <p>{getEmptyStateCopy(isPrincipalView).replace('No transactions yet. ', '')}</p>
-                  <small><Search size={14} /> Try clearing filters or search terms if you expected to see activity.</small>
-                </div>
-              </td>
-            </tr>
-          ) : null}
-        </tbody>
-      </DataTableInner>
+          </tbody>
+        </DataTableInner>
+      )}
 
       {filteredRows.length > pageSize ? (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-borderDefault pt-4">

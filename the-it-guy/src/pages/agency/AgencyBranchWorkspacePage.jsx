@@ -18,8 +18,11 @@ import {
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import Button from '../../components/ui/Button'
+import Field from '../../components/ui/Field'
+import Modal from '../../components/ui/Modal'
 import { getAgentLeaderboard } from '../../services/branchAnalyticsService'
-import { getBranch, getBranchListings, getBranchTransactions } from '../../services/agencyBranchService'
+import { getBranch, getBranchListings, getBranchTransactions, updateBranch } from '../../services/agencyBranchService'
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
@@ -90,7 +93,7 @@ function KpiCard({ label, value, helper, icon, tone = 'blue' }) {
   )
 }
 
-function EmptyState({ title, copy, icon = Building2 }) {
+function EmptyState({ title, copy, icon = Building2, action = null }) {
   return (
     <div className="rounded-[20px] border border-dashed border-[#d6e2ef] bg-[#fbfdff] px-6 py-8 text-center">
       <div className="mx-auto grid h-11 w-11 place-items-center rounded-[16px] bg-[#edf4fb] text-[#35546c]">
@@ -98,6 +101,7 @@ function EmptyState({ title, copy, icon = Building2 }) {
       </div>
       <h4 className="mt-4 text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{title}</h4>
       <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#60758b]">{copy}</p>
+      {action ? <div className="mt-5 flex justify-center">{action}</div> : null}
     </div>
   )
 }
@@ -155,6 +159,122 @@ function ActionButton({ children, icon, variant = 'default', ...props }) {
   )
 }
 
+function BranchSettingsModal({ open, branch, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    name: '',
+    city: '',
+    province: '',
+    address: '',
+    location: '',
+    managerName: '',
+    email: '',
+    phone: '',
+    isActive: true,
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!open || !branch) return
+    setForm({
+      name: branch.name || '',
+      city: branch.city || '',
+      province: branch.province || '',
+      address: branch.address || '',
+      location: branch.location || '',
+      managerName: branch.principalName === 'Principal pending' ? '' : branch.principalName || '',
+      email: branch.email || '',
+      phone: branch.phone || '',
+      isActive: branch.isActive !== false,
+    })
+    setError('')
+  }, [branch, open])
+
+  function updateField(key, value) {
+    setForm((previous) => ({ ...previous, [key]: value }))
+  }
+
+  async function handleSave() {
+    if (!normalizeText(form.name)) {
+      setError('Branch name is required.')
+      return
+    }
+
+    try {
+      setSaving(true)
+      setError('')
+      const updated = await updateBranch(branch.id, form)
+      onSaved?.(updated)
+      onClose?.()
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to update this branch right now.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={saving ? undefined : onClose}
+      title="Branch Settings"
+      subtitle="Update the branch profile, contact details, manager label, and active status."
+      className="max-w-3xl"
+      footer={(
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button type="button" onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save Branch'}</Button>
+        </div>
+      )}
+    >
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="grid gap-1.5 md:col-span-2">
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Branch Name</span>
+          <Field value={form.name} onChange={(event) => updateField('name', event.target.value)} />
+        </label>
+        <label className="grid gap-1.5">
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">City</span>
+          <Field value={form.city} onChange={(event) => updateField('city', event.target.value)} />
+        </label>
+        <label className="grid gap-1.5">
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Province</span>
+          <Field value={form.province} onChange={(event) => updateField('province', event.target.value)} />
+        </label>
+        <label className="grid gap-1.5 md:col-span-2">
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Address</span>
+          <Field value={form.address} onChange={(event) => updateField('address', event.target.value)} />
+        </label>
+        <label className="grid gap-1.5">
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Display Location</span>
+          <Field value={form.location} onChange={(event) => updateField('location', event.target.value)} placeholder="e.g. Benoni, Gauteng" />
+        </label>
+        <label className="grid gap-1.5">
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Principal / Manager</span>
+          <Field value={form.managerName} onChange={(event) => updateField('managerName', event.target.value)} />
+        </label>
+        <label className="grid gap-1.5">
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Branch Email</span>
+          <Field type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} />
+        </label>
+        <label className="grid gap-1.5">
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Branch Phone</span>
+          <Field value={form.phone} onChange={(event) => updateField('phone', event.target.value)} />
+        </label>
+        <label className="flex items-center gap-3 rounded-[14px] border border-[#e1e8f2] bg-[#fbfcfe] px-4 py-3 md:col-span-2">
+          <input
+            type="checkbox"
+            checked={form.isActive}
+            onChange={(event) => updateField('isActive', event.target.checked)}
+            className="h-4 w-4 rounded border-[#cbd8e6] text-[#163247] focus:ring-[#163247]"
+          />
+          <span className="text-sm font-semibold text-[#263f58]">Branch is active</span>
+        </label>
+      </div>
+      {error ? <p className="mt-4 rounded-[12px] border border-[#f2d7d7] bg-[#fff6f6] px-3 py-2 text-sm text-[#b42318]">{error}</p> : null}
+    </Modal>
+  )
+}
+
 export default function AgencyBranchWorkspacePage() {
   const { branchId = '' } = useParams()
   const navigate = useNavigate()
@@ -165,6 +285,7 @@ export default function AgencyBranchWorkspacePage() {
   const [leaderboard, setLeaderboard] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const loadWorkspace = useCallback(async () => {
     setLoading(true)
@@ -216,6 +337,23 @@ export default function AgencyBranchWorkspacePage() {
   const activeAgents = Number(branch?.kpis?.activeAgents ?? leaderboard.length ?? 0)
   const listingCount = Number(branch?.kpis?.activeListings ?? branchListings.length)
   const conversionRate = Number(branch?.kpis?.conversionRate || closedRate || 0)
+
+  const openBranchAgentInvite = useCallback(() => {
+    navigate('/agency/agents', {
+      state: {
+        openInvite: true,
+        branchId,
+        branchName,
+      },
+    })
+  }, [branchId, branchName, navigate])
+
+  const handleBranchSaved = useCallback((updatedBranch) => {
+    if (updatedBranch) {
+      setBranch(updatedBranch)
+    }
+    void loadWorkspace()
+  }, [loadWorkspace])
 
   const activityItems = useMemo(() => {
     const transactions = branchTransactions.slice(0, 5).map((row) => ({
@@ -306,8 +444,8 @@ export default function AgencyBranchWorkspacePage() {
               <Plus size={16} />
               Add Transaction
             </button>
-            <ActionButton icon={UserPlus} onClick={() => setActiveTab('agents')}>Add Agent</ActionButton>
-            <ActionButton icon={Settings} onClick={() => setActiveTab('settings')} aria-label="Branch settings" />
+            <ActionButton icon={UserPlus} onClick={openBranchAgentInvite}>Add Agent</ActionButton>
+            <ActionButton icon={Settings} onClick={() => setSettingsOpen(true)} aria-label="Branch settings" />
             <ActionButton aria-label="More branch actions"><MoreHorizontal size={17} /></ActionButton>
           </div>
         </div>
@@ -325,9 +463,9 @@ export default function AgencyBranchWorkspacePage() {
       <section className="rounded-[20px] border border-[#dfe8f1] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(24,45,68,0.04)]">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
-            <ActionButton icon={Building2}>Edit Branch</ActionButton>
-            <ActionButton icon={UserPlus} onClick={() => setActiveTab('agents')}>Invite Agent</ActionButton>
-            <ActionButton icon={Settings} onClick={() => setActiveTab('settings')}>Branch Settings</ActionButton>
+            <ActionButton icon={Building2} onClick={() => setSettingsOpen(true)}>Edit Branch</ActionButton>
+            <ActionButton icon={UserPlus} onClick={openBranchAgentInvite}>Invite Agent</ActionButton>
+            <ActionButton icon={Settings} onClick={() => setSettingsOpen(true)}>Branch Settings</ActionButton>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <ActionButton variant="danger">Archive Branch</ActionButton>
@@ -337,13 +475,13 @@ export default function AgencyBranchWorkspacePage() {
       </section>
 
       <section className="overflow-x-auto pb-1">
-        <div className="inline-flex min-w-max items-center rounded-[18px] border border-[#dfe8f1] bg-white p-1 shadow-[0_10px_24px_rgba(24,45,68,0.04)]">
+        <div className="grid w-full min-w-[760px] grid-cols-8 items-center rounded-[18px] border border-[#dfe8f1] bg-white p-1 shadow-[0_10px_24px_rgba(24,45,68,0.04)]">
           {TABS.map((tab) => (
             <button
               key={tab.key}
               type="button"
               onClick={() => setActiveTab(tab.key)}
-              className={`min-h-[38px] rounded-[14px] px-4 text-sm font-semibold transition ${
+              className={`min-h-[38px] rounded-[14px] px-3 text-center text-sm font-semibold transition ${
                 activeTab === tab.key
                   ? 'bg-[#163247] text-white shadow-[0_8px_18px_rgba(22,50,71,0.18)]'
                   : 'text-[#5f7187] hover:bg-[#f6f9fc] hover:text-[#163247]'
@@ -447,7 +585,12 @@ export default function AgencyBranchWorkspacePage() {
               ])}
             />
           ) : (
-            <EmptyState title="No agents yet" copy="Invite branch agents to unlock team performance and deal ownership tracking." icon={Users} />
+            <EmptyState
+              title="No agents yet"
+              copy="Invite branch agents to unlock team performance and deal ownership tracking."
+              icon={Users}
+              action={<ActionButton icon={UserPlus} onClick={openBranchAgentInvite}>Invite Agent</ActionButton>}
+            />
           )
         ) : null}
 
@@ -536,9 +679,19 @@ export default function AgencyBranchWorkspacePage() {
                 <p className="mt-2 text-sm leading-6 text-[#6b7d93]">Branch logo, cover image, and notification identity settings.</p>
               </article>
             </div>
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              <ActionButton icon={Building2} onClick={() => setSettingsOpen(true)}>Edit Branch Details</ActionButton>
+              <ActionButton icon={UserPlus} onClick={openBranchAgentInvite}>Invite Agent To Branch</ActionButton>
+            </div>
           </section>
         ) : null}
       </section>
+      <BranchSettingsModal
+        open={settingsOpen}
+        branch={branch}
+        onClose={() => setSettingsOpen(false)}
+        onSaved={handleBranchSaved}
+      />
     </section>
   )
 }

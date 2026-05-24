@@ -68,7 +68,7 @@ function PipelineOverviewSkeleton() {
   )
 }
 
-function KpiCard({ label, value, helper, tone = 'blue' }) {
+function KpiCard({ icon: Icon, label, value, helper, tone = 'blue' }) {
   const toneClass = {
     blue: 'bg-blue-50 text-blue-700',
     green: 'bg-emerald-50 text-emerald-700',

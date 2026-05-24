@@ -31,8 +31,8 @@ import {
   Users,
   XCircle,
 } from 'lucide-react'
-import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
@@ -2472,6 +2472,7 @@ function AgentMemberWorkspace({
 
 export function AgentsPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { role, baseRole, profile } = useWorkspace()
   const [membershipRole, setMembershipRole] = useState('viewer')
   const [loading, setLoading] = useState(true)
@@ -2517,6 +2518,7 @@ export function AgentsPage() {
   const [allocatingAgent, setAllocatingAgent] = useState(false)
   const [allocationError, setAllocationError] = useState('')
   const [inviteForm, setInviteForm] = useState(() => buildAgentInviteForm({ profile, directory: readAgentDirectory() }))
+  const consumedOpenInviteStateRef = useRef('')
 
   const canAccess = canAccessAgentsModule({ role, baseRole, profile, membershipRole })
   const canManageDirectory = canManageAgentOrganisations({ role, baseRole, profile, membershipRole })
@@ -2808,6 +2810,32 @@ export function AgentsPage() {
       return { ...previous, branchId: '', office: '' }
     })
   }, [inviteBranchOptions])
+
+  useEffect(() => {
+    const routeState = location.state && typeof location.state === 'object' ? location.state : {}
+    const shouldOpenInvite = Boolean(routeState.openInvite || routeState.openAgentInvite || routeState.branchId)
+    const requestedBranchId = String(routeState.branchId || '').trim()
+    if (!shouldOpenInvite) return
+    if (requestedBranchId && loading && !inviteBranchOptions.length) return
+
+    const consumeKey = `${location.key || location.pathname}:${requestedBranchId || 'no-branch'}`
+    if (consumedOpenInviteStateRef.current === consumeKey) return
+    consumedOpenInviteStateRef.current = consumeKey
+
+    const selectedBranch = inviteBranchOptions.find((branch) => branch.id === requestedBranchId)
+    setActionMessage('')
+    setActionError('')
+    setInviteError('')
+    setInviteSentContext({ email: '', link: '' })
+    setBranchFilter(selectedBranch?.id || requestedBranchId || 'all')
+    setInviteForm({
+      ...buildAgentInviteForm({ profile, directory: readAgentDirectory() }),
+      branchId: selectedBranch?.id || requestedBranchId,
+      office: selectedBranch?.name || String(routeState.branchName || '').trim(),
+    })
+    setInviteModalOpen(true)
+    navigate(location.pathname, { replace: true, state: null })
+  }, [inviteBranchOptions, loading, location.key, location.pathname, location.state, navigate, profile])
 
   useEffect(() => {
     setInviteForm((previous) => {

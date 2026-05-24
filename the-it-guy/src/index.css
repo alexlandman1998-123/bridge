@@ -1582,6 +1582,33 @@
     text-transform: uppercase;
   }
 
+  .agent-transactions-empty-summary {
+    display: grid;
+    min-width: min(100%, 320px);
+    gap: 0.35rem;
+    justify-items: start;
+    border: 1px solid #e1e9f3;
+    border-radius: 18px;
+    background: #ffffff;
+    padding: 1rem 1.15rem;
+    box-shadow: 0 16px 42px rgba(16, 35, 56, 0.06);
+  }
+
+  .agent-transactions-empty-summary span {
+    color: #64748b;
+    font-size: 0.72rem;
+    font-weight: 750;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .agent-transactions-empty-summary strong {
+    color: #111827;
+    font-size: 1.05rem;
+    font-weight: 750;
+    letter-spacing: 0;
+  }
+
   .transaction-ops-filter-bar {
     position: sticky;
     top: 0;
@@ -1636,6 +1663,98 @@
     color: #64748b;
     font-size: 0.78rem;
     font-weight: 650;
+  }
+
+  .agent-transactions-empty-state {
+    display: grid;
+    justify-items: center;
+    gap: 1.15rem;
+    min-height: 360px;
+    padding: clamp(2rem, 5vw, 4rem) clamp(1rem, 4vw, 3rem);
+    text-align: center;
+    background:
+      linear-gradient(180deg, rgba(248, 251, 255, 0.92), rgba(255, 255, 255, 1)),
+      radial-gradient(circle at 50% 0%, rgba(29, 78, 216, 0.08), transparent 40%);
+  }
+
+  .agent-transactions-empty-state.is-filtered {
+    min-height: 260px;
+    background: #ffffff;
+  }
+
+  .agent-transactions-empty-icon {
+    display: inline-grid;
+    width: 64px;
+    height: 64px;
+    place-items: center;
+    border: 1px solid #d9e6f4;
+    border-radius: 20px;
+    background: #eef6ff;
+    color: #1d4ed8;
+    box-shadow: 0 16px 34px rgba(30, 64, 175, 0.12);
+  }
+
+  .agent-transactions-empty-copy {
+    display: grid;
+    max-width: 640px;
+    gap: 0.45rem;
+  }
+
+  .agent-transactions-empty-kicker {
+    color: #6f839c;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+  }
+
+  .agent-transactions-empty-copy strong {
+    color: #101828;
+    font-size: clamp(1.55rem, 3vw, 2.15rem);
+    font-weight: 750;
+    letter-spacing: 0;
+    line-height: 1.08;
+  }
+
+  .agent-transactions-empty-copy p {
+    margin: 0;
+    color: #60748e;
+    font-size: 0.98rem;
+    line-height: 1.65;
+  }
+
+  .agent-transactions-empty-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+
+  .agent-transactions-empty-steps {
+    display: grid;
+    width: min(100%, 760px);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .agent-transactions-empty-steps span {
+    display: inline-flex;
+    min-height: 54px;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border: 1px solid #e0e8f2;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.88);
+    padding: 0.75rem;
+    color: #334b66;
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+
+  .agent-transactions-empty-steps svg {
+    flex: 0 0 auto;
+    color: #16a36f;
   }
 
   .ui-data-table.agent-transactions-table,
@@ -2030,6 +2149,10 @@
       padding: 1rem;
     }
 
+    .agent-transactions-empty-summary {
+      width: 100%;
+    }
+
     .agent-transaction-metric:nth-child(odd) {
       padding-left: 0;
       border-left: 0;
@@ -2063,6 +2186,15 @@
 
     .transaction-ops-count {
       justify-self: start;
+    }
+
+    .agent-transactions-empty-state {
+      min-height: 0;
+      padding: 2rem 1rem;
+    }
+
+    .agent-transactions-empty-steps {
+      grid-template-columns: 1fr;
     }
 
     .ui-data-table.agent-transactions-table,

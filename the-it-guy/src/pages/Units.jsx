@@ -1686,6 +1686,8 @@ function Units() {
             title="Transactions"
             isPrincipalView={isPrincipalAgentView}
             onRowClick={handleOpenAgentTransaction}
+            onCreateTransaction={() => navigate('/new-transaction')}
+            onOpenPipeline={() => navigate('/pipeline')}
             onDeleteTransaction={canDeleteTransactions ? requestDeleteTransaction : null}
             deletingTransactionId={deletingTransactionId}
           />
