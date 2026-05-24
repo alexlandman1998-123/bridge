@@ -346,9 +346,11 @@ function dedupeListingOptions(listings = []) {
 async function resolveOrganisationId() {
   try {
     const context = await fetchOrganisationSettings()
-    return normalizeText(context?.organisation?.id || 'default') || 'default'
+    const organisationId = normalizeText(context?.organisation?.id)
+    if (!organisationId) throw new Error('A resolved workspace is required before quick-create can load.')
+    return organisationId
   } catch {
-    return 'default'
+    throw new Error('A resolved workspace is required before quick-create can load.')
   }
 }
 

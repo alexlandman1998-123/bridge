@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { assertResolvedWorkspaceContext } from './workspaceResolutionService'
 import {
   getDashboardPipelineValue,
   getDashboardTransactionPrice,
@@ -12,7 +13,7 @@ const DONE_DOCUMENT_STATUSES = ['uploaded', 'approved', 'completed', 'accepted']
 const OPEN_PACKET_STATUSES = ['draft', 'generated', 'ready', 'sent', 'viewed', 'partially_signed', 'pending']
 const FINANCE_PROCESS_KEYS = ['finance', 'bond', 'bond_origination', 'bond_originator']
 const ATTORNEY_PROCESS_KEYS = ['attorney', 'transfer', 'conveyancing']
-const ALL_WORKSPACES_ID = 'all'
+const ALL_BRANCHES_ID = 'all'
 
 export const PRINCIPAL_DASHBOARD_DATE_PRESETS = [
   { key: 'this_month', label: 'This Month' },
@@ -400,7 +401,7 @@ function normalizeAgentUser(row = {}) {
 
 function buildAvailableWorkspaces(branches = []) {
   return [
-    { id: ALL_WORKSPACES_ID, label: 'All Workspaces', name: 'All Workspaces', type: 'all' },
+    { id: ALL_BRANCHES_ID, label: 'All Branches', name: 'All Branches', type: 'all' },
     ...branches
       .filter((branch) => branch?.is_active !== false)
       .map((branch) => ({
@@ -414,15 +415,15 @@ function buildAvailableWorkspaces(branches = []) {
   ]
 }
 
-function getSelectedWorkspaceId(workspaceId, availableWorkspaces = []) {
+function getSelectedBranchId(workspaceId, availableBranches = []) {
   const requested = normalizeText(workspaceId)
-  if (!requested || requested === ALL_WORKSPACES_ID) return ALL_WORKSPACES_ID
-  return availableWorkspaces.some((item) => item.id === requested) ? requested : ALL_WORKSPACES_ID
+  if (!requested || requested === ALL_BRANCHES_ID) return ALL_BRANCHES_ID
+  return availableBranches.some((item) => item.id === requested) ? requested : ALL_BRANCHES_ID
 }
 
-function isScopedToWorkspace(row = {}, selectedWorkspaceId = ALL_WORKSPACES_ID, branchColumn = 'branch_id') {
-  if (!selectedWorkspaceId || selectedWorkspaceId === ALL_WORKSPACES_ID) return true
-  return normalizeText(row?.[branchColumn] || row?.branchId) === selectedWorkspaceId
+function isScopedToBranch(row = {}, selectedBranchId = ALL_BRANCHES_ID, branchColumn = 'branch_id') {
+  if (!selectedBranchId || selectedBranchId === ALL_BRANCHES_ID) return true
+  return normalizeText(row?.[branchColumn] || row?.branchId) === selectedBranchId
 }
 
 function dedupeRowsById(rows = []) {
@@ -517,8 +518,8 @@ function buildAgentRevenueRows(transactions = [], usersByKey = new Map(), commis
 function buildEmptyDashboard() {
   return {
     filters: {
-      availableWorkspaces: [{ id: ALL_WORKSPACES_ID, label: 'All Workspaces', name: 'All Workspaces', type: 'all' }],
-      selectedWorkspaceId: ALL_WORKSPACES_ID,
+      availableBranches: [{ id: ALL_BRANCHES_ID, label: 'All Branches', name: 'All Branches', type: 'all' }],
+      selectedBranchId: ALL_BRANCHES_ID,
       dateRange: getDateRangeFromPreset('this_month'),
     },
     kpis: {
@@ -612,7 +613,7 @@ function buildActivityItem(item) {
 export async function getPrincipalDashboardData({
   agencyId = '',
   organisationId = '',
-  workspaceId = ALL_WORKSPACES_ID,
+  workspaceId = ALL_BRANCHES_ID,
   dateRange = 'this_month',
   dateRangePreset = '',
   startDate = null,
@@ -625,6 +626,7 @@ export async function getPrincipalDashboardData({
   if (!isSupabaseConfigured || !supabase) return buildEmptyDashboard()
 
   const resolvedAgencyId = normalizeText(organisationId || agencyId)
+  assertResolvedWorkspaceContext({ organisationId: resolvedAgencyId, appRole: 'agent' }, { service: 'principalDashboardService.getPrincipalDashboardData' })
   const range = resolveDateRange(dateRangePreset || dateRange, new Date(), { startDate, endDate })
   const transactionFields = [
     'id, organisation_id, assigned_branch_id, lifecycle_state, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, assigned_attorney_email, assigned_bond_originator_email, bank, next_action, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, completed_at, archived_at, cancelled_at, deleted_at, updated_at, created_at, is_active',
@@ -655,8 +657,8 @@ export async function getPrincipalDashboardData({
     safeSelect('organisation_branches', 'id, organisation_id, name, location, city, is_head_office, is_active, updated_at, created_at', { agencyId: resolvedAgencyId, order: 'name', ascending: true, limit: 200 }),
   ])
 
-  const availableWorkspaces = buildAvailableWorkspaces(organisationBranches)
-  const selectedWorkspaceId = getSelectedWorkspaceId(workspaceId, availableWorkspaces)
+  const availableBranches = buildAvailableWorkspaces(organisationBranches)
+  const selectedBranchId = getSelectedBranchId(workspaceId, availableBranches)
   const allTransactions = scopeTransactionsToAgency(rawTransactions, resolvedAgencyId)
   const scopedActorId = normalizeText(actorId).toLowerCase()
   const scopedActorEmail = normalizeText(actorEmail).toLowerCase()
@@ -670,17 +672,17 @@ export async function getPrincipalDashboardData({
           (scopedActorEmail && assignedEmail === scopedActorEmail),
         )
       })
-  const transactions = scopedAllTransactions.filter((row) => isScopedToWorkspace(row, selectedWorkspaceId, 'assigned_branch_id'))
-  const leads = allLeads.filter((row) => isScopedToWorkspace(row, selectedWorkspaceId, 'branch_id'))
-  const organisationUsers = allOrganisationUsers.filter((row) => isScopedToWorkspace(row, selectedWorkspaceId, 'branch_id'))
+  const transactions = scopedAllTransactions.filter((row) => isScopedToBranch(row, selectedBranchId, 'assigned_branch_id'))
+  const leads = allLeads.filter((row) => isScopedToBranch(row, selectedBranchId, 'branch_id'))
+  const organisationUsers = allOrganisationUsers.filter((row) => isScopedToBranch(row, selectedBranchId, 'branch_id'))
   const transactionIds = new Set(transactions.map((row) => normalizeText(row.id)).filter(Boolean))
   const leadIds = new Set(leads.map((row) => normalizeText(row.lead_id)).filter(Boolean))
   const documentPackets = allDocumentPackets.filter((packet) => {
-    if (selectedWorkspaceId === ALL_WORKSPACES_ID) return true
+    if (selectedBranchId === ALL_BRANCHES_ID) return true
     return transactionIds.has(normalizeText(packet.transaction_id)) || leadIds.has(normalizeText(packet.lead_id))
   })
   const packetIds = new Set(documentPackets.map((packet) => normalizeText(packet.id)).filter(Boolean))
-  const packetEvents = allPacketEvents.filter((event) => selectedWorkspaceId === ALL_WORKSPACES_ID || packetIds.has(normalizeText(event.packet_id)))
+  const packetEvents = allPacketEvents.filter((event) => selectedBranchId === ALL_BRANCHES_ID || packetIds.has(normalizeText(event.packet_id)))
   const [
     documentRequests,
     documents,
@@ -698,9 +700,9 @@ export async function getPrincipalDashboardData({
   const effectivePacketIds = new Set(effectiveDocumentPackets.map((packet) => normalizeText(packet.id)).filter(Boolean))
   const linkedPacketEvents = await safeSelectByIds('document_packet_events', 'id, packet_id, organisation_id, event_type, event_payload_json, created_by, created_at', [...effectivePacketIds], { idColumn: 'packet_id', order: 'created_at', limit: 300 })
   const effectivePacketEvents = dedupeRowsById([...packetEvents, ...linkedPacketEvents])
-    .filter((event) => selectedWorkspaceId === ALL_WORKSPACES_ID || effectivePacketIds.has(normalizeText(event.packet_id)))
+    .filter((event) => selectedBranchId === ALL_BRANCHES_ID || effectivePacketIds.has(normalizeText(event.packet_id)))
   const transactionCommissions = dedupeRowsById([...allTransactionCommissions, ...linkedTransactionCommissions])
-    .filter((row) => selectedWorkspaceId === ALL_WORKSPACES_ID || transactionIds.has(normalizeText(row.transaction_id)))
+    .filter((row) => selectedBranchId === ALL_BRANCHES_ID || transactionIds.has(normalizeText(row.transaction_id)))
   const scopedDocumentRequests = documentRequests.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
   const scopedDocuments = documents.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
   const scopedSubprocesses = subprocesses.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
@@ -1009,8 +1011,10 @@ export async function getPrincipalDashboardData({
 
   return {
     filters: {
-      availableWorkspaces,
-      selectedWorkspaceId,
+      availableBranches,
+      selectedBranchId,
+      availableWorkspaces: availableBranches,
+      selectedWorkspaceId: selectedBranchId,
       dateRange: {
         key: range.key,
         startDate: range.startDate,
@@ -1077,7 +1081,9 @@ export async function getPrincipalDashboardData({
       isEmpty: transactions.length === 0 && leads.length === 0 && recentActivity.length === 0,
       hasAnyRecords: allTransactions.length > 0 || allLeads.length > 0 || allDocumentPackets.length > 0,
       agencyId: resolvedAgencyId,
-      workspaceId: selectedWorkspaceId,
+      workspaceId: selectedBranchId,
+      selectedBranchId,
+      requestedBranchId: normalizeText(workspaceId),
       requestedWorkspaceId: normalizeText(workspaceId),
       dateRange: range.key,
     },

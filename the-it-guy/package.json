@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test:workspace-resolution": "node scripts/workspace-resolution.test.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },

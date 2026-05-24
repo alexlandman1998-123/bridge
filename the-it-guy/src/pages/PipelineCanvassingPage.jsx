@@ -121,7 +121,8 @@ function createId(prefix) {
 }
 
 function getStorageKey(organisationId) {
-  const id = normalizeText(organisationId) || 'default'
+  const id = normalizeText(organisationId)
+  if (!id) throw new Error('A resolved workspace is required before loading canvassing data.')
   return `${STORAGE_PREFIX}:${id}`
 }
 
@@ -349,10 +350,11 @@ function PipelineCanvassingPage() {
             'Organisation context is taking too long to load.',
           )
         } catch (contextError) {
-          console.warn('[CANVASSING] organisation context load failed; using fallback workspace context.', contextError)
+          console.warn('[CANVASSING] organisation context load failed.', contextError)
         }
         if (!active) return
-        const orgId = normalizeText(context?.organisation?.id || 'default')
+        const orgId = normalizeText(context?.organisation?.id)
+        if (!orgId) throw new Error('A resolved workspace is required before loading canvassing data.')
         setOrganisationId(orgId)
         setOrganisationName(normalizeText(context?.organisation?.displayName || context?.organisation?.name || 'Organisation'))
         const store = readStore(orgId)

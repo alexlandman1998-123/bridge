@@ -1,12 +1,11 @@
 import { listAgencyCrmLeadContacts } from '../../lib/agencyCrmRepository'
-import { getAgencyPipelineSnapshot } from '../../lib/agencyPipelineService'
 import { fetchTransactionsByParticipant } from '../../lib/api'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../../lib/settingsApi'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
+import { assertResolvedWorkspaceContext } from '../../services/workspaceResolutionService'
 
 const CANVASSING_STORAGE_PREFIX = 'itg:agency-canvassing:v1'
 const QUICK_CREATE_STORAGE_KEY = 'bridge:quick-create-records:v1'
-const AGENT_DEMO_TRANSACTIONS_KEY = 'itg:agent-demo-transactions:v1'
 
 const TYPE_PRIORITY = [
   'Seller Lead',
@@ -50,7 +49,9 @@ function readJsonStorage(key, fallback) {
 }
 
 function getCanvassingStorageKey(organisationId) {
-  return `${CANVASSING_STORAGE_PREFIX}:${normalizeText(organisationId) || 'default'}`
+  const workspaceId = normalizeText(organisationId)
+  if (!workspaceId) throw new Error('A resolved workspace id is required before loading canvassing data.')
+  return `${CANVASSING_STORAGE_PREFIX}:${workspaceId}`
 }
 
 function readCanvassingStore(organisationId) {
@@ -67,11 +68,6 @@ function readQuickCreateStore() {
     prospects: Array.isArray(parsed?.prospects) ? parsed.prospects : [],
     appointments: Array.isArray(parsed?.appointments) ? parsed.appointments : [],
   }
-}
-
-function readLocalTransactionRows() {
-  const rows = readJsonStorage(AGENT_DEMO_TRANSACTIONS_KEY, [])
-  return Array.isArray(rows) ? rows : []
 }
 
 function toDateValue(value) {
@@ -691,7 +687,7 @@ export async function loadAgentClientDirectory({ profile = {}, role = 'agent', w
     fullName: normalizeText(profile?.fullName || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ')) || 'Current Agent',
   }
 
-  let organisationId = 'default'
+  let organisationId = normalizeText(workspace?.id)
   let users = []
   try {
     const [settingsResult, usersResult] = await Promise.allSettled([
@@ -700,11 +696,12 @@ export async function loadAgentClientDirectory({ profile = {}, role = 'agent', w
     ])
     const settings = settingsResult.status === 'fulfilled' ? settingsResult.value : null
     const rawOrganisationId = normalizeText(settings?.organisation?.id)
-    organisationId = isUuidLike(rawOrganisationId) ? rawOrganisationId : 'default'
+    organisationId = isUuidLike(organisationId) ? organisationId : rawOrganisationId
     users = usersResult.status === 'fulfilled' ? usersResult.value || [] : []
-  } catch {
-    organisationId = 'default'
+  } catch (error) {
+    console.warn('[agentClientDirectory] workspace settings lookup failed', error)
   }
+  assertResolvedWorkspaceContext({ organisationId, profile, appRole: role }, { service: 'agentClientDirectory.loadAgentClientDirectory' })
   if (!users.length) {
     users = [{
       id: currentAgent.id,
@@ -714,18 +711,13 @@ export async function loadAgentClientDirectory({ profile = {}, role = 'agent', w
     }]
   }
 
-  const localSnapshot = getAgencyPipelineSnapshot(organisationId)
   let crmSnapshot = {
-    contacts: localSnapshot.contacts || [],
-    leads: localSnapshot.leads || [],
-    leadActivities: localSnapshot.leadActivities || [],
-    tasks: localSnapshot.tasks || [],
+    contacts: [],
+    leads: [],
+    leadActivities: [],
+    tasks: [],
   }
-  try {
-    crmSnapshot = await listAgencyCrmLeadContacts(organisationId)
-  } catch {
-    // Local snapshot is already prepared as a resilient fallback.
-  }
+  crmSnapshot = await listAgencyCrmLeadContacts(organisationId)
 
   let transactionRows = []
   if (isSupabaseConfigured && profile?.id) {
@@ -738,7 +730,6 @@ export async function loadAgentClientDirectory({ profile = {}, role = 'agent', w
       transactionRows = []
     }
   }
-  transactionRows = [...transactionRows, ...readLocalTransactionRows()]
 
   const transactionIds = transactionRows.map((row) => normalizeText(row?.transaction?.id)).filter(Boolean)
   const [sellerRows, manualBuyerRows] = await Promise.all([

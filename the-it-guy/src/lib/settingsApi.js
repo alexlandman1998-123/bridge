@@ -2102,7 +2102,7 @@ export async function completeAgencyOnboarding(input = {}) {
   const principalParts = principalName.split(/\s+/).filter(Boolean)
   const principalFirstName = principalParts[0] || context.profile?.firstName || ''
   const principalLastName = principalParts.slice(1).join(' ') || context.profile?.lastName || ''
-  const principalEmail = normalizeEmail(mergedDraft?.principalInformation?.emailAddress || user.email || context.profile?.email)
+  const principalEmail = normalizeEmail(user.email || context.profile?.email || mergedDraft?.principalInformation?.emailAddress)
   if (!principalEmail) {
     throw new Error('Organisation onboarding cannot complete without a valid principal email address.')
   }

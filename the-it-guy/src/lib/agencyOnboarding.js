@@ -36,20 +36,24 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function preserveDraftText(value) {
+  return value == null ? '' : String(value)
+}
+
 export function createAgencyBranchDraft(overrides = {}) {
   return {
     id: overrides.id || generateDraftId('branch'),
-    branchName: normalizeText(overrides.branchName || 'Head Office'),
-    officeLocation: normalizeText(overrides.officeLocation),
-    branchManager: normalizeText(overrides.branchManager),
-    numberOfAgents: normalizeText(overrides.numberOfAgents),
+    branchName: preserveDraftText(overrides.branchName ?? 'Head Office'),
+    officeLocation: preserveDraftText(overrides.officeLocation),
+    branchManager: preserveDraftText(overrides.branchManager),
+    numberOfAgents: preserveDraftText(overrides.numberOfAgents),
   }
 }
 
 export function createAgencyInviteDraft(overrides = {}) {
   return {
     id: overrides.id || generateDraftId('invite'),
-    name: normalizeText(overrides.name),
+    name: preserveDraftText(overrides.name),
     email: normalizeText(overrides.email).toLowerCase(),
     branchId: normalizeText(overrides.branchId),
     role: normalizeText(overrides.role || 'agent') || 'agent',
@@ -183,4 +187,3 @@ export function normalizeBranchAgentCount(branch = {}) {
   if (!Number.isFinite(value) || value < 0) return 0
   return Math.trunc(value)
 }
-

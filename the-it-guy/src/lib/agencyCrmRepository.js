@@ -1,7 +1,4 @@
 import {
-  addLeadActivity,
-  createAgencyLead,
-  createLeadTask,
   deleteLeadActivity,
   deleteAgencyLead,
   deleteLeadTask,
@@ -13,6 +10,7 @@ import {
   updateLeadTask,
 } from './agencyPipelineService'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
+import { assertResolvedWorkspaceContext } from '../services/workspaceResolutionService'
 
 const LEAD_SELECT_FIELDS =
   'lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, lead_direction, lead_source, stage, status, priority, budget, area_interest, property_interest, seller_property_address, estimated_value, notes, converted_transaction_id, created_at, updated_at'
@@ -33,6 +31,15 @@ function normalizeLowerText(value) {
 
 function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeText(value))
+}
+
+function requireAgencyWorkspaceId(organisationId, service) {
+  const workspaceId = normalizeText(organisationId)
+  assertResolvedWorkspaceContext({ organisationId: workspaceId, appRole: 'agent' }, { service })
+  if (!isUuidLike(workspaceId)) {
+    throw new Error('A valid resolved agency workspace id is required before loading CRM data.')
+  }
+  return workspaceId
 }
 
 function normalizeLeadUuid(value) {
@@ -288,45 +295,39 @@ function buildRemoteLeadUpdatePayload(patch = {}) {
 }
 
 export async function listAgencyCrmLeadContacts(organisationId) {
-  const localSnapshot = getAgencyPipelineSnapshot(organisationId)
-  if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) {
-    return {
-      contacts: Array.isArray(localSnapshot.contacts) ? localSnapshot.contacts : [],
-      leads: Array.isArray(localSnapshot.leads) ? localSnapshot.leads : [],
-      leadActivities: Array.isArray(localSnapshot.leadActivities) ? localSnapshot.leadActivities : [],
-      tasks: Array.isArray(localSnapshot.tasks) ? localSnapshot.tasks : [],
-      source: 'local',
-    }
+  const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.listAgencyCrmLeadContacts')
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Supabase is required before loading agency CRM data.')
   }
 
   let leadResult = await supabase
     .from('leads')
     .select(LEAD_SELECT_FIELDS_EXTENDED)
-    .eq('organisation_id', organisationId)
+    .eq('organisation_id', workspaceId)
     .order('updated_at', { ascending: false })
 
   if (leadResult.error && isMissingColumnError(leadResult.error)) {
     leadResult = await supabase
       .from('leads')
       .select(LEAD_SELECT_FIELDS)
-      .eq('organisation_id', organisationId)
+      .eq('organisation_id', workspaceId)
       .order('updated_at', { ascending: false })
   }
 
   const contactResult = await supabase
     .from('contacts')
     .select('contact_id, organisation_id, assigned_agent_id, first_name, last_name, phone, email, contact_type, notes, created_at, updated_at')
-    .eq('organisation_id', organisationId)
+    .eq('organisation_id', workspaceId)
     .order('updated_at', { ascending: false })
   const activityResult = await supabase
     .from('lead_activities')
     .select(LEAD_ACTIVITY_SELECT_FIELDS)
-    .eq('organisation_id', organisationId)
+    .eq('organisation_id', workspaceId)
     .order('activity_date', { ascending: false })
   const taskResult = await supabase
     .from('tasks')
     .select(TASK_SELECT_FIELDS)
-    .eq('organisation_id', organisationId)
+    .eq('organisation_id', workspaceId)
     .order('updated_at', { ascending: false })
 
   const leadBlocked = leadResult.error && (isPermissionDeniedError(leadResult.error) || isMissingSchemaOrTableError(leadResult.error))
@@ -343,7 +344,7 @@ export async function listAgencyCrmLeadContacts(organisationId) {
   const remoteLeadActivities = Array.isArray(activityResult.data) ? activityResult.data.map(mapSupabaseLeadActivity) : []
   const remoteTasks = Array.isArray(taskResult.data) ? taskResult.data.map(mapSupabaseTask) : []
 
-  const reconciled = reconcileAgencyPipelineSnapshot(organisationId, {
+  const reconciled = reconcileAgencyPipelineSnapshot(workspaceId, {
     contacts: remoteContacts,
     leads: remoteLeads,
     leadActivities: remoteLeadActivities,
@@ -362,19 +363,17 @@ export async function listAgencyCrmLeadContacts(organisationId) {
 }
 
 export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { actor = null, requireRemote = false } = {}) {
-  if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) {
-    if (requireRemote) {
-      throw new Error('A database-backed organisation is required before this buyer lifecycle action can continue.')
-    }
-    return createAgencyLead(organisationId, payload, { actor })
+  const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.createAgencyCrmLeadRecord')
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Supabase is required before creating agency CRM data.')
   }
 
-  const { contact, lead } = buildLocalLeadAndContactRows(payload, organisationId)
+  const { contact, lead } = buildLocalLeadAndContactRows(payload, workspaceId)
 
   try {
     const contactResult = await supabase.from('contacts').upsert({
       contact_id: normalizeText(contact.contactId),
-      organisation_id: organisationId,
+      organisation_id: workspaceId,
       assigned_agent_id: normalizeNullableUuid(contact.assignedAgentId),
       first_name: normalizeText(contact.firstName),
       last_name: normalizeText(contact.lastName),
@@ -388,7 +387,7 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
 
     const leadPayloadForRemote = {
       lead_id: normalizeText(lead.leadId),
-      organisation_id: organisationId,
+      organisation_id: workspaceId,
       assigned_agent_id: normalizeNullableUuid(lead.assignedAgentId),
       contact_id: normalizeText(lead.contactId) || null,
       lead_category: normalizeText(lead.leadCategory) || 'Buyer',
@@ -414,7 +413,7 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
     }
     if (leadResult.error) throw leadResult.error
 
-    const reconciled = reconcileAgencyPipelineSnapshot(organisationId, {
+    const reconciled = reconcileAgencyPipelineSnapshot(workspaceId, {
       contacts: [contact],
       leads: [{
         ...lead,
@@ -424,28 +423,13 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
     })
     return (Array.isArray(reconciled.leads) ? reconciled.leads : []).find((row) => normalizeText(row?.leadId) === normalizeText(lead.leadId)) || lead
   } catch (error) {
-    if (requireRemote) {
-      throw error
-    }
-    console.warn('[agencyCrmRepository] create lead fell back to local store', error)
-    return createAgencyLead(organisationId, {
-      ...payload,
-      contact: {
-        ...(payload?.contact && typeof payload.contact === 'object' ? payload.contact : {}),
-        contactId: contact.contactId,
-      },
-      lead: {
-        ...(payload?.lead && typeof payload.lead === 'object' ? payload.lead : {}),
-        leadId: lead.leadId,
-        syncStatus: 'pending_remote_sync',
-        syncError: normalizeText(error?.message || error?.code || 'remote_create_failed'),
-      },
-    }, { actor })
+    console.error('[agencyCrmRepository] create lead failed without local fallback', error)
+    throw error
   }
 }
 
 export async function ensureAgencyCrmLeadRecordPersisted(organisationId, lead = {}, contact = {}, { actor = null } = {}) {
-  const normalizedOrganisationId = normalizeText(organisationId)
+  const normalizedOrganisationId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.ensureAgencyCrmLeadRecordPersisted')
   const normalizedLeadId = normalizeLeadUuid(lead?.leadId || lead?.lead_id || lead?.id)
   if (!normalizedOrganisationId || !isUuidLike(normalizedOrganisationId)) {
     throw new Error('A database-backed organisation is required before this buyer lifecycle action can continue.')
@@ -561,7 +545,7 @@ export async function ensureAgencyCrmLeadRecordPersisted(organisationId, lead = 
 }
 
 export async function updateAgencyCrmLeadRecord(organisationId, leadId, patch = {}) {
-  const normalizedOrganisationId = normalizeText(organisationId || 'default')
+  const normalizedOrganisationId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.updateAgencyCrmLeadRecord')
   const normalizedLeadId = normalizeText(leadId)
   if (!normalizedLeadId) return null
 
@@ -569,7 +553,7 @@ export async function updateAgencyCrmLeadRecord(organisationId, leadId, patch = 
   const dbLeadId = normalizeLeadUuid(normalizedLeadId)
 
   if (!isSupabaseConfigured || !supabase || !isUuidLike(normalizedOrganisationId) || !dbLeadId) {
-    return updatedLead
+    throw new Error('Supabase and a persisted lead id are required before updating agency CRM data.')
   }
 
   const { corePayload, bridgePayload, payload } = buildRemoteLeadUpdatePayload(patch)
@@ -606,14 +590,15 @@ export async function updateAgencyCrmLeadRecord(organisationId, leadId, patch = 
       throw updateResult.error
     }
   } catch (error) {
-    console.warn('[agencyCrmRepository] update lead fell back to local store', error)
+    console.error('[agencyCrmRepository] update lead failed without local fallback', error)
+    throw error
   }
 
   return updatedLead
 }
 
 export async function updateAgencyCrmContactRecord(organisationId, contactId, patch = {}) {
-  const normalizedOrganisationId = normalizeText(organisationId || 'default')
+  const normalizedOrganisationId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.updateAgencyCrmContactRecord')
   const normalizedContactId = normalizeText(contactId)
   if (!normalizedContactId) return null
 
@@ -621,7 +606,7 @@ export async function updateAgencyCrmContactRecord(organisationId, contactId, pa
   const dbContactId = normalizeNullableUuid(normalizedContactId)
 
   if (!isSupabaseConfigured || !supabase || !isUuidLike(normalizedOrganisationId) || !dbContactId) {
-    return updatedContact
+    throw new Error('Supabase and a persisted contact id are required before updating agency CRM data.')
   }
 
   const payload = {
@@ -649,22 +634,20 @@ export async function updateAgencyCrmContactRecord(organisationId, contactId, pa
       contacts: [mappedContact],
     })
   } catch (error) {
-    console.warn('[agencyCrmRepository] update contact fell back to local store', error)
+    console.error('[agencyCrmRepository] update contact failed without local fallback', error)
+    throw error
   }
 
   return updatedContact
 }
 
 export async function createAgencyCrmLeadActivity(organisationId, leadId, payload = {}, { actor = null } = {}) {
-  const normalizedOrganisationId = normalizeText(organisationId || 'default')
+  const normalizedOrganisationId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.createAgencyCrmLeadActivity')
   const normalizedLeadId = normalizeText(leadId)
   if (!normalizedLeadId) return null
 
   if (!isSupabaseConfigured || !supabase || !isUuidLike(normalizedOrganisationId) || !normalizeLeadUuid(normalizedLeadId)) {
-    return addLeadActivity(normalizedOrganisationId, normalizedLeadId, {
-      ...payload,
-      agent: payload?.agent || actor || {},
-    })
+    throw new Error('Supabase and a persisted lead id are required before creating CRM activity.')
   }
 
   const activityId = createUuid()
@@ -696,16 +679,13 @@ export async function createAgencyCrmLeadActivity(organisationId, leadId, payloa
       (row) => normalizeText(row?.activityId) === normalizeText(mappedActivity.activityId),
     ) || mappedActivity
   } catch (error) {
-    console.warn('[agencyCrmRepository] create activity fell back to local store', error)
-    return addLeadActivity(normalizedOrganisationId, normalizedLeadId, {
-      ...payload,
-      agent: payload?.agent || actor || {},
-    })
+    console.error('[agencyCrmRepository] create activity failed without local fallback', error)
+    throw error
   }
 }
 
 export async function updateAgencyCrmLeadActivity(organisationId, activityId, updater = {}) {
-  const normalizedOrganisationId = normalizeText(organisationId || 'default')
+  const normalizedOrganisationId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.updateAgencyCrmLeadActivity')
   const normalizedActivityId = normalizeText(activityId)
   if (!normalizedActivityId) return null
 
@@ -713,7 +693,7 @@ export async function updateAgencyCrmLeadActivity(organisationId, activityId, up
   const dbActivityId = normalizeNullableUuid(normalizedActivityId)
 
   if (!isSupabaseConfigured || !supabase || !isUuidLike(normalizedOrganisationId) || !dbActivityId) {
-    return updatedActivity
+    throw new Error('Supabase and a persisted activity id are required before updating CRM activity.')
   }
 
   const payload = {}
@@ -736,21 +716,22 @@ export async function updateAgencyCrmLeadActivity(organisationId, activityId, up
       leadActivities: [mappedActivity],
     })
   } catch (error) {
-    console.warn('[agencyCrmRepository] update activity fell back to local store', error)
+    console.error('[agencyCrmRepository] update activity failed without local fallback', error)
+    throw error
   }
 
   return updatedActivity
 }
 
 export async function deleteAgencyCrmLeadActivity(organisationId, activityId) {
-  const normalizedOrganisationId = normalizeText(organisationId || 'default')
+  const normalizedOrganisationId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.deleteAgencyCrmLeadActivity')
   const normalizedActivityId = normalizeText(activityId)
   if (!normalizedActivityId) return false
 
   const locallyDeleted = deleteLeadActivity(normalizedOrganisationId, normalizedActivityId)
   const dbActivityId = normalizeNullableUuid(normalizedActivityId)
   if (!isSupabaseConfigured || !supabase || !isUuidLike(normalizedOrganisationId) || !dbActivityId) {
-    return locallyDeleted
+    throw new Error('Supabase and a persisted activity id are required before deleting CRM activity.')
   }
 
   try {
@@ -763,18 +744,18 @@ export async function deleteAgencyCrmLeadActivity(organisationId, activityId) {
     if (deleteResult.error) throw deleteResult.error
     return locallyDeleted || (Array.isArray(deleteResult.data) && deleteResult.data.length > 0)
   } catch (error) {
-    console.warn('[agencyCrmRepository] delete activity fell back to local store', error)
-    return locallyDeleted
+    console.error('[agencyCrmRepository] delete activity failed without local fallback', error)
+    throw error
   }
 }
 
 export async function createAgencyCrmLeadTask(organisationId, leadId, payload = {}, { actor = null } = {}) {
-  const normalizedOrganisationId = normalizeText(organisationId || 'default')
+  const normalizedOrganisationId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.createAgencyCrmLeadTask')
   const normalizedLeadId = normalizeText(leadId)
   if (!normalizedLeadId) return null
 
   if (!isSupabaseConfigured || !supabase || !isUuidLike(normalizedOrganisationId) || !normalizeLeadUuid(normalizedLeadId)) {
-    return createLeadTask(normalizedOrganisationId, normalizedLeadId, payload, { actor })
+    throw new Error('Supabase and a persisted lead id are required before creating CRM tasks.')
   }
 
   const assignedAgentId = normalizeNullableUuid(payload?.assignedAgent?.id || actor?.id)
@@ -815,13 +796,13 @@ export async function createAgencyCrmLeadTask(organisationId, leadId, payload = 
       (row) => normalizeText(row?.taskId) === normalizeText(mappedTask.taskId),
     ) || mappedTask
   } catch (error) {
-    console.warn('[agencyCrmRepository] create task fell back to local store', error)
-    return createLeadTask(normalizedOrganisationId, normalizedLeadId, payload, { actor })
+    console.error('[agencyCrmRepository] create task failed without local fallback', error)
+    throw error
   }
 }
 
 export async function updateAgencyCrmLeadTask(organisationId, taskId, updater = {}, { actor = null } = {}) {
-  const normalizedOrganisationId = normalizeText(organisationId || 'default')
+  const normalizedOrganisationId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.updateAgencyCrmLeadTask')
   const normalizedTaskId = normalizeText(taskId)
   if (!normalizedTaskId) return null
 
@@ -829,7 +810,7 @@ export async function updateAgencyCrmLeadTask(organisationId, taskId, updater = 
   const dbTaskId = normalizeNullableUuid(normalizedTaskId)
 
   if (!isSupabaseConfigured || !supabase || !isUuidLike(normalizedOrganisationId) || !dbTaskId) {
-    return updatedTask
+    throw new Error('Supabase and a persisted task id are required before updating CRM tasks.')
   }
 
   const taskPayload = {
@@ -865,14 +846,15 @@ export async function updateAgencyCrmLeadTask(organisationId, taskId, updater = 
       tasks: [mappedTask],
     })
   } catch (error) {
-    console.warn('[agencyCrmRepository] update task fell back to local store', error)
+    console.error('[agencyCrmRepository] update task failed without local fallback', error)
+    throw error
   }
 
   return updatedTask
 }
 
 export async function deleteAgencyCrmLeadTask(organisationId, taskId, { actor = null } = {}) {
-  const normalizedOrganisationId = normalizeText(organisationId || 'default')
+  const normalizedOrganisationId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.deleteAgencyCrmLeadTask')
   const normalizedTaskId = normalizeText(taskId)
   if (!normalizedTaskId) return false
 
@@ -884,7 +866,7 @@ export async function deleteAgencyCrmLeadTask(organisationId, taskId, { actor = 
   const dbTaskId = normalizeNullableUuid(normalizedTaskId)
 
   if (!isSupabaseConfigured || !supabase || !isUuidLike(normalizedOrganisationId) || !dbTaskId) {
-    return locallyDeleted
+    throw new Error('Supabase and a persisted task id are required before deleting CRM tasks.')
   }
 
   try {
@@ -897,8 +879,8 @@ export async function deleteAgencyCrmLeadTask(organisationId, taskId, { actor = 
     if (deleteResult.error) throw deleteResult.error
     return locallyDeleted || (Array.isArray(deleteResult.data) && deleteResult.data.length > 0)
   } catch (error) {
-    console.warn('[agencyCrmRepository] delete task fell back to local store', error)
-    return locallyDeleted
+    console.error('[agencyCrmRepository] delete task failed without local fallback', error)
+    throw error
   } finally {
     if (taskToDelete?.leadId) {
       try {
@@ -916,7 +898,7 @@ export async function deleteAgencyCrmLeadTask(organisationId, taskId, { actor = 
 }
 
 export async function deleteAgencyCrmLeadRecord(organisationId, leadId) {
-  const normalizedOrganisationId = normalizeText(organisationId || 'default')
+  const normalizedOrganisationId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.deleteAgencyCrmLeadRecord')
   const normalizedLeadId = normalizeText(leadId)
   const dbLeadId = normalizeLeadUuid(normalizedLeadId)
 

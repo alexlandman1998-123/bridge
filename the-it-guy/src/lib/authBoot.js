@@ -7,6 +7,7 @@ import { normalizeOrgRole } from '../constants/orgRoles'
 import { WORKSPACE_TYPES, inferWorkspaceTypeFromAppRole, normalizeWorkspaceType } from '../constants/workspaceTypes'
 import { loadSignupIntentForUser, markSignupIntentReadyForOnboarding } from './signupIntent'
 import { getOnboardingState } from '../services/onboarding/onboardingEngine'
+import { resolveCurrentWorkspace } from '../services/workspaceResolutionService'
 
 const ACTIVE_MEMBERSHIP_STATUSES = new Set([MEMBERSHIP_STATUSES.active])
 
@@ -365,24 +366,19 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     })
   }
 
-  const [organisationMemberships, attorneyMemberships] = await Promise.all([
-    fetchOrganisationMemberships(supabase, user, profile),
-    fetchAttorneyMemberships(supabase, user, profile),
-  ])
-
-  const memberships = [...organisationMemberships, ...attorneyMemberships].sort(sortMemberships)
-  const activeMemberships = memberships.filter((membership) => isActiveMembershipStatus(membership.status))
-  const pendingMemberships = memberships.filter((membership) =>
-    [MEMBERSHIP_STATUSES.invited, MEMBERSHIP_STATUSES.pending].includes(normalizeMembershipStatus(membership.status)),
-  )
-  const suspendedMemberships = memberships.filter((membership) =>
-    [MEMBERSHIP_STATUSES.suspended, MEMBERSHIP_STATUSES.removed, MEMBERSHIP_STATUSES.deactivated].includes(
-      normalizeMembershipStatus(membership.status),
-    ),
-  )
-  const currentMembership = chooseCurrentMembership(activeMemberships, selectedWorkspaceId)
-  const currentWorkspace = currentMembership?.workspace || null
-  const workspaceType = currentWorkspace?.type || currentMembership?.workspaceType || inferWorkspaceTypeFromAppRole(appRole)
+  const workspaceResolution = await resolveCurrentWorkspace(user.id, {
+    client: supabase,
+    user,
+    profile,
+    requestedWorkspaceId: selectedWorkspaceId,
+  })
+  const memberships = workspaceResolution.memberships
+  const activeMemberships = workspaceResolution.activeMemberships
+  const pendingMemberships = workspaceResolution.pendingMemberships
+  const suspendedMemberships = workspaceResolution.suspendedMemberships
+  const currentMembership = workspaceResolution.currentMembership
+  const currentWorkspace = workspaceResolution.currentWorkspace
+  const workspaceType = workspaceResolution.workspaceType || inferWorkspaceTypeFromAppRole(appRole)
   const onboarding = deriveAuthBootOnboardingState({
     profile,
     signupIntent,
@@ -403,6 +399,10 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     currentMembership,
     currentWorkspace,
     workspaceType,
+    workspaceRole: workspaceResolution.workspaceRole,
+    permissions: workspaceResolution.permissions,
+    workspaceResolution,
+    workspaceDiagnostics: workspaceResolution.diagnostics,
     onboardingComplete: onboarding.onboardingComplete,
     onboardingRequiredReason: onboarding.onboardingRequiredReason,
   })
@@ -431,6 +431,10 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     currentMembership,
     currentWorkspace,
     workspaceType,
+    workspaceRole: workspaceResolution.workspaceRole,
+    permissions: workspaceResolution.permissions,
+    workspaceResolution,
+    workspaceDiagnostics: workspaceResolution.diagnostics,
     onboardingComplete: engineRequiresSetup ? false : onboarding.onboardingComplete,
     onboardingRequiredReason: engineRequiresSetup || onboardingState?.onboardingStatus === ONBOARDING_STATUSES.workspacePendingApproval
       ? engineRequiredReason

@@ -1,5 +1,6 @@
 import { getAgencyPipelineSnapshot } from '../lib/agencyPipelineService'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { assertResolvedWorkspaceContext } from './workspaceResolutionService'
 
 export const PIPELINE_STAGE_ORDER = [
   'new_lead',
@@ -602,10 +603,11 @@ export async function getPrincipalPipelineOverview({
   dateRange = 'this_month',
   canViewAll = false,
 } = {}) {
-  const resolvedOrganisationId = normalizeText(organisationId) || 'default'
+  const resolvedOrganisationId = normalizeText(organisationId)
+  assertResolvedWorkspaceContext({ organisationId: resolvedOrganisationId, appRole: 'agent' }, { service: 'principalPipelineOverviewService.getPrincipalPipelineOverview' })
   const remoteOrganisationId = isUuidLike(resolvedOrganisationId) ? resolvedOrganisationId : ''
   const range = resolveDateRange(dateRange)
-  const localSnapshot = getAgencyPipelineSnapshot(resolvedOrganisationId)
+  const localSnapshot = remoteOrganisationId ? getAgencyPipelineSnapshot(resolvedOrganisationId) : { transactions: [], deals: [], leads: [] }
 
   const transactionFields = [
     'id, organisation_id, assigned_branch_id, assigned_user_id, owner_user_id, assigned_agent, assigned_agent_email, transaction_reference, title, stage, current_main_stage, current_sub_stage_summary, lifecycle_state, is_active, sales_price, purchase_price, finance_type, expected_transfer_date, registration_date, registered_at, completed_at, cancelled_at, archived_at, last_meaningful_activity_at, updated_at, created_at, stage_date, next_action, waiting_on_role, property_address_line_1, suburb, city',

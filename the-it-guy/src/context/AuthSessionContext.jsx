@@ -2,7 +2,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { clearStoredDevAuthRole, createDevAuthSession, getStoredDevAuthRole, isDevAuthBypassEnabled } from '../lib/devAuth'
 import { loadBridgeAuthState } from '../lib/authBoot'
-import { clearOrganisationRuntimeCache } from '../lib/settingsApi'
 import { clearSupabaseLocalAuthState, isSupabaseConfigured, isUnsupportedJwtAlgorithmError, supabase } from '../lib/supabaseClient'
 import { getProductionSafetyViolation } from '../lib/envValidation'
 import { APP_ROLE_LABELS } from '../lib/roles'
@@ -10,9 +9,10 @@ import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import { reportError } from '../services/observability/errorTracking'
 import { measureAsyncOperation } from '../services/observability/performanceMetrics'
 import { trackAuthMetric } from '../services/observability/monitoring'
+import { setActiveWorkspacePreference } from '../services/workspaceResolutionService'
+import { clearWorkspaceScopedRuntimeCaches } from '../services/workspaceScopedCache'
 
 const AUTH_BOOTSTRAP_TIMEOUT_MS = 15000
-const WORKSPACE_SELECTION_STORAGE_KEY = 'itg:selected-workspace'
 
 const EMPTY_AUTH_STATE = Object.freeze({
   status: 'loading',
@@ -35,28 +35,6 @@ const EMPTY_AUTH_STATE = Object.freeze({
 })
 
 const AuthSessionContext = createContext(null)
-
-function readStoredWorkspacePreference() {
-  if (typeof window === 'undefined') return ''
-  try {
-    const raw = window.localStorage.getItem(WORKSPACE_SELECTION_STORAGE_KEY)
-    if (!raw) return ''
-    const parsed = JSON.parse(raw)
-    return String(parsed?.id || parsed?.workspaceId || raw || '').trim()
-  } catch {
-    return ''
-  }
-}
-
-function writeStoredWorkspacePreference(workspaceId = '') {
-  if (typeof window === 'undefined') return
-  const id = String(workspaceId || '').trim()
-  if (!id || id === 'all') {
-    window.localStorage.removeItem(WORKSPACE_SELECTION_STORAGE_KEY)
-    return
-  }
-  window.localStorage.setItem(WORKSPACE_SELECTION_STORAGE_KEY, JSON.stringify({ id }))
-}
 
 function createDevOnlyAuthState(devAuthRole) {
   const session = createDevAuthSession(devAuthRole)
@@ -141,7 +119,7 @@ export function AuthSessionProvider({ children }) {
   const [sessionLoading, setSessionLoading] = useState(true)
   const [authState, setAuthState] = useState(EMPTY_AUTH_STATE)
   const [bootAttempt, setBootAttempt] = useState(0)
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => readStoredWorkspacePreference())
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('')
   const productionSafetyViolation = getProductionSafetyViolation()
 
   const setDevAuthRole = useCallback((nextRole) => {
@@ -230,7 +208,7 @@ export function AuthSessionProvider({ children }) {
 
     const { data: authSubscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
       console.debug('[AUTH] state-change', { event, hasSession: Boolean(nextSession) })
-      clearOrganisationRuntimeCache()
+      clearWorkspaceScopedRuntimeCaches()
       setSession(nextSession || null)
     })
 
@@ -324,21 +302,34 @@ export function AuthSessionProvider({ children }) {
     (workspaceId) => {
       const id = String(workspaceId || '').trim()
       const allowed = authState.activeMemberships.some((membership) => membership.workspaceId === id || membership.id === id)
-      if (!allowed && id && id !== 'all') {
+      if (!allowed || !id || id === 'all') {
         console.warn('[AUTH] ignored workspace selection not present in active memberships', { workspaceId: id })
         return
       }
-      writeStoredWorkspacePreference(id)
+      clearWorkspaceScopedRuntimeCaches()
       setSelectedWorkspaceId(id)
+      void setActiveWorkspacePreference(authState.user?.id || session?.user?.id || '', id, {
+        user: authState.user || session?.user || null,
+        profile: authState.profile,
+        source: 'user_selected',
+      }).catch((error) => {
+        console.error('[AUTH] workspace preference persist failed', error)
+        void reportError(error, {
+          userId: authState.user?.id || session?.user?.id || '',
+          operation: 'workspace_switch',
+          category: 'workspace_resolution',
+          metadata: { workspaceId: id },
+        })
+      })
     },
-    [authState.activeMemberships],
+    [authState.activeMemberships, authState.profile, authState.user, session?.user],
   )
 
   const logout = useCallback(async () => {
     const userId = authState.user?.id || session?.user?.id || ''
     const workspaceId = authState.currentWorkspace?.id || ''
     clearStoredDevAuthRole()
-    clearOrganisationRuntimeCache()
+    clearWorkspaceScopedRuntimeCaches()
     setDevAuthRoleState(null)
     setSession(null)
     setAuthState({

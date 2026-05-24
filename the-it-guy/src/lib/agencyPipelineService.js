@@ -366,7 +366,10 @@ async function runAppointmentNotificationTask(taskName, callback) {
 }
 
 function getStorageKey(organisationId) {
-  const org = normalizeText(organisationId) || 'default'
+  const org = normalizeText(organisationId)
+  if (!org || org === 'default') {
+    throw new Error('A resolved organisation id is required before using agency pipeline storage.')
+  }
   return `${STORAGE_PREFIX}:${org}`
 }
 
@@ -822,7 +825,9 @@ export function recoverAgencyPipelineStoreForOrganisation(organisationId) {
 export function resolveAgencyPipelineStorageScope(preferredOrganisationId = '') {
   const preferred = normalizeText(preferredOrganisationId)
   if (preferred && preferred !== 'default') return preferred
-  if (typeof window === 'undefined' || !window.localStorage) return preferred || 'default'
+  if (typeof window === 'undefined' || !window.localStorage) {
+    throw new Error('A resolved organisation id is required before loading agency pipeline data.')
+  }
 
   const prefix = `${STORAGE_PREFIX}:`
   const candidates = []
@@ -846,7 +851,11 @@ export function resolveAgencyPipelineStorageScope(preferredOrganisationId = '') 
     return right.score - left.score
   })
 
-  return candidates[0]?.org || preferred || 'default'
+  const resolved = candidates[0]?.org || preferred
+  if (!resolved || resolved === 'default') {
+    throw new Error('A resolved organisation id is required before loading agency pipeline data.')
+  }
+  return resolved
 }
 
 function emitAgencyCrmUpdated() {

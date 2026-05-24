@@ -131,7 +131,9 @@ function ensureDirectoryShape(directory = {}) {
 }
 
 function getAgentKey(email, organisationId) {
-  return `${normalizeEmail(email)}::${String(organisationId || 'default').trim().toLowerCase()}`
+  const workspaceId = String(organisationId || '').trim().toLowerCase()
+  if (!workspaceId) throw new Error('A resolved workspace is required before storing agent invite state.')
+  return `${normalizeEmail(email)}::${workspaceId}`
 }
 
 function upsertDirectoryAgent(directory, agentRecord) {

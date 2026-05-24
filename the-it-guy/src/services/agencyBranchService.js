@@ -5,6 +5,7 @@ import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
 import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import { recordSecurityAuditEvent } from './auditLogService'
 import { assertMembershipStatusTransition } from './transitions/stateTransitionEngine'
+import { assertResolvedWorkspaceContext } from './workspaceResolutionService'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -44,6 +45,17 @@ async function resolveOrganisationContext() {
   if (!organisationId) {
     throw new Error('A valid organisation is required to load agency branches.')
   }
+  assertResolvedWorkspaceContext({
+    organisationId,
+    profile: context?.profile || null,
+    appRole: context?.profile?.role || 'agent',
+    currentMembership: {
+      id: context?.membershipId || organisationId,
+      workspaceId: organisationId,
+      status: context?.membershipStatus || 'active',
+      role: context?.membershipRole || 'viewer',
+    },
+  }, { service: 'agencyBranchService.resolveOrganisationContext' })
 
   return {
     organisationId,

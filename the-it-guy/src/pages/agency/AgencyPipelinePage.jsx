@@ -532,7 +532,9 @@ function normalizeLeadIdentityKey(value) {
 }
 
 function getCanvassingStorageKey(organisationId) {
-  return `${CANVASSING_STORAGE_PREFIX}:${normalizeText(organisationId) || 'default'}`
+  const workspaceId = normalizeText(organisationId)
+  if (!workspaceId) throw new Error('A resolved workspace is required before loading canvassing data.')
+  return `${CANVASSING_STORAGE_PREFIX}:${workspaceId}`
 }
 
 function readCanvassingStore(organisationId) {
@@ -6943,7 +6945,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     const leadIdentityKey = normalizeLeadIdentityKey(leadId)
     const leadForDelete = records.leads.find((row) => normalizeLeadIdentityKey(row?.leadId || row?.id) === leadIdentityKey) || null
-    const targetOrganisationId = normalizeText(organisationId || leadForDelete?.organisationId || 'default')
+    const targetOrganisationId = normalizeText(organisationId || leadForDelete?.organisationId)
+    if (!targetOrganisationId) throw new Error('A resolved workspace is required before deleting a lead.')
     setError('')
     try {
       await deleteAgencyCrmLeadRecord(targetOrganisationId, leadId)

@@ -10,7 +10,7 @@ import { completeOnboarding } from '../services/onboarding/onboardingEngine'
 const WorkspaceContext = createContext(null)
 const AGENCY_WORKFLOW_MODE_STORAGE_KEY = 'itg:agency-workflow-mode:v1'
 const DEFAULT_AGENCY_WORKFLOW_MODE = 'agent'
-const ALL_WORKSPACE = { id: 'all', name: 'All Developments', type: '' }
+const UNRESOLVED_WORKSPACE = { id: '', name: 'Workspace setup required', type: '' }
 
 function normalizeAgencyWorkflowMode(value, fallback = DEFAULT_AGENCY_WORKFLOW_MODE) {
   const normalized = String(value || '').trim().toLowerCase()
@@ -20,7 +20,7 @@ function normalizeAgencyWorkflowMode(value, fallback = DEFAULT_AGENCY_WORKFLOW_M
 
 function normalizeWorkspaceSelection(nextWorkspace) {
   const id = String(nextWorkspace?.id || nextWorkspace?.workspaceId || '').trim()
-  if (!id || id === 'all') return ALL_WORKSPACE
+  if (!id || id === 'all') return UNRESOLVED_WORKSPACE
   return {
     id,
     name: String(nextWorkspace?.name || '').trim() || 'Selected Workspace',
@@ -53,7 +53,7 @@ export function WorkspaceProvider({ children }) {
             name: authState.currentWorkspace.name || 'Workspace',
             type: authState.currentWorkspace.type || authState.workspaceType || '',
           }
-        : ALL_WORKSPACE,
+        : UNRESOLVED_WORKSPACE,
     [authState.currentWorkspace, authState.workspaceType],
   )
   const onboardingCompleted = Boolean(authState.onboardingComplete)
@@ -192,7 +192,7 @@ export function WorkspaceProvider({ children }) {
     () => ({
       workspace,
       setWorkspace,
-      allWorkspace: ALL_WORKSPACE,
+      allWorkspace: UNRESOLVED_WORKSPACE,
       role,
       baseRole,
       rolePreviewActive: false,
@@ -218,6 +218,10 @@ export function WorkspaceProvider({ children }) {
       currentMembership: authState.currentMembership,
       currentWorkspace: authState.currentWorkspace,
       workspaceType: authState.workspaceType,
+      workspaceRole: authState.workspaceRole,
+      permissions: authState.permissions || {},
+      workspaceResolution: authState.workspaceResolution || null,
+      workspaceDiagnostics: authState.workspaceDiagnostics || null,
       onboardingRequiredReason: authState.onboardingRequiredReason,
       permissionResolver,
       can: (permission) => can(permission, permissionContext),
