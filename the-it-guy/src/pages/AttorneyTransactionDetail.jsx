@@ -922,6 +922,7 @@ function buildMatterPreviewShell(matterPreview, transactionId) {
   return {
     transaction: {
       id: matterPreview.matterId,
+      matter_number: matterPreview.matterReference || `MAT-${String(transactionId).slice(0, 8).toUpperCase()}`,
       transaction_reference: matterPreview.matterReference || `Matter ${String(transactionId).slice(0, 8)}`,
       finance_type: matterPreview.financeType || 'cash',
       purchase_price: matterPreview.purchasePrice || 0,
@@ -1842,7 +1843,10 @@ function AttorneyTransactionDetail() {
   const matterHeadline = !isPrivateMatter
     ? `${development?.name || 'Development'}${unit?.unit_number ? ` • Unit ${unit.unit_number}` : ''}`
     : transaction?.property_description || transaction?.property_address_line_1 || 'Private Property Transaction'
-  const matterReference = transaction?.transaction_reference || `TRX-${String(transaction?.id || '').slice(0, 8).toUpperCase()}`
+  const matterReference =
+    transaction?.matter_number ||
+    transaction?.transaction_reference ||
+    `MAT-${String(transaction?.id || '').slice(0, 8).toUpperCase()}`
   const transferStageKey = getAttorneyTransferStage({ transaction, stage: transaction?.stage, unit, development })
   const transferStageLabel = stageLabelFromAttorneyKey(transferStageKey)
   const lifecycleState = normalizeLifecycleState(
@@ -2703,7 +2707,7 @@ function AttorneyTransactionDetail() {
         subtitle: 'Reference and transaction metadata relevant to legal execution.',
         summary: `${transferStageLabel} • ${matterReference}`,
         items: [
-          { label: 'Transaction Reference', value: matterReference },
+          { label: 'Matter Number', value: matterReference },
           { label: 'Development', value: development?.name || 'Standalone matter' },
           { label: 'Unit', value: unit?.unit_number ? `Unit ${unit.unit_number}` : 'Not linked' },
           { label: 'Property Address', value: propertyAddress || transaction?.property_description || 'Not set' },

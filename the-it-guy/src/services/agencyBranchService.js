@@ -1,5 +1,10 @@
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { assertPermission } from '../auth/permissions/permissionResolver'
+import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
+import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
+import { recordSecurityAuditEvent } from './auditLogService'
+import { assertMembershipStatusTransition } from './transitions/stateTransitionEngine'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -43,9 +48,30 @@ async function resolveOrganisationContext() {
   return {
     organisationId,
     organisation,
+    profile: context?.profile || null,
     membershipRole: normalizeLower(context?.membershipRole || 'viewer'),
     membershipStatus: normalizeLower(context?.membershipStatus || 'pending'),
+    workspaceType: normalizeLower(organisation?.type || WORKSPACE_TYPES.agency) || WORKSPACE_TYPES.agency,
   }
+}
+
+function assertBranchManagementAccess(context, action = 'manage branches') {
+  assertPermission(PERMISSIONS.manageBranches, {
+    profile: context?.profile,
+    appRole: context?.profile?.role || 'agent',
+    organisationRole: context?.membershipRole,
+    membershipStatus: context?.membershipStatus,
+    currentMembership: {
+      id: context?.organisationId || 'agency-membership',
+      role: context?.membershipRole,
+      status: context?.membershipStatus || 'active',
+      workspaceType: context?.workspaceType || WORKSPACE_TYPES.agency,
+      workspaceId: context?.organisationId,
+      workspace: { id: context?.organisationId, type: context?.workspaceType || WORKSPACE_TYPES.agency },
+    },
+    currentWorkspace: { id: context?.organisationId, type: context?.workspaceType || WORKSPACE_TYPES.agency },
+    workspaceType: context?.workspaceType || WORKSPACE_TYPES.agency,
+  }, `You do not have permission to ${action}.`)
 }
 
 async function listOrganisationBranches(client, organisationId) {
@@ -260,7 +286,9 @@ export async function getBranches() {
     return []
   }
 
-  const { organisationId } = await resolveOrganisationContext()
+  const context = await resolveOrganisationContext()
+  assertBranchManagementAccess(context, 'create branches')
+  const { organisationId } = context
   const [branches, members, transactions, listings, leads] = await Promise.all([
     listOrganisationBranches(supabase, organisationId),
     listOrganisationUsers(supabase, organisationId),
@@ -311,7 +339,9 @@ export async function createBranch(payload = {}) {
     throw new Error('Supabase is not configured for branch creation.')
   }
 
-  const { organisationId } = await resolveOrganisationContext()
+  const context = await resolveOrganisationContext()
+  assertBranchManagementAccess(context, 'create branches')
+  const { organisationId } = context
   const name = normalizeText(payload?.name)
   if (!name) {
     throw new Error('Branch name is required.')
@@ -343,6 +373,14 @@ export async function createBranch(payload = {}) {
     throw query.error
   }
 
+  void recordSecurityAuditEvent({
+    userId: context.profile?.id,
+    workspaceId: organisationId,
+    action: 'branch_created',
+    targetType: 'organisation_branch',
+    targetId: query.data?.id,
+    metadata: { name },
+  })
   return getBranch(query.data?.id)
 }
 
@@ -356,6 +394,8 @@ export async function updateBranch(branchId, payload = {}) {
     throw new Error('Branch id is required.')
   }
 
+  const context = await resolveOrganisationContext()
+  assertBranchManagementAccess(context, 'edit branches')
   const patch = {}
   if (payload?.name !== undefined) patch.name = normalizeText(payload.name)
   if (payload?.slug !== undefined) patch.slug = toSlug(payload.slug || payload.name || '') || null
@@ -377,6 +417,7 @@ export async function updateBranch(branchId, payload = {}) {
     .from('organisation_branches')
     .update(patch)
     .eq('id', safeBranchId)
+    .eq('organisation_id', context.organisationId)
     .select('id')
     .single()
 
@@ -387,6 +428,14 @@ export async function updateBranch(branchId, payload = {}) {
     throw query.error
   }
 
+  void recordSecurityAuditEvent({
+    userId: context.profile?.id,
+    workspaceId: context.organisationId,
+    action: 'branch_updated',
+    targetType: 'organisation_branch',
+    targetId: safeBranchId,
+    metadata: { fields: Object.keys(patch) },
+  })
   return getBranch(query.data?.id)
 }
 
@@ -414,7 +463,9 @@ export async function inviteBranchMember(payload = {}) {
     throw new Error('Supabase is not configured for branch invites.')
   }
 
-  const { organisationId } = await resolveOrganisationContext()
+  const context = await resolveOrganisationContext()
+  assertBranchManagementAccess(context, 'invite branch members')
+  const { organisationId } = context
   const email = normalizeLower(payload?.email)
   const branchId = normalizeText(payload?.branchId)
   const role = normalizeLower(payload?.role || 'agent') || 'agent'
@@ -446,6 +497,14 @@ export async function inviteBranchMember(payload = {}) {
     throw result.error
   }
 
+  void recordSecurityAuditEvent({
+    userId: context.profile?.id,
+    workspaceId: organisationId,
+    action: 'invite_sent',
+    targetType: 'organisation_user',
+    targetId: result.data?.id,
+    metadata: { email, role, branchId },
+  })
   return result.data
 }
 
@@ -459,10 +518,23 @@ export async function removeBranchMember(memberId) {
     throw new Error('Branch member id is required.')
   }
 
+  const context = await resolveOrganisationContext()
+  assertBranchManagementAccess(context, 'remove branch members')
+
+  const existing = await supabase
+    .from('organisation_users')
+    .select('id, status')
+    .eq('id', safeMemberId)
+    .eq('organisation_id', context.organisationId)
+    .maybeSingle()
+  if (existing.error) throw existing.error
+  assertMembershipStatusTransition(existing.data?.status, 'deactivated')
+
   const result = await supabase
     .from('organisation_users')
     .update({ status: 'deactivated', updated_at: new Date().toISOString() })
     .eq('id', safeMemberId)
+    .eq('organisation_id', context.organisationId)
     .select('id')
     .single()
 
@@ -470,5 +542,12 @@ export async function removeBranchMember(memberId) {
     throw result.error
   }
 
+  void recordSecurityAuditEvent({
+    userId: context.profile?.id,
+    workspaceId: context.organisationId,
+    action: 'membership_deactivated',
+    targetType: 'organisation_user',
+    targetId: safeMemberId,
+  })
   return true
 }

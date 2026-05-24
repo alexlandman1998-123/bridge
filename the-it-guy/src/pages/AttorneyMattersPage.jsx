@@ -47,6 +47,10 @@ const MATTER_VIEW_COPY = {
     title: 'Registered Matters',
     description: 'Completed or registered matters ready for close-out and reporting.',
   },
+  archived: {
+    title: 'Archived Matters',
+    description: 'Closed matters retained for firm records, audit, and historical reference.',
+  },
   'full-service': {
     title: 'Full-Service Matters',
     description: 'Matters where transfer, bond, and cancellation work all apply to the same transaction.',
@@ -124,6 +128,7 @@ function matterMatchesView(matter = {}, view = 'all') {
   if (type === 'registered') {
     return lifecycle.includes('registered') || stage.includes('registered') || Boolean(matter.registrationDate)
   }
+  if (type === 'archived') return lifecycle.includes('archived')
   return true
 }
 

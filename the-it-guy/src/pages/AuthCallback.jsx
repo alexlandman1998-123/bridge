@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { recordAuditEvent } from '../lib/activityAudit'
 import { clearSupabaseLocalAuthState, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { loadSignupIntentForUser, markSignupIntentReadyForOnboarding, resolveSignupIntentRoute } from '../lib/signupIntent'
 
 const AUTH_CALLBACK_TIMEOUT_MS = 15000
 const PENDING_ORG_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
@@ -88,11 +89,17 @@ export default function AuthCallback() {
           throw new Error('Session could not be restored from the verification callback.')
         }
 
+        const { data: userData, error: userError } = await withTimeout(supabase.auth.getUser())
+        if (userError) throw userError
+        const user = userData?.user || session.user
+        const loadedIntent = await loadSignupIntentForUser({ user })
+        const readyIntent = loadedIntent ? await markSignupIntentReadyForOnboarding({ user, intent: loadedIntent }) : null
         const pendingInvitePath = resolvePendingInvitePath()
-        const target = pendingInvitePath || resolveSafeNextPath(location.search)
+        const target = pendingInvitePath || (readyIntent ? resolveSignupIntentRoute(readyIntent) : resolveSafeNextPath(location.search))
         recordAuditEvent('session_restored_from_callback', {
           target,
           pendingInvite: Boolean(pendingInvitePath),
+          signupIntentPath: readyIntent?.onboarding_path || '',
         })
         console.debug('[REDIRECT] callback:success', { target, pendingInvite: Boolean(pendingInvitePath) })
         if (!active) return
@@ -102,7 +109,6 @@ export default function AuthCallback() {
         if (!active) return
         setStatus('error')
         setError(restoreError?.message || 'Unable to restore your verified session.')
-      } finally {
       }
     }
 
@@ -148,13 +154,6 @@ export default function AuthCallback() {
             }}
           >
             Return to Sign-in
-          </button>
-          <button
-            type="button"
-            className="auth-secondary-cta"
-            onClick={() => navigate('/dashboard', { replace: true })}
-          >
-            Continue to Dashboard
           </button>
         </div>
       </div>

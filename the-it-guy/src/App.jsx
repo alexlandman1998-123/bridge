@@ -1,23 +1,24 @@
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import AppErrorBoundary from './components/AppErrorBoundary'
+import AccessState from './components/access/AccessState'
 import PermissionGate from './components/PermissionGate'
 import TokenRouteGate from './components/routing/TokenRouteGate'
 import { AuthSessionProvider, useAuthSession } from './context/AuthSessionContext'
 import { WorkspaceProvider } from './context/WorkspaceContext'
 import { useWorkspace } from './context/WorkspaceContext'
 import { APP_ROLE_LABELS } from './lib/roles'
-import { isAttorneyDemoModeActiveForWorkspace } from './lib/attorneyDemoContext'
 import { FEATURE_FLAGS, SHOW_INTELLIGENCE_BETA } from './lib/featureFlags'
 import { MOCK_DATA_ENABLED } from './lib/mockData'
-import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from './lib/organisationAccess'
 import {
   isSupabaseConfigured,
 } from './lib/supabaseClient'
 import { getRuntimeEnvValidation } from './lib/envValidation'
 import { markRouteFirstVisibleContent, markRouteRendered } from './lib/performanceTrace'
-import { decideAuthRedirect, isOnboardingRoute } from './lib/onboardingRouting'
-import { fetchOrganisationSettings } from './lib/settingsApi'
-import { getCurrentUserAttorneyMembership } from './lib/attorneyPermissions'
+import { isOnboardingRoute } from './lib/onboardingRouting'
+import { ONBOARDING_REQUIRED_REASONS } from './constants/onboardingStatuses'
+import { resolveSignupIntentRoute } from './lib/signupIntent'
+import { evaluateAccessRequirement, getRouteAccessRequirement } from './auth/permissions/permissionResolver'
+import { PERMISSIONS } from './auth/permissions/permissionRegistry'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 
 const INACTIVITY_TIMEOUT_MINUTES = 15
@@ -135,6 +136,7 @@ const Pipeline = lazy(() => import('./pages/Pipeline'))
 const PipelineCanvassingPage = lazy(() => import('./pages/PipelineCanvassingPage'))
 const PipelineOverviewPage = lazy(() => import('./pages/PipelineOverviewPage'))
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'))
+const PlatformDiagnosticsPage = lazy(() => import('./pages/PlatformDiagnosticsPage'))
 const PostDashboardSetup = lazy(() => import('./pages/PostDashboardSetup'))
 const Report = lazy(() => import('./pages/Report'))
 const RoleModuleOnboarding = lazy(() => import('./pages/RoleModuleOnboarding'))
@@ -277,7 +279,7 @@ function AppLayout({ onLogout, session = null, user }) {
 
   useEffect(() => {
     sessionStartedAtRef.current = getSessionStartedAt(session)
-  }, [session?.access_token, session?.user?.last_sign_in_at, session?.user?.created_at])
+  }, [session])
 
   useEffect(() => {
     function clearSessionTimers() {
@@ -556,14 +558,35 @@ function AppLayout({ onLogout, session = null, user }) {
 
 const WORKSPACE_GATE_TIMEOUT_MS = 15000
 
-function AuthGate({ authLoading, session, authBootstrapError = '', onRetryBootstrap = null, onLogout = null }) {
+function AccessDenied({ title = 'Access restricted', message = 'You do not have access to this area.' }) {
+  return <AccessState type="denied" title={title} description={message} />
+}
+
+function isSetupPath(pathname = '') {
+  return (
+    pathname === '/setup' ||
+    pathname.startsWith('/setup/') ||
+    pathname === '/client-access' ||
+    pathname.startsWith('/onboarding') ||
+    pathname.startsWith('/attorney/onboarding') ||
+    pathname.startsWith('/agent/invite/')
+  )
+}
+
+function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
   const location = useLocation()
-  const { profileError, onboardingCompleted, baseRole, profile, workspaceReady, retryWorkspaceBootstrap } = useWorkspace()
+  const { authState } = useAuthSession()
+  const { retryWorkspaceBootstrap } = useWorkspace()
   const [loadingTimedOut, setLoadingTimedOut] = useState(false)
   const didHandleSessionMismatchRef = useRef(false)
+  const authLoading = authState.status === 'loading'
+  const session = authState.session
+  const profileError = authState.bootError
+  const baseRole = authState.appRole
+  const onboardingCompleted = authState.onboardingComplete
+  const waitingOnWorkspace = authState.status === 'loading'
 
   useEffect(() => {
-    const waitingOnWorkspace = authLoading || (isSupabaseConfigured && session && !workspaceReady)
     if (!waitingOnWorkspace) {
       const resetFrameId = window.requestAnimationFrame(() => {
         setLoadingTimedOut(false)
@@ -575,24 +598,25 @@ function AuthGate({ authLoading, session, authBootstrapError = '', onRetryBootst
       console.error('[AUTH] gate:timeout', {
         authLoading,
         hasSession: Boolean(session),
-        workspaceReady,
+        authStatus: authState.status,
         path: location.pathname,
       })
     }, WORKSPACE_GATE_TIMEOUT_MS)
     return () => window.clearTimeout(timeoutId)
-  }, [authLoading, location.pathname, session, workspaceReady])
+  }, [authLoading, authState.status, location.pathname, session, waitingOnWorkspace])
 
   useEffect(() => {
     console.debug('[AUTH] gate:state', {
       path: location.pathname,
-      authLoading,
+      authStatus: authState.status,
       hasSession: Boolean(session),
-      workspaceReady,
       hasProfileError: Boolean(profileError),
       baseRole,
       onboardingCompleted,
+      onboardingRequiredReason: authState.onboardingRequiredReason || null,
+      activeMemberships: authState.activeMemberships.length,
     })
-  }, [authLoading, baseRole, location.pathname, onboardingCompleted, profileError, session, workspaceReady])
+  }, [authState.activeMemberships.length, authState.onboardingRequiredReason, authState.status, baseRole, location.pathname, onboardingCompleted, profileError, session])
 
   const normalizedProfileError = String(profileError || '').toLowerCase()
   const sessionOutOfSync =
@@ -610,13 +634,13 @@ function AuthGate({ authLoading, session, authBootstrapError = '', onRetryBootst
     })
   }, [onLogout, sessionOutOfSync])
 
-  if (authLoading || (isSupabaseConfigured && session && !workspaceReady)) {
+  if (waitingOnWorkspace) {
     if (loadingTimedOut) {
       return (
         <section className="auth-loading-screen">
           <div className="auth-loading-card">
             <h2>We couldn’t load your workspace.</h2>
-            <p>{authBootstrapError || 'Authentication or workspace setup took too long. Please retry.'}</p>
+            <p>{profileError || 'Authentication or workspace setup took too long. Please retry.'}</p>
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
               <button
                 type="button"
@@ -627,15 +651,6 @@ function AuthGate({ authLoading, session, authBootstrapError = '', onRetryBootst
                 }}
               >
                 Retry
-              </button>
-              <button
-                type="button"
-                className="auth-secondary-cta"
-                onClick={() => {
-                  window.location.assign('/dashboard')
-                }}
-              >
-                Go to Dashboard
               </button>
               <button
                 type="button"
@@ -663,17 +678,17 @@ function AuthGate({ authLoading, session, authBootstrapError = '', onRetryBootst
     )
   }
 
-  if (isSupabaseConfigured && !session) {
+  if (authState.status === 'unauthenticated' || !session) {
     console.debug('[REDIRECT] auth:missing-session', { target: '/auth', from: location.pathname })
     return <Navigate to="/auth" replace state={{ from: location }} />
   }
 
-  if (profileError) {
+  if (authState.status === 'error') {
     return (
       <section className="auth-loading-screen">
         <div className="auth-loading-card">
-          <h2>We couldn’t resolve your account profile.</h2>
-          <p>{profileError}</p>
+          <h2>We couldn’t load your Bridge account.</h2>
+          <p>{profileError || 'Authentication boot failed.'}</p>
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             <button
               type="button"
@@ -695,38 +710,70 @@ function AuthGate({ authLoading, session, authBootstrapError = '', onRetryBootst
     )
   }
 
-  const redirectDecision = decideAuthRedirect({
-    pathname: location.pathname,
-    search: location.search,
-    hasSession: Boolean(session),
-    profile,
-    baseRole,
-  })
-
   const onAnyOnboardingRoute = isOnboardingRoute(location.pathname)
   if (baseRole !== 'client' && (onAnyOnboardingRoute || !onboardingCompleted)) {
     console.debug('[ONBOARDING] gate:setup-state', {
       path: location.pathname,
-      setupState: redirectDecision.setupState,
+      onboardingRequiredReason: authState.onboardingRequiredReason || null,
     })
   }
 
-  if (redirectDecision.action === 'redirect' && redirectDecision.to !== location.pathname) {
-    console.debug('[REDIRECT] onboarding:decision', {
-      from: location.pathname,
-      to: redirectDecision.to,
-      reason: redirectDecision.reason,
-      role: baseRole,
-    })
-    return <Navigate to={redirectDecision.to} replace />
+  const reason = authState.onboardingRequiredReason
+  if (
+    reason === ONBOARDING_REQUIRED_REASONS.noProfile ||
+    reason === ONBOARDING_REQUIRED_REASONS.profileIncomplete ||
+    reason === ONBOARDING_REQUIRED_REASONS.appRoleMissing
+  ) {
+    if (!location.pathname.startsWith('/onboarding/profile')) {
+      return <Navigate to="/onboarding/profile" replace />
+    }
+    return <Outlet />
+  }
+
+  if (reason === ONBOARDING_REQUIRED_REASONS.onboardingIncomplete) {
+    const target =
+      authState.signupIntent
+        ? resolveSignupIntentRoute(authState.signupIntent)
+        : baseRole === 'attorney'
+        ? '/attorney/onboarding'
+        : baseRole === 'client'
+          ? '/client-access'
+          : '/setup'
+    if (!isSetupPath(location.pathname) && location.pathname !== target) {
+      return <Navigate to={target} replace />
+    }
+    return <Outlet />
+  }
+
+  if (
+    reason === ONBOARDING_REQUIRED_REASONS.noActiveMembership ||
+    reason === ONBOARDING_REQUIRED_REASONS.workspaceMissing ||
+    reason === ONBOARDING_REQUIRED_REASONS.pendingApproval ||
+    reason === ONBOARDING_REQUIRED_REASONS.missingBranch ||
+    reason === ONBOARDING_REQUIRED_REASONS.missingDepartment ||
+    reason === ONBOARDING_REQUIRED_REASONS.missingSettings ||
+    reason === ONBOARDING_REQUIRED_REASONS.completionValidationFailed ||
+    reason === ONBOARDING_REQUIRED_REASONS.invalidOnboardingState
+  ) {
+    const target = baseRole === 'client' ? '/client-access' : '/setup'
+    if (!isSetupPath(location.pathname) && location.pathname !== target) {
+      return <Navigate to={target} replace />
+    }
+    return <Outlet />
+  }
+
+  if (onAnyOnboardingRoute && onboardingCompleted) {
+    const target = baseRole === 'attorney' ? '/attorney/dashboard' : '/dashboard'
+    return <Navigate to={target} replace />
   }
 
   return <Outlet />
 }
 
-function RoleRoute({ allowedRoles, children }) {
+function RoleRoute({ allowedRoles, requiredPermission = '', requiredWorkspaceType = '', children }) {
   const location = useLocation()
-  const { role, workspaceReady, profileLoading } = useWorkspace()
+  const workspaceContext = useWorkspace()
+  const { role, workspaceReady, profileLoading, activeMemberships, onboardingRequiredReason } = workspaceContext
 
   if (!workspaceReady || profileLoading) {
     return (
@@ -739,12 +786,41 @@ function RoleRoute({ allowedRoles, children }) {
     )
   }
 
-  if (FEATURE_FLAGS.disableRoleRestrictions) {
+  if (FEATURE_FLAGS.disableRoleRestrictions && !import.meta.env.PROD) {
     return children
   }
 
   if (!allowedRoles.includes(role)) {
-    return <Navigate to="/dashboard" replace state={{ from: location }} />
+    return <AccessDenied message="Your Bridge role does not include access to this module." />
+  }
+
+  const canAccessWithoutMembership =
+    role === 'client' ||
+    role === 'platform_admin' ||
+    location.pathname === '/setup' ||
+    location.pathname.startsWith('/onboarding') ||
+    location.pathname.startsWith('/attorney/onboarding') ||
+    location.pathname.startsWith('/agent/invite/')
+
+  if (!canAccessWithoutMembership && !activeMemberships.length && onboardingRequiredReason) {
+    return <Navigate to="/setup" replace state={{ from: location }} />
+  }
+
+  const routeRequirement = getRouteAccessRequirement(location.pathname)
+  const access = evaluateAccessRequirement(
+    {
+      ...routeRequirement,
+      permission: requiredPermission || routeRequirement?.permission,
+      workspaceType: requiredWorkspaceType || routeRequirement?.workspaceType,
+    },
+    workspaceContext,
+  )
+
+  if (!access.ok) {
+    if (access.reason === 'membership_blocked') {
+      return <AccessState type="suspended" description={access.message} />
+    }
+    return <AccessState type="permission_required" description={access.message} />
   }
 
   return children
@@ -752,97 +828,14 @@ function RoleRoute({ allowedRoles, children }) {
 
 function AttorneyFirmRoute({ children, requireFirm = true }) {
   const location = useLocation()
-  const { role, baseRole, rolePreviewActive, profile, workspaceReady, profileLoading } = useWorkspace()
-  const demoModeBypass = isAttorneyDemoModeActiveForWorkspace({ role, baseRole, rolePreviewActive })
-  const [checking, setChecking] = useState(role === 'attorney')
-  const [hasFirm, setHasFirm] = useState(Boolean(profile?.primaryAttorneyFirmId) || demoModeBypass)
-  const [membershipStatus, setMembershipStatus] = useState(demoModeBypass ? 'active' : '')
-  const [guardTimedOut, setGuardTimedOut] = useState(false)
+  const { role, workspaceReady, profileLoading, currentMembership, activeMemberships, suspendedMemberships } = useWorkspace()
+  const attorneyMembership =
+    currentMembership?.workspaceType === 'attorney_firm'
+      ? currentMembership
+      : activeMemberships.find((membership) => membership.workspaceType === 'attorney_firm')
+  const suspendedAttorneyMembership = suspendedMemberships.find((membership) => membership.workspaceType === 'attorney_firm')
 
-  useEffect(() => {
-    let active = true
-    const timeoutId = window.setTimeout(() => {
-      if (!active) return
-      setGuardTimedOut(true)
-      if (role === 'attorney' && profile?.primaryAttorneyFirmId) {
-        setHasFirm(true)
-        setMembershipStatus((current) => current || 'active')
-        setChecking(false)
-      }
-    }, 12000)
-
-    async function resolveFirmContext() {
-      if (!workspaceReady || profileLoading) {
-        return
-      }
-
-      setGuardTimedOut(false)
-      if (role !== 'attorney') {
-        if (!active) return
-        setHasFirm(false)
-        setChecking(false)
-        return
-      }
-
-      if (demoModeBypass) {
-        if (!active) return
-        setHasFirm(true)
-        setMembershipStatus('active')
-        setChecking(false)
-        return
-      }
-
-      const profileFirmId = String(profile?.primaryAttorneyFirmId || '').trim()
-      if (profileFirmId) {
-        try {
-          const membership = await getCurrentUserAttorneyMembership(profileFirmId)
-          if (!active) return
-          setHasFirm(true)
-          const nextStatus = String(membership?.status || '').trim().toLowerCase()
-          setMembershipStatus(['suspended', 'removed'].includes(nextStatus) ? nextStatus : 'active')
-          setChecking(false)
-          return
-        } catch {
-          if (!active) return
-          setHasFirm(true)
-          setMembershipStatus('active')
-          setChecking(false)
-          return
-        }
-      }
-
-      setChecking(true)
-      try {
-        const { getCurrentUserPrimaryAttorneyFirm } = await import('./services/attorneyFirms')
-        const primaryFirm = await getCurrentUserPrimaryAttorneyFirm()
-        if (!active) return
-        if (!primaryFirm?.id) {
-          setHasFirm(false)
-          setMembershipStatus('')
-        } else {
-          const membership = await getCurrentUserAttorneyMembership(primaryFirm.id).catch(() => null)
-          if (!active) return
-          setHasFirm(true)
-          const nextStatus = String(membership?.status || '').trim().toLowerCase()
-          setMembershipStatus(['suspended', 'removed'].includes(nextStatus) ? nextStatus : 'active')
-        }
-      } catch {
-        if (!active) return
-        setHasFirm(false)
-        setMembershipStatus('')
-      } finally {
-        if (active) setChecking(false)
-      }
-    }
-
-    void resolveFirmContext()
-    return () => {
-      active = false
-      window.clearTimeout(timeoutId)
-    }
-  }, [demoModeBypass, profile?.primaryAttorneyFirmId, profileLoading, role, workspaceReady])
-
-  if ((!guardTimedOut && (!workspaceReady || profileLoading || checking)) || (guardTimedOut && checking && !profile?.primaryAttorneyFirmId)) {
+  if (!workspaceReady || profileLoading) {
     return (
       <section className="auth-loading-screen">
         <div className="auth-loading-card">
@@ -854,10 +847,10 @@ function AttorneyFirmRoute({ children, requireFirm = true }) {
   }
 
   if (role !== 'attorney') {
-    return <Navigate to="/dashboard" replace state={{ from: location }} />
+    return <AccessDenied message="Your Bridge role does not include access to the attorney workspace." />
   }
 
-  if (membershipStatus === 'suspended') {
+  if (suspendedAttorneyMembership?.status === 'suspended') {
     return (
       <section className="auth-loading-screen">
         <div className="auth-loading-card">
@@ -868,7 +861,7 @@ function AttorneyFirmRoute({ children, requireFirm = true }) {
     )
   }
 
-  if (membershipStatus === 'removed') {
+  if (['removed', 'deactivated'].includes(suspendedAttorneyMembership?.status)) {
     return (
       <section className="auth-loading-screen">
         <div className="auth-loading-card">
@@ -879,7 +872,7 @@ function AttorneyFirmRoute({ children, requireFirm = true }) {
     )
   }
 
-  if (!hasFirm) {
+  if (requireFirm && !attorneyMembership?.workspaceId) {
     return <Navigate to={requireFirm ? '/setup' : '/attorney/onboarding'} replace state={{ from: location }} />
   }
 
@@ -887,52 +880,9 @@ function AttorneyFirmRoute({ children, requireFirm = true }) {
 }
 
 function AgentManagementRoute({ children }) {
-  const location = useLocation()
-  const { role, workspaceReady, profileLoading } = useWorkspace()
-  const [checking, setChecking] = useState(true)
-  const [canAccess, setCanAccess] = useState(false)
-
-  useEffect(() => {
-    let active = true
-
-    async function resolveAccess() {
-      if (!workspaceReady || profileLoading) return
-      if (role === 'developer') {
-        if (!active) return
-        setCanAccess(true)
-        setChecking(false)
-        return
-      }
-      if (role !== 'agent') {
-        if (!active) return
-        setCanAccess(false)
-        setChecking(false)
-        return
-      }
-
-      try {
-        const context = await fetchOrganisationSettings()
-        if (!active) return
-        const nextCanAccess = canManageOrganisationSettings({
-          appRole: role,
-          membershipRole: normalizeOrganisationMembershipRole(context?.membershipRole),
-        })
-        setCanAccess(nextCanAccess)
-      } catch {
-        if (!active) return
-        setCanAccess(false)
-      } finally {
-        if (active) setChecking(false)
-      }
-    }
-
-    setChecking(true)
-    void resolveAccess()
-
-    return () => {
-      active = false
-    }
-  }, [profileLoading, role, workspaceReady])
+  const workspaceContext = useWorkspace()
+  const { workspaceReady, profileLoading } = workspaceContext
+  const canAccess = evaluateAccessRequirement({ permission: PERMISSIONS.manageBranches }, workspaceContext).ok
 
   if (!workspaceReady || profileLoading) {
     return (
@@ -945,75 +895,23 @@ function AgentManagementRoute({ children }) {
     )
   }
 
-  if (FEATURE_FLAGS.disableRoleRestrictions) {
+  if (FEATURE_FLAGS.disableRoleRestrictions && !import.meta.env.PROD) {
     return children
   }
 
-  if (checking) {
-    return (
-      <section className="auth-loading-screen">
-        <div className="auth-loading-card">
-          <h2>Preparing your workspace…</h2>
-          <p>Validating access for this area.</p>
-        </div>
-      </section>
-    )
-  }
-
   if (!canAccess) {
-    return <Navigate to="/dashboard" replace state={{ from: location }} />
+    return <AccessDenied message="You need agency management authority to open this area." />
   }
 
   return children
 }
 
 function OrganisationSettingsManageRoute({ children }) {
-  const location = useLocation()
-  const { role, workspaceReady, profileLoading } = useWorkspace()
-  const [checking, setChecking] = useState(true)
-  const [canManage, setCanManage] = useState(false)
+  const workspaceContext = useWorkspace()
+  const { workspaceReady, profileLoading } = workspaceContext
+  const canManage = evaluateAccessRequirement({ permission: PERMISSIONS.manageWorkspaceSettings }, workspaceContext).ok
 
-  useEffect(() => {
-    let active = true
-
-    async function resolveAccess() {
-      if (!workspaceReady || profileLoading) return
-      if (role === 'developer') {
-        if (!active) return
-        setCanManage(true)
-        setChecking(false)
-        return
-      }
-      if (role !== 'agent') {
-        if (!active) return
-        setCanManage(false)
-        setChecking(false)
-        return
-      }
-
-      try {
-        const context = await fetchOrganisationSettings()
-        if (!active) return
-        const allowed = canManageOrganisationSettings({
-          appRole: role,
-          membershipRole: normalizeOrganisationMembershipRole(context?.membershipRole),
-        })
-        setCanManage(allowed)
-      } catch {
-        if (!active) return
-        setCanManage(false)
-      } finally {
-        if (active) setChecking(false)
-      }
-    }
-
-    void resolveAccess()
-    return () => {
-      active = false
-    }
-  }, [profileLoading, role, workspaceReady])
-
-  if (!workspaceReady || profileLoading || checking) {
+  if (!workspaceReady || profileLoading) {
     return (
       <section className="auth-loading-screen">
         <div className="auth-loading-card">
@@ -1024,12 +922,12 @@ function OrganisationSettingsManageRoute({ children }) {
     )
   }
 
-  if (FEATURE_FLAGS.disableRoleRestrictions) {
+  if (FEATURE_FLAGS.disableRoleRestrictions && !import.meta.env.PROD) {
     return children
   }
 
   if (!canManage) {
-    return <Navigate to="/listings/developments" replace state={{ from: location }} />
+    return <AccessDenied message="You need workspace management authority to open this area." />
   }
 
   return children
@@ -1158,6 +1056,14 @@ function AppRoutes() {
                 <Route path="*" element={<Navigate to="/commercial/dashboard" replace />} />
               </Route>
               <Route path="/setup" element={<PostDashboardSetup />} />
+              <Route
+                path="/platform/diagnostics"
+                element={
+                  <RoleRoute allowedRoles={['platform_admin']}>
+                    <PlatformDiagnosticsPage />
+                  </RoleRoute>
+                }
+              />
               <Route
                 path="/attorney/onboarding"
                 element={
@@ -2001,12 +1907,24 @@ function ConveyancerOrDeveloperDevelopmentDetail() {
 }
 
 function ClientAwareDashboard() {
-  const { role } = useWorkspace()
+  const workspaceContext = useWorkspace()
+  const { role } = workspaceContext
   if (role === 'client') {
     return <ClientModulePage />
   }
   if (role === 'attorney') {
     return <Navigate to="/attorney/dashboard" replace />
+  }
+  const dashboardPermission = role === 'agent'
+    ? PERMISSIONS.viewAgencyDashboard
+    : role === 'developer'
+      ? PERMISSIONS.viewDeveloperDashboard
+      : role === 'bond_originator'
+        ? PERMISSIONS.viewBondDashboard
+        : PERMISSIONS.viewDashboard
+  const access = evaluateAccessRequirement({ permission: dashboardPermission }, workspaceContext)
+  if (!access.ok) {
+    return <AccessState type="permission_required" description={access.message} />
   }
   return <Dashboard />
 }

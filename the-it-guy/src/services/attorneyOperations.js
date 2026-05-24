@@ -63,6 +63,14 @@ function isTruthy(value) {
   return value !== null && value !== undefined && value !== ''
 }
 
+function getMatterReference(transaction = {}, fallbackId = '') {
+  return (
+    normalizeText(transaction.matter_number) ||
+    normalizeText(transaction.transaction_reference) ||
+    `MAT-${String(fallbackId || transaction.id || '').slice(0, 8).toUpperCase()}`
+  )
+}
+
 function normalizeRoleLabel(value) {
   return String(value || '')
     .trim()
@@ -221,7 +229,7 @@ async function fetchTransactions(client, ids = []) {
   if (!transactionIds.length) return []
 
   const primarySelect =
-    'id, organisation_id, buyer_id, transaction_reference, stage, current_main_stage, current_sub_stage_summary, finance_type, risk_status, operational_state, attorney_stage, next_action, updated_at, created_at, assigned_attorney_email, attorney, property_description, property_address_line_1, property_address_line_2, suburb, city, province, seller_name, seller_email, seller_phone, seller_has_existing_bond, current_bond_bank, current_bond_account_number, estimated_settlement_amount, purchase_price, sales_price, expected_transfer_date, registration_date, registered_at, lifecycle_state, is_active'
+    'id, organisation_id, buyer_id, matter_number, transaction_reference, stage, current_main_stage, current_sub_stage_summary, finance_type, risk_status, operational_state, attorney_stage, next_action, updated_at, created_at, assigned_attorney_email, attorney, property_description, property_address_line_1, property_address_line_2, suburb, city, province, seller_name, seller_email, seller_phone, seller_has_existing_bond, current_bond_bank, current_bond_account_number, estimated_settlement_amount, purchase_price, sales_price, expected_transfer_date, registration_date, registered_at, lifecycle_state, is_active'
 
   let query = await client
     .from('transactions')
@@ -231,6 +239,7 @@ async function fetchTransactions(client, ids = []) {
   if (
     query.error &&
     (isMissingColumnError(query.error, 'current_main_stage') ||
+      isMissingColumnError(query.error, 'matter_number') ||
       isMissingColumnError(query.error, 'assigned_attorney_email') ||
       isMissingColumnError(query.error, 'operational_state') ||
       isMissingColumnError(query.error, 'attorney_stage') ||
@@ -737,7 +746,7 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
         assignmentId: assignment.id,
         matterId: transaction.id,
         organisationId: transaction.organisation_id || null,
-        matterReference: transaction.transaction_reference || `Transaction ${String(transaction.id || '').slice(0, 8)}`,
+        matterReference: getMatterReference(transaction, transaction.id),
         clientName,
         buyerName: clientName,
         sellerName: transaction.seller_name || transaction.seller_email || 'Seller pending',
@@ -784,7 +793,7 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
         const matter = matterQueue.find((item) => item.matterId === request.transaction_id)
         return {
           id: request.id,
-          matterReference: matter?.matterReference || `Transaction ${String(request.transaction_id || '').slice(0, 8)}`,
+          matterReference: matter?.matterReference || getMatterReference({}, request.transaction_id),
           clientName: matter?.clientName || 'Unassigned client',
           documentType: request.document_type || request.title || request.category || 'Document',
           status: normalizeText(request.status || 'requested') || 'requested',
@@ -823,7 +832,7 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
           id: appointment.appointment_id,
           appointmentType: appointmentTypeLabel || appointment.title || 'General consultation',
           appointmentTypeKey,
-          matterReference: matter?.matterReference || `Transaction ${String(appointment.transaction_id || '').slice(0, 8)}`,
+          matterReference: matter?.matterReference || getMatterReference({}, appointment.transaction_id),
           transactionId: appointment.transaction_id || null,
           organisationId: matter?.organisationId || null,
           clientName: matter?.clientName || 'Unassigned client',

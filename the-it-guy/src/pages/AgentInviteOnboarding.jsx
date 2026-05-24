@@ -12,8 +12,11 @@ import {
   startAgentInviteOnboarding,
 } from '../lib/agentInviteService'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { getUnsafeEnvironmentFlags } from '../lib/envValidation'
+import { getWorkspaceInviteByToken, joinWorkspaceFromInvite } from '../services/workspaceService'
 
 const PENDING_ORG_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
+const LOCAL_INVITE_FALLBACK_ENABLED = Boolean(getUnsafeEnvironmentFlags().enableLocalFallbacks)
 
 function persistPendingInviteToken(token) {
   if (typeof window === 'undefined') return
@@ -61,13 +64,48 @@ export default function AgentInviteOnboarding() {
     async function loadInvite() {
       console.debug('[ONBOARDING] invite:load:start', { token: String(token || '').trim() })
       if (isSupabaseConfigured && supabase) {
+        let signedInEmail = ''
         try {
-          const [inviteContext, sessionResult] = await Promise.all([
-            fetchOrganisationInviteByToken(token),
-            supabase.auth.getSession(),
-          ])
+          const sessionResult = await supabase.auth.getSession()
           if (!active) return
-          setSessionUserEmail(String(sessionResult?.data?.session?.user?.email || '').trim().toLowerCase())
+          signedInEmail = String(sessionResult?.data?.session?.user?.email || '').trim().toLowerCase()
+          setSessionUserEmail(signedInEmail)
+          if (signedInEmail) {
+            const workspaceInviteContext = await getWorkspaceInviteByToken(token)
+            if (!active) return
+            if (workspaceInviteContext?.ok && workspaceInviteContext.invite) {
+              const activeInvite = {
+                ...workspaceInviteContext.invite,
+                organisationName:
+                  workspaceInviteContext.invite.organisations?.display_name ||
+                  workspaceInviteContext.invite.organisations?.name ||
+                  'Bridge Workspace',
+                email: workspaceInviteContext.invite.invited_email,
+                role: workspaceInviteContext.invite.organisation_role,
+                firstName: '',
+                surname: '',
+                mobile: '',
+              }
+              setInviteSource('workspace')
+              setInvite(activeInvite)
+              setForm((previous) => ({
+                ...previous,
+                email: String(activeInvite?.email || '').trim(),
+              }))
+              setLoading(false)
+              console.debug('[ONBOARDING] invite:load:success', { source: 'workspace_invites', email: activeInvite?.email || '' })
+              return
+            }
+            if (workspaceInviteContext?.reason && workspaceInviteContext.reason !== 'invite_schema_missing' && workspaceInviteContext.reason !== 'not_found') {
+              setInvite(workspaceInviteContext?.invite || null)
+              setInvalidReason(workspaceInviteContext.reason)
+              setLoading(false)
+              return
+            }
+          }
+
+          const inviteContext = await fetchOrganisationInviteByToken(token)
+          if (!active) return
           if (inviteContext?.ok && inviteContext.invite) {
             const activeInvite = {
               ...inviteContext.invite,
@@ -96,8 +134,20 @@ export default function AgentInviteOnboarding() {
         } catch (loadError) {
           if (!active) return
           console.error('[ONBOARDING] invite:load:failed', loadError)
+          if (!signedInEmail) {
+            setInviteSource('workspace')
+            setInvite({ token, organisationName: 'your workspace', role: 'agent', email: '' })
+            setLoading(false)
+            return
+          }
           setError(loadError?.message || 'Unable to load invite.')
         }
+      }
+
+      if (!LOCAL_INVITE_FALLBACK_ENABLED) {
+        setInvalidReason('not_found')
+        setLoading(false)
+        return
       }
 
       const context = startAgentInviteOnboarding(token)
@@ -141,7 +191,16 @@ export default function AgentInviteOnboarding() {
 
   async function handleSubmit(event) {
     event.preventDefault()
-    if (!form.firstName.trim() || !form.surname.trim() || !form.email.trim() || !form.mobile.trim()) {
+    if (inviteSource === 'workspace' && !sessionUserEmail) {
+      const safeToken = String(token || '').trim()
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(PENDING_ORG_INVITE_TOKEN_STORAGE_KEY, safeToken)
+        window.location.assign(`/auth?next=${encodeURIComponent(`/agent/invite/${safeToken}`)}`)
+      }
+      return
+    }
+
+    if (inviteSource !== 'workspace' && (!form.firstName.trim() || !form.surname.trim() || !form.email.trim() || !form.mobile.trim())) {
       setError('First name, surname, email, and mobile are required.')
       return
     }
@@ -153,7 +212,24 @@ export default function AgentInviteOnboarding() {
     try {
       setSaving(true)
       setError('')
-      if (inviteSource === 'supabase' && isSupabaseConfigured && supabase) {
+      if (inviteSource === 'workspace' && isSupabaseConfigured && supabase) {
+        const sessionResult = await supabase.auth.getSession()
+        const signedInEmail = String(sessionResult?.data?.session?.user?.email || '').trim().toLowerCase()
+        if (!signedInEmail) {
+          const safeToken = String(token || '').trim()
+          if (typeof window !== 'undefined') {
+            window.sessionStorage.setItem(PENDING_ORG_INVITE_TOKEN_STORAGE_KEY, safeToken)
+            window.location.assign(`/auth?next=${encodeURIComponent(`/agent/invite/${safeToken}`)}`)
+          }
+          return
+        }
+        await joinWorkspaceFromInvite(token, sessionResult.data.session.user)
+        recordAuditEvent('invite_accepted', {
+          source: 'workspace_invites',
+          email: signedInEmail,
+          organisationName: invite?.organisationName || '',
+        })
+      } else if (inviteSource === 'supabase' && isSupabaseConfigured && supabase) {
         const sessionResult = await supabase.auth.getSession()
         const signedInEmail = String(sessionResult?.data?.session?.user?.email || '').trim().toLowerCase()
         if (!signedInEmail) {

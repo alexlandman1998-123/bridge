@@ -22,6 +22,14 @@ function isTruthy(value) {
   return value !== null && value !== undefined && value !== ''
 }
 
+function getMatterReference(transaction = {}, fallbackId = '') {
+  return (
+    String(transaction.matter_number || '').trim() ||
+    String(transaction.transaction_reference || '').trim() ||
+    `MAT-${String(fallbackId || transaction.id || '').slice(0, 8).toUpperCase()}`
+  )
+}
+
 function startOfWeek(date = new Date()) {
   const cloned = new Date(date)
   const day = cloned.getDay()
@@ -117,7 +125,7 @@ function resolveAttentionIssue(flags = {}) {
 
 async function fetchTransactionsForDashboard(client) {
   const primarySelect =
-    'id, organisation_id, buyer_id, transaction_reference, title, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, finance_type, onboarding_status, next_action, risk_status, operational_state, attorney_stage, updated_at, created_at, property_description, property_address_line_1, property_address_line_2, suburb, city, province, seller_name, seller_email, seller_has_existing_bond, current_bond_bank, purchase_price, sales_price, bond_amount, deposit_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, lifecycle_state, last_meaningful_activity_at'
+    'id, organisation_id, buyer_id, matter_number, transaction_reference, title, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, finance_type, onboarding_status, next_action, risk_status, operational_state, attorney_stage, updated_at, created_at, property_description, property_address_line_1, property_address_line_2, suburb, city, province, seller_name, seller_email, seller_has_existing_bond, current_bond_bank, purchase_price, sales_price, bond_amount, deposit_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, lifecycle_state, last_meaningful_activity_at'
 
   let query = await client
     .from('transactions')
@@ -127,6 +135,7 @@ async function fetchTransactionsForDashboard(client) {
   if (
     query.error &&
     (isMissingColumnError(query.error, 'current_main_stage') ||
+      isMissingColumnError(query.error, 'matter_number') ||
       isMissingColumnError(query.error, 'transaction_reference') ||
       isMissingColumnError(query.error, 'assigned_attorney_email') ||
       isMissingColumnError(query.error, 'onboarding_status') ||
@@ -141,7 +150,7 @@ async function fetchTransactionsForDashboard(client) {
   ) {
     query = await client
       .from('transactions')
-      .select('id, buyer_id, stage, attorney, assigned_attorney_email, finance_type, next_action, updated_at, created_at')
+      .select('id, buyer_id, transaction_reference, stage, attorney, assigned_attorney_email, finance_type, next_action, updated_at, created_at')
   }
 
   if (query.error) {
@@ -176,6 +185,55 @@ async function fetchBuyerMap(client, buyerIds = []) {
     accumulator[row.id] = row
     return accumulator
   }, {})
+}
+
+async function fetchTodayAppointments(client, transactionIds = []) {
+  const ids = [...new Set((transactionIds || []).filter(Boolean))]
+  if (!ids.length) return []
+
+  let query = await client
+    .from('appointments')
+    .select('appointment_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, status')
+    .in('transaction_id', ids)
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'appointments')) return []
+    throw query.error
+  }
+
+  return (query.data || []).filter((appointment) => {
+    const value = appointment.date_time || (appointment.appointment_date ? `${appointment.appointment_date}T${appointment.start_time || '00:00:00'}` : '')
+    const timestamp = new Date(value).getTime()
+    if (!Number.isFinite(timestamp)) return false
+    const date = new Date(timestamp)
+    const today = new Date()
+    return date.toDateString() === today.toDateString()
+  })
+}
+
+function formatAppointmentType(value = '') {
+  const normalized = String(value || '').trim().replace(/[_-]+/g, ' ')
+  if (!normalized) return 'Appointment'
+  return normalized
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function getAppointmentDateTime(appointment = {}) {
+  if (appointment.date_time) return appointment.date_time
+  if (appointment.appointment_date && appointment.start_time) return `${appointment.appointment_date}T${appointment.start_time}`
+  if (appointment.appointment_date) return `${appointment.appointment_date}T00:00:00`
+  return ''
+}
+
+function getAppointmentDuration(appointment = {}) {
+  if (!appointment.start_time || !appointment.end_time) return ''
+  const start = new Date(`2000-01-01T${appointment.start_time}`).getTime()
+  const end = new Date(`2000-01-01T${appointment.end_time}`).getTime()
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return ''
+  return `${Math.round((end - start) / 60000)} min`
 }
 
 async function fetchMemberProfilesMap(client, members = []) {
@@ -425,13 +483,19 @@ function buildOperationalMatterLanes({ matterRoleSummaries = [], buyersById = {}
     const assignedUserId = primaryUnit.primaryAttorneyId || primaryUnit.secretaryId || primaryUnit.adminHandlerId || null
     const assignedProfile = assignedUserId ? memberProfilesById[assignedUserId] : null
     const buyer = buyersById[transaction.buyer_id] || {}
-    const reference = transaction.transaction_reference || `Matter ${String(summary.transactionId || primaryUnit.transactionId || '').slice(0, 8)}`
+    const reference = getMatterReference(transaction, summary.transactionId || primaryUnit.transactionId)
     const currentStage = transaction.current_sub_stage_summary || transaction.current_main_stage || transaction.stage || 'Instruction'
+    const propertyAddress =
+      transaction.property_description ||
+      [transaction.property_address_line_1, transaction.suburb, transaction.city].filter(Boolean).join(', ') ||
+      'Property address pending'
+    const buyerName = buyer.name || buyer.email || 'Client pending'
     const card = {
       id: summary.transactionId,
       reference,
-      propertyAddress: transaction.property_address || transaction.address || 'Property address pending',
-      buyerName: buyer.name || buyer.email || 'Buyer pending',
+      propertyAddress,
+      buyerName,
+      contextLine: `${propertyAddress} - ${buyerName}`,
       sellerName: transaction.seller_name || transaction.seller || 'Seller pending',
       bank: transaction.bank || transaction.bond_bank || transaction.financing_bank || 'Bank pending',
       linkedReference: reference,
@@ -741,6 +805,7 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
 
   const uniqueTransactionIds = [...new Set(matterUnits.map((item) => item.transactionId).filter(Boolean))]
   const uniqueMatters = uniqueTransactionIds.map((id) => matterUnits.find((item) => item.transactionId === id)).filter(Boolean)
+  const todayAppointments = await readDashboardDependency('today appointments', fetchTodayAppointments(client, uniqueTransactionIds), [])
 
   const currentMemberRecord = activeMembers.find((member) => member.userId === authUser.id) || null
   const currentUserRole = currentMemberRecord?.role || null
@@ -851,8 +916,7 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
 
       return {
         matterId: matter.transactionId,
-        matterReference:
-          matter.transaction?.transaction_reference || `Transaction ${String(matter.transactionId || '').slice(0, 8)}`,
+        matterReference: getMatterReference(matter.transaction, matter.transactionId),
         clientName: buyerName || 'Unassigned client',
         department:
           departmentsById[matter.departmentId]?.name || (matter.matterType === 'bond' ? 'Bond Department' : 'Transfer Department'),
@@ -860,6 +924,7 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
           matter.transaction?.current_sub_stage_summary || matter.transaction?.stage || matter.transaction?.current_main_stage || 'Unknown',
         assignedUser: assignedProfile?.fullName || matter.transaction?.assigned_attorney_email || 'Unassigned',
         issue: matter.issue,
+        daysInactive: daysSince(matter.transaction?.last_meaningful_activity_at || matter.transaction?.updated_at || matter.transaction?.created_at),
         lastUpdated: matter.transaction?.updated_at || matter.transaction?.created_at || null,
         actionLabel: 'Open Transaction',
         actionHref: `/transactions/${matter.transactionId}`,
@@ -901,7 +966,7 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     ...matterUnits.slice(0, 8).map((matter) => ({
       id: `assignment-${matter.assignmentId || matter.transactionId}`,
       type: 'assignment',
-      message: `Attorney assignment ${matter.assignmentStatus} for ${matter.transaction?.transaction_reference || `transaction ${String(matter.transactionId).slice(0, 8)}`}.`,
+      message: `Attorney assignment ${matter.assignmentStatus} for ${getMatterReference(matter.transaction, matter.transactionId)}.`,
       occurredAt: matter.transaction?.updated_at || matter.transaction?.created_at || null,
     })),
   ]
@@ -927,6 +992,20 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
   const matterStats = getAttorneyMatterStats({ kpis, matterRoleSummaries: scopedMatterRoleSummaries })
   const criticalAlerts = getCriticalAlerts({ uniqueMatters, kpis })
   const upcomingKeyDates = getUpcomingKeyDates({ kpis })
+  const todayCalendar = todayAppointments
+    .map((appointment) => {
+      const matter = uniqueMatters.find((item) => item.transactionId === appointment.transaction_id)
+      return {
+        id: appointment.appointment_id,
+        dateTime: getAppointmentDateTime(appointment),
+        type: formatAppointmentType(appointment.appointment_type || appointment.title),
+        matterReference: getMatterReference(matter?.transaction || {}, appointment.transaction_id),
+        duration: getAppointmentDuration(appointment),
+        status: appointment.status || '',
+      }
+    })
+    .sort((left, right) => new Date(left.dateTime || 0).getTime() - new Date(right.dateTime || 0).getTime())
+    .slice(0, 5)
   const financialSnapshot = getFinancialSnapshot()
   const matterLanes = buildOperationalMatterLanes({
     matterRoleSummaries: scopedMatterRoleSummaries,
@@ -972,6 +1051,7 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     mattersRequiringAttention,
     recentActivity: getRecentAttorneyActivity({ rows: recentActivity }),
     upcomingKeyDates,
+    todayCalendar,
     financialSnapshot,
     matterLanes,
     businessIntelligence,

@@ -8,7 +8,7 @@ import {
 } from './api'
 import { resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
 import { DEMO_PROFILE_ID } from './demoIds'
-import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from './organisationAccess'
+import { normalizeOrganisationMembershipRole } from './organisationAccess'
 import { normalizeAppRole } from './roles'
 import {
   BRANDING_BUCKET_CANDIDATES,
@@ -34,6 +34,11 @@ import {
   getEmailTemplateSettingsFromOrganisationSettings,
   sanitizeEmailTemplateSettings,
 } from './emailTemplateSettings'
+import { assertPermission } from '../auth/permissions/permissionResolver'
+import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
+import { recordSecurityAuditEvent } from '../services/auditLogService'
+import { completeOnboarding } from '../services/onboarding/onboardingEngine'
+import { assertMembershipStatusTransition } from '../services/transitions/stateTransitionEngine'
 
 const DEFAULT_NOTIFICATION_PREFERENCES = {
   emailMentions: true,
@@ -300,23 +305,27 @@ function resolveInviteExpiryIso(days = 7) {
   return new Date(expires).toISOString()
 }
 
-function mapMembershipRoleToAppRole(value) {
-  const membershipRole = normalizeOrganisationMembershipRole(value)
-  if (membershipRole === 'attorney') return 'attorney'
-  if (membershipRole === 'bond_originator') return 'bond_originator'
-  if (membershipRole === 'developer') return 'developer'
-  if (membershipRole === 'viewer') return 'viewer'
-  return 'agent'
-}
-
 function assertOrganisationAdminAccess(context, actionLabel = 'perform this action') {
-  const hasAccess = canManageOrganisationSettings({
+  const action = normalizeText(actionLabel).toLowerCase()
+  const requiredPermission = action.includes('member') || action.includes('user')
+    ? PERMISSIONS.manageUsers
+    : PERMISSIONS.manageWorkspaceSettings
+  assertPermission(requiredPermission, {
+    profile: context?.profile,
     appRole: context?.profile?.role,
-    membershipRole: normalizeOrganisationMembershipRole(context?.membershipRole),
-  })
-  if (!hasAccess) {
-    throw new Error(`Only Principal or Super Admin roles can ${actionLabel}.`)
-  }
+    organisationRole: context?.membershipRole,
+    membershipStatus: context?.membershipStatus,
+    currentMembership: {
+      id: context?.membershipId || context?.organisation?.id || 'current-membership',
+      role: normalizeOrganisationMembershipRole(context?.membershipRole),
+      status: context?.membershipStatus || 'active',
+      workspaceType: context?.organisation?.type || '',
+      workspaceId: context?.organisation?.id || '',
+      workspace: context?.organisation?.id ? { id: context.organisation.id, type: context?.organisation?.type || '' } : null,
+    },
+    currentWorkspace: context?.organisation?.id ? { id: context.organisation.id, type: context?.organisation?.type || '' } : null,
+    workspaceType: context?.organisation?.type || '',
+  }, `You do not have permission to ${actionLabel}.`)
 }
 
 function isGenericDocumentLabel(value) {
@@ -1262,16 +1271,14 @@ async function activatePendingInviteMembership(client, { userId, inviteRowId }) 
 }
 
 async function syncProfileRoleFromMembership({ userId, profile, membershipRole }) {
-  const mappedRole = mapMembershipRoleToAppRole(membershipRole)
-  const currentRole = normalizeAppRole(profile?.role)
-  if (!userId || mappedRole === currentRole) {
-    return profile
+  if (userId && membershipRole) {
+    console.warn('[AUTH] legacy role sync skipped: membership.role must not overwrite profiles.role', {
+      userId,
+      membershipRole,
+      profileRole: profile?.role || null,
+    })
   }
-
-  return updateUserProfile({
-    userId,
-    role: mappedRole,
-  })
+  return profile
 }
 
 async function ensureOrganisationContext(client) {
@@ -1367,8 +1374,9 @@ async function ensureOrganisationContext(client) {
       }
     }
 
-    const canAutoCreateOrganisation =
-      !membership && ['developer', 'principal', 'admin', 'super_admin'].includes(normalizeAppRole(profile?.role))
+    // Phase 1 auth foundation rule: organisation lookup must not create workspaces.
+    // Workspace creation remains an explicit onboarding/setup action.
+    const canAutoCreateOrganisation = false
 
     if (!organisation && canAutoCreateOrganisation) {
       console.debug('[ONBOARDING] org:auto-create:start', { userId: user.id })
@@ -2189,19 +2197,24 @@ export async function completeAgencyOnboarding(input = {}) {
     }
   }
 
-  await updateUserProfile({
+  await completeOnboarding({
     userId: user.id,
-    firstName: principalFirstName,
-    lastName: principalLastName,
-    companyName: mergedDraft?.agencyInformation?.agencyName || context.profile?.companyName || '',
-    phoneNumber: mergedDraft?.principalInformation?.phoneNumber || context.profile?.phoneNumber || '',
-    role: 'agent',
-    onboardingCompleted: true,
+    user,
+    appRole: 'agent',
+    workspaceType: 'agency',
+    workspaceId: organisationId,
+    profilePatch: {
+      first_name: principalFirstName || undefined,
+      last_name: principalLastName || undefined,
+      company_name: mergedDraft?.agencyInformation?.agencyName || context.profile?.companyName || undefined,
+      phone_number: mergedDraft?.principalInformation?.phoneNumber || context.profile?.phoneNumber || undefined,
+    },
+    context: { source: 'legacy_agency_onboarding_complete' },
   })
   console.debug('[PROFILE] write:agency-onboarding-complete', {
     userId: user.id,
     role: 'agent',
-    onboardingCompleted: true,
+    completedViaEngine: true,
   })
 
   return {
@@ -2273,6 +2286,14 @@ export async function updateOrganisationSettings(input = {}) {
     throw error
   }
 
+  void recordSecurityAuditEvent({
+    userId: context.profile?.id,
+    workspaceId: context.organisation.id,
+    action: 'workspace_settings_updated',
+    targetType: 'organisation',
+    targetId: context.organisation.id,
+    metadata: { fields: Object.keys(input || {}) },
+  })
   clearOrganisationRuntimeCache()
   return {
     ...context,
@@ -2324,6 +2345,13 @@ export async function updateWorkflowSettings(input = {}) {
     throw error
   }
 
+  void recordSecurityAuditEvent({
+    userId: context.profile?.id,
+    workspaceId: context.organisation.id,
+    action: 'workflow_settings_updated',
+    targetType: 'organisation_settings',
+    targetId: context.organisation.id,
+  })
   clearOrganisationRuntimeCache()
   return {
     membershipRole: context.membershipRole,
@@ -2377,6 +2405,13 @@ export async function updateEmailTemplateSettings(input = {}) {
     throw error
   }
 
+  void recordSecurityAuditEvent({
+    userId: context.profile?.id,
+    workspaceId: context.organisation.id,
+    action: 'email_template_settings_updated',
+    targetType: 'organisation_settings',
+    targetId: context.organisation.id,
+  })
   clearOrganisationRuntimeCache()
   return {
     membershipRole: context.membershipRole,
@@ -3434,6 +3469,14 @@ export async function inviteOrganisationUser(input = {}) {
     throw error
   }
 
+  void recordSecurityAuditEvent({
+    userId: context.profile?.id,
+    workspaceId: context.organisation.id,
+    action: 'invite_sent',
+    targetType: 'organisation_user',
+    targetId: data?.id,
+    metadata: { email: payload.email, role: payload.role },
+  })
   organisationUsersCache = null
   return normalizeOrganisationUserRow(data)
 }
@@ -3455,6 +3498,14 @@ export async function updateOrganisationUserRole(userRowId, role) {
     throw error
   }
 
+  void recordSecurityAuditEvent({
+    userId: context.profile?.id,
+    workspaceId: context.organisation.id,
+    action: 'role_changed',
+    targetType: 'organisation_user',
+    targetId: userRowId,
+    metadata: { role: normalizeOrganisationUserRole(role, 'viewer') },
+  })
   organisationUsersCache = null
   return normalizeOrganisationUserRow(data)
 }
@@ -3463,6 +3514,15 @@ export async function deactivateOrganisationUser(userRowId) {
   const client = requireClient()
   const context = await ensureOrganisationContext(client)
   assertOrganisationAdminAccess(context, 'manage organisation members')
+
+  const existing = await client
+    .from('organisation_users')
+    .select('id, status')
+    .eq('id', userRowId)
+    .eq('organisation_id', context.organisation.id)
+    .maybeSingle()
+  if (existing.error) throw existing.error
+  assertMembershipStatusTransition(existing.data?.status, 'deactivated')
 
   const { data, error } = await client
     .from('organisation_users')
@@ -3476,6 +3536,13 @@ export async function deactivateOrganisationUser(userRowId) {
     throw error
   }
 
+  void recordSecurityAuditEvent({
+    userId: context.profile?.id,
+    workspaceId: context.organisation.id,
+    action: 'membership_deactivated',
+    targetType: 'organisation_user',
+    targetId: userRowId,
+  })
   organisationUsersCache = null
   return normalizeOrganisationUserRow(data)
 }
@@ -3610,21 +3677,28 @@ export async function completeInvitedMemberOnboarding(input = {}) {
 
   const firstName = normalizeText(input.firstName || invite.firstName)
   const lastName = normalizeText(input.lastName || invite.lastName)
-  const appRole = mapMembershipRoleToAppRole(claimedRow?.role || invite.role)
-  const updatedProfile = await updateUserProfile({
+  const existingProfile = await getOrCreateUserProfile({ user })
+  const existingAppRole = normalizeAppRole(existingProfile?.role)
+  const appRole = normalizeAppRole(input.appRole || (existingAppRole === 'viewer' ? 'agent' : existingAppRole) || 'agent')
+  const completion = await completeOnboarding({
     userId: user.id,
-    firstName,
-    lastName,
-    phoneNumber: normalizeText(input.phoneNumber || ''),
-    role: appRole,
-    onboardingCompleted: true,
+    user,
+    appRole,
+    workspaceType: 'agency',
+    workspaceId: claimedRow?.organisation_id || invite.organisationId,
+    profilePatch: {
+      first_name: firstName || undefined,
+      last_name: lastName || undefined,
+      phone_number: normalizeText(input.phoneNumber || '') || undefined,
+    },
+    context: { source: 'legacy_org_invite_acceptance', inviteId: invite.id },
   })
 
   return {
     ok: true,
     organisationId: claimedRow?.organisation_id || invite.organisationId,
     role: appRole,
-    profile: updatedProfile,
+    profile: completion.profile,
   }
 }
 

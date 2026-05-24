@@ -28,6 +28,7 @@ import {
   isValidWebsite,
 } from './attorneyFirmServiceShared'
 import { inviteAttorneyFirmMember } from './attorneyFirmInvitations'
+import { completeOnboarding } from './onboarding/onboardingEngine'
 
 const ATTORNEY_FIRM_SELECT_COLUMNS =
   'id, name, registration_number, vat_number, website, email, phone, address_line_1, address_line_2, city, province, postal_code, country, logo_url, primary_colour, secondary_colour, created_by, created_at, updated_at, is_active'
@@ -556,7 +557,6 @@ export async function createAttorneyFirm(payload = {}) {
     .update({
       primary_attorney_firm_id: firm.id,
       attorney_role: 'firm_admin',
-      onboarding_completed: true,
       updated_at: nowIso,
     })
     .eq('id', user.id)
@@ -573,14 +573,24 @@ export async function createAttorneyFirm(payload = {}) {
     const fallbackProfileResult = await client
       .from('profiles')
       .update({
-        onboarding_completed: true,
         updated_at: nowIso,
       })
       .eq('id', user.id)
 
-    if (fallbackProfileResult.error && !isMissingColumnError(fallbackProfileResult.error, 'onboarding_completed')) {
+    if (fallbackProfileResult.error) {
       throw fallbackProfileResult.error
     }
+  }
+
+  if (!payload.skipOnboardingCompletion) {
+    await completeOnboarding({
+      userId: user.id,
+      user,
+      appRole: 'attorney',
+      workspaceType: 'attorney_firm',
+      workspaceId: firm.id,
+      context: { source: 'attorney_firm_create' },
+    })
   }
 
   return mapFirmRow(firm)

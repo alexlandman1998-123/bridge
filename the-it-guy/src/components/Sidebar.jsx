@@ -26,6 +26,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { getRoleNavItems } from '../lib/roles'
 import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import { fetchAgencyOnboardingSettings, fetchOrganisationSettings } from '../lib/settingsApi'
+import { filterNavigationItems } from '../auth/permissions/permissionResolver'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 
 const ICON_BY_KEY = {
@@ -63,7 +64,10 @@ const ICON_BY_KEY = {
   attorney_matters_transfer: SwitchCamera,
   attorney_matters_bond: FileCheck2,
   attorney_matters_cancellation: AlertTriangle,
+  attorney_matters_registered: FileCheck2,
+  attorney_matters_archived: Files,
   attorney_workflow_board: KanbanSquare,
+  scheduling: CalendarDays,
   team_departments: ShieldUser,
   buyer_information: FileCheck2,
   handover: KeyRound,
@@ -92,6 +96,7 @@ const ICON_BY_KEY = {
   agent_intelligence_pipeline: KanbanSquare,
   agent_intelligence_performance: BriefcaseBusiness,
   agent_intelligence_network: Users,
+  platform_diagnostics: ShieldUser,
 }
 
 const BRANDING_REFRESH_EVENT = 'itg:organisation-branding-updated'
@@ -213,15 +218,16 @@ function preloadBrandLogo(logoUrl) {
 }
 
 function Sidebar() {
-  const { workspace, setWorkspace, allWorkspace, role, baseRole, profile } = useWorkspace()
+  const workspaceContext = useWorkspace()
+  const { workspace, setWorkspace, allWorkspace, role, baseRole, profile } = workspaceContext
   const location = useLocation()
   const navigate = useNavigate()
   const [membershipRole, setMembershipRole] = useState('viewer')
   const brandingOwnerKey = getSidebarBrandingOwner(profile)
   const cachedSidebarBranding = useMemo(() => readCachedSidebarBranding(brandingOwnerKey), [brandingOwnerKey])
   const roleNavItems = useMemo(
-    () => getRoleNavItems(role, { baseRole, profile, membershipRole }),
-    [baseRole, membershipRole, profile, role],
+    () => filterNavigationItems(getRoleNavItems(role, { baseRole, profile, membershipRole }), workspaceContext),
+    [baseRole, membershipRole, profile, role, workspaceContext],
   )
   const isIntelligencePath =
     location.pathname.startsWith('/attorney/intelligence') ||
@@ -233,7 +239,7 @@ function Sidebar() {
   const [sidebarBranding, setSidebarBranding] = useState(() => cachedSidebarBranding || EMPTY_SIDEBAR_BRANDING)
   const [brandingResolved, setBrandingResolved] = useState(() => Boolean(cachedSidebarBranding?.logoUrl))
   const [logoLoadFailed, setLogoLoadFailed] = useState(false)
-  const secondaryItems =
+  const secondaryItems = filterNavigationItems(
     role === 'developer'
       ? [{ key: 'team', label: 'Team', to: '/team' }, { key: 'settings', label: 'Settings', to: '/settings' }]
       : role === 'attorney'
@@ -242,7 +248,72 @@ function Sidebar() {
           ? [{ key: 'settings', label: 'Settings', to: '/settings' }]
         : role === 'client'
           ? [{ key: 'settings', label: 'Settings', to: '/settings' }]
-          : [{ key: 'settings', label: 'Settings', to: '/settings' }]
+          : [{ key: 'settings', label: 'Settings', to: '/settings' }],
+    workspaceContext,
+  )
+  const attorneySecondaryKeys = new Set(['financials', 'team_departments', 'reports'])
+  const primaryNavItems = role === 'attorney'
+    ? roleNavItems.filter((item) => !attorneySecondaryKeys.has(item.key))
+    : roleNavItems
+  const firmNavItems = role === 'attorney'
+    ? [...roleNavItems.filter((item) => attorneySecondaryKeys.has(item.key)), ...secondaryItems]
+    : secondaryItems
+
+  const renderNavItem = (item, { child = false } = {}) => {
+    const Icon = ICON_BY_KEY[item.key] || LayoutDashboard
+    const hasChildren = Array.isArray(item.children) && item.children.length > 0
+    const isParentActive = hasChildren ? isParentNavActive(item, location.pathname) : false
+    const menuExpanded = Boolean(expandedMenus[item.key] ?? isParentActive)
+
+    if (!hasChildren) {
+      const matchesCustomActive = Array.isArray(item.activeMatch)
+        ? item.activeMatch.some(
+            (path) => location.pathname === path || location.pathname.startsWith(`${path}/`),
+          )
+        : false
+      return (
+        <NavLink
+          key={item.label}
+          to={item.to}
+          end={item.to === '/dashboard'}
+          className={({ isActive }) =>
+            `ui-sidebar-link ${child ? 'ui-sidebar-link-child' : ''} ${isActive || matchesCustomActive ? 'ui-sidebar-link-active' : ''}`.trim()
+          }
+        >
+          <Icon size={child ? 13 : 15} />
+          <span>{item.label}</span>
+        </NavLink>
+      )
+    }
+
+    return (
+      <div key={item.label} className="space-y-1">
+        <button
+          type="button"
+          onClick={() =>
+            setExpandedMenus((previous) => ({
+              ...previous,
+              [item.key]: !(previous[item.key] ?? isParentActive),
+            }))
+          }
+          className={`ui-sidebar-link w-full justify-between ${menuExpanded ? 'ui-sidebar-link-open' : ''}`.trim()}
+          aria-expanded={menuExpanded}
+        >
+          <span className="inline-flex items-center gap-2.5">
+            <Icon size={15} />
+            <span>{item.label}</span>
+          </span>
+          <ChevronDown size={14} className={`transition ${menuExpanded ? 'rotate-180' : ''}`} />
+        </button>
+
+        {menuExpanded ? (
+          <div className="space-y-1 pl-3">
+            {item.children.map((childItem) => renderNavItem(childItem, { child: true }))}
+          </div>
+        ) : null}
+      </div>
+    )
+  }
 
   const loadSidebarBranding = useCallback(async () => {
     const [settingsResult, contextResult] = await Promise.allSettled([fetchAgencyOnboardingSettings(), fetchOrganisationSettings()])
@@ -386,97 +457,16 @@ function Sidebar() {
 
       <div className="ui-sidebar-nav-scroll" aria-label="Primary Navigation">
         <nav className={`ui-nav-stack ${role === 'client' ? 'mt-3' : 'mt-2.5'}`}>
-          {roleNavItems.map((item) => {
-            const Icon = ICON_BY_KEY[item.key] || LayoutDashboard
-            const hasChildren = Array.isArray(item.children) && item.children.length > 0
-            const isParentActive = hasChildren ? isParentNavActive(item, location.pathname) : false
-            const menuExpanded = Boolean(expandedMenus[item.key] ?? isParentActive)
-
-            if (!hasChildren) {
-              const matchesCustomActive = Array.isArray(item.activeMatch)
-                ? item.activeMatch.some(
-                    (path) => location.pathname === path || location.pathname.startsWith(`${path}/`),
-                  )
-                : false
-              return (
-                <NavLink
-                  key={item.label}
-                  to={item.to}
-                  end={item.to === '/dashboard'}
-                  className={({ isActive }) =>
-                    `ui-sidebar-link ${isActive || matchesCustomActive ? 'ui-sidebar-link-active' : ''}`.trim()
-                  }
-                >
-                  <Icon size={15} />
-                  <span>{item.label}</span>
-                </NavLink>
-              )
-            }
-
-            return (
-              <div key={item.label} className="space-y-1">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setExpandedMenus((previous) => ({
-                      ...previous,
-                      [item.key]: !(previous[item.key] ?? isParentActive),
-                    }))
-                  }
-                  className={`ui-sidebar-link w-full justify-between ${menuExpanded ? 'ui-sidebar-link-open' : ''}`.trim()}
-                  aria-expanded={menuExpanded}
-                >
-                  <span className="inline-flex items-center gap-2.5">
-                    <Icon size={15} />
-                    <span>{item.label}</span>
-                  </span>
-                  <ChevronDown size={14} className={`transition ${menuExpanded ? 'rotate-180' : ''}`} />
-                </button>
-
-                {menuExpanded ? (
-                  <div className="space-y-1 pl-3">
-                    {item.children.map((child) => {
-                      const ChildIcon = ICON_BY_KEY[child.key] || LayoutDashboard
-                      return (
-                        <NavLink
-                          key={child.label}
-                          to={child.to}
-                          className={({ isActive }) =>
-                            `ui-sidebar-link py-2.5 text-[0.86rem] ${isActive ? 'ui-sidebar-link-active' : ''}`.trim()
-                          }
-                        >
-                          <ChildIcon size={14} />
-                          <span>{child.label}</span>
-                        </NavLink>
-                      )
-                    })}
-                  </div>
-                ) : null}
-              </div>
-            )
-          })}
+          {role === 'attorney' ? <p className="ui-sidebar-section-label px-3 pt-2">Primary</p> : null}
+          {primaryNavItems.map((item) => renderNavItem(item))}
         </nav>
       </div>
 
-      {secondaryItems.length ? <div className="ui-sidebar-divider" /> : null}
+      {firmNavItems.length ? <div className="ui-sidebar-divider" /> : null}
 
       <nav className="ui-nav-stack ui-sidebar-secondary" aria-label="Secondary Navigation">
-        {secondaryItems.map((item) => {
-          const Icon = ICON_BY_KEY[item.key] || Settings
-
-          return (
-            <NavLink
-              key={item.label}
-              to={item.to}
-              className={({ isActive }) =>
-                `ui-sidebar-link ${isActive ? 'ui-sidebar-link-active' : ''}`.trim()
-              }
-            >
-              <Icon size={15} />
-              <span>{item.label}</span>
-            </NavLink>
-          )
-        })}
+        {role === 'attorney' ? <p className="ui-sidebar-section-label px-3">Firm</p> : null}
+        {firmNavItems.map((item) => renderNavItem(item))}
       </nav>
     </aside>
   )

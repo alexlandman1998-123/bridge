@@ -649,9 +649,9 @@ function isMissingColumnError(error, columnName) {
 
 const knownMissingSchemaColumns = new Set()
 const TRANSACTION_SUMMARY_SELECT_CLAUSE =
-  'id, organisation_id, assigned_branch_id, lifecycle_state, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, updated_at, created_at, is_active'
+  'id, organisation_id, assigned_branch_id, lifecycle_state, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, updated_at, created_at, is_active'
 const TRANSACTION_SUMMARY_FALLBACK_SELECT_CLAUSE =
-  'id, development_id, unit_id, buyer_id, finance_type, purchaser_type, stage, attorney, bond_originator, next_action, updated_at, created_at, is_active'
+  'id, development_id, unit_id, buyer_id, transaction_reference, finance_type, purchaser_type, stage, attorney, bond_originator, next_action, updated_at, created_at, is_active'
 
 function registerKnownMissingColumns(error, columnNames = []) {
   if (!error) {
@@ -11194,7 +11194,10 @@ export async function getFinalReportData(transactionId) {
     transactionId,
     lifecycleState,
     transaction: {
-      reference: detail.transaction.transaction_reference || `TRX-${String(detail.transaction.id || '').slice(0, 8).toUpperCase()}`,
+      reference:
+        detail.transaction.matter_number ||
+        detail.transaction.transaction_reference ||
+        `MAT-${String(detail.transaction.id || '').slice(0, 8).toUpperCase()}`,
       stage: detail.transaction.stage || null,
       currentMainStage: detail.transaction.current_main_stage || null,
       nextAction: detail.transaction.next_action || null,
@@ -11928,7 +11931,7 @@ async function fetchTransactionRowById(client, transactionId) {
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+        'id, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
       ),
     )
     .eq('id', transactionId)
@@ -11937,6 +11940,7 @@ async function fetchTransactionRowById(client, transactionId) {
   if (
     query.error &&
     (isMissingColumnError(query.error, 'transaction_reference') ||
+      isMissingColumnError(query.error, 'matter_number') ||
       isMissingColumnError(query.error, 'transaction_type') ||
       isMissingColumnError(query.error, 'property_type') ||
       isMissingColumnError(query.error, 'property_address_line_1') ||
@@ -11979,6 +11983,7 @@ async function fetchTransactionRowById(client, transactionId) {
       isMissingColumnError(query.error, 'title_deed_number'))
   ) {
     registerKnownMissingColumns(query.error, [
+      'matter_number',
       'transaction_reference',
       'transaction_type',
       'property_type',
@@ -18005,7 +18010,7 @@ async function fetchStandaloneTransactionRows(client, { developmentId = null, ex
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, purchase_price, finance_type, purchaser_type, finance_managed_by, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+        'id, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, purchase_price, finance_type, purchaser_type, finance_managed_by, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
       ),
     )
 
@@ -18018,6 +18023,7 @@ async function fetchStandaloneTransactionRows(client, { developmentId = null, ex
   if (
     query.error &&
     (isMissingColumnError(query.error, 'transaction_type') ||
+      isMissingColumnError(query.error, 'matter_number') ||
       isMissingColumnError(query.error, 'property_type') ||
       isMissingColumnError(query.error, 'property_address_line_1') ||
       isMissingColumnError(query.error, 'lifecycle_state') ||
@@ -19648,6 +19654,7 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
 
   if (transactionsQuery.error && isMissingColumnError(transactionsQuery.error)) {
     registerKnownMissingColumns(transactionsQuery.error, [
+      'matter_number',
       'transaction_reference',
       'transaction_type',
       'property_type',
@@ -19814,6 +19821,7 @@ export async function fetchTransactionsListSummary({
   let query = baseResult
   if (query.error && isMissingColumnError(query.error)) {
     registerKnownMissingColumns(query.error, [
+      'matter_number',
       'transaction_reference',
       'transaction_type',
       'property_type',

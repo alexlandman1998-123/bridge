@@ -8,6 +8,27 @@ function asBoolean(value, fallback = false) {
   return ['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)
 }
 
+export function getUnsafeEnvironmentFlags() {
+  return {
+    enableDemoMode: asBoolean(import.meta.env.VITE_ENABLE_DEMO_MODE, false),
+    enableLocalFallbacks: asBoolean(import.meta.env.VITE_ENABLE_LOCAL_FALLBACKS, false),
+    enableDevAuthBypass: asBoolean(import.meta.env.VITE_ENABLE_DEV_AUTH_BYPASS, false),
+    enableMockData: asBoolean(import.meta.env.VITE_ENABLE_MOCK_DATA, false),
+    disableRoleRestrictions: asBoolean(import.meta.env.VITE_FEATURE_DISABLE_ROLE_RESTRICTIONS, false),
+  }
+}
+
+export function getProductionSafetyViolation() {
+  if (!import.meta.env.PROD) return ''
+  const unsafeFlags = getUnsafeEnvironmentFlags()
+  const enabled = Object.entries(unsafeFlags)
+    .filter(([, value]) => Boolean(value))
+    .map(([key]) => key)
+
+  if (!enabled.length) return ''
+  return `Unsafe production flags are enabled: ${enabled.join(', ')}. Disable all demo, fallback, bypass, mock-data, and permission-bypass flags.`
+}
+
 function buildMissingMessage(vars = []) {
   if (!vars.length) return ''
   return `Missing required environment variables: ${vars.join(', ')}`
@@ -31,6 +52,7 @@ export function getRuntimeEnvValidation() {
 }
 
 export function getFeatureFlags() {
+  const unsafeFlags = getUnsafeEnvironmentFlags()
   return {
     enableClientPortalAlterations: asBoolean(import.meta.env.VITE_FEATURE_CLIENT_PORTAL_ALTERATIONS, true),
     enableServiceReviews: asBoolean(import.meta.env.VITE_FEATURE_SERVICE_REVIEWS, true),
@@ -41,6 +63,6 @@ export function getFeatureFlags() {
     enableInviteOnboarding: asBoolean(import.meta.env.VITE_FEATURE_INVITE_ONBOARDING, true),
     enableNativeMandateRenderer: asBoolean(import.meta.env.VITE_FEATURE_NATIVE_MANDATE_RENDERER, false),
     enableNativeOtpRenderer: asBoolean(import.meta.env.VITE_FEATURE_NATIVE_OTP_RENDERER, false),
-    disableRoleRestrictions: asBoolean(import.meta.env.VITE_FEATURE_DISABLE_ROLE_RESTRICTIONS, true),
+    disableRoleRestrictions: unsafeFlags.disableRoleRestrictions,
   }
 }

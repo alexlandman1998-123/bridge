@@ -1,5 +1,6 @@
 import { useWorkspace } from '../context/WorkspaceContext'
 import { canUser, resolveCapabilityDenialMessage } from '../lib/permissionGate'
+import AccessState from './access/AccessState'
 
 export default function PermissionGate({
   capability = '',
@@ -10,16 +11,19 @@ export default function PermissionGate({
   fallback = null,
   children,
 }) {
-  const { role, profile } = useWorkspace()
+  const { role, profile, currentMembership, currentWorkspace, workspaceType } = useWorkspace()
 
   const allowed = canUser({
     capability,
     appRole: role,
-    organisationRole,
+    organisationRole: organisationRole || currentMembership?.role || currentMembership?.rawRole || '',
     transactionRole,
     assignedUserIds,
     userId: profile?.id || '',
     isSuperAdmin,
+    currentMembership,
+    currentWorkspace,
+    workspaceType,
   })
 
   if (allowed) {
@@ -30,12 +34,5 @@ export default function PermissionGate({
     return fallback
   }
 
-  return (
-    <section className="auth-loading-screen">
-      <div className="auth-loading-card">
-        <h2>Access restricted</h2>
-        <p>{resolveCapabilityDenialMessage(capability)}</p>
-      </div>
-    </section>
-  )
+  return <AccessState type="permission_required" description={resolveCapabilityDenialMessage(capability)} />
 }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
-import { canManageOrganisationMembers, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { PERMISSIONS } from '../../auth/permissions/permissionRegistry'
 import {
   assignOrganisationUserCommissionProfile,
   deactivateOrganisationUser,
@@ -37,12 +37,9 @@ const ROLE_OPTIONS = [
 ]
 
 export default function SettingsUsersPage() {
-  const { role } = useWorkspace()
-  const [membershipRole, setMembershipRole] = useState('viewer')
-  const canEdit = canManageOrganisationMembers({
-    appRole: role,
-    membershipRole: normalizeOrganisationMembershipRole(membershipRole),
-  })
+  const { can } = useWorkspace()
+  const [, setMembershipRole] = useState('viewer')
+  const canEdit = can(PERMISSIONS.manageUsers)
   const [users, setUsers] = useState([])
   const [commissionStructures, setCommissionStructures] = useState([])
   const [commissionProfiles, setCommissionProfiles] = useState([])
@@ -124,6 +121,7 @@ export default function SettingsUsersPage() {
   }
 
   async function handleRoleChange(userRowId, nextRole) {
+    if (!canEdit) return
     try {
       setError('')
       await updateOrganisationUserRole(userRowId, nextRole)
@@ -134,6 +132,7 @@ export default function SettingsUsersPage() {
   }
 
   async function handleDeactivate(userRowId) {
+    if (!canEdit) return
     try {
       setError('')
       await deactivateOrganisationUser(userRowId)
@@ -144,6 +143,7 @@ export default function SettingsUsersPage() {
   }
 
   async function handleCommissionStructureChange(userRow, structureId) {
+    if (!canEdit) return
     try {
       setError('')
       await assignOrganisationUserCommissionProfile({

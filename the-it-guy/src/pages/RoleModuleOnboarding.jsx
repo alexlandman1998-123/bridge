@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { recordAuditEvent } from '../lib/activityAudit'
 import { APP_ROLE_LABELS, normalizeAppRole } from '../lib/roles'
+import { resolveSignupIntentRoute } from '../lib/signupIntent'
+import { completeOnboarding } from '../services/onboarding/onboardingEngine'
 
 const ROLE_COPY = {
   agent: {
@@ -21,7 +24,8 @@ const ROLE_COPY = {
 
 function RoleModuleOnboarding({ expectedRole }) {
   const navigate = useNavigate()
-  const { profile, saveProfileDraft } = useWorkspace()
+  const { authState, refreshAuthState } = useAuthSession()
+  const { profile, signupIntent, currentMembership, currentWorkspace, workspaceType, activeMemberships } = useWorkspace()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const normalizedRole = normalizeAppRole(expectedRole || profile?.role || '')
@@ -39,10 +43,19 @@ function RoleModuleOnboarding({ expectedRole }) {
         role: normalizedRole,
         profileId: profile?.id || null,
       })
-      await saveProfileDraft({
-        role: normalizedRole,
-        onboardingCompleted: true,
+      if (normalizedRole !== 'client' && !currentMembership?.id && !activeMemberships.length) {
+        throw new Error('Workspace setup is required before onboarding can be completed.')
+      }
+      await completeOnboarding({
+        userId: authState.user?.id,
+        user: authState.user,
+        intent: signupIntent,
+        appRole: normalizedRole,
+        workspaceType,
+        workspaceId: currentWorkspace?.id || currentMembership?.workspaceId,
+        context: { source: 'role_module_onboarding' },
       })
+      refreshAuthState?.()
       recordAuditEvent('onboarding_completed', {
         role: normalizedRole,
         profileId: profile?.id || null,
@@ -58,11 +71,22 @@ function RoleModuleOnboarding({ expectedRole }) {
   }
 
   useEffect(() => {
+    if (signupIntent) {
+      const route = resolveSignupIntentRoute(signupIntent)
+      if (route) {
+        navigate(route, { replace: true })
+      }
+      return
+    }
+    if (!currentMembership?.id && !activeMemberships.length) {
+      navigate('/setup', { replace: true })
+      return
+    }
     if (activeRole && activeRole !== normalizedRole) {
       console.debug('[REDIRECT] role-module:mismatch', { activeRole, normalizedRole, target: '/onboarding/profile' })
       navigate('/onboarding/profile', { replace: true })
     }
-  }, [activeRole, navigate, normalizedRole])
+  }, [activeMemberships.length, activeRole, currentMembership?.id, navigate, normalizedRole, signupIntent])
 
   return (
     <div className="auth-page onboarding-page agency-onboarding-page">
@@ -90,14 +114,6 @@ function RoleModuleOnboarding({ expectedRole }) {
               disabled={saving}
             >
               Back to Profile Setup
-            </button>
-            <button
-              type="button"
-              className="auth-secondary-cta"
-              onClick={() => navigate('/dashboard', { replace: true })}
-              disabled={saving}
-            >
-              Continue Anyway
             </button>
           </div>
         </section>

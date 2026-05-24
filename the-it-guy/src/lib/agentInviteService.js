@@ -1,4 +1,5 @@
 import { generateId } from './agentListingStorage'
+import { getUnsafeEnvironmentFlags } from './envValidation'
 
 const KEY_AGENT_DIRECTORY = 'itg:agent-directory:v1'
 const KEY_AGENT_INVITES = 'itg:agent-invites:v1'
@@ -37,6 +38,10 @@ function readJson(key, fallback) {
 
 function writeJson(key, value) {
   if (typeof window === 'undefined') return
+  const flags = getUnsafeEnvironmentFlags()
+  if (import.meta.env.PROD || !flags.enableLocalFallbacks) {
+    throw new Error('Local invite storage is disabled. Use backend workspace invites for production onboarding.')
+  }
   window.localStorage.setItem(key, JSON.stringify(value))
 }
 

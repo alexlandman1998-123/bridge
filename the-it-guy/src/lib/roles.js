@@ -1,8 +1,14 @@
 import { SHOW_INTELLIGENCE_BETA } from './featureFlags'
+import {
+  DEFAULT_APP_ROLE,
+  TRANSITIONAL_APP_ROLE_VALUES,
+  normalizeCanonicalAppRole,
+} from '../constants/appRoles'
 
-export const APP_ROLES = ['developer', 'agent', 'attorney', 'bond_originator', 'client', 'viewer']
-export const INTERNAL_APP_ROLES = ['developer', 'agent', 'attorney', 'bond_originator', 'client', 'viewer']
-export const DEFAULT_APP_ROLE = 'viewer'
+export { DEFAULT_APP_ROLE }
+
+export const APP_ROLES = TRANSITIONAL_APP_ROLE_VALUES
+export const INTERNAL_APP_ROLES = TRANSITIONAL_APP_ROLE_VALUES
 
 export const APP_ROLE_LABELS = {
   developer: 'Developer',
@@ -10,6 +16,7 @@ export const APP_ROLE_LABELS = {
   attorney: 'Attorney / Conveyancer',
   bond_originator: 'Bond Originator',
   client: 'Client / Buyer',
+  platform_admin: 'Platform Admin',
   viewer: 'Viewer',
 }
 
@@ -33,6 +40,10 @@ export const APP_ROLE_MODULE_COPY = {
   viewer: {
     title: 'Workspace Access Pending',
     subtitle: 'Waiting for membership activation',
+  },
+  platform_admin: {
+    title: 'Platform Admin',
+    subtitle: 'Bridge administration',
   },
 }
 
@@ -125,15 +136,17 @@ export const APP_NAV_BY_ROLE = {
         { key: 'attorney_matters_transfer', label: 'Transfer Matters', to: '/attorney/matters/transfer' },
         { key: 'attorney_matters_bond', label: 'Bond Matters', to: '/attorney/matters/bond' },
         { key: 'attorney_matters_cancellation', label: 'Cancellation Matters', to: '/attorney/matters/cancellation' },
+        { key: 'attorney_matters_registered', label: 'Registered Matters', to: '/attorney/matters/registered' },
+        { key: 'attorney_matters_archived', label: 'Archived Matters', to: '/attorney/matters/archived' },
       ],
     },
-    { key: 'attorney_workflow_board', label: 'Workflow Board', to: '/attorney/operations' },
-    { key: 'scheduling', label: 'Calendar & Scheduling', to: '/attorney/scheduling' },
-    { key: 'documents', label: 'Documents', to: '/documents' },
+    { key: 'attorney_workflow_board', label: 'Workflow', to: '/attorney/operations' },
+    { key: 'scheduling', label: 'Calendar', to: '/attorney/scheduling' },
     { key: 'clients', label: 'Clients & Parties', to: '/clients' },
-    { key: 'financials', label: 'Financials', to: '/financials' },
-    { key: 'team_departments', label: 'Team & Departments', to: '/users' },
-    { key: 'reports', label: 'Reports & Analytics', to: '/reports' },
+    { key: 'documents', label: 'Documents', to: '/documents' },
+    { key: 'financials', label: 'Finance', to: '/financials' },
+    { key: 'team_departments', label: 'Team', to: '/users' },
+    { key: 'reports', label: 'Reports', to: '/reports' },
     ...(SHOW_INTELLIGENCE_BETA
       ? [
           {
@@ -171,14 +184,16 @@ export const APP_NAV_BY_ROLE = {
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
     { key: 'settings', label: 'Settings', to: '/settings' },
   ],
+  platform_admin: [
+    { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
+    { key: 'platform_diagnostics', label: 'Diagnostics', to: '/platform/diagnostics' },
+    { key: 'audit_logs', label: 'Audit Logs', to: '/attorney/audit-logs' },
+    { key: 'settings', label: 'Settings', to: '/settings' },
+  ],
 }
 
 export function normalizeAppRole(value) {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
-
-  return APP_ROLES.includes(normalized) ? normalized : DEFAULT_APP_ROLE
+  return normalizeCanonicalAppRole(value, DEFAULT_APP_ROLE)
 }
 
 export function isInternalAppRole(value) {

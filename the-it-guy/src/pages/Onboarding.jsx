@@ -403,7 +403,6 @@ function Onboarding() {
         companyName: completionResponse?.onboarding?.agencyInformation?.agencyName || profile?.companyName || '',
         phoneNumber: principal.phoneNumber || profile?.phoneNumber || '',
         role: 'agent',
-        onboardingCompleted: true,
       })
       navigate('/dashboard', { replace: true })
     } catch (completeError) {
@@ -442,13 +441,7 @@ function Onboarding() {
           window.sessionStorage.removeItem(PENDING_ORG_INVITE_TOKEN_STORAGE_KEY)
         }
       } else {
-        await saveProfileDraft({
-          firstName,
-          lastName,
-          phoneNumber: invitedForm.phoneNumber,
-          role: 'agent',
-          onboardingCompleted: true,
-        })
+        throw new Error('A valid workspace invite is required before invited onboarding can be completed.')
       }
 
       navigate('/dashboard', { replace: true })

@@ -1039,6 +1039,7 @@ create table if not exists transactions (
   development_id uuid references developments(id) on delete set null,
   unit_id uuid references units(id) on delete cascade,
   buyer_id uuid references buyers(id) on delete set null,
+  matter_number text,
   transaction_reference text,
   transaction_type text not null default 'developer_sale',
   property_type text,
@@ -1120,6 +1121,7 @@ alter table if exists transactions add column if not exists organisation_id uuid
 alter table if exists transactions add column if not exists assigned_branch_id uuid references organisation_branches(id) on delete set null;
 alter table if exists transactions add column if not exists assigned_user_id uuid references profiles(id) on delete set null;
 alter table if exists transactions add column if not exists development_id uuid references developments(id) on delete set null;
+alter table if exists transactions add column if not exists matter_number text;
 alter table if exists transactions add column if not exists transaction_reference text;
 alter table if exists transactions add column if not exists transaction_type text not null default 'developer_sale';
 alter table if exists transactions add column if not exists property_type text;

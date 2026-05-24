@@ -486,13 +486,13 @@
 
   .ui-sidebar {
     @apply fixed left-0 top-0 z-30 flex h-screen flex-col overflow-hidden px-4 py-4;
-    background: #ffffff;
+    background: #fbfcfd;
     width: 268px;
     height: 100dvh;
-    border-right: 1px solid #e5edf6;
-    box-shadow: 12px 0 32px rgba(15, 23, 42, 0.03);
-    padding-left: 16px;
-    padding-right: 16px;
+    border-right: 1px solid #edf1f5;
+    box-shadow: 10px 0 28px rgba(15, 23, 42, 0.025);
+    padding-left: 18px;
+    padding-right: 18px;
     isolation: isolate;
   }
 
@@ -700,6 +700,11 @@
 
   .ui-sidebar-section-label {
     @apply text-label uppercase text-textSoft;
+    margin: 0.2rem 0 0.35rem;
+    color: #9aa7b7 !important;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.11em;
   }
 
   .ui-select,
@@ -777,20 +782,20 @@
 
   .ui-nav-stack {
     @apply mt-2 grid;
-    gap: 0.26rem;
+    gap: 0.34rem;
   }
 
   .ui-sidebar-link {
-    @apply relative flex min-h-[38px] items-center gap-2.5 rounded-[13px] border border-transparent px-3 py-2 text-nav font-medium transition duration-150 ease-out;
-    color: #42526b;
-    font-weight: 560;
+    @apply relative flex min-h-[42px] items-center gap-2.5 rounded-[10px] border border-transparent px-3 py-2 text-nav font-medium transition duration-150 ease-out;
+    color: #506076;
+    font-weight: 540;
   }
 
   .ui-sidebar-link:hover {
-    border-color: #dbe6f2;
-    background: #f5f9ff;
-    color: #0f4f9f;
-    transform: translateX(1px);
+    border-color: transparent;
+    background: #f3f7fb;
+    color: #1c3f5c;
+    transform: none;
   }
 
   .ui-sidebar-link:focus-visible {
@@ -800,22 +805,34 @@
   }
 
   .ui-sidebar-link-active {
-    color: #0f5ed7 !important;
-    border-color: #e0ecff;
-    background: #eef5ff;
+    color: #17324b !important;
+    border-color: transparent;
+    background: #eef4f8;
     box-shadow: none;
     backdrop-filter: none;
+    font-weight: 650;
+  }
+
+  .ui-sidebar-link-active::before {
+    content: '';
+    position: absolute;
+    left: -0.5rem;
+    top: 0.72rem;
+    bottom: 0.72rem;
+    width: 2px;
+    border-radius: 999px;
+    background: #2f5f7b;
   }
 
   .ui-sidebar-link-open {
-    border-color: #dbe6f2;
-    background: #f8fafc;
+    border-color: transparent;
+    background: #f5f7fa;
     color: #1f3448;
   }
 
   .ui-sidebar .ui-nav-stack {
     display: grid !important;
-    gap: 0.26rem !important;
+    gap: 0.34rem !important;
   }
 
   .ui-sidebar .ui-nav-stack .ui-sidebar-link {
@@ -823,24 +840,44 @@
     width: 100%;
     align-items: center;
     gap: 0.75rem;
-    color: #42526b !important;
+    color: #506076 !important;
     text-decoration: none !important;
     white-space: nowrap;
-    border-radius: 13px;
-    min-height: 38px;
-    padding: 0.46rem 0.78rem;
+    border-radius: 10px;
+    min-height: 42px;
+    padding: 0.56rem 0.78rem;
+  }
+
+  .ui-sidebar .ui-nav-stack .ui-sidebar-link svg {
+    width: 14px;
+    height: 14px;
+    color: #7c8b9d;
   }
 
   .ui-sidebar .ui-nav-stack .ui-sidebar-link:visited {
-    color: #42526b !important;
+    color: #506076 !important;
     text-decoration: none !important;
   }
 
   .ui-sidebar .ui-nav-stack .ui-sidebar-link:hover,
   .ui-sidebar .ui-nav-stack .ui-sidebar-link.ui-sidebar-link-active,
   .ui-sidebar .ui-nav-stack .ui-sidebar-link.active {
-    color: #0f5ed7 !important;
+    color: #17324b !important;
     text-decoration: none !important;
+  }
+
+  .ui-sidebar .ui-nav-stack .ui-sidebar-link:hover svg,
+  .ui-sidebar .ui-nav-stack .ui-sidebar-link.ui-sidebar-link-active svg {
+    color: #315b74;
+  }
+
+  .ui-sidebar .ui-nav-stack .ui-sidebar-link-child {
+    min-height: 36px;
+    padding-top: 0.42rem;
+    padding-bottom: 0.42rem;
+    color: #68768a !important;
+    font-size: 0.83rem;
+    font-weight: 500;
   }
 
   .ui-sidebar .ui-sidebar-brand,
@@ -852,8 +889,8 @@
   }
 
   .ui-sidebar-divider {
-    margin: 0.5rem 0;
-    border-top: 1px solid #edf2f7;
+    margin: 0.85rem 0 0.65rem;
+    border-top: 1px solid #eef2f6;
   }
 
   .ui-sidebar-secondary {
@@ -2214,7 +2251,7 @@
   overflow-x: hidden !important;
   border-right: 1px solid #e5edf6 !important;
   box-shadow: 12px 0 32px rgba(15, 23, 42, 0.03) !important;
-  background-color: #ffffff !important;
+  background-color: #fbfcfd !important;
   background-image: none !important;
   padding-top: 16px !important;
 }

@@ -1,10 +1,15 @@
 import { INTERNAL_APP_ROLES, normalizeAppRole } from './roles'
 import { getDevBypassUserId } from './demoIds'
+import { getUnsafeEnvironmentFlags } from './envValidation'
 
 export const DEV_AUTH_STORAGE_KEY = 'itg:dev-auth-role'
 
+export function isDevAuthBypassEnabled() {
+  return Boolean(import.meta.env.DEV && getUnsafeEnvironmentFlags().enableDevAuthBypass)
+}
+
 export function getStoredDevAuthRole() {
-  if (!import.meta.env.DEV || typeof window === 'undefined') {
+  if (!isDevAuthBypassEnabled() || typeof window === 'undefined') {
     return null
   }
 
@@ -18,7 +23,7 @@ export function getStoredDevAuthRole() {
 }
 
 export function setStoredDevAuthRole(role) {
-  if (!import.meta.env.DEV || typeof window === 'undefined') {
+  if (!isDevAuthBypassEnabled() || typeof window === 'undefined') {
     return
   }
 
@@ -40,6 +45,9 @@ export function clearStoredDevAuthRole() {
 }
 
 export function createDevAuthSession(role) {
+  if (!isDevAuthBypassEnabled()) {
+    return null
+  }
   const normalizedRole = normalizeAppRole(role)
 
   return {

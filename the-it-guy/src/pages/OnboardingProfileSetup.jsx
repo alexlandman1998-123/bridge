@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { APP_ROLE_LABELS, APP_ROLE_ONBOARDING_OPTIONS, normalizeAppRole } from '../lib/roles'
+import { APP_ROLE_LABELS, normalizeAppRole } from '../lib/roles'
 import { clearSupabaseLocalAuthState, supabase } from '../lib/supabaseClient'
+import { BUSINESS_TYPE_OPTIONS, POSITION_OPTIONS_BY_BUSINESS_TYPE, SIGNUP_INTENT_SOURCE } from '../constants/signupIntents'
+import { buildSignupIntent, persistSignupIntent, resolveSignupIntentRoute } from '../lib/signupIntent'
 
 const PROFILE_BOOTSTRAP_TIMEOUT_MS = 12000
 
@@ -22,8 +25,10 @@ function isOutOfSyncSessionError(message) {
 
 function OnboardingProfileSetup() {
   const navigate = useNavigate()
+  const { authState } = useAuthSession()
   const {
     profile,
+    signupIntent,
     profileLoading,
     profileError,
     workspaceReady,
@@ -38,6 +43,8 @@ function OnboardingProfileSetup() {
   const [companyName, setCompanyName] = useState('')
   const [phoneNumber, setPhoneNumber] = useState('')
   const [selectedRole, setSelectedRole] = useState('viewer')
+  const [recoveryBusinessType, setRecoveryBusinessType] = useState('')
+  const [recoveryPosition, setRecoveryPosition] = useState('')
 
   const waitingForBootstrap = profileLoading || !workspaceReady
   const activeProfileError = error || profileError || ''
@@ -66,7 +73,21 @@ function OnboardingProfileSetup() {
     () => Boolean(String(firstName || '').trim() && String(lastName || '').trim()),
     [firstName, lastName],
   )
-  const roleSelected = selectedRole !== 'viewer'
+  const recoveryIntent = useMemo(
+    () =>
+      recoveryPosition
+        ? buildSignupIntent({
+            position: recoveryPosition,
+            source: SIGNUP_INTENT_SOURCE.recovery,
+          })
+        : null,
+    [recoveryPosition],
+  )
+  const effectiveIntent = signupIntent || recoveryIntent
+  const effectiveAppRole = effectiveIntent?.app_role || selectedRole
+  const roleSelected = effectiveAppRole !== 'viewer'
+  const needsIntentRecovery = !signupIntent && selectedRole === 'viewer'
+  const recoveryPositionOptions = POSITION_OPTIONS_BY_BUSINESS_TYPE[recoveryBusinessType] || []
 
   async function handleSignOut() {
     console.debug('[AUTH] onboarding-profile:signout')
@@ -93,7 +114,7 @@ function OnboardingProfileSetup() {
       return
     }
     if (!roleSelected) {
-      setError('Select the module you want to set up first.')
+      setError('Confirm your business type and position before continuing.')
       return
     }
 
@@ -102,21 +123,32 @@ function OnboardingProfileSetup() {
       setError('')
       console.debug('[ONBOARDING] profile:continue:start', {
         profileId: profile?.id || null,
-        selectedRole,
+        selectedRole: effectiveAppRole,
       })
+      if (effectiveIntent && authState.user?.id) {
+        await persistSignupIntent({
+          intent: {
+            ...effectiveIntent,
+            email: profile?.email || authState.user.email || '',
+          },
+          user: authState.user,
+          email: profile?.email || authState.user.email || '',
+          status: 'ready_for_onboarding',
+        })
+      }
       await saveProfileDraft({
         firstName: String(firstName || '').trim(),
         lastName: String(lastName || '').trim(),
         companyName: String(companyName || '').trim(),
         phoneNumber: String(phoneNumber || '').trim(),
-        role: selectedRole,
+        role: effectiveAppRole,
         onboardingCompleted: false,
       })
-      const route = resolveOnboardingPathForRole(selectedRole)
+      const route = signupIntent || recoveryIntent ? resolveSignupIntentRoute(effectiveIntent) : resolveOnboardingPathForRole(effectiveAppRole)
       if (!route) {
         throw new Error('Could not determine onboarding route for the selected role.')
       }
-      console.debug('[REDIRECT] profile:continue', { route, selectedRole })
+      console.debug('[REDIRECT] profile:continue', { route, selectedRole: effectiveAppRole })
       navigate(route, { replace: true })
     } catch (submitError) {
       setError(submitError?.message || 'Unable to continue onboarding right now.')
@@ -207,7 +239,11 @@ function OnboardingProfileSetup() {
           <div className="auth-card-head">
             <span className="auth-card-eyebrow">Profile Setup</span>
             <h2>Before We Continue</h2>
-            <p>We need your profile details and role selection before organisation onboarding.</p>
+            <p>
+              {signupIntent
+                ? 'We found your signup path. Confirm your profile details before workspace setup.'
+                : 'Confirm your business type and position so Bridge can recover the correct onboarding path.'}
+            </p>
           </div>
 
           <form className="auth-form onboarding-form agency-onboarding-form" onSubmit={handleContinue}>
@@ -230,29 +266,63 @@ function OnboardingProfileSetup() {
               </label>
             </section>
 
-            <section className="mt-4">
-              <h3 className="text-sm font-semibold tracking-[0.08em] text-[#5f748b]">Select Module</h3>
-              <div className="agency-role-grid mt-3">
-                {APP_ROLE_ONBOARDING_OPTIONS.map((option) => {
-                  const isActive = selectedRole === option.value
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={`agency-role-card ${isActive ? 'active' : ''}`}
-                      onClick={() => setSelectedRole(option.value)}
-                    >
-                      <div className="agency-role-card-head">
-                        <div>
-                          <strong>{APP_ROLE_LABELS[option.value] || option.label}</strong>
-                          <span>{option.description}</span>
-                        </div>
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-            </section>
+            {signupIntent ? (
+              <section className="mt-4 rounded-[16px] border border-[#dbe8f3] bg-[#f8fbff] px-4 py-3 text-sm leading-6 text-[#48627d]">
+                Bridge will continue with {APP_ROLE_LABELS[signupIntent.app_role] || 'workspace'} setup.
+                {signupIntent.workspace_action === 'create_workspace'
+                  ? ' You will create the workspace in the next step.'
+                  : ' You will join by invite or request access in the next step.'}
+              </section>
+            ) : null}
+
+            {needsIntentRecovery ? (
+              <section className="mt-4 grid gap-4">
+                <div>
+                  <h3 className="text-sm font-semibold tracking-[0.08em] text-[#5f748b]">Business Type</h3>
+                  <div className="mt-3 grid gap-2">
+                    {BUSINESS_TYPE_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`rounded-[14px] border px-3 py-2 text-left text-sm ${
+                          recoveryBusinessType === option.value
+                            ? 'border-[#315b7b] bg-[#eef5fb] text-[#142132]'
+                            : 'border-[#dfe8f2] bg-white text-[#31485e]'
+                        }`}
+                        onClick={() => {
+                          setRecoveryBusinessType(option.value)
+                          setRecoveryPosition('')
+                        }}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {recoveryBusinessType ? (
+                  <div>
+                    <h3 className="text-sm font-semibold tracking-[0.08em] text-[#5f748b]">Position</h3>
+                    <div className="mt-3 grid gap-2">
+                      {recoveryPositionOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`rounded-[14px] border px-3 py-2 text-left text-sm ${
+                            recoveryPosition === option.value
+                              ? 'border-[#315b7b] bg-[#eef5fb] text-[#142132]'
+                              : 'border-[#dfe8f2] bg-white text-[#31485e]'
+                          }`}
+                          onClick={() => setRecoveryPosition(option.value)}
+                        >
+                          <strong className="block">{option.label}</strong>
+                          <span className="mt-1 block text-xs text-[#61758a]">{option.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
 
             {activeProfileError ? <p className="auth-form-error">{activeProfileError}</p> : null}
             {error ? <p className="auth-form-error">{error}</p> : null}

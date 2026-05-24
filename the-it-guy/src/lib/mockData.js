@@ -1,4 +1,8 @@
-export const MOCK_DATA_ENABLED = import.meta.env.VITE_ENABLE_MOCK_DATA === 'true'
+import { getUnsafeEnvironmentFlags } from './envValidation'
+
+const unsafeFlags = getUnsafeEnvironmentFlags()
+
+export const MOCK_DATA_ENABLED = Boolean(unsafeFlags.enableMockData || unsafeFlags.enableDemoMode)
 
 export function sortByNewest(items = [], ...dateKeys) {
   const normalizedItems = Array.isArray(items) ? items.filter(Boolean) : []

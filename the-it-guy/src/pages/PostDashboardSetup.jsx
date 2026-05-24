@@ -1,196 +1,384 @@
-import { Link } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
+import OnboardingProgressLayout from '../components/onboarding/OnboardingProgressLayout'
 import { APP_ROLE_LABELS } from '../lib/roles'
-import { deriveOnboardingSetupState } from '../lib/onboardingRouting'
-import { getCurrentUserPrimaryAttorneyFirm } from '../services/attorneyFirms'
+import { ONBOARDING_STATUSES, ONBOARDING_STEPS } from '../constants/onboardingStatuses'
+import { SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
+import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
+import {
+  createWorkspaceFromIntent,
+  joinWorkspaceFromInvite,
+  requestWorkspaceAccess,
+} from '../services/workspaceService'
 
-function resolveSetupActions(role = '', agencyWorkflowMode = 'agent', options = {}) {
-  if (role === 'developer') {
-    return [
-      { label: 'Create Organisation Profile', href: '/settings/organisation' },
-      { label: 'Create First Development', href: '/listings/developments' },
-      { label: 'Invite Team Members', href: '/settings/users' },
-    ]
+function normalizeText(value) {
+  return String(value || '').trim()
+}
+
+function getWorkspaceNoun(workspaceType = '') {
+  if (workspaceType === WORKSPACE_TYPES.agency) return 'agency'
+  if (workspaceType === WORKSPACE_TYPES.developerCompany) return 'developer company'
+  if (workspaceType === WORKSPACE_TYPES.attorneyFirm) return 'attorney firm'
+  if (workspaceType === WORKSPACE_TYPES.bondOriginator) return 'bond originator business'
+  return 'workspace'
+}
+
+function getDefaultForm(intent, profile) {
+  const workspaceNoun = getWorkspaceNoun(intent?.workspace_type)
+  const companyName = normalizeText(profile?.companyName)
+  return {
+    name: companyName || '',
+    legalName: companyName || '',
+    registrationNumber: '',
+    contactNumber: normalizeText(profile?.phoneNumber),
+    businessEmail: normalizeText(profile?.email),
+    mainBranchName: intent?.workspace_type === WORKSPACE_TYPES.agency ? 'Main Branch' : 'Main Team',
+    province: '',
+    city: '',
+    operatingArea: '',
+    primaryContactName: normalizeText(profile?.fullName),
+    workspaceNameForRequest: '',
+    requestMessage: `Please approve my access to your ${workspaceNoun} on Bridge.`,
+    inviteToken: normalizeText(intent?.invite_token),
   }
+}
 
-  if (role === 'agent') {
-    if (agencyWorkflowMode === 'principal') {
-      return [
-        { label: 'Open Principal Workflow', href: '/new-transaction' },
-        { label: 'Manage Agency Pipeline', href: '/pipeline/overview' },
-        { label: 'Manage Team & Invites', href: '/agency/agents' },
-      ]
-    }
+function getDashboardPath(appRole = '') {
+  if (appRole === 'attorney') return '/attorney/dashboard'
+  if (appRole === 'client') return '/client-access'
+  return '/dashboard'
+}
 
-    return [
-      { label: 'Open Agent Workflow', href: '/new-transaction' },
-      { label: 'Add Seller Lead', href: '/listings/agent' },
-      { label: 'View Assigned Pipeline', href: '/pipeline/leads' },
-    ]
-  }
-
-  if (role === 'attorney') {
-    if (!options.attorneyFirmReady) {
-      return [
-        { label: 'Create or Repair Attorney Firm', href: '/attorney/onboarding?repair=firm' },
-        { label: 'Open Attorney Dashboard', href: '/attorney/dashboard' },
-      ]
-    }
-
-    return [
-      { label: 'Review Firm Setup', href: '/attorney/onboarding?repair=firm' },
-      { label: 'Configure Firm Settings', href: '/attorney/firm-settings' },
-      { label: 'Open Attorney Dashboard', href: '/attorney/dashboard' },
-    ]
-  }
-
-  if (role === 'bond_originator') {
-    return [
-      { label: 'Create Team Workspace', href: '/settings/organisation' },
-      { label: 'Set Workflow Preferences', href: '/settings/workflows' },
-      { label: 'Open Dashboard', href: '/dashboard' },
-    ]
-  }
-
-  return [{ label: 'Open Dashboard', href: '/dashboard' }]
+function SetupStatusCard({ title, children, tone = 'info' }) {
+  const toneClass =
+    tone === 'warning'
+      ? 'border-[#f5d3a4] bg-[#fff8ec] text-[#8a4b10]'
+      : tone === 'error'
+        ? 'border-[#f2c8c4] bg-[#fff5f4] text-[#9f1c1c]'
+        : tone === 'success'
+          ? 'border-[#cfe8d8] bg-[#effaf3] text-[#236340]'
+          : 'border-[#dbe8f3] bg-[#f8fbff] text-[#1f3d59]'
+  return (
+    <div className={`rounded-[14px] border px-4 py-3 text-sm leading-6 ${toneClass}`}>
+      <strong className="block text-[#142132]">{title}</strong>
+      <div className="mt-1">{children}</div>
+    </div>
+  )
 }
 
 export default function PostDashboardSetup() {
-  const { profile, baseRole, agencyWorkflowMode, setAgencyWorkflowMode } = useWorkspace()
-  const setupState = deriveOnboardingSetupState({ profile, baseRole })
-  const [attorneyFirmStatus, setAttorneyFirmStatus] = useState({
-    loading: setupState.appRole === 'attorney',
-    firm: null,
-    error: '',
-  })
-  const attorneyFirmReady = setupState.appRole === 'attorney' ? Boolean(attorneyFirmStatus.firm?.id) : true
-  const actions = resolveSetupActions(setupState.appRole, agencyWorkflowMode, { attorneyFirmReady })
+  const navigate = useNavigate()
+  const { authState, refreshAuthState } = useAuthSession()
+  const {
+    profile,
+    baseRole,
+    signupIntent,
+    activeMemberships,
+    pendingMemberships,
+    suspendedMemberships,
+    currentMembership,
+    currentWorkspace,
+    onboardingState,
+    onboardingRequiredReason,
+  } = useWorkspace()
+  const intent = signupIntent || null
+  const [form, setForm] = useState(() => getDefaultForm(intent, profile))
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [request, setRequest] = useState(null)
+  const workspaceNoun = getWorkspaceNoun(intent?.workspace_type)
+  const canCreateWorkspace = intent?.workspace_action === SIGNUP_WORKSPACE_ACTIONS.createWorkspace
+  const canJoinOrRequest = intent?.workspace_action === SIGNUP_WORKSPACE_ACTIONS.joinOrRequestWorkspace
+  const canAcceptInvite = intent?.workspace_action === SIGNUP_WORKSPACE_ACTIONS.acceptInvite
+  const pageTitle = useMemo(() => {
+    if (canCreateWorkspace) return `Create your ${workspaceNoun}`
+    if (canAcceptInvite) return 'Accept your workspace invite'
+    if (canJoinOrRequest) return `Join a ${workspaceNoun}`
+    return 'Workspace setup'
+  }, [canAcceptInvite, canCreateWorkspace, canJoinOrRequest, workspaceNoun])
 
-  useEffect(() => {
-    let active = true
+  function updateField(field, value) {
+    setForm((previous) => ({ ...previous, [field]: value }))
+  }
 
-    async function resolveAttorneyFirmStatus() {
-      if (setupState.appRole !== 'attorney') {
-        setAttorneyFirmStatus({ loading: false, firm: null, error: '' })
-        return
-      }
-
-      setAttorneyFirmStatus((previous) => ({ ...previous, loading: true, error: '' }))
-      try {
-        const firm = await getCurrentUserPrimaryAttorneyFirm()
-        if (!active) return
-        setAttorneyFirmStatus({ loading: false, firm: firm || null, error: '' })
-      } catch (error) {
-        if (!active) return
-        setAttorneyFirmStatus({
-          loading: false,
-          firm: null,
-          error: error?.message || 'Unable to verify attorney firm setup.',
-        })
-      }
+  async function handleCreateWorkspace(event) {
+    event.preventDefault()
+    if (!intent) {
+      setError('Signup intent is missing. Confirm your business type and position first.')
+      return
+    }
+    if (!normalizeText(form.name)) {
+      setError('Workspace name is required.')
+      return
+    }
+    if (!normalizeText(form.businessEmail)) {
+      setError('Business email is required.')
+      return
+    }
+    if (!normalizeText(form.contactNumber)) {
+      setError('Contact number is required.')
+      return
+    }
+    if (intent.workspace_type === WORKSPACE_TYPES.agency && !normalizeText(form.mainBranchName)) {
+      setError('Main branch name is required for agency setup.')
+      return
     }
 
-    void resolveAttorneyFirmStatus()
-    return () => {
-      active = false
+    try {
+      setSaving(true)
+      setError('')
+      setMessage('')
+      const result = await createWorkspaceFromIntent(intent, authState.user, {
+        ...form,
+        firstName: profile?.firstName,
+        lastName: profile?.lastName,
+      })
+      refreshAuthState?.()
+      setMessage(`${result.workspace.name} is ready. Opening your dashboard...`)
+      window.setTimeout(() => {
+        navigate(getDashboardPath(intent.app_role), { replace: true })
+      }, 500)
+    } catch (createError) {
+      setError(createError?.message || 'Workspace setup failed.')
+    } finally {
+      setSaving(false)
     }
-  }, [setupState.appRole, profile?.primaryAttorneyFirmId])
+  }
+
+  async function handleAcceptInvite(event) {
+    event.preventDefault()
+    const token = normalizeText(form.inviteToken)
+    if (!token) {
+      setError('Invite token is required.')
+      return
+    }
+
+    try {
+      setSaving(true)
+      setError('')
+      setMessage('')
+      await joinWorkspaceFromInvite(token, authState.user, { intent })
+      refreshAuthState?.()
+      setMessage('Invite accepted. Opening your workspace...')
+      window.setTimeout(() => {
+        navigate(getDashboardPath(intent?.app_role || baseRole), { replace: true })
+      }, 500)
+    } catch (inviteError) {
+      setError(inviteError?.message || 'Invite acceptance failed.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleRequestAccess(event) {
+    event.preventDefault()
+    if (!intent) {
+      setError('Signup intent is missing. Confirm your business type and position first.')
+      return
+    }
+    if (!normalizeText(form.workspaceNameForRequest)) {
+      setError('Enter the workspace or business name you need access to.')
+      return
+    }
+
+    try {
+      setSaving(true)
+      setError('')
+      setMessage('')
+      const createdRequest = await requestWorkspaceAccess(intent, authState.user, {
+        workspaceName: form.workspaceNameForRequest,
+        message: form.requestMessage,
+      })
+      setRequest(createdRequest)
+      refreshAuthState?.()
+      setMessage('Access request sent. You will remain pending until an owner or admin approves it.')
+    } catch (requestError) {
+      setError(requestError?.message || 'Access request failed.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const hasActiveMembership = activeMemberships.length > 0
+  const hasPendingMembership = pendingMemberships.length > 0
+  const hasSuspendedMembership = suspendedMemberships.length > 0
+  const hasPendingOnboardingState = onboardingState?.onboardingStatus === ONBOARDING_STATUSES.workspacePendingApproval
 
   return (
-    <section className="page">
-      <article className="panel card-tier-standard" style={{ display: 'grid', gap: '0.9rem' }}>
-        <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#60758d]">Post-Dashboard Setup</p>
-        <h1 className="text-[1.35rem] font-semibold tracking-[-0.02em] text-[#142132]">
-          Continue {APP_ROLE_LABELS[setupState.appRole] || 'Workspace'} Setup
-        </h1>
-        <p className="text-sm leading-6 text-[#60758d]">
-          Signup onboarding is complete. Finish organisation and module setup here so workflow access stays isolated
-          from authentication and profile creation.
-        </p>
-        {setupState.appRole === 'agent' ? (
-          <div className="rounded-[14px] border border-[#dde4ee] bg-white px-4 py-4 text-sm text-[#1f3d59]">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#60758d]">Agency workflow mode</p>
-            <h2 className="mt-1 text-[1rem] font-semibold text-[#142132]">Choose your operating mode</h2>
-            <p className="mt-1 text-sm leading-6 text-[#60758d]">
-              This does not change auth/onboarding. It only controls which workflow modal path opens for agent accounts.
+    <OnboardingProgressLayout
+      title={pageTitle}
+      description="Bridge has your profile and signup path. The last step is creating or joining a real backend workspace so dashboard access is tied to an active membership."
+      activeStep={onboardingState?.onboardingStep || ONBOARDING_STEPS.createOrJoinWorkspace}
+    >
+
+        {intent ? (
+          <SetupStatusCard title="Signup path">
+            <p>
+              {APP_ROLE_LABELS[intent.app_role] || intent.app_role} · {workspaceNoun} ·{' '}
+              {intent.intended_org_role.replace(/_/g, ' ')}
             </p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                className={`rounded-[12px] border px-3 py-2 text-left text-sm font-semibold transition ${
-                  agencyWorkflowMode === 'agent'
-                    ? 'border-[#c8d7e6] bg-[#edf3f8] text-[#162334]'
-                    : 'border-[#dbe5ef] bg-[#f8fbff] text-[#5f7288] hover:border-[#c8d7e6] hover:text-[#162334]'
-                }`}
-                onClick={() => setAgencyWorkflowMode('agent')}
-              >
-                Agent mode
-              </button>
-              <button
-                type="button"
-                className={`rounded-[12px] border px-3 py-2 text-left text-sm font-semibold transition ${
-                  agencyWorkflowMode === 'principal'
-                    ? 'border-[#c8d7e6] bg-[#edf3f8] text-[#162334]'
-                    : 'border-[#dbe5ef] bg-[#f8fbff] text-[#5f7288] hover:border-[#c8d7e6] hover:text-[#162334]'
-                }`}
-                onClick={() => setAgencyWorkflowMode('principal')}
-              >
-                Principal mode
+          </SetupStatusCard>
+        ) : (
+          <SetupStatusCard title="Signup intent missing" tone="warning">
+            <p>
+              This looks like a legacy or interrupted account. Confirm your business type on the profile recovery
+              screen before creating or joining a workspace.
+            </p>
+            <button type="button" className="header-secondary-cta mt-3" onClick={() => navigate('/onboarding/profile')}>
+              Continue profile recovery
+            </button>
+          </SetupStatusCard>
+        )}
+
+        {hasActiveMembership ? (
+          <SetupStatusCard title="Workspace membership active" tone="success">
+            <p>Your active membership is ready. You can open your dashboard.</p>
+            {currentWorkspace?.name ? (
+              <p className="mt-2">
+                You are joining {currentWorkspace.name} as {(currentMembership?.role || '').replace(/_/g, ' ') || 'a member'}.
+              </p>
+            ) : null}
+            <button type="button" className="header-secondary-cta mt-3" onClick={() => navigate(getDashboardPath(baseRole))}>
+              Open dashboard
+            </button>
+          </SetupStatusCard>
+        ) : null}
+
+        {hasPendingMembership || hasPendingOnboardingState || request ? (
+          <SetupStatusCard title="Pending approval" tone="warning">
+            <p>
+              Your workspace access is pending. You cannot open protected dashboards until an owner, principal, partner,
+              or manager approves your membership.
+            </p>
+          </SetupStatusCard>
+        ) : null}
+
+        {hasSuspendedMembership ? (
+          <SetupStatusCard title="Access unavailable" tone="error">
+            <p>Your existing workspace membership is suspended or removed. Contact your workspace administrator.</p>
+          </SetupStatusCard>
+        ) : null}
+
+        {canCreateWorkspace ? (
+          <form className="grid gap-4 rounded-[16px] border border-[#dde4ee] bg-white px-4 py-4" onSubmit={handleCreateWorkspace}>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="grid gap-1.5 text-sm font-semibold text-[#31485e]">
+                {workspaceNoun[0].toUpperCase() + workspaceNoun.slice(1)} name
+                <input className="auth-input" value={form.name} onChange={(event) => updateField('name', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#31485e]">
+                Legal name
+                <input className="auth-input" value={form.legalName} onChange={(event) => updateField('legalName', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#31485e]">
+                Business email
+                <input className="auth-input" type="email" value={form.businessEmail} onChange={(event) => updateField('businessEmail', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#31485e]">
+                Contact number
+                <input className="auth-input" value={form.contactNumber} onChange={(event) => updateField('contactNumber', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#31485e]">
+                Registration number
+                <input className="auth-input" value={form.registrationNumber} onChange={(event) => updateField('registrationNumber', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#31485e]">
+                Province
+                <input className="auth-input" value={form.province} onChange={(event) => updateField('province', event.target.value)} />
+              </label>
+              {intent?.workspace_type === WORKSPACE_TYPES.agency || intent?.workspace_type === WORKSPACE_TYPES.bondOriginator ? (
+                <label className="grid gap-1.5 text-sm font-semibold text-[#31485e]">
+                  {intent.workspace_type === WORKSPACE_TYPES.agency ? 'Main branch name' : 'Main team name'}
+                  <input className="auth-input" value={form.mainBranchName} onChange={(event) => updateField('mainBranchName', event.target.value)} />
+                </label>
+              ) : null}
+              {intent?.workspace_type === WORKSPACE_TYPES.developerCompany ? (
+                <label className="grid gap-1.5 text-sm font-semibold text-[#31485e]">
+                  Operating area
+                  <input className="auth-input" value={form.operatingArea} onChange={(event) => updateField('operatingArea', event.target.value)} />
+                </label>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              <button type="submit" className="header-primary-cta" disabled={saving}>
+                {saving ? 'Creating workspace...' : `Create ${workspaceNoun}`}
               </button>
             </div>
+          </form>
+        ) : null}
+
+        {canAcceptInvite ? (
+          <form className="grid gap-4 rounded-[16px] border border-[#dde4ee] bg-white px-4 py-4" onSubmit={handleAcceptInvite}>
+            <SetupStatusCard title="Invite acceptance">
+              <p>Confirm the invite token and Bridge will create your active membership if the invite is valid.</p>
+            </SetupStatusCard>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#31485e]">
+              Invite token
+              <input className="auth-input" value={form.inviteToken} onChange={(event) => updateField('inviteToken', event.target.value)} />
+            </label>
+            <div className="flex flex-wrap justify-end gap-2">
+              <button type="submit" className="header-primary-cta" disabled={saving}>
+                {saving ? 'Accepting invite...' : 'Accept invite'}
+              </button>
+            </div>
+          </form>
+        ) : null}
+
+        {canJoinOrRequest ? (
+          <div className="grid gap-4">
+            <form className="grid gap-4 rounded-[16px] border border-[#dde4ee] bg-white px-4 py-4" onSubmit={handleAcceptInvite}>
+              <SetupStatusCard title="Have an invite code?">
+                <p>Paste it here. Operational users can only enter a workspace through a valid invite or approval.</p>
+              </SetupStatusCard>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#31485e]">
+                Invite token
+                <input className="auth-input" value={form.inviteToken} onChange={(event) => updateField('inviteToken', event.target.value)} />
+              </label>
+              <div className="flex flex-wrap justify-end gap-2">
+                <button type="submit" className="header-secondary-cta" disabled={saving}>
+                  Accept invite
+                </button>
+              </div>
+            </form>
+
+            <form className="grid gap-4 rounded-[16px] border border-[#dde4ee] bg-white px-4 py-4" onSubmit={handleRequestAccess}>
+              <SetupStatusCard title="Request access" tone="warning">
+                <p>This creates a pending backend request. It does not create a workspace or unlock dashboards.</p>
+              </SetupStatusCard>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#31485e]">
+                Workspace or business name
+                <input className="auth-input" value={form.workspaceNameForRequest} onChange={(event) => updateField('workspaceNameForRequest', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#31485e]">
+                Message
+                <textarea className="auth-input min-h-[96px]" value={form.requestMessage} onChange={(event) => updateField('requestMessage', event.target.value)} />
+              </label>
+              <div className="flex flex-wrap justify-end gap-2">
+                <button type="submit" className="header-primary-cta" disabled={saving}>
+                  {saving ? 'Sending request...' : 'Request access'}
+                </button>
+              </div>
+            </form>
           </div>
         ) : null}
-        <div className="rounded-[14px] border border-[#dde4ee] bg-[#f8fbff] px-4 py-3 text-sm text-[#1f3d59]">
-          <p>
-            <strong>Profile status:</strong> {setupState.profileStatus}
-          </p>
-          <p>
-            <strong>Onboarding status:</strong> {setupState.onboardingStatus}
-          </p>
-          <p>
-            <strong>Organisation setup status:</strong> {setupState.organisationSetupStatus}
-          </p>
-          <p>
-            <strong>Module setup status:</strong> {setupState.moduleSetupStatus}
-          </p>
-          {setupState.appRole === 'attorney' ? (
-            <>
-              <p>
-                <strong>Firm workspace status:</strong>{' '}
-                {attorneyFirmStatus.loading
-                  ? 'checking'
-                  : attorneyFirmStatus.firm?.id
-                    ? 'configured'
-                    : 'needs setup'}
-              </p>
-              {attorneyFirmStatus.firm?.id ? (
-                <p>
-                  <strong>Firm:</strong> {attorneyFirmStatus.firm.name || 'Attorney firm'}
-                </p>
-              ) : null}
-              {!attorneyFirmStatus.loading && !attorneyFirmStatus.firm?.id ? (
-                <p className="mt-2 rounded-[12px] border border-[#f5d3a4] bg-[#fff8ec] px-3 py-2 text-[#8a4b10]">
-                  Your profile setup is complete, but the firm workspace itself still needs to be created, repaired, or
-                  re-linked before the attorney workflow can open.
-                </p>
-              ) : null}
-              {attorneyFirmStatus.error ? (
-                <p className="mt-2 rounded-[12px] border border-[#f4c7c3] bg-[#fff5f4] px-3 py-2 text-[#9f1c1c]">
-                  {attorneyFirmStatus.error}
-                </p>
-              ) : null}
-            </>
-          ) : null}
-        </div>
-        <div className="grid gap-2">
-          {actions.map((action) => (
-            <Link key={action.href} to={action.href} className="header-secondary-cta">
-              {action.label}
-            </Link>
-          ))}
-        </div>
-      </article>
-    </section>
+
+        {!intent && onboardingRequiredReason ? (
+          <SetupStatusCard title="Repair state" tone="warning">
+            <p>Current setup reason: {onboardingRequiredReason.replace(/_/g, ' ')}.</p>
+          </SetupStatusCard>
+        ) : null}
+
+        {onboardingState?.recoveryReason ? (
+          <SetupStatusCard title="Recovery required" tone="warning">
+            <p>Bridge needs to repair: {onboardingState.recoveryReason.replace(/_/g, ' ')}.</p>
+          </SetupStatusCard>
+        ) : null}
+
+        {message ? <p className="rounded-[12px] border border-[#cfe8d8] bg-[#effaf3] px-3 py-2 text-sm text-[#236340]">{message}</p> : null}
+        {error ? <p className="rounded-[12px] border border-[#f2c8c4] bg-[#fff5f4] px-3 py-2 text-sm text-[#9f1c1c]">{error}</p> : null}
+    </OnboardingProgressLayout>
   )
 }

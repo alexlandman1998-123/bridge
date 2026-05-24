@@ -1,8 +1,22 @@
-import { ArrowRight, Building2, CheckCircle2, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Building2, CheckCircle2, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { setStoredDevAuthRole } from '../lib/devAuth'
+import { isDevAuthBypassEnabled } from '../lib/devAuth'
 import { APP_ROLE_LABELS } from '../lib/roles'
+import {
+  BUSINESS_TYPE_OPTIONS,
+  POSITION_OPTIONS_BY_BUSINESS_TYPE,
+  SIGNUP_BUSINESS_TYPES,
+  SIGNUP_INTENT_SOURCE,
+} from '../constants/signupIntents'
+import {
+  buildSignupIntent,
+  createSignupUserMetadata,
+  persistSignupIntent,
+  resolveSignupIntentRoute,
+  storeSignupIntentTemporarily,
+} from '../lib/signupIntent'
 import {
   clearSupabaseLocalAuthState,
   isSupabaseConfigured,
@@ -24,7 +38,7 @@ function getRedirectPath(location) {
   return '/dashboard'
 }
 
-function resolveEmailVerificationRedirectTo() {
+function resolveEmailVerificationRedirectTo(nextPath = '/setup') {
   const candidates = [
     import.meta?.env?.VITE_PUBLIC_APP_URL,
     import.meta?.env?.VITE_APP_BASE_URL,
@@ -38,7 +52,7 @@ function resolveEmailVerificationRedirectTo() {
     try {
       const baseUrl = new URL(value)
       const redirectUrl = new URL('/auth/callback', baseUrl.origin)
-      redirectUrl.searchParams.set('next', '/onboarding/profile')
+      redirectUrl.searchParams.set('next', nextPath)
       return redirectUrl.toString()
     } catch {
       // Ignore malformed URL candidates and continue.
@@ -53,6 +67,14 @@ function resolvePendingInvitePath() {
   const pendingInviteToken = String(window.sessionStorage.getItem('itg:pending-org-invite-token') || '').trim()
   if (!pendingInviteToken) return ''
   return `/agent/invite/${pendingInviteToken}`
+}
+
+function resolveInviteTokenFromLocation(location) {
+  const nextPath = new URLSearchParams(location.search).get('next')
+  const match = String(nextPath || '').match(/^\/agent\/invite\/([^/?#]+)/)
+  if (match?.[1]) return decodeURIComponent(match[1])
+  if (typeof window === 'undefined') return ''
+  return String(window.sessionStorage.getItem('itg:pending-org-invite-token') || '').trim()
 }
 
 const DEV_BYPASS_ROLES = ['developer', 'agent', 'attorney', 'bond_originator']
@@ -96,6 +118,11 @@ function Auth({ onDevBypass = null }) {
   const navigate = useNavigate()
   const location = useLocation()
   const [mode, setMode] = useState('login')
+  const [signupStep, setSignupStep] = useState(0)
+  const [businessType, setBusinessType] = useState('')
+  const [position, setPosition] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -108,6 +135,17 @@ function Auth({ onDevBypass = null }) {
   const [nowTick, setNowTick] = useState(Date.now())
 
   const redirectTo = useMemo(() => getRedirectPath(location), [location])
+  const inviteToken = useMemo(() => resolveInviteTokenFromLocation(location), [location])
+  const inviteDrivenSignup = Boolean(inviteToken)
+  const currentIntent = useMemo(() => {
+    if (!position) return null
+    return buildSignupIntent({
+      position,
+      inviteToken,
+      source: inviteDrivenSignup ? SIGNUP_INTENT_SOURCE.inviteLink : SIGNUP_INTENT_SOURCE.publicSignup,
+    })
+  }, [inviteDrivenSignup, inviteToken, position])
+  const positionOptions = POSITION_OPTIONS_BY_BUSINESS_TYPE[businessType] || []
   const resendSecondsRemaining = Math.max(0, Math.ceil((resendCooldownUntil - nowTick) / 1000))
   const resendCooldownActive = resendSecondsRemaining > 0
 
@@ -156,6 +194,13 @@ function Auth({ onDevBypass = null }) {
     void checkSession()
   }, [navigate, redirectTo])
 
+  useEffect(() => {
+    if (!inviteDrivenSignup) return
+    setBusinessType(SIGNUP_BUSINESS_TYPES.agency)
+    setPosition('agency_operational')
+    setSignupStep(2)
+  }, [inviteDrivenSignup])
+
   async function handleSubmit(event) {
     event.preventDefault()
 
@@ -175,6 +220,21 @@ function Auth({ onDevBypass = null }) {
     }
 
     if (mode === 'signup') {
+      if (!currentIntent) {
+        setError('Choose your business type and position before creating an account.')
+        setSignupStep(businessType ? 1 : 0)
+        return
+      }
+      if (!fullName.trim()) {
+        setError('Full name is required.')
+        setSignupStep(2)
+        return
+      }
+      if (!phone.trim()) {
+        setError('Phone number is required.')
+        setSignupStep(2)
+        return
+      }
       if (password.length < 6) {
         setError('Password must be at least 6 characters.')
         return
@@ -190,7 +250,9 @@ function Auth({ onDevBypass = null }) {
       setLoading(true)
       setError('')
       setMessage('')
-      const emailRedirectTo = resolveEmailVerificationRedirectTo()
+      const emailRedirectTo = resolveEmailVerificationRedirectTo(
+        mode === 'signup' && currentIntent ? resolveSignupIntentRoute(currentIntent) : '/setup',
+      )
 
       if (mode === 'login') {
         console.debug('[AUTH] login:start', { email: email.trim().toLowerCase() })
@@ -210,12 +272,27 @@ function Auth({ onDevBypass = null }) {
         return
       }
 
-      console.debug('[AUTH] signup:start', { email: email.trim().toLowerCase() })
+      const intentWithEmail = {
+        ...currentIntent,
+        email: email.trim().toLowerCase(),
+      }
+      storeSignupIntentTemporarily(intentWithEmail)
+
+      console.debug('[AUTH] signup:start', {
+        email: email.trim().toLowerCase(),
+        appRole: intentWithEmail.app_role,
+        workspaceAction: intentWithEmail.workspace_action,
+      })
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
         options: {
           emailRedirectTo,
+          data: createSignupUserMetadata({
+            intent: intentWithEmail,
+            fullName,
+            phone,
+          }),
         },
       })
 
@@ -244,9 +321,18 @@ function Auth({ onDevBypass = null }) {
         throw signUpError
       }
 
+      if (data?.user) {
+        await persistSignupIntent({
+          intent: intentWithEmail,
+          user: data.user,
+          email: email.trim(),
+          status: data?.session ? 'ready_for_onboarding' : 'pending_email_verification',
+        })
+      }
+
       if (data?.session) {
         const pendingInvitePath = resolvePendingInvitePath()
-        const target = pendingInvitePath || '/onboarding/profile'
+        const target = pendingInvitePath || resolveSignupIntentRoute(intentWithEmail)
         console.debug('[REDIRECT] signup:session-created', { target, pendingInvite: Boolean(pendingInvitePath) })
         navigate(target, { replace: true })
         return
@@ -262,6 +348,7 @@ function Auth({ onDevBypass = null }) {
       }
       setPendingVerificationEmail(email.trim())
       setMode('login')
+      setSignupStep(0)
       setPassword('')
       setConfirmPassword('')
     } catch (submitError) {
@@ -399,51 +486,214 @@ function Auth({ onDevBypass = null }) {
           </div>
 
           <form className="auth-form" onSubmit={handleSubmit}>
-            <label>
-              Email
-              <input
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@company.com"
-                autoComplete="email"
-                required
-              />
-            </label>
-
-            <label>
-              Password
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder={mode === 'signup' ? 'At least 6 characters' : 'Your password'}
-                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                required
-              />
-            </label>
-
             {mode === 'signup' ? (
-              <label>
-                Confirm Password
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                  placeholder="Re-enter password"
-                  autoComplete="new-password"
-                  required
-                />
-              </label>
+              <>
+                <div className="grid grid-cols-3 gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#71859c]">
+                  {['Your role', 'Your position', 'Create account'].map((label, index) => (
+                    <span
+                      key={label}
+                      className={`rounded-[12px] border px-3 py-2 text-center ${
+                        signupStep === index
+                          ? 'border-[#315b7b] bg-[#eef5fb] text-[#19344f]'
+                          : signupStep > index
+                            ? 'border-[#d4e7dc] bg-[#f0fbf5] text-[#276246]'
+                            : 'border-[#dfe8f2] bg-[#fbfdff]'
+                      }`}
+                    >
+                      {label}
+                    </span>
+                  ))}
+                </div>
+
+                {inviteDrivenSignup ? (
+                  <p className="rounded-[14px] border border-[#dbe8f3] bg-[#f8fbff] px-4 py-3 text-sm leading-6 text-[#48627d]">
+                    Invite detected. Bridge will create an agency staff profile linked to this invitation after email verification.
+                  </p>
+                ) : null}
+
+                {signupStep === 0 ? (
+                  <section className="grid gap-3">
+                    {BUSINESS_TYPE_OPTIONS.map((option) => {
+                      const active = businessType === option.value
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`rounded-[18px] border px-4 py-3 text-left transition ${
+                            active
+                              ? 'border-[#315b7b] bg-[#eef5fb] text-[#142132]'
+                              : 'border-[#dfe8f2] bg-white text-[#31485e] hover:border-[#b9cde0]'
+                          }`}
+                          onClick={() => {
+                            setBusinessType(option.value)
+                            setPosition('')
+                            setError('')
+                          }}
+                        >
+                          <strong className="block text-sm">{option.label}</strong>
+                          <span className="mt-1 block text-xs leading-5 text-[#61758a]">{option.description}</span>
+                        </button>
+                      )
+                    })}
+                    <button
+                      type="button"
+                      className="auth-submit"
+                      disabled={!businessType}
+                      onClick={() => {
+                        setError('')
+                        setSignupStep(1)
+                      }}
+                    >
+                      Continue
+                      <ArrowRight size={15} />
+                    </button>
+                  </section>
+                ) : null}
+
+                {signupStep === 1 ? (
+                  <section className="grid gap-3">
+                    <p className="text-sm leading-6 text-[#60758d]">
+                      Choose the option that best describes your authority. Staff users will need an invite or approval before
+                      entering a workspace.
+                    </p>
+                    {positionOptions.map((option) => {
+                      const active = position === option.value
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`rounded-[18px] border px-4 py-3 text-left transition ${
+                            active
+                              ? 'border-[#315b7b] bg-[#eef5fb] text-[#142132]'
+                              : 'border-[#dfe8f2] bg-white text-[#31485e] hover:border-[#b9cde0]'
+                          }`}
+                          onClick={() => {
+                            setPosition(option.value)
+                            setError('')
+                          }}
+                        >
+                          <strong className="block text-sm">{option.label}</strong>
+                          <span className="mt-1 block text-xs leading-5 text-[#61758a]">{option.description}</span>
+                        </button>
+                      )
+                    })}
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <button type="button" className="auth-secondary-cta" onClick={() => setSignupStep(0)}>
+                        <ArrowLeft size={14} />
+                        Back
+                      </button>
+                      <button
+                        type="button"
+                        className="auth-submit"
+                        disabled={!position}
+                        onClick={() => {
+                          setError('')
+                          setSignupStep(2)
+                        }}
+                      >
+                        Continue
+                        <ArrowRight size={15} />
+                      </button>
+                    </div>
+                  </section>
+                ) : null}
+              </>
+            ) : null}
+
+            {mode === 'login' || signupStep === 2 ? (
+              <>
+                {mode === 'signup' ? (
+                  <>
+                    <label>
+                      Full Name
+                      <input
+                        type="text"
+                        value={fullName}
+                        onChange={(event) => setFullName(event.target.value)}
+                        placeholder="Your full name"
+                        autoComplete="name"
+                        required
+                      />
+                    </label>
+
+                    <label>
+                      Phone
+                      <input
+                        type="tel"
+                        value={phone}
+                        onChange={(event) => setPhone(event.target.value)}
+                        placeholder="Your phone number"
+                        autoComplete="tel"
+                        required
+                      />
+                    </label>
+                  </>
+                ) : null}
+
+                <label>
+                  Email
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="you@company.com"
+                    autoComplete="email"
+                    required
+                  />
+                </label>
+
+                <label>
+                  Password
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder={mode === 'signup' ? 'At least 6 characters' : 'Your password'}
+                    autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                    required
+                  />
+                </label>
+
+                {mode === 'signup' ? (
+                  <>
+                    <label>
+                      Confirm Password
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(event) => setConfirmPassword(event.target.value)}
+                        placeholder="Re-enter password"
+                        autoComplete="new-password"
+                        required
+                      />
+                    </label>
+                    {currentIntent ? (
+                      <p className="rounded-[14px] border border-[#dbe8f3] bg-[#f8fbff] px-4 py-3 text-sm leading-6 text-[#48627d]">
+                        {currentIntent.workspace_action === 'create_workspace'
+                          ? 'After verification, Bridge will continue with workspace setup for your business.'
+                          : currentIntent.workspace_action === 'accept_invite'
+                            ? 'After verification, Bridge will return you to this invitation.'
+                            : 'After verification, Bridge will guide you to join or request access to the right workspace.'}
+                      </p>
+                    ) : null}
+                    <button type="button" className="auth-secondary-cta" onClick={() => setSignupStep(1)}>
+                      <ArrowLeft size={14} />
+                      Back to position
+                    </button>
+                  </>
+                ) : null}
+              </>
             ) : null}
 
             {error ? <p className="auth-feedback error">{error}</p> : null}
             {message ? <p className="auth-feedback success">{message}</p> : null}
 
-            <button type="submit" className="auth-submit" disabled={loading}>
-              {loading ? 'Processing...' : mode === 'login' ? 'Launch Workspace' : 'Create Account'}
-              {!loading ? <ArrowRight size={15} /> : null}
-            </button>
+            {mode === 'login' || signupStep === 2 ? (
+              <button type="submit" className="auth-submit" disabled={loading}>
+                {loading ? 'Processing...' : mode === 'login' ? 'Launch Workspace' : 'Create Account'}
+                {!loading ? <ArrowRight size={15} /> : null}
+              </button>
+            ) : null}
           </form>
 
           {mode === 'login' ? (
@@ -473,12 +723,11 @@ function Auth({ onDevBypass = null }) {
 
           {!isSupabaseConfigured ? (
             <p className="auth-demo-note">
-              Supabase env vars are missing, so auth is disabled. You can still open the app in demo mode via{' '}
-              <Link to="/dashboard">Dashboard</Link>.
+              Supabase env vars are missing, so Bridge authentication is disabled until the environment is configured.
             </p>
           ) : null}
 
-          {import.meta.env.DEV ? (
+          {isDevAuthBypassEnabled() ? (
             <div className="mt-6 rounded-[24px] border border-[#d8e2f0] bg-[#f4f7fb] p-4">
               <div className="mb-3">
                 <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-[#6f87a7]">Local Dev Bypass</h3>
