@@ -996,6 +996,7 @@ function RecentActivityFeed({ rows }) {
 }
 
 function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransactions: canViewAllTransactionsOverride }) {
+  const navigate = useNavigate()
   const { profile, currentMembership, workspaceRole, workspaceType } = useWorkspace()
   const [dateRange, setDateRange] = useState('this_month')
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => String(workspaceId || 'all').trim() || 'all')
