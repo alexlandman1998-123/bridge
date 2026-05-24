@@ -74,12 +74,7 @@ export const APP_NAV_BY_ROLE = {
   ],
   agent: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
-    {
-      key: 'listings',
-      label: 'Listings',
-      to: '/listings',
-      activeMatch: ['/listings', '/agent/listings'],
-    },
+    { key: 'transactions', label: 'Transactions', to: '/transactions' },
     {
       key: 'pipeline',
       label: 'Pipeline',
@@ -90,7 +85,12 @@ export const APP_NAV_BY_ROLE = {
         { key: 'pipeline_calendar', label: 'Calendar', to: '/pipeline/calendar' },
       ],
     },
-    { key: 'transactions', label: 'Transactions', to: '/transactions' },
+    {
+      key: 'listings',
+      label: 'Listings',
+      to: '/listings',
+      activeMatch: ['/listings', '/agent/listings'],
+    },
     { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'documents', label: 'Documents', to: '/documents' },
     { key: 'reports', label: 'Reports', to: '/reports' },
@@ -260,12 +260,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
 
   return [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
-    {
-      key: 'listings',
-      label: 'Listings',
-      to: '/listings',
-      activeMatch: ['/listings', '/agent/listings'],
-    },
+    { key: 'transactions', label: 'Transactions', to: '/transactions' },
     {
       key: 'pipeline',
       label: 'Pipeline',
@@ -277,9 +272,12 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
         { key: 'pipeline_calendar', label: 'Calendar', to: '/pipeline/calendar' },
       ],
     },
-    { key: 'transactions', label: 'Transactions', to: '/transactions' },
-    { key: 'clients', label: 'Clients', to: '/clients' },
-    { key: 'documents', label: 'Documents', to: '/documents' },
+    {
+      key: 'listings',
+      label: 'Listings',
+      to: '/listings',
+      activeMatch: ['/listings', '/agent/listings'],
+    },
     {
       key: 'agency',
       label: 'Agency',
@@ -292,6 +290,8 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
         { key: 'agents_reporting', label: 'Reports', to: '/agents/reporting' },
       ],
     },
+    { key: 'clients', label: 'Clients', to: '/clients' },
+    { key: 'documents', label: 'Documents', to: '/documents' },
     { key: 'reports', label: 'Reports', to: '/reports' },
   ]
 

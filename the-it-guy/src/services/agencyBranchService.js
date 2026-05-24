@@ -159,13 +159,14 @@ async function listOrganisationPrivateListings(client, organisationId) {
     .from('private_listings')
     .select('id, organisation_id, branch_id, assigned_agent_email, assigned_agent_name, listing_title, asking_price, listing_status, stage, created_at, updated_at')
     .eq('organisation_id', organisationId)
+    .neq('listing_status', 'withdrawn')
 
   if (query.error) {
     if (isMissingTableError(query.error) || isSchemaMismatchError(query.error)) return []
     throw query.error
   }
 
-  return query.data || []
+  return (query.data || []).filter((row) => normalizeLower(row?.listing_status || row?.stage) !== 'withdrawn')
 }
 
 async function listOrganisationLeads(client, organisationId) {

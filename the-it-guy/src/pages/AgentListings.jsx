@@ -24,6 +24,7 @@ import {
   LISTING_STATUS,
   OFFER_STATUS,
   readAgentPrivateListings,
+  readDeletedListingIds,
   SELLER_ONBOARDING_STATUS,
 } from '../lib/agentListingStorage'
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
@@ -67,8 +68,7 @@ function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(String(value || '').trim())
 }
 
-function rowMatchesDeletedListing(row = {}, deletedIds = new Set()) {
-  if (!deletedIds.size) return false
+function getListingIdentityKeys(row = {}) {
   return [
     row.id,
     row.listingId,
@@ -83,7 +83,25 @@ function rowMatchesDeletedListing(row = {}, deletedIds = new Set()) {
     row.seller_lead_id,
     row.originatingCrmLeadId,
     row.originating_crm_lead_id,
-  ].some((value) => deletedIds.has(String(value || '').trim()))
+  ].map((value) => String(value || '').trim()).filter(Boolean)
+}
+
+function rowMatchesDeletedListing(row = {}, deletedIds = new Set()) {
+  if (!deletedIds.size) return false
+  return getListingIdentityKeys(row).some((value) => deletedIds.has(value))
+}
+
+function isDeletedListingRecord(row = {}) {
+  const status = String(row.listingStatus || row.listing_status || row.status || row.lifecycleStatus || '').trim().toLowerCase()
+  const visibility = String(row.listingVisibility || row.listing_visibility || '').trim().toLowerCase()
+  return Boolean(
+    row.deleted_at ||
+      row.deletedAt ||
+      row.is_deleted ||
+      row.isDeleted ||
+      ['withdrawn', 'deleted', 'archived'].includes(status) ||
+      ['archived', 'deleted'].includes(visibility),
+  )
 }
 
 function getListingStatusLabel(key) {
@@ -197,17 +215,22 @@ function statusPillClass(statusKey) {
   return 'border-[#dbe6f2] bg-[#f5f9fd] text-[#35546c]'
 }
 
-function mergePrivateListingRows(dbRows = [], runtimeRows = []) {
+function mergePrivateListingRows(dbRows = [], runtimeRows = [], deletedIds = new Set()) {
   const map = new Map()
+  const seenKeys = new Set()
   for (const row of Array.isArray(dbRows) ? dbRows : []) {
-    const id = String(row?.id || '').trim()
-    if (!id) continue
-    map.set(id, row)
+    if (rowMatchesDeletedListing(row, deletedIds) || isDeletedListingRecord(row)) continue
+    const keys = getListingIdentityKeys(row)
+    if (!keys.length || keys.some((key) => seenKeys.has(key))) continue
+    keys.forEach((key) => seenKeys.add(key))
+    map.set(keys[0], row)
   }
   for (const row of Array.isArray(runtimeRows) ? runtimeRows : []) {
-    const id = String(row?.id || '').trim()
-    if (!id || map.has(id)) continue
-    map.set(id, row)
+    if (rowMatchesDeletedListing(row, deletedIds) || isDeletedListingRecord(row)) continue
+    const keys = getListingIdentityKeys(row)
+    if (!keys.length || keys.some((key) => seenKeys.has(key))) continue
+    keys.forEach((key) => seenKeys.add(key))
+    map.set(keys[0], row)
   }
   return Array.from(map.values())
 }
@@ -342,6 +365,7 @@ function AgentListings({ initialTab = null } = {}) {
   const [developmentOptions, setDevelopmentOptions] = useState([])
   const [assignedDevelopmentIds, setAssignedDevelopmentIds] = useState([])
   const [privateListings, setPrivateListings] = useState([])
+  const [deletedListingIds, setDeletedListingIds] = useState(() => readDeletedListingIds())
   const [organisationId, setOrganisationId] = useState('')
   const [deletingListingId, setDeletingListingId] = useState('')
   const [filters, setFilters] = useState({
@@ -358,6 +382,8 @@ function AgentListings({ initialTab = null } = {}) {
       let participantRows = []
       let options = []
       let assignedIds = []
+      const locallyDeletedIds = readDeletedListingIds()
+      setDeletedListingIds(locallyDeletedIds)
       const runtimeListings = readAgentPrivateListings()
       let dbPrivateListings = []
       let resolvedOrganisationId = ''
@@ -391,13 +417,15 @@ function AgentListings({ initialTab = null } = {}) {
       setDevelopmentOptions(Array.isArray(options) ? options : [])
       setAssignedDevelopmentIds(Array.isArray(assignedIds) ? assignedIds : [])
       setOrganisationId(resolvedOrganisationId)
-      setPrivateListings(mergePrivateListingRows(dbPrivateListings, runtimeListings))
+      setPrivateListings(mergePrivateListingRows(dbPrivateListings, runtimeListings, locallyDeletedIds))
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load listings at the moment.')
       setDevelopmentRows([])
       setDevelopmentOptions([])
       setAssignedDevelopmentIds([])
-      setPrivateListings(readAgentPrivateListings())
+      const locallyDeletedIds = readDeletedListingIds()
+      setDeletedListingIds(locallyDeletedIds)
+      setPrivateListings(mergePrivateListingRows([], readAgentPrivateListings(), locallyDeletedIds))
     } finally {
       if (showLoading) setLoading(false)
     }
@@ -798,12 +826,19 @@ function AgentListings({ initialTab = null } = {}) {
     setWorkflowMessage('')
 
     try {
+      let remoteDelete = null
       if (isSupabaseConfigured && isUuidLike(listingId)) {
-        await deletePrivateListing(listingId)
+        remoteDelete = await deletePrivateListing(listingId, {
+          organisationId: card?.listingRecord?.organisationId || card?.listingRecord?.organisation_id || organisationId,
+        })
+        if (!remoteDelete?.deleted) {
+          throw new Error('Could not delete listing. Please try again.')
+        }
       }
 
-      const localDelete = deleteAgentPrivateListingCascade(card?.listingRecord || listingId)
+      const localDelete = deleteAgentPrivateListingCascade(card?.listingRecord || remoteDelete?.listing || listingId)
       const deletedIds = new Set([listingId, ...(localDelete.deletedIds || [])].map((value) => String(value || '').trim()).filter(Boolean))
+      setDeletedListingIds((previous) => new Set([...previous, ...deletedIds]))
       setPrivateListings((rows) => rows.filter((row) => !rowMatchesDeletedListing(row, deletedIds)))
       await loadData({ showLoading: false })
       setWorkflowMessage(`"${listingTitle}" was permanently deleted.`)
@@ -816,7 +851,9 @@ function AgentListings({ initialTab = null } = {}) {
 
   const privateListingCards = useMemo(() => {
     const agentName = String(profile?.fullName || profile?.name || profile?.email || 'Assigned Agent').trim()
-    return privateListings.map((listing) => {
+    return privateListings
+      .filter((listing) => !rowMatchesDeletedListing(listing, deletedListingIds) && !isDeletedListingRecord(listing))
+      .map((listing) => {
       const statusKey = getPrivateListingStatus(listing)
       const propertyCategory = resolvePropertyCategory(listing)
       const listingSource = resolveListingSource(listing)
@@ -869,7 +906,7 @@ function AgentListings({ initialTab = null } = {}) {
         agentName,
       }
     })
-  }, [privateListings, profile?.email, profile?.fullName, profile?.name])
+  }, [deletedListingIds, privateListings, profile?.email, profile?.fullName, profile?.name])
 
   const categoryFilteredListingCards = useMemo(() => {
     const query = String(filters.search || '').trim().toLowerCase()

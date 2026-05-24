@@ -218,7 +218,10 @@ function HeaderBar({ onLogout, user }) {
       : agencyWorkflowMode === 'principal'
         ? 'Agency command centre'
         : 'Agent workspace'
-  const hidePremiumHeaderTitle = location.pathname.startsWith('/pipeline/leads') || isPremiumAttorneyOperations
+  const hidePremiumHeaderTitle =
+    location.pathname.startsWith('/pipeline/leads') ||
+    location.pathname.startsWith('/agency/branches') ||
+    isPremiumAttorneyOperations
   const developerHideTitle =
     role === 'developer' &&
     (

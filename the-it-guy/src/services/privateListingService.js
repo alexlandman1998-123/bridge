@@ -35,6 +35,8 @@ const LISTING_STATUSES = PRIVATE_LISTING_LIFECYCLE.STATUSES
 const LISTING_VISIBILITY = ['internal', 'active_market', 'archived']
 const SELLER_ONBOARDING_STATUSES = ['not_started', 'sent', 'in_progress', 'completed', 'rejected']
 const MANDATE_STATUSES = ['not_started', 'ready', 'generated', 'sent', 'viewed', 'signed', 'rejected', 'expired']
+const DELETED_LISTING_STATUSES = new Set(['withdrawn', 'deleted', 'archived'])
+const DELETED_LISTING_VISIBILITIES = new Set(['archived', 'deleted'])
 
 function requireClient() {
   if (!isSupabaseConfigured || !supabase) {
@@ -49,6 +51,25 @@ function normalizeText(value) {
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function isDeletedPrivateListingRow(row = {}) {
+  const status = normalizeKey(row.listing_status || row.listingStatus || row.status || row.lifecycleStatus)
+  const visibility = normalizeKey(row.listing_visibility || row.listingVisibility)
+  return Boolean(
+    row.deleted_at ||
+      row.deletedAt ||
+      row.is_deleted ||
+      row.isDeleted ||
+      DELETED_LISTING_STATUSES.has(status) ||
+      DELETED_LISTING_VISIBILITIES.has(visibility),
+  )
+}
+
+function applyVisiblePrivateListingFilters(queryBuilder) {
+  return queryBuilder
+    .neq('listing_status', 'withdrawn')
+    .neq('listing_visibility', 'archived')
 }
 
 function normalizeNullableText(value) {
@@ -921,6 +942,7 @@ export async function createPrivateListing(payload = {}, options = {}) {
       .select('*')
       .eq('originating_crm_lead_id', originatingCrmLeadId)
       .neq('listing_status', 'withdrawn')
+      .neq('listing_visibility', 'archived')
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -1068,15 +1090,23 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
   return mapPrivateListingRow(updateQuery.data, onboardingMap, requirementsMap, documentsMap)
 }
 
-export async function deletePrivateListing(listingId) {
+export async function deletePrivateListing(listingId, { organisationId = null } = {}) {
   const client = requireClient()
   const normalizedId = normalizeUuid(listingId)
+  const normalizedOrgId = normalizeUuid(organisationId)
   if (!normalizedId) throw new Error('Listing id is required.')
 
-  const result = await client
+  let hardDeleteError = null
+  let hardDeleteQuery = client
     .from('private_listings')
     .delete()
     .eq('id', normalizedId)
+
+  if (normalizedOrgId) {
+    hardDeleteQuery = hardDeleteQuery.eq('organisation_id', normalizedOrgId)
+  }
+
+  const result = await hardDeleteQuery
     .select('id, organisation_id, seller_lead_id, originating_crm_lead_id, listing_reference, title')
     .maybeSingle()
 
@@ -1084,12 +1114,53 @@ export async function deletePrivateListing(listingId) {
     if (isMissingTableError(result.error, 'private_listings')) {
       throw new Error('Private listings table is unavailable in this Supabase project.')
     }
-    throw result.error
+    hardDeleteError = result.error
+  }
+
+  if (result.data?.id) {
+    return {
+      deleted: true,
+      mode: 'hard',
+      listing: result.data,
+    }
+  }
+
+  const softDeletePayload = {
+    listing_status: 'withdrawn',
+    listing_visibility: 'archived',
+    is_active: false,
+  }
+  let softDeleteQuery = client
+    .from('private_listings')
+    .update(softDeletePayload)
+    .eq('id', normalizedId)
+
+  if (normalizedOrgId) {
+    softDeleteQuery = softDeleteQuery.eq('organisation_id', normalizedOrgId)
+  }
+
+  const softDelete = await softDeleteQuery
+    .select('id, organisation_id, seller_lead_id, originating_crm_lead_id, listing_reference, title, listing_status, listing_visibility')
+    .maybeSingle()
+
+  if (softDelete.error) {
+    if (isMissingTableError(softDelete.error, 'private_listings')) {
+      throw new Error('Private listings table is unavailable in this Supabase project.')
+    }
+    throw softDelete.error
+  }
+
+  if (!softDelete.data?.id) {
+    const message = hardDeleteError?.message
+      ? `Could not delete listing. ${hardDeleteError.message}`
+      : 'Could not delete listing. It may already be removed or you may not have permission.'
+    throw new Error(message)
   }
 
   return {
-    deleted: Boolean(result.data?.id),
-    listing: result.data || null,
+    deleted: true,
+    mode: 'soft',
+    listing: softDelete.data,
   }
 }
 
@@ -1162,7 +1233,7 @@ async function getPrivateListingById(listingId, { includeRequirementsAndDocument
     if (isMissingTableError(query.error, 'private_listings')) return null
     throw query.error
   }
-  if (!query.data) return null
+  if (!query.data || isDeletedPrivateListingRow(query.data)) return null
   const [onboardingMap, requirementsMap, documentsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, [query.data.id]),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
@@ -1176,16 +1247,17 @@ export async function getOrganisationPrivateListings(organisationId, options = {
   const client = requireClient()
   const normalizedOrgId = normalizeUuid(organisationId)
   if (!normalizedOrgId) throw new Error('Organisation id is required.')
-  const query = await client
-    .from('private_listings')
-    .select('*')
-    .eq('organisation_id', normalizedOrgId)
-    .order('updated_at', { ascending: false })
+  const query = await applyVisiblePrivateListingFilters(
+    client
+      .from('private_listings')
+      .select('*')
+      .eq('organisation_id', normalizedOrgId),
+  ).order('updated_at', { ascending: false })
   if (query.error) {
     if (isMissingTableError(query.error, 'private_listings')) return []
     throw query.error
   }
-  const rows = Array.isArray(query.data) ? query.data : []
+  const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => !isDeletedPrivateListingRow(row))
   const listingIds = rows.map((row) => row.id)
   const [onboardingMap, requirementsMap, documentsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, listingIds),
@@ -1200,7 +1272,7 @@ export async function getAgentPrivateListings(agentId, { organisationId = null, 
   const normalizedAgentId = normalizeUuid(agentId)
   const normalizedOrgId = normalizeUuid(organisationId)
   if (!includeAllOrganisationListings && !normalizedAgentId) return []
-  const queryBuilder = client.from('private_listings').select('*')
+  const queryBuilder = applyVisiblePrivateListingFilters(client.from('private_listings').select('*'))
 
   if (normalizedOrgId) {
     queryBuilder.eq('organisation_id', normalizedOrgId)
@@ -1214,7 +1286,7 @@ export async function getAgentPrivateListings(agentId, { organisationId = null, 
     if (isMissingTableError(query.error, 'private_listings')) return []
     throw query.error
   }
-  const rows = Array.isArray(query.data) ? query.data : []
+  const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => !isDeletedPrivateListingRow(row))
   const listingIds = rows.map((row) => row.id)
   const [onboardingMap, requirementsMap, documentsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, listingIds),

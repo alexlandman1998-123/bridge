@@ -2300,7 +2300,10 @@ function AgentListingDetail() {
 
     try {
       if (isSupabaseConfigured && isUuidLike(listingId)) {
-        await deletePrivateListing(listingId)
+        const remoteDelete = await deletePrivateListing(listingId, { organisationId: listingOrganisationId })
+        if (!remoteDelete?.deleted) {
+          throw new Error('Could not delete listing. Please try again.')
+        }
       }
       deleteAgentPrivateListingCascade(listingRecord || listingId)
       window.dispatchEvent(new Event('itg:listings-updated'))

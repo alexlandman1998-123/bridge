@@ -137,12 +137,12 @@ export function buildSellerClientPortalLink(token, baseUrl = '') {
 
 export function readAgentPrivateListings() {
   const deletedIds = readDeletedListingIds()
-  return readRows(AGENT_PRIVATE_LISTINGS_STORAGE_KEY).filter((row) => !listingMatchesDeletedIds(row, deletedIds))
+  return readRows(AGENT_PRIVATE_LISTINGS_STORAGE_KEY).filter((row) => !listingMatchesDeletedIds(row, deletedIds) && !isDeletedListingRecord(row))
 }
 
 export function writeAgentPrivateListings(rows) {
   const deletedIds = readDeletedListingIds()
-  writeRows(AGENT_PRIVATE_LISTINGS_STORAGE_KEY, (Array.isArray(rows) ? rows : []).filter((row) => !listingMatchesDeletedIds(row, deletedIds)))
+  writeRows(AGENT_PRIVATE_LISTINGS_STORAGE_KEY, (Array.isArray(rows) ? rows : []).filter((row) => !listingMatchesDeletedIds(row, deletedIds) && !isDeletedListingRecord(row)))
 }
 
 export function readAgentSellerLeads() {
@@ -196,6 +196,19 @@ function collectListingDeleteIds(recordOrId = {}) {
 function listingMatchesDeletedIds(record = {}, deletedIds = new Set()) {
   if (!record || !deletedIds?.size) return false
   return Array.from(collectListingDeleteIds(record)).some((id) => deletedIds.has(id))
+}
+
+function isDeletedListingRecord(record = {}) {
+  const status = String(record.listingStatus || record.listing_status || record.status || record.lifecycleStatus || '').trim().toLowerCase()
+  const visibility = String(record.listingVisibility || record.listing_visibility || '').trim().toLowerCase()
+  return Boolean(
+    record.deleted_at ||
+      record.deletedAt ||
+      record.is_deleted ||
+      record.isDeleted ||
+      ['withdrawn', 'deleted', 'archived'].includes(status) ||
+      ['archived', 'deleted'].includes(visibility),
+  )
 }
 
 export function rememberDeletedListingIds(ids = []) {
