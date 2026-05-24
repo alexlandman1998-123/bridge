@@ -2306,7 +2306,7 @@ body.sidebar-compact .ui-main-region {
 .auth-page {
   min-height: 100vh;
   min-height: 100dvh;
-  padding: 1.2rem;
+  padding: clamp(0.72rem, 2vw, 1.2rem);
   display: grid;
   place-items: center;
   overflow: auto;
@@ -2322,10 +2322,13 @@ body.sidebar-compact .ui-main-region {
 
 .auth-shell {
   width: min(1160px, 100%);
+  height: min(760px, calc(100dvh - clamp(1.44rem, 4vw, 2.4rem)));
+  min-height: min(640px, calc(100dvh - clamp(1.44rem, 4vw, 2.4rem)));
   display: grid;
   grid-template-columns: minmax(0, 1.04fr) minmax(430px, 0.96fr);
   gap: 1rem;
   align-items: stretch;
+  min-width: 0;
 }
 
 .auth-hero {
@@ -2337,8 +2340,9 @@ body.sidebar-compact .ui-main-region {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
   position: relative;
+  scrollbar-width: thin;
 }
 
 .auth-brand {
@@ -2517,6 +2521,9 @@ body.sidebar-compact .ui-main-region {
   display: grid;
   gap: 1rem;
   align-content: start;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
 }
 
 .auth-card-head h2 {
@@ -2679,6 +2686,7 @@ body.sidebar-compact .ui-main-region {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
   padding: 0.1rem 0 0.3rem;
 }
 
@@ -2687,7 +2695,7 @@ body.sidebar-compact .ui-main-region {
 }
 
 .signup-stepper-item {
-  min-width: 0;
+  min-width: max-content;
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
@@ -2988,9 +2996,123 @@ body.sidebar-compact .ui-main-region {
   font-size: 0.82rem;
 }
 
-@media (max-width: 1024px) {
+@media (max-height: 780px) and (min-width: 1025px) {
   .auth-shell {
+    height: calc(100dvh - clamp(1.44rem, 4vw, 2.4rem));
+    min-height: 0;
+  }
+
+  .auth-hero,
+  .auth-card {
+    padding: clamp(0.86rem, 1.45vw, 1.15rem);
+  }
+
+  .auth-card {
+    gap: 0.72rem;
+  }
+
+  .auth-card-head h2 {
+    font-size: clamp(1.25rem, 1.6vw, 1.55rem);
+  }
+
+  .auth-card-head p {
+    font-size: 0.82rem;
+  }
+
+  .auth-hero h1 {
+    font-size: clamp(1.35rem, 2.3vw, 1.85rem);
+  }
+
+  .auth-hero-points,
+  .auth-platform-preview {
+    margin-top: 0.78rem;
+  }
+
+  .auth-hero-points {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .auth-hero-points article {
+    display: grid;
+    gap: 0.32rem;
+    align-content: start;
+  }
+
+  .auth-hero-points article,
+  .auth-preview-stages article {
+    padding: 0.48rem 0.54rem;
+  }
+
+  .auth-hero-points span {
+    font-size: 0.68rem;
+    line-height: 1.32;
+  }
+
+  .auth-platform-preview {
+    padding: 0.78rem;
+  }
+
+  .auth-platform-preview header {
+    margin-bottom: 0.62rem;
+  }
+
+  .auth-preview-stages {
+    gap: 0.34rem;
+  }
+
+  .auth-preview-metrics {
+    margin-top: 0.52rem;
+  }
+
+  .signup-choice-stack,
+  .auth-form {
+    gap: 0.62rem;
+  }
+
+  .signup-role-card {
+    padding: 0.78rem;
+    gap: 0.5rem;
+  }
+
+  .signup-role-card-icon {
+    width: 2.35rem;
+    height: 2.35rem;
+    border-radius: 12px;
+  }
+
+  .signup-role-card strong,
+  .signup-position-card strong {
+    font-size: 0.92rem;
+  }
+
+  .signup-role-card-main span span,
+  .signup-position-card span span {
+    font-size: 0.78rem;
+    line-height: 1.36;
+  }
+}
+
+@media (max-width: 1024px) {
+  .auth-page {
+    place-items: start center;
+  }
+
+  .auth-shell {
+    width: min(720px, 100%);
+    height: auto;
+    min-height: 0;
     grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .auth-card {
+    order: 1;
+    overflow: visible;
+  }
+
+  .auth-hero {
+    order: 2;
+    overflow: visible;
   }
 }
 
@@ -3011,7 +3133,29 @@ body.sidebar-compact .ui-main-region {
   }
 
   .signup-stepper {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
     gap: 0.35rem;
+  }
+
+  .signup-stepper-item-wrap {
+    display: flex;
+    justify-content: center;
+    min-width: 0;
+  }
+
+  .signup-stepper-line {
+    display: none;
+  }
+
+  .signup-stepper-item {
+    min-width: 0;
+    width: 100%;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.32rem;
+    text-align: center;
   }
 
   .signup-stepper-node {
@@ -3024,7 +3168,8 @@ body.sidebar-compact .ui-main-region {
   }
 
   .signup-stepper-copy strong {
-    font-size: 0.74rem;
+    font-size: 0.72rem;
+    line-height: 1.12;
   }
 
   .signup-role-card,
@@ -3039,5 +3184,69 @@ body.sidebar-compact .ui-main-region {
   .auth-footer {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+@media (max-width: 480px) {
+  .auth-shell {
+    gap: 0.72rem;
+  }
+
+  .auth-card,
+  .auth-hero {
+    border-radius: 14px;
+    padding: 0.72rem;
+  }
+
+  .auth-card {
+    gap: 0.78rem;
+  }
+
+  .auth-card-head h2 {
+    font-size: 1.28rem;
+  }
+
+  .auth-card-head p,
+  .signup-step-note {
+    font-size: 0.8rem;
+  }
+
+  .auth-mode-switch {
+    width: 100%;
+  }
+
+  .auth-mode-switch button {
+    flex: 1 1 0;
+  }
+
+  .signup-role-card {
+    padding: 0.78rem;
+  }
+
+  .signup-role-card-main {
+    gap: 0.64rem;
+  }
+
+  .signup-role-card-icon {
+    width: 2.35rem;
+    height: 2.35rem;
+    border-radius: 12px;
+  }
+
+  .signup-position-card {
+    grid-template-columns: auto 1fr;
+  }
+
+  .signup-position-check {
+    display: none;
+  }
+
+  .auth-platform-preview header {
+    display: grid;
+    gap: 0.18rem;
+  }
+
+  .auth-preview-stages article {
+    padding: 0.54rem;
   }
 }
