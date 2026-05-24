@@ -21,6 +21,19 @@ import { useNavigate, useParams } from 'react-router-dom'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import Modal from '../../components/ui/Modal'
+import {
+  AGENT_ROLE_OPTIONS,
+  buildAgentInviteLink,
+  createAgentInvite,
+  markAgentInviteSent,
+} from '../../lib/agentInviteService'
+import {
+  assignOrganisationUserCommissionProfile,
+  fetchOrganisationSettings,
+  listOrganisationCommissionStructures,
+} from '../../lib/settingsApi'
+import { invokeEdgeFunction, isSupabaseConfigured } from '../../lib/supabaseClient'
+import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../../lib/whatsapp'
 import { getAgentLeaderboard } from '../../services/branchAnalyticsService'
 import { getBranch, getBranchListings, getBranchTransactions, updateBranch } from '../../services/agencyBranchService'
 
@@ -53,6 +66,12 @@ function formatPercent(value) {
   const numeric = Number(value || 0)
   if (!Number.isFinite(numeric)) return '0%'
   return `${Math.round(numeric)}%`
+}
+
+function buildInviteMessage({ invite, inviteLink }) {
+  const agentName = `${invite?.firstName || ''} ${invite?.surname || ''}`.trim() || 'Agent'
+  const orgName = invite?.organisationName || 'your organisation'
+  return `Hi ${agentName},\n\nYou have been invited to join ${orgName} on Bridge 9.\n\nComplete your agent onboarding here:\n${inviteLink}\n\n- Bridge`
 }
 
 function formatDateShort(value) {
@@ -275,6 +294,227 @@ function BranchSettingsModal({ open, branch, onClose, onSaved }) {
   )
 }
 
+function BranchAgentInviteModal({
+  open,
+  branch,
+  organisation,
+  profile,
+  commissionStructures = [],
+  onClose,
+  onSent,
+}) {
+  const defaultCommissionStructure = commissionStructures.find((structure) => structure?.isDefault) || null
+  const hasCommissionStructures = commissionStructures.length > 0
+  const [form, setForm] = useState({
+    firstName: '',
+    surname: '',
+    email: '',
+    mobile: '',
+    role: 'agent',
+    commissionStructureId: '',
+    notes: '',
+  })
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!open) return
+    setForm({
+      firstName: '',
+      surname: '',
+      email: '',
+      mobile: '',
+      role: 'agent',
+      commissionStructureId: defaultCommissionStructure?.id || '',
+      notes: '',
+    })
+    setError('')
+  }, [defaultCommissionStructure?.id, open])
+
+  function updateField(key, value) {
+    setForm((previous) => ({ ...previous, [key]: value }))
+  }
+
+  async function sendInviteNotifications(invite) {
+    const inviteLink = buildAgentInviteLink(invite?.token)
+    const inviteMessage = buildInviteMessage({ invite, inviteLink })
+    const recipientEmail = normalizeText(invite?.email)
+    const recipientPhone = formatSouthAfricanWhatsAppNumber(invite?.mobile)
+
+    if (recipientEmail && isSupabaseConfigured) {
+      try {
+        await invokeEdgeFunction('send-email', {
+          body: {
+            type: 'agent_invite',
+            to: recipientEmail,
+            agentName: `${invite?.firstName || ''} ${invite?.surname || ''}`.trim(),
+            organisationName: invite?.organisationName || organisation?.name || 'Bridge Organisation',
+            onboardingLink: inviteLink,
+          },
+        })
+      } catch (sendError) {
+        console.error('[Branch Agent Invite] email send failed', sendError)
+      }
+    }
+
+    if (recipientPhone) {
+      try {
+        await sendWhatsAppNotification({
+          to: recipientPhone,
+          role: 'agent_invite',
+          message: inviteMessage,
+        })
+      } catch (sendError) {
+        console.error('[Branch Agent Invite] WhatsApp send failed', sendError)
+      }
+    }
+
+    return inviteLink
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    if (!normalizeText(form.firstName) || !normalizeText(form.surname) || !normalizeText(form.email) || !normalizeText(form.mobile)) {
+      setError('First name, surname, email, and mobile number are required.')
+      return
+    }
+    if (!hasCommissionStructures) {
+      setError('Create a commission structure before inviting agents.')
+      return
+    }
+    const selectedCommissionStructure =
+      commissionStructures.find((structure) => structure.id === form.commissionStructureId) ||
+      defaultCommissionStructure
+    if (!selectedCommissionStructure?.id) {
+      setError('Select a commission structure before inviting this agent.')
+      return
+    }
+
+    try {
+      setSubmitting(true)
+      setError('')
+      const created = createAgentInvite({
+        firstName: form.firstName,
+        surname: form.surname,
+        email: form.email,
+        mobile: form.mobile,
+        organisationId: organisation?.id || branch?.organisationId,
+        organisationName: organisation?.name || 'Bridge Organisation',
+        branchId: branch?.id,
+        office: branch?.name,
+        commissionStructureId: selectedCommissionStructure.id,
+        commissionStructureName: selectedCommissionStructure.name,
+        role: form.role,
+        notes: form.notes,
+        invitedByUserId: profile?.id || '',
+        invitedByEmail: profile?.email || '',
+        invitedByName: profile?.fullName || profile?.name || profile?.email || '',
+      })
+
+      await assignOrganisationUserCommissionProfile({
+        email: form.email,
+        commissionStructureId: selectedCommissionStructure.id,
+      })
+      await sendInviteNotifications(created.invite)
+      markAgentInviteSent(created.invite.id)
+      onSent?.(created.invite)
+      onClose?.()
+    } catch (inviteError) {
+      setError(inviteError?.message || 'Unable to send agent invite.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={submitting ? undefined : onClose}
+      title="Add Agent"
+      subtitle={`Invite an agent directly to ${branch?.name || 'this branch'}.`}
+      className="max-w-4xl"
+      footer={(
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>Cancel</Button>
+          <Button type="submit" form="branch-agent-invite-form" disabled={submitting}>{submitting ? 'Sending Invite...' : 'Send Invite'}</Button>
+        </div>
+      )}
+    >
+      <form id="branch-agent-invite-form" className="space-y-5" onSubmit={handleSubmit}>
+        <section className="rounded-[16px] border border-[#e1e8f2] bg-[#fbfcfe] p-4">
+          <p className="text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-[#7a8ca2]">Agent Details</p>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">First Name</span>
+              <Field value={form.firstName} onChange={(event) => updateField('firstName', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Surname</span>
+              <Field value={form.surname} onChange={(event) => updateField('surname', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Email Address</span>
+              <Field type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Mobile Number</span>
+              <Field value={form.mobile} onChange={(event) => updateField('mobile', event.target.value)} />
+            </label>
+          </div>
+        </section>
+
+        <section className="rounded-[16px] border border-[#e1e8f2] bg-[#fbfcfe] p-4">
+          <p className="text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-[#7a8ca2]">Organisation Details</p>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Organisation</span>
+              <Field value={organisation?.name || 'Bridge Organisation'} disabled />
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Branch</span>
+              <Field value={branch?.name || 'Selected branch'} disabled />
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Role / Permission</span>
+              <Field as="select" value={form.role} onChange={(event) => updateField('role', event.target.value)}>
+                {AGENT_ROLE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </Field>
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Commission Structure</span>
+              <Field as="select" value={form.commissionStructureId} onChange={(event) => updateField('commissionStructureId', event.target.value)}>
+                <option value="">{hasCommissionStructures ? 'Select commission structure' : 'No commission structures available'}</option>
+                {commissionStructures.map((structure) => (
+                  <option key={structure.id} value={structure.id}>
+                    {structure.name} ({formatPercent(structure.agentSplitPercentage)} agent / {formatPercent(structure.agencySplitPercentage)} agency)
+                  </option>
+                ))}
+              </Field>
+            </label>
+          </div>
+          {!hasCommissionStructures ? (
+            <div className="mt-3 rounded-[12px] border border-[#f3d9a8] bg-[#fff8ec] px-3 py-2 text-sm text-[#8a5b13]">
+              Create a commission structure in Settings before inviting branch agents.
+            </div>
+          ) : null}
+        </section>
+
+        <section className="rounded-[16px] border border-[#e1e8f2] bg-[#fbfcfe] p-4">
+          <p className="text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-[#7a8ca2]">Notes</p>
+          <label className="mt-3 grid gap-1.5">
+            <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Internal Notes (optional)</span>
+            <Field as="textarea" value={form.notes} onChange={(event) => updateField('notes', event.target.value)} placeholder="Add context for this invite" />
+          </label>
+        </section>
+
+        {error ? <p className="rounded-[12px] border border-[#f2d7d7] bg-[#fff6f6] px-3 py-2 text-sm text-[#b42318]">{error}</p> : null}
+      </form>
+    </Modal>
+  )
+}
+
 export default function AgencyBranchWorkspacePage() {
   const { branchId = '' } = useParams()
   const navigate = useNavigate()
@@ -286,6 +526,9 @@ export default function AgencyBranchWorkspacePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [agentInviteOpen, setAgentInviteOpen] = useState(false)
+  const [organisationContext, setOrganisationContext] = useState({ organisation: null, profile: null })
+  const [commissionStructures, setCommissionStructures] = useState([])
 
   const loadWorkspace = useCallback(async () => {
     setLoading(true)
@@ -306,6 +549,16 @@ export default function AgencyBranchWorkspacePage() {
       setBranchTransactions(transactions)
       setBranchListings(listings)
       setLeaderboard(topAgents)
+
+      const [settingsContext, structures] = await Promise.all([
+        fetchOrganisationSettings().catch(() => null),
+        listOrganisationCommissionStructures().catch(() => []),
+      ])
+      setOrganisationContext({
+        organisation: settingsContext?.organisation || null,
+        profile: settingsContext?.profile || null,
+      })
+      setCommissionStructures(Array.isArray(structures) ? structures.filter((structure) => structure?.isActive !== false) : [])
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load branch workspace right now.')
     } finally {
@@ -339,14 +592,8 @@ export default function AgencyBranchWorkspacePage() {
   const conversionRate = Number(branch?.kpis?.conversionRate || closedRate || 0)
 
   const openBranchAgentInvite = useCallback(() => {
-    navigate('/agency/agents', {
-      state: {
-        openInvite: true,
-        branchId,
-        branchName,
-      },
-    })
-  }, [branchId, branchName, navigate])
+    setAgentInviteOpen(true)
+  }, [])
 
   const handleBranchSaved = useCallback((updatedBranch) => {
     if (updatedBranch) {
@@ -691,6 +938,18 @@ export default function AgencyBranchWorkspacePage() {
         branch={branch}
         onClose={() => setSettingsOpen(false)}
         onSaved={handleBranchSaved}
+      />
+      <BranchAgentInviteModal
+        open={agentInviteOpen}
+        branch={branch}
+        organisation={organisationContext.organisation}
+        profile={organisationContext.profile}
+        commissionStructures={commissionStructures}
+        onClose={() => setAgentInviteOpen(false)}
+        onSent={() => {
+          setAgentInviteOpen(false)
+          void loadWorkspace()
+        }}
       />
     </section>
   )
