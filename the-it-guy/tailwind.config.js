@@ -72,6 +72,7 @@ export default {
       },
       fontFamily: {
         sans: ['Inter', 'SF Pro Text', 'SF Pro Display', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'system-ui', 'sans-serif'],
+        display: ['Inter Tight', 'Inter', 'SF Pro Display', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'system-ui', 'sans-serif'],
       },
       fontSize: {
         'page-title': ['1.75rem', { lineHeight: '1.15', letterSpacing: '-0.03em' }],

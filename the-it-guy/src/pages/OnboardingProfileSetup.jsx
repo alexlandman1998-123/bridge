@@ -329,10 +329,10 @@ function OnboardingProfileSetup() {
 
             <div className="auth-actions">
               <button type="submit" className="auth-primary-cta" disabled={saving || !profileComplete || !roleSelected}>
-                {saving ? 'Saving…' : 'Continue'}
+                {saving ? 'Saving…' : `Continue to ${APP_ROLE_LABELS[effectiveAppRole] || 'Workspace'} Setup`}
               </button>
               <button type="button" className="auth-secondary-cta" onClick={handleSignOut} disabled={saving}>
-                Sign Out
+                Sign out
               </button>
             </div>
           </form>

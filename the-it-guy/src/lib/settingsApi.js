@@ -1105,6 +1105,9 @@ function mapAgencyOnboardingToOrganisationPayload(onboarding = {}, fallbackOrgan
   return {
     name: normalizeText(info.agencyName) || fallbackOrganisation?.name || 'Bridge Agency',
     display_name: normalizeNullableText(info.tradingName) || normalizeText(info.agencyName) || fallbackOrganisation?.displayName || 'Bridge Agency',
+    type: 'agency',
+    legal_name: normalizeNullableText(info.agencyName),
+    registration_number: normalizeNullableText(info.companyRegistrationNumber),
     company_email: normalizeNullableText(info.mainEmailAddress),
     company_phone: normalizeNullableText(info.mainOfficeNumber),
     website: normalizeNullableText(info.website),
@@ -2042,12 +2045,19 @@ export async function completeAgencyOnboarding(input = {}) {
       id: bootstrapOrgId,
       name: bootstrapName,
       display_name: bootstrapName,
+      type: 'agency',
+      legal_name: normalizeNullableText(mergedDraft?.agencyInformation?.agencyName),
+      registration_number: normalizeNullableText(mergedDraft?.agencyInformation?.companyRegistrationNumber),
       company_email: normalizeNullableText(
         mergedDraft?.agencyInformation?.mainEmailAddress || context.profile?.email,
       ),
       company_phone: normalizeNullableText(
         mergedDraft?.agencyInformation?.mainOfficeNumber || context.profile?.phoneNumber,
       ),
+      website: normalizeNullableText(mergedDraft?.agencyInformation?.website),
+      address_line_1: normalizeNullableText(mergedDraft?.agencyInformation?.physicalAddress),
+      province: normalizeNullableText(mergedDraft?.agencyInformation?.province),
+      logo_url: normalizeNullableText(mergedDraft?.branding?.logoLight),
       country: 'South Africa',
       support_email: normalizeNullableText(
         mergedDraft?.agencyInformation?.mainEmailAddress || context.profile?.email,
