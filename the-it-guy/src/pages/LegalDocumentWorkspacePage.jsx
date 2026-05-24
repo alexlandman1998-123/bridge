@@ -928,6 +928,7 @@ export default function LegalDocumentWorkspacePage() {
             : buildFallbackPacketStatus(resolvedPacketType)
         )
         setLoadingContext(false)
+        setContextHydrated(true)
         renderedFallback = true
         hasRenderedContextRef.current = true
       }

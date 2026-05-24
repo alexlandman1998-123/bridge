@@ -363,6 +363,89 @@ export async function listAgencyCrmLeadContacts(organisationId) {
   }
 }
 
+export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId) {
+  const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.fetchAgencyCrmLeadWorkspace')
+  const leadUuid = normalizeLeadUuid(leadId)
+  if (!leadUuid) {
+    return {
+      contacts: [],
+      leads: [],
+      leadActivities: [],
+      tasks: [],
+      source: 'remote',
+    }
+  }
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Supabase is required before loading agency CRM lead data.')
+  }
+
+  let leadResult = await supabase
+    .from('leads')
+    .select(LEAD_SELECT_FIELDS_EXTENDED)
+    .eq('organisation_id', workspaceId)
+    .eq('lead_id', leadUuid)
+    .maybeSingle()
+
+  if (leadResult.error && isMissingColumnError(leadResult.error)) {
+    leadResult = await supabase
+      .from('leads')
+      .select(LEAD_SELECT_FIELDS)
+      .eq('organisation_id', workspaceId)
+      .eq('lead_id', leadUuid)
+      .maybeSingle()
+  }
+
+  const leadBlocked = leadResult.error && (isPermissionDeniedError(leadResult.error) || isMissingSchemaOrTableError(leadResult.error))
+  if (leadResult.error && !leadBlocked) throw leadResult.error
+  if (leadBlocked || !leadResult.data) {
+    return {
+      contacts: [],
+      leads: [],
+      leadActivities: [],
+      tasks: [],
+      source: 'remote',
+    }
+  }
+
+  const contactId = normalizeText(leadResult.data?.contact_id)
+  const contactPromise = contactId
+    ? supabase
+      .from('contacts')
+      .select('contact_id, organisation_id, assigned_agent_id, first_name, last_name, phone, email, contact_type, notes, created_at, updated_at')
+      .eq('organisation_id', workspaceId)
+      .eq('contact_id', contactId)
+      .maybeSingle()
+    : Promise.resolve({ data: null, error: null })
+  const activityPromise = supabase
+    .from('lead_activities')
+    .select(LEAD_ACTIVITY_SELECT_FIELDS)
+    .eq('organisation_id', workspaceId)
+    .eq('lead_id', leadUuid)
+    .order('activity_date', { ascending: false })
+  const taskPromise = supabase
+    .from('tasks')
+    .select(TASK_SELECT_FIELDS)
+    .eq('organisation_id', workspaceId)
+    .eq('lead_id', leadUuid)
+    .order('updated_at', { ascending: false })
+
+  const [contactResult, activityResult, taskResult] = await Promise.all([contactPromise, activityPromise, taskPromise])
+  const contactBlocked = contactResult.error && (isPermissionDeniedError(contactResult.error) || isMissingSchemaOrTableError(contactResult.error))
+  const activityBlocked = activityResult.error && (isPermissionDeniedError(activityResult.error) || isMissingSchemaOrTableError(activityResult.error))
+  const taskBlocked = taskResult.error && (isPermissionDeniedError(taskResult.error) || isMissingSchemaOrTableError(taskResult.error))
+  if (contactResult.error && !contactBlocked) throw contactResult.error
+  if (activityResult.error && !activityBlocked) throw activityResult.error
+  if (taskResult.error && !taskBlocked) throw taskResult.error
+
+  return {
+    contacts: contactResult.data && !contactBlocked ? [mapSupabaseContact(contactResult.data)] : [],
+    leads: [mapSupabaseLead(leadResult.data)],
+    leadActivities: Array.isArray(activityResult.data) && !activityBlocked ? activityResult.data.map(mapSupabaseLeadActivity) : [],
+    tasks: Array.isArray(taskResult.data) && !taskBlocked ? taskResult.data.map(mapSupabaseTask) : [],
+    source: 'remote',
+  }
+}
+
 export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { actor = null, requireRemote = false } = {}) {
   const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.createAgencyCrmLeadRecord')
   if (!isSupabaseConfigured || !supabase) {

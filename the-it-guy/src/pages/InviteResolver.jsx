@@ -14,7 +14,7 @@ function normalizeText(value) {
 function getInviteTitle(reason = '') {
   if (reason === 'expired') return 'Invite Expired'
   if (reason === 'revoked') return 'Invite Revoked'
-  if (reason === 'already_accepted') return 'Invite Already Accepted'
+  if (reason === 'already_accepted') return 'Invite Already Used'
   if (reason === 'invite_email_mismatch') return 'Wrong Account'
   return 'Invite Not Available'
 }
@@ -23,6 +23,16 @@ function getRedirectTarget(result = {}) {
   if (result.redirect_to) return result.redirect_to
   if (result.transaction_id) return `/transactions/${result.transaction_id}`
   return '/dashboard'
+}
+
+function getInviteTarget(invite = {}) {
+  if (invite.targetTransactionId) return `/transactions/${invite.targetTransactionId}`
+  return '/dashboard'
+}
+
+function clearPendingInviteToken() {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.removeItem(PENDING_INVITE_TOKEN_STORAGE_KEY)
 }
 
 export default function InviteResolver() {
@@ -35,6 +45,7 @@ export default function InviteResolver() {
   const [error, setError] = useState('')
   const [acceptedResult, setAcceptedResult] = useState(null)
   const [sessionEmail, setSessionEmail] = useState('')
+  const [sessionUserId, setSessionUserId] = useState('')
 
   useEffect(() => {
     let active = true
@@ -57,7 +68,9 @@ export default function InviteResolver() {
       try {
         const sessionResult = await supabase.auth.getSession()
         if (!active) return
-        const signedInEmail = normalizeText(sessionResult?.data?.session?.user?.email).toLowerCase()
+        const user = sessionResult?.data?.session?.user || null
+        const signedInEmail = normalizeText(user?.email).toLowerCase()
+        setSessionUserId(normalizeText(user?.id))
         setSessionEmail(signedInEmail)
         if (!signedInEmail) {
           setInviteContext({ token: safeToken })
@@ -84,6 +97,10 @@ export default function InviteResolver() {
 
   const invite = inviteContext?.inviteType ? inviteContext : null
   const invitedEmail = normalizeText(invite?.email)
+  const signedInAsInvitedEmail = Boolean(sessionEmail && invitedEmail && sessionEmail === invitedEmail.toLowerCase())
+  const acceptedBySignedInUser = Boolean(sessionUserId && invite?.acceptedByUserId && sessionUserId === invite.acceptedByUserId)
+  const acceptedInviteBelongsToSession = Boolean(reason === 'already_accepted' && (signedInAsInvitedEmail || acceptedBySignedInUser))
+  const pendingInviteWrongAccount = Boolean(reason === '' && sessionEmail && invitedEmail && !signedInAsInvitedEmail)
   const workspaceName = normalizeText(invite?.workspace?.display_name || invite?.workspace?.name)
   const invitePurpose = useMemo(() => {
     if (!invite) return 'Bridge invite'
@@ -92,6 +109,12 @@ export default function InviteResolver() {
     if (invite.inviteType === 'client_invite') return 'Client access'
     return workspaceName ? `${workspaceName} workspace` : 'Workspace access'
   }, [invite, workspaceName])
+
+  useEffect(() => {
+    if (acceptedInviteBelongsToSession) {
+      clearPendingInviteToken()
+    }
+  }, [acceptedInviteBelongsToSession])
 
   async function handleAccept() {
     const safeToken = normalizeText(token)
@@ -109,9 +132,7 @@ export default function InviteResolver() {
       setError('')
       const result = await acceptInvite(safeToken)
       setAcceptedResult(result)
-      if (typeof window !== 'undefined') {
-        window.sessionStorage.removeItem(PENDING_INVITE_TOKEN_STORAGE_KEY)
-      }
+      clearPendingInviteToken()
     } catch (acceptError) {
       if (acceptError instanceof InviteValidationError) {
         setReason(acceptError.code)
@@ -124,6 +145,15 @@ export default function InviteResolver() {
     } finally {
       setSaving(false)
     }
+  }
+
+  async function handleSwitchAccount() {
+    const safeToken = normalizeText(token)
+    if (typeof window !== 'undefined' && safeToken) {
+      window.sessionStorage.setItem(PENDING_INVITE_TOKEN_STORAGE_KEY, safeToken)
+    }
+    await supabase?.auth?.signOut?.()
+    navigate(`/auth?next=${encodeURIComponent(`/invite/${safeToken}`)}`, { replace: true })
   }
 
   if (loading) {
@@ -146,6 +176,46 @@ export default function InviteResolver() {
     )
   }
 
+  if (acceptedInviteBelongsToSession) {
+    const target = getInviteTarget(invite)
+    return (
+      <section className="mx-auto max-w-[720px] space-y-4 rounded-[22px] border border-borderDefault bg-surface p-6 shadow-surface">
+        <div className="flex items-center gap-2 text-success">
+          <CheckCircle2 size={18} />
+          <h1 className="text-page-title font-semibold">You’re already connected</h1>
+        </div>
+        <p className="text-secondary text-textMuted">
+          This invite has already been accepted for {invitedEmail || 'your account'}. Continue into Bridge to access the workspace.
+        </p>
+        <Link to={target} className="inline-flex rounded-control bg-primary px-4 py-2 text-secondary font-semibold text-white">
+          Continue to Bridge
+        </Link>
+      </section>
+    )
+  }
+
+  if (pendingInviteWrongAccount) {
+    return (
+      <section className="mx-auto max-w-[720px] space-y-4 rounded-[22px] border border-borderDefault bg-surface p-6 shadow-surface">
+        <div className="flex items-center gap-2 text-danger">
+          <ShieldAlert size={18} />
+          <h1 className="text-page-title font-semibold">Wrong account</h1>
+        </div>
+        <p className="text-secondary text-textMuted">
+          This invite is for <strong>{invitedEmail}</strong>, but you are signed in as <strong>{sessionEmail}</strong>.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" onClick={() => void handleSwitchAccount()}>
+            Switch account
+          </Button>
+          <Link to="/dashboard" className="inline-flex rounded-control border border-borderDefault px-4 py-2 text-secondary font-semibold text-textStrong">
+            Back to Bridge
+          </Link>
+        </div>
+      </section>
+    )
+  }
+
   if (reason && reason !== 'not_authenticated') {
     return (
       <section className="mx-auto max-w-[720px] space-y-4 rounded-[22px] border border-borderDefault bg-surface p-6 shadow-surface">
@@ -154,7 +224,9 @@ export default function InviteResolver() {
           <h1 className="text-page-title font-semibold">{getInviteTitle(reason)}</h1>
         </div>
         <p className="text-secondary text-textMuted">
-          We could not validate this invite. Ask the sender to issue a fresh invite if access is still required.
+          {reason === 'already_accepted'
+            ? 'This invite link has already been used. Sign in with the invited account, or ask the sender to resend access if you still need help.'
+            : 'We could not validate this invite. Ask the sender to issue a fresh invite if access is still required.'}
         </p>
         {error ? <p className="rounded-control border border-danger/30 bg-dangerSoft px-3 py-2 text-secondary text-danger">{error}</p> : null}
         <Link to="/dashboard" className="inline-flex rounded-control border border-borderDefault px-4 py-2 text-secondary font-semibold text-textStrong">

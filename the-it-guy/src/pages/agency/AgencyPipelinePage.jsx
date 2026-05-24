@@ -1,6 +1,6 @@
 import { AlertTriangle, ArrowUpRight, Bold, CalendarDays, CheckSquare, ChevronRight, Clock3, Columns3, Filter, Home, ImageIcon, Italic, Link2, List, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Search, Smile, Table2, Trash2, TrendingUp, Upload, UserRound, X } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
 import AppointmentCalendarActions from '../../components/appointments/AppointmentCalendarActions'
 import LegalDocumentWorkspace from '../../components/documents/LegalDocumentWorkspace'
@@ -42,6 +42,7 @@ import {
   deleteAgencyCrmLeadRecord,
   deleteAgencyCrmLeadTask,
   ensureAgencyCrmLeadRecordPersisted,
+  fetchAgencyCrmLeadWorkspace,
   listAgencyCrmLeadContacts,
   updateAgencyCrmLeadActivity,
   updateAgencyCrmLeadRecord,
@@ -105,12 +106,13 @@ const PIPELINE_CONTEXT_TIMEOUT_MS = 3500
 const PIPELINE_RECORDS_TIMEOUT_MS = 3500
 const PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS = 15000
 const SELLER_ONBOARDING_COMPLETION_POLL_MS = 7000
-const LEAD_WORKSPACE_RETRY_MS = 2500
+const LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS = 2500
+const LEAD_WORKSPACE_HYDRATION_RETRY_MS = 900
+const LEAD_WORKSPACE_HYDRATION_MAX_RETRIES = 4
 const CANVASSING_STORAGE_PREFIX = 'itg:agency-canvassing:v1'
 const CANVASSING_UPDATED_EVENT = 'itg:agency-canvassing-updated'
 const BUYER_LIFECYCLE_REFRESH_STORAGE_KEY = 'bridge:buyer-lifecycle-refresh:v1'
 const BUYER_LIFECYCLE_REFRESH_EVENT = 'bridge:buyer-lifecycle-refresh'
-const LEAD_WORKSPACE_MAX_RETRIES = 10
 const LEAD_TABLE_PAGE_SIZE = 12
 const QUICK_CREATE_STORAGE_KEY = 'bridge:quick-create-records:v1'
 const APPOINTMENT_CATEGORY_CONFIG = {
@@ -354,7 +356,7 @@ function resolvePipelineKanbanColumnId(lead = {}, linkedDeal = null) {
   const stage = normalizeLeadKanbanStage(lead?.stage || lead?.status)
   const status = normalizeLeadKanbanStage(lead?.status)
   const combined = `${stage} ${status}`
-  const isSellerLead = normalizeKey(lead?.leadCategory).includes('seller')
+  const isSellerLead = resolveLeadCategoryView(lead) === 'seller'
 
   if (combined.includes('lost') || combined.includes('archive')) return 'lost'
   if (combined.includes('registered') || combined.includes('closed')) return 'registered'
@@ -426,32 +428,6 @@ function normalizeText(value) {
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
-}
-
-const TERMINAL_LEAD_STAGE_KEYWORDS = [
-  'archived',
-  'closed',
-  'converted to listing',
-  'converted to transaction',
-  'deal created',
-  'lost',
-  'registered',
-]
-
-function isTerminalPipelineLead(lead = {}) {
-  const stageSignal = [
-    lead?.stage,
-    lead?.currentStage,
-    lead?.current_stage,
-    lead?.pipelineStage,
-    lead?.pipeline_stage,
-    lead?.status,
-    lead?.dealStatus,
-    lead?.deal_status,
-  ].map(normalizeKey).join(' ')
-
-  if (!stageSignal) return false
-  return TERMINAL_LEAD_STAGE_KEYWORDS.some((keyword) => stageSignal.includes(keyword))
 }
 
 function normalizeAppointmentCategorySignal(value) {
@@ -1761,7 +1737,32 @@ const DEFAULT_LEAD_FILTER = {
 }
 
 function resolveLeadCategoryView(value = '') {
-  return normalizeText(value).toLowerCase() === 'seller' ? 'seller' : 'buyer'
+  const signal = typeof value === 'object' && value !== null
+    ? [
+        value?.leadCategory,
+        value?.lead_category,
+        value?.leadDirection,
+        value?.lead_direction,
+        value?.contactType,
+        value?.contact_type,
+        value?.sellerPropertyAddress,
+        value?.seller_property_address,
+        value?.sellerOnboardingStatus,
+        value?.seller_onboarding_status,
+        value?.sellerOnboardingToken,
+        value?.seller_onboarding_token,
+        value?.sellerLeadId,
+        value?.seller_lead_id,
+        value?.sellerWorkflowLeadId,
+        value?.seller_workflow_lead_id,
+        value?.listingId,
+        value?.listing_id,
+        value?.privateListingId,
+        value?.private_listing_id,
+      ].map(normalizeText).join(' ')
+    : normalizeText(value)
+  const normalized = normalizeKey(signal).replace(/[_-]+/g, ' ')
+  return normalized.includes('seller') || normalized.includes('landlord') || normalized.includes('mandate') ? 'seller' : 'buyer'
 }
 
 function leadCategoryLabelForView(value = '') {
@@ -1786,7 +1787,6 @@ const LEAD_DETAIL_DEFAULTS = {
 
 function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const navigate = useNavigate()
-  const location = useLocation()
   const { leadId: routeLeadIdParam = '' } = useParams()
   const routeLeadId = normalizeText(routeLeadIdParam)
   const isLeadWorkspaceRoute = !initialViewMode || (initialViewMode !== 'calendar' && routeLeadId.length > 0)
@@ -1809,6 +1809,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [canvassingStore, setCanvassingStore] = useState({ prospects: [], activities: [] })
   const reloadRequestRef = useRef(0)
   const reloadTimerRef = useRef(null)
+  const routeLeadHydrationRef = useRef('')
   const isCalendarMode = initialViewMode === 'calendar'
   const isOverviewMode = initialViewMode === 'overview'
   const [leadTypeView, setLeadTypeView] = useState('buyer')
@@ -1902,7 +1903,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return records.leads.find((lead) => normalizeLeadIdentityKey(lead?.leadId) === routeLeadKey) || null
   }, [records.leads, routeLeadId])
   const [legalWorkspaceOpen, setLegalWorkspaceOpen] = useState(false)
-  const [legalWorkspaceMode] = useState('view')
+  const [legalWorkspaceMode, setLegalWorkspaceMode] = useState('view')
   const [mandatePacketStatus, setMandatePacketStatus] = useState(() => ({
     packetType: 'mandate',
     state: 'NO_PACKET',
@@ -2529,7 +2530,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const routeKey = normalizeLeadIdentityKey(routeLeadId)
     const routeLead = records.leads.find((row) => normalizeLeadIdentityKey(row?.leadId) === routeKey)
     if (!routeLead) return
-    const category = resolveLeadCategoryView(routeLead?.leadCategory)
+    const category = resolveLeadCategoryView(routeLead)
     if (leadTypeView !== category) {
       setLeadTypeView(category)
     }
@@ -2537,19 +2538,56 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   useEffect(() => {
     if (!isLeadWorkspaceRoute || !routeLeadId || routeLeadRecord || !organisationId || !isSupabaseConfigured) return
+    const hydrationKey = `${organisationId}:${normalizeLeadIdentityKey(routeLeadId)}`
+    if (routeLeadHydrationRef.current === hydrationKey) return
     let attempt = 0
     let retryTimer = null
-    const refreshLeadWorkspace = () => {
-      if (attempt >= LEAD_WORKSPACE_MAX_RETRIES) return
+    let cancelled = false
+    routeLeadHydrationRef.current = hydrationKey
+
+    const mergeRouteLeadSnapshot = (snapshot) => {
+      if (!snapshot?.leads?.length) return false
+      setRecords((previous) => ({
+        ...previous,
+        contacts: dedupeByKey(
+          [...previous.contacts, ...(Array.isArray(snapshot.contacts) ? snapshot.contacts : [])],
+          (row) => row?.contactId,
+        ),
+        leads: mergeLeadRowsForReload(previous.leads, snapshot.leads),
+        leadActivities: dedupeByKey(
+          [...previous.leadActivities, ...(Array.isArray(snapshot.leadActivities) ? snapshot.leadActivities : [])],
+          (row) => row?.activityId,
+        ),
+        tasks: dedupeByKey(
+          [...previous.tasks, ...(Array.isArray(snapshot.tasks) ? snapshot.tasks : [])],
+          (row) => row?.taskId,
+        ),
+      }))
+      return true
+    }
+
+    const hydrateLeadWorkspace = async () => {
+      if (cancelled || attempt >= LEAD_WORKSPACE_HYDRATION_MAX_RETRIES) return
       attempt += 1
-      void reloadRecords(organisationId)
-      if (attempt >= LEAD_WORKSPACE_MAX_RETRIES) return
-      if (typeof window !== 'undefined') {
-        retryTimer = window.setTimeout(refreshLeadWorkspace, LEAD_WORKSPACE_RETRY_MS)
+      try {
+        const snapshot = await withPipelineTimeout(
+          fetchAgencyCrmLeadWorkspace(organisationId, routeLeadId),
+          'Lead workspace data is taking too long to load.',
+          LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS,
+        )
+        if (cancelled) return
+        if (mergeRouteLeadSnapshot(snapshot)) return
+      } catch (leadWorkspaceError) {
+        console.warn('[PIPELINE] lead workspace hydration failed; full workspace refresh will continue in the background.', leadWorkspaceError)
+      }
+      if (!cancelled && attempt < LEAD_WORKSPACE_HYDRATION_MAX_RETRIES && typeof window !== 'undefined') {
+        retryTimer = window.setTimeout(hydrateLeadWorkspace, LEAD_WORKSPACE_HYDRATION_RETRY_MS)
       }
     }
-    refreshLeadWorkspace()
+
+    void hydrateLeadWorkspace()
     return () => {
+      cancelled = true
       if (retryTimer && typeof window !== 'undefined') {
         window.clearTimeout(retryTimer)
       }
@@ -2596,7 +2634,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         records.contacts.find((row) => normalizeText(row?.contactId) === normalizeText(lead?.contactId)) ||
         buildLeadContactFallback(lead) ||
         buildCanvassingProspectContactFallback(canvassingProspect)
-      const categoryMatch = resolveLeadCategoryView(lead?.leadCategory) === categoryValue
+      const categoryMatch = resolveLeadCategoryView(lead) === categoryValue
       const searchMatch = leadFilter.search
         ? [
             contact?.firstName,
@@ -2620,14 +2658,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ? true
         : normalizeText(lead?.stage) === leadFilter.stage ||
           normalizeLeadKanbanStage(lead?.stage || lead?.status) === normalizeKey(leadFilter.stage)
-      const activeStageMatch = leadFilter.stage === 'all' ? !isTerminalPipelineLead(lead) : true
       const agentMatch =
         leadFilter.agent === 'all'
           ? true
           : normalizeKey(lead?.assignedAgentId) === normalizeKey(leadFilter.agent) ||
             normalizeKey(lead?.assignedAgentEmail) === normalizeKey(leadFilter.agent)
 
-      return categoryMatch && searchMatch && sourceMatch && stageMatch && activeStageMatch && agentMatch
+      return categoryMatch && searchMatch && sourceMatch && stageMatch && agentMatch
     })
 
     return visibleRows.sort((left, right) => {
@@ -2745,7 +2782,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedLeadSyncError = normalizeText(selectedLead?.syncError || selectedLead?.sync_error)
   const selectedLeadHasSyncIssue = Boolean(
     selectedLead &&
-    !normalizeText(selectedLead?.leadCategory).toLowerCase().includes('seller') &&
+    resolveLeadCategoryView(selectedLead) !== 'seller' &&
     (selectedLeadSyncStatus === 'pending_remote_sync' || selectedLeadSyncError),
   )
 
@@ -2753,7 +2790,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!lead) {
       throw new Error('Select a buyer lead before continuing.')
     }
-    const isSeller = normalizeText(lead?.leadCategory).toLowerCase().includes('seller')
+    const isSeller = resolveLeadCategoryView(lead) === 'seller'
     if (isSeller) return { ok: true, skipped: true }
     const result = await ensureAgencyCrmLeadRecordPersisted(
       organisationId,
@@ -3048,7 +3085,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     })
   }, [selectedLead, selectedLeadContact])
 
-  const selectedLeadIsSeller = normalizeText(selectedLead?.leadCategory).toLowerCase() === 'seller'
+  const selectedLeadIsSeller = resolveLeadCategoryView(selectedLead) === 'seller'
   const selectedLeadRecordId = normalizeText(selectedLead?.leadId)
   const selectedLeadMandatePacketId = normalizeText(selectedLead?.mandatePacketId)
   const selectedLeadStageKey = normalizeText(selectedLead?.stage).toLowerCase()
@@ -3261,7 +3298,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return { completed: 0, total: 0, percent: 0, missing: [] }
     }
 
-    const isSeller = normalizeText(selectedLead.leadCategory).toLowerCase() === 'seller'
+    const isSeller = resolveLeadCategoryView(selectedLead) === 'seller'
     const stage = normalizeText(selectedLead.stage).toLowerCase()
     const appointments = selectedLeadAppointments || []
     const hasAppointment = appointments.length > 0
@@ -4067,7 +4104,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const leadPageSummary = useMemo(() => {
     const targetCategory = leadTypeView === 'seller' ? 'seller' : 'buyer'
-    const allCategoryLeads = records.leads.filter((lead) => normalizeText(lead?.leadCategory).toLowerCase() === targetCategory)
+    const allCategoryLeads = records.leads.filter((lead) => resolveLeadCategoryView(lead) === targetCategory)
     const now = new Date()
     const weekStart = new Date(now)
     weekStart.setDate(now.getDate() - 6)
@@ -4309,7 +4346,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       })
       setError('')
       setMessage('Lead created.')
-      setLeadTypeView(resolveLeadCategoryView(createdLead?.leadCategory || leadForm.leadCategory))
+      setLeadTypeView(resolveLeadCategoryView(createdLead || leadForm.leadCategory))
       setLeadFilter({ ...DEFAULT_LEAD_FILTER })
       setSelectedLeadId(createdLead?.leadId || '')
       clearLeadForm()
@@ -4507,7 +4544,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleMovePipelineCard(leadId, targetColumnId) {
     const lead = records.leads.find((row) => normalizeText(row?.leadId) === normalizeText(leadId))
-    const leadType = normalizeKey(lead?.leadCategory).includes('seller') ? 'seller' : 'buyer'
+    const leadType = resolveLeadCategoryView(lead)
     const targetColumn = getPipelineKanbanColumn(targetColumnId, leadType)
     const currentColumn = getPipelineKanbanColumn(resolvePipelineKanbanColumnId(lead, linkedDealByLeadId.get(normalizeText(leadId))), leadType)
     const validation = canMovePipelineCard({
@@ -4787,7 +4824,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ),
     )
     const linkedLeadEmail = normalizeText(selectedLeadContact?.email || linkedLead?.email)
-    const linkedLeadParticipantRole = normalizeText(linkedLead?.leadCategory).toLowerCase() === 'seller' ? 'Seller' : 'Buyer'
+    const linkedLeadParticipantRole = resolveLeadCategoryView(linkedLead) === 'seller' ? 'Seller' : 'Buyer'
     const participantSeed = [...(appointmentForm.participants || [])]
     const explicitRecipientEmail = normalizeText(appointmentForm.recipientEmail).toLowerCase()
     if (explicitRecipientEmail && !isValidEmail(explicitRecipientEmail)) {
@@ -4858,7 +4895,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       notifyCreatorOnRsvp: appointmentForm.notifyCreatorOnRsvp !== false,
     })
     try {
-      if (linkedLead && normalizeText(linkedLead.leadCategory).toLowerCase() !== 'seller') {
+      if (linkedLead && resolveLeadCategoryView(linkedLead) !== 'seller') {
         const linkedContact =
           records.contacts.find((contact) => normalizeText(contact?.contactId) === normalizeText(linkedLead.contactId)) ||
           buildLeadContactFallback(linkedLead)
@@ -4888,7 +4925,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (created?.appointmentId) {
         setSelectedAppointmentId(created.appointmentId)
       }
-      if (linkedLead && normalizeText(linkedLead.leadCategory).toLowerCase() === 'seller') {
+      if (linkedLead && resolveLeadCategoryView(linkedLead) === 'seller') {
         await updateAgencyCrmLeadRecord(organisationId, linkedLead.leadId, {
           stage: 'Appointment Scheduled',
           status: 'Appointment Requested',
@@ -5386,14 +5423,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         if (!['PACKETS_SCHEMA_MISSING', 'PACKETS_RLS_DENIED'].includes(packetError?.code)) {
           throw packetError
         }
-        fallbackPacketId = `local-mandate-${Date.now()}`
+        const safeRuntimeLeadId = normalizeLeadIdentityKey(selectedLead?.leadId) || Date.now()
+        fallbackPacketId = `runtime_mandate_${safeRuntimeLeadId}`
       }
 
+      let generatedVersionResult = null
       if (packet?.id) {
         onProgress?.('Merging seller and property details…')
         try {
           onProgress?.('Generating mandate PDF…')
-          await generatePacketVersion({
+          generatedVersionResult = await generatePacketVersion({
             packetId: packet.id,
             packetType: 'mandate',
             template,
@@ -5453,6 +5492,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         status: 'Mandate Generated',
         mandatePacketId: normalizeText(packet?.id) || fallbackPacketId,
       })
+      setRecords((previous) => ({
+        ...previous,
+        leads: (Array.isArray(previous.leads) ? previous.leads : []).map((lead) =>
+          normalizeLeadIdentityKey(lead?.leadId) === normalizeLeadIdentityKey(selectedLead.leadId)
+            ? {
+                ...lead,
+                stage: 'Mandate Generated',
+                status: 'Mandate Generated',
+                mandatePacketId: normalizeText(packet?.id) || fallbackPacketId,
+                updatedAt: new Date().toISOString(),
+              }
+            : lead,
+        ),
+      }))
       await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Mandate Generated',
@@ -5466,10 +5519,65 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           : 'Mandate generated. Packet tracking is running in fallback mode until packet schema/permissions are fully enabled.',
       )
       onProgress?.('Draft ready.')
+      let generatedStatus = null
+      if (isUuidLike(packet?.id)) {
+        generatedStatus = await withPipelineTimeout(
+          resolveDocumentPacketStatus({
+            packetType: 'mandate',
+            packetId: packet.id,
+            leadId: normalizeLeadUuid(selectedLead.leadId),
+            transactionId: isUuidLike(selectedLeadLinkedTransactionId) ? selectedLeadLinkedTransactionId : '',
+            organisationId,
+          }),
+          'Generated mandate status is taking too long to refresh.',
+          PIPELINE_RECORDS_TIMEOUT_MS,
+        ).catch((statusError) => {
+          console.warn('[MANDATE] generated packet status refresh failed; using local generated status.', statusError)
+          return {
+            packetType: 'mandate',
+            state: 'generated',
+            packet: generatedVersionResult?.packet || packet,
+            versions: [generatedVersionResult?.version].filter(Boolean),
+            signingSummary: null,
+            warnings: generatedVersionResult?.validation?.warnings || [],
+            actionHint: 'Draft generated.',
+          }
+        })
+      } else if (fallbackPacketId) {
+        generatedStatus = {
+          packetType: 'mandate',
+          state: 'generated',
+          packet: {
+            id: fallbackPacketId,
+            packet_type: 'mandate',
+            title: packetTitle,
+            lead_id: normalizeLeadUuid(selectedLead.leadId) || null,
+            organisation_id: organisationId,
+            status: 'generated',
+            source_context_json: {
+              uiLeadId: normalizeText(selectedLead.leadId),
+              leadId: normalizeLeadUuid(selectedLead.leadId) || null,
+              generatedDataSnapshot: mandateData,
+              sourceContext: mandateData.sourceContext,
+            },
+          },
+          versions: [],
+          signingSummary: null,
+          warnings: [],
+          actionHint: 'Draft generated in fallback mode.',
+        }
+      }
+      if (generatedStatus) {
+        setMandatePacketStatus(generatedStatus)
+      }
       void reloadRecords(organisationId).catch((reloadError) => {
         console.warn('[MANDATE] post-generation lead refresh failed; keeping generated packet available in workspace.', reloadError)
       })
-      return true
+      return {
+        packet,
+        version: generatedVersionResult?.version || null,
+        status: generatedStatus,
+      }
     } catch (mandateError) {
       if (selectedLead?.leadId && mandateError?.code !== 'MANDATE_PREFLIGHT_BLOCKED') {
         await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
@@ -5477,7 +5585,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           activityType: 'Note',
           activityNote: 'Mandate generation failed. Review the missing information and try again.',
           outcome: normalizeText(mandateError?.code || 'Failed'),
-        }, { actor: currentAgent })
+        }, { actor: currentAgent }).catch((activityError) => {
+          console.warn('[MANDATE] failure activity write skipped.', activityError)
+        })
       }
       setError(mandateError?.message || 'Unable to generate mandate from this lead right now.')
       throw mandateError
@@ -5993,20 +6103,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     const actionKey = normalizeText(selectedLeadMandateActionState?.actionKey).toLowerCase()
     const workspaceMode = resolveWorkspaceModeFromAction(actionKey)
-    const transactionId = selectedLeadLinkedTransactionId
-    const params = new URLSearchParams()
-    params.set('mode', workspaceMode)
-    params.set('leadId', normalizeText(selectedLead.leadId))
-    params.set('returnTo', `${location.pathname}${location.search}`)
-    const statusPacket = mandatePacketStatus?.packet || null
-    const mandatePacketId = documentPacketBelongsToLead(statusPacket, selectedLead.leadId)
-      ? normalizeText(statusPacket?.id)
-      : ''
-    if (mandatePacketId) params.set('packetId', mandatePacketId)
-    const route = transactionId
-      ? `/transactions/${transactionId}/legal/mandate?${params.toString()}`
-      : `/pipeline/leads/${selectedLead.leadId}/legal/mandate?${params.toString()}`
-    navigate(route)
+    setLegalWorkspaceMode(workspaceMode)
+    setLegalWorkspaceOpen(true)
   }
 
   function handleWorkspaceViewMandate() {
@@ -6953,7 +7051,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setError('')
     try {
       await deleteAgencyCrmLeadRecord(targetOrganisationId, leadId)
-      if (normalizeText(leadForDelete?.leadCategory).toLowerCase().includes('seller')) {
+      if (resolveLeadCategoryView(leadForDelete) === 'seller') {
         const sellerWorkflowIds = [
           leadId,
           normalizeText(leadId).replace(/^lead_/i, ''),
@@ -7635,18 +7733,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </div>
               ) : (
               <>
-              <div className="hidden max-w-full overflow-x-auto lg:block">
-                <table className="w-full min-w-[1520px] table-fixed text-sm">
+              <div className="hidden max-w-full overflow-x-auto overscroll-x-contain lg:block">
+                <table className="w-full min-w-[1280px] table-fixed text-sm">
                   <thead className="sticky top-[38px] z-[1] h-[42px] border-b border-[rgba(15,23,42,0.06)] bg-[#FCFCFD] text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                     <tr>
-                      <th className="w-[48px] px-3 py-3"><span className="sr-only">Select</span></th>
-                      <th className="w-[300px] px-3 py-3">Lead</th>
-                      <th className="w-[252px] px-3 py-3">Opportunity</th>
-                      <th className="w-[138px] px-3 py-3">Stage</th>
-                      <th className="w-[220px] px-3 py-3">Next Action</th>
-                      <th className="w-[150px] px-3 py-3">Owner</th>
-                      <th className="w-[130px] px-3 py-3">Activity</th>
-                      <th className="w-[282px] px-3 py-3 text-right">Quick Actions</th>
+                      <th className="w-[44px] px-3 py-3"><span className="sr-only">Select</span></th>
+                      <th className="w-[268px] px-3 py-3">Lead</th>
+                      <th className="w-[220px] px-3 py-3">Opportunity</th>
+                      <th className="w-[112px] px-3 py-3">Stage</th>
+                      <th className="w-[180px] px-3 py-3">Next Action</th>
+                      <th className="w-[135px] px-3 py-3">Owner</th>
+                      <th className="w-[105px] px-3 py-3">Activity</th>
+                      <th className="w-[216px] px-3 py-3 text-right">Quick Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[rgba(15,23,42,0.06)] bg-white">
@@ -7665,7 +7763,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           .sort((a, b) => new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0))[0]
                         const leadTasks = leadTasksByLeadId.get(leadId) || []
                         const leadActivities = leadActivitiesByLeadId.get(leadId) || []
-                        const isSeller = normalizeText(lead?.leadCategory).toLowerCase() === 'seller'
+                        const isSeller = resolveLeadCategoryView(lead) === 'seller'
                         const funnelStage = resolveLeadFunnelStage(lead)
                         const nextStep = resolveLeadNextStep(lead, leadTasks)
                         const latestActivity = [...leadActivities]
@@ -7685,7 +7783,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const leadPhone = normalizeText(leadContact?.phone || lead?.phone)
                         const leadEmail = normalizeText(leadContact?.email || lead?.email)
                         const whatsappPhone = leadPhone.replace(/[^\d+]/g, '').replace(/^\+/, '')
-                        const quickActionButtonClass = 'inline-flex h-8 w-8 items-center justify-center rounded-[10px] border border-transparent bg-transparent text-slate-400 transition hover:border-slate-200 hover:bg-white hover:text-slate-800'
+                        const quickActionButtonClass = 'inline-flex h-7 w-7 items-center justify-center rounded-[9px] border border-transparent bg-transparent text-slate-400 transition hover:border-slate-200 hover:bg-white hover:text-slate-800'
 
                         return (
                           <tr
@@ -7714,7 +7812,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       {categoryMeta.label}
                                     </span>
                                   </div>
-                                  <div className="mt-1 flex min-w-0 items-center gap-3 text-[12px] font-medium text-slate-500">
+                                <div className="mt-1 flex min-w-0 items-center gap-2 text-[12px] font-medium text-slate-500">
                                     <span className="flex min-w-0 items-center gap-1.5">
                                       <Phone size={12} className="shrink-0 text-slate-400" />
                                       <span className="truncate">{leadPhone || 'No phone'}</span>
@@ -7733,7 +7831,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             <td className="px-3 py-3 align-middle">
                               {opportunity.hasListing ? (
                                 <div className="flex min-w-0 items-center gap-2.5">
-                                  <div className="relative grid h-14 w-20 shrink-0 place-items-center overflow-hidden rounded-[10px] border border-slate-200 bg-slate-100" style={{ backgroundImage: `linear-gradient(135deg, ${agentColor}1f, #f8fafc 72%)` }}>
+                                  <div className="relative grid h-12 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border border-slate-200 bg-slate-100" style={{ backgroundImage: `linear-gradient(135deg, ${agentColor}1f, #f8fafc 72%)` }}>
                                     <Home size={16} className="text-slate-400" />
                                     {opportunity.thumbnailUrl ? (
                                       <img
@@ -7806,7 +7904,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               </div>
                             </td>
                             <td className="px-3 py-3 text-right align-middle">
-                              <div className="ml-auto flex items-center justify-end gap-1 opacity-0 transition-all duration-200 group-hover:opacity-100 group-focus-within:opacity-100" onClick={(event) => event.stopPropagation()}>
+                              <div className="ml-auto flex items-center justify-end gap-0.5 opacity-0 transition-all duration-200 group-hover:opacity-100 group-focus-within:opacity-100" onClick={(event) => event.stopPropagation()}>
                                 {leadPhone ? (
                                   <a href={`tel:${leadPhone}`} className={quickActionButtonClass} aria-label={`Call ${leadName}`} title="Call">
                                     <Phone size={14} />
@@ -7882,10 +7980,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               <UserRound size={21} />
                             </div>
                             <h4 className="mt-4 text-[1rem] font-semibold tracking-[-0.02em] text-slate-900">
-                              {leadTypeView === 'seller' ? 'No seller leads yet' : 'No buyer leads yet'}
+                              {leadPageSummary.total > 0
+                                ? 'No leads match these filters'
+                                : leadTypeView === 'seller' ? 'No seller leads yet' : 'No buyer leads yet'}
                             </h4>
                             <p className="mt-2 text-sm leading-6 text-slate-500">
-                              {leadTypeView === 'seller'
+                              {leadPageSummary.total > 0
+                                ? 'Clear the search or filters to show the leads already in this pipeline.'
+                                : leadTypeView === 'seller'
                                 ? 'Create your first seller lead manually or convert a canvassing prospect when they are ready to sell.'
                                 : 'Create your first buyer lead manually or connect listings to start capturing enquiries automatically.'}
                             </p>
@@ -7943,7 +8045,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     const linkedTransaction = records.deals
                       .filter((row) => normalizeLeadIdentityKey(row?.leadId) === leadId)
                       .sort((a, b) => new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0))[0]
-                    const isSeller = normalizeText(lead?.leadCategory).toLowerCase() === 'seller'
+                    const isSeller = resolveLeadCategoryView(lead) === 'seller'
                     const linkedListingLabel = normalizeText(lead?.listingId || lead?.propertyInterest || lead?.sellerPropertyAddress)
                     const interestedListing = isSeller
                       ? linkedListingLabel || 'Property not linked yet'
@@ -8008,9 +8110,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       <UserRound size={22} />
                     </div>
                     <h4 className="mt-4 text-[1.05rem] font-semibold tracking-[-0.025em] text-[#142132]">
-                      {leadTypeView === 'seller' ? 'No seller leads yet' : 'No buyer leads yet'}
+                      {leadPageSummary.total > 0
+                        ? 'No leads match these filters'
+                        : leadTypeView === 'seller' ? 'No seller leads yet' : 'No buyer leads yet'}
                     </h4>
-                    <p className="mt-2 text-sm leading-6 text-[#60758b]">Create your first lead to start building the pipeline.</p>
+                    <p className="mt-2 text-sm leading-6 text-[#60758b]">
+                      {leadPageSummary.total > 0 ? 'Clear the search or filters to show the leads already in this pipeline.' : 'Create your first lead to start building the pipeline.'}
+                    </p>
                   </div>
                 )}
               </div>
@@ -9574,9 +9680,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                     <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">
-                        {normalizeText(selectedLead.leadCategory).toLowerCase() === 'seller' ? 'Mandate / Listing' : 'Offers / Transaction'}
+                        {selectedLeadIsSeller ? 'Mandate / Listing' : 'Offers / Transaction'}
                       </p>
-                      {normalizeText(selectedLead.leadCategory).toLowerCase() === 'seller' ? (
+                      {selectedLeadIsSeller ? (
                         <div className="mt-5 space-y-4 text-sm">
                           <div>
                             <p className="font-semibold text-[#8aa0b7]">Mandate ID</p>
@@ -9624,7 +9730,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </div>
               ) : (
                 <p className="mt-3 rounded-[14px] border border-dashed border-[#d7e2ef] bg-[#f9fbfe] px-4 py-5 text-sm text-[#6f839c]">
-                  {routeLeadId ? 'Loading this lead workspace. If it was just converted, it will appear here as soon as the local pipeline store refreshes.' : 'Select a lead from the pipeline board to open the CRM workspace.'}
+                  {routeLeadId ? 'Opening this lead workspace. We are fetching the lead record and latest activity.' : 'Select a lead from the pipeline board to open the CRM workspace.'}
                 </p>
               )}
             </article>
