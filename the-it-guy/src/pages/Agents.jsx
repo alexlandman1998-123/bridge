@@ -43,7 +43,14 @@ import { fetchTransactionsByParticipantSummary, fetchTransactionsListSummary, sa
 import { listAppointmentsAsync } from '../lib/agencyPipelineService'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
-import { deactivateOrganisationUser, fetchOrganisationSettings, listOrganisationUsers, updateOrganisationUserRole } from '../lib/settingsApi'
+import {
+  assignOrganisationUserCommissionProfile,
+  deactivateOrganisationUser,
+  fetchOrganisationSettings,
+  listOrganisationCommissionStructures,
+  listOrganisationUsers,
+  updateOrganisationUserRole,
+} from '../lib/settingsApi'
 import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import {
   AGENT_INVITE_STATUS,
@@ -125,6 +132,12 @@ function formatRoleLabel(value) {
   return matched?.label || 'Agent'
 }
 
+function formatPercent(value) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return '0%'
+  return `${numeric.toFixed(2).replace(/\.00$/, '')}%`
+}
+
 function formatDateTime(value) {
   if (!value) return '—'
   const date = new Date(value)
@@ -164,8 +177,13 @@ function AgentInviteModal({
   form,
   onChange,
   organisationOptions = [],
+  branchOptions = [],
+  commissionStructureOptions = [],
+  defaultCommissionStructure = null,
   showOrganisationSelect = false,
+  onManageCommissionStructures,
 }) {
+  const hasCommissionStructures = commissionStructureOptions.length > 0
   return (
     <Modal
       open={open}
@@ -208,6 +226,41 @@ function AgentInviteModal({
         </section>
 
         <section className="rounded-[16px] border border-[#e1e8f2] bg-[#fbfcfe] p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-[#7a8ca2]">Commercial Details</p>
+              <p className="mt-1 text-sm text-[#61748d]">Set the commission structure before this agent starts generating pipeline or transaction data.</p>
+            </div>
+            {!hasCommissionStructures ? (
+              <Button type="button" variant="ghost" onClick={onManageCommissionStructures}>
+                Set Up
+              </Button>
+            ) : null}
+          </div>
+          {hasCommissionStructures ? (
+            <label className="mt-3 grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Commission Structure</span>
+              <Field as="select" value={form.commissionStructureId || ''} onChange={(event) => onChange('commissionStructureId', event.target.value)}>
+                <option value="">
+                  {defaultCommissionStructure
+                    ? `Use agency default: ${defaultCommissionStructure.name}`
+                    : 'Select commission structure'}
+                </option>
+                {commissionStructureOptions.map((structure) => (
+                  <option key={structure.id} value={structure.id}>
+                    {structure.name} ({formatPercent(structure.agentSplitPercentage)} agent / {formatPercent(structure.agencySplitPercentage)} agency)
+                  </option>
+                ))}
+              </Field>
+            </label>
+          ) : (
+            <div className="mt-3 rounded-[12px] border border-[#f3d9a8] bg-[#fff8ec] px-3 py-2 text-sm text-[#8a5b13]">
+              Create at least one commission structure before inviting agents so new transactions do not fall back to generic splits.
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-[16px] border border-[#e1e8f2] bg-[#fbfcfe] p-4">
           <p className="text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-[#7a8ca2]">Organisation Details</p>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             {showOrganisationSelect ? (
@@ -241,7 +294,23 @@ function AgentInviteModal({
 
             <label className="grid gap-1.5 md:col-span-2">
               <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Branch / Office (optional)</span>
-              <Field value={form.office} onChange={(event) => onChange('office', event.target.value)} placeholder="e.g. Sandton" />
+              <Field
+                as="select"
+                value={form.branchId || ''}
+                onChange={(event) => {
+                  const branchId = event.target.value
+                  const selectedBranch = branchOptions.find((branch) => branch.id === branchId)
+                  onChange('branchId', branchId)
+                  onChange('office', selectedBranch?.name || '')
+                }}
+              >
+                <option value="">{branchOptions.length ? 'Select branch' : 'No branches available'}</option>
+                {branchOptions.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </Field>
             </label>
           </div>
         </section>
@@ -373,7 +442,9 @@ function buildAgentInviteForm({ profile, directory }) {
     mobile: '',
     organisationId: String(agency?.id || profile?.agencyId || '').trim().toLowerCase(),
     organisationName: String(agency?.name || profile?.agencyName || profile?.companyName || 'Bridge Organisation').trim(),
+    branchId: '',
     office: '',
+    commissionStructureId: '',
     role: 'agent',
     notes: '',
   }
@@ -2415,6 +2486,7 @@ export function AgentsPage() {
   const [taskRows, setTaskRows] = useState([])
   const [appointmentRows, setAppointmentRows] = useState([])
   const [listingRows, setListingRows] = useState([])
+  const [commissionStructures, setCommissionStructures] = useState([])
   const [branchFilter, setBranchFilter] = useState('all')
   const [dateRange, setDateRange] = useState('last_30_days')
   const [activeAgentTab, setActiveAgentTab] = useState('all')
@@ -2477,6 +2549,7 @@ export function AgentsPage() {
       setTaskRows([])
       setAppointmentRows([])
       setListingRows([])
+      setCommissionStructures([])
       setLoading(false)
       return
     }
@@ -2489,14 +2562,17 @@ export function AgentsPage() {
       const invites = readAgentInvites()
       const localPrivateListings = readLocalRows(PRIVATE_LISTINGS_STORAGE_KEY)
       const localPipelineRows = readLocalRows(PIPELINE_STORAGE_KEY)
-      const performanceSources = await loadAgentPerformanceSources({
-        canManageDirectory,
-        profile,
-        role,
-        directory,
-        localPrivateListings,
-        localPipelineRows,
-      })
+      const [performanceSources, commissionStructureRows] = await Promise.all([
+        loadAgentPerformanceSources({
+          canManageDirectory,
+          profile,
+          role,
+          directory,
+          localPrivateListings,
+          localPipelineRows,
+        }),
+        canManageDirectory ? listOrganisationCommissionStructures().catch(() => []) : Promise.resolve([]),
+      ])
       const transactionRowsSource = performanceSources.transactions
       const privateListings = performanceSources.listings
       const pipelineRows = performanceSources.leads
@@ -2596,6 +2672,7 @@ export function AgentsPage() {
       setTaskRows(performanceSources.tasks)
       setAppointmentRows(performanceSources.appointments)
       setListingRows(privateListings)
+      setCommissionStructures(Array.isArray(commissionStructureRows) ? commissionStructureRows : [])
       setAgentDirectory(directory)
       setAgentInvites(invites)
     } catch (loadError) {
@@ -2608,6 +2685,7 @@ export function AgentsPage() {
       setTaskRows([])
       setAppointmentRows([])
       setListingRows([])
+      setCommissionStructures([])
     } finally {
       setLoading(false)
     }
@@ -2661,6 +2739,39 @@ export function AgentsPage() {
 
   const organisationFilterOptions = useMemo(() => [EMPTY_ORGANISATION, ...organisationOptions], [organisationOptions])
 
+  const inviteBranchOptions = useMemo(
+    () =>
+      branches
+        .filter((branch) => branch?.isActive !== false)
+        .map((branch) => ({
+          id: String(branch?.id || branch?.branchId || '').trim(),
+          name: String(branch?.name || branch?.branchName || branch?.location || 'Untitled Branch').trim(),
+        }))
+        .filter((branch) => branch.id && branch.name)
+        .filter((branch, index, list) => list.findIndex((item) => item.id === branch.id) === index),
+    [branches],
+  )
+
+  const activeCommissionStructureOptions = useMemo(
+    () =>
+      commissionStructures
+        .filter((structure) => structure?.isActive !== false)
+        .map((structure) => ({
+          id: String(structure?.id || '').trim(),
+          name: String(structure?.name || 'Commission Structure').trim(),
+          agentSplitPercentage: structure?.agentSplitPercentage,
+          agencySplitPercentage: structure?.agencySplitPercentage,
+          isDefault: Boolean(structure?.isDefault),
+        }))
+        .filter((structure) => structure.id && structure.name),
+    [commissionStructures],
+  )
+
+  const defaultCommissionStructure = useMemo(
+    () => activeCommissionStructureOptions.find((structure) => structure.isDefault) || null,
+    [activeCommissionStructureOptions],
+  )
+
   useEffect(() => {
     if (organisationFilterOptions.some((option) => option.id === organisationFilter)) {
       return
@@ -2688,6 +2799,23 @@ export function AgentsPage() {
       }
     })
   }, [organisationOptions])
+
+  useEffect(() => {
+    if (!inviteBranchOptions.length) return
+    setInviteForm((previous) => {
+      const branchId = String(previous?.branchId || '').trim()
+      if (!branchId || inviteBranchOptions.some((branch) => branch.id === branchId)) return previous
+      return { ...previous, branchId: '', office: '' }
+    })
+  }, [inviteBranchOptions])
+
+  useEffect(() => {
+    setInviteForm((previous) => {
+      const structureId = String(previous?.commissionStructureId || '').trim()
+      if (!structureId || activeCommissionStructureOptions.some((structure) => structure.id === structureId)) return previous
+      return { ...previous, commissionStructureId: '' }
+    })
+  }, [activeCommissionStructureOptions])
 
   const officeOptions = useMemo(() => {
     const items = [...new Set(agents.map((agent) => agent.office).filter(Boolean))]
@@ -2909,6 +3037,14 @@ export function AgentsPage() {
       setInviteError('First name, surname, email, and mobile number are required.')
       return
     }
+    if (!activeCommissionStructureOptions.length) {
+      setInviteError('Create a commission structure before inviting agents.')
+      return
+    }
+    if (!inviteForm.commissionStructureId && !defaultCommissionStructure) {
+      setInviteError('Select a commission structure or set an agency default before inviting this agent.')
+      return
+    }
 
     try {
       setInviteSubmitting(true)
@@ -2916,6 +3052,8 @@ export function AgentsPage() {
       setActionError('')
 
       const selectedOrganisation = organisationOptions.find((option) => option.id === String(inviteForm.organisationId || '').trim().toLowerCase())
+      const selectedBranch = inviteBranchOptions.find((branch) => branch.id === String(inviteForm.branchId || '').trim())
+      const selectedCommissionStructure = activeCommissionStructureOptions.find((structure) => structure.id === String(inviteForm.commissionStructureId || '').trim())
       const created = createAgentInvite({
         firstName: inviteForm.firstName,
         surname: inviteForm.surname,
@@ -2923,13 +3061,23 @@ export function AgentsPage() {
         mobile: inviteForm.mobile,
         organisationId: selectedOrganisation?.id || inviteForm.organisationId,
         organisationName: selectedOrganisation?.name || inviteForm.organisationName,
-        office: inviteForm.office,
+        branchId: selectedBranch?.id || '',
+        office: selectedBranch?.name || inviteForm.office,
+        commissionStructureId: selectedCommissionStructure?.id || '',
+        commissionStructureName: selectedCommissionStructure?.name || '',
         role: inviteForm.role,
         notes: inviteForm.notes,
         invitedByUserId: profile?.id || '',
         invitedByEmail: profile?.email || '',
         invitedByName: profile?.fullName || profile?.name || profile?.email || '',
       })
+
+      if (selectedCommissionStructure?.id) {
+        await assignOrganisationUserCommissionProfile({
+          email: inviteForm.email,
+          commissionStructureId: selectedCommissionStructure.id,
+        })
+      }
 
       await sendInviteNotifications(created.invite)
       markAgentInviteSent(created.invite.id)
@@ -3394,7 +3542,14 @@ export function AgentsPage() {
             form={inviteForm}
             onChange={handleInviteFormChange}
             organisationOptions={organisationOptions}
+            branchOptions={inviteBranchOptions}
+            commissionStructureOptions={activeCommissionStructureOptions}
+            defaultCommissionStructure={defaultCommissionStructure}
             showOrganisationSelect={organisationOptions.length > 1}
+            onManageCommissionStructures={() => {
+              setInviteModalOpen(false)
+              navigate('/settings/commission-structures')
+            }}
           />
 
           <CreateOrganisationModal
