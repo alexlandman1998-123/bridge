@@ -385,7 +385,9 @@ export default function PostDashboardSetup() {
       setMessage('')
       const result = await completeAgencyOnboarding(agencyDraft)
       refreshAuthState?.()
-      setMessage(`${result.organisation?.displayName || result.organisation?.name || agencyDraft.agencyInformation.agencyName} is ready. Opening your dashboard...`)
+      const organisationName = result.organisation?.displayName || result.organisation?.name || agencyDraft.agencyInformation.agencyName
+      const resumedCopy = result.completion?.resumed_duplicate_workspace ? ' Existing setup resumed and repaired.' : ''
+      setMessage(`${organisationName} is ready.${resumedCopy} Opening your dashboard...`)
       window.setTimeout(() => {
         navigate('/dashboard', { replace: true })
       }, 500)
