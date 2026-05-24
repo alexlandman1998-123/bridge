@@ -393,7 +393,7 @@ function HeaderBar({ onLogout, user }) {
 
       {open ? (
         <div className="ui-surface-floating absolute right-0 top-[calc(100%+12px)] z-40 flex min-w-[200px] flex-col p-2">
-          <Link className="rounded-control px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/settings" onClick={() => setOpen(false)}>
+          <Link className="rounded-control px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/settings/account" onClick={() => setOpen(false)}>
             Profile
           </Link>
           <Link className="rounded-control px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/settings" onClick={() => setOpen(false)}>
@@ -407,7 +407,7 @@ function HeaderBar({ onLogout, user }) {
               onLogout?.()
             }}
           >
-            Logout
+            Log out
           </button>
         </div>
       ) : null}

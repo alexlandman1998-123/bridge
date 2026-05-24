@@ -59,6 +59,8 @@ import {
   updateAgentRole,
 } from '../lib/agentInviteService'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
+import { buildAgentPerformanceModel, AGENT_DATE_RANGE_OPTIONS, AGENT_STATUS_TABS, LEADERBOARD_METRICS } from '../modules/agency/agents/agentPerformanceUtils'
+import { loadAgentPerformanceSources } from '../modules/agency/agents/agentPerformanceDataService'
 
 const PRIVATE_LISTINGS_STORAGE_KEY = 'itg:agent-private-listings:v1'
 const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
@@ -1200,6 +1202,429 @@ function AgentDirectoryTable({ agents, onView, onEditRole, onDeactivate }) {
   )
 }
 
+function PerformanceKpiStrip({ kpis }) {
+  const cards = [
+    { label: 'Total Agents', value: kpis.totalAgents, helper: 'In selected scope', icon: Users, tone: 'bg-[#edf5ff] text-[#1769d1]' },
+    { label: 'Active Today', value: kpis.activeToday, helper: 'Logged activity today', icon: CheckCircle2, tone: 'bg-[#ecfdf3] text-[#16894f]' },
+    { label: 'Pipeline Value', value: formatCompactCurrency(kpis.totalPipelineValue), helper: 'Active assigned value', icon: ArrowRight, tone: 'bg-[#eef4ff] text-[#315adf]' },
+    { label: 'Transactions', value: kpis.activeTransactions, helper: 'Active deals', icon: BriefcaseBusiness, tone: 'bg-[#f3efff] text-[#7657d8]' },
+    { label: 'Conversion', value: `${kpis.averageConversionRate || 0}%`, helper: 'Average rate', icon: Trophy, tone: 'bg-[#fff7e8] text-[#a46313]' },
+    { label: 'Response Time', value: kpis.averageResponseTimeLabel || 'N/A', helper: 'Lead to first action', icon: Clock3, tone: 'bg-[#f1f7ff] text-[#1f4f78]' },
+    { label: 'Commission MTD', value: kpis.commissionMtd === null || kpis.commissionMtd === undefined ? 'N/A' : formatCompactCurrency(kpis.commissionMtd), helper: 'Registered month to date', icon: DollarSign, tone: 'bg-[#f0fbf5] text-[#1d7d45]' },
+  ]
+
+  return (
+    <section className="sticky top-0 z-10 grid grid-cols-1 gap-2 border-y border-[#e6edf5] bg-[#f8fbff]/95 py-3 backdrop-blur sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
+      {cards.map((card) => {
+        const Icon = card.icon
+        return (
+          <article key={card.label} className="min-w-0 rounded-xl border border-[#dfe7f1] bg-white px-3 py-2.5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${card.tone}`}>
+                <Icon size={15} />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#71859c]">{card.label}</p>
+                <p className="mt-0.5 truncate text-[1.04rem] font-semibold leading-none tracking-[-0.025em] text-[#10243a]">{card.value}</p>
+                <p className="mt-1 truncate text-[0.68rem] text-[#71859c]">{card.helper}</p>
+              </div>
+            </div>
+          </article>
+        )
+      })}
+    </section>
+  )
+}
+
+function ChartShell({ title, helper, children, empty }) {
+  return (
+    <article className="min-w-0 rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-semibold text-[#10243a]">{title}</h3>
+          <p className="mt-0.5 truncate text-xs text-[#6d8299]">{helper}</p>
+        </div>
+      </div>
+      <div className="mt-4 min-h-[164px]">
+        {empty ? (
+          <div className="flex min-h-[150px] items-center justify-center rounded-xl bg-[#f8fbff] px-4 text-center text-sm text-[#6d8299]">
+            No data recorded for this period.
+          </div>
+        ) : children}
+      </div>
+    </article>
+  )
+}
+
+function PipelineValueChart({ data = [] }) {
+  return (
+    <div className="space-y-2.5">
+      {data.map((item) => (
+        <div key={`${item.agent}-pipeline`} className="grid grid-cols-[34px_minmax(0,1fr)_76px] items-center gap-2">
+          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#edf5ff] text-[0.68rem] font-semibold text-[#1769d1]">{item.initials}</span>
+          <div className="min-w-0">
+            <div className="mb-1 flex min-w-0 items-center justify-between gap-2">
+              <span className="truncate text-xs font-semibold text-[#294159]">{item.agent}</span>
+            </div>
+            <div className="h-2 rounded-full bg-[#edf2f7]">
+              <div className="h-2 rounded-full bg-[#1769d1]" style={{ width: `${Math.max(4, item.percent)}%` }} />
+            </div>
+          </div>
+          <span className="truncate text-right text-xs font-semibold text-[#10243a]">{formatCompactCurrency(item.value)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ConversionRateChart({ data = [] }) {
+  return (
+    <div className="space-y-2.5">
+      {data.map((item) => (
+        <div key={`${item.agent}-conversion`} className="grid grid-cols-[minmax(0,0.9fr)_minmax(100px,1fr)_42px] items-center gap-2">
+          <span className="truncate text-xs font-semibold text-[#294159]">{item.agent}</span>
+          <div className="h-2 rounded-full bg-[#edf2f7]">
+            <div className="h-2 rounded-full bg-[#16a36b]" style={{ width: `${Math.max(3, Math.min(100, item.value || 0))}%` }} />
+          </div>
+          <span className="text-right text-xs font-semibold text-[#10243a]">{item.value || 0}%</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ListingsRegistrationsChart({ data = [] }) {
+  return (
+    <div className="space-y-3">
+      {data.map((item) => (
+        <div key={`${item.agent}-listing-registration`} className="grid grid-cols-[minmax(0,0.8fr)_minmax(120px,1fr)] items-center gap-3">
+          <span className="truncate text-xs font-semibold text-[#294159]">{item.agent}</span>
+          <div className="grid gap-1.5">
+            <div className="flex items-center gap-2">
+              <div className="h-2 flex-1 rounded-full bg-[#edf2f7]">
+                <div className="h-2 rounded-full bg-[#1769d1]" style={{ width: `${Math.max(4, Math.round((item.listings / Math.max(item.max, 1)) * 100))}%` }} />
+              </div>
+              <span className="w-6 text-right text-[0.68rem] font-semibold text-[#60758d]">{item.listings}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="h-2 flex-1 rounded-full bg-[#edf2f7]">
+                <div className="h-2 rounded-full bg-[#18a058]" style={{ width: `${Math.max(4, Math.round((item.registrations / Math.max(item.max, 1)) * 100))}%` }} />
+              </div>
+              <span className="w-6 text-right text-[0.68rem] font-semibold text-[#60758d]">{item.registrations}</span>
+            </div>
+          </div>
+        </div>
+      ))}
+      <div className="flex items-center gap-4 pt-1 text-[0.68rem] font-semibold text-[#6d8299]">
+        <span className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-[#1769d1]" /> Listings</span>
+        <span className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-[#18a058]" /> Registrations</span>
+      </div>
+    </div>
+  )
+}
+
+function ActivityHeatmap({ data = [] }) {
+  const maxValue = Math.max(1, ...data.flatMap((row) => row.days.map((day) => day.value)))
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-[86px_repeat(7,minmax(24px,1fr))] gap-1 text-[0.64rem] font-semibold uppercase tracking-[0.06em] text-[#8a9bb0]">
+        <span />
+        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => <span key={day} className="text-center">{day}</span>)}
+      </div>
+      {data.map((row) => (
+        <div key={row.type} className="grid grid-cols-[86px_repeat(7,minmax(24px,1fr))] items-center gap-1">
+          <span className="truncate text-xs font-semibold text-[#405870]">{row.label}</span>
+          {row.days.map((day) => (
+            <span
+              key={`${row.type}-${day.day}`}
+              title={`${row.label}: ${day.value}`}
+              className="h-7 rounded-md border border-[#e4ebf4]"
+              style={{
+                backgroundColor: day.value ? `rgba(23, 105, 209, ${0.12 + (day.value / maxValue) * 0.5})` : '#f8fbff',
+              }}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function AgentPerformanceCard({ agent, canManage = false, onView, onEditRole, onDeactivate, onAssignLead }) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const performance = agent.performance || {}
+  const statusMeta = agent.statusMeta || getAgentStatusMeta(agent)
+  const sparkMax = Math.max(1, ...(performance.sparkline || []))
+
+  return (
+    <article className="group min-w-0 rounded-2xl border border-[#dfe7f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:border-[#c7d6e6] hover:bg-[#fbfdff] hover:shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
+      <div className="flex items-start justify-between gap-3">
+        <button type="button" className="flex min-w-0 items-center gap-3 text-left" onClick={onView}>
+          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#d7e2ef] bg-[linear-gradient(135deg,#f8fbff,#eaf2fb)] text-sm font-semibold text-[#244e70]">
+            {agent.initials || getAgentInitials(agent)}
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold text-[#10243a]">{agent.displayName || agent.name || 'Agent'}</span>
+            <span className="mt-0.5 block truncate text-xs text-[#60758d]">{formatRoleLabel(agent.role)} • {agent.office || agent.organisationName || 'Unassigned'}</span>
+          </span>
+        </button>
+        <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold ${statusMeta.className}`}>
+          {statusMeta.label}
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-4 divide-x divide-[#e7eef6] border-y border-[#edf2f7] py-3">
+        <div className="min-w-0 pr-2">
+          <p className="text-[0.66rem] font-medium text-[#72859c]">Pipeline</p>
+          <p className="mt-1 truncate text-sm font-semibold text-[#10243a]">{formatCompactCurrency(performance.pipelineValue)}</p>
+        </div>
+        <div className="min-w-0 px-2">
+          <p className="text-[0.66rem] font-medium text-[#72859c]">Deals</p>
+          <p className="mt-1 text-sm font-semibold text-[#10243a]">{performance.deals || 0}</p>
+        </div>
+        <div className="min-w-0 px-2">
+          <p className="text-[0.66rem] font-medium text-[#72859c]">Listings</p>
+          <p className="mt-1 text-sm font-semibold text-[#10243a]">{performance.listings || 0}</p>
+        </div>
+        <div className="min-w-0 pl-2">
+          <p className="text-[0.66rem] font-medium text-[#72859c]">Convert</p>
+          <p className="mt-1 text-sm font-semibold text-[#10243a]">{performance.conversionRate || 0}%</p>
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+        <div className="rounded-xl bg-[#f8fbff] px-3 py-2">
+          <p className="font-medium text-[#72859c]">Next follow-ups</p>
+          <p className="mt-1 font-semibold text-[#10243a]">{performance.nextFollowUps || 0}</p>
+        </div>
+        <div className="rounded-xl bg-[#fff8f5] px-3 py-2">
+          <p className="font-medium text-[#72859c]">Overdue</p>
+          <p className="mt-1 font-semibold text-[#9a4038]">{performance.overdueFollowUps || 0}</p>
+        </div>
+        <div className="rounded-xl bg-[#f8fbff] px-3 py-2">
+          <p className="font-medium text-[#72859c]">Response</p>
+          <p className="mt-1 font-semibold text-[#10243a]">{performance.responseTimeLabel || 'N/A'}</p>
+        </div>
+      </div>
+
+      {(performance.sparkline || []).some(Boolean) ? (
+        <div className="mt-3 flex h-8 items-end gap-1">
+          {performance.sparkline.map((value, index) => (
+            <span key={`${agent.id}-spark-${index}`} className="flex-1 rounded-t bg-[#cfe0f5]" style={{ height: `${Math.max(15, Math.round((value / sparkMax) * 100))}%` }} />
+          ))}
+        </div>
+      ) : null}
+
+      <div className="mt-4 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1 opacity-70 transition group-hover:opacity-100">
+          <a className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#526981] hover:bg-[#edf5ff] hover:text-[#1769d1]" href={agent.phone ? `tel:${agent.phone}` : undefined} aria-label="Call agent">
+            <Phone size={15} />
+          </a>
+          <a className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#526981] hover:bg-[#edf5ff] hover:text-[#1769d1]" href={agent.phone ? `https://wa.me/${String(agent.phone).replace(/\D/g, '')}` : undefined} aria-label="WhatsApp agent">
+            <MessageCircle size={15} />
+          </a>
+          <a className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#526981] hover:bg-[#edf5ff] hover:text-[#1769d1]" href={agent.email ? `mailto:${agent.email}` : undefined} aria-label="Email agent">
+            <Mail size={15} />
+          </a>
+          <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#526981] hover:bg-[#edf5ff] hover:text-[#1769d1]" aria-label="Calendar" onClick={onView}>
+            <CalendarDays size={15} />
+          </button>
+          {canManage ? (
+            <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#526981] hover:bg-[#edf5ff] hover:text-[#1769d1]" aria-label="Assign lead" onClick={onAssignLead}>
+              <ArrowRight size={15} />
+            </button>
+          ) : null}
+        </div>
+        <div className="relative">
+          <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#526981] hover:bg-[#f5f8fb]" aria-label="More actions" onClick={() => setMenuOpen((open) => !open)}>
+            <MoreHorizontal size={16} />
+          </button>
+          {menuOpen ? (
+            <div className="absolute bottom-[calc(100%+8px)] right-0 z-20 w-44 rounded-2xl border border-[#dce6f0] bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.15)]">
+              <button type="button" className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]" onClick={onView}>Open lead workspace</button>
+              {canManage ? <button type="button" className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]" onClick={onEditRole}>Edit agent</button> : null}
+              {canManage ? <button type="button" className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#9a3a13] hover:bg-[#fff7ed]" onClick={onDeactivate}>Deactivate</button> : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function AgentPerformanceTable({ agents, canManage = false, onView, onEditRole, onDeactivate }) {
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-[#dde6f1] bg-white shadow-sm">
+      <table className="w-full min-w-[1040px] text-left">
+        <thead className="bg-[#f6f9fc] text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#70849d]">
+          <tr>
+            <th className="px-4 py-3">Agent</th>
+            <th className="px-4 py-3">Branch</th>
+            <th className="px-4 py-3">Status</th>
+            <th className="px-4 py-3">Pipeline</th>
+            <th className="px-4 py-3">Deals</th>
+            <th className="px-4 py-3">Listings</th>
+            <th className="px-4 py-3">Conversion</th>
+            <th className="px-4 py-3">Response</th>
+            <th className="px-4 py-3">Last Activity</th>
+            <th className="px-4 py-3 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-[#e8eef5] text-sm text-[#22384c]">
+          {agents.map((agent) => {
+            const performance = agent.performance || {}
+            const statusMeta = agent.statusMeta || getAgentStatusMeta(agent)
+            return (
+              <tr key={`${agent.id}-${agent.organisationId || 'org'}-performance-row`} className="hover:bg-[#f8fbff]">
+                <td className="px-4 py-3">
+                  <button type="button" className="flex min-w-0 items-center gap-3 text-left" onClick={() => onView(agent)}>
+                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d7e2ef] bg-[#f8fbff] text-xs font-semibold text-[#245076]">{agent.initials || getAgentInitials(agent)}</span>
+                    <span className="min-w-0">
+                      <span className="block truncate font-semibold text-[#142132]">{agent.displayName || agent.name || 'Agent'}</span>
+                      <span className="block truncate text-xs text-[#60758d]">{agent.email || 'No email added'}</span>
+                    </span>
+                  </button>
+                </td>
+                <td className="px-4 py-3">{agent.office || agent.organisationName || 'Unassigned'}</td>
+                <td className="px-4 py-3"><span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold ${statusMeta.className}`}>{statusMeta.label}</span></td>
+                <td className="px-4 py-3 font-semibold">{formatCompactCurrency(performance.pipelineValue)}</td>
+                <td className="px-4 py-3">{performance.deals || 0}</td>
+                <td className="px-4 py-3">{performance.listings || 0}</td>
+                <td className="px-4 py-3">{performance.conversionRate || 0}%</td>
+                <td className="px-4 py-3">{performance.responseTimeLabel || 'N/A'}</td>
+                <td className="px-4 py-3">{formatRelativeActivity(performance.lastActivityAt)}</td>
+                <td className="px-4 py-3">
+                  <div className="flex justify-end gap-1.5">
+                    <Button type="button" size="sm" variant="secondary" onClick={() => onView(agent)}>Open</Button>
+                    {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onEditRole(agent)}>Role</Button> : null}
+                    {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onDeactivate(agent)}>Disable</Button> : null}
+                  </div>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function AgentLeaderboardView({ agents, metric, onMetricChange, onView }) {
+  const sortedAgents = [...agents].sort((left, right) => {
+    const leftPerformance = left.performance || {}
+    const rightPerformance = right.performance || {}
+    if (metric === 'registrations') return (rightPerformance.registrations || 0) - (leftPerformance.registrations || 0)
+    if (metric === 'conversionRate') return (rightPerformance.conversionRate || 0) - (leftPerformance.conversionRate || 0)
+    if (metric === 'activityVolume') return (rightPerformance.activityVolume || 0) - (leftPerformance.activityVolume || 0)
+    if (metric === 'responseTime') return (leftPerformance.responseTimeHours ?? Infinity) - (rightPerformance.responseTimeHours ?? Infinity)
+    return (rightPerformance.pipelineValue || 0) - (leftPerformance.pipelineValue || 0)
+  })
+
+  const renderMetricValue = (agent) => {
+    const performance = agent.performance || {}
+    if (metric === 'registrations') return performance.registrations || 0
+    if (metric === 'conversionRate') return `${performance.conversionRate || 0}%`
+    if (metric === 'activityVolume') return performance.activityVolume || 0
+    if (metric === 'responseTime') return performance.responseTimeLabel || 'N/A'
+    return formatCompactCurrency(performance.pipelineValue)
+  }
+
+  return (
+    <section className="rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-[#10243a]">Leaderboard</h3>
+          <p className="mt-0.5 text-xs text-[#6d8299]">Rank agents by the metric that matters this week.</p>
+        </div>
+        <DirectorySelect
+          label="Leaderboard metric"
+          value={metric}
+          onChange={onMetricChange}
+          options={LEADERBOARD_METRICS.map((item) => ({ value: item.value, label: item.label }))}
+        />
+      </div>
+      <div className="mt-4 divide-y divide-[#edf2f7]">
+        {sortedAgents.map((agent, index) => (
+          <button key={`${agent.id}-leaderboard`} type="button" className="grid w-full grid-cols-[38px_minmax(0,1fr)_120px] items-center gap-3 py-3 text-left hover:bg-[#f8fbff]" onClick={() => onView(agent)}>
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#edf5ff] text-xs font-semibold text-[#1769d1]">{index + 1}</span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold text-[#10243a]">{agent.displayName || agent.name || 'Agent'}</span>
+              <span className="block truncate text-xs text-[#6d8299]">{agent.office || agent.organisationName || 'Unassigned'}</span>
+            </span>
+            <span className="text-right text-sm font-semibold text-[#10243a]">{renderMetricValue(agent)}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function AgentPerformanceIntelligencePanel({ intelligence, onLeaderboard }) {
+  return (
+    <aside className="space-y-4">
+      <article className="rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-[#142132]">Top Performers</h3>
+          <button type="button" className="text-xs font-semibold text-[#1769d1]" onClick={onLeaderboard}>View Leaderboard</button>
+        </div>
+        <div className="mt-4 space-y-3">
+          {intelligence.topPerformers?.length ? intelligence.topPerformers.map((agent, index) => (
+            <div key={`${agent.id}-top-performance`} className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#eaf3ff] text-xs font-semibold text-[#1769d1]">{index + 1}</span>
+                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#d7e2ef] bg-white text-[0.64rem] font-semibold text-[#245076]">{agent.initials || getAgentInitials(agent)}</span>
+                <span className="truncate text-sm font-semibold text-[#263a4f]">{agent.displayName || agent.name || 'Agent'}</span>
+              </div>
+              <span className="shrink-0 text-xs font-semibold text-[#0f2742]">{formatCompactCurrency(agent.performance?.pipelineValue)}</span>
+            </div>
+          )) : <p className="rounded-xl bg-[#f8fbff] px-3 py-3 text-sm text-[#6b7f97]">No performance data yet.</p>}
+        </div>
+      </article>
+
+      <article className="rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-[#142132]">Agents Needing Attention</h3>
+          <span className="text-xs font-semibold text-[#1769d1]">Watchlist</span>
+        </div>
+        <div className="mt-4 space-y-3">
+          {intelligence.attentionAgents?.length ? intelligence.attentionAgents.map((agent) => (
+            <div key={`${agent.id}-attention-performance`} className="flex items-start gap-2">
+              <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#fff7ed] text-[#e07800]">
+                <AlertTriangle size={14} />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-[#263a4f]">{agent.displayName || agent.name || 'Agent'}</p>
+                <p className="text-xs text-[#6b7f97]">{agent.attentionFlags?.[0] || 'Needs review'}</p>
+              </div>
+            </div>
+          )) : <p className="rounded-xl bg-[#f8fbff] px-3 py-3 text-sm text-[#6b7f97]">No attention items right now.</p>}
+        </div>
+      </article>
+
+      <article className="rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-[#142132]">Recent Agent Activity</h3>
+          <span className="text-xs font-semibold text-[#1769d1]">Latest</span>
+        </div>
+        <div className="mt-4 space-y-3">
+          {intelligence.recentActivity?.length ? intelligence.recentActivity.map((event, index) => (
+            <div key={`${event.agentName}-${event.timestamp}-${index}`} className="flex items-start gap-2">
+              <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#ecfdf3] text-[#16894f]">
+                <Clock3 size={14} />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-[#263a4f]">{event.agentName}</p>
+                <p className="truncate text-xs text-[#6b7f97]">{event.action}</p>
+                <p className="mt-0.5 text-xs text-[#8294aa]">{formatRelativeActivity(event.timestamp)}</p>
+              </div>
+            </div>
+          )) : <p className="rounded-xl bg-[#f8fbff] px-3 py-3 text-sm text-[#6b7f97]">No activity recorded for this period.</p>}
+        </div>
+      </article>
+    </aside>
+  )
+}
+
 function DetailInfoRow({ label, value }) {
   return (
     <div className="grid min-w-0 grid-cols-[minmax(86px,0.42fr)_minmax(0,1fr)] gap-3 border-b border-[#edf2f7] py-2.5 last:border-0 sm:grid-cols-[118px_minmax(0,1fr)]">
@@ -1980,6 +2405,16 @@ export function AgentsPage() {
   const [actionMessage, setActionMessage] = useState('')
   const [inviteSentContext, setInviteSentContext] = useState({ email: '', link: '' })
   const [transactionRows, setTransactionRows] = useState([])
+  const [branches, setBranches] = useState([])
+  const [leadRows, setLeadRows] = useState([])
+  const [leadActivities, setLeadActivities] = useState([])
+  const [taskRows, setTaskRows] = useState([])
+  const [appointmentRows, setAppointmentRows] = useState([])
+  const [listingRows, setListingRows] = useState([])
+  const [branchFilter, setBranchFilter] = useState('all')
+  const [dateRange, setDateRange] = useState('last_30_days')
+  const [activeAgentTab, setActiveAgentTab] = useState('all')
+  const [leaderboardMetric, setLeaderboardMetric] = useState('pipelineValue')
   const [officeFilter, setOfficeFilter] = useState('all')
   const [organisationFilter, setOrganisationFilter] = useState(EMPTY_ORGANISATION.id)
   const [roleFilter, setRoleFilter] = useState('all')
@@ -2032,6 +2467,12 @@ export function AgentsPage() {
     if (!canAccess) {
       setAgents([])
       setTransactionRows([])
+      setBranches([])
+      setLeadRows([])
+      setLeadActivities([])
+      setTaskRows([])
+      setAppointmentRows([])
+      setListingRows([])
       setLoading(false)
       return
     }
@@ -2040,24 +2481,26 @@ export function AgentsPage() {
       setLoading(true)
       setError('')
 
-      const [transactions, organisationSettings, organisationUsers] = await Promise.all([
-        canManageDirectory
-          ? fetchTransactionsListSummary({ activeTransactionsOnly: false })
-          : fetchTransactionsByParticipantSummary({ userId: profile?.id, roleType: role }),
-        fetchOrganisationSettings().catch(() => null),
-        canManageDirectory ? listOrganisationUsers().catch(() => []) : Promise.resolve([]),
-      ])
-      const transactionRowsSource = Array.isArray(transactions) ? transactions : []
-
-      const privateListings = readLocalRows(PRIVATE_LISTINGS_STORAGE_KEY)
-      const pipelineRows = readLocalRows(PIPELINE_STORAGE_KEY)
-
       const directory = readAgentDirectory()
       const invites = readAgentInvites()
+      const localPrivateListings = readLocalRows(PRIVATE_LISTINGS_STORAGE_KEY)
+      const localPipelineRows = readLocalRows(PIPELINE_STORAGE_KEY)
+      const performanceSources = await loadAgentPerformanceSources({
+        canManageDirectory,
+        profile,
+        role,
+        directory,
+        localPrivateListings,
+        localPipelineRows,
+      })
+      const transactionRowsSource = performanceSources.transactions
+      const privateListings = performanceSources.listings
+      const pipelineRows = performanceSources.leads
       const mapped = computeAgentWorkspaceData({
         transactions: transactionRowsSource,
         privateListings,
         pipelineRows,
+        appointments: performanceSources.appointments,
         agentDirectory: directory,
       })
 
@@ -2100,10 +2543,10 @@ export function AgentsPage() {
           inviteToken: invite?.token || '',
         }
       })
-      const organisationAgentRows = (organisationUsers || [])
+      const organisationAgentRows = (performanceSources.organisationUsers || [])
         .map((user) => normalizeOrganisationUserAgent(user, {
-          organisationId: organisationSettings?.organisation?.id || directory?.agency?.id,
-          organisationName: organisationSettings?.organisation?.name || directory?.agency?.name,
+          organisationId: performanceSources.organisationSettings?.organisation?.id || directory?.agency?.id,
+          organisationName: performanceSources.organisationSettings?.organisation?.name || directory?.agency?.name,
         }))
         .filter(Boolean)
       const mergedAgents = mergeAgentRows(mappedAgents, organisationAgentRows)
@@ -2143,12 +2586,24 @@ export function AgentsPage() {
 
       setAgents(mergedAgents)
       setTransactionRows(transactionRowsSource)
+      setBranches(performanceSources.branches)
+      setLeadRows(pipelineRows)
+      setLeadActivities(performanceSources.leadActivities)
+      setTaskRows(performanceSources.tasks)
+      setAppointmentRows(performanceSources.appointments)
+      setListingRows(privateListings)
       setAgentDirectory(directory)
       setAgentInvites(invites)
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load agents.')
       setAgents([])
       setTransactionRows([])
+      setBranches([])
+      setLeadRows([])
+      setLeadActivities([])
+      setTaskRows([])
+      setAppointmentRows([])
+      setListingRows([])
     } finally {
       setLoading(false)
     }
@@ -2240,82 +2695,82 @@ export function AgentsPage() {
     return ['all', ...items]
   }, [agents])
 
-  const statusOptions = useMemo(() => {
-    const items = [...new Set(agents.map((agent) => String(agent.status || AGENT_INVITE_STATUS.ACTIVE).trim().toLowerCase()).filter(Boolean))]
-    return ['all', ...items]
-  }, [agents])
+  const statusOptions = useMemo(
+    () => [
+      { value: 'all', label: 'All Statuses' },
+      { value: 'active', label: 'Active' },
+      { value: 'needs_attention', label: 'Needs Attention' },
+      { value: 'inactive', label: 'Inactive' },
+      { value: 'on_leave', label: 'On Leave' },
+    ],
+    [],
+  )
+
+  const effectiveStatusFilter = statusFilter !== 'all' ? statusFilter : activeAgentTab
+
+  const performanceModel = useMemo(
+    () => buildAgentPerformanceModel({
+      agents,
+      branches,
+      leads: leadRows,
+      transactions: transactionRows,
+      listings: listingRows,
+      appointments: appointmentRows,
+      tasks: taskRows,
+      activities: leadActivities,
+      filters: {
+        branchId: branchFilter,
+        office: officeFilter,
+        role: roleFilter,
+        status: effectiveStatusFilter,
+        search: searchTerm,
+        dateRange,
+      },
+    }),
+    [agents, appointmentRows, branchFilter, branches, dateRange, effectiveStatusFilter, leadActivities, leadRows, listingRows, officeFilter, roleFilter, searchTerm, taskRows, transactionRows],
+  )
+
+  const statusSummaryModel = useMemo(
+    () => buildAgentPerformanceModel({
+      agents,
+      branches,
+      leads: leadRows,
+      transactions: transactionRows,
+      listings: listingRows,
+      appointments: appointmentRows,
+      tasks: taskRows,
+      activities: leadActivities,
+      filters: {
+        branchId: branchFilter,
+        office: officeFilter,
+        role: roleFilter,
+        status: 'all',
+        search: searchTerm,
+        dateRange,
+      },
+    }),
+    [agents, appointmentRows, branchFilter, branches, dateRange, leadActivities, leadRows, listingRows, officeFilter, roleFilter, searchTerm, taskRows, transactionRows],
+  )
+
+  const tabCounts = useMemo(() => {
+    const counts = { all: statusSummaryModel.agents.length, active: 0, inactive: 0, on_leave: 0 }
+    statusSummaryModel.agents.forEach((agent) => {
+      const key = agent.baseStatusKey || 'active'
+      if (Object.prototype.hasOwnProperty.call(counts, key)) counts[key] += 1
+    })
+    return counts
+  }, [statusSummaryModel.agents])
 
   const filteredAgents = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase()
-    const rows = agents.filter((agent) => {
-      const organisationMatch = organisationFilter === EMPTY_ORGANISATION.id
-        ? true
-        : String(agent?.organisationId || '').trim().toLowerCase() === organisationFilter
-      const officeMatch = officeFilter === 'all' ? true : agent.office === officeFilter
-      const roleMatch = roleFilter === 'all' ? true : String(agent.role || '').trim().toLowerCase() === roleFilter
-      const statusMatch = statusFilter === 'all' ? true : String(agent.status || '').trim().toLowerCase() === statusFilter
-      const searchMatch = query
-        ? `${agent.name} ${agent.email} ${agent.office} ${agent.organisationName} ${formatRoleLabel(agent.role)}`.toLowerCase().includes(query)
-        : true
-      return organisationMatch && officeMatch && roleMatch && statusMatch && searchMatch
-    })
+    const rows = [...performanceModel.agents]
     return rows.sort((left, right) => {
-      if (sortBy === 'pipeline') return getAgentPipelineValue(right) - getAgentPipelineValue(left)
-      if (sortBy === 'active_deals') return Number(right?.metrics?.activeDeals || 0) - Number(left?.metrics?.activeDeals || 0)
-      if (sortBy === 'recent') return (getAgentLastActivityDate(right)?.getTime() || 0) - (getAgentLastActivityDate(left)?.getTime() || 0)
-      if (sortBy === 'status') return getAgentStatusMeta(left).label.localeCompare(getAgentStatusMeta(right).label)
-      return String(left?.name || '').localeCompare(String(right?.name || ''))
+      if (sortBy === 'pipeline') return (right.performance?.pipelineValue || 0) - (left.performance?.pipelineValue || 0)
+      if (sortBy === 'active_deals') return (right.performance?.deals || 0) - (left.performance?.deals || 0)
+      if (sortBy === 'recent') return new Date(right.performance?.lastActivityAt || 0).getTime() - new Date(left.performance?.lastActivityAt || 0).getTime()
+      if (sortBy === 'status') return String(left.statusMeta?.label || '').localeCompare(String(right.statusMeta?.label || ''))
+      return String(left?.displayName || left?.name || '').localeCompare(String(right?.displayName || right?.name || ''))
     })
-  }, [agents, officeFilter, organisationFilter, roleFilter, searchTerm, sortBy, statusFilter])
-
-  const directorySummary = useMemo(() => {
-    const activeAgents = agents.filter((agent) => getAgentStatusMeta(agent).key === AGENT_INVITE_STATUS.ACTIVE)
-    const activeTodayRows = agents.filter((agent) => {
-      const lastActivity = getAgentLastActivityDate(agent)
-      if (!lastActivity) return false
-      const today = new Date()
-      return lastActivity.toDateString() === today.toDateString()
-    })
-    const activeToday = activeTodayRows.length || activeAgents.length
-    const pipelineValue = agents.reduce((sum, agent) => sum + getAgentPipelineValue(agent), 0)
-    const activeTransactions = agents.reduce((sum, agent) => sum + (Number(agent?.metrics?.activeDeals || 0) || 0), 0)
-    return {
-      totalAgents: agents.length,
-      activeToday,
-      activePercent: agents.length ? Math.round((activeToday / agents.length) * 100) : 0,
-      pipelineValue,
-      activeTransactions,
-    }
-  }, [agents])
-
-  const topPerformers = useMemo(
-    () => [...agents].sort((left, right) => getAgentPipelineValue(right) - getAgentPipelineValue(left)).slice(0, 5),
-    [agents],
-  )
-
-  const recentAgents = useMemo(
-    () => [...agents]
-      .sort((left, right) => (getAgentLastActivityDate(right)?.getTime() || 0) - (getAgentLastActivityDate(left)?.getTime() || 0))
-      .slice(0, 5),
-    [agents],
-  )
-
-  const attentionAgents = useMemo(
-    () => agents
-      .filter((agent) => {
-        const statusKey = getAgentStatusMeta(agent).key
-        const lastActivity = getAgentLastActivityDate(agent)
-        const daysSinceActivity = lastActivity ? (Date.now() - lastActivity.getTime()) / 86400000 : Infinity
-        return (
-          statusKey !== AGENT_INVITE_STATUS.ACTIVE ||
-          Number(agent?.metrics?.activeListings || 0) <= 0 ||
-          Number(agent?.metrics?.activeDeals || 0) <= 0 ||
-          daysSinceActivity > 14
-        )
-      })
-      .slice(0, 5),
-    [agents],
-  )
+  }, [performanceModel.agents, sortBy])
 
   function handleInviteFormChange(key, value) {
     setInviteForm((previous) => ({ ...previous, [key]: value }))
@@ -2627,12 +3082,51 @@ export function AgentsPage() {
     <section className="space-y-5">
       {canManageDirectory ? (
         <>
-          <section className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <section className="flex flex-col gap-4 rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)] lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
-              <h1 className="text-[1.65rem] font-semibold tracking-[-0.035em] text-[#0f2237]">Agents Directory</h1>
-              <p className="mt-1 text-sm leading-6 text-[#667a92]">Browse and manage your agents across all branches and offices.</p>
+              <h1 className="text-[1.65rem] font-semibold tracking-[-0.035em] text-[#0f2237]">Agents</h1>
+              <p className="mt-1 text-sm leading-6 text-[#667a92]">Manage agent performance, activity and pipeline across your organisation.</p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
+              <DirectorySelect
+                label="Branch"
+                value={branchFilter}
+                onChange={setBranchFilter}
+                options={performanceModel.filters.branchOptions.map((branch) => ({ value: branch.id, label: branch.name }))}
+              />
+              <DirectorySelect
+                label="Date range"
+                value={dateRange}
+                onChange={setDateRange}
+                options={AGENT_DATE_RANGE_OPTIONS.map((range) => ({ value: range.value, label: range.label }))}
+              />
+              {canManageDirectory ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    setActionMessage('')
+                    setActionError('')
+                    setInviteSentContext({ email: '', link: '' })
+                    resetInviteForm()
+                    setInviteModalOpen(true)
+                  }}
+                >
+                  <Plus size={15} />
+                  Add Agent
+                </Button>
+              ) : null}
+              {canManageDirectory ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setActionMessage('Agent export is ready to connect to the reporting service.')}
+                >
+                  <FileText size={15} />
+                  Export
+                </Button>
+              ) : null}
               <div className="inline-flex rounded-xl border border-[#d9e3ef] bg-white p-1 shadow-sm">
                 <button
                   type="button"
@@ -2644,14 +3138,22 @@ export function AgentsPage() {
                 </button>
                 <button
                   type="button"
-                  className={`inline-flex h-9 w-9 items-center justify-center rounded-lg transition ${viewMode === 'list' ? 'bg-[#1769d1] text-white shadow-sm' : 'text-[#60758d] hover:bg-[#f5f8fb]'}`}
-                  aria-label="List view"
-                  onClick={() => setViewMode('list')}
+                  className={`inline-flex h-9 w-9 items-center justify-center rounded-lg transition ${viewMode === 'table' ? 'bg-[#1769d1] text-white shadow-sm' : 'text-[#60758d] hover:bg-[#f5f8fb]'}`}
+                  aria-label="Table view"
+                  onClick={() => setViewMode('table')}
                 >
                   <List size={17} />
                 </button>
+                <button
+                  type="button"
+                  className={`inline-flex h-9 w-9 items-center justify-center rounded-lg transition ${viewMode === 'leaderboard' ? 'bg-[#1769d1] text-white shadow-sm' : 'text-[#60758d] hover:bg-[#f5f8fb]'}`}
+                  aria-label="Leaderboard view"
+                  onClick={() => setViewMode('leaderboard')}
+                >
+                  <Trophy size={16} />
+                </button>
               </div>
-              <label className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 shadow-sm">
+              <label className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 shadow-sm">
                 <span className="text-xs font-semibold text-[#60758d]">Sort by</span>
                 <select
                   className="min-w-[150px] border-0 bg-transparent p-0 text-sm font-semibold text-[#24364b] outline-none"
@@ -2668,54 +3170,68 @@ export function AgentsPage() {
             </div>
           </section>
 
-          <section className="flex flex-wrap items-center gap-2">
+          <section className="grid gap-2 rounded-2xl border border-[#dde6f1] bg-white p-3 shadow-sm md:grid-cols-[minmax(220px,1fr)_repeat(4,minmax(142px,auto))_auto]">
+            <label className="min-w-0">
+              <span className="sr-only">Search agents</span>
+              <input
+                className="h-10 w-full rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] shadow-sm outline-none transition placeholder:text-[#9aaabd] focus:border-[#1f4f78] focus:ring-2 focus:ring-[#1f4f78]/10"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Search agent, email, phone or branch..."
+              />
+            </label>
             <DirectorySelect
-              label="All Branches"
-              value={organisationFilter}
-              onChange={setOrganisationFilter}
-              options={organisationFilterOptions.map((organisation) => ({
-                value: organisation.id,
-                label: organisation.id === EMPTY_ORGANISATION.id ? 'All Branches' : organisation.name,
-              }))}
-            />
-            <DirectorySelect
-              label="All Offices"
+              label="Office"
               value={officeFilter}
               onChange={setOfficeFilter}
               options={officeOptions.map((office) => ({ value: office, label: office === 'all' ? 'All Offices' : office }))}
             />
             <DirectorySelect
-              label="All Roles"
+              label="Role"
               value={roleFilter}
               onChange={setRoleFilter}
               options={roleOptions.map((item) => ({ value: item, label: item === 'all' ? 'All Roles' : formatRoleLabel(item) }))}
             />
             <DirectorySelect
-              label="All Statuses"
+              label="Status"
               value={statusFilter}
               onChange={setStatusFilter}
-              options={statusOptions.map((item) => ({
-                value: item,
-                label: item === 'all' ? 'All Statuses' : AGENT_STATUS_LABELS[item] || item,
-              }))}
+              options={statusOptions}
             />
             <button
               type="button"
               className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] shadow-sm transition hover:bg-[#f7fafc]"
               onClick={() => {
-                setOrganisationFilter(EMPTY_ORGANISATION.id)
+                setBranchFilter('all')
                 setOfficeFilter('all')
                 setRoleFilter('all')
                 setStatusFilter('all')
+                setActiveAgentTab('all')
+                setDateRange('last_30_days')
                 setSearchTerm('')
               }}
             >
               <SlidersHorizontal size={15} />
-              Filters
+              Reset
             </button>
           </section>
 
-          <AgentSummaryStrip summary={directorySummary} />
+          <PerformanceKpiStrip kpis={performanceModel.kpis} />
+
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+            <ChartShell title="Pipeline Value by Agent" helper="Top active pipeline owners" empty={!performanceModel.charts.pipelineByAgent.length}>
+              <PipelineValueChart data={performanceModel.charts.pipelineByAgent} />
+            </ChartShell>
+            <ChartShell title="Conversion Rate by Agent" helper="Registered opportunities over total" empty={!performanceModel.charts.conversionByAgent.length}>
+              <ConversionRateChart data={performanceModel.charts.conversionByAgent} />
+            </ChartShell>
+            <ChartShell title="Listings vs Registrations" helper="Active listings compared with closed deals" empty={!performanceModel.charts.listingsVsRegistrations.length}>
+              <ListingsRegistrationsChart data={performanceModel.charts.listingsVsRegistrations} />
+            </ChartShell>
+            <ChartShell title="Activity Heatmap" helper="Activity type by weekday" empty={!performanceModel.charts.activityHeatmap.some((row) => row.days.some((day) => day.value))}>
+              <ActivityHeatmap data={performanceModel.charts.activityHeatmap} />
+            </ChartShell>
+          </section>
         </>
       ) : null}
 
@@ -2758,36 +3274,61 @@ export function AgentsPage() {
       {!loading && canManageDirectory ? (
         <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
           <div className="min-w-0">
+            <div className="mb-3 flex flex-col gap-3 rounded-2xl border border-[#dde6f1] bg-white p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-[#10243a]">Agent Workspace</h2>
+                <p className="mt-0.5 text-xs text-[#6d8299]">Operational cards, table and leaderboard all respect the selected filters.</p>
+              </div>
+              <div className="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-[#f2f6fb] p-1">
+                {AGENT_STATUS_TABS.map((tab) => (
+                  <button
+                    key={tab.value}
+                    type="button"
+                    onClick={() => {
+                      setActiveAgentTab(tab.value)
+                      if (statusFilter !== 'all') setStatusFilter('all')
+                    }}
+                    className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-semibold transition ${
+                      activeAgentTab === tab.value
+                        ? 'bg-white text-[#1769d1] shadow-sm'
+                        : 'text-[#60758d] hover:bg-white/70 hover:text-[#10243a]'
+                    }`}
+                  >
+                    {tab.label}
+                    <span className="rounded-full bg-[#e7eef7] px-1.5 py-0.5 text-[0.64rem] text-[#526981]">{tabCounts[tab.value] || 0}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
             {filteredAgents.length ? (
               viewMode === 'grid' ? (
                 <section className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
                   {filteredAgents.map((agent) => (
-                    <AgentDirectoryCard
+                    <AgentPerformanceCard
                       key={`${agent.id}-${agent.organisationId || 'org'}`}
                       agent={agent}
+                      canManage={canManageDirectory}
                       onView={() => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
                       onEditRole={() => openRoleEditor(agent)}
                       onDeactivate={() => openConfirm('deactivate', agent)}
-                      onResendInvite={() => void handleResendInvite(agent)}
-                      onCopyInviteLink={() => void handleCopyInviteLink(agent)}
+                      onAssignLead={() => setActionMessage('Lead assignment opens from the lead pipeline workspace.')}
                     />
                   ))}
-                  <AddAgentDirectoryCard
-                    onAddAgent={() => {
-                      setActionMessage('')
-                      setActionError('')
-                      setInviteSentContext({ email: '', link: '' })
-                      resetInviteForm()
-                      setInviteModalOpen(true)
-                    }}
-                  />
                 </section>
-              ) : (
-                <AgentDirectoryTable
+              ) : viewMode === 'table' ? (
+                <AgentPerformanceTable
                   agents={filteredAgents}
+                  canManage={canManageDirectory}
                   onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
                   onEditRole={openRoleEditor}
                   onDeactivate={(agent) => openConfirm('deactivate', agent)}
+                />
+              ) : (
+                <AgentLeaderboardView
+                  agents={filteredAgents}
+                  metric={leaderboardMetric}
+                  onMetricChange={setLeaderboardMetric}
+                  onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
                 />
               )
             ) : (
@@ -2814,10 +3355,9 @@ export function AgentsPage() {
             )}
           </div>
 
-          <AgentInsightPanel
-            topPerformers={topPerformers}
-            recentAgents={recentAgents}
-            attentionAgents={attentionAgents}
+          <AgentPerformanceIntelligencePanel
+            intelligence={performanceModel.intelligence}
+            onLeaderboard={() => setViewMode('leaderboard')}
           />
         </section>
       ) : null}

@@ -4019,6 +4019,47 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     [filteredLeads, records.appointments, records.deals, records.tasks],
   )
 
+  const leadOperationalSummary = useMemo(() => {
+    const visibleLeadKeys = new Set(filteredLeads.map((lead) => normalizeLeadIdentityKey(lead?.leadId)).filter(Boolean))
+    const now = new Date()
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    const endOfToday = startOfToday + 86400000
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime()
+    const attentionLeadIds = new Set()
+    let overdue = 0
+
+    for (const task of Array.isArray(records.tasks) ? records.tasks : []) {
+      const leadKey = normalizeLeadIdentityKey(task?.leadId)
+      if (!visibleLeadKeys.has(leadKey) || normalizeText(task?.status) === 'Completed') continue
+      const dueTime = new Date(task?.dueDate || 0).getTime()
+      if (!Number.isFinite(dueTime)) continue
+      if (dueTime < startOfToday) {
+        overdue += 1
+        attentionLeadIds.add(leadKey)
+      } else if (dueTime < endOfToday) {
+        attentionLeadIds.add(leadKey)
+      }
+    }
+
+    const newToday = filteredLeads.filter((lead) => {
+      const created = new Date(lead?.createdAt || 0).getTime()
+      return Number.isFinite(created) && created >= startOfToday && created < endOfToday
+    }).length
+    const convertedMtd = (Array.isArray(records.deals) ? records.deals : []).filter((deal) => {
+      const leadKey = normalizeLeadIdentityKey(deal?.leadId)
+      const created = new Date(deal?.createdAt || deal?.updatedAt || 0).getTime()
+      return visibleLeadKeys.has(leadKey) && Number.isFinite(created) && created >= monthStart
+    }).length
+
+    return {
+      total: filteredLeads.length,
+      needAttention: attentionLeadIds.size,
+      overdue,
+      newToday,
+      convertedMtd,
+    }
+  }, [filteredLeads, records.deals, records.tasks])
+
   const leadPageSummary = useMemo(() => {
     const targetCategory = leadTypeView === 'seller' ? 'seller' : 'buyer'
     const allCategoryLeads = records.leads.filter((lead) => normalizeText(lead?.leadCategory).toLowerCase() === targetCategory)
@@ -6957,25 +6998,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
 
       {!isCalendarMode && !isLeadWorkspaceRoute ? (
-        <section className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <section className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-5">
           {[
-            { label: 'New Leads', value: metrics.newLeads, detail: `${leadPageSummary.newThisWeek} captured this week`, icon: UserRound, tone: 'text-[#315f8f] bg-[#edf5ff]' },
-            { label: 'Follow-Ups Today', value: metrics.followUpsDueToday, detail: 'Ready for agent action', icon: CheckSquare, tone: 'text-[#8a641d] bg-[#fff7e8]' },
-            { label: 'Active Opportunities', value: metrics.activeOpportunities, detail: `${leadPageSummary.filtered} visible now`, icon: TrendingUp, tone: 'text-[#26724c] bg-[#effaf3]' },
-            { label: 'Appointments This Week', value: metrics.appointmentsThisWeek, detail: 'Viewings and meetings', icon: CalendarDays, tone: 'text-[#405b75] bg-[#f5f8fc]' },
-            { label: 'Overdue Tasks', value: metrics.overdueTasks, detail: metrics.overdueTasks ? 'Needs attention' : 'No blockers', icon: CheckSquare, tone: 'text-[#9a4038] bg-[#fff5f4]' },
+            { label: 'New Leads', value: metrics.newLeads, detail: `${leadPageSummary.newThisWeek} this week`, compare: '↑ 12% vs yesterday', icon: UserRound, tone: 'text-[#315f8f] bg-[#edf5ff]' },
+            { label: 'Need Attention', value: leadOperationalSummary.needAttention, detail: `${leadOperationalSummary.overdue} overdue`, compare: leadOperationalSummary.overdue ? 'Action required' : 'Clear', icon: AlertTriangle, tone: 'text-[#8a641d] bg-[#fff7e8]' },
+            { label: 'Follow-Ups Today', value: metrics.followUpsDueToday, detail: 'Ready for action', compare: 'Operational queue', icon: CheckSquare, tone: 'text-[#405b75] bg-[#f5f8fc]' },
+            { label: 'Overdue', value: metrics.overdueTasks, detail: metrics.overdueTasks ? 'Needs attention' : 'No blockers', compare: metrics.overdueTasks ? 'Prioritize first' : 'Healthy', icon: Clock3, tone: 'text-[#9a4038] bg-[#fff5f4]' },
+            { label: 'Converted MTD', value: leadOperationalSummary.convertedMtd || metrics.dealsCreated, detail: `${metrics.activeOpportunities} active`, compare: 'Month to date', icon: TrendingUp, tone: 'text-[#26724c] bg-[#effaf3]' },
           ].map((metric) => {
             const Icon = metric.icon
             return (
-              <article key={metric.label} className="group min-w-0 rounded-[20px] border border-[#dfe8f1] bg-white/88 px-4 py-3 shadow-[0_18px_36px_rgba(24,45,68,0.06)] backdrop-blur transition duration-200 hover:-translate-y-0.5 hover:border-[#cddbe9]">
-                <div className="flex items-start justify-between gap-3">
+              <article key={metric.label} className="group min-w-0 rounded-[14px] border border-[#e4ebf2] bg-white/90 px-3 py-2.5 shadow-[0_10px_24px_rgba(24,45,68,0.045)] backdrop-blur transition duration-200 hover:border-[#cddbe9]">
+                <div className="flex items-center justify-between gap-2">
                   <span className="min-w-0 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{metric.label}</span>
-                  <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] ${metric.tone}`}>
+                  <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] ${metric.tone}`}>
                     <Icon size={14} />
                   </span>
                 </div>
-                <strong className="mt-3 block text-[1.9rem] font-semibold leading-none tracking-[-0.05em] text-[#102236] tabular-nums">{metric.value}</strong>
-                <p className="mt-2 truncate text-[0.78rem] font-medium text-[#667b92]">{metric.detail}</p>
+                <div className="mt-2 flex min-w-0 items-end justify-between gap-3">
+                  <strong className="block text-[1.55rem] font-semibold leading-none tracking-[-0.04em] text-[#102236] tabular-nums">{metric.value}</strong>
+                  <span className="truncate text-[0.68rem] font-semibold text-[#6f8398]">{metric.compare}</span>
+                </div>
+                <p className="mt-1 truncate text-[0.74rem] font-medium text-[#667b92]">{metric.detail}</p>
               </article>
             )
           })}
@@ -7293,9 +7337,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ) : (
         <>
           {!isLeadWorkspaceRoute ? (
-          <section className="min-w-0 rounded-[22px] border border-[#dfe8f1] bg-white/88 p-3 shadow-[0_18px_42px_rgba(24,45,68,0.06)] backdrop-blur">
+          <section className="min-w-0 rounded-[16px] border border-[#e4ebf2] bg-white/90 p-2.5 shadow-[0_10px_26px_rgba(24,45,68,0.045)] backdrop-blur">
             <div className="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-center">
-              <label className="flex min-h-[46px] min-w-0 flex-1 items-center gap-3 rounded-[16px] border border-[#dbe6f1] bg-[#f8fbfe] px-4 transition focus-within:border-[#9db7cf] focus-within:bg-white">
+              <label className="flex min-h-[38px] min-w-0 flex-1 items-center gap-2.5 rounded-[12px] border border-[#dbe6f1] bg-[#f8fbfe] px-3 transition focus-within:border-[#9db7cf] focus-within:bg-white">
                 <Search size={16} className="shrink-0 text-[#7f92a6]" />
                 <input
                   className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-medium text-[#162334] outline-none placeholder:text-[#97a7b8]"
@@ -7308,7 +7352,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               </label>
 
               <div className="grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:flex xl:shrink-0">
-                <select className="min-h-[46px] rounded-[16px] border border-[#dbe6f1] bg-white px-3 text-sm font-semibold text-[#2b4056] outline-none transition hover:border-[#c7d6e5]" value={leadFilter.source} onChange={(event) => setLeadFilter((previous) => ({ ...previous, source: event.target.value }))}>
+                <select className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056] outline-none transition hover:border-[#c7d6e5]" value={leadFilter.source} onChange={(event) => setLeadFilter((previous) => ({ ...previous, source: event.target.value }))}>
                   <option value="all">All Sources</option>
                   {availableLeadSources.map((option) => (
                     <option key={option} value={option}>
@@ -7316,7 +7360,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     </option>
                   ))}
                 </select>
-                <select className="min-h-[46px] rounded-[16px] border border-[#dbe6f1] bg-white px-3 text-sm font-semibold text-[#2b4056] outline-none transition hover:border-[#c7d6e5]" value={leadFilter.stage} onChange={(event) => setLeadFilter((previous) => ({ ...previous, stage: event.target.value }))}>
+                <select className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056] outline-none transition hover:border-[#c7d6e5]" value={leadFilter.stage} onChange={(event) => setLeadFilter((previous) => ({ ...previous, stage: event.target.value }))}>
                   <option value="all">All Stages</option>
                   {LEAD_STAGES.map((option) => (
                     <option key={option} value={option}>
@@ -7325,7 +7369,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ))}
                 </select>
                 {isPrincipal ? (
-                  <select className="min-h-[46px] rounded-[16px] border border-[#dbe6f1] bg-white px-3 text-sm font-semibold text-[#2b4056] outline-none transition hover:border-[#c7d6e5]" value={leadFilter.agent} onChange={(event) => setLeadFilter((previous) => ({ ...previous, agent: event.target.value }))}>
+                  <select className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056] outline-none transition hover:border-[#c7d6e5]" value={leadFilter.agent} onChange={(event) => setLeadFilter((previous) => ({ ...previous, agent: event.target.value }))}>
                     <option value="all">All Agents</option>
                     {agentOptions.map((agent) => (
                       <option key={`${agent.id}:${agent.email}`} value={agent.id || agent.email}>
@@ -7334,14 +7378,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     ))}
                   </select>
                 ) : null}
-                <select className="min-h-[46px] rounded-[16px] border border-[#dbe6f1] bg-white px-3 text-sm font-semibold text-[#2b4056] outline-none transition hover:border-[#c7d6e5]" value={leadFilter.sort} onChange={(event) => setLeadFilter((previous) => ({ ...previous, sort: event.target.value }))}>
+                <select className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056] outline-none transition hover:border-[#c7d6e5]" value={leadFilter.sort} onChange={(event) => setLeadFilter((previous) => ({ ...previous, sort: event.target.value }))}>
                   <option value="newest">Sort: Newest</option>
                   <option value="next_follow_up">Sort: Next Follow-up</option>
                   <option value="stage">Sort: Stage</option>
                 </select>
                 <button
                   type="button"
-                  className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-[16px] border border-[#dbe6f1] bg-white px-3 text-sm font-semibold text-[#405b75] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe]"
+                  className="inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#405b75] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe]"
                   onClick={() => setLeadFilter({ search: '', source: 'all', stage: 'all', agent: 'all', sort: 'newest' })}
                 >
                   <Filter size={15} />
@@ -7359,24 +7403,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
           <section className="grid gap-4">
             {!isLeadWorkspaceRoute ? (
-            <article className="min-w-0 overflow-hidden rounded-[24px] border border-[rgba(15,23,42,0.06)] bg-white shadow-[0_18px_50px_rgba(15,23,42,0.05)]">
-              <div className="border-b border-[rgba(15,23,42,0.06)] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-4 py-4 sm:px-5">
+            <article className="min-w-0 overflow-hidden rounded-[18px] border border-[rgba(15,23,42,0.06)] bg-white shadow-[0_16px_42px_rgba(15,23,42,0.045)]">
+              <div className="border-b border-[rgba(15,23,42,0.06)] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-3 py-3 sm:px-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div className="min-w-0">
                     <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Lead Pipeline</p>
-                    <h3 className="mt-1 text-[1.2rem] font-semibold tracking-[-0.035em] text-[#142132]">
+                    <h3 className="mt-0.5 text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">
                       {leadTypeView === 'seller' ? 'Seller Leads' : 'Buyer Leads'}
                     </h3>
-                    <p className="mt-1 text-sm text-[#60758b]">
+                    <p className="mt-0.5 text-[0.78rem] font-medium text-[#60758b]">
                       {leadPageSummary.filtered} visible · {metrics.followUpsDueToday} follow-ups today
                     </p>
                   </div>
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <div className="inline-flex items-center rounded-[16px] border border-[#dbe4ee] bg-[#f6f9fc] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+                  <div className="inline-flex items-center rounded-[12px] border border-[#dbe4ee] bg-[#f6f9fc] p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
                     <button
                       type="button"
                       onClick={() => setPipelineViewMode('table')}
-                      className={`inline-flex min-h-[32px] items-center gap-1.5 rounded-[12px] px-3 text-xs font-semibold transition ${
+                      className={`inline-flex min-h-[30px] items-center gap-1.5 rounded-[10px] px-2.5 text-xs font-semibold transition ${
                         pipelineViewMode === 'table' ? 'bg-white text-[#163247] shadow-[0_8px_18px_rgba(24,45,68,0.12)]' : 'text-[#51667f] hover:text-[#1f4f78]'
                       }`}
                     >
@@ -7386,7 +7430,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <button
                       type="button"
                       onClick={() => setPipelineViewMode('kanban')}
-                      className={`inline-flex min-h-[32px] items-center gap-1.5 rounded-[12px] px-3 text-xs font-semibold transition ${
+                      className={`inline-flex min-h-[30px] items-center gap-1.5 rounded-[10px] px-2.5 text-xs font-semibold transition ${
                         pipelineViewMode === 'kanban' ? 'bg-white text-[#163247] shadow-[0_8px_18px_rgba(24,45,68,0.12)]' : 'text-[#51667f] hover:text-[#1f4f78]'
                       }`}
                     >
@@ -7394,11 +7438,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       Kanban
                     </button>
                   </div>
-                  <div className="inline-flex items-center rounded-[16px] border border-[#dbe4ee] bg-white p-1">
+                  <div className="inline-flex items-center rounded-[12px] border border-[#dbe4ee] bg-white p-0.5 shadow-[0_8px_18px_rgba(24,45,68,0.045)]">
                     <button
                       type="button"
                       onClick={() => setLeadTypeView('buyer')}
-                      className={`rounded-[12px] px-3 py-2 text-xs font-semibold transition ${
+                      className={`rounded-[10px] px-3 py-1.5 text-xs font-semibold transition ${
                         leadTypeView === 'buyer' ? 'bg-[#163247] text-white shadow-[0_8px_18px_rgba(22,50,71,0.18)]' : 'text-[#51667f] hover:text-[#1f4f78]'
                       }`}
                     >
@@ -7407,19 +7451,37 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <button
                       type="button"
                       onClick={() => setLeadTypeView('seller')}
-                      className={`rounded-[12px] px-3 py-2 text-xs font-semibold transition ${
+                      className={`rounded-[10px] px-3 py-1.5 text-xs font-semibold transition ${
                         leadTypeView === 'seller' ? 'bg-[#163247] text-white shadow-[0_8px_18px_rgba(22,50,71,0.18)]' : 'text-[#51667f] hover:text-[#1f4f78]'
                       }`}
                     >
                       Seller Leads
                     </button>
                   </div>
-                  <button type="button" className="inline-flex min-h-[40px] items-center justify-center rounded-[14px] border border-[#dbe4ee] bg-white px-3 text-[#405b75] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe]" aria-label="More lead actions">
+                  <button type="button" className="inline-flex min-h-[34px] items-center justify-center rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-[#405b75] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe]" aria-label="More lead actions">
                     <MoreHorizontal size={17} />
                   </button>
                   </div>
                 </div>
               </div>
+              {!isLeadWorkspaceRoute ? (
+                <div className="sticky top-0 z-[2] border-b border-[rgba(15,23,42,0.06)] bg-white/95 px-3 py-2 backdrop-blur sm:px-4">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-2 text-[0.78rem]">
+                    {[
+                      ['Leads', leadOperationalSummary.total],
+                      ['Need Attention', leadOperationalSummary.needAttention],
+                      ['Overdue', leadOperationalSummary.overdue],
+                      ['New Today', leadOperationalSummary.newToday],
+                      ['Converted MTD', leadOperationalSummary.convertedMtd],
+                    ].map(([label, value]) => (
+                      <div key={label} className="flex items-baseline gap-1.5">
+                        <span className="font-semibold tabular-nums text-[#102236]">{value}</span>
+                        <span className="font-medium text-[#73879c]">{label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               {pipelineViewMode === 'kanban' ? (
                 <div className="max-w-full overflow-x-auto pb-2">
                   <div className="flex min-h-[560px] gap-3 pr-1">
@@ -7568,17 +7630,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               ) : (
               <>
               <div className="hidden max-w-full overflow-x-auto lg:block">
-                <table className="w-full min-w-[1516px] table-fixed text-sm">
-                  <thead className="sticky top-0 z-[1] h-[52px] border-b border-[rgba(15,23,42,0.06)] bg-[#FCFCFD] text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                <table className="w-full min-w-[1520px] table-fixed text-sm">
+                  <thead className="sticky top-[38px] z-[1] h-[42px] border-b border-[rgba(15,23,42,0.06)] bg-[#FCFCFD] text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                     <tr>
-                      <th className="w-[56px] px-5 py-4"><span className="sr-only">Select</span></th>
-                      <th className="w-[360px] px-5 py-4">Lead</th>
-                      <th className="w-[300px] px-5 py-4">Opportunity</th>
-                      <th className="w-[160px] px-5 py-4">Status</th>
-                      <th className="w-[260px] px-5 py-4">Next Action</th>
-                      <th className="w-[180px] px-5 py-4">Owner</th>
-                      <th className="w-[140px] px-5 py-4">Activity</th>
-                      <th className="w-[60px] px-5 py-4 text-right"><span className="sr-only">Menu</span></th>
+                      <th className="w-[48px] px-3 py-3"><span className="sr-only">Select</span></th>
+                      <th className="w-[300px] px-3 py-3">Lead</th>
+                      <th className="w-[252px] px-3 py-3">Opportunity</th>
+                      <th className="w-[138px] px-3 py-3">Stage</th>
+                      <th className="w-[220px] px-3 py-3">Next Action</th>
+                      <th className="w-[150px] px-3 py-3">Owner</th>
+                      <th className="w-[130px] px-3 py-3">Activity</th>
+                      <th className="w-[282px] px-3 py-3 text-right">Quick Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[rgba(15,23,42,0.06)] bg-white">
@@ -7614,55 +7676,59 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const opportunity = getLeadOpportunityPreview(lead, linkedTransaction, isSeller, linkedListing)
                         const actionMeta = getLeadNextActionMeta(lead, leadTasks, linkedAppointment, nextStep)
                         const latestActivityTitle = normalizeText(latestActivity?.activityType || latestActivity?.activityNote || linkedAppointment?.title)
+                        const leadPhone = normalizeText(leadContact?.phone || lead?.phone)
+                        const leadEmail = normalizeText(leadContact?.email || lead?.email)
+                        const whatsappPhone = leadPhone.replace(/[^\d+]/g, '').replace(/^\+/, '')
+                        const quickActionButtonClass = 'inline-flex h-8 w-8 items-center justify-center rounded-[10px] border border-transparent bg-transparent text-slate-400 transition hover:border-slate-200 hover:bg-white hover:text-slate-800'
 
                         return (
                           <tr
                             key={lead.leadId}
-                            className={`group h-[112px] cursor-pointer text-slate-700 transition-all duration-200 hover:bg-slate-50/70 hover:shadow-sm ${isActive ? 'bg-[#f2f7ff]' : 'bg-white'}`}
+                            className={`group h-[94px] cursor-pointer text-slate-700 transition-all duration-200 hover:bg-[#f8fbff] hover:shadow-[0_8px_22px_rgba(15,23,42,0.035)] ${isActive ? 'bg-[#f2f7ff]' : 'bg-white'}`}
                             onClick={() => {
                               setSelectedLeadId(lead.leadId)
                               navigate(`/pipeline/leads/${lead.leadId}`)
                             }}
                           >
-                            <td className="px-5 py-5 align-middle" onClick={(event) => event.stopPropagation()}>
+                            <td className="px-3 py-3 align-middle" onClick={(event) => event.stopPropagation()}>
                               <input type="checkbox" className="h-4 w-4 rounded-[5px] border-slate-300 text-[#2563eb] shadow-sm focus:ring-2 focus:ring-[#dbeafe]" aria-label={`Select ${leadName}`} />
                             </td>
-                            <td className="px-5 py-5 align-middle">
-                              <div className="flex min-w-0 items-start gap-3.5">
+                            <td className="px-3 py-3 align-middle">
+                              <div className="flex min-w-0 items-center gap-3">
                                 <span
-                                  className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-[0.78rem] font-bold text-white shadow-[0_10px_22px_rgba(24,45,68,0.14)] ring-1 ring-white/70"
+                                  className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[0.72rem] font-bold text-white shadow-[0_8px_18px_rgba(24,45,68,0.12)] ring-1 ring-white/70"
                                   style={{ backgroundImage: `linear-gradient(135deg, ${agentColor}, #1f4f78)` }}
                                 >
                                   {getInitials(leadName)}
                                 </span>
                                 <div className="min-w-0">
-                                  <p className="truncate text-[16px] font-semibold leading-6 text-slate-900">{leadName}</p>
-                                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-[0.08em] ${categoryMeta.className}`}>
+                                  <div className="flex min-w-0 items-center gap-2">
+                                    <p className="truncate text-[14px] font-semibold leading-5 text-slate-950">{leadName}</p>
+                                    <span className={`inline-flex shrink-0 rounded-full border px-2 py-0.5 text-[0.58rem] font-bold uppercase tracking-[0.08em] ${categoryMeta.className}`}>
                                       {categoryMeta.label}
                                     </span>
                                   </div>
-                                  <div className="mt-2 grid min-w-0 gap-1 text-[13px] font-medium text-slate-500">
+                                  <div className="mt-1 flex min-w-0 items-center gap-3 text-[12px] font-medium text-slate-500">
                                     <span className="flex min-w-0 items-center gap-1.5">
-                                      <Phone size={13} className="shrink-0 text-slate-400" />
-                                      <span className="truncate">{leadContact?.phone || 'No phone'}</span>
+                                      <Phone size={12} className="shrink-0 text-slate-400" />
+                                      <span className="truncate">{leadPhone || 'No phone'}</span>
                                     </span>
                                     <span className="flex min-w-0 items-center gap-1.5">
-                                      <Mail size={13} className="shrink-0 text-slate-400" />
-                                      <span className="truncate">{leadContact?.email || 'No email'}</span>
+                                      <Mail size={12} className="shrink-0 text-slate-400" />
+                                      <span className="truncate">{leadEmail || 'No email'}</span>
                                     </span>
                                   </div>
-                                  <p className="mt-2 truncate text-[0.72rem] font-medium text-slate-400">
+                                  <p className="mt-1 truncate text-[0.7rem] font-medium text-slate-400">
                                     {lead.leadSource || 'Manual'} • {formatDateShort(lead?.createdAt)}
                                   </p>
                                 </div>
                               </div>
                             </td>
-                            <td className="px-5 py-5 align-middle">
+                            <td className="px-3 py-3 align-middle">
                               {opportunity.hasListing ? (
-                                <div className="flex min-w-0 items-center gap-3">
-                                  <div className="relative grid h-[72px] w-[120px] shrink-0 place-items-center overflow-hidden rounded-[14px] border border-slate-200 bg-slate-100" style={{ backgroundImage: `linear-gradient(135deg, ${agentColor}22, #f8fafc 70%)` }}>
-                                    <Home size={20} className="text-slate-400" />
+                                <div className="flex min-w-0 items-center gap-2.5">
+                                  <div className="relative grid h-14 w-20 shrink-0 place-items-center overflow-hidden rounded-[10px] border border-slate-200 bg-slate-100" style={{ backgroundImage: `linear-gradient(135deg, ${agentColor}1f, #f8fafc 72%)` }}>
+                                    <Home size={16} className="text-slate-400" />
                                     {opportunity.thumbnailUrl ? (
                                       <img
                                         src={opportunity.thumbnailUrl}
@@ -7676,86 +7742,140 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     ) : null}
                                   </div>
                                   <div className="min-w-0">
-                                    <p className="truncate text-sm font-semibold text-slate-900">{opportunity.title}</p>
-                                    <p className="mt-0.5 truncate text-[13px] font-medium text-slate-500">{opportunity.subtitle}</p>
-                                    {opportunity.price ? <p className="mt-2 text-[13px] font-semibold text-[#1f4f78]">{opportunity.price}</p> : null}
-                                    <p className="mt-0.5 truncate text-[12px] font-medium text-slate-400">{opportunity.specs || 'Property details pending'}</p>
+                                    <p className="truncate text-[13px] font-semibold text-slate-950">{opportunity.title}</p>
+                                    {opportunity.price ? <p className="mt-0.5 text-[12px] font-semibold text-[#1f4f78]">{opportunity.price}</p> : null}
+                                    <p className="mt-0.5 truncate text-[12px] font-medium text-slate-500">{opportunity.specs || 'Property details pending'}</p>
+                                    <p className="mt-0.5 truncate text-[11px] font-medium text-slate-400">{opportunity.subtitle}</p>
                                   </div>
                                 </div>
                               ) : (
-                                <div className="flex min-w-0 items-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-3 py-3">
-                                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-slate-400 shadow-sm">
-                                    <ImageIcon size={17} />
+                                <div className="flex min-w-0 items-center gap-2.5">
+                                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-slate-100 text-slate-400">
+                                    <ImageIcon size={15} />
                                   </span>
                                   <div className="min-w-0">
-                                    <p className="truncate text-sm font-semibold text-slate-700">No listing assigned</p>
-                                    <p className="mt-1 inline-flex items-center gap-1 text-[12px] font-semibold text-[#1f4f78]">Assign listing <ArrowUpRight size={12} /></p>
+                                    <p className="truncate text-[13px] font-semibold text-slate-700">No listing assigned</p>
+                                    <p className="mt-0.5 inline-flex items-center gap-1 text-[12px] font-semibold text-[#1f4f78]">Assign listing <ArrowUpRight size={12} /></p>
                                   </div>
                                 </div>
                               )}
                             </td>
-                            <td className="px-5 py-5 align-middle">
-                              <div className="space-y-2">
-                                <span className={`inline-flex rounded-full border px-3 py-1.5 text-[0.68rem] font-bold uppercase tracking-[0.08em] ${statusMeta.className}`}>{statusMeta.label}</span>
-                                <div className="flex items-center gap-1" aria-label={`${statusMeta.label} lead score ${statusMeta.score} out of 5`}>
+                            <td className="px-3 py-3 align-middle">
+                              <div className="min-w-0">
+                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.08em] ${statusMeta.className}`}>{statusMeta.label}</span>
+                                <div className="mt-1.5 flex items-center gap-1" aria-label={`${statusMeta.label} lead score ${statusMeta.score} out of 5`}>
                                   {Array.from({ length: 5 }).map((_, dotIndex) => (
-                                    <span key={`${lead.leadId}:score:${dotIndex}`} className={`h-2 w-2 rounded-full ${dotIndex < statusMeta.score ? statusMeta.dotClassName : 'bg-slate-200'}`} />
+                                    <span key={`${lead.leadId}:score:${dotIndex}`} className={`h-1.5 w-1.5 rounded-full ${dotIndex < statusMeta.score ? statusMeta.dotClassName : 'bg-slate-200'}`} />
                                   ))}
                                 </div>
-                                <p className="truncate text-[12px] font-medium text-slate-400">{funnelStage}</p>
+                                <p className="mt-1 truncate text-[11px] font-medium text-slate-400">Stage {statusMeta.score}/5 · {funnelStage}</p>
                               </div>
                             </td>
-                            <td className="px-5 py-5 align-middle">
-                              <div className={`rounded-2xl border p-4 shadow-[0_10px_24px_rgba(15,23,42,0.035)] ${actionMeta.className}`}>
-                                <p className="text-[0.62rem] font-bold uppercase tracking-[0.08em] opacity-75">{actionMeta.eyebrow}</p>
-                                <p className="mt-1 truncate text-sm font-semibold text-slate-900">{actionMeta.title}</p>
-                                <p className="mt-1 text-[0.68rem] font-bold uppercase tracking-[0.08em]">{actionMeta.meta}</p>
-                                <p className="mt-2 line-clamp-2 text-[12px] font-medium leading-5 text-slate-500">{actionMeta.detail}</p>
-                                <span className="mt-3 inline-flex items-center gap-1 text-[12px] font-semibold text-[#1f4f78]">Take action <ArrowUpRight size={12} /></span>
+                            <td className="px-3 py-3 align-middle">
+                              <div className="min-w-0 border-l-2 border-[#dbe7f2] pl-3">
+                                <p className="truncate text-[13px] font-semibold text-slate-950">{actionMeta.title}</p>
+                                <div className="mt-1 flex min-w-0 items-center gap-2">
+                                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${actionMeta.meta.toLowerCase().includes('overdue') ? 'bg-[#d96b5f]' : actionMeta.meta.toLowerCase().includes('today') ? 'bg-[#d79d3f]' : 'bg-[#35a66d]'}`} />
+                                  <p className="truncate text-[12px] font-semibold text-slate-500">{actionMeta.meta}</p>
+                                </div>
+                                <span className="mt-1 inline-flex items-center gap-1 text-[12px] font-semibold text-[#1f4f78]">Take action <ArrowUpRight size={12} /></span>
                               </div>
                             </td>
-                            <td className="px-5 py-5 align-middle">
+                            <td className="px-3 py-3 align-middle">
                               <div className="flex min-w-0 items-center gap-2.5">
-                                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[0.72rem] font-bold text-white shadow-sm" style={{ backgroundColor: agentColor }}>{getInitials(assignedAgent)}</span>
+                                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[0.68rem] font-bold text-white shadow-sm" style={{ backgroundColor: agentColor }}>{getInitials(assignedAgent)}</span>
                                 <div className="min-w-0">
-                                  <p className="truncate text-sm font-semibold text-slate-800">{assignedAgent}</p>
-                                  <p className="mt-0.5 truncate text-[12px] font-medium text-slate-400">Agent</p>
+                                  <p className="truncate text-[13px] font-semibold text-slate-800">{assignedAgent}</p>
+                                  <p className="truncate text-[11px] font-medium text-slate-400">Agent</p>
                                 </div>
                               </div>
                             </td>
-                            <td className="px-5 py-5 align-middle">
+                            <td className="px-3 py-3 align-middle">
                               <div className="min-w-0">
-                                <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
-                                  <Clock3 size={13} className="shrink-0 text-slate-400" />
+                                <p className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-800">
+                                  <Clock3 size={12} className="shrink-0 text-slate-400" />
                                   {formatRelativeTime(activityReference)}
                                 </p>
-                                <p className="mt-1 line-clamp-2 text-[12px] font-medium leading-5 text-slate-500">{latestActivityTitle || lastActivityLabel}</p>
+                                <p className="mt-0.5 line-clamp-1 text-[12px] font-medium text-slate-500">{latestActivityTitle || lastActivityLabel}</p>
                               </div>
                             </td>
-                            <td className="px-5 py-5 text-right align-middle">
-                              <button
-                                type="button"
-                                className="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-full border border-transparent bg-transparent text-slate-400 opacity-0 transition-all duration-200 hover:border-slate-200 hover:bg-white hover:text-slate-700 focus:opacity-100 group-hover:opacity-100"
-                                aria-label={`Open actions for ${leadName}`}
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  openArchiveLeadModal(lead.leadId)
-                                }}
-                              >
-                                <MoreHorizontal size={17} />
-                              </button>
+                            <td className="px-3 py-3 text-right align-middle">
+                              <div className="ml-auto flex items-center justify-end gap-1 opacity-0 transition-all duration-200 group-hover:opacity-100 group-focus-within:opacity-100" onClick={(event) => event.stopPropagation()}>
+                                {leadPhone ? (
+                                  <a href={`tel:${leadPhone}`} className={quickActionButtonClass} aria-label={`Call ${leadName}`} title="Call">
+                                    <Phone size={14} />
+                                  </a>
+                                ) : null}
+                                {whatsappPhone ? (
+                                  <a href={`https://wa.me/${whatsappPhone}`} target="_blank" rel="noreferrer" className={quickActionButtonClass} aria-label={`WhatsApp ${leadName}`} title="WhatsApp">
+                                    <MessageCircle size={14} />
+                                  </a>
+                                ) : null}
+                                {leadEmail ? (
+                                  <a href={`mailto:${leadEmail}`} className={quickActionButtonClass} aria-label={`Email ${leadName}`} title="Email">
+                                    <Mail size={14} />
+                                  </a>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className={quickActionButtonClass}
+                                  aria-label={`Book viewing for ${leadName}`}
+                                  title="Book Viewing"
+                                  onClick={() => {
+                                    setSelectedLeadId(lead.leadId)
+                                    setLeadWorkspaceTab('appointments')
+                                    navigate(`/pipeline/leads/${lead.leadId}`)
+                                  }}
+                                >
+                                  <CalendarDays size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className={quickActionButtonClass}
+                                  aria-label={`Generate OTP for ${leadName}`}
+                                  title="Generate OTP"
+                                  onClick={() => {
+                                    setSelectedLeadId(lead.leadId)
+                                    setLeadWorkspaceTab('offers')
+                                    navigate(`/pipeline/leads/${lead.leadId}`)
+                                  }}
+                                >
+                                  <CheckSquare size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className={quickActionButtonClass}
+                                  aria-label={`Open ${leadName}`}
+                                  title="Open Lead"
+                                  onClick={() => {
+                                    setSelectedLeadId(lead.leadId)
+                                    navigate(`/pipeline/leads/${lead.leadId}`)
+                                  }}
+                                >
+                                  <ArrowUpRight size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className={quickActionButtonClass}
+                                  aria-label={`More actions for ${leadName}`}
+                                  title="More"
+                                  onClick={() => openArchiveLeadModal(lead.leadId)}
+                                >
+                                  <MoreHorizontal size={15} />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         )
                       })
                     ) : (
                       <tr>
-                        <td className="px-6 py-14" colSpan={8}>
-                          <div className="mx-auto max-w-lg rounded-[28px] border border-dashed border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] px-8 py-10 text-center shadow-[0_18px_44px_rgba(15,23,42,0.05)]">
-                            <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#edf4fb] text-[#35546c]">
-                              <UserRound size={24} />
+                        <td className="px-6 py-12" colSpan={8}>
+                          <div className="mx-auto max-w-md rounded-[18px] border border-dashed border-slate-200 bg-[#fbfdff] px-6 py-8 text-center">
+                            <div className="mx-auto grid h-12 w-12 place-items-center rounded-[14px] bg-[#edf4fb] text-[#35546c]">
+                              <UserRound size={21} />
                             </div>
-                            <h4 className="mt-5 text-[1.1rem] font-semibold tracking-[-0.025em] text-slate-900">
+                            <h4 className="mt-4 text-[1rem] font-semibold tracking-[-0.02em] text-slate-900">
                               {leadTypeView === 'seller' ? 'No seller leads yet' : 'No buyer leads yet'}
                             </h4>
                             <p className="mt-2 text-sm leading-6 text-slate-500">
@@ -7765,7 +7885,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             </p>
                             <button
                               type="button"
-                              className="mt-6 inline-flex min-h-[42px] items-center justify-center gap-2 rounded-2xl bg-[#163247] px-4 py-2 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(22,50,71,0.18)]"
+                              className="mt-5 inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[12px] bg-[#163247] px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(22,50,71,0.16)]"
                               onClick={() => openLeadForm(leadTypeView)}
                             >
                               <Plus size={15} />
@@ -7833,7 +7953,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     return (
                       <article
                         key={`mobile-${lead.leadId}`}
-                        className="rounded-[22px] border border-[#dfe8f1] bg-white p-4 shadow-[0_16px_32px_rgba(24,45,68,0.07)]"
+                        className="rounded-[16px] border border-[#e1e8f0] bg-white p-3 shadow-[0_10px_24px_rgba(24,45,68,0.055)]"
                         onClick={() => {
                           setSelectedLeadId(lead.leadId)
                           navigate(`/pipeline/leads/${lead.leadId}`)
@@ -7845,31 +7965,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               {getInitials(leadName)}
                             </span>
                             <div className="min-w-0">
-                              <h4 className="truncate text-[1rem] font-semibold text-[#142132]">{leadName}</h4>
-                              <p className="mt-1 truncate text-sm text-[#60758b]">{interestedListing}</p>
+                              <h4 className="truncate text-[0.95rem] font-semibold text-[#142132]">{leadName}</h4>
+                              <p className="mt-0.5 truncate text-[0.8rem] font-medium text-[#60758b]">{interestedListing}</p>
                             </div>
                           </div>
-                          <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getLeadStageTone(funnelStage)}`}>
+                          <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[0.66rem] font-semibold ${getLeadStageTone(funnelStage)}`}>
                             {funnelStage}
                           </span>
                         </div>
-                        <div className="mt-4 grid gap-3 rounded-[18px] border border-[#edf2f7] bg-[#fbfdff] p-3">
+                        <div className="mt-3 grid gap-2 border-l-2 border-[#dbe7f2] pl-3">
                           <div>
-                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Next Step</p>
-                            <p className="mt-1 text-sm font-semibold text-[#2d4560]">{nextStep}</p>
-                            <span className={`mt-1 inline-flex items-center gap-1.5 text-[0.7rem] font-semibold ${nextStepStatus.text}`}>
+                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Next Action</p>
+                            <p className="mt-0.5 truncate text-[0.86rem] font-semibold text-[#2d4560]">{nextStep}</p>
+                            <span className={`mt-0.5 inline-flex items-center gap-1.5 text-[0.7rem] font-semibold ${nextStepStatus.text}`}>
                               <span className={`h-1.5 w-1.5 rounded-full ${nextStepStatus.tone}`} />
                               {nextStepStatus.label}
                             </span>
                           </div>
                           <div className="grid grid-cols-2 gap-2 text-sm">
                             <div>
-                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Agent</p>
-                              <p className="mt-1 truncate font-medium text-[#2d4560]">{assignedAgent}</p>
+                              <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Owner</p>
+                              <p className="mt-0.5 truncate text-[0.78rem] font-medium text-[#2d4560]">{assignedAgent}</p>
                             </div>
                             <div>
-                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Activity</p>
-                              <p className="mt-1 truncate font-medium text-[#2d4560]">{formatDateShort(activityReference)}</p>
+                              <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Activity</p>
+                              <p className="mt-0.5 truncate text-[0.78rem] font-medium text-[#2d4560]">{formatRelativeTime(activityReference)}</p>
                             </div>
                           </div>
                         </div>

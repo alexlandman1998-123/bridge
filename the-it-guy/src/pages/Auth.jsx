@@ -323,6 +323,8 @@ function Auth({ onDevBypass = null }) {
     navigate('/dashboard', { replace: true })
   }
 
+  const securityLogoutMessage = new URLSearchParams(location.search).get('security') === '1'
+
   return (
     <div className="auth-page">
       <main className="auth-shell">
@@ -366,6 +368,10 @@ function Auth({ onDevBypass = null }) {
                 : 'Set up your secure workspace access to continue into the app.'}
             </p>
           </div>
+
+          {securityLogoutMessage ? (
+            <p className="auth-feedback success">You were signed out for security. Please log in again.</p>
+          ) : null}
 
           <div className="auth-mode-switch" role="tablist" aria-label="Authentication mode">
             <button

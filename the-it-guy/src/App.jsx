@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom'
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import AppErrorBoundary from './components/AppErrorBoundary'
 import PermissionGate from './components/PermissionGate'
 import TokenRouteGate from './components/routing/TokenRouteGate'
@@ -19,6 +19,14 @@ import { decideAuthRedirect, isOnboardingRoute } from './lib/onboardingRouting'
 import { fetchOrganisationSettings } from './lib/settingsApi'
 import { getCurrentUserAttorneyMembership } from './lib/attorneyPermissions'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+
+const INACTIVITY_TIMEOUT_MINUTES = 15
+const WARNING_BEFORE_LOGOUT_MINUTES = 1
+const MAX_SESSION_HOURS = 8
+const INACTIVITY_TIMEOUT_MS = INACTIVITY_TIMEOUT_MINUTES * 60 * 1000
+const WARNING_BEFORE_LOGOUT_MS = WARNING_BEFORE_LOGOUT_MINUTES * 60 * 1000
+const WARNING_DELAY_MS = Math.max(INACTIVITY_TIMEOUT_MS - WARNING_BEFORE_LOGOUT_MS, 0)
+const MAX_SESSION_MS = MAX_SESSION_HOURS * 60 * 60 * 1000
 
 const lazyNamed = (loader, exportName) => lazy(() => loader().then((module) => ({ default: module[exportName] })))
 
@@ -230,11 +238,30 @@ function HeaderSkeleton() {
   )
 }
 
-function AppLayout({ onLogout, user }) {
+function getSessionStartedAt(session) {
+  const candidates = [
+    session?.user?.last_sign_in_at,
+    session?.user?.created_at,
+  ]
+  for (const candidate of candidates) {
+    const timestamp = new Date(candidate || '').getTime()
+    if (Number.isFinite(timestamp)) return timestamp
+  }
+  return Date.now()
+}
+
+function AppLayout({ onLogout, session = null, user }) {
   const { workspace, role, profile, agencyWorkflowMode } = useWorkspace()
   const location = useLocation()
+  const navigate = useNavigate()
   const mainScrollRef = useRef(null)
+  const sessionStartedAtRef = useRef(getSessionStartedAt(session))
+  const inactivityTimerRef = useRef(null)
+  const warningTimerRef = useRef(null)
+  const maxSessionTimerRef = useRef(null)
+  const securityLogoutInProgressRef = useRef(false)
   const routeContentKey = `${location.pathname}${location.search}`
+  const [sessionWarningOpen, setSessionWarningOpen] = useState(false)
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardInitialDevelopmentId, setWizardInitialDevelopmentId] = useState('')
   const [developmentModalOpen, setDevelopmentModalOpen] = useState(false)
@@ -247,6 +274,93 @@ function AppLayout({ onLogout, user }) {
   const isAttorneyDashboardRoute = role === 'attorney' && location.pathname === '/attorney/dashboard'
   const isDashboardRoute = location.pathname === '/dashboard' || location.pathname === '/'
   const defaultDevelopmentId = workspace.id === 'all' ? '' : workspace.id
+
+  useEffect(() => {
+    sessionStartedAtRef.current = getSessionStartedAt(session)
+  }, [session?.access_token, session?.user?.last_sign_in_at, session?.user?.created_at])
+
+  useEffect(() => {
+    function clearSessionTimers() {
+      if (inactivityTimerRef.current) window.clearTimeout(inactivityTimerRef.current)
+      if (warningTimerRef.current) window.clearTimeout(warningTimerRef.current)
+      if (maxSessionTimerRef.current) window.clearTimeout(maxSessionTimerRef.current)
+      inactivityTimerRef.current = null
+      warningTimerRef.current = null
+      maxSessionTimerRef.current = null
+    }
+
+    async function performSecurityLogout() {
+      if (securityLogoutInProgressRef.current) return
+      securityLogoutInProgressRef.current = true
+      clearSessionTimers()
+      setSessionWarningOpen(false)
+      try {
+        await Promise.resolve(onLogout?.())
+      } catch (logoutError) {
+        console.error('[SESSION] security logout failed', logoutError)
+      } finally {
+        navigate('/auth?security=1', { replace: true })
+      }
+    }
+
+    function scheduleInactivityTimers() {
+      if (inactivityTimerRef.current) window.clearTimeout(inactivityTimerRef.current)
+      if (warningTimerRef.current) window.clearTimeout(warningTimerRef.current)
+      warningTimerRef.current = window.setTimeout(() => {
+        setSessionWarningOpen(true)
+      }, WARNING_DELAY_MS)
+      inactivityTimerRef.current = window.setTimeout(() => {
+        void performSecurityLogout()
+      }, INACTIVITY_TIMEOUT_MS)
+    }
+
+    function resetInactivityTimer() {
+      if (securityLogoutInProgressRef.current) return
+      setSessionWarningOpen(false)
+      scheduleInactivityTimers()
+    }
+
+    clearSessionTimers()
+    securityLogoutInProgressRef.current = false
+    scheduleInactivityTimers()
+
+    const elapsed = Date.now() - sessionStartedAtRef.current
+    const remainingSessionMs = Math.max(MAX_SESSION_MS - elapsed, 0)
+    maxSessionTimerRef.current = window.setTimeout(() => {
+      void performSecurityLogout()
+    }, remainingSessionMs)
+
+    const activityEvents = ['mousemove', 'mousedown', 'click', 'keydown', 'scroll', 'touchstart', 'touchmove']
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, resetInactivityTimer, { passive: true })
+    })
+    document.addEventListener('scroll', resetInactivityTimer, { passive: true, capture: true })
+
+    return () => {
+      clearSessionTimers()
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, resetInactivityTimer)
+      })
+      document.removeEventListener('scroll', resetInactivityTimer, true)
+    }
+  }, [navigate, onLogout, session?.access_token])
+
+  function handleStaySignedIn() {
+    setSessionWarningOpen(false)
+    if (inactivityTimerRef.current) window.clearTimeout(inactivityTimerRef.current)
+    if (warningTimerRef.current) window.clearTimeout(warningTimerRef.current)
+    warningTimerRef.current = window.setTimeout(() => {
+      setSessionWarningOpen(true)
+    }, WARNING_DELAY_MS)
+    inactivityTimerRef.current = window.setTimeout(() => {
+      if (securityLogoutInProgressRef.current) return
+      securityLogoutInProgressRef.current = true
+      setSessionWarningOpen(false)
+      void Promise.resolve(onLogout?.())
+        .catch((logoutError) => console.error('[SESSION] security logout failed', logoutError))
+        .finally(() => navigate('/auth?security=1', { replace: true }))
+    }, INACTIVITY_TIMEOUT_MS)
+  }
 
   useEffect(() => {
     function openNewTransaction(event) {
@@ -340,9 +454,26 @@ function AppLayout({ onLogout, user }) {
     setWizardInitialDevelopmentId(defaultDevelopmentId)
   }
 
+  const sessionTimeoutWarning = sessionWarningOpen ? (
+    <div className="fixed bottom-5 right-5 z-[1000] w-[min(360px,calc(100vw-32px))] rounded-2xl border border-[#d8e2ef] bg-white p-4 shadow-[0_18px_45px_rgba(15,23,42,0.18)]">
+      <p className="text-sm font-semibold text-[#10243a]">You’ve been inactive for a while.</p>
+      <p className="mt-1.5 text-sm leading-6 text-[#60758d]">For your security, you’ll be signed out soon.</p>
+      <div className="mt-3 flex justify-end">
+        <button
+          type="button"
+          className="inline-flex h-10 items-center justify-center rounded-xl bg-[#0f2742] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#173a5e]"
+          onClick={handleStaySignedIn}
+        >
+          Stay signed in
+        </button>
+      </div>
+    </div>
+  ) : null
+
   if (isCommercialRoute) {
     return (
       <div className="h-screen overflow-hidden bg-[#f6f8fb] text-textStrong">
+        {sessionTimeoutWarning}
         <Suspense fallback={<PageSkeleton />}>
           <Outlet />
         </Suspense>
@@ -352,6 +483,7 @@ function AppLayout({ onLogout, user }) {
 
   return (
     <div className="h-screen overflow-hidden bg-app text-textStrong">
+      {sessionTimeoutWarning}
       <Suspense fallback={<SidebarSkeleton />}>
         <Sidebar />
       </Suspense>
@@ -925,7 +1057,7 @@ function ProtectedLayout({ onLogout, session }) {
     return <Navigate to="/auth" replace />
   }
 
-  return <AppLayout onLogout={onLogout} user={session?.user || null} />
+  return <AppLayout onLogout={onLogout} session={session} user={session?.user || null} />
 }
 
 function EnvironmentValidationBanner() {

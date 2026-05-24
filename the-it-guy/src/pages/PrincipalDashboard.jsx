@@ -13,8 +13,10 @@ import {
   FileText,
   LayoutGrid,
   LineChart,
+  LogOut,
   Loader2,
   PieChart,
+  Settings,
   ShieldAlert,
   Target,
   TrendingDown,
@@ -26,6 +28,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import QuickCreateDropdown from '../components/QuickCreateDropdown'
+import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
@@ -219,12 +222,33 @@ function PrincipalDashboardHeader({
   workspaceOptions,
   profile,
 }) {
+  const navigate = useNavigate()
+  const { logout } = useAuthSession()
+  const accountMenuRef = useRef(null)
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const initials = String(profile?.fullName || profile?.name || profile?.email || 'AL')
     .split(/\s+/)
     .map((part) => part[0])
     .join('')
     .slice(0, 2)
     .toUpperCase()
+
+  useEffect(() => {
+    function handlePointerDown(event) {
+      if (!accountMenuRef.current || accountMenuRef.current.contains(event.target)) return
+      setAccountMenuOpen(false)
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [])
+
+  async function handleLogout() {
+    setAccountMenuOpen(false)
+    await logout()
+    navigate('/auth', { replace: true })
+  }
+
   return (
     <header className="flex justify-end">
       <div className="flex flex-wrap items-center gap-2.5">
@@ -246,10 +270,57 @@ function PrincipalDashboardHeader({
         <button type="button" disabled title="Coming soon" className="relative inline-flex h-11 w-11 cursor-not-allowed items-center justify-center rounded-xl border border-[#d9e3ef] bg-white text-[#8a9aac] opacity-70 shadow-sm">
           <Bell size={17} />
         </button>
-        <button type="button" disabled title="Coming soon" className="inline-flex h-11 cursor-not-allowed items-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-2.5 opacity-80 shadow-sm">
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#0f172a] text-xs font-semibold text-white">{initials}</span>
-          <ChevronDown size={14} className="text-[#8a9aac]" />
-        </button>
+        <div className="relative" ref={accountMenuRef}>
+          <button
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={accountMenuOpen}
+            className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-2.5 shadow-sm transition hover:border-[#bfd0e4] hover:bg-[#f8fbff]"
+            onClick={() => setAccountMenuOpen((open) => !open)}
+          >
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#0f172a] text-xs font-semibold text-white">{initials}</span>
+            <ChevronDown size={14} className="text-[#526981]" />
+          </button>
+
+          {accountMenuOpen ? (
+            <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-56 rounded-2xl border border-[#dce6f0] bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.15)]" role="menu">
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]"
+                role="menuitem"
+                onClick={() => {
+                  setAccountMenuOpen(false)
+                  navigate('/settings/account')
+                }}
+              >
+                <UserRound size={16} />
+                Profile
+              </button>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]"
+                role="menuitem"
+                onClick={() => {
+                  setAccountMenuOpen(false)
+                  navigate('/settings')
+                }}
+              >
+                <Settings size={16} />
+                Settings
+              </button>
+              <div className="my-1 border-t border-[#edf2f7]" />
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#b42318] hover:bg-[#fff5f5]"
+                role="menuitem"
+                onClick={() => void handleLogout()}
+              >
+                <LogOut size={16} />
+                Log out
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
     </header>
   )
