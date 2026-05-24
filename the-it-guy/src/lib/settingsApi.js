@@ -110,7 +110,7 @@ function isFreshCacheEntry(entry) {
   return Boolean(entry?.value && Number(entry?.expiresAt || 0) > Date.now())
 }
 
-function clearOrganisationRuntimeCache() {
+export function clearOrganisationRuntimeCache() {
   organisationContextCache = null
   organisationContextInflight = null
   organisationUsersCache = null
@@ -1794,7 +1794,7 @@ export async function changePassword({ password }) {
   return true
 }
 
-export async function fetchOrganisationSettings() {
+export async function fetchOrganisationSettings({ forceRefresh = false } = {}) {
   if (!isSupabaseConfigured || !supabase) {
     return {
       organisation: buildDefaultOrganisation(),
@@ -1806,10 +1806,14 @@ export async function fetchOrganisationSettings() {
     }
   }
 
+  if (forceRefresh) {
+    clearOrganisationRuntimeCache()
+  }
+
   return ensureOrganisationContextCached(requireClient())
 }
 
-export async function fetchAgencyOnboardingSettings() {
+export async function fetchAgencyOnboardingSettings({ forceRefresh = false } = {}) {
   if (!isSupabaseConfigured || !supabase) {
     console.debug('[ONBOARDING] agency-settings:fallback-demo')
     return {
@@ -1824,6 +1828,9 @@ export async function fetchAgencyOnboardingSettings() {
 
   console.debug('[ONBOARDING] agency-settings:start')
   try {
+    if (forceRefresh) {
+      clearOrganisationRuntimeCache()
+    }
     const context = await ensureOrganisationContextCached(requireClient())
     const mergedOnboarding = mergeAgencyOnboardingDraft(context.organisationSettings?.agencyOnboarding, {}, context.profile)
     const hydratedOnboarding = await hydrateAgencyOnboardingBrandingUrls(requireClient(), mergedOnboarding)
@@ -2001,6 +2008,7 @@ export async function saveAgencyOnboardingDraft(input = {}) {
     throw error
   }
 
+  clearOrganisationRuntimeCache()
   return {
     onboarding: mergedDraft,
     organisation: context.organisation,
@@ -2217,6 +2225,7 @@ export async function completeAgencyOnboarding(input = {}) {
     completedViaEngine: true,
   })
 
+  clearOrganisationRuntimeCache()
   return {
     onboarding: mergedDraft,
     organisation: normalizeOrganisationRow(organisationResult.data, context.profile),

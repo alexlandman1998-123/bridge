@@ -2,10 +2,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { clearStoredDevAuthRole, createDevAuthSession, getStoredDevAuthRole, isDevAuthBypassEnabled } from '../lib/devAuth'
 import { loadBridgeAuthState } from '../lib/authBoot'
+import { clearOrganisationRuntimeCache } from '../lib/settingsApi'
 import { clearSupabaseLocalAuthState, isSupabaseConfigured, isUnsupportedJwtAlgorithmError, supabase } from '../lib/supabaseClient'
 import { getProductionSafetyViolation } from '../lib/envValidation'
 import { APP_ROLE_LABELS } from '../lib/roles'
 import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
+import { reportError } from '../services/observability/errorTracking'
+import { measureAsyncOperation } from '../services/observability/performanceMetrics'
+import { trackAuthMetric } from '../services/observability/monitoring'
 
 const AUTH_BOOTSTRAP_TIMEOUT_MS = 15000
 const WORKSPACE_SELECTION_STORAGE_KEY = 'itg:selected-workspace'
@@ -199,9 +203,18 @@ export function AuthSessionProvider({ children }) {
         }
         setSession(data?.session || null)
         console.debug('[AUTH] session-bootstrap:success', { hasSession: Boolean(data?.session) })
+        void trackAuthMetric(data?.session ? 'session_restored' : 'no_session', {
+          userId: data?.session?.user?.id || '',
+          metadata: { source: 'session_bootstrap' },
+        })
       } catch (error) {
         if (!active) return
         console.error('[AUTH] session-bootstrap:failed', error)
+        void reportError(error, {
+          userId: '',
+          operation: 'session_bootstrap',
+          category: 'auth_error',
+        })
         setSession(null)
         setAuthState({
           ...EMPTY_AUTH_STATE,
@@ -217,6 +230,7 @@ export function AuthSessionProvider({ children }) {
 
     const { data: authSubscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
       console.debug('[AUTH] state-change', { event, hasSession: Boolean(nextSession) })
+      clearOrganisationRuntimeCache()
       setSession(nextSession || null)
     })
 
@@ -254,9 +268,22 @@ export function AuthSessionProvider({ children }) {
           selectedWorkspaceId: selectedWorkspaceId || null,
           attempt: bootAttempt + 1,
         })
-        const nextState = await withBootstrapTimeout(loadBridgeAuthState({ session, selectedWorkspaceId }))
+        const nextState = await measureAsyncOperation(
+          'auth_bridge_boot',
+          () => withBootstrapTimeout(loadBridgeAuthState({ session, selectedWorkspaceId })),
+          { userId: session.user.id, route: typeof window !== 'undefined' ? window.location.pathname : '' },
+        )
         if (!active) return
         setAuthState(nextState)
+        void trackAuthMetric('auth_boot_success', {
+          userId: session.user.id,
+          workspaceId: nextState.currentWorkspace?.id || '',
+          metadata: {
+            appRole: nextState.appRole || null,
+            activeMemberships: nextState.activeMemberships.length,
+            onboardingRequiredReason: nextState.onboardingRequiredReason || null,
+          },
+        })
         console.debug('[AUTH] bridge-boot:success', {
           userId: session.user.id,
           appRole: nextState.appRole || null,
@@ -267,6 +294,11 @@ export function AuthSessionProvider({ children }) {
       } catch (error) {
         if (!active) return
         console.error('[AUTH] bridge-boot:failed', error)
+        void reportError(error, {
+          userId: session.user.id,
+          operation: 'bridge_auth_boot',
+          category: 'auth_error',
+        })
         setAuthState({
           ...EMPTY_AUTH_STATE,
           status: 'error',
@@ -303,7 +335,10 @@ export function AuthSessionProvider({ children }) {
   )
 
   const logout = useCallback(async () => {
+    const userId = authState.user?.id || session?.user?.id || ''
+    const workspaceId = authState.currentWorkspace?.id || ''
     clearStoredDevAuthRole()
+    clearOrganisationRuntimeCache()
     setDevAuthRoleState(null)
     setSession(null)
     setAuthState({
@@ -314,7 +349,8 @@ export function AuthSessionProvider({ children }) {
     if (supabase) {
       await supabase.auth.signOut()
     }
-  }, [])
+    void trackAuthMetric('logout', { userId, workspaceId })
+  }, [authState.currentWorkspace?.id, authState.user?.id, session?.user?.id])
 
   const value = useMemo(
     () => ({

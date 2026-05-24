@@ -20,12 +20,12 @@ import {
   Users,
   Wallet,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { getRoleNavItems } from '../lib/roles'
 import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
-import { fetchAgencyOnboardingSettings, fetchOrganisationSettings } from '../lib/settingsApi'
 import { filterNavigationItems } from '../auth/permissions/permissionResolver'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 
@@ -99,15 +99,9 @@ const ICON_BY_KEY = {
   platform_diagnostics: ShieldUser,
 }
 
-const BRANDING_REFRESH_EVENT = 'itg:organisation-branding-updated'
-const SIDEBAR_BRANDING_CACHE_KEY = 'itg:sidebar-branding:v1'
 const BRIDGE_BRAND_MARK = 'bridge.'
 const BRIDGE_BRAND_SUBTITLE = 'Property Transaction OS'
 const BRIDGE_POWERED_LABEL = 'Powered by Bridge'
-const EMPTY_SIDEBAR_BRANDING = {
-  logoUrl: '',
-  organisationLabel: '',
-}
 
 function routeMatches(pathname, target = '') {
   return pathname === target || pathname.startsWith(`${target}/`)
@@ -131,100 +125,13 @@ function isParentNavActive(item, pathname) {
   )
 }
 
-function normalizeBrandText(value) {
-  return String(value || '').trim()
-}
-
-function resolveSidebarBranding(snapshot) {
-  const onboarding = snapshot?.onboarding || {}
-  const organisation = snapshot?.organisation || {}
-  const branding = onboarding?.branding || {}
-  const agencyInformation = onboarding?.agencyInformation || {}
-
-  const logoLightUrl = normalizeBrandText(branding.logoLight)
-  const logoDarkUrl = normalizeBrandText(branding.logoDark)
-  const organisationLogoUrl = normalizeBrandText(organisation.logoUrl)
-  const logoUrl = logoDarkUrl || organisationLogoUrl || logoLightUrl
-  const organisationLabel =
-    normalizeBrandText(agencyInformation.tradingName) ||
-    normalizeBrandText(agencyInformation.agencyName) ||
-    normalizeBrandText(organisation.displayName) ||
-    normalizeBrandText(organisation.name)
-
-  return {
-    logoUrl,
-    organisationLabel,
-  }
-}
-
-function getSidebarBrandingOwner(profile) {
-  return normalizeBrandText(profile?.id || profile?.email).toLowerCase()
-}
-
-function normalizeSidebarBranding(value) {
-  return {
-    logoUrl: normalizeBrandText(value?.logoUrl),
-    organisationLabel: normalizeBrandText(value?.organisationLabel),
-  }
-}
-
-function readCachedSidebarBranding(ownerKey) {
-  if (typeof window === 'undefined' || !ownerKey) {
-    return null
-  }
-
-  try {
-    const cached = JSON.parse(window.localStorage.getItem(SIDEBAR_BRANDING_CACHE_KEY) || 'null')
-    if (!cached || cached.ownerKey !== ownerKey) {
-      return null
-    }
-
-    const branding = normalizeSidebarBranding(cached.branding)
-    return branding.logoUrl || branding.organisationLabel ? branding : null
-  } catch {
-    return null
-  }
-}
-
-function writeCachedSidebarBranding(ownerKey, branding) {
-  if (typeof window === 'undefined' || !ownerKey || !branding?.logoUrl) {
-    return
-  }
-
-  try {
-    window.localStorage.setItem(
-      SIDEBAR_BRANDING_CACHE_KEY,
-      JSON.stringify({
-        ownerKey,
-        branding: normalizeSidebarBranding(branding),
-      }),
-    )
-  } catch {
-    // Local storage can be unavailable in private browsing; the live fetch still drives the render.
-  }
-}
-
-function preloadBrandLogo(logoUrl) {
-  if (typeof window === 'undefined' || !logoUrl) {
-    return Promise.resolve(false)
-  }
-
-  return new Promise((resolve) => {
-    const image = new Image()
-    image.onload = () => resolve(true)
-    image.onerror = () => resolve(false)
-    image.src = logoUrl
-  })
-}
-
 function Sidebar() {
   const workspaceContext = useWorkspace()
   const { workspace, setWorkspace, allWorkspace, role, baseRole, profile } = workspaceContext
+  const { branding, loading: organisationLoading, membershipRole: organisationMembershipRole } = useOrganisation()
   const location = useLocation()
   const navigate = useNavigate()
-  const [membershipRole, setMembershipRole] = useState('viewer')
-  const brandingOwnerKey = getSidebarBrandingOwner(profile)
-  const cachedSidebarBranding = useMemo(() => readCachedSidebarBranding(brandingOwnerKey), [brandingOwnerKey])
+  const membershipRole = normalizeOrganisationMembershipRole(organisationMembershipRole || 'viewer')
   const roleNavItems = useMemo(
     () => filterNavigationItems(getRoleNavItems(role, { baseRole, profile, membershipRole }), workspaceContext),
     [baseRole, membershipRole, profile, role, workspaceContext],
@@ -236,9 +143,7 @@ function Sidebar() {
   const [expandedMenus, setExpandedMenus] = useState(() => ({
     intelligence_beta: isIntelligencePath,
   }))
-  const [sidebarBranding, setSidebarBranding] = useState(() => cachedSidebarBranding || EMPTY_SIDEBAR_BRANDING)
-  const [brandingResolved, setBrandingResolved] = useState(() => Boolean(cachedSidebarBranding?.logoUrl))
-  const [logoLoadFailed, setLogoLoadFailed] = useState(false)
+  const [logoLoadFailure, setLogoLoadFailure] = useState({ url: '', failed: false })
   const secondaryItems = filterNavigationItems(
     role === 'developer'
       ? [{ key: 'team', label: 'Team', to: '/team' }, { key: 'settings', label: 'Settings', to: '/settings' }]
@@ -315,34 +220,6 @@ function Sidebar() {
     )
   }
 
-  const loadSidebarBranding = useCallback(async () => {
-    const [settingsResult, contextResult] = await Promise.allSettled([fetchAgencyOnboardingSettings(), fetchOrganisationSettings()])
-    const settings = settingsResult.status === 'fulfilled' ? settingsResult.value : null
-    const context = contextResult.status === 'fulfilled' ? contextResult.value : null
-    const snapshot = settings || context
-
-    if (snapshot) {
-      const nextBranding = resolveSidebarBranding(snapshot)
-      const logoReady = nextBranding.logoUrl ? await preloadBrandLogo(nextBranding.logoUrl) : false
-
-      setSidebarBranding(nextBranding)
-      setLogoLoadFailed(Boolean(nextBranding.logoUrl) && !logoReady)
-      setBrandingResolved(true)
-
-      if (logoReady) {
-        writeCachedSidebarBranding(brandingOwnerKey, nextBranding)
-      }
-    } else {
-      setBrandingResolved(true)
-    }
-
-    setMembershipRole((previous) =>
-      normalizeOrganisationMembershipRole(
-        context?.membershipRole || settings?.membershipRole || previous || 'viewer',
-      ),
-    )
-  }, [brandingOwnerKey])
-
   useEffect(() => {
     if (role === 'client' || workspace.id === 'all') {
       return
@@ -351,34 +228,9 @@ function Sidebar() {
     setWorkspace(allWorkspace)
   }, [allWorkspace, role, setWorkspace, workspace.id])
 
-  const showOrganisationBranding = Boolean(sidebarBranding.logoUrl) && !logoLoadFailed
-  const showBrandPlaceholder = !showOrganisationBranding && !brandingResolved
-
-  useEffect(() => {
-    let active = true
-
-    async function load() {
-      if (!active) return
-      await loadSidebarBranding()
-    }
-
-    void load()
-
-    return () => {
-      active = false
-    }
-  }, [loadSidebarBranding, profile?.id])
-
-  useEffect(() => {
-    function handleBrandingRefresh() {
-      void loadSidebarBranding()
-    }
-
-    window.addEventListener(BRANDING_REFRESH_EVENT, handleBrandingRefresh)
-    return () => {
-      window.removeEventListener(BRANDING_REFRESH_EVENT, handleBrandingRefresh)
-    }
-  }, [loadSidebarBranding])
+  const logoLoadFailed = logoLoadFailure.url === branding.logoUrl && logoLoadFailure.failed
+  const showOrganisationBranding = Boolean(branding.logoUrl) && !logoLoadFailed
+  const showBrandPlaceholder = organisationLoading || (Boolean(branding.logoUrl) && logoLoadFailed)
 
   useEffect(() => {
     let active = true
@@ -421,14 +273,14 @@ function Sidebar() {
             <div className="ui-sidebar-brand-org">
               <div className="ui-sidebar-brand-logo-wrap">
                 <img
-                  key={sidebarBranding.logoUrl}
-                  src={sidebarBranding.logoUrl}
-                  alt={`${sidebarBranding.organisationLabel || 'Organisation'} logo`}
+                  key={branding.logoUrl}
+                  src={branding.logoUrl}
+                  alt={`${branding.organisationLabel || 'Organisation'} logo`}
                   className="ui-sidebar-brand-logo"
                   loading="eager"
                   decoding="async"
-                  onLoad={() => setLogoLoadFailed(false)}
-                  onError={() => setLogoLoadFailed(true)}
+                  onLoad={() => setLogoLoadFailure({ url: branding.logoUrl, failed: false })}
+                  onError={() => setLogoLoadFailure({ url: branding.logoUrl, failed: true })}
                 />
               </div>
               <p className="ui-sidebar-brand-powered">{BRIDGE_POWERED_LABEL}</p>

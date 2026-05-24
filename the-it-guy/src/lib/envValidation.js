@@ -1,3 +1,5 @@
+import { getRequiredProductionEnvVars, getUnsafeProductionFlags, isProductionEnvironment, validateProductionConfiguration } from '../config/productionValidation'
+
 function normalize(value) {
   return String(value || '').trim()
 }
@@ -9,24 +11,19 @@ function asBoolean(value, fallback = false) {
 }
 
 export function getUnsafeEnvironmentFlags() {
+  const unsafeFlags = getUnsafeProductionFlags()
   return {
-    enableDemoMode: asBoolean(import.meta.env.VITE_ENABLE_DEMO_MODE, false),
-    enableLocalFallbacks: asBoolean(import.meta.env.VITE_ENABLE_LOCAL_FALLBACKS, false),
-    enableDevAuthBypass: asBoolean(import.meta.env.VITE_ENABLE_DEV_AUTH_BYPASS, false),
-    enableMockData: asBoolean(import.meta.env.VITE_ENABLE_MOCK_DATA, false),
-    disableRoleRestrictions: asBoolean(import.meta.env.VITE_FEATURE_DISABLE_ROLE_RESTRICTIONS, false),
+    enableDemoMode: unsafeFlags.VITE_ENABLE_DEMO_MODE,
+    enableLocalFallbacks: unsafeFlags.VITE_ENABLE_LOCAL_FALLBACKS,
+    enableDevAuthBypass: unsafeFlags.VITE_ENABLE_DEV_AUTH_BYPASS,
+    enableMockData: unsafeFlags.VITE_ENABLE_MOCK_DATA,
+    disableRoleRestrictions: unsafeFlags.VITE_FEATURE_DISABLE_ROLE_RESTRICTIONS,
   }
 }
 
 export function getProductionSafetyViolation() {
-  if (!import.meta.env.PROD) return ''
-  const unsafeFlags = getUnsafeEnvironmentFlags()
-  const enabled = Object.entries(unsafeFlags)
-    .filter(([, value]) => Boolean(value))
-    .map(([key]) => key)
-
-  if (!enabled.length) return ''
-  return `Unsafe production flags are enabled: ${enabled.join(', ')}. Disable all demo, fallback, bypass, mock-data, and permission-bypass flags.`
+  const validation = validateProductionConfiguration({ strict: isProductionEnvironment() })
+  return validation.ok ? '' : validation.message
 }
 
 function buildMissingMessage(vars = []) {
@@ -35,12 +32,12 @@ function buildMissingMessage(vars = []) {
 }
 
 export function getRuntimeEnvValidation() {
-  const required = ['VITE_SUPABASE_URL']
+  const required = isProductionEnvironment() ? getRequiredProductionEnvVars() : ['VITE_SUPABASE_URL']
   const missing = required.filter((name) => !normalize(import.meta.env[name]))
   const hasAnonKey = Boolean(normalize(import.meta.env.VITE_SUPABASE_ANON_KEY))
   const hasLegacyKey = Boolean(normalize(import.meta.env.VITE_SUPABASE_KEY))
 
-  if (!hasAnonKey && !hasLegacyKey) {
+  if (!isProductionEnvironment() && !hasAnonKey && !hasLegacyKey) {
     missing.push('VITE_SUPABASE_ANON_KEY or VITE_SUPABASE_KEY')
   }
 

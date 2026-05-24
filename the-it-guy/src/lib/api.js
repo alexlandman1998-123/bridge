@@ -649,9 +649,9 @@ function isMissingColumnError(error, columnName) {
 
 const knownMissingSchemaColumns = new Set()
 const TRANSACTION_SUMMARY_SELECT_CLAUSE =
-  'id, organisation_id, assigned_branch_id, lifecycle_state, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, updated_at, created_at, is_active'
+  'id, organisation_id, assigned_branch_id, lifecycle_state, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, registered_at, completed_at, archived_at, cancelled_at, deleted_at, updated_at, created_at, is_active'
 const TRANSACTION_SUMMARY_FALLBACK_SELECT_CLAUSE =
-  'id, development_id, unit_id, buyer_id, transaction_reference, finance_type, purchaser_type, stage, attorney, bond_originator, next_action, updated_at, created_at, is_active'
+  'id, organisation_id, development_id, unit_id, buyer_id, transaction_reference, finance_type, purchaser_type, stage, current_main_stage, purchase_price, sales_price, registered_at, completed_at, archived_at, cancelled_at, attorney, bond_originator, next_action, updated_at, created_at, is_active'
 
 function registerKnownMissingColumns(error, columnNames = []) {
   if (!error) {
@@ -18501,19 +18501,31 @@ async function fetchInheritedDevelopmentTransactionIdsForUser(
   return ids
 }
 
-export async function getAccessibleTransactionIdsForUser({ userId, roleType = null } = {}) {
+export async function getAccessibleTransactionIdsForUser({ userId, roleType = null, organisationId = '' } = {}) {
   const client = requireClient()
   if (!userId) {
     return []
   }
 
   const normalizedRole = roleType ? normalizeRoleType(roleType) : null
+  const normalizedOrganisationId = String(organisationId || '').trim()
   const identity = await resolveProfileIdentityByUserId(client, userId)
   const actorProfile = await resolveActiveProfileContext(client)
   if (normalizeRoleType(actorProfile.role) === 'internal_admin') {
-    let allTransactionsQuery = await client.from('transactions').select('id, is_active')
+    let allTransactionsBuilder = client.from('transactions').select('id, organisation_id, is_active')
+    if (normalizedOrganisationId) {
+      allTransactionsBuilder = allTransactionsBuilder.eq('organisation_id', normalizedOrganisationId)
+    }
+    let allTransactionsQuery = await allTransactionsBuilder
     if (allTransactionsQuery.error && isMissingColumnError(allTransactionsQuery.error, 'is_active')) {
-      allTransactionsQuery = await client.from('transactions').select('id')
+      let fallbackBuilder = client.from('transactions').select('id, organisation_id')
+      if (normalizedOrganisationId) {
+        fallbackBuilder = fallbackBuilder.eq('organisation_id', normalizedOrganisationId)
+      }
+      allTransactionsQuery = await fallbackBuilder
+    }
+    if (allTransactionsQuery.error && normalizedOrganisationId && isMissingColumnError(allTransactionsQuery.error, 'organisation_id')) {
+      return []
     }
     if (allTransactionsQuery.error) {
       if (isMissingSchemaError(allTransactionsQuery.error)) {
@@ -18523,6 +18535,7 @@ export async function getAccessibleTransactionIdsForUser({ userId, roleType = nu
     }
     return (allTransactionsQuery.data || [])
       .filter((row) => row?.id && row?.is_active !== false)
+      .filter((row) => !normalizedOrganisationId || String(row?.organisation_id || '').trim() === normalizedOrganisationId)
       .map((row) => row.id)
   }
 
@@ -19641,18 +19654,26 @@ export async function getAccessibleTransactionsForUser({ userId, roleType = null
   return dedupeTransactionRows(await enrichRowsWithReadinessContext(client, scopedRows))
 }
 
-async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
+async function fetchTransactionSummaryRowsByIds(client, transactionIds = [], { organisationId = '' } = {}) {
   const ids = [...new Set((transactionIds || []).filter(Boolean))]
   if (!ids.length) {
     return []
   }
+  const normalizedOrganisationId = String(organisationId || '').trim()
 
-  let transactionsQuery = await client
+  let transactionsBuilder = client
     .from('transactions')
     .select(selectWithoutKnownMissingColumns(TRANSACTION_SUMMARY_SELECT_CLAUSE))
     .in('id', ids)
+  if (normalizedOrganisationId) {
+    transactionsBuilder = transactionsBuilder.eq('organisation_id', normalizedOrganisationId)
+  }
+  let transactionsQuery = await transactionsBuilder
 
   if (transactionsQuery.error && isMissingColumnError(transactionsQuery.error)) {
+    if (normalizedOrganisationId && isMissingColumnError(transactionsQuery.error, 'organisation_id')) {
+      return []
+    }
     registerKnownMissingColumns(transactionsQuery.error, [
       'matter_number',
       'transaction_reference',
@@ -19667,6 +19688,11 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
       'organisation_id',
       'assigned_branch_id',
       'lifecycle_state',
+      'registered_at',
+      'completed_at',
+      'archived_at',
+      'cancelled_at',
+      'deleted_at',
       'gross_commission_percentage',
       'gross_commission_amount',
       'agent_split_percentage_snapshot',
@@ -19677,17 +19703,26 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
       'bank',
       'is_active',
     ])
-    transactionsQuery = await client
+    let fallbackBuilder = client
       .from('transactions')
       .select(selectWithoutKnownMissingColumns(TRANSACTION_SUMMARY_FALLBACK_SELECT_CLAUSE))
       .in('id', ids)
+    if (normalizedOrganisationId) {
+      fallbackBuilder = fallbackBuilder.eq('organisation_id', normalizedOrganisationId)
+    }
+    transactionsQuery = await fallbackBuilder
+    if (transactionsQuery.error && normalizedOrganisationId && isMissingColumnError(transactionsQuery.error, 'organisation_id')) {
+      return []
+    }
   }
 
   if (transactionsQuery.error) {
     throw transactionsQuery.error
   }
 
-  const transactionRows = (transactionsQuery.data || []).filter((item) => item?.is_active !== false)
+  const transactionRows = (transactionsQuery.data || [])
+    .filter((item) => item?.is_active !== false)
+    .filter((item) => !normalizedOrganisationId || String(item?.organisation_id || '').trim() === normalizedOrganisationId)
   if (!transactionRows.length) {
     return []
   }
@@ -19779,8 +19814,9 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
   return hydrateRowsWithCommissionSnapshots(client, rows)
 }
 
-export async function fetchTransactionsByParticipantSummary({ userId, roleType = null } = {}) {
-  const timer = createPerfTimer('api.fetchTransactionsByParticipantSummary', { userId, roleType })
+export async function fetchTransactionsByParticipantSummary({ userId, roleType = null, organisationId = '' } = {}) {
+  const normalizedOrganisationId = String(organisationId || '').trim()
+  const timer = createPerfTimer('api.fetchTransactionsByParticipantSummary', { userId, roleType, organisationId: normalizedOrganisationId })
   if (!userId) {
     timer.end({ rowCount: 0 })
     return []
@@ -19788,21 +19824,24 @@ export async function fetchTransactionsByParticipantSummary({ userId, roleType =
 
   timer.mark('resolve_access_start')
   const client = requireClient()
-  const transactionIds = await getAccessibleTransactionIdsForUser({ userId, roleType })
+  const transactionIds = await getAccessibleTransactionIdsForUser({ userId, roleType, organisationId: normalizedOrganisationId })
   timer.mark('resolve_access_end', { transactionCount: transactionIds.length })
-  const rows = await fetchTransactionSummaryRowsByIds(client, transactionIds)
+  const rows = await fetchTransactionSummaryRowsByIds(client, transactionIds, { organisationId: normalizedOrganisationId })
   timer.end({ rowCount: rows.length })
   return rows
 }
 
 export async function fetchTransactionsListSummary({
   developmentId = null,
+  organisationId = '',
   stage = 'all',
   financeType = 'all',
   activeTransactionsOnly = true,
 } = {}) {
+  const normalizedOrganisationId = String(organisationId || '').trim()
   const timer = createPerfTimer('api.fetchTransactionsListSummary', {
     developmentId: developmentId || 'all',
+    organisationId: normalizedOrganisationId,
     stage,
     financeType,
     activeTransactionsOnly,
@@ -19816,10 +19855,17 @@ export async function fetchTransactionsListSummary({
   if (developmentId) {
     transactionsQuery = transactionsQuery.eq('development_id', developmentId)
   }
+  if (normalizedOrganisationId) {
+    transactionsQuery = transactionsQuery.eq('organisation_id', normalizedOrganisationId)
+  }
 
   const baseResult = await transactionsQuery
   let query = baseResult
   if (query.error && isMissingColumnError(query.error)) {
+    if (normalizedOrganisationId && isMissingColumnError(query.error, 'organisation_id')) {
+      timer.end({ rowCount: 0, missingOrganisationScope: true })
+      return []
+    }
     registerKnownMissingColumns(query.error, [
       'matter_number',
       'transaction_reference',
@@ -19834,6 +19880,11 @@ export async function fetchTransactionsListSummary({
       'organisation_id',
       'assigned_branch_id',
       'lifecycle_state',
+      'registered_at',
+      'completed_at',
+      'archived_at',
+      'cancelled_at',
+      'deleted_at',
       'gross_commission_percentage',
       'gross_commission_amount',
       'agent_split_percentage_snapshot',
@@ -19850,7 +19901,14 @@ export async function fetchTransactionsListSummary({
     if (developmentId) {
       fallbackQuery = fallbackQuery.eq('development_id', developmentId)
     }
+    if (normalizedOrganisationId) {
+      fallbackQuery = fallbackQuery.eq('organisation_id', normalizedOrganisationId)
+    }
     query = await fallbackQuery
+    if (query.error && normalizedOrganisationId && isMissingColumnError(query.error, 'organisation_id')) {
+      timer.end({ rowCount: 0, missingOrganisationScope: true })
+      return []
+    }
   }
 
   if (query.error) {
@@ -19859,6 +19917,9 @@ export async function fetchTransactionsListSummary({
 
   let transactionRows = (query.data || []).filter((row) => {
     if (activeTransactionsOnly && row?.is_active === false) {
+      return false
+    }
+    if (normalizedOrganisationId && String(row?.organisation_id || '').trim() !== normalizedOrganisationId) {
       return false
     }
     return true

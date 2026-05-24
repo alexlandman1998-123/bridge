@@ -950,6 +950,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => String(workspaceId || 'all').trim() || 'all')
   const [overviewMode, setOverviewMode] = useState('pipeline')
   const [resolvedAgencyId, setResolvedAgencyId] = useState(agencyId)
+  const [agencyResolutionComplete, setAgencyResolutionComplete] = useState(Boolean(agencyId))
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -969,13 +970,17 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
     async function resolveAgency() {
       if (agencyId) {
         setResolvedAgencyId(agencyId)
+        setAgencyResolutionComplete(true)
         return
       }
+      setAgencyResolutionComplete(false)
       try {
         const context = await fetchOrganisationSettings()
         if (active) setResolvedAgencyId(String(context?.organisation?.id || '').trim())
       } catch {
         if (active) setResolvedAgencyId('')
+      } finally {
+        if (active) setAgencyResolutionComplete(true)
       }
     }
     void resolveAgency()
@@ -985,6 +990,16 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
   }, [agencyId])
 
   const loadDashboard = useCallback(async () => {
+    if (!resolvedAgencyId) {
+      if (!agencyResolutionComplete) {
+        setLoading(true)
+        return
+      }
+      setError('Organisation context is required before loading dashboard totals.')
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     setError('')
     try {
@@ -1007,7 +1022,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
     } finally {
       setLoading(false)
     }
-  }, [canViewAllTransactions, dateRange, overviewMode, profile?.email, profile?.id, profile?.userId, resolvedAgencyId, selectedWorkspaceId])
+  }, [agencyResolutionComplete, canViewAllTransactions, dateRange, overviewMode, profile?.email, profile?.id, profile?.userId, resolvedAgencyId, selectedWorkspaceId])
 
   useEffect(() => {
     void loadDashboard()

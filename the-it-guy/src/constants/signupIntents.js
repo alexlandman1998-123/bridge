@@ -74,8 +74,8 @@ export const BUSINESS_TYPE_OPTIONS = Object.freeze([
   },
   {
     value: SIGNUP_BUSINESS_TYPES.client,
-    label: 'Buyer / Seller / Client',
-    description: 'For transaction participants using a secure client access link.',
+    label: 'Buyer / Seller',
+    description: 'Track your transaction, upload documents, and stay updated securely.',
   },
 ])
 

@@ -1,6 +1,11 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import {
+  getDashboardPipelineValue,
+  getDashboardTransactionPrice,
+  getScopedDashboardTransactions,
+  logDashboardPipelineDiagnostics,
+} from '../lib/dashboardTransactionIntegrity'
 
-const ACTIVE_EXCLUDED_STATES = ['registered', 'closed', 'completed', 'cancelled', 'canceled', 'lost', 'archived', 'deleted']
 const COMPLETED_STATES = ['registered', 'closed', 'completed']
 const RISK_DOCUMENT_STATUSES = ['requested', 'pending', 'missing', 'rejected', 'overdue']
 const DONE_DOCUMENT_STATUSES = ['uploaded', 'approved', 'completed', 'accepted']
@@ -231,7 +236,7 @@ async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'tr
 }
 
 function getDealValue(row = {}) {
-  return toNumber(row.purchase_price || row.sales_price || row.sale_price || row.estimated_value || row.budget)
+  return getDashboardTransactionPrice(row)
 }
 
 function getTransactionStatusText(row = {}) {
@@ -247,18 +252,6 @@ function getTransactionStatusText(row = {}) {
 function isRegisteredTransaction(row = {}) {
   const status = getTransactionStatusText(row)
   return Boolean(row.registered_at || row.registration_date || status.includes('registered') || status.includes('closed'))
-}
-
-function isExcludedTransaction(row = {}) {
-  const status = getTransactionStatusText(row)
-  // Principal transaction tables include legacy rows where is_active=false but
-  // lifecycle/stage still represent an open transaction. Keep the dashboard
-  // aligned with that visible transaction workspace and exclude by stage state.
-  return ACTIVE_EXCLUDED_STATES.some((state) => status.includes(state))
-}
-
-function isActiveTransaction(row = {}) {
-  return !isExcludedTransaction(row)
 }
 
 function getTransactionCompletedAt(row = {}) {
@@ -448,53 +441,20 @@ function dedupeRowsById(rows = []) {
   return deduped
 }
 
-function buildAgencyTransactionScope({ branches = [], users = [], developments = [] } = {}) {
-  return {
-    branchIds: new Set(branches.map((row) => normalizeText(row?.id)).filter(Boolean)),
-    developmentIds: new Set(developments.map((row) => normalizeText(row?.id)).filter(Boolean)),
-    userIds: new Set(users.flatMap((row) => [row?.user_id, row?.id]).map(normalizeText).filter(Boolean)),
-    emails: new Set(users.map((row) => normalizeText(row?.email).toLowerCase()).filter(Boolean)),
-  }
-}
-
-function isTransactionInAgencyScope(row = {}, agencyId = '', scope = {}) {
+function isTransactionInAgencyScope(row = {}, agencyId = '') {
   const resolvedAgencyId = normalizeText(agencyId)
   if (!resolvedAgencyId) return true
 
   const organisationId = normalizeText(row.organisation_id)
-  if (organisationId) return organisationId === resolvedAgencyId
-
-  const branchId = normalizeText(row.assigned_branch_id)
-  if (branchId && scope.branchIds?.has(branchId)) return true
-
-  const developmentId = normalizeText(row.development_id)
-  if (developmentId && scope.developmentIds?.has(developmentId)) return true
-
-  const assignedUserId = normalizeText(row.assigned_user_id || row.owner_user_id)
-  if (assignedUserId && scope.userIds?.has(assignedUserId)) return true
-
-  const assignedEmail = normalizeText(row.assigned_agent_email).toLowerCase()
-  if (assignedEmail && scope.emails?.has(assignedEmail)) return true
-
-  return false
+  return Boolean(organisationId && organisationId === resolvedAgencyId)
 }
 
-function scopeTransactionsToAgency(rows = [], agencyId = '', scope = {}) {
+function scopeTransactionsToAgency(rows = [], agencyId = '') {
   const resolvedAgencyId = normalizeText(agencyId)
   const allRows = dedupeRowsById(rows)
   if (!resolvedAgencyId) return allRows
 
-  const scopedRows = allRows.filter((row) => isTransactionInAgencyScope(row, resolvedAgencyId, scope))
-  const hasExplicitOrganisationData = allRows.some((row) => normalizeText(row?.organisation_id))
-
-  // Legacy transaction rows created before tenant columns were backfilled may have no
-  // organisation_id at all. In that single-tenant legacy shape, mirror the Transactions
-  // page instead of presenting an empty executive dashboard.
-  if (!scopedRows.length && allRows.length && !hasExplicitOrganisationData) {
-    return allRows
-  }
-
-  return scopedRows
+  return allRows.filter((row) => isTransactionInAgencyScope(row, resolvedAgencyId))
 }
 
 function getCommissionAmount(row = {}, commissionByTransaction = new Map()) {
@@ -667,8 +627,8 @@ export async function getPrincipalDashboardData({
   const resolvedAgencyId = normalizeText(organisationId || agencyId)
   const range = resolveDateRange(dateRangePreset || dateRange, new Date(), { startDate, endDate })
   const transactionFields = [
-    'id, organisation_id, assigned_branch_id, lifecycle_state, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, assigned_attorney_email, assigned_bond_originator_email, bank, next_action, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, updated_at, created_at, is_active',
-    'id, development_id, unit_id, buyer_id, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, next_action, updated_at, created_at, is_active',
+    'id, organisation_id, assigned_branch_id, lifecycle_state, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, assigned_attorney_email, assigned_bond_originator_email, bank, next_action, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, completed_at, archived_at, cancelled_at, deleted_at, updated_at, created_at, is_active',
+    'id, organisation_id, development_id, unit_id, buyer_id, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, next_action, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at, is_active',
   ]
 
   const [
@@ -679,9 +639,8 @@ export async function getPrincipalDashboardData({
     allOrganisationUsers,
     allTransactionCommissions,
     organisationBranches,
-    organisationDevelopments,
   ] = await Promise.all([
-    safeSelect('transactions', transactionFields, { order: 'updated_at', limit: 1200 }),
+    safeSelect('transactions', transactionFields, { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
     safeSelect('leads', [
       'lead_id, organisation_id, branch_id, assigned_agent_id, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
       'lead_id, organisation_id, assigned_agent_id, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
@@ -694,20 +653,11 @@ export async function getPrincipalDashboardData({
     ], { agencyId: resolvedAgencyId, order: 'updated_at', limit: 500 }),
     safeSelect('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
     safeSelect('organisation_branches', 'id, organisation_id, name, location, city, is_head_office, is_active, updated_at, created_at', { agencyId: resolvedAgencyId, order: 'name', ascending: true, limit: 200 }),
-    safeSelect('developments', [
-      'id, organisation_id, name, location, updated_at, created_at',
-      'id, name, location, updated_at, created_at',
-    ], { agencyId: resolvedAgencyId, order: 'name', ascending: true, limit: 500 }),
   ])
 
   const availableWorkspaces = buildAvailableWorkspaces(organisationBranches)
   const selectedWorkspaceId = getSelectedWorkspaceId(workspaceId, availableWorkspaces)
-  const agencyTransactionScope = buildAgencyTransactionScope({
-    branches: organisationBranches,
-    users: allOrganisationUsers,
-    developments: organisationDevelopments,
-  })
-  const allTransactions = scopeTransactionsToAgency(rawTransactions, resolvedAgencyId, agencyTransactionScope)
+  const allTransactions = scopeTransactionsToAgency(rawTransactions, resolvedAgencyId)
   const scopedActorId = normalizeText(actorId).toLowerCase()
   const scopedActorEmail = normalizeText(actorEmail).toLowerCase()
   const scopedAllTransactions = canViewAllTransactions
@@ -754,7 +704,7 @@ export async function getPrincipalDashboardData({
   const scopedDocumentRequests = documentRequests.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
   const scopedDocuments = documents.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
   const scopedSubprocesses = subprocesses.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
-  const activeTransactions = transactions.filter(isActiveTransaction)
+  const activeTransactions = getScopedDashboardTransactions(transactions, { organisationId: resolvedAgencyId })
   const completedTransactions = transactions.filter((row) => {
     const status = getTransactionStatusText(row)
     return COMPLETED_STATES.some((state) => status.includes(state)) || Boolean(getTransactionCompletedAt(row))
@@ -764,11 +714,17 @@ export async function getPrincipalDashboardData({
     return ['cancel', 'lost', 'archive'].some((state) => status.includes(state))
   })
 
-  const pipelineValue = activeTransactions.reduce((sum, row) => sum + getDealValue(row), 0)
+  const pipelineValue = getDashboardPipelineValue(activeTransactions)
+  logDashboardPipelineDiagnostics({
+    currentOrganisationId: resolvedAgencyId,
+    transactions: activeTransactions,
+    pipelineValue,
+    source: 'supabase',
+  })
   const currentActiveTransactions = activeTransactions.filter((row) => isBetween(row.created_at, range.start, range.end)).length
   const previousActiveTransactions = activeTransactions.filter((row) => isBetween(row.created_at, range.previousStart, range.previousEnd)).length
-  const currentPipelineValue = activeTransactions.filter((row) => isBetween(row.created_at, range.start, range.end)).reduce((sum, row) => sum + getDealValue(row), 0)
-  const previousPipelineValue = activeTransactions.filter((row) => isBetween(row.created_at, range.previousStart, range.previousEnd)).reduce((sum, row) => sum + getDealValue(row), 0)
+  const currentPipelineValue = getDashboardPipelineValue(activeTransactions.filter((row) => isBetween(row.created_at, range.start, range.end)))
+  const previousPipelineValue = getDashboardPipelineValue(activeTransactions.filter((row) => isBetween(row.created_at, range.previousStart, range.previousEnd)))
 
   const commissionByTransaction = new Map()
   for (const row of transactionCommissions) {

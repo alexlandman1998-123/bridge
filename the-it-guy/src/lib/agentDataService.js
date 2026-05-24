@@ -1,5 +1,10 @@
 import { OFFER_STATUS, readAgentPrivateListings, readAgentSellerLeads } from './agentListingStorage'
 import { getAgentDemoTransactionRowsFromStorage } from './agentDemoSeed'
+import {
+  getDashboardPipelineValue,
+  getDashboardTransactionPrice,
+  getScopedDashboardTransactions,
+} from './dashboardTransactionIntegrity'
 import { MOCK_DATA_ENABLED } from './mockData'
 import { normalizeOfferWorkflowStatus, OFFER_WORKFLOW_STATUS } from './listingOffersService'
 
@@ -309,10 +314,9 @@ export function getDerivedAgentTransactionRowsFromListings({ profile = null, sco
     .map((listing) => makeDerivedTransactionRow(listing, agentMap))
 }
 
-export function getUnifiedAgentRows({ liveRows = [], profile = null, scope = 'agent', includeDemoRows = false } = {}) {
+export function getUnifiedAgentRows({ liveRows = [], includeDemoRows = false } = {}) {
   const seededRows = MOCK_DATA_ENABLED && includeDemoRows ? getAgentDemoTransactionRowsFromStorage() : []
-  const derivedRows = getDerivedAgentTransactionRowsFromListings({ profile, scope })
-  return dedupeRows([...(Array.isArray(liveRows) ? liveRows : []), ...(Array.isArray(seededRows) ? seededRows : []), ...derivedRows])
+  return dedupeRows([...(Array.isArray(liveRows) ? liveRows : []), ...(Array.isArray(seededRows) ? seededRows : [])])
 }
 
 export function getListingCount(listings = []) {
@@ -320,11 +324,7 @@ export function getListingCount(listings = []) {
 }
 
 export function getActiveDealCount(rows = []) {
-  return (Array.isArray(rows) ? rows : []).filter((row) => {
-    const main = String(row?.mainStage || row?.transaction?.current_main_stage || '').toUpperCase()
-    const lifecycle = normalizeText(row?.transaction?.lifecycle_state)
-    return main !== 'REG' && !lifecycle.includes('cancel')
-  }).length
+  return getScopedDashboardTransactions(rows).length
 }
 
 export function getRegisteredCount(rows = []) {
@@ -335,17 +335,11 @@ export function getRegisteredCount(rows = []) {
 }
 
 export function getPipelineValue(rows = []) {
-  return (Array.isArray(rows) ? rows : []).reduce((sum, row) => {
-    const main = String(row?.mainStage || row?.transaction?.current_main_stage || '').toUpperCase()
-    if (main === 'REG') return sum
-    const value = Number(row?.transaction?.sales_price || row?.transaction?.purchase_price || row?.unit?.price || 0)
-    return sum + (Number.isFinite(value) ? value : 0)
-  }, 0)
+  return getDashboardPipelineValue(getScopedDashboardTransactions(rows))
 }
 
 function getDealValue(row = {}) {
-  const value = Number(row?.transaction?.sales_price || row?.transaction?.purchase_price || row?.unit?.price || 0)
-  return Number.isFinite(value) ? value : 0
+  return getDashboardTransactionPrice(row)
 }
 
 function isLegacyCommissionFallbackEligible(row = {}) {
@@ -421,7 +415,6 @@ export function getTopPerformingAgents(rows = [], limit = 5) {
   const map = new Map()
   const directory = readAgentDirectory()
   const directoryAgents = Array.isArray(directory?.agents) ? directory.agents : []
-  const pipelineLeads = readAgentPipelineLeads()
 
   const getKeyByIdentity = ({ id = '', email = '', name = '' } = {}) => {
     const normalizedId = normalizeText(id)
@@ -473,12 +466,12 @@ export function getTopPerformingAgents(rows = [], limit = 5) {
     ensureEntry({ id: agent?.id, email: agent?.email, name: agent?.name || agent?.fullName })
   }
 
-  for (const row of Array.isArray(rows) ? rows : []) {
+  for (const row of getScopedDashboardTransactions(rows)) {
     const entry = resolveEntryByRow(row)
     if (!entry) continue
 
     const main = String(row?.mainStage || row?.transaction?.current_main_stage || '').toUpperCase()
-    const value = Number(row?.transaction?.sales_price || row?.transaction?.purchase_price || row?.unit?.price || 0) || 0
+    const value = getDashboardTransactionPrice(row)
     const updatedAt = row?.transaction?.updated_at || row?.unit?.updated_at || row?.transaction?.created_at || row?.unit?.created_at || null
     const daysSinceUpdate = updatedAt
       ? Math.max(0, Math.round((Date.now() - new Date(updatedAt).getTime()) / (1000 * 60 * 60 * 24)))
@@ -487,34 +480,6 @@ export function getTopPerformingAgents(rows = [], limit = 5) {
     entry.totalDays += Number.isFinite(daysSinceUpdate) ? daysSinceUpdate : 0
     if (main === 'REG') entry.registered += 1
     else entry.pipelineValue += value
-  }
-
-  for (const lead of Array.isArray(pipelineLeads) ? pipelineLeads : []) {
-    const leadAgentEmail = String(lead?.assignedAgentEmail || lead?.agentEmail || '').trim().toLowerCase()
-    const leadAgentName = String(lead?.assignedAgent || lead?.agentName || '').trim()
-    const leadAgentId = String(lead?.agent_id || lead?.agentId || '').trim()
-    const byEmail = leadAgentEmail
-      ? directoryAgents.find((agent) => normalizeText(agent?.email) === normalizeText(leadAgentEmail))
-      : null
-    const byId = !byEmail && leadAgentId
-      ? directoryAgents.find((agent) => normalizeText(agent?.id) === normalizeText(leadAgentId))
-      : null
-    const byName = !byEmail && !byId && leadAgentName
-      ? directoryAgents.find((agent) => normalizeText(agent?.name) === normalizeText(leadAgentName))
-      : null
-    const directoryMatch = byEmail || byId || byName || null
-
-    const entry = ensureEntry({
-      id: directoryMatch?.id || leadAgentId,
-      email: directoryMatch?.email || leadAgentEmail,
-      name: directoryMatch?.name || leadAgentName,
-    })
-    if (!entry) continue
-
-    const budget = Number(lead?.budget || lead?.value || 0)
-    if (Number.isFinite(budget) && budget > 0) {
-      entry.pipelineValue += budget
-    }
   }
 
   return [...map.values()]
@@ -536,8 +501,7 @@ export function getTopPerformingAgents(rows = [], limit = 5) {
 }
 
 export function getActiveDeals(rows = [], limit = 10) {
-  return (Array.isArray(rows) ? rows : [])
-    .filter((row) => String(row?.mainStage || row?.transaction?.current_main_stage || '').toUpperCase() !== 'REG')
+  return getScopedDashboardTransactions(rows)
     .sort((a, b) => new Date(b?.transaction?.updated_at || 0) - new Date(a?.transaction?.updated_at || 0))
     .slice(0, limit)
 }
@@ -546,7 +510,8 @@ export function getAgentModuleSharedData({ liveRows = [], profile = null, scope 
   const listings = readAgentPrivateListings().filter((listing) => listingMatchesScope(listing, { profile, scope }))
   const sellerLeads = readAgentSellerLeads().filter((lead) => listingMatchesScope(lead, { profile, scope }))
   const pipelineLeads = readAgentPipelineLeads()
-  const rows = getUnifiedAgentRows({ liveRows, profile, scope, includeDemoRows })
+  const rows = getUnifiedAgentRows({ liveRows, includeDemoRows })
+  const activeRows = getScopedDashboardTransactions(rows)
 
   return {
     listings,
@@ -555,14 +520,14 @@ export function getAgentModuleSharedData({ liveRows = [], profile = null, scope 
     rows,
     dashboard: {
       listingCount: getListingCount(listings),
-      activeDealCount: getActiveDealCount(rows),
+      activeDealCount: activeRows.length,
       registeredCount: getRegisteredCount(rows),
-      pipelineValue: getPipelineValue(rows),
-      estimatedCommission: getEstimatedCommission(rows),
-      commissionEarned: getEstimatedCommission(rows),
-      commissionCoverage: getCommissionSnapshotCoverage(rows),
-      topPerformingAgents: getTopPerformingAgents(rows),
-      activeDeals: getActiveDeals(rows),
+      pipelineValue: getPipelineValue(activeRows),
+      estimatedCommission: getEstimatedCommission(activeRows),
+      commissionEarned: getEstimatedCommission(activeRows),
+      commissionCoverage: getCommissionSnapshotCoverage(activeRows),
+      topPerformingAgents: getTopPerformingAgents(activeRows),
+      activeDeals: getActiveDeals(activeRows),
     },
   }
 }

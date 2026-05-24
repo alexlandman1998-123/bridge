@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
+import { useOrganisation } from '../../context/OrganisationContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { createAgencyBranchDraft } from '../../lib/agencyOnboarding'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
-import { fetchAgencyOnboardingSettings, saveAgencyOnboardingDraft, updateOrganisationSettings, uploadOrganisationBrandingAsset } from '../../lib/settingsApi'
+import { saveAgencyOnboardingDraft, updateOrganisationSettings, uploadOrganisationBrandingAsset } from '../../lib/settingsApi'
 import {
   SettingsBanner,
   SettingsLoadingState,
@@ -43,6 +44,13 @@ function getLogoPreviewLabel(sourceUrl, fallbackLabel = 'Uploaded logo') {
 
 export default function SettingsOrganisationPage() {
   const { role } = useWorkspace()
+  const {
+    state: organisationContextState,
+    loading: organisationContextLoading,
+    error: organisationContextError,
+    applyOrganisationState,
+    refreshOrganisation,
+  } = useOrganisation()
   const [state, setState] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -54,15 +62,27 @@ export default function SettingsOrganisationPage() {
     let active = true
 
     async function load() {
+      if (organisationContextLoading) {
+        setLoading(true)
+        return
+      }
+
+      if (organisationContextState) {
+        setState(organisationContextState)
+        setError('')
+        setLoading(false)
+        return
+      }
+
       try {
         setLoading(true)
-        const response = await fetchAgencyOnboardingSettings()
+        const response = await refreshOrganisation({ forceRefresh: true })
         if (active) {
           setState(response)
         }
       } catch (loadError) {
         if (active) {
-          setError(loadError.message)
+          setError(loadError.message || organisationContextError)
         }
       } finally {
         if (active) {
@@ -75,7 +95,7 @@ export default function SettingsOrganisationPage() {
     return () => {
       active = false
     }
-  }, [])
+  }, [organisationContextError, organisationContextLoading, organisationContextState, refreshOrganisation])
 
   const form = useMemo(() => state?.organisation || null, [state])
   const onboarding = useMemo(() => state?.onboarding || null, [state])
@@ -192,6 +212,7 @@ export default function SettingsOrganisationPage() {
       }
       await Promise.all(saveTasks)
 
+      applyOrganisationState(nextState)
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('itg:organisation-branding-updated'))
       }
@@ -262,12 +283,18 @@ export default function SettingsOrganisationPage() {
         saveAgencyOnboardingDraft(state.onboarding),
       ])
 
+      const nextState = {
+        ...state,
+        ...organisationResponse,
+        membershipRole: organisationResponse.membershipRole || onboardingResponse.membershipRole || state?.membershipRole || 'viewer',
+        onboarding: onboardingResponse.onboarding,
+      }
+
       setState((previous) => ({
         ...previous,
-        ...organisationResponse,
-        membershipRole: organisationResponse.membershipRole || onboardingResponse.membershipRole || previous?.membershipRole || 'viewer',
-        onboarding: onboardingResponse.onboarding,
+        ...nextState,
       }))
+      applyOrganisationState(nextState)
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('itg:organisation-branding-updated'))

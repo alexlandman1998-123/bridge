@@ -4,6 +4,7 @@ import AccessState from './components/access/AccessState'
 import PermissionGate from './components/PermissionGate'
 import TokenRouteGate from './components/routing/TokenRouteGate'
 import { AuthSessionProvider, useAuthSession } from './context/AuthSessionContext'
+import { OrganisationProvider, useOrganisation } from './context/OrganisationContext'
 import { WorkspaceProvider } from './context/WorkspaceContext'
 import { useWorkspace } from './context/WorkspaceContext'
 import { APP_ROLE_LABELS } from './lib/roles'
@@ -19,6 +20,9 @@ import { ONBOARDING_REQUIRED_REASONS } from './constants/onboardingStatuses'
 import { resolveSignupIntentRoute } from './lib/signupIntent'
 import { evaluateAccessRequirement, getRouteAccessRequirement } from './auth/permissions/permissionResolver'
 import { PERMISSIONS } from './auth/permissions/permissionRegistry'
+import { createRoutePerformanceMarker } from './services/observability/performanceMetrics'
+import { reportError } from './services/observability/errorTracking'
+import { trackPermissionMetric } from './services/observability/monitoring'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 
 const INACTIVITY_TIMEOUT_MINUTES = 15
@@ -817,6 +821,12 @@ function RoleRoute({ allowedRoles, requiredPermission = '', requiredWorkspaceTyp
   )
 
   if (!access.ok) {
+    void trackPermissionMetric('permission_denied', {
+      userId: workspaceContext.profile?.id || '',
+      workspaceId: workspaceContext.currentWorkspace?.id || '',
+      route: location.pathname,
+      metadata: { reason: access.reason, requiredPermission: requiredPermission || routeRequirement?.permission || '' },
+    })
     if (access.reason === 'membership_blocked') {
       return <AccessState type="suspended" description={access.message} />
     }
@@ -958,6 +968,45 @@ function ProtectedLayout({ onLogout, session }) {
   return <AppLayout onLogout={onLogout} session={session} user={session?.user || null} />
 }
 
+function OrganisationGate({ children }) {
+  const { role, activeMemberships } = useWorkspace()
+  const { loading, error, refreshOrganisation } = useOrganisation()
+  const shouldHydrateOrganisation = role !== 'client' && activeMemberships.length > 0
+
+  if (shouldHydrateOrganisation && loading) {
+    return (
+      <section className="auth-loading-screen">
+        <div className="auth-loading-card">
+          <h2>Loading organisation branding…</h2>
+          <p>Preparing your workspace identity.</p>
+        </div>
+      </section>
+    )
+  }
+
+  if (shouldHydrateOrganisation && error) {
+    return (
+      <section className="auth-loading-screen">
+        <div className="auth-loading-card">
+          <h2>We couldn’t load organisation branding.</h2>
+          <p>{error}</p>
+          <button
+            type="button"
+            className="auth-primary-cta mt-4"
+            onClick={() => {
+              void refreshOrganisation({ forceRefresh: true }).catch(() => {})
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      </section>
+    )
+  }
+
+  return children
+}
+
 function EnvironmentValidationBanner() {
   const validation = getRuntimeEnvValidation()
   if (validation.ok) return null
@@ -973,6 +1022,52 @@ function EnvironmentValidationBanner() {
   )
 }
 
+function RouteObservability() {
+  const location = useLocation()
+  const { authState } = useAuthSession()
+
+  useEffect(() => {
+    const marker = createRoutePerformanceMarker(location.pathname)
+    const frameId = window.requestAnimationFrame(() => {
+      marker.finish({
+        userId: authState.user?.id || '',
+        workspaceId: authState.currentWorkspace?.id || '',
+      })
+    })
+    return () => window.cancelAnimationFrame(frameId)
+  }, [authState.currentWorkspace?.id, authState.user?.id, location.pathname])
+
+  useEffect(() => {
+    function handleError(event) {
+      void reportError(event.error || new Error(event.message || 'Unhandled browser error'), {
+        userId: authState.user?.id || '',
+        workspaceId: authState.currentWorkspace?.id || '',
+        route: location.pathname,
+        category: 'ui_error',
+        operation: 'window_error',
+      })
+    }
+    function handleRejection(event) {
+      const reason = event.reason instanceof Error ? event.reason : new Error(String(event.reason || 'Unhandled promise rejection'))
+      void reportError(reason, {
+        userId: authState.user?.id || '',
+        workspaceId: authState.currentWorkspace?.id || '',
+        route: location.pathname,
+        category: 'ui_error',
+        operation: 'unhandled_rejection',
+      })
+    }
+    window.addEventListener('error', handleError)
+    window.addEventListener('unhandledrejection', handleRejection)
+    return () => {
+      window.removeEventListener('error', handleError)
+      window.removeEventListener('unhandledrejection', handleRejection)
+    }
+  }, [authState.currentWorkspace?.id, authState.user?.id, location.pathname])
+
+  return null
+}
+
 function AppRoutes() {
   const location = useLocation()
   const { session, authLoading, authError, retryAuthBootstrap, logout, devAuthRole, setDevAuthRole } = useAuthSession()
@@ -985,9 +1080,11 @@ function AppRoutes() {
 
   return (
     <WorkspaceProvider user={session?.user || null} authBypassRole={devAuthRole}>
-      <EnvironmentValidationBanner />
-      <Suspense fallback={<PageSkeleton label="Loading Bridge" />}>
-        <Routes>
+      <OrganisationProvider>
+        <EnvironmentValidationBanner />
+        <RouteObservability />
+        <Suspense fallback={<PageSkeleton label="Loading Bridge" />}>
+          <Routes>
           <Route path="/bridge" element={<BridgeLanding />} />
           <Route path="/bridge/product" element={<BridgeProductPage />} />
           <Route path="/bridge/solutions" element={<BridgeSolutionsPage />} />
@@ -1023,7 +1120,7 @@ function AppRoutes() {
             <Route path="/bond-originator/onboarding" element={<RoleModuleOnboarding expectedRole="bond_originator" />} />
             <Route path="/client-access" element={<ClientAccessNotice onLogout={logout} />} />
 
-            <Route element={<ProtectedLayout onLogout={logout} session={session} />}>
+            <Route element={<OrganisationGate><ProtectedLayout onLogout={logout} session={session} /></OrganisationGate>}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<AppErrorBoundary scope="dashboard-shell" title="Dashboard failed to render"><ClientAwareDashboard /></AppErrorBoundary>} />
               <Route path="/commercial" element={<AppErrorBoundary scope="commercial-workspace" title="Commercial workspace failed to render"><CommercialLayout /></AppErrorBoundary>}>
@@ -1881,8 +1978,9 @@ function AppRoutes() {
           />
           <Route path="/status/:token" element={<TokenRouteGate><AppErrorBoundary scope="status-share-route" title="Status page failed to load"><TransactionStatusShare /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Suspense>
+          </Routes>
+        </Suspense>
+      </OrganisationProvider>
       </WorkspaceProvider>
   )
 }

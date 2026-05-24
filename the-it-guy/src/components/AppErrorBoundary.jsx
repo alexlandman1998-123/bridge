@@ -1,5 +1,6 @@
 import { Component } from 'react'
 import { Link } from 'react-router-dom'
+import { reportError } from '../services/observability/errorTracking'
 
 function getErrorMessage(error) {
   const message = String(error?.message || '').trim()
@@ -69,6 +70,12 @@ class AppErrorBoundary extends Component {
       message: error?.message || 'Unknown render error',
       stack: error?.stack || '',
       componentStack: info?.componentStack || '',
+    })
+    void reportError(error, {
+      category: 'ui_error',
+      operation: this.props.scope || 'app_error_boundary',
+      route: typeof window !== 'undefined' ? window.location.pathname : '',
+      metadata: { componentStack: info?.componentStack || '' },
     })
 
     if (this.props.autoRecoverStaleChunks !== false && isStaleChunkLoadError(error)) {

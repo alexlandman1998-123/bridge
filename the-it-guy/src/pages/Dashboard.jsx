@@ -44,12 +44,18 @@ import {
 import { TRANSACTION_SCOPE_OPTIONS, filterRowsByTransactionScope, getTransactionScopeForRow } from '../core/transactions/transactionScope'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { useOrganisation } from '../context/OrganisationContext'
 import { fetchDashboardOverview, fetchTransactionsByParticipantSummary, fetchTransactionsListSummary } from '../lib/api'
 import { getAgentModuleSharedData } from '../lib/agentDataService'
 import { getAgencyPipelineSnapshot, getAppointmentsDashboardSummaryAsync } from '../lib/agencyPipelineService'
+import {
+  getDashboardPipelineValue,
+  getDashboardTransactionPrice,
+  getScopedDashboardTransactions,
+  logDashboardPipelineDiagnostics,
+} from '../lib/dashboardTransactionIntegrity'
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
-import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import {
   getListingSourceLabel,
@@ -308,14 +314,7 @@ function formatAppointmentStatusLabel(value) {
 }
 
 function getTransactionDealValue(row) {
-  const value = Number(
-    row?.transaction?.purchase_price ||
-      row?.transaction?.sales_price ||
-      row?.unit?.price ||
-      row?.unit?.list_price ||
-      0,
-  )
-  return Number.isFinite(value) ? value : 0
+  return getDashboardTransactionPrice(row)
 }
 
 function getLegacyCommissionFallbackEligibility(row) {
@@ -817,6 +816,12 @@ function Dashboard() {
   const navigate = useNavigate()
   const location = useLocation()
   const { workspace, role, profile, personaOptions, setActivePersona, rolePreviewActive } = useWorkspace()
+  const {
+    organisation,
+    loading: organisationLoading,
+    membershipRole: hydratedMembershipRole,
+  } = useOrganisation()
+  const currentOrganisationId = String(organisation?.id || '').trim()
   const [overview, setOverview] = useState({
     metrics: {
       totalDevelopments: 0,
@@ -881,35 +886,15 @@ function Dashboard() {
   const agentDataScope = isPrincipalAgentView ? 'principal' : 'agent'
 
   useEffect(() => {
-    let active = true
-
-    async function loadMembershipRole() {
-      if (role !== 'agent') {
-        if (active) {
-          setOrganisationMembershipRole('viewer')
-          setOrganisationIdForAppointments('')
-        }
-        return
-      }
-
-      try {
-        const context = await fetchOrganisationSettings()
-        if (!active) return
-        setOrganisationMembershipRole(context?.membershipRole || 'viewer')
-        setOrganisationIdForAppointments(String(context?.organisation?.id || '').trim())
-      } catch {
-        if (active) {
-          setOrganisationMembershipRole('viewer')
-          setOrganisationIdForAppointments('')
-        }
-      }
+    if (role !== 'agent') {
+      setOrganisationMembershipRole('viewer')
+      setOrganisationIdForAppointments('')
+      return
     }
-
-    void loadMembershipRole()
-    return () => {
-      active = false
-    }
-  }, [role, profile?.id])
+    if (organisationLoading) return
+    setOrganisationMembershipRole(hydratedMembershipRole || 'viewer')
+    setOrganisationIdForAppointments(currentOrganisationId)
+  }, [currentOrganisationId, hydratedMembershipRole, organisationLoading, role])
 
   const loadDashboard = useCallback(async () => {
     if (isPrincipalAgentView) {
@@ -918,6 +903,28 @@ function Dashboard() {
     }
 
     if (!isSupabaseConfigured) {
+      setLoading(false)
+      return
+    }
+
+    if (role === 'agent' && organisationLoading) {
+      setLoading(true)
+      return
+    }
+
+    if (role === 'agent' && !currentOrganisationId) {
+      setOverview({
+        metrics: {
+          totalDevelopments: 0,
+          totalUnits: 0,
+          activeTransactions: 0,
+          unitsInTransfer: 0,
+          unitsRegistered: 0,
+          totalRevenue: 0,
+        },
+        developmentSummaries: [],
+        rows: [],
+      })
       setLoading(false)
       return
     }
@@ -932,11 +939,13 @@ function Dashboard() {
           participantRows = await fetchTransactionsListSummary({
             developmentId: workspace.id === 'all' ? null : workspace.id,
             activeTransactionsOnly: false,
+            organisationId: currentOrganisationId,
           })
         } else if (profile?.id) {
           participantRows = await fetchTransactionsByParticipantSummary({
             userId: profile.id,
             roleType,
+            organisationId: role === 'agent' ? currentOrganisationId : '',
           })
         }
         const scopedRows =
@@ -948,11 +957,17 @@ function Dashboard() {
                 ? buildBondDemoRows(participantRows || [])
                 : participantRows
 
+        const organisationScopedRows = role === 'agent'
+          ? getScopedDashboardTransactions(scopedRows, { organisationId: currentOrganisationId, activeOnly: false })
+          : scopedRows
         const filteredRows = role === 'agent' && isPrincipalAgentView
-          ? scopedRows
-          : scopedRows.filter((row) =>
+          ? organisationScopedRows
+          : organisationScopedRows.filter((row) =>
             workspace.id === 'all' ? true : (row?.development?.id || row?.unit?.development_id) === workspace.id,
           )
+        const activeFinancialRows = role === 'agent'
+          ? getScopedDashboardTransactions(filteredRows, { organisationId: currentOrganisationId })
+          : filteredRows
 
         setOverview({
           metrics: {
@@ -960,15 +975,17 @@ function Dashboard() {
               filteredRows.map((row) => row?.development?.id || row?.unit?.development_id).filter(Boolean),
             ).size,
             totalUnits: filteredRows.length,
-            activeTransactions: filteredRows.length,
-            unitsInTransfer: filteredRows.filter((row) =>
+            activeTransactions: activeFinancialRows.length,
+            unitsInTransfer: activeFinancialRows.filter((row) =>
               ['Proceed to Attorneys', 'Transfer in Progress', 'Transfer Lodged'].includes(row?.stage),
             ).length,
             unitsRegistered: filteredRows.filter((row) => row?.stage === 'Registered').length,
-            totalRevenue: filteredRows.reduce((sum, row) => {
-              const value = Number(row?.transaction?.sales_price ?? row?.unit?.price)
-              return sum + (Number.isFinite(value) ? value : 0)
-            }, 0),
+            totalRevenue: role === 'agent'
+              ? getDashboardPipelineValue(activeFinancialRows)
+              : filteredRows.reduce((sum, row) => {
+                const value = Number(row?.transaction?.sales_price ?? row?.unit?.price)
+                return sum + (Number.isFinite(value) ? value : 0)
+              }, 0),
           },
           developmentSummaries: [],
           rows: filteredRows,
@@ -984,7 +1001,7 @@ function Dashboard() {
     } finally {
       setLoading(false)
     }
-  }, [isPrincipalAgentView, profile?.id, role, workspace.id])
+  }, [currentOrganisationId, isPrincipalAgentView, organisationLoading, profile?.id, role, workspace.id])
 
   useEffect(() => {
     void loadDashboard()
@@ -1193,10 +1210,23 @@ function Dashboard() {
     () => (isAgentRole ? getAgentModuleSharedData({ liveRows: agentScopedRows, profile, scope: agentDataScope }) : null),
     [agentDataScope, agentScopedRows, isAgentRole, profile],
   )
+  const agentDashboardPipelineRows = useMemo(
+    () => (isAgentRole ? getScopedDashboardTransactions(agentScopedRows, { organisationId: currentOrganisationId }) : []),
+    [agentScopedRows, currentOrganisationId, isAgentRole],
+  )
+  useEffect(() => {
+    if (!isAgentRole || loading || !currentOrganisationId) return
+    logDashboardPipelineDiagnostics({
+      currentOrganisationId,
+      transactions: agentDashboardPipelineRows,
+      pipelineValue: getDashboardPipelineValue(agentDashboardPipelineRows),
+      source: 'supabase',
+    })
+  }, [agentDashboardPipelineRows, currentOrganisationId, isAgentRole, loading])
   const sharedDashboardRows = useMemo(() => (isAgentRole ? roleScopedRows : rows), [isAgentRole, roleScopedRows, rows])
   const activeTransactionCards = useMemo(
-    () => selectActiveTransactions(isAgentRole ? agentScopedRows : isBondRole ? roleScopedRows : rows),
-    [agentScopedRows, isAgentRole, isBondRole, roleScopedRows, rows],
+    () => selectActiveTransactions(isAgentRole ? agentDashboardPipelineRows : isBondRole ? roleScopedRows : rows),
+    [agentDashboardPipelineRows, isAgentRole, isBondRole, roleScopedRows, rows],
   )
   const stageAging = useMemo(() => selectStageAging(rows), [rows])
   const AGENT_SUMMARY = useMemo(() => selectAgentSummary(roleScopedRows), [roleScopedRows])
@@ -1398,6 +1428,7 @@ function Dashboard() {
   }, [bondInsights.approvalRate, bondInsights.averageDaysInFinance, bondInsights.averageGrantValue, bondSummary.active, roleScopedRows])
   const agentPerformanceMetrics = useMemo(() => {
     const scoped = agentScopedRows.filter((row) => row?.transaction)
+    const activeFinancialRows = getScopedDashboardTransactions(scoped, { organisationId: currentOrganisationId })
     const listingRows = Array.isArray(agentSharedData?.listings) ? agentSharedData.listings : []
     const scopedListings = isPrincipalAgentView
       ? listingRows
@@ -1507,15 +1538,13 @@ function Dashboard() {
 
     for (const row of scoped) {
       const main = getRowMainStage(row)
-      const lifecycle = String(row?.transaction?.lifecycle_state || '').trim().toLowerCase()
-      const isCancelled = lifecycle.includes('cancel')
       const dealValue = dealValueOf(row)
       const askingValue = askingValueOf(row)
       const daysInDeal = getDaysSinceRowUpdate(row)
       const isRegistered = main === 'REG'
 
       if (isRegistered) REGISTERED += 1
-      if (!isRegistered && !isCancelled) openDeals += 1
+      if (activeFinancialRows.includes(row)) openDeals += 1
 
       totalAsking += askingValue
       totalSelling += dealValue
@@ -1830,9 +1859,7 @@ function Dashboard() {
       .sort((left, right) => right.deals - left.deals)
       .slice(0, 8)
 
-    const activeDealValue = scoped
-      .filter((row) => getRowMainStage(row) !== 'REG')
-      .reduce((sum, row) => sum + dealValueOf(row), 0)
+    const activeDealValue = getDashboardPipelineValue(activeFinancialRows)
     const avgAskingPrice = scoped.length ? totalAsking / scoped.length : 0
     const avgSellingPrice = scoped.length ? totalSelling / scoped.length : 0
     const askingVsSellingDelta = avgAskingPrice ? ((avgSellingPrice - avgAskingPrice) / avgAskingPrice) * 100 : 0
@@ -1926,7 +1953,7 @@ function Dashboard() {
       registeredDeals: registeredRows.length,
       openDeals,
     }
-  }, [agentScopedRows, agentSharedData?.listings, agentSharedData?.pipelineLeads, agentSharedData?.sellerLeads, appointmentSummary.rows, isPrincipalAgentView, profileIdentitySet])
+  }, [agentScopedRows, agentSharedData?.listings, agentSharedData?.pipelineLeads, agentSharedData?.sellerLeads, appointmentSummary.rows, currentOrganisationId, isPrincipalAgentView, profileIdentitySet])
   const topSummaryItems = useMemo(() => {
     if (isAgentRole) {
       const sharedDashboard = agentSharedData?.dashboard || {}
@@ -2727,17 +2754,16 @@ function Dashboard() {
   }, [agentSharedData?.listings, agentSharedData?.sellerLeads, appointmentSummary?.rows, isPrincipalAgentView, principalCanvassingSnapshot?.activities, principalCanvassingSnapshot?.prospects, principalCrmSnapshot?.leadActivities, principalCrmSnapshot?.leads, principalTimeFilter, roleScopedRows])
   const AGENT_PIPELINE_ITEMS = useMemo(() => {
     if (!isAgentRole) return 0
-    return agentScopedRows.filter((row) => getRowMainStage(row) !== 'REG').length
-  }, [agentScopedRows, isAgentRole])
+    return agentDashboardPipelineRows.length
+  }, [agentDashboardPipelineRows, isAgentRole])
   const AGENT_FOLLOW_UPS_DUE = useMemo(() => {
     if (!isAgentRole) return 0
-    return agentScopedRows.filter((row) => {
-      if (getRowMainStage(row) === 'REG') return false
+    return agentDashboardPipelineRows.filter((row) => {
       const days = getDaysSinceRowUpdate(row)
       const hasNextAction = String(row?.transaction?.next_action || '').trim().length > 0
       return !hasNextAction || days >= 7
     }).length
-  }, [agentScopedRows, isAgentRole])
+  }, [agentDashboardPipelineRows, isAgentRole])
   const sharedActivityViewPath = useMemo(() => {
     if (isAttorneyRole) return '/transactions'
     if (isBondRole) return '/applications'

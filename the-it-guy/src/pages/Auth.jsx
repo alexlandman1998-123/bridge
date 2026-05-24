@@ -1,4 +1,17 @@
-import { ArrowLeft, ArrowRight, Building2, CheckCircle2, ShieldCheck } from 'lucide-react'
+import {
+  ArrowLeft,
+  ArrowRight,
+  Building2,
+  Check,
+  CheckCircle2,
+  Circle,
+  Hammer,
+  Landmark,
+  Scale,
+  ShieldCheck,
+  UserRound,
+  WalletCards,
+} from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { setStoredDevAuthRole } from '../lib/devAuth'
@@ -80,6 +93,25 @@ function resolveInviteTokenFromLocation(location) {
 const DEV_BYPASS_ROLES = ['developer', 'agent', 'attorney', 'bond_originator']
 const RESEND_COOLDOWN_SECONDS = 90
 const RESEND_COOLDOWN_STORAGE_KEY = 'itg:auth:resend-cooldown-until'
+const SIGNUP_STEPS = [
+  { eyebrow: 'Step 1', label: 'Select Role' },
+  { eyebrow: 'Step 2', label: 'Your Position' },
+  { eyebrow: 'Step 3', label: 'Create Account' },
+]
+const ROLE_ICONS = {
+  [SIGNUP_BUSINESS_TYPES.agency]: Building2,
+  [SIGNUP_BUSINESS_TYPES.developer]: Hammer,
+  [SIGNUP_BUSINESS_TYPES.attorney]: Scale,
+  [SIGNUP_BUSINESS_TYPES.bondOriginator]: WalletCards,
+  [SIGNUP_BUSINESS_TYPES.client]: UserRound,
+}
+const POSITION_ICON = Landmark
+const PREVIEW_STAGES = [
+  { label: 'Offer Accepted', state: 'Complete' },
+  { label: 'Bond Approved', state: 'Active' },
+  { label: 'Transfer In Progress', state: 'Live' },
+  { label: 'Registration Pending', state: 'Next' },
+]
 
 function normalizeErrorMessage(error) {
   return String(error?.message || error || '').trim()
@@ -146,6 +178,8 @@ function Auth({ onDevBypass = null }) {
     })
   }, [inviteDrivenSignup, inviteToken, position])
   const positionOptions = POSITION_OPTIONS_BY_BUSINESS_TYPE[businessType] || []
+  const selectedBusinessTypeLabel = BUSINESS_TYPE_OPTIONS.find((option) => option.value === businessType)?.label || ''
+  const selectedPositionLabel = positionOptions.find((option) => option.value === position)?.label || ''
   const resendSecondsRemaining = Math.max(0, Math.ceil((resendCooldownUntil - nowTick) / 1000))
   const resendCooldownActive = resendSecondsRemaining > 0
 
@@ -200,6 +234,14 @@ function Auth({ onDevBypass = null }) {
     setPosition('agency_operational')
     setSignupStep(2)
   }, [inviteDrivenSignup])
+
+  useEffect(() => {
+    if (mode !== 'signup' || typeof window === 'undefined') return undefined
+    const frame = window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0 })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [mode, signupStep])
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -443,6 +485,29 @@ function Auth({ onDevBypass = null }) {
               </div>
             </article>
           </div>
+
+          <div className="auth-platform-preview" aria-label="Transaction workflow preview">
+            <header>
+              <span>Operations Preview</span>
+              <strong>Live Transaction Rail</strong>
+            </header>
+            <div className="auth-preview-stages">
+              {PREVIEW_STAGES.map((stage, index) => (
+                <article key={stage.label} className={index < 2 ? 'complete' : index === 2 ? 'active' : ''}>
+                  <span className="auth-preview-dot">{index < 2 ? <Check size={12} /> : null}</span>
+                  <div>
+                    <strong>{stage.label}</strong>
+                    <em>{stage.state}</em>
+                  </div>
+                </article>
+              ))}
+            </div>
+            <div className="auth-preview-metrics">
+              <span>Docs 84%</span>
+              <span>Risk Low</span>
+              <span>SLA On Track</span>
+            </div>
+          </div>
         </section>
 
         <section className="auth-card">
@@ -488,21 +553,27 @@ function Auth({ onDevBypass = null }) {
           <form className="auth-form" onSubmit={handleSubmit}>
             {mode === 'signup' ? (
               <>
-                <div className="grid grid-cols-3 gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#71859c]">
-                  {['Your role', 'Your position', 'Create account'].map((label, index) => (
-                    <span
-                      key={label}
-                      className={`rounded-[12px] border px-3 py-2 text-center ${
-                        signupStep === index
-                          ? 'border-[#315b7b] bg-[#eef5fb] text-[#19344f]'
-                          : signupStep > index
-                            ? 'border-[#d4e7dc] bg-[#f0fbf5] text-[#276246]'
-                            : 'border-[#dfe8f2] bg-[#fbfdff]'
-                      }`}
-                    >
-                      {label}
-                    </span>
-                  ))}
+                <div className="signup-stepper" aria-label="Signup progress">
+                  {SIGNUP_STEPS.map((step, index) => {
+                    const complete = signupStep > index
+                    const active = signupStep === index
+                    return (
+                      <div key={step.label} className="signup-stepper-item-wrap">
+                        <div className={`signup-stepper-item ${active ? 'active' : ''} ${complete ? 'complete' : ''}`}>
+                          <span className="signup-stepper-node">
+                            {complete ? <Check size={15} /> : active ? String(index + 1) : <Circle size={8} />}
+                          </span>
+                          <span className="signup-stepper-copy">
+                            <em>{step.eyebrow}</em>
+                            <strong>{step.label}</strong>
+                          </span>
+                        </div>
+                        {index < SIGNUP_STEPS.length - 1 ? (
+                          <span className={`signup-stepper-line ${signupStep > index ? 'complete' : ''}`} aria-hidden="true" />
+                        ) : null}
+                      </div>
+                    )
+                  })}
                 </div>
 
                 {inviteDrivenSignup ? (
@@ -512,26 +583,34 @@ function Auth({ onDevBypass = null }) {
                 ) : null}
 
                 {signupStep === 0 ? (
-                  <section className="grid gap-3">
-                    {BUSINESS_TYPE_OPTIONS.map((option) => {
+                  <section className="signup-choice-stack">
+                    {BUSINESS_TYPE_OPTIONS.map((option, index) => {
                       const active = businessType === option.value
+                      const RoleIcon = ROLE_ICONS[option.value] || Building2
                       return (
                         <button
                           key={option.value}
                           type="button"
-                          className={`rounded-[18px] border px-4 py-3 text-left transition ${
-                            active
-                              ? 'border-[#315b7b] bg-[#eef5fb] text-[#142132]'
-                              : 'border-[#dfe8f2] bg-white text-[#31485e] hover:border-[#b9cde0]'
-                          }`}
+                          className={`signup-role-card ${active ? 'active' : ''}`}
                           onClick={() => {
                             setBusinessType(option.value)
                             setPosition('')
                             setError('')
                           }}
                         >
-                          <strong className="block text-sm">{option.label}</strong>
-                          <span className="mt-1 block text-xs leading-5 text-[#61758a]">{option.description}</span>
+                          <span className="signup-role-card-topline">
+                            <span>Role {String(index + 1).padStart(2, '0')}</span>
+                            {active ? <span className="signup-role-card-selected"><Check size={13} /> Selected</span> : null}
+                          </span>
+                          <span className="signup-role-card-main">
+                            <span className="signup-role-card-icon">
+                              <RoleIcon size={22} />
+                            </span>
+                            <span>
+                              <strong>{option.label}</strong>
+                              <span>{option.description}</span>
+                            </span>
+                          </span>
                         </button>
                       )
                     })}
@@ -544,15 +623,15 @@ function Auth({ onDevBypass = null }) {
                         setSignupStep(1)
                       }}
                     >
-                      Continue
+                      {selectedBusinessTypeLabel ? `Continue as ${selectedBusinessTypeLabel}` : 'Continue to Position Selection'}
                       <ArrowRight size={15} />
                     </button>
                   </section>
                 ) : null}
 
                 {signupStep === 1 ? (
-                  <section className="grid gap-3">
-                    <p className="text-sm leading-6 text-[#60758d]">
+                  <section className="signup-choice-stack">
+                    <p className="signup-step-note">
                       Choose the option that best describes your authority. Staff users will need an invite or approval before
                       entering a workspace.
                     </p>
@@ -562,18 +641,20 @@ function Auth({ onDevBypass = null }) {
                         <button
                           key={option.value}
                           type="button"
-                          className={`rounded-[18px] border px-4 py-3 text-left transition ${
-                            active
-                              ? 'border-[#315b7b] bg-[#eef5fb] text-[#142132]'
-                              : 'border-[#dfe8f2] bg-white text-[#31485e] hover:border-[#b9cde0]'
-                          }`}
+                          className={`signup-position-card ${active ? 'active' : ''}`}
                           onClick={() => {
                             setPosition(option.value)
                             setError('')
                           }}
                         >
-                          <strong className="block text-sm">{option.label}</strong>
-                          <span className="mt-1 block text-xs leading-5 text-[#61758a]">{option.description}</span>
+                          <span className="signup-position-icon">
+                            <POSITION_ICON size={18} />
+                          </span>
+                          <span>
+                            <strong>{option.label}</strong>
+                            <span>{option.description}</span>
+                          </span>
+                          {active ? <Check size={17} className="signup-position-check" /> : null}
                         </button>
                       )
                     })}
@@ -591,7 +672,7 @@ function Auth({ onDevBypass = null }) {
                           setSignupStep(2)
                         }}
                       >
-                        Continue
+                        {selectedPositionLabel ? 'Continue to Account Creation' : 'Continue'}
                         <ArrowRight size={15} />
                       </button>
                     </div>
