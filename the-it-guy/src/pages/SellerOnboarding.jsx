@@ -184,6 +184,8 @@ function getInitials(value = '') {
 function resolveAgencyBrand(listing = {}) {
   const agencyName =
     String(
+      listing?.branding?.organisationName ||
+      listing?.branding?.agencyName ||
       listing?.agencyOrganisation ||
       listing?.organisationName ||
       listing?.agencyName ||
@@ -194,11 +196,17 @@ function resolveAgencyBrand(listing = {}) {
     ).trim() || 'Your Agency'
   const logoUrl =
     String(
+      listing?.agencyLogoDarkUrl ||
+      listing?.organisationLogoDarkUrl ||
+      listing?.branding?.logoDarkUrl ||
+      listing?.branding?.logoDark ||
       listing?.agencyLogoUrl ||
       listing?.organisationLogoUrl ||
       listing?.agency?.logoUrl ||
       listing?.organisation?.logoUrl ||
       listing?.branding?.logoUrl ||
+      listing?.branding?.logoLightUrl ||
+      listing?.branding?.logoLight ||
       '',
     ).trim()
   return { name: agencyName, logoUrl, initials: getInitials(agencyName) }
@@ -386,11 +394,13 @@ function normalizeFormData(listing) {
 function AgencyMark({ brand, tone = 'dark' }) {
   if (brand?.logoUrl) {
     return (
-      <img
-        src={brand.logoUrl}
-        alt={`${brand.name} logo`}
-        className={`h-10 w-10 rounded-[14px] object-contain p-1 shadow-[0_12px_30px_rgba(0,0,0,0.18)] sm:h-12 sm:w-12 sm:rounded-[16px] ${tone === 'light' ? 'border border-[#dbe5ef] bg-white' : 'border border-white/15 bg-white'}`}
-      />
+      <span className={`inline-flex h-12 min-w-12 max-w-[220px] items-center justify-center rounded-[16px] px-2 py-1 shadow-[0_12px_30px_rgba(0,0,0,0.18)] ${tone === 'light' ? 'border border-[#dbe5ef] bg-white' : 'border border-white/15 bg-white/5'}`}>
+        <img
+          src={brand.logoUrl}
+          alt={`${brand.name} logo`}
+          className="max-h-10 w-auto max-w-[200px] object-contain"
+        />
+      </span>
     )
   }
 

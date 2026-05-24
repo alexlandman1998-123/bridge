@@ -77,6 +77,14 @@ function normalizeNullableText(value) {
   return normalized || null
 }
 
+function pickFirstText(...values) {
+  for (const value of values) {
+    const text = normalizeText(value)
+    if (text) return text
+  }
+  return ''
+}
+
 function normalizeStorageSafeName(value = '', fallback = 'asset') {
   const normalized = normalizeText(value)
     .replace(/[^a-zA-Z0-9._-]+/g, '-')
@@ -508,6 +516,9 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     'not_started',
   )
   const onboardingFormData = onboarding?.form_data && typeof onboarding.form_data === 'object' ? onboarding.form_data : {}
+  const portalBranding = onboardingFormData.portalBranding && typeof onboardingFormData.portalBranding === 'object'
+    ? onboardingFormData.portalBranding
+    : {}
   const imageGallery = normalizeMediaItems(onboardingFormData.imageGallery)
   const coverImageId = normalizeText(onboardingFormData.coverImageId) || normalizeText(imageGallery[0]?.id)
   const coverImage = imageGallery.find((item) => normalizeText(item.id) === coverImageId) || imageGallery[0] || null
@@ -554,6 +565,22 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     createdBy: row.created_by || null,
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null,
+    agencyOrganisation: pickFirstText(portalBranding.organisationName, portalBranding.agencyName, row.agency_organisation),
+    organisationName: pickFirstText(portalBranding.organisationName, portalBranding.agencyName),
+    agencyName: pickFirstText(portalBranding.agencyName, portalBranding.organisationName),
+    agencyLogoUrl: pickFirstText(portalBranding.logoDarkUrl, portalBranding.logoDark, portalBranding.logoUrl),
+    agencyLogoDarkUrl: pickFirstText(portalBranding.logoDarkUrl, portalBranding.logoDark),
+    agencyLogoLightUrl: pickFirstText(portalBranding.logoLightUrl, portalBranding.logoLight, portalBranding.logoUrl),
+    organisationLogoUrl: pickFirstText(portalBranding.logoDarkUrl, portalBranding.logoDark, portalBranding.logoUrl),
+    organisationLogoDarkUrl: pickFirstText(portalBranding.logoDarkUrl, portalBranding.logoDark),
+    branding: {
+      ...portalBranding,
+      organisationName: pickFirstText(portalBranding.organisationName, portalBranding.agencyName),
+      agencyName: pickFirstText(portalBranding.agencyName, portalBranding.organisationName),
+      logoUrl: pickFirstText(portalBranding.logoDarkUrl, portalBranding.logoDark, portalBranding.logoUrl),
+      logoDarkUrl: pickFirstText(portalBranding.logoDarkUrl, portalBranding.logoDark),
+      logoLightUrl: pickFirstText(portalBranding.logoLightUrl, portalBranding.logoLight, portalBranding.logoUrl),
+    },
     property24ListingUrl: row.property24_listing_url || onboardingFormData.property24ListingUrl || '',
     property24Reference: row.property24_reference || onboardingFormData.property24Reference || '',
     property24Status: row.property24_status || onboardingFormData.property24Status || 'not_published',
@@ -669,6 +696,92 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   }
 }
 
+async function fetchOrganisationBrandingSnapshot(client, organisationId) {
+  const normalizedOrganisationId = normalizeUuid(organisationId)
+  if (!client || !normalizedOrganisationId) return null
+
+  try {
+    const [organisationResult, settingsResult] = await Promise.all([
+      client
+        .from('organisations')
+        .select('id, name, display_name, logo_url')
+        .eq('id', normalizedOrganisationId)
+        .maybeSingle(),
+      client
+        .from('organisation_settings')
+        .select('settings_json')
+        .eq('organisation_id', normalizedOrganisationId)
+        .maybeSingle(),
+    ])
+
+    const organisation = organisationResult.error ? null : organisationResult.data
+    const settings = settingsResult.error ? null : settingsResult.data?.settings_json
+    const onboarding = settings?.agencyOnboarding && typeof settings.agencyOnboarding === 'object'
+      ? settings.agencyOnboarding
+      : {}
+    const agencyInformation = onboarding?.agencyInformation && typeof onboarding.agencyInformation === 'object'
+      ? onboarding.agencyInformation
+      : {}
+    const branding = onboarding?.branding && typeof onboarding.branding === 'object'
+      ? onboarding.branding
+      : {}
+    const organisationName = pickFirstText(
+      agencyInformation.tradingName,
+      agencyInformation.agencyName,
+      organisation?.display_name,
+      organisation?.name,
+    )
+    const logoLightUrl = pickFirstText(branding.logoLight, organisation?.logo_url)
+    const logoDarkUrl = pickFirstText(branding.logoDark, branding.logoLight, organisation?.logo_url)
+    const logoUrl = pickFirstText(logoDarkUrl, logoLightUrl)
+
+    if (!organisationName && !logoUrl) return null
+    return {
+      organisationId: normalizedOrganisationId,
+      organisationName,
+      agencyName: organisationName,
+      logoUrl,
+      logoDarkUrl,
+      logoLightUrl,
+      logoDark: logoDarkUrl,
+      logoLight: logoLightUrl,
+      primaryColour: pickFirstText(branding?.brandColours?.primary, '#274C69'),
+      secondaryColour: pickFirstText(branding?.brandColours?.secondary, '#10273A'),
+    }
+  } catch (error) {
+    console.warn('[Private Listings] organisation branding snapshot unavailable for seller onboarding.', {
+      organisationId: normalizedOrganisationId,
+      error,
+    })
+    return null
+  }
+}
+
+function attachBrandingToListing(listing = null, branding = null) {
+  if (!listing || !branding) return listing
+  const mergedBranding = {
+    ...(listing.branding || {}),
+    ...branding,
+    organisationName: pickFirstText(branding.organisationName, branding.agencyName, listing.organisationName, listing.agencyName),
+    agencyName: pickFirstText(branding.agencyName, branding.organisationName, listing.agencyName, listing.organisationName),
+    logoUrl: pickFirstText(branding.logoDarkUrl, branding.logoDark, branding.logoUrl, listing.branding?.logoUrl),
+    logoDarkUrl: pickFirstText(branding.logoDarkUrl, branding.logoDark, listing.branding?.logoDarkUrl),
+    logoLightUrl: pickFirstText(branding.logoLightUrl, branding.logoLight, branding.logoUrl, listing.branding?.logoLightUrl),
+  }
+  return {
+    ...listing,
+    agencyOrganisation: pickFirstText(mergedBranding.organisationName, listing.agencyOrganisation),
+    organisationName: pickFirstText(mergedBranding.organisationName, listing.organisationName),
+    agencyName: pickFirstText(mergedBranding.agencyName, listing.agencyName),
+    agencyLogoUrl: pickFirstText(mergedBranding.logoDarkUrl, mergedBranding.logoUrl, listing.agencyLogoUrl),
+    agencyLogoDarkUrl: pickFirstText(mergedBranding.logoDarkUrl, listing.agencyLogoDarkUrl),
+    agencyLogoLightUrl: pickFirstText(mergedBranding.logoLightUrl, listing.agencyLogoLightUrl),
+    organisationLogoUrl: pickFirstText(mergedBranding.logoDarkUrl, mergedBranding.logoUrl, listing.organisationLogoUrl),
+    organisationLogoDarkUrl: pickFirstText(mergedBranding.logoDarkUrl, listing.organisationLogoDarkUrl),
+    branding: mergedBranding,
+  }
+}
+
 function mapSellerClientPortalPayload(payload) {
   const listingRow = payload?.listing && typeof payload.listing === 'object' ? payload.listing : null
   const onboardingRow = payload?.onboarding && typeof payload.onboarding === 'object' ? payload.onboarding : null
@@ -676,8 +789,10 @@ function mapSellerClientPortalPayload(payload) {
   const onboardingMap = new Map([[String(onboardingRow.private_listing_id), onboardingRow]])
   const requirements = normalizeRequirementRows(Array.isArray(payload?.requirements) ? payload.requirements : [])
   const documents = normalizeDocumentRows(Array.isArray(payload?.documents) ? payload.documents : [])
+  const appointments = Array.isArray(payload?.appointments) ? payload.appointments : []
   return {
     onboarding: onboardingRow,
+    appointments,
     listing: mapPrivateListingRow(
       listingRow,
       onboardingMap,
@@ -1671,6 +1786,10 @@ export async function sendSellerOnboarding(
 
   const token = normalizeText(existingQuery.data?.token) || generateSellerOnboardingToken()
   const expiresAt = new Date(Date.now() + Math.max(1, Number(expiresInDays || 14)) * 24 * 60 * 60 * 1000).toISOString()
+  const existingFormData = existingQuery.data?.form_data && typeof existingQuery.data.form_data === 'object'
+    ? existingQuery.data.form_data
+    : {}
+  const portalBranding = await fetchOrganisationBrandingSnapshot(client, listing.organisationId)
   const payload = {
     private_listing_id: listing.id,
     token,
@@ -1678,7 +1797,10 @@ export async function sendSellerOnboarding(
     seller_type: normalizeNullableText(sellerType || listing.sellerType),
     ownership_structure: normalizeNullableText(ownershipStructure),
     marital_regime: normalizeNullableText(maritalRegime),
-    form_data: existingQuery.data?.form_data && typeof existingQuery.data.form_data === 'object' ? existingQuery.data.form_data : {},
+    form_data: {
+      ...existingFormData,
+      ...(portalBranding ? { portalBranding } : {}),
+    },
     status: 'sent',
   }
 
@@ -1752,7 +1874,15 @@ export async function getSellerOnboardingByToken(token, options = {}) {
   if (!normalizedToken) throw new Error('Onboarding token is required.')
 
   const portalPayload = await fetchSellerClientPortalPayloadByToken(client, normalizedToken)
-  if (portalPayload?.listing) return portalPayload
+  if (portalPayload?.listing) {
+    const branding = portalPayload.listing?.branding?.logoUrl || portalPayload.listing?.branding?.organisationName
+      ? null
+      : await fetchOrganisationBrandingSnapshot(client, portalPayload.listing.organisationId)
+    return {
+      ...portalPayload,
+      listing: attachBrandingToListing(portalPayload.listing, branding),
+    }
+  }
 
   const query = await client
     .from('private_listing_seller_onboarding')
@@ -1767,9 +1897,12 @@ export async function getSellerOnboardingByToken(token, options = {}) {
   const listing = await getPrivateListingById(query.data.private_listing_id, {
     includeRequirementsAndDocuments,
   })
+  const branding = listing?.branding?.logoUrl || listing?.branding?.organisationName
+    ? null
+    : await fetchOrganisationBrandingSnapshot(client, listing?.organisationId)
   return {
     onboarding: query.data,
-    listing,
+    listing: attachBrandingToListing(listing, branding),
   }
 }
 

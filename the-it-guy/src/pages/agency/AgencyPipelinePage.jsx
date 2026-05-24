@@ -536,10 +536,22 @@ function resolveCanvassingProspectCategory(prospect = {}) {
 }
 
 function buildLeadContactFallback(lead = {}) {
-  const firstName = normalizeText(lead?.sellerName)
-  const lastName = normalizeText(lead?.sellerSurname)
-  const phone = normalizeText(lead?.sellerPhone)
-  const email = normalizeText(lead?.sellerEmail).toLowerCase()
+  const explicitName = normalizeText(lead?.name || lead?.buyerName)
+  const explicitParts = explicitName.split(/\s+/).filter(Boolean)
+  const firstName = normalizeText(
+    lead?.sellerName ||
+    lead?.firstName ||
+    lead?.first_name ||
+    explicitParts[0],
+  )
+  const lastName = normalizeText(
+    lead?.sellerSurname ||
+    lead?.lastName ||
+    lead?.last_name ||
+    explicitParts.slice(1).join(' '),
+  )
+  const phone = normalizeText(lead?.sellerPhone || lead?.phone)
+  const email = normalizeText(lead?.sellerEmail || lead?.email).toLowerCase()
   if (!firstName && !lastName && !phone && !email) return null
   return {
     contactId: normalizeText(lead?.contactId),
@@ -549,6 +561,57 @@ function buildLeadContactFallback(lead = {}) {
     email,
     contactType: normalizeText(lead?.leadCategory) || 'Lead',
   }
+}
+
+function isGenericLeadPersonName(value = '') {
+  const normalized = normalizeKey(value).replace(/\s+/g, ' ')
+  return !normalized || ['lead', 'contact', 'buyer', 'seller', 'unnamed lead', 'unnamed'].includes(normalized)
+}
+
+function formatContactName(contact = null) {
+  return [contact?.firstName, contact?.lastName].map(normalizeText).filter(Boolean).join(' ').trim()
+}
+
+function mergeLeadContactSnapshot(primary = null, secondary = null) {
+  if (!primary && !secondary) return null
+  return {
+    ...(secondary || {}),
+    ...(primary || {}),
+    contactId: normalizeText(primary?.contactId || secondary?.contactId),
+    firstName: normalizeText(primary?.firstName || secondary?.firstName),
+    lastName: normalizeText(primary?.lastName || secondary?.lastName),
+    phone: normalizeText(primary?.phone || secondary?.phone),
+    email: normalizeText(primary?.email || secondary?.email).toLowerCase(),
+    contactType: normalizeText(primary?.contactType || secondary?.contactType) || 'Lead',
+  }
+}
+
+function resolveLeadContactSnapshot(lead = {}, contact = null, prospect = null) {
+  const leadFallback = buildLeadContactFallback(lead)
+  const prospectFallback = buildCanvassingProspectContactFallback(prospect)
+  const candidates = [contact, leadFallback, prospectFallback].filter(Boolean)
+  const namedCandidate = candidates.find((candidate) => !isGenericLeadPersonName(formatContactName(candidate)))
+
+  if (namedCandidate) {
+    const detailFallback = candidates.find((candidate) => candidate !== namedCandidate) || null
+    return mergeLeadContactSnapshot(namedCandidate, detailFallback)
+  }
+
+  return mergeLeadContactSnapshot(contact, leadFallback || prospectFallback) || leadFallback || prospectFallback || null
+}
+
+function resolveLeadDisplayName(lead = {}, contact = null, prospect = null, fallback = 'Unnamed Lead') {
+  const resolvedContact = resolveLeadContactSnapshot(lead, contact, prospect)
+  const contactName = formatContactName(resolvedContact)
+  if (!isGenericLeadPersonName(contactName)) return contactName
+
+  const leadName = normalizeText(lead?.name || lead?.buyerName || [lead?.sellerName, lead?.sellerSurname].filter(Boolean).join(' '))
+  if (!isGenericLeadPersonName(leadName)) return leadName
+
+  const prospectName = [prospect?.firstName, prospect?.lastName].map(normalizeText).filter(Boolean).join(' ').trim()
+  if (!isGenericLeadPersonName(prospectName)) return prospectName
+
+  return fallback
 }
 
 function buildCanvassingProspectContactFallback(prospect = {}) {
@@ -2771,10 +2834,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const selectedLeadContact = useMemo(() => {
     if (!selectedLead) return null
-    return (
-      records.contacts.find((contact) => normalizeText(contact?.contactId) === normalizeText(selectedLead.contactId)) ||
-      buildLeadContactFallback(selectedLead) ||
-      buildCanvassingProspectContactFallback(canvassingProspectById.get(normalizeText(selectedLead?.canvassingProspectId)))
+    return resolveLeadContactSnapshot(
+      selectedLead,
+      records.contacts.find((contact) => normalizeText(contact?.contactId) === normalizeText(selectedLead.contactId)),
+      canvassingProspectById.get(normalizeText(selectedLead?.canvassingProspectId)),
     )
   }, [canvassingProspectById, records.contacts, selectedLead])
 
@@ -2828,12 +2891,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const selectedLeadDisplayName = useMemo(() => {
     if (!selectedLead && !selectedLeadContact) return 'Lead Workspace'
-    return [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() ||
-      selectedLead?.name ||
-      selectedLead?.buyerName ||
-      selectedLead?.sellerName ||
-      'Unnamed Lead'
-  }, [selectedLead, selectedLeadContact])
+    return resolveLeadDisplayName(
+      selectedLead,
+      selectedLeadContact,
+      canvassingProspectById.get(normalizeText(selectedLead?.canvassingProspectId)),
+      'Unnamed Lead',
+    )
+  }, [canvassingProspectById, selectedLead, selectedLeadContact])
 
   const selectedLeadPropertyLabel = useMemo(() => {
     if (!selectedLead) return 'No property linked'
@@ -5077,12 +5141,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   function handleScheduleSellerAppointment() {
     if (!selectedLead) return
+    const sellerListingId = normalizeText(
+      selectedLead?.listingId ||
+      selectedLead?.listing_id ||
+      selectedLead?.privateListingId ||
+      selectedLead?.private_listing_id,
+    )
+    const sellerLeadId = normalizeText(selectedLead?.leadId || selectedLead?.lead_id)
     setAppointmentForm((previous) => buildDefaultAppointmentFormForType('seller_consultation', {
       ...previous,
       appointmentType: 'seller_consultation',
       date: previous.date || getTomorrowIsoDate(),
       startTime: previous.startTime || getCurrentTimeValue(),
       contactId: normalizeText(selectedLead?.contactId) || '',
+      leadId: sellerLeadId || previous.leadId || '',
+      listingId: sellerListingId || previous.listingId || '',
+      relatedEntityType: 'lead',
+      relatedEntityId: sellerLeadId || previous.relatedEntityId || '',
+      visibility: 'client_visible',
     }))
     setAppointmentSchedulingIntegrity(null)
     setAppointmentSchedulingError('')
@@ -5099,7 +5175,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     if (!selectedLeadIsSeller) return
 
-    const sellerName = [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller'
+    const resolvedSellerDisplayName = selectedLeadDisplayName && selectedLeadDisplayName !== 'Lead Workspace'
+      ? selectedLeadDisplayName
+      : resolveLeadDisplayName(
+          selectedLead,
+          selectedLeadContact,
+          canvassingProspectById.get(normalizeText(selectedLead?.canvassingProspectId)),
+          'Seller',
+        )
+    const sellerNameParts = resolvedSellerDisplayName.split(/\s+/).filter(Boolean)
+    const sellerFirstName = normalizeText(selectedLeadContact?.firstName) || sellerNameParts[0] || ''
+    const sellerSurname = normalizeText(selectedLeadContact?.lastName) || sellerNameParts.slice(1).join(' ')
+    const sellerName = !isGenericLeadPersonName(resolvedSellerDisplayName)
+      ? resolvedSellerDisplayName
+      : [sellerFirstName, sellerSurname].filter(Boolean).join(' ').trim() || 'Seller'
     const sellerEmail = normalizeText(selectedLeadContact?.email)
     if (!isValidEmail(sellerEmail)) {
       setError('Seller email is required to send onboarding.')
@@ -5155,8 +5244,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       } else {
         sellerWorkflowLead = createAgentSellerLead({
           sellerLeadId: normalizeLeadIdentityKey(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
-          sellerName: normalizeText(selectedLeadContact?.firstName),
-          sellerSurname: normalizeText(selectedLeadContact?.lastName),
+          sellerName: sellerFirstName,
+          sellerSurname,
           sellerEmail,
           sellerPhone: normalizeText(selectedLeadContact?.phone),
           propertyAddress: normalizeText(selectedLeadPropertyArea || selectedLead?.sellerPropertyAddress),
@@ -5179,6 +5268,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         })
       }
 
+      const selectedContactId = normalizeText(selectedLeadContact?.contactId || selectedLead?.contactId)
+      if (selectedContactId && (sellerFirstName || sellerSurname || sellerEmail || normalizeText(selectedLeadContact?.phone))) {
+        const contactRepairPatch = {
+          contactType: 'Seller',
+        }
+        if (sellerFirstName) contactRepairPatch.firstName = sellerFirstName
+        if (sellerSurname) contactRepairPatch.lastName = sellerSurname
+        if (normalizeText(selectedLeadContact?.phone)) contactRepairPatch.phone = normalizeText(selectedLeadContact.phone)
+        if (sellerEmail) contactRepairPatch.email = sellerEmail
+        await updateAgencyCrmContactRecord(organisationId, selectedContactId, contactRepairPatch).catch((contactUpdateError) => {
+          console.warn('[Seller Onboarding] contact name repair skipped', {
+            leadId: selectedLead?.leadId || null,
+            contactId: selectedContactId,
+            error: contactUpdateError,
+          })
+        })
+      }
+
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
         stage: 'Onboarding Sent',
         status: 'Onboarding Sent',
@@ -5188,6 +5295,43 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         sellerWorkflowLeadId: normalizeText(sellerWorkflowLead?.sellerLeadId || sellerWorkflowLead?.id || selectedLead.leadId),
         listingId: canonicalListingId || normalizeText(selectedLead?.listingId),
       })
+      setRecords((previous) => ({
+        ...previous,
+        contacts: selectedContactId
+          ? (Array.isArray(previous.contacts) ? previous.contacts : []).map((contact) =>
+              normalizeText(contact?.contactId) === selectedContactId
+                ? {
+                    ...contact,
+                    firstName: sellerFirstName || contact.firstName,
+                    lastName: sellerSurname || contact.lastName,
+                    phone: normalizeText(selectedLeadContact?.phone) || contact.phone,
+                    email: sellerEmail || contact.email,
+                    contactType: 'Seller',
+                    updatedAt: new Date().toISOString(),
+                  }
+                : contact,
+            )
+          : previous.contacts,
+        leads: (Array.isArray(previous.leads) ? previous.leads : []).map((lead) =>
+          normalizeLeadIdentityKey(lead?.leadId) === normalizeLeadIdentityKey(selectedLead.leadId)
+            ? {
+                ...lead,
+                stage: 'Onboarding Sent',
+                status: 'Onboarding Sent',
+                sellerOnboardingToken: token,
+                sellerOnboardingLink: onboardingLink,
+                sellerOnboardingStatus: 'sent',
+                sellerWorkflowLeadId: normalizeText(sellerWorkflowLead?.sellerLeadId || sellerWorkflowLead?.id || selectedLead.leadId),
+                listingId: canonicalListingId || normalizeText(selectedLead?.listingId),
+                sellerName: sellerFirstName || lead.sellerName,
+                sellerSurname: sellerSurname || lead.sellerSurname,
+                sellerEmail: sellerEmail || lead.sellerEmail,
+                sellerPhone: normalizeText(selectedLeadContact?.phone) || lead.sellerPhone,
+                updatedAt: new Date().toISOString(),
+              }
+            : lead,
+        ),
+      }))
       await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Seller Onboarding Sent',
@@ -7618,7 +7762,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           {column.cards.length ? (
                             column.cards.map((lead) => {
                               const leadId = normalizeLeadIdentityKey(lead?.leadId)
-                              const leadContact = contactById.get(normalizeText(lead?.contactId))
+                              const leadProspect = canvassingProspectById.get(normalizeText(lead?.canvassingProspectId))
+                              const leadContact = resolveLeadContactSnapshot(
+                                lead,
+                                contactById.get(normalizeText(lead?.contactId)),
+                                leadProspect,
+                              )
                               const leadTasks = leadTasksByLeadId.get(leadId) || []
                               const leadActivities = leadActivitiesByLeadId.get(leadId) || []
                               const linkedDeal = linkedDealByLeadId.get(leadId)
@@ -7626,7 +7775,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 .sort((a, b) => new Date(b?.activityDate || b?.createdAt || 0) - new Date(a?.activityDate || a?.createdAt || 0))[0]
                               const lastActivityLabel = formatDateShort(latestActivity?.activityDate || latestActivity?.createdAt || lead?.updatedAt || lead?.createdAt)
                               const nextStep = resolveLeadNextStep(lead, leadTasks)
-                              const clientName = [leadContact?.firstName, leadContact?.lastName].filter(Boolean).join(' ') || 'Unnamed lead'
+                              const clientName = resolveLeadDisplayName(lead, leadContact, leadProspect, 'Unnamed lead')
                               const propertyLabel = normalizeText(lead?.propertyInterest || lead?.sellerPropertyAddress || lead?.areaInterest || linkedDeal?.title) || 'Property not linked'
                               const assignedAgent = normalizeText(lead?.assignedAgentName || lead?.assignedAgentEmail || 'Unassigned')
                               const agentColor = getAgentKanbanColor(lead?.assignedAgentId || lead?.assignedAgentEmail || assignedAgent)
@@ -7750,10 +7899,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   <tbody className="divide-y divide-[rgba(15,23,42,0.06)] bg-white">
                     {leadTableRows.length ? (
                       leadTableRows.map((lead) => {
+                        const leadProspect = canvassingProspectById.get(normalizeText(lead?.canvassingProspectId))
                         const leadContact =
-                          contactById.get(normalizeText(lead.contactId)) ||
-                          buildLeadContactFallback(lead) ||
-                          buildCanvassingProspectContactFallback(canvassingProspectById.get(normalizeText(lead?.canvassingProspectId)))
+                          resolveLeadContactSnapshot(
+                            lead,
+                            contactById.get(normalizeText(lead.contactId)),
+                            leadProspect,
+                          )
                         const leadId = normalizeLeadIdentityKey(lead?.leadId)
                         const linkedAppointment = records.appointments
                           .filter((row) => normalizeLeadIdentityKey(row?.leadId) === leadId)
@@ -7772,7 +7924,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const lastActivityLabel = formatDateShort(activityReference)
                         const assignedAgent = normalizeText(lead?.assignedAgentName || lead?.assignedAgentEmail || 'Unassigned')
                         const agentColor = getAgentKanbanColor(lead?.assignedAgentId || lead?.assignedAgentEmail || assignedAgent)
-                        const leadName = [leadContact?.firstName, leadContact?.lastName].filter(Boolean).join(' ') || 'Unnamed lead'
+                        const leadName = resolveLeadDisplayName(lead, leadContact, leadProspect, 'Unnamed lead')
                         const isActive = normalizeLeadIdentityKey(selectedLeadId) === leadId && isLeadWorkspaceRoute
                         const categoryMeta = getLeadCategoryMeta(lead, leadContact)
                         const statusMeta = getLeadStatusMeta(lead, funnelStage)
@@ -8030,10 +8182,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               <div className="space-y-3 p-4 lg:hidden">
                 {filteredLeads.length ? (
                   filteredLeads.map((lead) => {
+                    const leadProspect = canvassingProspectById.get(normalizeText(lead?.canvassingProspectId))
                     const leadContact =
-                      contactById.get(normalizeText(lead.contactId)) ||
-                      buildLeadContactFallback(lead) ||
-                      buildCanvassingProspectContactFallback(canvassingProspectById.get(normalizeText(lead?.canvassingProspectId)))
+                      resolveLeadContactSnapshot(
+                        lead,
+                        contactById.get(normalizeText(lead.contactId)),
+                        leadProspect,
+                      )
                     const leadId = normalizeLeadIdentityKey(lead?.leadId)
                     const leadTasks = leadTasksByLeadId.get(leadId) || []
                     const leadActivities = leadActivitiesByLeadId.get(leadId) || []
@@ -8055,7 +8210,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     const activityReference = latestActivity?.activityDate || latestActivity?.createdAt || linkedAppointment?.updatedAt || linkedAppointment?.dateTime || lead?.updatedAt || lead?.createdAt
                     const assignedAgent = normalizeText(lead?.assignedAgentName || lead?.assignedAgentEmail || 'Unassigned')
                     const agentColor = getAgentKanbanColor(lead?.assignedAgentId || lead?.assignedAgentEmail || assignedAgent)
-                    const leadName = [leadContact?.firstName, leadContact?.lastName].filter(Boolean).join(' ') || 'Unnamed lead'
+                    const leadName = resolveLeadDisplayName(lead, leadContact, leadProspect, 'Unnamed lead')
                     const nextStepStatus = getNextStepStatus(leadTasks)
 
                     return (

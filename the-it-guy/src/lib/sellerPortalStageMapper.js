@@ -135,6 +135,14 @@ function collectStageSignals(transaction = {}) {
   const portal = transaction.portal || {}
   const portalTransaction = portal.transaction || {}
   const mandatePacket = context.mandatePacket || portal.mandate?.packet || {}
+  const sellerOnboardingStatus = normalizeStageSignal(
+    transaction.sellerOnboardingStatus ||
+      transaction.seller_onboarding_status ||
+      context.sellerOnboardingStatus ||
+      context.seller_onboarding_status ||
+      portal.onboarding?.status ||
+      portal.onboardingFormData?.status,
+  )
 
   ;[
     transaction.status,
@@ -148,15 +156,11 @@ function collectStageSignals(transaction = {}) {
     transaction.mandatePacketState,
     transaction.listingStatus,
     transaction.listing_status,
-    transaction.sellerOnboardingStatus,
-    transaction.seller_onboarding_status,
     context.status,
     context.mandateStatus,
     context.mandate_status,
     context.listingStatus,
     context.listing_status,
-    context.sellerOnboardingStatus,
-    context.seller_onboarding_status,
     mandatePacket.state,
     portalTransaction.status,
     portalTransaction.stage,
@@ -166,9 +170,11 @@ function collectStageSignals(transaction = {}) {
     portal.stage,
     portal.mainStage,
     portal.unit?.status,
-    portal.onboarding?.status,
-    portal.onboardingFormData?.status,
   ].forEach((value) => pushSignal(signals, value))
+
+  if (['completed', 'submitted', 'under_review', 'in_progress', 'sent'].includes(sellerOnboardingStatus)) {
+    pushSignal(signals, 'mandate_signed')
+  }
 
   if (transaction.hasMandate || context.mandatePacketId || context.mandate_packet_id) {
     pushSignal(signals, 'mandate_signed')

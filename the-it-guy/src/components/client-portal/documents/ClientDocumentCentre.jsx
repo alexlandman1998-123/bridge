@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import ClientDocumentSection from './ClientDocumentSection'
 import { normalizeDocumentStatus } from '../../../lib/clientPortalDocumentStatus'
 import { getEducationalContentForRequirement } from '../../../content/clientPortalEducation'
@@ -214,6 +215,32 @@ function ClientDocumentCentre({
     ...sections.allRequired.filter((item) => sellerRequirementGroup(item) === 'transfer'),
     ...sections.signedDocuments.filter((item) => /transfer|sale agreement|otp/i.test(`${item?.title || ''} ${item?.description || ''}`)),
   ]
+  const sellerDocumentTabs = [
+    {
+      key: 'property',
+      title: 'Property Documents',
+      subtitle: 'Property, mandate, transfer, levy, rates, occupancy, and related sale documents.',
+      items: uniqueById([...sellerPropertyDocuments, ...sellerMandateDocuments, ...sellerTransferDocuments]),
+      emptyState: 'No property documents are required at this stage.',
+    },
+    {
+      key: 'fica',
+      title: 'FICA Documents',
+      subtitle: 'Identity and compliance documents based on your seller onboarding answers.',
+      items: sellerFicaDocuments,
+      emptyState: 'No FICA documents are required at this stage.',
+    },
+    {
+      key: 'additional',
+      title: 'Additional Requests',
+      subtitle: 'Extra seller documents requested by your transaction team.',
+      items: sections.additionalRequests,
+      emptyState: 'No additional document requests yet.',
+    },
+  ]
+  const [activeSellerDocumentTab, setActiveSellerDocumentTab] = useState('property')
+  const activeSellerDocumentSection =
+    sellerDocumentTabs.find((tab) => tab.key === activeSellerDocumentTab) || sellerDocumentTabs[0]
 
   return (
     <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
@@ -230,77 +257,36 @@ function ClientDocumentCentre({
 
       {isSelling ? (
         <>
-          <ClientDocumentSection
-            title="FICA Documents"
-            subtitle="Identity and compliance documents based on your seller onboarding answers."
-            items={sellerFicaDocuments}
-            emptyState="No FICA documents are required at this stage."
-            uploadingDocumentKey={uploadingDocumentKey}
-            openingDocumentPath={openingDocumentPath}
-            onUpload={onUpload}
-            onOpenDocument={onOpenDocument}
-          />
+          <div className="rounded-[18px] border border-[#dbe5ef] bg-[#f8fbff] p-2">
+            <div className="grid gap-2 md:grid-cols-3">
+              {sellerDocumentTabs.map((tab) => {
+                const isActive = activeSellerDocumentSection.key === tab.key
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveSellerDocumentTab(tab.key)}
+                    className={`inline-flex min-h-[46px] items-center justify-between gap-3 rounded-[14px] px-4 py-2 text-left text-sm font-semibold transition ${
+                      isActive
+                        ? 'border border-[#cfe0ef] bg-white text-[#142132] shadow-[0_10px_22px_rgba(15,23,42,0.08)]'
+                        : 'border border-transparent text-[#5f7086] hover:border-[#d8e4ef] hover:bg-white hover:text-[#142132]'
+                    }`}
+                  >
+                    <span>{tab.title}</span>
+                    <span className="inline-flex min-w-[28px] items-center justify-center rounded-full border border-[#dce6f0] bg-white px-2 py-0.5 text-[0.7rem] font-semibold text-[#5f7086]">
+                      {tab.items.length}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
 
           <ClientDocumentSection
-            title="Property Documents"
-            subtitle="Property, levy, rates, occupancy, and related sale documents."
-            items={sellerPropertyDocuments}
-            emptyState="No property documents are required at this stage."
-            uploadingDocumentKey={uploadingDocumentKey}
-            openingDocumentPath={openingDocumentPath}
-            onUpload={onUpload}
-            onOpenDocument={onOpenDocument}
-          />
-
-          <ClientDocumentSection
-            title="Additional Requests"
-            subtitle="Extra seller documents requested by your transaction team."
-            items={sections.additionalRequests}
-            emptyState="No additional document requests yet."
-            uploadingDocumentKey={uploadingDocumentKey}
-            openingDocumentPath={openingDocumentPath}
-            onUpload={onUpload}
-            onOpenDocument={onOpenDocument}
-          />
-
-          <ClientDocumentSection
-            title="Mandate Documents"
-            subtitle="Mandate documents and seller signature records."
-            items={sellerMandateDocuments}
-            emptyState="Mandate documents will appear here once prepared."
-            uploadingDocumentKey={uploadingDocumentKey}
-            openingDocumentPath={openingDocumentPath}
-            onUpload={onUpload}
-            onOpenDocument={onOpenDocument}
-          />
-
-          <ClientDocumentSection
-            title="Transfer Documents"
-            subtitle="Transfer documents appear here when your sale moves into transfer."
-            items={sellerTransferDocuments}
-            emptyState="Transfer documents are not required yet."
-            uploadingDocumentKey={uploadingDocumentKey}
-            openingDocumentPath={openingDocumentPath}
-            onUpload={onUpload}
-            onOpenDocument={onOpenDocument}
-          />
-
-          <ClientDocumentSection
-            title="Uploaded / Under Review"
-            subtitle="Your uploads are being checked by the team."
-            items={sections.uploadedUnderReview}
-            emptyState="Uploaded documents will appear here."
-            uploadingDocumentKey={uploadingDocumentKey}
-            openingDocumentPath={openingDocumentPath}
-            onUpload={onUpload}
-            onOpenDocument={onOpenDocument}
-          />
-
-          <ClientDocumentSection
-            title="Approved / Completed"
-            subtitle="Documents reviewed and accepted."
-            items={sections.approvedCompleted}
-            emptyState="No approved or completed documents yet."
+            title={activeSellerDocumentSection.title}
+            subtitle={activeSellerDocumentSection.subtitle}
+            items={activeSellerDocumentSection.items}
+            emptyState={activeSellerDocumentSection.emptyState}
             uploadingDocumentKey={uploadingDocumentKey}
             openingDocumentPath={openingDocumentPath}
             onUpload={onUpload}
