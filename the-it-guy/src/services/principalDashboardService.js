@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { getReportingRole, getReportingRoleLabel } from '../lib/reportingRoleLogic'
 import { assertResolvedWorkspaceContext } from './workspaceResolutionService'
 import {
   getDashboardPipelineValue,
@@ -371,11 +372,11 @@ function isConvertedLead(lead = {}) {
 }
 
 function getAgentKeyFromTransaction(row = {}) {
-  return normalizeText(row.assigned_user_id || row.owner_user_id || row.assigned_agent_email || row.assigned_agent || 'unassigned').toLowerCase()
+  return normalizeText(row.assigned_user_id || row.assigned_agent_id || row.owner_user_id || row.created_by || row.assigned_agent_email || row.assigned_agent || 'unassigned').toLowerCase()
 }
 
 function getAgentKeyFromLead(row = {}) {
-  return normalizeText(row.assigned_agent_id || row.assigned_agent_email || 'unassigned').toLowerCase()
+  return normalizeText(row.assigned_user_id || row.assigned_agent_id || row.created_by || row.assigned_agent_email || 'unassigned').toLowerCase()
 }
 
 function getAgentName(row = {}, usersByKey = new Map()) {
@@ -394,7 +395,8 @@ function normalizeAgentUser(row = {}) {
     agentName: name,
     email: normalizeText(row.email).toLowerCase(),
     avatarUrl: normalizeText(row.avatar_url),
-    role: normalizeText(row.role),
+    role: getReportingRole(row),
+    roleLabel: getReportingRoleLabel(getReportingRole(row)),
     status: normalizeText(row.status),
   }
 }
@@ -629,8 +631,8 @@ export async function getPrincipalDashboardData({
   assertResolvedWorkspaceContext({ organisationId: resolvedAgencyId, appRole: 'agent' }, { service: 'principalDashboardService.getPrincipalDashboardData' })
   const range = resolveDateRange(dateRangePreset || dateRange, new Date(), { startDate, endDate })
   const transactionFields = [
-    'id, organisation_id, assigned_branch_id, lifecycle_state, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, assigned_attorney_email, assigned_bond_originator_email, bank, next_action, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, completed_at, archived_at, cancelled_at, deleted_at, updated_at, created_at, is_active',
-    'id, organisation_id, development_id, unit_id, buyer_id, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, next_action, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at, is_active',
+    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, lifecycle_state, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, assigned_attorney_email, assigned_bond_originator_email, bank, next_action, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, completed_at, archived_at, cancelled_at, deleted_at, updated_at, created_at, is_active',
+    'id, organisation_id, development_id, unit_id, buyer_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, next_action, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at, is_active',
   ]
 
   const [
@@ -644,13 +646,13 @@ export async function getPrincipalDashboardData({
   ] = await Promise.all([
     safeSelect('transactions', transactionFields, { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
     safeSelect('leads', [
-      'lead_id, organisation_id, branch_id, assigned_agent_id, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
-      'lead_id, organisation_id, assigned_agent_id, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
+      'lead_id, organisation_id, branch_id, assigned_user_id, assigned_agent_id, created_by, assigned_agent_email, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
+      'lead_id, organisation_id, assigned_user_id, assigned_agent_id, created_by, assigned_agent_email, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
     ], { agencyId: resolvedAgencyId, order: 'created_at', limit: 1500 }),
     safeSelect('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1000 }),
     safeSelect('document_packet_events', 'id, packet_id, organisation_id, event_type, event_payload_json, created_by, created_at', { agencyId: resolvedAgencyId, order: 'created_at', limit: 300 }),
     safeSelect('organisation_users', [
-      'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, status, last_active_at, created_at, updated_at',
+      'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, organisation_role, status, last_active_at, created_at, updated_at',
       'id, organisation_id, user_id, first_name, last_name, email, role, status, last_active_at, created_at, updated_at',
     ], { agencyId: resolvedAgencyId, order: 'updated_at', limit: 500 }),
     safeSelect('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
@@ -816,12 +818,14 @@ export async function getPrincipalDashboardData({
     .map((row) => buildActiveTransactionCard(row, usersByKey))
 
   const agentMap = new Map()
-  for (const row of activeTransactions) {
-    const key = getAgentKeyFromTransaction(row)
-    const existing = agentMap.get(key) || {
-      agentId: usersByKey.get(key)?.agentId || normalizeText(row.assigned_user_id || row.owner_user_id),
+  const createPerformanceRow = (key, row = {}) => {
+    const user = usersByKey.get(key)
+    return {
+      agentId: user?.agentId || normalizeText(row.assigned_user_id || row.assigned_agent_id || row.owner_user_id || row.created_by),
       agentName: getAgentName(row, usersByKey),
-      avatarUrl: usersByKey.get(key)?.avatarUrl || '',
+      avatarUrl: user?.avatarUrl || '',
+      role: user?.role || '',
+      roleLabel: user?.roleLabel || getReportingRoleLabel(user?.role),
       pipelineValue: 0,
       activeDeals: 0,
       registeredCount: 0,
@@ -829,39 +833,23 @@ export async function getPrincipalDashboardData({
       converted: 0,
       responseRate: null,
     }
+  }
+  for (const row of activeTransactions) {
+    const key = getAgentKeyFromTransaction(row)
+    const existing = agentMap.get(key) || createPerformanceRow(key, row)
     existing.pipelineValue += getDealValue(row)
     existing.activeDeals += 1
     agentMap.set(key, existing)
   }
   for (const row of registeredTransactionsInRange) {
     const key = getAgentKeyFromTransaction(row)
-    const existing = agentMap.get(key) || {
-      agentId: usersByKey.get(key)?.agentId || normalizeText(row.assigned_user_id || row.owner_user_id),
-      agentName: getAgentName(row, usersByKey),
-      avatarUrl: usersByKey.get(key)?.avatarUrl || '',
-      pipelineValue: 0,
-      activeDeals: 0,
-      registeredCount: 0,
-      leads: 0,
-      converted: 0,
-      responseRate: null,
-    }
+    const existing = agentMap.get(key) || createPerformanceRow(key, row)
     existing.registeredCount += 1
     agentMap.set(key, existing)
   }
   for (const lead of selectedLeads) {
     const key = getAgentKeyFromLead(lead)
-    const existing = agentMap.get(key) || {
-      agentId: usersByKey.get(key)?.agentId || normalizeText(lead.assigned_agent_id),
-      agentName: usersByKey.get(key)?.agentName || 'Unassigned',
-      avatarUrl: usersByKey.get(key)?.avatarUrl || '',
-      pipelineValue: 0,
-      activeDeals: 0,
-      registeredCount: 0,
-      leads: 0,
-      converted: 0,
-      responseRate: null,
-    }
+    const existing = agentMap.get(key) || createPerformanceRow(key, lead)
     existing.leads += 1
     if (isConvertedLead(lead)) existing.converted += 1
     agentMap.set(key, existing)
@@ -871,6 +859,8 @@ export async function getPrincipalDashboardData({
       agentId: agent.agentId,
       agentName: agent.agentName,
       avatarUrl: agent.avatarUrl,
+      role: agent.role,
+      roleLabel: agent.roleLabel,
       pipelineValue: agent.pipelineValue,
       activeDeals: agent.activeDeals,
       conversionRate: percentage(agent.converted, agent.leads),

@@ -1,11 +1,14 @@
 import { fetchOrganisationSettings } from '../lib/settingsApi'
+import { buildRoleHeadcount } from '../lib/reportingRoleLogic'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { assertPermission } from '../auth/permissions/permissionResolver'
 import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
+import { getWorkspaceUnitLabels } from '../constants/workspaceUnits'
 import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import { recordSecurityAuditEvent } from './auditLogService'
 import { assertMembershipStatusTransition } from './transitions/stateTransitionEngine'
 import { assertResolvedWorkspaceContext } from './workspaceResolutionService'
+import { resolveWorkspaceRole } from './roleResolutionService'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -43,7 +46,7 @@ async function resolveOrganisationContext() {
   const organisationId = normalizeText(organisation?.id)
 
   if (!organisationId) {
-    throw new Error('A valid organisation is required to load agency branches.')
+    throw new Error('A valid organisation is required to load workspace branches.')
   }
   assertResolvedWorkspaceContext({
     organisationId,
@@ -68,6 +71,7 @@ async function resolveOrganisationContext() {
 }
 
 function assertBranchManagementAccess(context, action = 'manage branches') {
+  const labels = getWorkspaceUnitLabels(context?.workspaceType || WORKSPACE_TYPES.agency)
   assertPermission(PERMISSIONS.manageBranches, {
     profile: context?.profile,
     appRole: context?.profile?.role || 'agent',
@@ -83,7 +87,7 @@ function assertBranchManagementAccess(context, action = 'manage branches') {
     },
     currentWorkspace: { id: context?.organisationId, type: context?.workspaceType || WORKSPACE_TYPES.agency },
     workspaceType: context?.workspaceType || WORKSPACE_TYPES.agency,
-  }, `You do not have permission to ${action}.`)
+  }, `You do not have permission to ${action || `manage ${labels.plural.toLowerCase()}`}.`)
 }
 
 async function listOrganisationBranches(client, organisationId) {
@@ -145,7 +149,7 @@ async function listOrganisationBranches(client, organisationId) {
 async function listOrganisationUsers(client, organisationId) {
   const query = await client
     .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, first_name, last_name, email, role, status, last_active_at, updated_at, accepted_at, created_at')
+    .select('id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, first_name, last_name, email, role, workspace_role, organisation_role, status, last_active_at, updated_at, accepted_at, created_at')
     .eq('organisation_id', organisationId)
 
   if (query.error) {
@@ -228,6 +232,7 @@ function buildBranchViewModel(branch = {}, related = {}) {
   const leads = Array.isArray(related.leads) ? related.leads : []
 
   const activeMembers = members.filter((member) => normalizeLower(member?.status) === 'active')
+  const headcount = buildRoleHeadcount(members)
   const branchTransactions = transactions.filter((row) => normalizeText(row?.assigned_branch_id) === normalizeText(branch?.id))
   const branchListings = listings.filter((row) => normalizeText(row?.branch_id) === normalizeText(branch?.id))
   const branchLeads = leads.filter((row) => normalizeText(row?.branch_id) === normalizeText(branch?.id))
@@ -251,7 +256,9 @@ function buildBranchViewModel(branch = {}, related = {}) {
   const closedDeals = branchTransactions.length ? registeredTransactions : 0
   const conversionRate = branchLeads.length ? Math.round((closedDeals / branchLeads.length) * 100) : 0
 
-  const principalMember = activeMembers.find((member) => ['principal', 'super_admin', 'admin', 'branch_manager'].includes(normalizeLower(member?.role)))
+  const principalMember = activeMembers.find((member) =>
+    ['principal', 'owner', 'admin_staff', 'branch_manager'].includes(resolveWorkspaceRole(member, { workspaceType: WORKSPACE_TYPES.agency })),
+  )
 
   const city = normalizeText(branch?.city)
   const province = normalizeText(branch?.province)
@@ -283,7 +290,12 @@ function buildBranchViewModel(branch = {}, related = {}) {
     listings: branchListings,
     leads: branchLeads,
     kpis: {
-      activeAgents: activeMembers.filter((member) => normalizeLower(member?.role) === 'agent').length,
+      activeAgents: headcount.activeAgents,
+      activePrincipals: headcount.activePrincipals,
+      activeManagers: headcount.activeManagers,
+      activeSupportUsers: headcount.activeSupportUsers,
+      activeOperationalUsers: headcount.activeOperationalUsers,
+      activeMembers: activeMembers.length,
       activeListings,
       activeTransactions: activeTransactions.length,
       pipelineValue,

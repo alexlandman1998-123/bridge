@@ -30,9 +30,10 @@ import { useNavigate } from 'react-router-dom'
 import QuickCreateDropdown from '../components/QuickCreateDropdown'
 import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
+import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { getPrincipalDashboardData, PRINCIPAL_DASHBOARD_DATE_PRESETS } from '../services/principalDashboardService'
+import { resolveWorkspaceRole } from '../services/roleResolutionService'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -945,7 +946,7 @@ function RecentActivityFeed({ rows }) {
 }
 
 function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransactions: canViewAllTransactionsOverride }) {
-  const { profile } = useWorkspace()
+  const { profile, currentMembership, workspaceRole, workspaceType } = useWorkspace()
   const [dateRange, setDateRange] = useState('this_month')
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => String(workspaceId || 'all').trim() || 'all')
   const [overviewMode, setOverviewMode] = useState('pipeline')
@@ -958,9 +959,15 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
     () =>
       canAccessPrincipalExperience({
         appRole: profile?.role,
-        membershipRole: normalizeOrganisationMembershipRole(profile?.membershipRole || profile?.organisationRole || profile?.role),
+        membershipRole: resolveWorkspaceRole(currentMembership || {
+          workspace_role: workspaceRole,
+          organisation_role: profile?.organisationRole,
+          role: profile?.membershipRole || profile?.role,
+          app_role: profile?.role,
+          workspace_type: workspaceType,
+        }, { appRole: profile?.role, workspaceType }),
       }),
-    [profile?.membershipRole, profile?.organisationRole, profile?.role],
+    [currentMembership, profile?.membershipRole, profile?.organisationRole, profile?.role, workspaceRole, workspaceType],
   )
   const canViewAllTransactions =
     typeof canViewAllTransactionsOverride === 'boolean' ? canViewAllTransactionsOverride : profileCanViewAllTransactions

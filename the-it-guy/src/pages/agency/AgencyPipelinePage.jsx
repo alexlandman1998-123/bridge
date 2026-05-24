@@ -7,6 +7,7 @@ import LegalDocumentWorkspace from '../../components/documents/LegalDocumentWork
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import { isUnsafeFallbackAllowed } from '../../lib/envValidation'
 import {
   ACTIVITY_TYPES,
   APPOINTMENT_PARTICIPANT_ROLES,
@@ -539,6 +540,7 @@ function getCanvassingStorageKey(organisationId) {
 
 function readCanvassingStore(organisationId) {
   if (typeof window === 'undefined') return { prospects: [], activities: [] }
+  if (!isUnsafeFallbackAllowed()) return { prospects: [], activities: [] }
   try {
     const parsed = JSON.parse(window.localStorage.getItem(getCanvassingStorageKey(organisationId)) || '{}')
     return {
@@ -688,6 +690,7 @@ function buildListingOptionsFromLeads(leads = []) {
 
 function readQuickCreateAppointments() {
   if (typeof window === 'undefined') return []
+  if (!isUnsafeFallbackAllowed()) return []
   try {
     const parsed = JSON.parse(window.localStorage.getItem(QUICK_CREATE_STORAGE_KEY) || '{}')
     return Array.isArray(parsed?.appointments) ? parsed.appointments : []
@@ -2066,7 +2069,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       let mergedSnapshot = snapshot
       let listingOptionsForAppointments = dedupeListingOptions([
         ...buildListingOptionsFromLeads(Array.isArray(snapshot?.leads) ? snapshot.leads : []),
-        ...readAgentPrivateListings().map((listing) => normalizeAppointmentListingOption(listing)).filter(Boolean),
+        ...(isUnsafeFallbackAllowed()
+          ? readAgentPrivateListings().map((listing) => normalizeAppointmentListingOption(listing)).filter(Boolean)
+          : []),
       ])
       const applySnapshotRecords = (sourceSnapshot, appointmentRows = sourceSnapshot?.appointments || []) => {
         const sourceContacts = Array.isArray(sourceSnapshot?.contacts) ? sourceSnapshot.contacts : []
@@ -2159,7 +2164,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             tasks: Array.isArray(crmSnapshot.tasks) ? crmSnapshot.tasks : [],
           }
         } catch (dbLoadError) {
-          console.warn('[PIPELINE] supabase lead/contact load failed; using local snapshot only.', dbLoadError)
+          console.warn('[PIPELINE] supabase lead/contact load failed; no local CRM fallback will be loaded.', dbLoadError)
         }
       }
       let appointmentRows = []
@@ -2260,7 +2265,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const usersDenied = isPermissionDeniedError(usersError)
 
       if (contextError && !contextDenied) {
-        console.warn('[PIPELINE] organisation context load failed; using fallback workspace context.', contextError)
+        console.warn('[PIPELINE] organisation context load failed.', contextError)
       }
       if (usersError && !usersDenied) {
         console.warn('[PIPELINE] team directory load failed; using current user fallback.', usersError)
@@ -2270,20 +2275,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const organisationUsers = usersResult.status === 'fulfilled' ? usersResult.value : []
       const rawOrganisationId = normalizeText(context?.organisation?.id)
       const resolvedOrgId = isUuidLike(rawOrganisationId) ? rawOrganisationId : ''
+      if (!resolvedOrgId) {
+        throw new Error('A resolved workspace is required before loading agency pipeline data.')
+      }
       const storageOrgId = resolveAgencyPipelineStorageScope(resolvedOrgId)
-      const effectiveOrgId = resolvedOrgId || (isUuidLike(storageOrgId) ? storageOrgId : '')
+      const effectiveOrgId = resolvedOrgId
       const fallbackMembershipRole = role === 'agent' ? 'agent' : 'viewer'
       const resolvedMembershipRole = normalizeText(context?.membershipRole || fallbackMembershipRole) || fallbackMembershipRole
 
       setOrganisationId(effectiveOrgId)
       setOrganisationName(normalizeText(context?.organisation?.display_name || context?.organisation?.displayName || context?.organisation?.name))
       setMembershipRole(resolvedMembershipRole)
-      if (!resolvedOrgId && effectiveOrgId) {
-        console.warn('[PIPELINE] using scoped CRM store because organisation context did not resolve an id', {
-          storageOrgId,
-        })
-      }
-      if (effectiveOrgId) {
+      if (effectiveOrgId && isUnsafeFallbackAllowed()) {
         const recovery = recoverAgencyPipelineStoreForOrganisation(effectiveOrgId)
         if (recovery?.migrated) {
           console.warn('[PIPELINE] recovered scoped CRM store', recovery)

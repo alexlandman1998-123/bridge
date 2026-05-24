@@ -75,6 +75,7 @@ import {
   updateCanonicalOfferStatus,
 } from '../lib/buyerLifecycleService'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import {
   getPrivateListing,
   deletePrivateListing,
@@ -521,6 +522,7 @@ function CompactSnapshotRow({ label, value }) {
 
 function readPipelineLeads() {
   if (typeof window === 'undefined') return []
+  if (!isUnsafeFallbackAllowed()) return []
   try {
     const raw = window.localStorage.getItem(PIPELINE_STORAGE_KEY)
     if (!raw) return []
@@ -845,7 +847,7 @@ function AgentListingDetail() {
 
   const refreshListingViewings = useCallback(async () => {
     if (!listingId) return
-    const localRows = getViewingRequestsForListing(listingId)
+    const localRows = isUnsafeFallbackAllowed() ? getViewingRequestsForListing(listingId) : []
     let appointmentRows = []
     if (listingOrganisationId && isSupabaseConfigured) {
       try {
@@ -857,7 +859,7 @@ function AgentListingDetail() {
           .filter((appointment) => String(appointment?.listingId || appointment?.listing_id || '') === String(listingId))
           .map(mapAppointmentToViewingRecord)
       } catch (error) {
-        console.warn('[AgentListingDetail] listing appointments load failed; using local viewing fallback', error)
+        console.warn('[AgentListingDetail] listing appointments load failed.', error)
       }
     }
     setViewings(mergeAppointmentAndLocalViewings(appointmentRows, localRows))

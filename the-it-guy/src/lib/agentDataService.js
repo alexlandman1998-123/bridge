@@ -1,5 +1,6 @@
 import { OFFER_STATUS, readAgentPrivateListings, readAgentSellerLeads } from './agentListingStorage'
 import { getAgentDemoTransactionRowsFromStorage } from './agentDemoSeed'
+import { isUnsafeFallbackAllowed } from './envValidation'
 import {
   getDashboardPipelineValue,
   getDashboardTransactionPrice,
@@ -13,6 +14,7 @@ const KEY_AGENT_DIRECTORY = 'itg:agent-directory:v1'
 
 function safeReadJson(key, fallback) {
   if (typeof window === 'undefined') return fallback
+  if (!isUnsafeFallbackAllowed()) return fallback
   try {
     const raw = window.localStorage.getItem(key)
     if (!raw) return fallback
@@ -307,6 +309,7 @@ export function readAgentDirectory() {
 }
 
 export function getDerivedAgentTransactionRowsFromListings({ profile = null, scope = 'agent' } = {}) {
+  if (!isUnsafeFallbackAllowed()) return []
   const listings = readAgentPrivateListings()
   const agentMap = resolveAgentDirectoryMap()
   return listings

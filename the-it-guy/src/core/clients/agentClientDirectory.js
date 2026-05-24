@@ -1,8 +1,9 @@
 import { listAgencyCrmLeadContacts } from '../../lib/agencyCrmRepository'
 import { fetchTransactionsByParticipant } from '../../lib/api'
+import { isUnsafeFallbackAllowed } from '../../lib/envValidation'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../../lib/settingsApi'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
-import { assertResolvedWorkspaceContext } from '../../services/workspaceResolutionService'
+import { assertResolvedWorkspaceContext, logUnsafeFallbackBlocked } from '../../services/workspaceResolutionService'
 
 const CANVASSING_STORAGE_PREFIX = 'itg:agency-canvassing:v1'
 const QUICK_CREATE_STORAGE_KEY = 'bridge:quick-create-records:v1'
@@ -40,6 +41,15 @@ function isUuidLike(value) {
 
 function readJsonStorage(key, fallback) {
   if (typeof window === 'undefined') return fallback
+  if (!isUnsafeFallbackAllowed()) {
+    logUnsafeFallbackBlocked({
+      service: 'agentClientDirectory.readJsonStorage',
+      missingContextType: 'workspace_scoped_local_storage',
+      attemptedFallbackType: 'local_client_directory_snapshot',
+      metadata: { storageKey: key },
+    })
+    return fallback
+  }
   try {
     const parsed = JSON.parse(window.localStorage.getItem(key) || '')
     return parsed ?? fallback

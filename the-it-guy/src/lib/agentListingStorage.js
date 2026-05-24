@@ -1,3 +1,5 @@
+import { isUnsafeFallbackAllowed } from './envValidation'
+
 const AGENT_PRIVATE_LISTINGS_STORAGE_KEY = 'itg:agent-private-listings:v1'
 const AGENT_SELLER_LEADS_STORAGE_KEY = 'itg:agent-seller-leads:v1'
 const AGENT_LISTING_DRAFTS_STORAGE_KEY = 'itg:agent-listing-drafts:v1'
@@ -60,6 +62,7 @@ export const SELLER_REQUIRED_DOCUMENTS = [
 
 function readRows(storageKey) {
   if (typeof window === 'undefined') return []
+  if (!isUnsafeFallbackAllowed()) return []
   try {
     const raw = window.localStorage.getItem(storageKey)
     if (!raw) return []
@@ -72,6 +75,7 @@ function readRows(storageKey) {
 
 function writeRows(storageKey, rows) {
   if (typeof window === 'undefined') return
+  if (!isUnsafeFallbackAllowed()) return
   window.localStorage.setItem(storageKey, JSON.stringify(Array.isArray(rows) ? rows : []))
 }
 

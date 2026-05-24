@@ -1,4 +1,10 @@
 import { getBranch, getBranches } from './agencyBranchService'
+import {
+  getOperationalOwnerKeys,
+  getReportingRole,
+  getReportingRoleLabel,
+  shouldIncludeInAgentLeaderboard,
+} from '../lib/reportingRoleLogic'
 
 function toNumber(value) {
   const parsed = Number(value)
@@ -30,7 +36,21 @@ export async function getBranchConversionRate(branchId) {
   return toNumber(branch?.kpis?.conversionRate)
 }
 
-export async function getAgentLeaderboard(branchId = '') {
+function buildMemberKeys(member = {}) {
+  return [
+    member.user_id,
+    member.id,
+    member.email,
+  ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean)
+}
+
+function countOwnedRecords(records = [], member = {}) {
+  const memberKeys = new Set(buildMemberKeys(member))
+  if (!memberKeys.size) return 0
+  return (records || []).filter((record) => getOperationalOwnerKeys(record).some((key) => memberKeys.has(key))).length
+}
+
+export async function getAgentLeaderboard(branchId = '', { includeLeadership = false } = {}) {
   const branch = branchId ? await getBranch(branchId) : null
   const members = branch ? branch.members || [] : []
 
@@ -39,18 +59,27 @@ export async function getAgentLeaderboard(branchId = '') {
   }
 
   return members
-    .filter((member) => String(member?.role || '').toLowerCase() === 'agent')
+    .filter((member) => shouldIncludeInAgentLeaderboard(member, { includeLeadership }))
     .map((member) => ({
       id: member.id,
-      name: [member?.first_name, member?.last_name].filter(Boolean).join(' ') || member.email || 'Agent',
+      name: [member?.first_name, member?.last_name].filter(Boolean).join(' ') || member.email || getReportingRoleLabel(getReportingRole(member)),
       email: member.email || '',
       role: member.role || 'agent',
-      listings: 0,
-      transactions: 0,
-      revenue: 0,
+      roleLabel: getReportingRoleLabel(getReportingRole(member)),
+      listings: countOwnedRecords(branch.listings, member),
+      leads: countOwnedRecords(branch.leads, member),
+      transactions: countOwnedRecords(branch.transactions, member),
+      revenue: branch.transactions
+        .filter((record) => {
+          const memberKeys = new Set(buildMemberKeys(member))
+          return getOperationalOwnerKeys(record).some((key) => memberKeys.has(key))
+        })
+        .reduce((sum, row) => sum + toNumber(row.sales_price || row.purchase_price) * 0.03, 0),
       status: member.status || 'active',
       lastActive: member.last_active_at || member.updated_at || member.created_at || null,
     }))
+    .filter((member) => member.roleLabel === 'Agent' || member.listings || member.leads || member.transactions)
+    .sort((left, right) => right.revenue - left.revenue || right.transactions - left.transactions || right.listings - left.listings)
 }
 
 export async function getPortfolioLeaderboard() {

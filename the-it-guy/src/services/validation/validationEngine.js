@@ -87,11 +87,19 @@ export async function validateWorkspaceStateById(workspaceId) {
 export async function validateMembershipState(membershipId) {
   const id = normalizeText(membershipId)
   if (!id) return { entityType: 'membership', entityId: '', issues: [], ok: false, status: 'invalid' }
-  const result = await requireClient()
+  const client = requireClient()
+  let result = await client
     .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, role, organisation_role, app_role, workspace_type, status, organisations:organisation_id(id, type, name)')
+    .select('id, organisation_id, user_id, branch_id, role, workspace_role, organisation_role, app_role, workspace_type, status, organisations:organisation_id(id, type, name)')
     .eq('id', id)
     .maybeSingle()
+  if (result.error && isMissingSchemaError(result.error, 'workspace_role')) {
+    result = await client
+      .from('organisation_users')
+      .select('id, organisation_id, user_id, branch_id, role, organisation_role, app_role, workspace_type, status, organisations:organisation_id(id, type, name)')
+      .eq('id', id)
+      .maybeSingle()
+  }
   if (result.error && !isMissingSchemaError(result.error, 'organisation_users')) throw result.error
   const validation = await validateSingleMembershipState(id, { membership: result.data || null })
   await persistValidationState('membership', id, validation, result.data?.organisation_id || null)

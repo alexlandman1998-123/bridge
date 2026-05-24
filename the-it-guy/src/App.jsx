@@ -43,7 +43,7 @@ const MobileExecutiveLayout = lazy(() => import('./components/mobile/MobileExecu
 const NewTransactionWizard = lazy(() => import('./components/NewTransactionWizard'))
 const Sidebar = lazy(() => import('./components/Sidebar'))
 
-const AgentInviteOnboarding = lazy(() => import('./pages/AgentInviteOnboarding'))
+const InviteResolver = lazy(() => import('./pages/InviteResolver'))
 const AgentIntelligenceMarketPage = lazy(() => import('./pages/agent-intelligence/MarketPage'))
 const AgentIntelligenceNetworkPage = lazy(() => import('./pages/agent-intelligence/NetworkPage'))
 const AgentIntelligenceOpportunitiesPage = lazy(() => import('./pages/agent-intelligence/OpportunitiesPage'))
@@ -159,7 +159,6 @@ const SettingsUsersPage = lazy(() => import('./pages/settings/SettingsUsersPage'
 const SettingsWorkflowsPage = lazy(() => import('./pages/settings/SettingsWorkflowsPage'))
 const SignerPortal = lazy(() => import('./pages/SignerPortal'))
 const Snags = lazy(() => import('./pages/Snags'))
-const StakeholderInviteAccept = lazy(() => import('./pages/StakeholderInviteAccept'))
 const Team = lazy(() => import('./pages/Team'))
 const TransactionStatusShare = lazy(() => import('./pages/TransactionStatusShare'))
 const UnitDetail = lazy(() => import('./pages/UnitDetail'))
@@ -573,6 +572,7 @@ function isSetupPath(pathname = '') {
     pathname === '/client-access' ||
     pathname.startsWith('/onboarding') ||
     pathname.startsWith('/attorney/onboarding') ||
+    pathname.startsWith('/invite/') ||
     pathname.startsWith('/agent/invite/')
   )
 }
@@ -759,7 +759,7 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
     reason === ONBOARDING_REQUIRED_REASONS.completionValidationFailed ||
     reason === ONBOARDING_REQUIRED_REASONS.invalidOnboardingState
   ) {
-    const target = baseRole === 'client' ? '/client-access' : '/setup'
+    const target = baseRole === 'client' ? '/client-access' : '/setup/recovery'
     if (!isSetupPath(location.pathname) && location.pathname !== target) {
       return <Navigate to={target} replace />
     }
@@ -801,9 +801,11 @@ function RoleRoute({ allowedRoles, requiredPermission = '', requiredWorkspaceTyp
   const canAccessWithoutMembership =
     role === 'client' ||
     role === 'platform_admin' ||
-    location.pathname === '/setup' ||
+      location.pathname === '/setup' ||
+      location.pathname.startsWith('/setup/') ||
     location.pathname.startsWith('/onboarding') ||
     location.pathname.startsWith('/attorney/onboarding') ||
+    location.pathname.startsWith('/invite/') ||
     location.pathname.startsWith('/agent/invite/')
 
   if (!canAccessWithoutMembership && !activeMemberships.length && onboardingRequiredReason) {
@@ -1075,7 +1077,7 @@ function AppRoutes() {
     if (typeof window === 'undefined') return ''
     const token = String(window.sessionStorage.getItem('itg:pending-org-invite-token') || '').trim()
     if (!token) return ''
-    return `/agent/invite/${token}`
+    return `/invite/${token}`
   })()
 
   return (
@@ -1153,6 +1155,7 @@ function AppRoutes() {
                 <Route path="*" element={<Navigate to="/commercial/dashboard" replace />} />
               </Route>
               <Route path="/setup" element={<PostDashboardSetup />} />
+              <Route path="/setup/recovery" element={<PostDashboardSetup />} />
               <Route
                 path="/platform/diagnostics"
                 element={
@@ -1515,11 +1518,7 @@ function AppRoutes() {
               />
               <Route
                 path="/invite/stakeholder/:token"
-                element={
-                  <RoleRoute allowedRoles={['developer', 'attorney', 'bond_originator', 'agent', 'buyer', 'seller', 'internal_admin']}>
-                    <StakeholderInviteAccept />
-                  </RoleRoute>
-                }
+                element={<LegacyInviteRedirect />}
               />
               <Route
                 path="/new-transaction"
@@ -1953,9 +1952,10 @@ function AppRoutes() {
           <Route path="/offers/session/:token" element={<PostViewingOfferPortal />} />
           <Route path="/offers/:token" element={<BuyerOfferSubmission />} />
           <Route path="/seller/offers/review/:token" element={<SellerOfferReviewPage />} />
+          <Route path="/invite/:token" element={<TokenRouteGate><InviteResolver /></TokenRouteGate>} />
           <Route
             path="/agent/invite/:token"
-            element={FEATURE_FLAGS.enableInviteOnboarding ? <TokenRouteGate><AgentInviteOnboarding /></TokenRouteGate> : <Navigate to="/auth" replace />}
+            element={<LegacyInviteRedirect />}
           />
           <Route path="/client/:token/forms/trust-investment" element={<Navigate to="../documents" replace />} />
           <Route path="/client/:token/handover" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
@@ -2031,6 +2031,12 @@ function ClientTokenRootRedirect() {
   const { token = '' } = useParams()
   const safeToken = String(token || '').trim()
   return <Navigate to={safeToken ? `/client/${safeToken}` : '/auth'} replace />
+}
+
+function LegacyInviteRedirect() {
+  const { token = '' } = useParams()
+  const safeToken = String(token || '').trim()
+  return <Navigate to={safeToken ? `/invite/${encodeURIComponent(safeToken)}` : '/auth'} replace />
 }
 
 function LegacyAgentWorkspaceRedirect() {

@@ -1,6 +1,7 @@
 import { MEMBERSHIP_STATUSES, normalizeMembershipStatus } from '../../constants/membershipStatuses'
 import { normalizeWorkspaceType } from '../../constants/workspaceTypes'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
+import { resolveWorkspaceRole } from '../roleResolutionService'
 import {
   createIntegrityIssue,
   INTEGRITY_ISSUES,
@@ -27,16 +28,29 @@ function isMissingSchemaError(error, token = '') {
 export async function loadMembershipsForUser(userId) {
   const id = normalizeText(userId)
   if (!id) return []
-  const result = await requireClient()
+  const client = requireClient()
+  let result = await client
     .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, email, role, organisation_role, app_role, workspace_type, status, organisations:organisation_id(id, type, name, display_name)')
+    .select('id, organisation_id, user_id, branch_id, email, role, workspace_role, organisation_role, app_role, workspace_type, status, organisations:organisation_id(id, type, name, display_name)')
     .eq('user_id', id)
+  if (result.error && isMissingSchemaError(result.error, 'workspace_role')) {
+    result = await client
+      .from('organisation_users')
+      .select('id, organisation_id, user_id, branch_id, email, role, organisation_role, app_role, workspace_type, status, organisations:organisation_id(id, type, name, display_name)')
+      .eq('user_id', id)
+  }
 
   if (result.error) {
     if (isMissingSchemaError(result.error, 'organisation_users')) return []
     throw result.error
   }
-  return result.data || []
+  return (result.data || []).map((row) => ({
+    ...row,
+    workspace_role: resolveWorkspaceRole(row, {
+      appRole: row.app_role,
+      workspaceType: row.organisations?.type || row.workspace_type,
+    }),
+  }))
 }
 
 export async function loadAttorneyMembershipsForUser(userId) {
@@ -55,6 +69,7 @@ export async function loadAttorneyMembershipsForUser(userId) {
     ...row,
     organisation_id: row.firm_id,
     workspace_type: 'attorney_firm',
+    workspace_role: resolveWorkspaceRole({ ...row, app_role: 'attorney', workspace_type: 'attorney_firm' }),
     app_role: 'attorney',
     organisations: row.attorney_firms ? { ...row.attorney_firms, type: 'attorney_firm' } : null,
   }))

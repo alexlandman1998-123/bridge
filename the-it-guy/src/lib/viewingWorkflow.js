@@ -1,3 +1,5 @@
+import { isUnsafeFallbackAllowed } from './envValidation'
+
 const VIEWING_REQUESTS_STORAGE_KEY = 'itg:viewing-requests:v1'
 
 export const VIEWING_STATUS = {
@@ -20,6 +22,7 @@ export const VIEWING_RESPONSE_STATUS = {
 
 function readRows() {
   if (typeof window === 'undefined') return []
+  if (!isUnsafeFallbackAllowed()) return []
   try {
     const raw = window.localStorage.getItem(VIEWING_REQUESTS_STORAGE_KEY)
     if (!raw) return []
@@ -32,6 +35,7 @@ function readRows() {
 
 function writeRows(rows) {
   if (typeof window === 'undefined') return
+  if (!isUnsafeFallbackAllowed()) return
   window.localStorage.setItem(VIEWING_REQUESTS_STORAGE_KEY, JSON.stringify(Array.isArray(rows) ? rows : []))
   window.dispatchEvent(new Event('itg:viewings-updated'))
 }

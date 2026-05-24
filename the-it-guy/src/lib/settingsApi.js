@@ -38,7 +38,10 @@ import { assertPermission } from '../auth/permissions/permissionResolver'
 import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
 import { recordSecurityAuditEvent } from '../services/auditLogService'
 import { completeOnboarding } from '../services/onboarding/onboardingEngine'
+import { logUnsafeFallbackBlocked, resolveCurrentWorkspace, WorkspaceContextError } from '../services/workspaceResolutionService'
 import { assertMembershipStatusTransition } from '../services/transitions/stateTransitionEngine'
+import { isUnsafeFallbackAllowed } from './envValidation'
+import { loadSignupIntentForUser } from './signupIntent'
 
 const DEFAULT_NOTIFICATION_PREFERENCES = {
   emailMentions: true,
@@ -880,6 +883,21 @@ function buildDefaultOrganisation(profile = null) {
   }
 }
 
+function blockUnsafeSettingsFallback({ service = '', attemptedFallbackType = '', profile = null, error = null } = {}) {
+  logUnsafeFallbackBlocked({
+    userId: profile?.id || '',
+    service,
+    missingContextType: 'workspace_context',
+    attemptedFallbackType,
+    metadata: { errorCode: error?.code || '', errorMessage: error?.message || '' },
+  })
+  throw new WorkspaceContextError('workspace_context_missing', {
+    service,
+    attemptedFallbackType,
+    userId: profile?.id || '',
+  })
+}
+
 function normalizeOrganisationRow(row, profile = null) {
   const fallback = buildDefaultOrganisation(profile)
 
@@ -1150,6 +1168,87 @@ function buildAgencyOnboardingStorageRecord({
   }
 }
 
+function buildAtomicAgencyOnboardingPayload({ mergedDraft = {}, context = {}, user = null, intent = null } = {}) {
+  const info = mergedDraft.agencyInformation || {}
+  const principal = mergedDraft.principalInformation || {}
+  const principalName = normalizeText(principal.principalFullName || context.profile?.fullName)
+  const principalParts = principalName.split(/\s+/).filter(Boolean)
+  const principalFirstName = principalParts[0] || context.profile?.firstName || ''
+  const principalLastName = principalParts.slice(1).join(' ') || context.profile?.lastName || ''
+  const agencyName = normalizeText(info.agencyName || context.profile?.companyName) || 'Bridge Agency'
+  const settings = {
+    ...DEFAULT_ORGANISATION_SETTINGS,
+    ...safeJson(context.organisationSettings, DEFAULT_ORGANISATION_SETTINGS),
+    agencyOnboarding: mergedDraft,
+    organisationBranches: mergedDraft.branchStructure?.branches || [],
+    organisationPermissions: mergedDraft.permissions || {},
+  }
+  const branches = (mergedDraft.branchStructure?.branches || [])
+    .map((branch) => ({
+      name: normalizeText(branch.branchName) || 'Head Office',
+      address: normalizeText(branch.officeLocation || info.physicalAddress),
+      location: normalizeText(branch.officeLocation || info.province),
+      manager_name: normalizeBranchManagerName(branch) || principalName,
+      agent_count: normalizeBranchAgentCount(branch),
+      province: normalizeText(info.province),
+      email: normalizeEmail(info.mainEmailAddress || principal.emailAddress || user?.email),
+      phone: normalizeText(info.mainOfficeNumber || principal.phoneNumber),
+    }))
+    .filter((branch) => branch.name)
+
+  const invites = (mergedDraft.invitations || [])
+    .map((invite) => ({
+      email: normalizeEmail(invite.email),
+      workspace_role: mapAgencyInviteRoleToOrganisationRole(invite.role),
+      branch_name: normalizeText(
+        (mergedDraft.branchStructure?.branches || []).find((branch) => branch.id === invite.branchId)?.branchName,
+      ) || branches[0]?.name || 'Head Office',
+      name: normalizeText(invite.name),
+    }))
+    .filter((invite) => invite.email)
+
+  return {
+    signup_intent_id: intent?.id || null,
+    idempotency_key: `agency:${intent?.id || user?.id || 'unknown'}:${agencyName.toLowerCase()}`,
+    workspace_type: 'agency',
+    workspace_kind: 'agency',
+    workspace_action: 'create_workspace',
+    onboarding_path: intent?.onboarding_path || 'agency_owner',
+    organisation: {
+      name: agencyName,
+      legal_name: normalizeText(info.agencyName) || agencyName,
+      trading_name: normalizeText(info.tradingName) || agencyName,
+      registration_number: normalizeText(info.companyRegistrationNumber),
+      email: normalizeEmail(info.mainEmailAddress || principal.emailAddress || user?.email || context.profile?.email),
+      phone: normalizeText(info.mainOfficeNumber || principal.phoneNumber || context.profile?.phoneNumber),
+      website: normalizeText(info.website),
+      address: normalizeText(info.physicalAddress),
+      province: normalizeText(info.province),
+      country: normalizeText(info.country) || 'South Africa',
+    },
+    owner: {
+      user_id: user?.id || context.profile?.id || '',
+      workspace_role: 'principal',
+      first_name: principalFirstName,
+      last_name: principalLastName,
+      full_name: principalName,
+      email: normalizeEmail(principal.emailAddress || user?.email || context.profile?.email),
+      phone: normalizeText(principal.phoneNumber || context.profile?.phoneNumber),
+    },
+    branches,
+    settings,
+    invites,
+  }
+}
+
+function createAtomicOnboardingError(rpcResult = {}, fallbackMessage = 'Agency setup failed.') {
+  const message = normalizeText(rpcResult?.message) || fallbackMessage
+  const error = new Error(message)
+  error.code = normalizeText(rpcResult?.code) || 'atomic_onboarding_failed'
+  error.details = rpcResult?.details || {}
+  return error
+}
+
 function normalizeAccountSettings(row, profile) {
   return {
     id: row?.id || profile?.id || null,
@@ -1304,6 +1403,14 @@ async function ensureOrganisationContext(client) {
         isMissingColumnError(membershipError, 'organisation_id') ||
         isPermissionDeniedError(membershipError)
       ) {
+        if (!isUnsafeFallbackAllowed()) {
+          blockUnsafeSettingsFallback({
+            service: 'settingsApi.ensureOrganisationContext',
+            attemptedFallbackType: 'default_organisation_membership_lookup_failed',
+            profile,
+            error: membershipError,
+          })
+        }
         return {
           organisation: buildDefaultOrganisation(profile),
           organisationSettings: { ...DEFAULT_ORGANISATION_SETTINGS },
@@ -1496,6 +1603,13 @@ async function ensureOrganisationContext(client) {
         : 'principal_setup'
 
     if (!organisation) {
+      if (profile?.onboardingCompleted && !isUnsafeFallbackAllowed()) {
+        blockUnsafeSettingsFallback({
+          service: 'settingsApi.ensureOrganisationContext',
+          attemptedFallbackType: 'default_organisation_missing_workspace',
+          profile,
+        })
+      }
       return {
         organisation: buildDefaultOrganisation(profile),
         organisationSettings: { ...DEFAULT_ORGANISATION_SETTINGS },
@@ -1515,6 +1629,14 @@ async function ensureOrganisationContext(client) {
 
     if (settingsQuery.error) {
       if (isMissingTableError(settingsQuery.error, 'organisation_settings')) {
+        if (!isUnsafeFallbackAllowed()) {
+          blockUnsafeSettingsFallback({
+            service: 'settingsApi.ensureOrganisationContext',
+            attemptedFallbackType: 'default_organisation_settings_missing_table',
+            profile,
+            error: settingsQuery.error,
+          })
+        }
         return {
           organisation,
           organisationSettings: { ...DEFAULT_ORGANISATION_SETTINGS },
@@ -1526,6 +1648,14 @@ async function ensureOrganisationContext(client) {
         }
       }
       if (isRlsPolicyError(settingsQuery.error)) {
+        if (!isUnsafeFallbackAllowed()) {
+          blockUnsafeSettingsFallback({
+            service: 'settingsApi.ensureOrganisationContext',
+            attemptedFallbackType: 'default_organisation_settings_rls_denied',
+            profile,
+            error: settingsQuery.error,
+          })
+        }
         return {
           organisation,
           organisationSettings: { ...DEFAULT_ORGANISATION_SETTINGS },
@@ -1586,6 +1716,14 @@ async function ensureOrganisationContext(client) {
       isMissingTableError(error, 'organisation_settings') ||
       isPermissionDeniedError(error)
     ) {
+      if (!isUnsafeFallbackAllowed()) {
+        blockUnsafeSettingsFallback({
+          service: 'settingsApi.ensureOrganisationContext',
+          attemptedFallbackType: 'default_organisation_context_error',
+          profile,
+          error,
+        })
+      }
       return {
         organisation: buildDefaultOrganisation(profile),
         organisationSettings: { ...DEFAULT_ORGANISATION_SETTINGS },
@@ -1667,6 +1805,12 @@ function normalizeDevelopmentSettingsRecord({
 
 export async function fetchAccountSettings() {
   if (!isSupabaseConfigured || !supabase) {
+    if (!isUnsafeFallbackAllowed()) {
+      blockUnsafeSettingsFallback({
+        service: 'settingsApi.fetchAccountSettings',
+        attemptedFallbackType: 'demo_profile_no_supabase',
+      })
+    }
     return normalizeAccountSettings({}, {
       id: DEMO_PROFILE_ID,
       firstName: 'Demo',
@@ -1799,6 +1943,12 @@ export async function changePassword({ password }) {
 
 export async function fetchOrganisationSettings({ forceRefresh = false } = {}) {
   if (!isSupabaseConfigured || !supabase) {
+    if (!isUnsafeFallbackAllowed()) {
+      blockUnsafeSettingsFallback({
+        service: 'settingsApi.fetchOrganisationSettings',
+        attemptedFallbackType: 'default_organisation_no_supabase',
+      })
+    }
     return {
       organisation: buildDefaultOrganisation(),
       organisationSettings: { ...DEFAULT_ORGANISATION_SETTINGS },
@@ -1818,6 +1968,12 @@ export async function fetchOrganisationSettings({ forceRefresh = false } = {}) {
 
 export async function fetchAgencyOnboardingSettings({ forceRefresh = false } = {}) {
   if (!isSupabaseConfigured || !supabase) {
+    if (!isUnsafeFallbackAllowed()) {
+      blockUnsafeSettingsFallback({
+        service: 'settingsApi.fetchAgencyOnboardingSettings',
+        attemptedFallbackType: 'demo_agency_onboarding_no_supabase',
+      })
+    }
     console.debug('[ONBOARDING] agency-settings:fallback-demo')
     return {
       onboarding: buildDefaultAgencyOnboarding(),
@@ -2032,214 +2188,68 @@ export async function completeAgencyOnboarding(input = {}) {
     profileId: context.profile?.id || null,
   })
 
-  let organisationId = context.organisation.id || null
-  let organisationForMapping = context.organisation
-
-  if (!organisationId) {
-    const bootstrapName =
-      normalizeText(mergedDraft?.agencyInformation?.agencyName) ||
-      normalizeText(context.profile?.companyName) ||
-      'Bridge Agency'
-    const bootstrapOrgId = createUuid()
-    const bootstrapPayload = {
-      id: bootstrapOrgId,
-      name: bootstrapName,
-      display_name: bootstrapName,
-      type: 'agency',
-      legal_name: normalizeNullableText(mergedDraft?.agencyInformation?.agencyName),
-      registration_number: normalizeNullableText(mergedDraft?.agencyInformation?.companyRegistrationNumber),
-      company_email: normalizeNullableText(
-        mergedDraft?.agencyInformation?.mainEmailAddress || context.profile?.email,
-      ),
-      company_phone: normalizeNullableText(
-        mergedDraft?.agencyInformation?.mainOfficeNumber || context.profile?.phoneNumber,
-      ),
-      website: normalizeNullableText(mergedDraft?.agencyInformation?.website),
-      address_line_1: normalizeNullableText(mergedDraft?.agencyInformation?.physicalAddress),
-      province: normalizeNullableText(mergedDraft?.agencyInformation?.province),
-      logo_url: normalizeNullableText(mergedDraft?.branding?.logoLight),
-      country: 'South Africa',
-      support_email: normalizeNullableText(
-        mergedDraft?.agencyInformation?.mainEmailAddress || context.profile?.email,
-      ),
-      support_phone: normalizeNullableText(
-        mergedDraft?.agencyInformation?.mainOfficeNumber || context.profile?.phoneNumber,
-      ),
-      primary_contact_person: normalizeNullableText(
-        mergedDraft?.principalInformation?.principalFullName || context.profile?.fullName,
-      ),
-    }
-    const bootstrapInsert = await client
-      .from('organisations')
-      .insert(bootstrapPayload)
-
-    if (bootstrapInsert.error) {
-      if (isMissingTableError(bootstrapInsert.error, 'organisations')) {
-        throw new Error(
-          'Organisation onboarding cannot complete because the organisations/settings schema is missing. Install organisations, organisation_users, and organisation_settings first.',
-        )
-      }
-      throw bootstrapInsert.error
-    }
-
-    organisationId = bootstrapOrgId
-    organisationForMapping = normalizeOrganisationRow(bootstrapPayload, context.profile)
-  }
-
-  if (!organisationId) {
-    throw new Error(
-      'Organisation onboarding cannot complete because no organisation record could be resolved. Confirm organisations and organisation_settings tables are installed.',
-    )
-  }
-
-  const organisationPayload = {
-    id: organisationId,
-    ...mapAgencyOnboardingToOrganisationPayload(mergedDraft, organisationForMapping),
-  }
-
   const user = await getAuthenticatedUser()
-  const principalName = normalizeText(mergedDraft?.principalInformation?.principalFullName)
-  const principalParts = principalName.split(/\s+/).filter(Boolean)
-  const principalFirstName = principalParts[0] || context.profile?.firstName || ''
-  const principalLastName = principalParts.slice(1).join(' ') || context.profile?.lastName || ''
+  const intent = await loadSignupIntentForUser({ user })
   const principalEmail = normalizeEmail(user.email || context.profile?.email || mergedDraft?.principalInformation?.emailAddress)
   if (!principalEmail) {
     throw new Error('Organisation onboarding cannot complete without a valid principal email address.')
   }
-  const nowIso = new Date().toISOString()
 
-  const principalMembershipResult = await upsertOrganisationMembershipWithRoleFallback(
-    client,
-    {
-      organisation_id: organisationId,
-      user_id: user.id,
-      first_name: normalizeNullableText(principalFirstName),
-      last_name: normalizeNullableText(principalLastName),
-      email: principalEmail,
-      role: 'super_admin',
-      status: 'active',
-      invited_at: nowIso,
-      accepted_at: nowIso,
-    },
-    ['principal', 'admin', 'agent'],
-  )
-
-  if (principalMembershipResult.result.error && !isMissingTableError(principalMembershipResult.result.error, 'organisation_users')) {
-    throw principalMembershipResult.result.error
-  }
-
-  const organisationResult = await client
-    .from('organisations')
-    .upsert(organisationPayload, { onConflict: 'id' })
-    .select(`
-      id,
-      name,
-      display_name,
-      logo_url,
-      company_email,
-      company_phone,
-      website,
-      address_line_1,
-      address_line_2,
-      city,
-      province,
-      postal_code,
-      country,
-      support_email,
-      support_phone,
-      primary_contact_person
-    `)
-    .single()
-
-  if (organisationResult.error) {
-    throw organisationResult.error
-  }
-  console.debug('[ONBOARDING] org-write:upserted', { organisationId })
-
-  const mergedSettings = {
-    ...DEFAULT_ORGANISATION_SETTINGS,
-    ...safeJson(context.organisationSettings, DEFAULT_ORGANISATION_SETTINGS),
-    agencyOnboarding: mergedDraft,
-    organisationBranches: mergedDraft.branchStructure?.branches || [],
-    organisationPermissions: mergedDraft.permissions || {},
-  }
-
-  const settingsResult = await client
-    .from('organisation_settings')
-    .upsert(
-      {
-        organisation_id: organisationId,
-        settings_json: mergedSettings,
-      },
-      { onConflict: 'organisation_id' },
-    )
-
-  if (settingsResult.error) {
-    throw settingsResult.error
-  }
-  console.debug('[ONBOARDING] org-write:settings-upserted', { organisationId })
-
-  const inviteRows = Array.isArray(mergedDraft.invitations) ? mergedDraft.invitations.filter((invite) => invite.email) : []
-  if (inviteRows.length) {
-    const invitedAt = new Date().toISOString()
-    const expiresAt = resolveInviteExpiryIso(7)
-    for (const invite of inviteRows) {
-      const fullName = normalizeText(invite.name)
-      const fullNameParts = fullName.split(/\s+/).filter(Boolean)
-      const firstName = fullNameParts[0] || null
-      const lastName = fullNameParts.slice(1).join(' ') || null
-      const primaryRole = mapAgencyInviteRoleToOrganisationRole(invite.role)
-      const inviteToken = createInviteToken()
-
-      const payload = {
-        organisation_id: organisationId,
-        user_id: null,
-        first_name: normalizeNullableText(firstName),
-        last_name: normalizeNullableText(lastName),
-        email: normalizeEmail(invite.email),
-        role: primaryRole,
-        status: 'invited',
-        invited_at: invitedAt,
-        invited_by_user_id: user.id,
-        invitation_token: inviteToken,
-        invitation_expires_at: expiresAt,
-      }
-
-      let inviteResult = await upsertOrganisationUserInvite(client, payload)
-      if (inviteResult.error && primaryRole === 'branch_manager') {
-        inviteResult = await upsertOrganisationUserInvite(client, { ...payload, role: 'agent' })
-      }
-      if (inviteResult.error && !isMissingTableError(inviteResult.error, 'organisation_users')) {
-        throw inviteResult.error
-      }
+  const payload = buildAtomicAgencyOnboardingPayload({ mergedDraft, context, user, intent })
+  const rpcResponse = await client.rpc('bridge_complete_workspace_onboarding', { payload })
+  if (rpcResponse.error) {
+    const rpcErrorMessage = `${rpcResponse.error?.message || ''} ${rpcResponse.error?.details || ''} ${rpcResponse.error?.hint || ''}`.toLowerCase()
+    if (isMissingTableError(rpcResponse.error, 'bridge_complete_workspace_onboarding') || rpcErrorMessage.includes('bridge_complete_workspace_onboarding')) {
+      throw new Error('Atomic onboarding is not installed. Apply the bridge_complete_workspace_onboarding migration before completing agency setup.')
     }
+    throw rpcResponse.error
   }
 
-  await completeOnboarding({
-    userId: user.id,
+  const completion = rpcResponse.data || {}
+  if (!completion.success) {
+    throw createAtomicOnboardingError(completion, 'Agency setup failed before onboarding could be completed.')
+  }
+
+  const workspaceResolution = await resolveCurrentWorkspace(user.id, {
+    client,
     user,
-    appRole: 'agent',
-    workspaceType: 'agency',
-    workspaceId: organisationId,
-    profilePatch: {
-      first_name: principalFirstName || undefined,
-      last_name: principalLastName || undefined,
-      company_name: mergedDraft?.agencyInformation?.agencyName || context.profile?.companyName || undefined,
-      phone_number: mergedDraft?.principalInformation?.phoneNumber || context.profile?.phoneNumber || undefined,
-    },
-    context: { source: 'legacy_agency_onboarding_complete' },
+    requestedWorkspaceId: completion.workspace_id || completion.organisation_id,
   })
+
+  if (!workspaceResolution.ok) {
+    throw createAtomicOnboardingError(
+      {
+        code: workspaceResolution.reason || 'workspace_resolution_failed',
+        message: 'Agency setup completed, but the workspace could not be resolved. Use onboarding recovery before loading the dashboard.',
+        details: workspaceResolution.diagnostics || {},
+      },
+      'Workspace resolution failed after agency setup.',
+    )
+  }
+
   console.debug('[PROFILE] write:agency-onboarding-complete', {
     userId: user.id,
     role: 'agent',
-    completedViaEngine: true,
+    completedViaRpc: true,
+    workspaceId: workspaceResolution.currentWorkspace?.id || completion.workspace_id || null,
   })
 
   clearOrganisationRuntimeCache()
   return {
     onboarding: mergedDraft,
-    organisation: normalizeOrganisationRow(organisationResult.data, context.profile),
-    membershipRole: 'super_admin',
+    organisation: normalizeOrganisationRow(
+      {
+        ...(completion.organisation || {}),
+        id: workspaceResolution.currentWorkspace?.id || completion.workspace_id || completion.organisation_id,
+        name: workspaceResolution.currentWorkspace?.name || completion.organisation?.name,
+        display_name: workspaceResolution.currentWorkspace?.displayName || completion.organisation?.display_name,
+        type: workspaceResolution.currentWorkspace?.type || completion.workspace_type,
+      },
+      context.profile,
+    ),
+    membershipRole: workspaceResolution.currentMembership?.workspaceRole || workspaceResolution.currentMembership?.role || 'principal',
+    workspaceResolution,
+    completion,
     persisted: true,
   }
 }

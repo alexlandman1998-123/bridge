@@ -21,7 +21,7 @@ export function getRecoveryDescriptor(reason = '') {
       title: 'Workspace access is needed',
       description: 'Your account is not connected to an active workspace yet.',
       actionLabel: 'Set up workspace access',
-      route: '/setup',
+      route: '/setup/recovery',
     },
     [ONBOARDING_REQUIRED_REASONS.pendingApproval]: {
       title: 'Approval pending',
@@ -33,13 +33,13 @@ export function getRecoveryDescriptor(reason = '') {
       title: 'Workspace record missing',
       description: 'Your membership points to a workspace that could not be loaded.',
       actionLabel: 'Repair workspace setup',
-      route: '/setup',
+      route: '/setup/recovery',
     },
     [ONBOARDING_REQUIRED_REASONS.missingBranch]: {
       title: 'Branch assignment needed',
       description: 'This workspace requires a branch or team before onboarding can finish.',
       actionLabel: 'Review setup',
-      route: '/setup',
+      route: '/setup/recovery',
     },
     [ONBOARDING_REQUIRED_REASONS.missingDepartment]: {
       title: 'Department setup needed',
@@ -51,7 +51,7 @@ export function getRecoveryDescriptor(reason = '') {
       title: 'Workspace settings needed',
       description: 'The workspace exists, but its setup profile is incomplete.',
       actionLabel: 'Complete workspace setup',
-      route: '/setup',
+      route: '/setup/recovery',
     },
     [ONBOARDING_REQUIRED_REASONS.appRoleMissing]: {
       title: 'Business role needs confirmation',
@@ -65,7 +65,7 @@ export function getRecoveryDescriptor(reason = '') {
     title: 'Setup needs attention',
     description: 'Bridge found an incomplete onboarding state and stopped before opening a dashboard.',
     actionLabel: 'Continue setup',
-    route: '/setup',
+    route: '/setup/recovery',
   }
 }
 

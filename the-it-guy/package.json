@@ -10,6 +10,12 @@
     "dev": "vite",
     "build": "vite build",
     "test:workspace-resolution": "node scripts/workspace-resolution.test.mjs",
+    "test:workspace-branch-scope": "node scripts/workspace-branch-scope.test.mjs",
+    "test:atomic-onboarding": "node scripts/atomic-onboarding.test.mjs",
+    "test:reporting-role-logic": "node scripts/reporting-role-logic.test.mjs",
+    "test:unsafe-fallbacks": "node scripts/unsafe-fallbacks.test.mjs",
+    "test:unified-invites": "node scripts/unified-invites.test.mjs",
+    "test:role-resolution": "node scripts/role-resolution.test.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },

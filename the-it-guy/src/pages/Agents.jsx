@@ -42,6 +42,7 @@ import { canAccessAgentsModule, canManageAgentOrganisations } from '../lib/roles
 import { fetchTransactionsByParticipantSummary, fetchTransactionsListSummary, saveTransaction } from '../lib/api'
 import { listAppointmentsAsync } from '../lib/agencyPipelineService'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
+import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { deactivateOrganisationUser, fetchOrganisationSettings, listOrganisationUsers, updateOrganisationUserRole } from '../lib/settingsApi'
 import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import {
@@ -347,6 +348,9 @@ function readLocalRows(storageKey) {
   if (typeof window === 'undefined') {
     return []
   }
+  if (!isUnsafeFallbackAllowed()) {
+    return []
+  }
 
   try {
     const raw = window.localStorage.getItem(storageKey)
@@ -367,7 +371,7 @@ function buildAgentInviteForm({ profile, directory }) {
     surname: '',
     email: '',
     mobile: '',
-    organisationId: String(agency?.id || profile?.agencyId || 'agency-default').trim().toLowerCase(),
+    organisationId: String(agency?.id || profile?.agencyId || '').trim().toLowerCase(),
     organisationName: String(agency?.name || profile?.agencyName || profile?.companyName || 'Bridge Organisation').trim(),
     office: '',
     role: 'agent',
@@ -466,7 +470,7 @@ function normalizeOrganisationUserAgent(user = {}, context = {}) {
     phone: user.phone || '',
     office: user.branchName || (user.branchId ? 'Assigned Branch' : 'Head Office'),
     branchId: user.branchId || null,
-    organisationId: normalizeAgentRecordId(context.organisationId || user.organisationId || 'agency-default'),
+    organisationId: normalizeAgentRecordId(context.organisationId || user.organisationId || ''),
     organisationName: context.organisationName || user.organisationName || 'Bridge Organisation',
     role,
     status: normalizeAgentDirectoryStatus(user.status),
@@ -569,8 +573,8 @@ function resolveOrganisationOptions({ directory = null, invites = [], profile = 
   ;(directory?.agents || []).forEach((agent) => register(agent?.agencyId, agent?.agencyName))
   ;(invites || []).forEach((invite) => register(invite?.organisationId, invite?.organisationName))
 
-  if (!deduped.size) {
-    register(profile?.agencyId || 'agency-default', profile?.agencyName || profile?.companyName || 'Bridge Organisation')
+  if (!deduped.size && profile?.agencyId) {
+    register(profile.agencyId, profile?.agencyName || profile?.companyName || 'Bridge Organisation')
   }
 
   return [...deduped.values()].sort((left, right) => left.name.localeCompare(right.name))
@@ -2523,7 +2527,7 @@ export function AgentsPage() {
         const normalizedEmail = String(agent?.email || '').trim().toLowerCase()
         const directoryMatchesByEmail = directory.agents.filter((item) => String(item?.email || '').trim().toLowerCase() === normalizedEmail)
         const directoryMatch = directoryMatchesByEmail[0] || null
-        const organisationId = String(directoryMatch?.agencyId || directory?.agency?.id || 'agency-default').trim().toLowerCase()
+        const organisationId = String(directoryMatch?.agencyId || directory?.agency?.id || '').trim().toLowerCase()
         const inviteKey = `${normalizedEmail}::${organisationId}`
         const invite = inviteMap.get(inviteKey) || null
         const status = String(directoryMatch?.status || invite?.status || agent?.status || AGENT_INVITE_STATUS.ACTIVE).trim().toLowerCase()
@@ -2565,7 +2569,7 @@ export function AgentsPage() {
           email: profile?.email || '',
           phone: profile?.phoneNumber || profile?.phone || '',
           office: directory?.agency?.office || 'Head Office',
-          organisationId: String(directory?.agency?.id || 'agency-default').trim().toLowerCase(),
+          organisationId: String(directory?.agency?.id || performanceSources.organisationSettings?.organisation?.id || '').trim().toLowerCase(),
           organisationName: directory?.agency?.name || profile?.companyName || 'Bridge Organisation',
           role: 'principal',
           status: AGENT_INVITE_STATUS.ACTIVE,

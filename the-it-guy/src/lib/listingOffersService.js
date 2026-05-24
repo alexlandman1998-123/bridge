@@ -1,5 +1,6 @@
 import { generateId, readAgentPrivateListings, writeAgentPrivateListings } from './agentListingStorage'
 import { updateCanonicalOfferStatus } from './buyerLifecycleService'
+import { isUnsafeFallbackAllowed } from './envValidation'
 import { createTransactionFromAcceptedOffer } from './transactionLifecycleService'
 
 const KEY_OFFER_INVITES = 'itg:listing-offer-invites:v1'
@@ -26,6 +27,7 @@ export const OFFER_WORKFLOW_STATUS = {
 
 function readJson(key, fallback) {
   if (typeof window === 'undefined') return fallback
+  if (!isUnsafeFallbackAllowed()) return fallback
   try {
     const raw = window.localStorage.getItem(key)
     if (!raw) return fallback
@@ -38,6 +40,7 @@ function readJson(key, fallback) {
 
 function writeJson(key, value) {
   if (typeof window === 'undefined') return
+  if (!isUnsafeFallbackAllowed()) return
   window.localStorage.setItem(key, JSON.stringify(value))
 }
 

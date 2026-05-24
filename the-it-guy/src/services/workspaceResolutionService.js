@@ -2,10 +2,13 @@ import { APP_ROLES, isCanonicalAppRole, normalizeCanonicalAppRole } from '../con
 import { MEMBERSHIP_STATUSES, isActiveMembershipStatus, normalizeMembershipStatus } from '../constants/membershipStatuses'
 import { ONBOARDING_REQUIRED_REASONS } from '../constants/onboardingStatuses'
 import { normalizeOrgRole } from '../constants/orgRoles'
+import { getDefaultBranchScope, normalizeBranchScope } from '../constants/workspaceUnits'
 import { WORKSPACE_TYPES, inferWorkspaceTypeFromAppRole, normalizeWorkspaceType } from '../constants/workspaceTypes'
 import { permissionsByWorkspaceRole } from '../auth/permissions/permissionRegistry'
 import { getOrCreateUserProfile } from '../lib/api'
+import { getUnsafeFallbackEnvironmentDiagnostics } from '../lib/envValidation'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { resolveSystemRole, resolveWorkspaceRole } from './roleResolutionService'
 
 export const WORKSPACE_RESOLUTION_STATUSES = Object.freeze({
   resolved: 'resolved',
@@ -24,6 +27,23 @@ const BLOCKED_MEMBERSHIP_STATUSES = new Set([
   MEMBERSHIP_STATUSES.suspended,
   MEMBERSHIP_STATUSES.removed,
   MEMBERSHIP_STATUSES.deactivated,
+])
+
+const INVALID_SERVICE_WORKSPACE_IDS = new Set([
+  'default',
+  'all',
+  'all_workspace',
+  'all-workspace',
+  'all branches',
+  'all_branches',
+  'agency-default',
+  'bridge-workspace',
+  'demo',
+  'demo-workspace',
+  'mock',
+  'mock-workspace',
+  'local',
+  'local-workspace',
 ])
 
 function normalizeText(value) {
@@ -62,6 +82,7 @@ function normalizeProfile(profile = null) {
     lastName: profile.lastName || profile.last_name || '',
     fullName: profile.fullName || profile.full_name || '',
     role: normalizeCanonicalAppRole(profile.role, profile.role || ''),
+    systemRole: resolveSystemRole(profile),
     onboardingCompleted: Boolean(profile.onboardingCompleted ?? profile.onboarding_completed),
   }
 }
@@ -111,7 +132,10 @@ function createMembershipRecord({
   role,
   status,
   branchId = null,
+  primaryBranchId = null,
+  branchScope = '',
   departmentId = null,
+  teamId = null,
   invitedBy = null,
   joinedAt = null,
   acceptedAt = null,
@@ -119,7 +143,12 @@ function createMembershipRecord({
 }) {
   const normalizedWorkspaceType = normalizeWorkspaceType(workspaceType, inferWorkspaceTypeFromAppRole(appRole))
   const normalizedStatus = normalizeMembershipStatus(status)
-  const workspaceRole = normalizeOrgRole(role, { appRole, workspaceType: normalizedWorkspaceType })
+  const workspaceRole = resolveWorkspaceRole(
+    { workspace_role: role, role, app_role: appRole, workspace_type: normalizedWorkspaceType },
+    { appRole, workspaceType: normalizedWorkspaceType },
+  )
+  const resolvedBranchScope = normalizeBranchScope(branchScope, getDefaultBranchScope(workspaceRole, { appRole, workspaceType: normalizedWorkspaceType }))
+  const resolvedBranchId = branchId || primaryBranchId || null
   const resolvedWorkspace = workspace || null
   return {
     id,
@@ -134,8 +163,11 @@ function createMembershipRecord({
     rawRole: normalizeText(role).toLowerCase(),
     status: normalizedStatus,
     isActive: isActiveMembershipStatus(normalizedStatus),
-    branchId,
+    branchId: resolvedBranchId,
+    primaryBranchId: primaryBranchId || resolvedBranchId,
+    branchScope: resolvedBranchScope,
     departmentId,
+    teamId,
     invitedBy,
     joinedAt,
     acceptedAt,
@@ -211,6 +243,7 @@ function buildDiagnostics({
     status,
     reason,
     appRole: profile?.role || '',
+    systemRole: profile?.systemRole || '',
     requestedWorkspaceId: normalizeText(requestedWorkspaceId) || null,
     storedWorkspaceId: normalizeText(storedWorkspaceId) || null,
     currentWorkspaceId: currentMembership?.workspaceId || null,
@@ -242,7 +275,7 @@ function createResolutionResult({
 } = {}) {
   const currentWorkspace = currentMembership?.workspace || null
   const workspaceType = currentWorkspace?.type || currentMembership?.workspaceType || inferWorkspaceTypeFromAppRole(profile?.role)
-  const workspaceRole = currentMembership?.workspaceRole || currentMembership?.role || ''
+  const workspaceRole = currentMembership ? resolveWorkspaceRole(currentMembership, { appRole: profile?.role, workspaceType }) : ''
   const permissions = getPermissionMapForMembership(currentMembership, profile?.role)
   const diagnostics = buildDiagnostics({
     userId: user?.id || profile?.id || currentMembership?.userId || '',
@@ -310,9 +343,13 @@ export function buildWorkspaceResolution({
       workspace,
       workspaceType: row.workspace_type || workspace?.type || inferWorkspaceTypeFromAppRole(appRole),
       appRole: row.app_role || appRole,
-      role: row.organisation_role || row.role,
+      role: row.workspace_role || row.organisation_role || row.role,
       status: row.status,
       branchId: row.branch_id || null,
+      primaryBranchId: row.primary_branch_id || row.branch_id || null,
+      branchScope: row.branch_scope || null,
+      teamId: row.team_id || null,
+      departmentId: row.department_id || null,
       invitedBy: row.invited_by_user_id || null,
       joinedAt: row.joined_at || null,
       acceptedAt: row.accepted_at || null,
@@ -333,6 +370,9 @@ export function buildWorkspaceResolution({
       role: row.role,
       status: row.status,
       departmentId: row.department_id || null,
+      branchId: row.branch_id || null,
+      primaryBranchId: row.primary_branch_id || row.branch_id || null,
+      branchScope: row.branch_scope || null,
       invitedBy: row.invited_by || null,
       joinedAt: row.joined_at || null,
       raw: row,
@@ -528,10 +568,21 @@ export async function setActiveWorkspacePreference(userId, workspaceId, options 
 async function fetchOrganisationMembershipRows(client, user, profile) {
   const userId = normalizeText(user?.id)
   const userEmail = normalizeEmail(user?.email || profile?.email)
-  const byUserId = await client
+  const membershipSelect = 'id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, department_id, team_id, first_name, last_name, email, role, workspace_role, organisation_role, app_role, workspace_type, status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at'
+  const fallbackSelect = 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, organisation_role, app_role, workspace_type, status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at'
+  let byUserId = await client
     .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, first_name, last_name, email, role, organisation_role, app_role, workspace_type, status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at')
+    .select(membershipSelect)
     .eq('user_id', userId)
+
+  if (byUserId.error) {
+    if (isMissingColumnError(byUserId.error, 'branch_scope') || isMissingColumnError(byUserId.error, 'primary_branch_id') || isMissingColumnError(byUserId.error, 'workspace_role')) {
+      byUserId = await client
+        .from('organisation_users')
+        .select(fallbackSelect)
+        .eq('user_id', userId)
+    }
+  }
 
   if (byUserId.error) {
     if (isRecoverableSchemaError(byUserId.error, 'organisation_users', 'organisation_id')) return []
@@ -540,11 +591,19 @@ async function fetchOrganisationMembershipRows(client, user, profile) {
 
   let invitedRows = []
   if (userEmail) {
-    const byEmail = await client
+    let byEmail = await client
       .from('organisation_users')
-      .select('id, organisation_id, user_id, branch_id, first_name, last_name, email, role, organisation_role, app_role, workspace_type, status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at')
+      .select(membershipSelect)
       .eq('email', userEmail)
       .in('status', [MEMBERSHIP_STATUSES.invited, MEMBERSHIP_STATUSES.pending])
+
+    if (byEmail.error && (isMissingColumnError(byEmail.error, 'branch_scope') || isMissingColumnError(byEmail.error, 'primary_branch_id') || isMissingColumnError(byEmail.error, 'workspace_role'))) {
+      byEmail = await client
+        .from('organisation_users')
+        .select(fallbackSelect)
+        .eq('email', userEmail)
+        .in('status', [MEMBERSHIP_STATUSES.invited, MEMBERSHIP_STATUSES.pending])
+    }
 
     if (!byEmail.error) {
       invitedRows = byEmail.data || []
@@ -586,10 +645,17 @@ async function fetchOrganisationRows(client, organisationIds = []) {
 
 async function fetchAttorneyMembershipRows(client, user, profile) {
   const profileFirmId = normalizeText(profile?.primaryAttorneyFirmId || profile?.primary_attorney_firm_id)
-  const query = await client
+  let query = await client
     .from('attorney_firm_members')
-    .select('id, firm_id, user_id, department_id, role, status, invited_by, joined_at, created_at, updated_at')
+    .select('id, firm_id, user_id, branch_id, primary_branch_id, branch_scope, department_id, role, status, invited_by, joined_at, created_at, updated_at')
     .eq('user_id', user.id)
+
+  if (query.error && (isMissingColumnError(query.error, 'branch_scope') || isMissingColumnError(query.error, 'branch_id') || isMissingColumnError(query.error, 'primary_branch_id'))) {
+    query = await client
+      .from('attorney_firm_members')
+      .select('id, firm_id, user_id, department_id, role, status, invited_by, joined_at, created_at, updated_at')
+      .eq('user_id', user.id)
+  }
 
   if (query.error) {
     if (isMissingTableError(query.error, 'attorney_firm_members')) return []
@@ -706,6 +772,132 @@ export class WorkspaceResolutionError extends Error {
   }
 }
 
+export class WorkspaceContextError extends Error {
+  constructor(code = 'workspace_context_missing', details = {}) {
+    super(code)
+    this.name = 'WorkspaceContextError'
+    this.code = code
+    this.details = details
+    this.diagnostics = details
+  }
+}
+
+function normalizeWorkspaceContextId(value) {
+  return normalizeText(value).toLowerCase()
+}
+
+function isInvalidServiceWorkspaceId(value) {
+  const normalized = normalizeWorkspaceContextId(value)
+  return !normalized || INVALID_SERVICE_WORKSPACE_IDS.has(normalized)
+}
+
+export function logUnsafeFallbackBlocked({
+  userId = '',
+  route = '',
+  service = '',
+  missingContextType = '',
+  attemptedFallbackType = '',
+  workspaceId = '',
+  metadata = {},
+} = {}) {
+  const event = {
+    event: 'unsafe_fallback_blocked',
+    user_id: normalizeText(userId) || null,
+    route: normalizeText(route) || (typeof window !== 'undefined' ? window.location.pathname : ''),
+    service: normalizeText(service),
+    missing_context_type: normalizeText(missingContextType),
+    attempted_fallback_type: normalizeText(attemptedFallbackType),
+    workspace_id: normalizeText(workspaceId) || null,
+    environment: getUnsafeFallbackEnvironmentDiagnostics(),
+    timestamp: new Date().toISOString(),
+    metadata,
+  }
+  console.warn('[WORKSPACE_CONTEXT] unsafe fallback blocked', event)
+  return event
+}
+
+export function requireResolvedWorkspaceContext(context = {}, options = {}) {
+  const workspaceId = normalizeText(
+    context.workspaceId ||
+      context.organisationId ||
+      context.currentWorkspace?.id ||
+      context.currentMembership?.workspaceId ||
+      context.authState?.currentWorkspace?.id,
+  )
+  const membership = context.currentMembership || context.authState?.currentMembership || null
+  const workspaceRole = normalizeText(
+    context.workspaceRole ||
+      context.role ||
+      context.currentMembership?.workspaceRole ||
+      context.currentMembership?.role ||
+      context.authState?.workspaceRole ||
+      context.authState?.currentMembership?.workspaceRole ||
+      context.authState?.currentMembership?.role,
+  )
+  const appRole = normalizeCanonicalAppRole(context.appRole || context.profile?.role || context.authState?.appRole, '')
+  const service = options.service || context.service || ''
+
+  if (appRole === APP_ROLES.client || appRole === APP_ROLES.platformAdmin) {
+    return { workspaceId, appRole, membership, workspaceRole }
+  }
+
+  if (isInvalidServiceWorkspaceId(workspaceId)) {
+    const code = workspaceId ? 'invalid_service_workspace_context' : 'workspace_context_missing'
+    const details = {
+      reason: code,
+      workspaceId: workspaceId || null,
+      service,
+      userId: context.userId || context.profile?.id || context.authState?.user?.id || '',
+    }
+    logUnsafeFallbackBlocked({
+      userId: details.userId,
+      service,
+      missingContextType: 'workspace_id',
+      attemptedFallbackType: workspaceId || 'missing_workspace',
+      workspaceId,
+      metadata: details,
+    })
+    throw new WorkspaceContextError(code, details)
+  }
+
+  if (!membership?.id) {
+    const details = {
+      reason: 'membership_context_missing',
+      workspaceId,
+      service,
+      userId: context.userId || context.profile?.id || context.authState?.user?.id || '',
+    }
+    logUnsafeFallbackBlocked({
+      userId: details.userId,
+      service,
+      missingContextType: 'membership_id',
+      attemptedFallbackType: 'query_without_membership',
+      workspaceId,
+      metadata: details,
+    })
+    throw new WorkspaceContextError('membership_context_missing', details)
+  }
+
+  if (!isActiveMembershipStatus(membership.status)) {
+    throw new WorkspaceContextError('inactive_membership', {
+      workspaceId,
+      membershipId: membership.id,
+      membershipStatus: membership.status,
+      service,
+    })
+  }
+
+  if (!workspaceRole) {
+    throw new WorkspaceContextError('workspace_role_missing', {
+      workspaceId,
+      membershipId: membership.id,
+      service,
+    })
+  }
+
+  return { workspaceId, appRole, membership, workspaceRole }
+}
+
 export function assertResolvedWorkspaceContext(context = {}, options = {}) {
   const workspaceId = normalizeText(
     context.workspaceId ||
@@ -721,7 +913,14 @@ export function assertResolvedWorkspaceContext(context = {}, options = {}) {
     return { workspaceId, appRole }
   }
 
-  if (!workspaceId || workspaceId === 'default' || workspaceId === 'all') {
+  if (isInvalidServiceWorkspaceId(workspaceId)) {
+    logUnsafeFallbackBlocked({
+      userId: context.userId || context.profile?.id || context.authState?.user?.id || '',
+      service: options.service || '',
+      missingContextType: 'workspace_id',
+      attemptedFallbackType: workspaceId || 'missing_workspace',
+      workspaceId,
+    })
     throw new WorkspaceResolutionError(options.message || 'A resolved workspace context is required before loading professional data.', {
       reason: 'missing_workspace_id',
       workspaceId: workspaceId || null,

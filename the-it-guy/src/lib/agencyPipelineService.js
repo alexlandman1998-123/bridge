@@ -1,6 +1,8 @@
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 import { createTransactionFromLeadOverride } from './transactionLifecycleService'
 import { MOCK_DATA_ENABLED } from './mockData'
+import { isUnsafeFallbackAllowed } from './envValidation'
+import { logUnsafeFallbackBlocked, WorkspaceContextError } from '../services/workspaceResolutionService'
 import {
   getAppointmentCompletionBehavior,
   getAppointmentTypeDefinition,
@@ -373,6 +375,28 @@ function getStorageKey(organisationId) {
   return `${STORAGE_PREFIX}:${org}`
 }
 
+function localFallbackAllowed(service = '', organisationId = '', attemptedFallbackType = 'local_crm_snapshot') {
+  const allowed = isUnsafeFallbackAllowed()
+  if (!allowed) {
+    logUnsafeFallbackBlocked({
+      service,
+      missingContextType: 'workspace_scoped_data',
+      attemptedFallbackType,
+      workspaceId: organisationId,
+    })
+  }
+  return allowed
+}
+
+function assertLocalFallbackAllowed(service = '', organisationId = '', attemptedFallbackType = 'local_crm_mutation') {
+  if (localFallbackAllowed(service, organisationId, attemptedFallbackType)) return
+  throw new WorkspaceContextError('unsafe_local_fallback_blocked', {
+    service,
+    workspaceId: normalizeText(organisationId) || null,
+    attemptedFallbackType,
+  })
+}
+
 function createEmptyStore(organisationId) {
   return {
     version: 1,
@@ -393,6 +417,9 @@ function createEmptyStore(organisationId) {
 }
 
 function safeReadStore(organisationId) {
+  if (!localFallbackAllowed('agencyPipelineService.safeReadStore', organisationId, 'local_crm_snapshot')) {
+    return createEmptyStore(organisationId)
+  }
   if (typeof window === 'undefined') return createEmptyStore(organisationId)
   try {
     const raw = window.localStorage.getItem(getStorageKey(organisationId))
@@ -420,6 +447,7 @@ function safeReadStore(organisationId) {
 }
 
 function writeStore(organisationId, store) {
+  if (!localFallbackAllowed('agencyPipelineService.writeStore', organisationId, 'local_crm_snapshot_write')) return
   if (typeof window === 'undefined') return
   const payload = {
     ...store,
@@ -731,6 +759,9 @@ function pruneDeletedLeadFromSiblingStores(organisationId, deletedKeys = new Set
 }
 
 export function filterDeletedAgencyLeadRows(organisationId, leads = [], contacts = []) {
+  if (!isUnsafeFallbackAllowed()) {
+    return Array.isArray(leads) ? leads : []
+  }
   const store = {
     ...safeReadStore(organisationId),
     contacts: Array.isArray(contacts) ? contacts : [],
@@ -740,6 +771,7 @@ export function filterDeletedAgencyLeadRows(organisationId, leads = [], contacts
 }
 
 export function recoverAgencyPipelineStoreForOrganisation(organisationId) {
+  assertLocalFallbackAllowed('agencyPipelineService.recoverAgencyPipelineStoreForOrganisation', organisationId, 'legacy_local_crm_recovery')
   const targetOrgId = normalizeText(organisationId)
   if (!targetOrgId || targetOrgId === 'default') return { migrated: false, reason: 'no_target' }
   if (typeof window === 'undefined' || !window.localStorage) return { migrated: false, reason: 'no_storage' }
@@ -825,6 +857,7 @@ export function recoverAgencyPipelineStoreForOrganisation(organisationId) {
 export function resolveAgencyPipelineStorageScope(preferredOrganisationId = '') {
   const preferred = normalizeText(preferredOrganisationId)
   if (preferred && preferred !== 'default') return preferred
+  assertLocalFallbackAllowed('agencyPipelineService.resolveAgencyPipelineStorageScope', preferredOrganisationId, 'legacy_local_crm_scope_resolution')
   if (typeof window === 'undefined' || !window.localStorage) {
     throw new Error('A resolved organisation id is required before loading agency pipeline data.')
   }
@@ -995,6 +1028,9 @@ function normalizeLeadRecord(lead = {}, organisationId) {
 }
 
 export function getAgencyPipelineSnapshot(organisationId) {
+  if (!localFallbackAllowed('agencyPipelineService.getAgencyPipelineSnapshot', organisationId, 'local_crm_snapshot')) {
+    return createEmptyStore(organisationId)
+  }
   const store = safeReadStore(organisationId)
   const deletedKeys = getDeletedLeadKeySet(store)
   const dedupeMap = new Map()
@@ -1023,6 +1059,19 @@ export function getAgencyPipelineSnapshot(organisationId) {
 }
 
 export function reconcileAgencyPipelineSnapshot(organisationId, snapshot = {}, options = {}) {
+  if (!localFallbackAllowed('agencyPipelineService.reconcileAgencyPipelineSnapshot', organisationId, 'local_crm_snapshot_merge')) {
+    return {
+      ...createEmptyStore(organisationId),
+      contacts: Array.isArray(snapshot.contacts) ? snapshot.contacts : [],
+      leads: Array.isArray(snapshot.leads) ? snapshot.leads.map((row) => normalizeLeadRecord(row, organisationId)) : [],
+      leadActivities: Array.isArray(snapshot.leadActivities) ? snapshot.leadActivities : [],
+      tasks: Array.isArray(snapshot.tasks) ? snapshot.tasks : [],
+      appointments: Array.isArray(snapshot.appointments) ? snapshot.appointments : [],
+      appointmentParticipants: Array.isArray(snapshot.appointmentParticipants) ? snapshot.appointmentParticipants : [],
+      transactions: Array.isArray(snapshot.transactions) ? snapshot.transactions : [],
+      deals: Array.isArray(snapshot.deals) ? snapshot.deals : [],
+    }
+  }
   const store = safeReadStore(organisationId)
   const nextStore = {
     ...store,
@@ -1135,6 +1184,7 @@ export function listAgencyLeads(organisationId, { agentId = '', includeAll = fal
 }
 
 export function createAgencyLead(organisationId, payload = {}, { actor = null } = {}) {
+  assertLocalFallbackAllowed('agencyPipelineService.createAgencyLead', organisationId)
   const store = safeReadStore(organisationId)
   const assignedAgent = resolveAgentSnapshot(payload?.assignedAgent || actor || {})
   const leadPayload = {
@@ -1210,6 +1260,7 @@ export function createAgencyLead(organisationId, payload = {}, { actor = null } 
 }
 
 export function updateAgencyLead(organisationId, leadId, updater = {}) {
+  assertLocalFallbackAllowed('agencyPipelineService.updateAgencyLead', organisationId)
   const store = safeReadStore(organisationId)
   const targetId = normalizeLeadIdentityKey(leadId)
   let updatedLead = null
@@ -1235,6 +1286,7 @@ export function updateAgencyLead(organisationId, leadId, updater = {}) {
 }
 
 export function updateAgencyContact(organisationId, contactId, updater = {}) {
+  assertLocalFallbackAllowed('agencyPipelineService.updateAgencyContact', organisationId)
   const store = safeReadStore(organisationId)
   const targetId = normalizeText(contactId)
   if (!targetId) return null
@@ -1264,6 +1316,7 @@ export function updateAgencyContact(organisationId, contactId, updater = {}) {
 }
 
 export function deleteAgencyLead(organisationId, leadId) {
+  assertLocalFallbackAllowed('agencyPipelineService.deleteAgencyLead', organisationId)
   const store = safeReadStore(organisationId)
   const targetId = normalizeLeadIdentityKey(leadId)
   if (!targetId) return false
@@ -1280,6 +1333,7 @@ export function deleteAgencyLead(organisationId, leadId) {
 }
 
 export function addLeadActivity(organisationId, leadId, payload = {}) {
+  assertLocalFallbackAllowed('agencyPipelineService.addLeadActivity', organisationId)
   const store = safeReadStore(organisationId)
   const agent = resolveAgentSnapshot(payload?.agent || {})
   const next = {
@@ -1302,6 +1356,7 @@ export function addLeadActivity(organisationId, leadId, payload = {}) {
 }
 
 export function updateLeadActivity(organisationId, activityId, updater = {}) {
+  assertLocalFallbackAllowed('agencyPipelineService.updateLeadActivity', organisationId)
   const store = safeReadStore(organisationId)
   const targetId = normalizeText(activityId)
   if (!targetId) return null
@@ -1329,6 +1384,7 @@ export function updateLeadActivity(organisationId, activityId, updater = {}) {
 }
 
 export function deleteLeadActivity(organisationId, activityId) {
+  assertLocalFallbackAllowed('agencyPipelineService.deleteLeadActivity', organisationId)
   const store = safeReadStore(organisationId)
   const targetId = normalizeText(activityId)
   if (!targetId) return false
@@ -1990,11 +2046,21 @@ async function listAppointmentResourcesFromSupabase(organisationId, { includeIna
 export async function listAppointmentResourcesAsync(organisationId, { includeInactive = false } = {}) {
   const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
   if (fallbackReason) {
-    return []
+    if (isUnsafeFallbackAllowed()) return []
+    throw new WorkspaceContextError('invalid_service_workspace_context', {
+      service: 'agencyPipelineService.listAppointmentResourcesAsync',
+      workspaceId: normalizeText(organisationId) || null,
+      attemptedFallbackType: fallbackReason,
+    })
   }
   const scopedOrganisationId = normalizeText(organisationId)
-  if (!isUuidLike(scopedOrganisationId)) return []
-  if (!isSupabaseConfigured || !supabase) return []
+  if (!isUuidLike(scopedOrganisationId)) {
+    throw new WorkspaceContextError('invalid_service_workspace_context', {
+      service: 'agencyPipelineService.listAppointmentResourcesAsync',
+      workspaceId: scopedOrganisationId || null,
+    })
+  }
+  if (!isSupabaseConfigured || !supabase) throw new Error('Appointment resources require the database connection.')
   return listAppointmentResourcesFromSupabase(scopedOrganisationId, { includeInactive })
 }
 
@@ -2028,6 +2094,13 @@ export async function checkAppointmentSchedulingIntegrityAsync(
 ) {
   const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
   if (fallbackReason) {
+    if (!isUnsafeFallbackAllowed()) {
+      throw new WorkspaceContextError('invalid_service_workspace_context', {
+        service: 'agencyPipelineService.checkAppointmentSchedulingIntegrityAsync',
+        workspaceId: normalizeText(organisationId) || null,
+        attemptedFallbackType: fallbackReason,
+      })
+    }
     return {
       hardConflicts: [],
       softConflicts: [],
@@ -2123,6 +2196,7 @@ async function fetchAppointmentByIdFromSupabase(organisationId, appointmentId, o
 }
 
 export function createLeadTask(organisationId, leadId, payload = {}, { actor = null } = {}) {
+  assertLocalFallbackAllowed('agencyPipelineService.createLeadTask', organisationId)
   const store = safeReadStore(organisationId)
   const assigned = resolveAgentSnapshot(payload?.assignedAgent || actor || {})
   const created = {
@@ -2154,6 +2228,7 @@ export function createLeadTask(organisationId, leadId, payload = {}, { actor = n
 }
 
 export function updateLeadTask(organisationId, taskId, updater = {}, { actor = null, suppressActivity = false } = {}) {
+  assertLocalFallbackAllowed('agencyPipelineService.updateLeadTask', organisationId)
   const store = safeReadStore(organisationId)
   const targetId = normalizeText(taskId)
   let updatedTask = null
@@ -2185,6 +2260,7 @@ export function updateLeadTask(organisationId, taskId, updater = {}, { actor = n
 }
 
 export function deleteLeadTask(organisationId, taskId) {
+  assertLocalFallbackAllowed('agencyPipelineService.deleteLeadTask', organisationId)
   const store = safeReadStore(organisationId)
   const targetId = normalizeText(taskId)
   if (!targetId) return false
@@ -2213,6 +2289,7 @@ export function listLeadTasks(organisationId, leadId, { includeAll = false, agen
 }
 
 export function createLeadAppointment(organisationId, leadId, payload = {}, { actor = null } = {}) {
+  assertLocalFallbackAllowed('agencyPipelineService.createLeadAppointment', organisationId)
   return createAppointment(
     organisationId,
     {
@@ -2226,6 +2303,7 @@ export function createLeadAppointment(organisationId, leadId, payload = {}, { ac
 export async function createAppointmentAsync(organisationId, payload = {}, { actor = null } = {}) {
   const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
   if (fallbackReason) {
+    assertLocalFallbackAllowed('agencyPipelineService.createAppointmentAsync', organisationId, fallbackReason)
     return createAppointment(organisationId, payload, { actor })
   }
 
@@ -2456,6 +2534,7 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
 export async function updateAppointmentAsync(organisationId, appointmentId, updater = {}, { actor = null } = {}) {
   const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
   if (fallbackReason) {
+    assertLocalFallbackAllowed('agencyPipelineService.updateAppointmentAsync', organisationId, fallbackReason)
     return updateAppointment(organisationId, appointmentId, updater, { actor })
   }
 
@@ -2697,6 +2776,7 @@ export async function updateAppointmentParticipantRsvpAsync(
 ) {
   const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
   if (fallbackReason) {
+    assertLocalFallbackAllowed('agencyPipelineService.updateAppointmentParticipantRsvpAsync', organisationId, fallbackReason)
     return updateAppointmentParticipantRsvp(organisationId, appointmentId, participantId, payload, { actor })
   }
 
@@ -2797,6 +2877,7 @@ export async function updateAppointmentParticipantRsvpAsync(
 export async function addAppointmentOutcomeAsync(organisationId, appointmentId, payload = {}, { actor = null } = {}) {
   const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
   if (fallbackReason) {
+    assertLocalFallbackAllowed('agencyPipelineService.addAppointmentOutcomeAsync', organisationId, fallbackReason)
     return addAppointmentOutcome(organisationId, appointmentId, payload, { actor })
   }
 
@@ -2837,6 +2918,7 @@ export async function addAppointmentOutcomeAsync(organisationId, appointmentId, 
 }
 
 export function createAppointment(organisationId, payload = {}, { actor = null } = {}) {
+  assertLocalFallbackAllowed('agencyPipelineService.createAppointment', organisationId)
   const store = safeReadStore(organisationId)
   const assigned = resolveAgentSnapshot(payload?.assignedAgent || payload?.agent || actor || {})
   const nextId = createUuid()
@@ -2956,6 +3038,7 @@ export function createAppointment(organisationId, payload = {}, { actor = null }
 }
 
 export function updateAppointment(organisationId, appointmentId, updater = {}, { actor = null } = {}) {
+  assertLocalFallbackAllowed('agencyPipelineService.updateAppointment', organisationId)
   const store = safeReadStore(organisationId)
   const targetId = normalizeText(appointmentId)
   if (!targetId) return null
@@ -3055,6 +3138,7 @@ export function updateAppointmentParticipantRsvp(
   payload = {},
   { actor = null } = {},
 ) {
+  assertLocalFallbackAllowed('agencyPipelineService.updateAppointmentParticipantRsvp', organisationId)
   const store = safeReadStore(organisationId)
   const targetAppointmentId = normalizeText(appointmentId)
   const targetParticipantId = normalizeText(participantId)
@@ -3108,6 +3192,7 @@ export function updateAppointmentParticipantRsvp(
 }
 
 export function addAppointmentOutcome(organisationId, appointmentId, payload = {}, { actor = null } = {}) {
+  assertLocalFallbackAllowed('agencyPipelineService.addAppointmentOutcome', organisationId)
   const updated = updateAppointment(
     organisationId,
     appointmentId,
@@ -3225,10 +3310,14 @@ export function getAppointmentsDashboardSummary(
 export async function listAppointmentsAsync(organisationId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], listingId = '', from = null, to = null } = {}) {
   const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
   if (fallbackReason) {
+    assertLocalFallbackAllowed('agencyPipelineService.listAppointmentsAsync', organisationId, fallbackReason)
     return listAppointments(organisationId, { includeAll, agentId, agentEmail, agentKeys, listingId, from, to })
   }
   if (!isUuidLike(normalizeText(organisationId))) {
-    return listAppointments(organisationId, { includeAll, agentId, agentEmail, agentKeys, listingId, from, to })
+    throw new WorkspaceContextError('invalid_service_workspace_context', {
+      service: 'agencyPipelineService.listAppointmentsAsync',
+      workspaceId: normalizeText(organisationId) || null,
+    })
   }
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Appointment scheduling requires the database connection.')
@@ -3236,7 +3325,7 @@ export async function listAppointmentsAsync(organisationId, { includeAll = false
   try {
     return await listAppointmentsFromSupabase(organisationId, { includeAll, agentId, agentEmail, agentKeys, listingId, from, to })
   } catch (error) {
-    if (isPermissionDeniedError(error)) {
+    if (isPermissionDeniedError(error) && isUnsafeFallbackAllowed()) {
       return listAppointments(organisationId, { includeAll, agentId, agentEmail, agentKeys, listingId, from, to })
     }
     throw error
@@ -3258,6 +3347,7 @@ export async function getAppointmentsDashboardSummaryAsync(
 }
 
 export async function convertLeadToTransactionRecord(organisationId, leadId, payload = {}, { actor = null } = {}) {
+  assertLocalFallbackAllowed('agencyPipelineService.convertLeadToTransactionRecord', organisationId, 'local_crm_transaction_conversion')
   const store = safeReadStore(organisationId)
   const targetLeadId = normalizeText(leadId)
   const lead = store.leads.find((row) => normalizeText(row?.leadId) === targetLeadId)

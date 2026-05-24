@@ -455,8 +455,8 @@ async function loadAnalyticsDataset() {
   const organisationId = normalizeText(context?.organisation?.id)
   const localSnapshot = organisationId ? getAgencyPipelineSnapshot(organisationId) : { leads: [], appointments: [], tasks: [], deals: [], transactions: [] }
   const transactionFields = [
-    'id, organisation_id, assigned_branch_id, lifecycle_state, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, finance_type, cash_amount, bond_amount, bank, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, assigned_attorney_email, assigned_bond_originator_email, next_action, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, registration_date, completed_at, cancelled_at, archived_at, updated_at, created_at, is_active',
-    'id, development_id, unit_id, buyer_id, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, bank, sales_price, purchase_price, updated_at, created_at, is_active',
+    'id, organisation_id, assigned_branch_id, assigned_user_id, owner_user_id, created_by, lifecycle_state, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, finance_type, cash_amount, bond_amount, bank, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_id, assigned_agent_email, assigned_attorney_email, assigned_bond_originator_email, next_action, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, registration_date, completed_at, cancelled_at, archived_at, updated_at, created_at, is_active',
+    'id, development_id, unit_id, buyer_id, assigned_user_id, owner_user_id, created_by, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_id, assigned_agent_email, bank, sales_price, purchase_price, updated_at, created_at, is_active',
   ]
   const [
     transactions,
@@ -469,20 +469,20 @@ async function loadAnalyticsDataset() {
   ] = await Promise.all([
     safeSelect('transactions', transactionFields, { order: 'updated_at', limit: 2000, organisationColumn: '' }),
     organisationId ? safeSelect('leads', [
-      'lead_id, organisation_id, branch_id, assigned_agent_id, assigned_agent_email, lead_source, source, lead_category, lead_type, status, stage, converted_transaction_id, converted_at, budget, estimated_value, property_interest, seller_property_address, suburb, city, created_at, updated_at',
-      'lead_id, organisation_id, assigned_agent_id, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at',
+      'lead_id, organisation_id, branch_id, assigned_user_id, assigned_agent_id, assigned_agent_email, created_by, lead_source, source, lead_category, lead_type, status, stage, converted_transaction_id, converted_at, budget, estimated_value, property_interest, seller_property_address, suburb, city, created_at, updated_at',
+      'lead_id, organisation_id, assigned_user_id, assigned_agent_id, assigned_agent_email, created_by, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at',
     ], { organisationId, order: 'updated_at', limit: 2000 }) : [],
     organisationId ? safeSelect('private_listings', [
-      'id, organisation_id, branch_id, development_id, assigned_agent_email, assigned_agent_name, listing_title, asking_price, listing_status, listing_visibility, stage, suburb, city, location, created_at, updated_at',
-      'id, organisation_id, assigned_agent_email, listing_title, asking_price, listing_status, stage, created_at, updated_at',
+      'id, organisation_id, branch_id, development_id, assigned_user_id, assigned_agent_id, assigned_agent_email, assigned_agent_name, created_by, listing_title, asking_price, listing_status, listing_visibility, stage, suburb, city, location, created_at, updated_at',
+      'id, organisation_id, assigned_user_id, assigned_agent_id, assigned_agent_email, created_by, listing_title, asking_price, listing_status, stage, created_at, updated_at',
     ], { organisationId, order: 'updated_at', limit: 1600 }) : [],
     organisationId ? safeSelect('organisation_users', [
-      'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, status, last_active_at, created_at, updated_at',
+      'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, organisation_role, status, last_active_at, created_at, updated_at',
       'id, organisation_id, user_id, first_name, last_name, email, role, status, last_active_at, created_at, updated_at',
     ], { organisationId, order: 'updated_at', limit: 800 }) : [],
     organisationId ? safeSelect('appointments', [
-      'appointment_id, organisation_id, transaction_id, lead_id, agent_id, branch_id, appointment_type, title, date_time, appointment_date, status, completed_at, created_at, updated_at',
-      'appointment_id, organisation_id, transaction_id, lead_id, agent_id, appointment_type, title, date_time, appointment_date, status, created_at, updated_at',
+      'appointment_id, organisation_id, transaction_id, lead_id, agent_id, branch_id, assigned_user_id, created_by, appointment_type, title, date_time, appointment_date, status, completed_at, created_at, updated_at',
+      'appointment_id, organisation_id, transaction_id, lead_id, agent_id, assigned_user_id, created_by, appointment_type, title, date_time, appointment_date, status, created_at, updated_at',
     ], { organisationId, order: 'date_time', limit: 1000 }) : [],
     safeSelect('buyers', [
       'id, name, email, age, date_of_birth, gender, sex, buyer_type, purchaser_type, entity_type, marital_regime, marital_status, nationality, citizenship, country, income_bracket, monthly_income_bracket, income_range, created_at, updated_at',
@@ -520,6 +520,7 @@ export default function AgencyAnalyticsPage() {
   const [branchId, setBranchId] = useState('all')
   const [dateRange, setDateRange] = useState('last_30_days')
   const [comparison, setComparison] = useState('previous_30_days')
+  const [includeLeadershipInLeaderboard, setIncludeLeadershipInLeaderboard] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -548,8 +549,9 @@ export default function AgencyAnalyticsPage() {
         branchId,
         dateRangeKey: dateRange,
         comparisonKey: comparison,
+        includeLeadershipInLeaderboard,
       }),
-    [branchId, comparison, dataset, dateRange],
+    [branchId, comparison, dataset, dateRange, includeLeadershipInLeaderboard],
   )
 
   const branchOptions = analytics.filters.branchOptions
@@ -778,21 +780,43 @@ export default function AgencyAnalyticsPage() {
 
           <section className="grid gap-5 xl:grid-cols-2">
             <article className={`${CARD_CLASS} p-5`}>
-              <CardHeader eyebrow="Agent Performance" title="Agent Performance Top 5" copy="Sorted by pipeline value." action={<Link to="/agency/agents" className="text-xs font-semibold text-[#1769d1]">View all agents</Link>} />
+              <CardHeader
+                eyebrow="User Performance"
+                title="Production leaderboard"
+                copy="Default shows agent roles only. Include leadership to show principals and managers with operational activity."
+                action={(
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-[#40546a]">
+                      <input
+                        type="checkbox"
+                        checked={includeLeadershipInLeaderboard}
+                        onChange={(event) => setIncludeLeadershipInLeaderboard(event.target.checked)}
+                        className="h-4 w-4 rounded border-[#c8d6e5] text-[#1769d1]"
+                      />
+                      Include principals and managers
+                    </label>
+                    <Link to="/agency/agents" className="text-xs font-semibold text-[#1769d1]">View all users</Link>
+                  </div>
+                )}
+              />
               <DataTable
                 minWidth={760}
-                emptyTitle="No agent performance yet"
+                emptyTitle="No production activity yet"
                 columns={[
                   {
                     key: 'agent',
-                    label: 'Agent',
+                    label: 'User',
                     render: (row) => (
                       <span className="inline-flex items-center gap-2 font-semibold text-[#102236]">
                         <span className="grid h-8 w-8 place-items-center rounded-full bg-[#edf5ff] text-xs text-[#1769d1]">{getInitials(row.agent)}</span>
-                        {row.agent}
+                        <span>
+                          <span className="block">{row.agent}</span>
+                          <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7a8ca1]">{row.roleLabel || 'Agent'}</span>
+                        </span>
                       </span>
                     ),
                   },
+                  { key: 'listings', label: 'Listings', render: (row) => formatNumber(row.listings) },
                   { key: 'pipelineValue', label: 'Pipeline Value', render: (row) => formatCurrency(row.pipelineValue, { compact: true }) },
                   { key: 'conversionRate', label: 'Conversion Rate', render: (row) => formatPercent(row.conversionRate) },
                   { key: 'registrations', label: 'Registrations', render: (row) => formatNumber(row.registrations) },
@@ -819,6 +843,8 @@ export default function AgencyAnalyticsPage() {
                   { key: 'listings', label: 'Listings', render: (row) => formatNumber(row.listings) },
                   { key: 'transactions', label: 'Transactions', render: (row) => formatNumber(row.transactions) },
                   { key: 'activeAgents', label: 'Active Agents', render: (row) => formatNumber(row.activeAgents) },
+                  { key: 'activePrincipals', label: 'Principals', render: (row) => formatNumber(row.activePrincipals) },
+                  { key: 'activeOperationalUsers', label: 'Operational Users', render: (row) => formatNumber(row.activeOperationalUsers) },
                 ]}
                 rows={showBranchComparison ? analytics.branchPerformance : analytics.branchPerformance.filter((row) => row.branchId === branchId)}
               />

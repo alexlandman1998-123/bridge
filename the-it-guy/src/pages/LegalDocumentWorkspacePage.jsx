@@ -25,6 +25,7 @@ import {
   resolveDocumentPacketBranding,
 } from '../lib/documentPacketsApi'
 import { fetchTransactionById, updateOtpDocumentWorkflowState } from '../lib/api'
+import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { fetchAgencyOnboardingSettings } from '../lib/settingsApi'
 import { getSellerOnboardingByToken } from '../services/privateListingService'
@@ -302,6 +303,7 @@ function findLeadContextAcrossStores({ organisationId = '', leadId = '' } = {}) 
   const direct = findLeadContext({ organisationId, leadId })
   if (direct.lead) return direct
 
+  if (!isUnsafeFallbackAllowed()) return direct
   if (typeof window === 'undefined' || !leadId) return direct
   try {
     const normalizedLeadId = normalizeText(leadId)

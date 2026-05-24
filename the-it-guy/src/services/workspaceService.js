@@ -3,15 +3,17 @@ import { MEMBERSHIP_STATUSES, normalizeMembershipStatus } from '../constants/mem
 import { ONBOARDING_EVENT_TYPES, ONBOARDING_STATUSES, ONBOARDING_STEPS } from '../constants/onboardingStatuses'
 import { normalizeOrgRole, ORG_ROLES } from '../constants/orgRoles'
 import { SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
+import { getDefaultBranchScope, getWorkspaceUnitLabels } from '../constants/workspaceUnits'
 import { WORKSPACE_TYPES, inferWorkspaceTypeFromAppRole, normalizeWorkspaceType } from '../constants/workspaceTypes'
 import { normalizeSignupIntent } from '../lib/signupIntent'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { assertPermission } from '../auth/permissions/permissionResolver'
 import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
-import { createAttorneyFirm } from './attorneyFirms'
 import { recordSecurityAuditEvent } from './auditLogService'
 import { completeOnboarding } from './onboarding/onboardingEngine'
 import { recordOnboardingEvent, upsertOnboardingState } from './onboarding/onboardingPersistence'
+import { resolveCurrentWorkspace } from './workspaceResolutionService'
+import { acceptInvite, createInvite, getInviteByToken, InviteValidationError } from './inviteService'
 
 function requireClient() {
   if (!isSupabaseConfigured || !supabase) {
@@ -54,13 +56,17 @@ function mapOwnerRole(intent) {
   const intended = normalizeOrgRole(intent?.intended_org_role, { appRole: intent?.app_role, workspaceType })
   if (workspaceType === WORKSPACE_TYPES.agency) return intended === ORG_ROLES.owner ? ORG_ROLES.owner : ORG_ROLES.principal
   if (workspaceType === WORKSPACE_TYPES.developerCompany) return [ORG_ROLES.director, ORG_ROLES.owner].includes(intended) ? intended : ORG_ROLES.owner
-  if (workspaceType === WORKSPACE_TYPES.bondOriginator) return [ORG_ROLES.manager, ORG_ROLES.owner].includes(intended) ? intended : ORG_ROLES.owner
+  if (workspaceType === WORKSPACE_TYPES.bondOriginator) return [ORG_ROLES.director, ORG_ROLES.manager, ORG_ROLES.owner].includes(intended) ? intended : ORG_ROLES.owner
+  if (workspaceType === WORKSPACE_TYPES.attorneyFirm) return [ORG_ROLES.partner, ORG_ROLES.director, ORG_ROLES.owner].includes(intended) ? intended : ORG_ROLES.owner
   return intended || ORG_ROLES.owner
 }
 
-function buildOrganisationSettings({ intent, workspace, form }) {
-  return {
-    workspaceType: intent.workspace_type,
+function buildAtomicWorkspaceOnboardingPayload({ intent, user, form = {} } = {}) {
+  const workspaceType = normalizeWorkspaceType(intent.workspace_type)
+  const name = normalizeText(form.name || form.companyName || form.agencyName || form.firmName || form.businessName)
+  const ownerRole = mapOwnerRole(intent)
+  const settings = {
+    workspaceType,
     onboardingPath: intent.onboarding_path,
     workspaceAction: intent.workspace_action,
     profile: {
@@ -70,59 +76,56 @@ function buildOrganisationSettings({ intent, workspace, form }) {
       operatingArea: normalizeText(form.operatingArea),
     },
     workspace: {
-      id: workspace?.id || '',
-      name: workspace?.name || normalizeText(form.name),
-      createdFrom: 'phase_3_workspace_engine',
+      name,
+      createdFrom: 'bridge_complete_workspace_onboarding',
     },
     setup: {
       completedAt: new Date().toISOString(),
-      defaultStructureCreated: true,
+      defaultStructureCreated: [WORKSPACE_TYPES.agency, WORKSPACE_TYPES.attorneyFirm, WORKSPACE_TYPES.bondOriginator].includes(workspaceType),
     },
   }
-}
 
-function buildOrganisationPayload({ intent, user, form }) {
-  const workspaceType = normalizeWorkspaceType(intent.workspace_type)
-  const name = normalizeText(form.name || form.companyName || form.agencyName || form.firmName || form.businessName)
-  const legalName = normalizeText(form.legalName || name)
-  if (!name) throw new Error('Workspace name is required.')
+  const branches =
+    [WORKSPACE_TYPES.agency, WORKSPACE_TYPES.attorneyFirm, WORKSPACE_TYPES.bondOriginator].includes(workspaceType)
+      ? [{
+          name: normalizeText(form.mainBranchName || form.defaultTeamName) || getWorkspaceUnitLabels(workspaceType).defaultName,
+          province: normalizeText(form.province),
+          city: normalizeText(form.city || form.operatingArea),
+          location: normalizeText(form.location || form.province || form.operatingArea),
+          phone: normalizeText(form.contactNumber || form.phone),
+          email: normalizeEmail(form.businessEmail || form.email || user.email),
+        }]
+      : []
 
   return {
-    name,
-    display_name: name,
-    type: workspaceType,
-    legal_name: legalName || null,
-    registration_number: normalizeText(form.registrationNumber) || null,
-    company_email: normalizeEmail(form.businessEmail || form.email || user.email) || null,
-    company_phone: normalizeText(form.contactNumber || form.phone) || null,
-    support_email: normalizeEmail(form.businessEmail || form.email || user.email) || null,
-    support_phone: normalizeText(form.contactNumber || form.phone) || null,
-    province: normalizeText(form.province) || null,
-    city: normalizeText(form.city || form.operatingArea) || null,
-    country: 'South Africa',
-    primary_contact_person: normalizeText(form.primaryContactName || user.user_metadata?.full_name || user.email) || null,
-    status: 'active',
-    created_by: user.id,
-    settings_json: {
-      workspaceType,
-      source: 'phase_3_workspace_engine',
+    signup_intent_id: intent.id || null,
+    idempotency_key: `${workspaceType}:${intent.id || user.id}:${name.toLowerCase()}`,
+    workspace_type: workspaceType,
+    workspace_kind: workspaceType,
+    workspace_action: SIGNUP_WORKSPACE_ACTIONS.createWorkspace,
+    onboarding_path: intent.onboarding_path,
+    organisation: {
+      name,
+      legal_name: normalizeText(form.legalName || name),
+      trading_name: normalizeText(form.tradingName || name),
+      registration_number: normalizeText(form.registrationNumber),
+      email: normalizeEmail(form.businessEmail || form.email || user.email),
+      phone: normalizeText(form.contactNumber || form.phone),
+      website: normalizeText(form.website),
+      address: normalizeText(form.address || form.physicalAddress),
+      province: normalizeText(form.province),
+      country: 'South Africa',
     },
-  }
-}
-
-async function upsertOrganisationSettings(client, { organisationId, settings }) {
-  const result = await client
-    .from('organisation_settings')
-    .upsert(
-      {
-        organisation_id: organisationId,
-        settings_json: settings,
-      },
-      { onConflict: 'organisation_id' },
-    )
-
-  if (result.error) {
-    throw result.error
+    owner: {
+      user_id: user.id,
+      workspace_role: ownerRole,
+      full_name: normalizeText(form.primaryContactName || user.user_metadata?.full_name || user.email),
+      email: normalizeEmail(user.email),
+      phone: normalizeText(form.contactNumber || form.phone),
+    },
+    branches,
+    settings,
+    invites: [],
   }
 }
 
@@ -162,7 +165,7 @@ export async function createDefaultBranchOrTeam(workspace, { user = null, form =
   const defaultName =
     normalizeText(form.mainBranchName) ||
     normalizeText(form.defaultTeamName) ||
-    (workspaceType === WORKSPACE_TYPES.agency ? 'Main Branch' : workspaceType === WORKSPACE_TYPES.bondOriginator ? 'Main Team' : 'Head Office')
+    getWorkspaceUnitLabels(workspaceType).defaultName
   const slug = slugify(defaultName)
 
   const existing = await client
@@ -214,6 +217,8 @@ export async function createMembership(user, workspace, role, options = {}) {
   const appRole = normalizeCanonicalAppRole(options.appRole || options.app_role || user.user_metadata?.app_role || user.user_metadata?.role, '')
   const workspaceType = normalizeWorkspaceType(options.workspaceType || options.workspace_type || workspace.type, inferWorkspaceTypeFromAppRole(appRole))
   const organisationRole = normalizeOrgRole(role, { appRole, workspaceType })
+  const branchId = options.branchId || options.branch_id || null
+  const branchScope = options.branchScope || options.branch_scope || getDefaultBranchScope(organisationRole, { appRole, workspaceType })
   const nameParts = splitFullName(options.fullName || user.user_metadata?.full_name || '')
   const email = normalizeEmail(options.email || user.email)
 
@@ -223,11 +228,14 @@ export async function createMembership(user, workspace, role, options = {}) {
       {
         organisation_id: workspaceId,
         user_id: user.id,
-        branch_id: options.branchId || options.branch_id || null,
+        branch_id: branchId,
+        primary_branch_id: options.primaryBranchId || options.primary_branch_id || branchId,
+        branch_scope: branchScope,
         first_name: normalizeText(options.firstName || nameParts.firstName) || null,
         last_name: normalizeText(options.lastName || nameParts.lastName) || null,
         email,
         role: organisationRole,
+        workspace_role: organisationRole,
         organisation_role: organisationRole,
         app_role: appRole || null,
         workspace_type: workspaceType || null,
@@ -240,7 +248,7 @@ export async function createMembership(user, workspace, role, options = {}) {
       },
       { onConflict: 'organisation_id,email' },
     )
-    .select('id, organisation_id, user_id, branch_id, email, role, organisation_role, app_role, workspace_type, status, created_at, updated_at')
+    .select('id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, email, role, workspace_role, organisation_role, app_role, workspace_type, status, created_at, updated_at')
     .single()
 
   if (result.error) {
@@ -249,100 +257,56 @@ export async function createMembership(user, workspace, role, options = {}) {
   return result.data
 }
 
-async function updateCreatorMembershipBranch(client, membershipId, branchId) {
-  if (!membershipId || !branchId) return
-  const result = await client
-    .from('organisation_users')
-    .update({ branch_id: branchId })
-    .eq('id', membershipId)
-
-  if (result.error) {
-    throw result.error
-  }
-}
-
 async function createOrganisationWorkspaceFromIntent(intent, user, form = {}) {
   const client = requireClient()
-  const organisationPayload = buildOrganisationPayload({ intent, user, form })
-  const orgResult = await client
-    .from('organisations')
-    .insert(organisationPayload)
-    .select('id, name, display_name, type, legal_name, registration_number, company_email, company_phone, province, city, status, created_by')
-    .single()
-
-  if (orgResult.error) {
-    if (isMissingSchemaError(orgResult.error, 'type')) {
-      throw new Error('Workspace schema is missing organisation type fields. Apply the Phase 3 workspace migration before setup.')
+  const payload = buildAtomicWorkspaceOnboardingPayload({ intent, user, form })
+  const rpcResult = await client.rpc('bridge_complete_workspace_onboarding', { payload })
+  if (rpcResult.error) {
+    if (isMissingSchemaError(rpcResult.error, 'bridge_complete_workspace_onboarding')) {
+      throw new Error('Atomic workspace onboarding is not installed. Apply the Priority 2 onboarding migration before setup.')
     }
-    throw orgResult.error
+    throw rpcResult.error
+  }
+  if (!rpcResult.data?.success) {
+    const error = new Error(rpcResult.data?.message || 'Workspace setup failed before onboarding could be completed.')
+    error.code = rpcResult.data?.code || 'atomic_onboarding_failed'
+    error.details = rpcResult.data?.details || {}
+    throw error
   }
 
   const workspace = {
-    id: orgResult.data.id,
-    name: orgResult.data.display_name || orgResult.data.name,
-    type: orgResult.data.type || intent.workspace_type,
-    raw: orgResult.data,
+    id: rpcResult.data.workspace_id || rpcResult.data.organisation_id,
+    name: rpcResult.data.organisation?.display_name || rpcResult.data.organisation?.name || payload.organisation.name,
+    type: rpcResult.data.workspace_type || intent.workspace_type,
+    raw: rpcResult.data.organisation || null,
   }
-  const ownerRole = mapOwnerRole(intent)
-  const membership = await createMembership(user, workspace, ownerRole, {
-    appRole: intent.app_role,
-    workspaceType: intent.workspace_type,
+  const membership = {
+    id: rpcResult.data.membership_id,
+    organisation_id: workspace.id,
+    user_id: user.id,
+    branch_id: rpcResult.data.branch_id || null,
+    role: rpcResult.data.workspace_role || mapOwnerRole(intent),
+    organisation_role: rpcResult.data.workspace_role || mapOwnerRole(intent),
+    workspace_role: rpcResult.data.workspace_role || mapOwnerRole(intent),
+    app_role: intent.app_role,
+    workspace_type: intent.workspace_type,
     status: MEMBERSHIP_STATUSES.active,
-    fullName: form.primaryContactName,
-    email: user.email,
-    createdBy: user.id,
-    invitedBy: user.id,
-  })
-
-  const shouldCreateDefaultStructure =
-    intent.workspace_type === WORKSPACE_TYPES.agency ||
-    intent.workspace_type === WORKSPACE_TYPES.bondOriginator ||
-    intent.workspace_type === WORKSPACE_TYPES.developerCompany
-  const defaultStructure = shouldCreateDefaultStructure
-    ? await createDefaultBranchOrTeam(workspace, { user, form, intent })
-    : null
-
-  if (defaultStructure?.id) {
-    await updateCreatorMembershipBranch(client, membership.id, defaultStructure.id)
   }
-
-  await upsertOrganisationSettings(client, {
-    organisationId: workspace.id,
-    settings: buildOrganisationSettings({ intent, workspace, form }),
-  })
+  const defaultStructure = rpcResult.data.branch_id
+    ? {
+        id: rpcResult.data.branch_id,
+        organisation_id: workspace.id,
+        name: payload.branches?.[0]?.name || 'Head Office',
+        is_head_office: true,
+        is_active: true,
+      }
+    : null
 
   return {
     workspace,
     membership: defaultStructure?.id ? { ...membership, branch_id: defaultStructure.id } : membership,
     defaultStructure,
-  }
-}
-
-async function createAttorneyWorkspaceFromIntent(intent, user, form = {}) {
-  const firm = await createAttorneyFirm({
-    name: normalizeText(form.name || form.firmName || form.legalName),
-    registrationNumber: normalizeText(form.registrationNumber),
-    email: normalizeEmail(form.businessEmail || form.email || user.email),
-    phone: normalizeText(form.contactNumber || form.phone),
-    province: normalizeText(form.province),
-    city: normalizeText(form.city),
-    skipOnboardingCompletion: true,
-  })
-
-  return {
-    workspace: {
-      id: firm.id,
-      name: firm.name,
-      type: WORKSPACE_TYPES.attorneyFirm,
-      raw: firm,
-    },
-    membership: {
-      workspaceId: firm.id,
-      role: ORG_ROLES.owner,
-      status: MEMBERSHIP_STATUSES.active,
-      source: 'attorney_firm_members',
-    },
-    defaultStructure: null,
+    atomicCompletion: rpcResult.data,
   }
 }
 
@@ -353,7 +317,22 @@ export async function validateWorkspaceCompletion(userId, options = {}) {
   const workspaceId = normalizeText(options.workspaceId || options.workspace_id)
   if (!userId) return { ok: false, reason: 'missing_user' }
 
-  if (workspaceType === WORKSPACE_TYPES.attorneyFirm || appRole === APP_ROLES.attorney) {
+  const membershipQuery = await client
+    .from('organisation_users')
+    .select('id, organisation_id, branch_id, primary_branch_id, branch_scope, role, workspace_role, organisation_role, status, organisations:organisation_id(id, type)')
+    .eq('user_id', userId)
+    .eq('status', MEMBERSHIP_STATUSES.active)
+    .limit(10)
+
+  if (membershipQuery.error) return { ok: false, reason: 'membership_lookup_failed', error: membershipQuery.error }
+  const activeMemberships = (membershipQuery.data || []).filter((row) => {
+    if (!workspaceId && !workspaceType) return true
+    const matchesWorkspace = workspaceId ? row.organisation_id === workspaceId : true
+    const matchesType = workspaceType ? (row.organisations?.type || workspaceType) === workspaceType : true
+    return matchesWorkspace && matchesType
+  })
+
+  if (!activeMemberships.length && (workspaceType === WORKSPACE_TYPES.attorneyFirm || appRole === APP_ROLES.attorney)) {
     const memberQuery = await client
       .from('attorney_firm_members')
       .select('id, firm_id, role, status')
@@ -367,24 +346,9 @@ export async function validateWorkspaceCompletion(userId, options = {}) {
     return { ok: true, reason: '', membership: memberQuery.data, workspaceId: memberQuery.data.firm_id }
   }
 
-  const membershipQuery = await client
-    .from('organisation_users')
-    .select('id, organisation_id, branch_id, role, status, organisations:organisation_id(id, type)')
-    .eq('user_id', userId)
-    .eq('status', MEMBERSHIP_STATUSES.active)
-    .limit(10)
-
-  if (membershipQuery.error) return { ok: false, reason: 'membership_lookup_failed', error: membershipQuery.error }
-  const activeMemberships = (membershipQuery.data || []).filter((row) => {
-    if (!workspaceId && !workspaceType) return true
-    const matchesWorkspace = workspaceId ? row.organisation_id === workspaceId : true
-    const matchesType = workspaceType ? (row.organisations?.type || workspaceType) === workspaceType : true
-    return matchesWorkspace && matchesType
-  })
-
   if (!activeMemberships.length) return { ok: false, reason: 'no_active_membership' }
   const membership = activeMemberships[0]
-  if (workspaceType === WORKSPACE_TYPES.agency && !membership.branch_id) {
+  if ([WORKSPACE_TYPES.agency, WORKSPACE_TYPES.attorneyFirm, WORKSPACE_TYPES.bondOriginator].includes(workspaceType) && !membership.branch_id) {
     const branchQuery = await client
       .from('organisation_branches')
       .select('id')
@@ -408,10 +372,7 @@ export async function createWorkspaceFromIntent(intentInput, user, form = {}) {
     throw new Error('This signup path cannot create a workspace. Use invite acceptance or request access.')
   }
 
-  const result =
-    intent.workspace_type === WORKSPACE_TYPES.attorneyFirm
-      ? await createAttorneyWorkspaceFromIntent(intent, user, form)
-      : await createOrganisationWorkspaceFromIntent(intent, user, form)
+  const result = await createOrganisationWorkspaceFromIntent(intent, user, form)
 
   const validation = await validateWorkspaceCompletion(user.id, {
     appRole: intent.app_role,
@@ -422,21 +383,33 @@ export async function createWorkspaceFromIntent(intentInput, user, form = {}) {
     throw new Error(`Workspace setup is incomplete: ${validation.reason}.`)
   }
 
-  const completion = await completeOnboarding({
-    userId: user.id,
-    user,
-    intent,
-    appRole: intent.app_role,
-    workspaceType: intent.workspace_type,
-    workspaceId: result.workspace.id,
-    profilePatch: {
-      first_name: form.firstName || undefined,
-      last_name: form.lastName || undefined,
-      company_name: result.workspace.name,
-      phone_number: form.contactNumber || form.phone || undefined,
-    },
-    context: { source: 'workspace_create' },
-  })
+  const completion = result.atomicCompletion
+    ? {
+        validation,
+        workspaceResolution: await resolveCurrentWorkspace(user.id, {
+          client: requireClient(),
+          user,
+          requestedWorkspaceId: result.workspace.id,
+        }),
+      }
+    : await completeOnboarding({
+        userId: user.id,
+        user,
+        intent,
+        appRole: intent.app_role,
+        workspaceType: intent.workspace_type,
+        workspaceId: result.workspace.id,
+        profilePatch: {
+          first_name: form.firstName || undefined,
+          last_name: form.lastName || undefined,
+          company_name: result.workspace.name,
+          phone_number: form.contactNumber || form.phone || undefined,
+        },
+        context: { source: 'workspace_create' },
+      })
+  if (completion.workspaceResolution && !completion.workspaceResolution.ok) {
+    throw new Error(`Workspace setup completed but resolution failed: ${completion.workspaceResolution.reason}.`)
+  }
   void recordSecurityAuditEvent({
     userId: user.id,
     workspaceId: result.workspace.id,
@@ -478,7 +451,7 @@ export async function loadUserMemberships(userId) {
   if (!userId) return []
   const result = await client
     .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, email, role, organisation_role, app_role, workspace_type, status, created_at, updated_at, organisations:organisation_id(id, name, display_name, type)')
+    .select('id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, email, role, workspace_role, organisation_role, app_role, workspace_type, status, created_at, updated_at, organisations:organisation_id(id, name, display_name, type)')
     .eq('user_id', userId)
 
   if (result.error) throw result.error
@@ -486,6 +459,41 @@ export async function loadUserMemberships(userId) {
 }
 
 export async function getWorkspaceInviteByToken(token) {
+  try {
+    const canonical = await getInviteByToken(token)
+    if (canonical.ok && canonical.invite?.targetWorkspaceId) {
+      const invite = canonical.invite
+      return {
+        ok: true,
+        reason: '',
+        invite: {
+          id: invite.id,
+          workspace_id: invite.targetWorkspaceId,
+          workspace_type: invite.workspace?.type || invite.metadata?.workspace_type || '',
+          invited_email: invite.email,
+          app_role: invite.metadata?.app_role || '',
+          organisation_role: invite.targetWorkspaceRole,
+          branch_id: invite.targetBranchId,
+          team_id: invite.targetTeamId,
+          token: invite.token,
+          status: invite.status,
+          expires_at: invite.expiresAt,
+          invited_by: invite.inviterUserId,
+          accepted_by: invite.acceptedByUserId,
+          accepted_at: invite.acceptedAt,
+          created_at: invite.createdAt,
+          organisations: invite.workspace,
+          canonicalInvite: invite,
+        },
+      }
+    }
+    if (canonical.reason && !['invite_schema_missing', 'not_found'].includes(canonical.reason)) {
+      return { ok: false, reason: canonical.reason, invite: canonical.invite || null }
+    }
+  } catch (error) {
+    if (!(error instanceof InviteValidationError)) throw error
+  }
+
   const client = requireClient()
   const safeToken = normalizeText(token)
   if (!safeToken) return { ok: false, reason: 'not_found', invite: null }
@@ -557,6 +565,29 @@ export async function createWorkspaceInvite(input = {}, actor = null) {
     }
     throw result.error
   }
+  try {
+    await createInvite({
+      invite_type: 'workspace_invite',
+      token: result.data.token,
+      expires_at: result.data.expires_at,
+      target_workspace_id: workspaceId,
+      target_workspace_role: organisationRole,
+      target_branch_id: input.branchId || input.branch_id || null,
+      target_team_id: input.teamId || input.team_id || null,
+      email: invitedEmail,
+      metadata: {
+        legacy_source: 'workspace_invites',
+        legacy_invite_id: result.data.id,
+        workspace_type: workspaceType,
+        app_role: appRole,
+        department_id: input.departmentId || input.department_id || null,
+      },
+    })
+  } catch (canonicalError) {
+    if (canonicalError?.code !== 'invite_schema_missing') {
+      console.warn('[INVITES] canonical workspace invite mirror failed', canonicalError)
+    }
+  }
   void recordSecurityAuditEvent({
     userId: inviter.id,
     workspaceId,
@@ -569,6 +600,21 @@ export async function createWorkspaceInvite(input = {}, actor = null) {
 }
 
 export async function joinWorkspaceFromInvite(inviteToken, user, options = {}) {
+  try {
+    const canonical = await acceptInvite(inviteToken, { user, intent: options.intent || null })
+    if (canonical?.success) {
+      return {
+        invite: canonical.invite,
+        membership: canonical.workspaceResolution?.currentMembership || { id: canonical.membership_id },
+        canonicalInvite: canonical,
+      }
+    }
+  } catch (error) {
+    if (!['invite_schema_missing', 'invite_not_found', 'not_found'].includes(error?.code)) {
+      throw error
+    }
+  }
+
   const client = requireClient()
   if (!user?.id) throw new Error('Sign in before accepting an invite.')
   const context = await getWorkspaceInviteByToken(inviteToken)
@@ -708,5 +754,31 @@ export async function getWorkspaceSetupStatus(userId, options = {}) {
 export async function repairWorkspaceSetup(userId, options = {}) {
   const status = await getWorkspaceSetupStatus(userId, options)
   if (status.status === 'complete') return status
-  throw new Error(`Workspace repair requires an explicit admin action: ${status.validation.reason}.`)
+  const client = requireClient()
+  const result = await client.rpc('bridge_repair_workspace_onboarding', { target_user_id: userId })
+  if (result.error) throw result.error
+  if (!result.data?.success) {
+    const error = new Error(result.data?.message || `Workspace repair failed: ${status.validation.reason}.`)
+    error.code = result.data?.code || 'workspace_repair_failed'
+    error.details = result.data?.details || {}
+    throw error
+  }
+
+  const resolution = await resolveCurrentWorkspace(userId, {
+    client,
+    requestedWorkspaceId: result.data.workspace_id || result.data.organisation_id,
+  })
+  if (!resolution.ok) {
+    const error = new Error(`Workspace repair completed but resolution still failed: ${resolution.reason}.`)
+    error.code = resolution.reason || 'workspace_resolution_failed'
+    error.details = resolution.diagnostics || {}
+    throw error
+  }
+
+  return {
+    status: 'complete',
+    repaired: true,
+    repair: result.data,
+    resolution,
+  }
 }

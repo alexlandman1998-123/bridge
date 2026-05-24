@@ -68,7 +68,7 @@ function PipelineOverviewSkeleton() {
   )
 }
 
-function KpiCard({ icon: Icon, label, value, helper, tone = 'blue' }) {
+function KpiCard({ label, value, helper, tone = 'blue' }) {
   const toneClass = {
     blue: 'bg-blue-50 text-blue-700',
     green: 'bg-emerald-50 text-emerald-700',
@@ -203,8 +203,8 @@ function AgentMomentumTable({ rows = [] }) {
     <section className={`${cardClass} p-5`}>
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-slate-950">Agent Momentum</h2>
-          <p className="text-sm text-slate-500">Movement versus stalled deal pressure by agent.</p>
+          <h2 className="text-base font-semibold text-slate-950">User Momentum</h2>
+          <p className="text-sm text-slate-500">Movement versus stalled deal pressure by operational owner.</p>
         </div>
         <Users size={17} className="text-slate-500" />
       </div>
@@ -212,7 +212,7 @@ function AgentMomentumTable({ rows = [] }) {
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="text-xs uppercase tracking-[0.08em] text-slate-400">
             <tr className="border-b border-slate-100">
-              <th className="py-3 font-semibold">Agent</th>
+              <th className="py-3 font-semibold">User</th>
               <th className="py-3 font-semibold">Deals Moving</th>
               <th className="py-3 font-semibold">Stalled Deals</th>
               <th className="py-3 font-semibold">Avg. Response</th>
@@ -223,7 +223,10 @@ function AgentMomentumTable({ rows = [] }) {
           <tbody className="divide-y divide-slate-100">
             {rows.length ? rows.map((row) => (
               <tr key={row.agentId}>
-                <td className="py-3 font-semibold text-slate-900">{row.agentName}</td>
+                <td className="py-3 font-semibold text-slate-900">
+                  <span className="block">{row.agentName}</span>
+                  <span className="text-[0.68rem] uppercase tracking-[0.08em] text-slate-400">{row.roleLabel || 'Agent'}</span>
+                </td>
                 <td className="py-3 text-slate-700">{row.dealsMoving}</td>
                 <td className={`py-3 font-semibold ${row.stalledDeals ? 'text-rose-600' : 'text-emerald-700'}`}>{row.stalledDeals}</td>
                 <td className="py-3 text-slate-500">{row.avgResponseHours ? `${row.avgResponseHours}h` : '—'}</td>
@@ -231,7 +234,7 @@ function AgentMomentumTable({ rows = [] }) {
                 <td className="py-3 text-slate-500">{formatDate(row.lastActivity)}</td>
               </tr>
             )) : (
-              <tr><td colSpan={6} className="py-8 text-center text-slate-500">No agent momentum data yet.</td></tr>
+              <tr><td colSpan={6} className="py-8 text-center text-slate-500">No user momentum data yet.</td></tr>
             )}
           </tbody>
         </table>
@@ -434,8 +437,8 @@ export default function PipelineOverviewPage() {
                 {(data?.filters?.branches || []).map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
               </select>
               <select value={filters.agentId} disabled={!canViewAll} onChange={(event) => setFilters((prev) => ({ ...prev, agentId: event.target.value }))} className="min-h-[42px] rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm disabled:opacity-60">
-                <option value="">{canViewAll ? 'All agents' : 'My deals only'}</option>
-                {(data?.filters?.agents || []).map((agent) => <option key={agent.id || agent.email} value={agent.id || agent.email}>{agent.name}</option>)}
+                <option value="">{canViewAll ? 'All operational users' : 'My deals only'}</option>
+                {(data?.filters?.agents || []).map((agent) => <option key={agent.id || agent.email} value={agent.id || agent.email}>{agent.name}{agent.roleLabel ? ` (${agent.roleLabel})` : ''}</option>)}
               </select>
               <select value={filters.dateRange} onChange={(event) => setFilters((prev) => ({ ...prev, dateRange: event.target.value }))} className="min-h-[42px] rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm">
                 <option value="this_month">This month</option>

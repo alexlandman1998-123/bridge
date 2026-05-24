@@ -20,6 +20,7 @@ import {
   isMissingTableError,
   requireClient,
 } from './attorneyFirmServiceShared'
+import { resolveTransactionRole } from './roleResolutionService'
 
 const READ_MODEL_WARNING_PREFIX = '[workflow-read-model]'
 const ATTORNEY_ASSIGNMENTS_MIGRATION_HINT = 'transaction_attorney_assignments table missing. Run migration 202605090011_transaction_attorney_assignments_foundation.sql.'
@@ -213,6 +214,7 @@ function mapParticipantRows(rows = []) {
     userId: row.user_id || null,
     roleType: toLower(row.role_type) || 'unknown',
     legalRole: toLower(row.legal_role) || 'none',
+    transactionRole: resolveTransactionRole(row),
     status: toLower(row.status) || 'draft',
     visibility: normalizeVisibilityScope(row.visibility_scope || 'shared_role_players', 'shared_role_players'),
     participantName: row.participant_name || null,
@@ -724,7 +726,7 @@ async function fetchDocumentRequests(client, transactionId, warnings = []) {
       return []
     }
 
-    if (isMissingColumnError(query.error, 'visibility_scope')) {
+    if (isMissingColumnError(query.error, 'visibility_scope') || isMissingColumnError(query.error, 'transaction_role')) {
       const fallback = await client
         .from('document_requests')
         .select('id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, status, rejected_reason, request_type, notes, completed_at, updated_at, created_at')
@@ -749,7 +751,7 @@ async function fetchDocumentRequests(client, transactionId, warnings = []) {
 async function fetchParticipants(client, transactionId, warnings = []) {
   const query = await client
     .from('transaction_participants')
-    .select('id, transaction_id, user_id, role_type, legal_role, status, visibility_scope, participant_name, participant_email, firm_id, accepted_at, updated_at, created_at')
+    .select('id, transaction_id, user_id, role_type, legal_role, transaction_role, status, visibility_scope, participant_name, participant_email, firm_id, accepted_at, updated_at, created_at')
     .eq('transaction_id', transactionId)
 
   if (query.error) {

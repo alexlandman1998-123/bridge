@@ -79,12 +79,12 @@ function resolvePendingInvitePath() {
   if (typeof window === 'undefined') return ''
   const pendingInviteToken = String(window.sessionStorage.getItem('itg:pending-org-invite-token') || '').trim()
   if (!pendingInviteToken) return ''
-  return `/agent/invite/${pendingInviteToken}`
+  return `/invite/${pendingInviteToken}`
 }
 
 function resolveInviteTokenFromLocation(location) {
   const nextPath = new URLSearchParams(location.search).get('next')
-  const match = String(nextPath || '').match(/^\/agent\/invite\/([^/?#]+)/)
+  const match = String(nextPath || '').match(/^\/(?:agent\/)?invite\/([^/?#]+)/)
   if (match?.[1]) return decodeURIComponent(match[1])
   if (typeof window === 'undefined') return ''
   return String(window.sessionStorage.getItem('itg:pending-org-invite-token') || '').trim()

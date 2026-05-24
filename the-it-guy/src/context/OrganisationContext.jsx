@@ -2,6 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { useAuthSession } from './AuthSessionContext'
 import { fetchAgencyOnboardingSettings } from '../lib/settingsApi'
+import { resolveWorkspaceRole } from '../services/roleResolutionService'
 
 const EMPTY_ORGANISATION_BRANDING = Object.freeze({
   logoUrl: '',
@@ -79,7 +80,10 @@ function buildAuthOrganisationSnapshot(authState) {
       },
       branding: {},
     },
-    membershipRole: membership.role || authState.appRole || 'viewer',
+    membershipRole: resolveWorkspaceRole(membership, {
+      appRole: authState.appRole,
+      workspaceType: workspace.type || authState.workspaceType,
+    }),
     membershipStatus: membership.status || 'active',
     onboardingMode: 'dev_auth_bypass',
     persisted: false,

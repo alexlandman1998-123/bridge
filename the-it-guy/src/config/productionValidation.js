@@ -11,6 +11,7 @@ function asBoolean(value, fallback = false) {
 export const UNSAFE_PRODUCTION_FLAG_NAMES = Object.freeze([
   'VITE_ENABLE_DEMO_MODE',
   'VITE_ENABLE_LOCAL_FALLBACKS',
+  'VITE_ALLOW_UNSAFE_LOCAL_FALLBACKS',
   'VITE_ENABLE_DEV_AUTH_BYPASS',
   'VITE_ENABLE_MOCK_DATA',
   'VITE_FEATURE_DISABLE_ROLE_RESTRICTIONS',
@@ -32,6 +33,7 @@ export function getUnsafeProductionFlags() {
   return {
     VITE_ENABLE_DEMO_MODE: asBoolean(import.meta.env.VITE_ENABLE_DEMO_MODE, false),
     VITE_ENABLE_LOCAL_FALLBACKS: asBoolean(import.meta.env.VITE_ENABLE_LOCAL_FALLBACKS, false),
+    VITE_ALLOW_UNSAFE_LOCAL_FALLBACKS: asBoolean(import.meta.env.VITE_ALLOW_UNSAFE_LOCAL_FALLBACKS, false),
     VITE_ENABLE_DEV_AUTH_BYPASS: asBoolean(import.meta.env.VITE_ENABLE_DEV_AUTH_BYPASS, false),
     VITE_ENABLE_MOCK_DATA: asBoolean(import.meta.env.VITE_ENABLE_MOCK_DATA, false),
     VITE_FEATURE_DISABLE_ROLE_RESTRICTIONS: asBoolean(import.meta.env.VITE_FEATURE_DISABLE_ROLE_RESTRICTIONS, false),

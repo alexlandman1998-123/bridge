@@ -48,6 +48,7 @@ import { useOrganisation } from '../context/OrganisationContext'
 import { fetchDashboardOverview, fetchTransactionsByParticipantSummary, fetchTransactionsListSummary } from '../lib/api'
 import { getAgentModuleSharedData } from '../lib/agentDataService'
 import { getAgencyPipelineSnapshot, getAppointmentsDashboardSummaryAsync } from '../lib/agencyPipelineService'
+import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import {
   getDashboardPipelineValue,
   getDashboardTransactionPrice,
@@ -510,6 +511,7 @@ function isInRange(value, range) {
 
 function getCanvassingStorageSnapshot(organisationId) {
   if (typeof window === 'undefined') return { prospects: [], activities: [] }
+  if (!isUnsafeFallbackAllowed()) return { prospects: [], activities: [] }
   const orgId = String(organisationId || '').trim()
   if (!orgId) return { prospects: [], activities: [] }
   try {

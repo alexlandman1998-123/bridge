@@ -5,6 +5,7 @@ import {
   OFFER_STATUS,
   SELLER_ONBOARDING_STATUS,
 } from './agentListingStorage'
+import { isUnsafeFallbackAllowed } from './envValidation'
 import { MOCK_DATA_ENABLED } from './mockData'
 
 const SEED_VERSION = '2026-04-30-agent-demo-v3'
@@ -80,6 +81,7 @@ function money(value) {
 
 function readJson(key, fallback) {
   if (typeof window === 'undefined') return fallback
+  if (!isUnsafeFallbackAllowed()) return fallback
   try {
     const raw = window.localStorage.getItem(key)
     if (!raw) return fallback
@@ -91,11 +93,13 @@ function readJson(key, fallback) {
 
 function writeJson(key, value) {
   if (typeof window === 'undefined') return
+  if (!isUnsafeFallbackAllowed()) return
   window.localStorage.setItem(key, JSON.stringify(value))
 }
 
 function clearJson(key) {
   if (typeof window === 'undefined') return
+  if (!isUnsafeFallbackAllowed()) return
   window.localStorage.removeItem(key)
 }
 

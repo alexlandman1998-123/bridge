@@ -1,9 +1,10 @@
 import { APP_ROLES, isCanonicalAppRole, normalizeCanonicalAppRole } from '../../constants/appRoles'
 import { MEMBERSHIP_STATUSES } from '../../constants/membershipStatuses'
 import { ONBOARDING_REQUIRED_REASONS } from '../../constants/onboardingStatuses'
-import { normalizeOrgRole, ORG_ROLES } from '../../constants/orgRoles'
+import { ORG_ROLES } from '../../constants/orgRoles'
 import { WORKSPACE_TYPES, inferWorkspaceTypeFromAppRole, normalizeWorkspaceType } from '../../constants/workspaceTypes'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
+import { resolveSystemRole, resolveWorkspaceRole } from '../roleResolutionService'
 
 function requireClient() {
   if (!isSupabaseConfigured || !supabase) {
@@ -26,23 +27,23 @@ function isMissingSchemaError(error, token = '') {
 async function loadProfile(client, userId) {
   const result = await client
     .from('profiles')
-    .select('id, email, first_name, last_name, full_name, role, onboarding_completed, primary_attorney_firm_id, attorney_role')
+    .select('id, email, first_name, last_name, full_name, role, system_role, onboarding_completed, primary_attorney_firm_id, attorney_role')
     .eq('id', userId)
     .maybeSingle()
 
   if (result.error) {
-    if (isMissingSchemaError(result.error, 'primary_attorney_firm_id')) {
+    if (isMissingSchemaError(result.error, 'primary_attorney_firm_id') || isMissingSchemaError(result.error, 'system_role')) {
       const fallback = await client
         .from('profiles')
         .select('id, email, first_name, last_name, full_name, role, onboarding_completed')
         .eq('id', userId)
         .maybeSingle()
       if (fallback.error) throw fallback.error
-      return fallback.data || null
+      return fallback.data ? { ...fallback.data, systemRole: resolveSystemRole(fallback.data) } : null
     }
     throw result.error
   }
-  return result.data || null
+  return result.data ? { ...result.data, systemRole: resolveSystemRole(result.data) } : null
 }
 
 async function validateSettings(client, workspaceId, workspaceType) {
@@ -130,14 +131,23 @@ async function validateAttorneyCompletion(client, { userId, appRole, workspaceId
 }
 
 async function validateOrganisationCompletion(client, { userId, appRole, workspaceType, workspaceId }) {
-  const query = client
+  let query = client
     .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, role, organisation_role, status, app_role, workspace_type, organisations:organisation_id(id, name, display_name, type)')
+    .select('id, organisation_id, user_id, branch_id, role, workspace_role, organisation_role, status, app_role, workspace_type, organisations:organisation_id(id, name, display_name, type)')
     .eq('user_id', userId)
     .eq('status', MEMBERSHIP_STATUSES.active)
 
   if (workspaceId) query.eq('organisation_id', workspaceId)
-  const result = await query.limit(20)
+  let result = await query.limit(20)
+  if (result.error && isMissingSchemaError(result.error, 'workspace_role')) {
+    query = client
+      .from('organisation_users')
+      .select('id, organisation_id, user_id, branch_id, role, organisation_role, status, app_role, workspace_type, organisations:organisation_id(id, name, display_name, type)')
+      .eq('user_id', userId)
+      .eq('status', MEMBERSHIP_STATUSES.active)
+    if (workspaceId) query.eq('organisation_id', workspaceId)
+    result = await query.limit(20)
+  }
   if (result.error) {
     if (isMissingSchemaError(result.error, 'organisation_users')) {
       return { ok: false, reason: ONBOARDING_REQUIRED_REASONS.noActiveMembership }
@@ -160,12 +170,15 @@ async function validateOrganisationCompletion(client, { userId, appRole, workspa
     return { ok: false, reason: ONBOARDING_REQUIRED_REASONS.workspaceMissing, membership }
   }
 
-  const organisationRole = normalizeOrgRole(membership.role || membership.organisation_role, { appRole, workspaceType: resolvedWorkspaceType })
+  const organisationRole = resolveWorkspaceRole(membership, { appRole, workspaceType: resolvedWorkspaceType })
   const missingRecords = []
 
-  if (resolvedWorkspaceType === WORKSPACE_TYPES.agency) {
+  if ([WORKSPACE_TYPES.agency, WORKSPACE_TYPES.attorneyFirm, WORKSPACE_TYPES.bondOriginator].includes(resolvedWorkspaceType)) {
     const branch = await validateBranch(client, membership.organisation_id)
     if (!branch.ok) missingRecords.push('default_branch')
+  }
+
+  if (resolvedWorkspaceType === WORKSPACE_TYPES.agency) {
     const settings = await validateSettings(client, membership.organisation_id, resolvedWorkspaceType)
     if (!settings.ok) missingRecords.push('agency_settings')
   }
@@ -176,8 +189,8 @@ async function validateOrganisationCompletion(client, { userId, appRole, workspa
   }
 
   const requiresAssignment =
-    resolvedWorkspaceType === WORKSPACE_TYPES.agency &&
-    ![ORG_ROLES.owner, ORG_ROLES.principal].includes(organisationRole)
+    [WORKSPACE_TYPES.agency, WORKSPACE_TYPES.attorneyFirm, WORKSPACE_TYPES.bondOriginator].includes(resolvedWorkspaceType) &&
+    ![ORG_ROLES.owner, ORG_ROLES.principal, ORG_ROLES.director, ORG_ROLES.partner].includes(organisationRole)
   if (requiresAssignment && !membership.branch_id) missingRecords.push('branch_assignment')
 
   if (missingRecords.length) {

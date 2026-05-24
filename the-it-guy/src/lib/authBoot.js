@@ -3,11 +3,12 @@ import { isSupabaseConfigured, supabase } from './supabaseClient'
 import { normalizeCanonicalAppRole, isCanonicalAppRole } from '../constants/appRoles'
 import { MEMBERSHIP_STATUSES, isActiveMembershipStatus, normalizeMembershipStatus } from '../constants/membershipStatuses'
 import { ONBOARDING_REQUIRED_REASONS, ONBOARDING_STATUSES } from '../constants/onboardingStatuses'
-import { normalizeOrgRole } from '../constants/orgRoles'
+import { getDefaultBranchScope, normalizeBranchScope } from '../constants/workspaceUnits'
 import { WORKSPACE_TYPES, inferWorkspaceTypeFromAppRole, normalizeWorkspaceType } from '../constants/workspaceTypes'
 import { loadSignupIntentForUser, markSignupIntentReadyForOnboarding } from './signupIntent'
 import { getOnboardingState } from '../services/onboarding/onboardingEngine'
 import { resolveCurrentWorkspace } from '../services/workspaceResolutionService'
+import { resolveWorkspaceRole } from '../services/roleResolutionService'
 
 const ACTIVE_MEMBERSHIP_STATUSES = new Set([MEMBERSHIP_STATUSES.active])
 
@@ -75,6 +76,8 @@ function createMembershipRecord({
   role,
   status,
   branchId = null,
+  primaryBranchId = null,
+  branchScope = '',
   departmentId = null,
   invitedBy = null,
   joinedAt = null,
@@ -83,6 +86,10 @@ function createMembershipRecord({
 }) {
   const normalizedWorkspaceType = normalizeWorkspaceType(workspaceType, inferWorkspaceTypeFromAppRole(appRole))
   const normalizedStatus = normalizeMembershipStatus(status)
+  const workspaceRole = resolveWorkspaceRole(
+    { workspace_role: role, role, app_role: appRole, workspace_type: normalizedWorkspaceType },
+    { appRole, workspaceType: normalizedWorkspaceType },
+  )
   return {
     id,
     source,
@@ -91,11 +98,14 @@ function createMembershipRecord({
     workspace,
     workspaceType: normalizedWorkspaceType,
     appRole: normalizeCanonicalAppRole(appRole),
-    role: normalizeOrgRole(role, { appRole, workspaceType: normalizedWorkspaceType }),
+    role: workspaceRole,
+    workspaceRole,
     rawRole: normalizeText(role).toLowerCase(),
     status: normalizedStatus,
     isActive: ACTIVE_MEMBERSHIP_STATUSES.has(normalizedStatus),
-    branchId,
+    branchId: branchId || primaryBranchId,
+    primaryBranchId: primaryBranchId || branchId,
+    branchScope: normalizeBranchScope(branchScope, getDefaultBranchScope(workspaceRole, { appRole, workspaceType: normalizedWorkspaceType })),
     departmentId,
     invitedBy,
     joinedAt,
@@ -132,7 +142,7 @@ async function fetchOrganisationMemberships(client, user, profile) {
   const appRole = normalizeCanonicalAppRole(profile?.role)
   const byUserId = await client
     .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, first_name, last_name, email, role, status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at')
+    .select('id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, first_name, last_name, email, role, workspace_role, organisation_role, app_role, workspace_type, status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at')
     .eq('user_id', user.id)
 
   if (byUserId.error) {
@@ -145,7 +155,7 @@ async function fetchOrganisationMemberships(client, user, profile) {
   if (userEmail) {
     const byEmail = await client
       .from('organisation_users')
-      .select('id, organisation_id, user_id, branch_id, first_name, last_name, email, role, status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at')
+      .select('id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, first_name, last_name, email, role, workspace_role, organisation_role, app_role, workspace_type, status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at')
       .eq('email', userEmail)
       .in('status', [MEMBERSHIP_STATUSES.invited, MEMBERSHIP_STATUSES.pending])
 
@@ -176,9 +186,11 @@ async function fetchOrganisationMemberships(client, user, profile) {
       workspace,
       workspaceType: workspace?.type || workspaceType,
       appRole,
-      role: row.role,
+      role: row.workspace_role || row.organisation_role || row.role,
       status: row.status,
       branchId: row.branch_id || null,
+      primaryBranchId: row.primary_branch_id || row.branch_id || null,
+      branchScope: row.branch_scope || null,
       invitedBy: row.invited_by_user_id || null,
       joinedAt: row.joined_at || null,
       acceptedAt: row.accepted_at || null,

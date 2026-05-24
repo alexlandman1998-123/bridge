@@ -1,5 +1,6 @@
 import { ACCESS_SCOPES } from './permissionRegistry'
 import { getPermissionScope, resolvePermissionContext } from './permissionResolver'
+import { BRANCH_SCOPES } from '../../constants/workspaceUnits'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -9,22 +10,30 @@ export function buildWorkspaceQueryScope(permission, context = {}) {
   const resolved = resolvePermissionContext(context)
   const scope = getPermissionScope(permission, context)
   const workspaceId = normalizeText(resolved.workspace?.id || resolved.membership?.workspaceId)
+  const requestedBranchId = normalizeText(context.selectedBranchId || context.branchFilterId || context.filterBranchId)
+  const assignedBranchId = normalizeText(resolved.assignedBranchId || resolved.branchId || resolved.primaryBranchId || resolved.departmentId || resolved.teamId)
+  const canFilterAllBranches = resolved.branchScope === BRANCH_SCOPES.allBranches || scope === ACCESS_SCOPES.allWorkspace
+  const effectiveBranchId = canFilterAllBranches ? requestedBranchId : assignedBranchId
 
   return {
     permission,
     scope,
+    branchScope: resolved.branchScope,
     workspaceId,
     organisationId: workspaceId,
-    branchId: normalizeText(resolved.branchId),
+    branchId: effectiveBranchId || normalizeText(resolved.branchId),
+    assignedBranchId,
+    requestedBranchId,
     departmentId: normalizeText(resolved.departmentId),
     teamId: normalizeText(resolved.teamId),
     assignedUserId: normalizeText(resolved.userId),
     canRead: scope !== ACCESS_SCOPES.none,
-    isAllWorkspace: scope === ACCESS_SCOPES.allWorkspace,
-    isBranchOnly: scope === ACCESS_SCOPES.branchOnly,
+    canFilterAllBranches,
+    isAllWorkspace: scope === ACCESS_SCOPES.allWorkspace && !requestedBranchId,
+    isBranchOnly: scope === ACCESS_SCOPES.branchOnly || Boolean(canFilterAllBranches && requestedBranchId) || (!canFilterAllBranches && resolved.branchScope === BRANCH_SCOPES.assignedBranch),
     isDepartmentOnly: scope === ACCESS_SCOPES.departmentOnly,
     isTeamOnly: scope === ACCESS_SCOPES.teamOnly,
-    isAssignedOnly: scope === ACCESS_SCOPES.assignedOnly,
+    isAssignedOnly: scope === ACCESS_SCOPES.assignedOnly || resolved.branchScope === BRANCH_SCOPES.own,
   }
 }
 
@@ -68,4 +77,3 @@ export function applySupabaseWorkspaceScope(query, queryScope, columns = {}) {
   }
   return scopedQuery
 }
-

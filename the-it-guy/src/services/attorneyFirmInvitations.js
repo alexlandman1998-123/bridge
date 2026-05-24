@@ -4,6 +4,7 @@ import {
   normalizeAttorneyFirmRole,
   normalizeAttorneyInvitationStatus,
 } from '../lib/attorneyPermissions'
+import { createInvite } from './inviteService'
 import {
   createInviteToken,
   getAuthenticatedUser,
@@ -18,6 +19,13 @@ import {
   resolveInviteExpiryIso,
 } from './attorneyFirmServiceShared'
 import { createOrActivateAttorneyFirmMember } from './attorneyFirmMembers'
+
+function isMissingInviteRpcError(error) {
+  if (!error) return false
+  const code = String(error.code || '').toLowerCase()
+  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
+  return code === '42p01' || code === '42883' || code === 'pgrst202' || message.includes('bridge_create_invite') || message.includes('bridge_accept_invite')
+}
 
 function assertRole(value) {
   const normalized = normalizeAttorneyFirmRole(value, '')
@@ -81,6 +89,26 @@ export async function inviteAttorneyFirmMember({
     throw query.error
   }
 
+  try {
+    await createInvite({
+      invite_type: 'workspace_invite',
+      token: query.data.token,
+      expires_at: query.data.expires_at,
+      target_workspace_role: query.data.role,
+      email: query.data.email,
+      metadata: {
+        legacy_source: 'attorney_firm_invitations',
+        legacy_invite_id: query.data.id,
+        attorney_firm_id: query.data.firm_id,
+        department_id: query.data.department_id,
+      },
+    })
+  } catch (canonicalError) {
+    if (!isMissingInviteRpcError(canonicalError)) {
+      console.warn('[INVITES] canonical attorney firm invite mirror failed', canonicalError)
+    }
+  }
+
   return mapInvitationRow(query.data)
 }
 
@@ -128,6 +156,35 @@ export async function acceptAttorneyFirmInvitation(token) {
   const userEmail = normalizeEmail(user.email)
   if (!userEmail) {
     throw new Error('Authenticated user email is required to accept an invitation.')
+  }
+
+  try {
+    const canonicalResult = await client.rpc('bridge_accept_invite', { p_token: normalizedToken })
+    if (!canonicalResult.error && canonicalResult.data?.success && canonicalResult.data.attorney_member_id) {
+      return {
+        invitation: {
+          token: normalizedToken,
+          status: 'accepted',
+          firmId: canonicalResult.data.attorney_firm_id || null,
+        },
+        membership: {
+          id: canonicalResult.data.attorney_member_id,
+          firmId: canonicalResult.data.attorney_firm_id || null,
+          userId: user.id,
+        },
+        canonicalInvite: canonicalResult.data,
+      }
+    }
+    if (canonicalResult.error && !isMissingInviteRpcError(canonicalResult.error)) {
+      throw canonicalResult.error
+    }
+    if (canonicalResult.data?.code && !['invite_not_found', 'missing_token'].includes(canonicalResult.data.code)) {
+      throw new Error(canonicalResult.data.message || canonicalResult.data.code)
+    }
+  } catch (canonicalError) {
+    if (!String(canonicalError?.message || '').toLowerCase().includes('invite_not_found')) {
+      throw canonicalError
+    }
   }
 
   const nowIso = new Date().toISOString()

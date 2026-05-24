@@ -104,13 +104,17 @@ function groupChecklistByCategory(checklist = []) {
 }
 
 function getCompanyDocsStorageKey(profileId) {
-  return `itg:developer-company-docs:v1:${profileId || 'default'}`
+  const normalizedProfileId = String(profileId || '').trim()
+  if (!normalizedProfileId) return ''
+  return `itg:developer-company-docs:v1:${normalizedProfileId}`
 }
 
 function readCompanyDocs(profileId) {
   if (typeof window === 'undefined') return []
+  const storageKey = getCompanyDocsStorageKey(profileId)
+  if (!storageKey) return []
   try {
-    const raw = window.localStorage.getItem(getCompanyDocsStorageKey(profileId))
+    const raw = window.localStorage.getItem(storageKey)
     if (!raw) return []
     const parsed = JSON.parse(raw)
     return Array.isArray(parsed) ? parsed : []
@@ -121,7 +125,9 @@ function readCompanyDocs(profileId) {
 
 function writeCompanyDocs(profileId, rows) {
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(getCompanyDocsStorageKey(profileId), JSON.stringify(rows))
+  const storageKey = getCompanyDocsStorageKey(profileId)
+  if (!storageKey) return
+  window.localStorage.setItem(storageKey, JSON.stringify(rows))
 }
 
 function readFileAsDataUrl(file) {

@@ -11,6 +11,8 @@ try {
   const {
     buildWorkspaceResolution,
     assertResolvedWorkspaceContext,
+    requireResolvedWorkspaceContext,
+    WorkspaceContextError,
     WORKSPACE_RESOLUTION_STATUSES,
   } = await server.ssrLoadModule('/src/services/workspaceResolutionService.js')
 
@@ -82,6 +84,33 @@ try {
     () => assertResolvedWorkspaceContext({ organisationId: 'default', appRole: 'agent' }),
     /resolved workspace context|required/i,
   )
+
+  assert.throws(
+    () => assertResolvedWorkspaceContext({ organisationId: 'ALL_WORKSPACE', appRole: 'agent' }),
+    /resolved workspace context|required/i,
+  )
+
+  assert.throws(
+    () => requireResolvedWorkspaceContext({
+      workspaceId: organisation.id,
+      appRole: 'agent',
+      currentMembership: null,
+    }),
+    WorkspaceContextError,
+  )
+
+  const guarded = requireResolvedWorkspaceContext({
+    workspaceId: organisation.id,
+    appRole: 'agent',
+    currentMembership: {
+      id: 'membership-1',
+      workspaceId: organisation.id,
+      workspaceRole: 'principal',
+      status: 'active',
+    },
+  })
+  assert.equal(guarded.workspaceId, organisation.id)
+  assert.equal(guarded.workspaceRole, 'principal')
 
   console.log('workspace-resolution tests passed')
 } finally {

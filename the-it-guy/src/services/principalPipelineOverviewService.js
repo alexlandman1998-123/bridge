@@ -1,4 +1,5 @@
 import { getAgencyPipelineSnapshot } from '../lib/agencyPipelineService'
+import { getReportingRole, getReportingRoleLabel } from '../lib/reportingRoleLogic'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { assertResolvedWorkspaceContext } from './workspaceResolutionService'
 
@@ -175,12 +176,6 @@ function isRegistered(row = {}) {
   return Boolean(row.registered_at || row.registration_date || status.includes('registered') || status.includes('closed'))
 }
 
-function isActiveTransaction(row = {}) {
-  const status = getStatusText(row)
-  if (row.is_active === false) return false
-  return !ACTIVE_EXCLUDED_STATES.some((state) => status.includes(state))
-}
-
 function isCancelledOpportunity(row = {}) {
   const status = getStatusText(row)
   if (row.is_active === false) return true
@@ -220,7 +215,8 @@ function normalizeAgent(row = {}) {
     name,
     email: normalizeText(row.email).toLowerCase(),
     branchId: normalizeText(row.branch_id || row.branchId),
-    role: normalizeText(row.role),
+    role: getReportingRole(row),
+    roleLabel: getReportingRoleLabel(getReportingRole(row)),
     status: normalizeText(row.status),
     lastActiveAt: row.last_active_at || row.lastActiveAt || row.updated_at || null,
   }
@@ -242,6 +238,7 @@ function resolveAgentFromRow(row = {}, usersByKey = new Map()) {
   const keys = [
     row.assigned_user_id,
     row.owner_user_id,
+    row.created_by,
     row.assignedAgentId,
     row.assigned_agent_id,
     row.assigned_agent_email,
@@ -252,7 +249,7 @@ function resolveAgentFromRow(row = {}, usersByKey = new Map()) {
     if (user) return user
   }
   return {
-    id: normalizeText(row.assigned_user_id || row.owner_user_id || row.assignedAgentId || row.assigned_agent_id || row.assigned_agent_email || row.assignedAgentEmail || 'unassigned').toLowerCase(),
+    id: normalizeText(row.assigned_user_id || row.owner_user_id || row.created_by || row.assignedAgentId || row.assigned_agent_id || row.assigned_agent_email || row.assignedAgentEmail || 'unassigned').toLowerCase(),
     name: normalizeText(row.assigned_agent || row.assignedAgentName || row.assignedAgentEmail || row.assigned_agent_email) || 'Unassigned',
     email: normalizeText(row.assigned_agent_email || row.assignedAgentEmail).toLowerCase(),
     branchId: normalizeText(row.assigned_branch_id || row.branchId),
@@ -297,8 +294,8 @@ function normalizeTransaction(row = {}, usersByKey = new Map(), source = 'supaba
 
 function normalizeLeadOpportunity(row = {}, usersByKey = new Map(), source = 'lead') {
   const agent = resolveAgentFromRow({
-    assigned_user_id: row.assigned_agent_id || row.assignedAgentId,
-    assigned_agent_email: row.assignedAgentEmail,
+    assigned_user_id: row.assigned_user_id || row.assigned_agent_id || row.assignedAgentId || row.created_by,
+    assigned_agent_email: row.assigned_agent_email || row.assignedAgentEmail,
     assigned_agent: row.assignedAgentName,
   }, usersByKey)
   const title = normalizeText(row.property_interest || row.propertyInterest || row.seller_property_address || row.sellerPropertyAddress || row.listingTitle) ||
@@ -336,6 +333,7 @@ function matchesAgent(row = {}, agentId = '') {
     row.assignedAgentId,
     row.assigned_user_id,
     row.owner_user_id,
+    row.created_by,
     row.assigned_agent_email,
     row.assignedAgentEmail,
   ].map((value) => normalizeText(value).toLowerCase()).includes(target)
@@ -356,28 +354,6 @@ function dedupeById(rows = []) {
     if (!existing || toDate(row.updatedAt) > toDate(existing.updatedAt)) map.set(key, row)
   }
   return [...map.values()]
-}
-
-function buildEmptyOverview() {
-  return {
-    filters: { branches: [], agents: [], dateRange: 'this_month' },
-    kpis: {
-      totalPipelineValue: 0,
-      activeTransactions: 0,
-      avgDaysToRegistration: null,
-      conversionRate: 0,
-      dealsAtRisk: 0,
-    },
-    stages: PIPELINE_STAGE_ORDER.map((key) => ({ key, label: PIPELINE_STAGE_LABELS[key], count: 0, value: 0, avgDaysInStage: null, atRiskCount: 0, movement: [0, 0, 0, 0] })),
-    bottlenecks: [],
-    activity: [],
-    agentMomentum: [],
-    valueFlow: { totalValue: 0, stages: [] },
-    criticalEvents: [],
-    opportunities: [],
-    transactions: [],
-    meta: { isEmpty: true, lastUpdatedAt: new Date().toISOString() },
-  }
 }
 
 function addRiskReasons(transactions = [], { documentRequests = [], subprocesses = [], steps = [], packets = [], tasks = [] } = {}) {
@@ -553,7 +529,7 @@ function buildActivity({ transactions = [], leadActivities = [], documents = [],
 
 function buildAgentMomentum(transactions = [], users = []) {
   const grouped = groupBy(transactions, (row) => row.agentId || row.agentEmail || 'unassigned')
-  const userMap = new Map(users.map((user) => [user.id || user.email, user]))
+  const userMap = new Map(users.flatMap((user) => [[user.id, user], [user.email, user]].filter(([key]) => key)))
   return [...grouped.entries()]
     .map(([key, rows]) => {
       const agent = userMap.get(key) || rows[0] || {}
@@ -561,6 +537,8 @@ function buildAgentMomentum(transactions = [], users = []) {
       return {
         agentId: key,
         agentName: agent.name || rows[0]?.agentName || 'Unassigned',
+        role: agent.role || '',
+        roleLabel: agent.roleLabel || getReportingRoleLabel(agent.role),
         dealsMoving: rows.filter((row) => !row.riskReasons?.length && row.stage !== 'registered').length,
         stalledDeals: rows.filter((row) => row.riskReasons?.length).length,
         avgResponseHours: null,
@@ -610,8 +588,8 @@ export async function getPrincipalPipelineOverview({
   const localSnapshot = remoteOrganisationId ? getAgencyPipelineSnapshot(resolvedOrganisationId) : { transactions: [], deals: [], leads: [] }
 
   const transactionFields = [
-    'id, organisation_id, assigned_branch_id, assigned_user_id, owner_user_id, assigned_agent, assigned_agent_email, transaction_reference, title, stage, current_main_stage, current_sub_stage_summary, lifecycle_state, is_active, sales_price, purchase_price, finance_type, expected_transfer_date, registration_date, registered_at, completed_at, cancelled_at, archived_at, last_meaningful_activity_at, updated_at, created_at, stage_date, next_action, waiting_on_role, property_address_line_1, suburb, city',
-    'id, organisation_id, assigned_user_id, owner_user_id, assigned_agent, assigned_agent_email, transaction_reference, stage, current_main_stage, lifecycle_state, is_active, sales_price, purchase_price, finance_type, expected_transfer_date, registration_date, registered_at, completed_at, cancelled_at, archived_at, last_meaningful_activity_at, updated_at, created_at, next_action, waiting_on_role, property_address_line_1, suburb, city',
+    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, assigned_agent, assigned_agent_email, transaction_reference, title, stage, current_main_stage, current_sub_stage_summary, lifecycle_state, is_active, sales_price, purchase_price, finance_type, expected_transfer_date, registration_date, registered_at, completed_at, cancelled_at, archived_at, last_meaningful_activity_at, updated_at, created_at, stage_date, next_action, waiting_on_role, property_address_line_1, suburb, city',
+    'id, organisation_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, assigned_agent, assigned_agent_email, transaction_reference, stage, current_main_stage, lifecycle_state, is_active, sales_price, purchase_price, finance_type, expected_transfer_date, registration_date, registered_at, completed_at, cancelled_at, archived_at, last_meaningful_activity_at, updated_at, created_at, next_action, waiting_on_role, property_address_line_1, suburb, city',
   ]
 
   const [
@@ -623,8 +601,8 @@ export async function getPrincipalPipelineOverview({
     packets,
   ] = await Promise.all([
     remoteOrganisationId ? safeSelect('transactions', transactionFields, { organisationId: remoteOrganisationId, order: 'updated_at', limit: 1600 }) : [],
-    remoteOrganisationId ? safeSelect('leads', 'lead_id, organisation_id, assigned_agent_id, lead_category, lead_source, stage, status, budget, estimated_value, converted_transaction_id, converted_at, property_interest, seller_property_address, created_at, updated_at', { organisationId: remoteOrganisationId, order: 'updated_at', limit: 1600 }) : [],
-    remoteOrganisationId ? safeSelect('organisation_users', 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, status, last_active_at, created_at, updated_at', { organisationId: remoteOrganisationId, order: 'updated_at', limit: 500 }) : [],
+    remoteOrganisationId ? safeSelect('leads', 'lead_id, organisation_id, assigned_user_id, assigned_agent_id, created_by, assigned_agent_email, lead_category, lead_source, stage, status, budget, estimated_value, converted_transaction_id, converted_at, property_interest, seller_property_address, created_at, updated_at', { organisationId: remoteOrganisationId, order: 'updated_at', limit: 1600 }) : [],
+    remoteOrganisationId ? safeSelect('organisation_users', 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, organisation_role, status, last_active_at, created_at, updated_at', { organisationId: remoteOrganisationId, order: 'updated_at', limit: 500 }) : [],
     remoteOrganisationId ? safeSelect('organisation_branches', 'id, organisation_id, name, location, city, is_head_office, is_active, updated_at, created_at', { organisationId: remoteOrganisationId, order: 'name', ascending: true, limit: 200 }) : [],
     remoteOrganisationId ? safeSelect('lead_activities', 'activity_id, organisation_id, lead_id, agent_id, activity_type, activity_note, activity_date, outcome, created_at', { organisationId: remoteOrganisationId, order: 'activity_date', limit: 500 }) : [],
     remoteOrganisationId ? safeSelect('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', { organisationId: remoteOrganisationId, order: 'updated_at', limit: 1000 }) : [],
@@ -692,7 +670,7 @@ export async function getPrincipalPipelineOverview({
   return {
     filters: {
       branches: branches.map((row) => ({ id: normalizeText(row.id), name: normalizeText(row.name), isHeadOffice: Boolean(row.is_head_office) })),
-      agents: users.map((row) => ({ id: row.id, name: row.name, email: row.email, branchId: row.branchId })),
+      agents: users.map((row) => ({ id: row.id, name: row.name, email: row.email, branchId: row.branchId, role: row.role, roleLabel: row.roleLabel })),
       dateRange: range.key,
     },
     kpis: {

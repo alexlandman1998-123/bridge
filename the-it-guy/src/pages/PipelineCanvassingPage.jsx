@@ -21,6 +21,7 @@ import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { createAgencyCrmLeadActivity, createAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
+import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 
 const CANVASSING_CONTEXT_TIMEOUT_MS = 20000
@@ -130,6 +131,9 @@ function readStore(organisationId) {
   if (typeof window === 'undefined') {
     return { prospects: [], activities: [] }
   }
+  if (!isUnsafeFallbackAllowed()) {
+    return { prospects: [], activities: [] }
+  }
 
   try {
     const raw = window.localStorage.getItem(getStorageKey(organisationId))
@@ -146,6 +150,7 @@ function readStore(organisationId) {
 
 function writeStore(organisationId, store) {
   if (typeof window === 'undefined') return
+  if (!isUnsafeFallbackAllowed()) return
   window.localStorage.setItem(getStorageKey(organisationId), JSON.stringify(store))
   window.dispatchEvent(new CustomEvent(CANVASSING_UPDATED_EVENT, { detail: { organisationId } }))
 }

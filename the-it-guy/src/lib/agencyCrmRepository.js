@@ -9,6 +9,7 @@ import {
   updateAgencyLead,
   updateLeadTask,
 } from './agencyPipelineService'
+import { isUnsafeFallbackAllowed } from './envValidation'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 import { assertResolvedWorkspaceContext } from '../services/workspaceResolutionService'
 
@@ -487,7 +488,7 @@ export async function ensureAgencyCrmLeadRecordPersisted(organisationId, lead = 
       if (leadLinkResult.error) throw leadLinkResult.error
     }
 
-    if (normalizeText(lead?.syncStatus || lead?.sync_status)) {
+    if (normalizeText(lead?.syncStatus || lead?.sync_status) && isUnsafeFallbackAllowed()) {
       updateAgencyLead(normalizedOrganisationId, normalizedLeadId, {
         syncStatus: '',
         syncError: '',
@@ -549,7 +550,15 @@ export async function updateAgencyCrmLeadRecord(organisationId, leadId, patch = 
   const normalizedLeadId = normalizeText(leadId)
   if (!normalizedLeadId) return null
 
-  const updatedLead = updateAgencyLead(normalizedOrganisationId, normalizedLeadId, patch)
+  const updatedAt = new Date().toISOString()
+  const updatedLead = isUnsafeFallbackAllowed()
+    ? updateAgencyLead(normalizedOrganisationId, normalizedLeadId, patch)
+    : {
+        ...patch,
+        leadId: normalizedLeadId,
+        organisationId: normalizedOrganisationId,
+        updatedAt,
+      }
   const dbLeadId = normalizeLeadUuid(normalizedLeadId)
 
   if (!isSupabaseConfigured || !supabase || !isUuidLike(normalizedOrganisationId) || !dbLeadId) {
@@ -559,7 +568,7 @@ export async function updateAgencyCrmLeadRecord(organisationId, leadId, patch = 
   const { corePayload, bridgePayload, payload } = buildRemoteLeadUpdatePayload(patch)
   const payloadWithTimestamp = {
     ...payload,
-    updated_at: new Date().toISOString(),
+    updated_at: updatedAt,
   }
 
   if (Object.keys(payloadWithTimestamp).length <= 1) {
@@ -602,7 +611,15 @@ export async function updateAgencyCrmContactRecord(organisationId, contactId, pa
   const normalizedContactId = normalizeText(contactId)
   if (!normalizedContactId) return null
 
-  const updatedContact = updateAgencyContact(normalizedOrganisationId, normalizedContactId, patch)
+  const updatedAt = new Date().toISOString()
+  const updatedContact = isUnsafeFallbackAllowed()
+    ? updateAgencyContact(normalizedOrganisationId, normalizedContactId, patch)
+    : {
+        ...patch,
+        contactId: normalizedContactId,
+        organisationId: normalizedOrganisationId,
+        updatedAt,
+      }
   const dbContactId = normalizeNullableUuid(normalizedContactId)
 
   if (!isSupabaseConfigured || !supabase || !isUuidLike(normalizedOrganisationId) || !dbContactId) {
@@ -610,7 +627,7 @@ export async function updateAgencyCrmContactRecord(organisationId, contactId, pa
   }
 
   const payload = {
-    updated_at: new Date().toISOString(),
+    updated_at: updatedAt,
   }
   if (hasOwn(patch, 'assignedAgentId')) payload.assigned_agent_id = normalizeNullableUuid(patch.assignedAgentId)
   if (hasOwn(patch, 'firstName')) payload.first_name = normalizeText(patch.firstName) || 'Contact'
@@ -806,7 +823,17 @@ export async function updateAgencyCrmLeadTask(organisationId, taskId, updater = 
   const normalizedTaskId = normalizeText(taskId)
   if (!normalizedTaskId) return null
 
-  const updatedTask = updateLeadTask(normalizedOrganisationId, normalizedTaskId, updater, { actor, suppressActivity: true })
+  const updatedAt = new Date().toISOString()
+  const updatedTask = isUnsafeFallbackAllowed()
+    ? updateLeadTask(normalizedOrganisationId, normalizedTaskId, updater, { actor, suppressActivity: true })
+    : {
+        ...updater,
+        taskId: normalizedTaskId,
+        organisationId: normalizedOrganisationId,
+        status: normalizeText(updater?.status) || 'Pending',
+        priority: normalizeText(updater?.priority) || 'Medium',
+        updatedAt,
+      }
   const dbTaskId = normalizeNullableUuid(normalizedTaskId)
 
   if (!isSupabaseConfigured || !supabase || !isUuidLike(normalizedOrganisationId) || !dbTaskId) {
@@ -814,7 +841,7 @@ export async function updateAgencyCrmLeadTask(organisationId, taskId, updater = 
   }
 
   const taskPayload = {
-    updated_at: new Date().toISOString(),
+    updated_at: updatedAt,
   }
   if (hasOwn(updater, 'title')) taskPayload.title = normalizeText(updater.title) || 'Follow-up'
   if (hasOwn(updater, 'description')) taskPayload.description = normalizeText(updater.description) || null
@@ -858,11 +885,15 @@ export async function deleteAgencyCrmLeadTask(organisationId, taskId, { actor = 
   const normalizedTaskId = normalizeText(taskId)
   if (!normalizedTaskId) return false
 
-  const localSnapshot = getAgencyPipelineSnapshot(normalizedOrganisationId)
+  const localSnapshot = isUnsafeFallbackAllowed()
+    ? getAgencyPipelineSnapshot(normalizedOrganisationId)
+    : { tasks: [] }
   const taskToDelete = (Array.isArray(localSnapshot.tasks) ? localSnapshot.tasks : []).find(
     (row) => normalizeText(row?.taskId) === normalizedTaskId,
   ) || null
-  const locallyDeleted = deleteLeadTask(normalizedOrganisationId, normalizedTaskId)
+  const locallyDeleted = isUnsafeFallbackAllowed()
+    ? deleteLeadTask(normalizedOrganisationId, normalizedTaskId)
+    : false
   const dbTaskId = normalizeNullableUuid(normalizedTaskId)
 
   if (!isSupabaseConfigured || !supabase || !isUuidLike(normalizedOrganisationId) || !dbTaskId) {
@@ -981,5 +1012,8 @@ export async function deleteAgencyCrmLeadRecord(organisationId, leadId) {
     }
   }
 
-  return deleteAgencyLead(normalizedOrganisationId, normalizedLeadId)
+  if (isUnsafeFallbackAllowed()) {
+    return deleteAgencyLead(normalizedOrganisationId, normalizedLeadId)
+  }
+  return true
 }

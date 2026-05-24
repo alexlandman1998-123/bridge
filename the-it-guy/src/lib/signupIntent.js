@@ -267,7 +267,7 @@ export function resolveSignupIntentRoute(intent = null) {
   const normalized = normalizeSignupIntent(intent)
   if (!normalized) return '/onboarding/profile'
   if (normalized.workspace_action === SIGNUP_WORKSPACE_ACTIONS.acceptInvite && normalized.invite_token) {
-    return `/agent/invite/${encodeURIComponent(normalized.invite_token)}`
+    return `/invite/${encodeURIComponent(normalized.invite_token)}`
   }
   if (normalized.app_role === 'client') return '/client-access'
   if (normalized.app_role === 'attorney') return '/attorney/onboarding'

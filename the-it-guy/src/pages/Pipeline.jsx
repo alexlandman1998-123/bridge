@@ -27,6 +27,7 @@ import {
   updateListingDraft,
 } from '../lib/agentListingStorage'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
+import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { resolveCommissionSnapshotForAgent } from '../lib/settingsApi'
 import { listPacketTemplates } from '../core/documents/packetService'
 import {
@@ -78,6 +79,7 @@ function readLeads() {
   if (typeof window === 'undefined') {
     return []
   }
+  if (!isUnsafeFallbackAllowed()) return []
 
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
@@ -96,6 +98,7 @@ function writeLeads(leads) {
   if (typeof window === 'undefined') {
     return
   }
+  if (!isUnsafeFallbackAllowed()) return
 
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(leads))
 }
@@ -104,6 +107,7 @@ function readLocalRows(storageKey, fallback = []) {
   if (typeof window === 'undefined') {
     return fallback
   }
+  if (!isUnsafeFallbackAllowed()) return fallback
 
   try {
     const raw = window.localStorage.getItem(storageKey)

@@ -10,6 +10,7 @@ import {
   isAttorneyDemoContextEnabled,
 } from '../lib/attorneyDemoContext'
 import { BRANDING_BUCKET_CANDIDATES } from '../lib/supabaseClient'
+import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import {
   DEFAULT_ATTORNEY_DEPARTMENTS,
   getAuthenticatedUser,
@@ -40,6 +41,7 @@ function buildAttorneyFirmRecoveryCacheKey(userId = '') {
 
 function rememberAttorneyFirmRecovery(userId = '', firm = null) {
   if (typeof window === 'undefined' || !firm?.id) return
+  if (!isUnsafeFallbackAllowed()) return
   try {
     window.localStorage.setItem(buildAttorneyFirmRecoveryCacheKey(userId), JSON.stringify({
       firm,
@@ -52,6 +54,7 @@ function rememberAttorneyFirmRecovery(userId = '', firm = null) {
 
 function getRememberedAttorneyFirmRecovery(userId = '', expectedFirmId = '') {
   if (typeof window === 'undefined') return null
+  if (!isUnsafeFallbackAllowed()) return null
   try {
     const raw = window.localStorage.getItem(buildAttorneyFirmRecoveryCacheKey(userId))
     if (!raw) return null

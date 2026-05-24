@@ -14,10 +14,39 @@ export function getUnsafeEnvironmentFlags() {
   const unsafeFlags = getUnsafeProductionFlags()
   return {
     enableDemoMode: unsafeFlags.VITE_ENABLE_DEMO_MODE,
-    enableLocalFallbacks: unsafeFlags.VITE_ENABLE_LOCAL_FALLBACKS,
+    enableLocalFallbacks: unsafeFlags.VITE_ENABLE_LOCAL_FALLBACKS || unsafeFlags.VITE_ALLOW_UNSAFE_LOCAL_FALLBACKS,
+    allowUnsafeLocalFallbacks: unsafeFlags.VITE_ALLOW_UNSAFE_LOCAL_FALLBACKS,
     enableDevAuthBypass: unsafeFlags.VITE_ENABLE_DEV_AUTH_BYPASS,
     enableMockData: unsafeFlags.VITE_ENABLE_MOCK_DATA,
     disableRoleRestrictions: unsafeFlags.VITE_FEATURE_DISABLE_ROLE_RESTRICTIONS,
+  }
+}
+
+function isProductionSupabaseProject() {
+  const currentUrl = normalize(import.meta.env.VITE_SUPABASE_URL)
+  const productionUrl = normalize(import.meta.env.VITE_PRODUCTION_SUPABASE_URL)
+  if (!currentUrl || !productionUrl) return false
+  return currentUrl.replace(/\/+$/, '') === productionUrl.replace(/\/+$/, '')
+}
+
+export function isUnsafeFallbackAllowed() {
+  const unsafeFlags = getUnsafeProductionFlags()
+  return Boolean(
+    import.meta.env.DEV &&
+      !isProductionEnvironment() &&
+      !isProductionSupabaseProject() &&
+      unsafeFlags.VITE_ALLOW_UNSAFE_LOCAL_FALLBACKS,
+  )
+}
+
+export function getUnsafeFallbackEnvironmentDiagnostics() {
+  return {
+    allowed: isUnsafeFallbackAllowed(),
+    mode: import.meta.env.MODE || '',
+    dev: Boolean(import.meta.env.DEV),
+    productionEnvironment: isProductionEnvironment(),
+    productionSupabaseProject: isProductionSupabaseProject(),
+    allowUnsafeLocalFallbacks: Boolean(getUnsafeProductionFlags().VITE_ALLOW_UNSAFE_LOCAL_FALLBACKS),
   }
 }
 

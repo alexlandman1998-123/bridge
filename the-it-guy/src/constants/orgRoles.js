@@ -10,6 +10,7 @@ export const ORG_ROLES = Object.freeze({
   salesAgent: 'sales_agent',
   attorney: 'attorney',
   conveyancer: 'conveyancer',
+  bondOriginator: 'bond_originator',
   consultant: 'consultant',
   processor: 'processor',
   agent: 'agent',
@@ -29,7 +30,7 @@ export function normalizeOrgRole(value, { appRole = '', workspaceType = '' } = {
     return ORG_ROLES.owner
   }
   if (normalized === 'admin' || normalized === 'branch_admin') return ORG_ROLES.adminStaff
-  if (normalized === 'principal / owner') return ORG_ROLES.principal
+  if (normalized === 'principal / owner' || normalized === 'agency_owner') return ORG_ROLES.principal
   if (normalized === 'branch manager') return ORG_ROLES.branchManager
   if (normalized === 'firm_admin') return ORG_ROLES.owner
   if (normalized === 'director_partner') return ORG_ROLES.partner
@@ -43,7 +44,7 @@ export function normalizeOrgRole(value, { appRole = '', workspaceType = '' } = {
   if (normalized === 'developer') {
     return appRole === 'developer' || workspaceType === 'developer_company' ? ORG_ROLES.owner : ORG_ROLES.manager
   }
-  if (normalized === 'bond_originator') return ORG_ROLES.consultant
+  if (normalized === 'bond originator' || normalized === 'originator') return ORG_ROLES.bondOriginator
 
   return ORG_ROLES.viewer
 }

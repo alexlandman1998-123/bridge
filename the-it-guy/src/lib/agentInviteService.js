@@ -1,5 +1,6 @@
 import { generateId } from './agentListingStorage'
-import { getUnsafeEnvironmentFlags } from './envValidation'
+import { isUnsafeFallbackAllowed } from './envValidation'
+import { WorkspaceContextError, logUnsafeFallbackBlocked } from '../services/workspaceResolutionService'
 
 const KEY_AGENT_DIRECTORY = 'itg:agent-directory:v1'
 const KEY_AGENT_INVITES = 'itg:agent-invites:v1'
@@ -25,6 +26,7 @@ export const AGENT_ROLE_OPTIONS = [
 ]
 
 function readJson(key, fallback) {
+  if (!isUnsafeFallbackAllowed()) return fallback
   if (typeof window === 'undefined') return fallback
   try {
     const raw = window.localStorage.getItem(key)
@@ -38,8 +40,7 @@ function readJson(key, fallback) {
 
 function writeJson(key, value) {
   if (typeof window === 'undefined') return
-  const flags = getUnsafeEnvironmentFlags()
-  if (import.meta.env.PROD || !flags.enableLocalFallbacks) {
+  if (!isUnsafeFallbackAllowed()) {
     throw new Error('Local invite storage is disabled. Use backend workspace invites for production onboarding.')
   }
   window.localStorage.setItem(key, JSON.stringify(value))
@@ -68,6 +69,17 @@ function normalizeOrganisationName(value) {
 function normalizeOrganisationId(value, fallbackName = '') {
   const explicit = String(value || '').trim().toLowerCase()
   if (explicit) return explicit
+  if (!isUnsafeFallbackAllowed()) {
+    logUnsafeFallbackBlocked({
+      service: 'agentInviteService.normalizeOrganisationId',
+      missingContextType: 'workspace_id',
+      attemptedFallbackType: 'local_invite_workspace_id',
+    })
+    throw new WorkspaceContextError('workspace_context_missing', {
+      service: 'agentInviteService.normalizeOrganisationId',
+      attemptedFallbackType: 'local_invite_workspace_id',
+    })
+  }
 
   const fromName = normalizeOrganisationName(fallbackName)
     .toLowerCase()
@@ -284,7 +296,7 @@ export function buildAgentInviteLink(token, baseUrl = '') {
     (typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin
       : 'https://app.bridgenine.co.za')
-  return `${origin}/agent/invite/${token}`
+  return `${origin}/invite/${token}`
 }
 
 export function createAgentInvite({
@@ -310,7 +322,7 @@ export function createAgentInvite({
   const nowIso = new Date().toISOString()
   const directory = readAgentDirectory()
   const existingInvites = readAgentInvites()
-  const normalizedOrgId = String(organisationId || directory?.agency?.id || 'agency-default').trim().toLowerCase()
+  const normalizedOrgId = normalizeOrganisationId(organisationId || directory?.agency?.id, organisationName || directory?.agency?.name)
   const resolvedOrgName = String(organisationName || directory?.agency?.name || 'Bridge Organisation').trim()
 
   const duplicateInvite = existingInvites.find((invite) => {

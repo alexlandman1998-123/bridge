@@ -1,4 +1,5 @@
 import { MOCK_DATA_ENABLED } from './mockData'
+import { isUnsafeFallbackAllowed } from './envValidation'
 
 const PERSONA_PREVIEW_STORAGE_KEY = 'itg:persona-preview-role'
 
@@ -49,14 +50,14 @@ export function isAttorneyPersonaPreviewMode() {
 }
 
 export function isAttorneyDemoContextEnabled() {
-  return Boolean(MOCK_DATA_ENABLED || isAttorneyPersonaPreviewMode())
+  return Boolean(MOCK_DATA_ENABLED || (isUnsafeFallbackAllowed() && isAttorneyPersonaPreviewMode()))
 }
 
 export function isAttorneyDemoModeActiveForWorkspace({ role = '', baseRole = '', rolePreviewActive = false } = {}) {
   if (String(role || '').trim().toLowerCase() !== 'attorney') return false
   if (MOCK_DATA_ENABLED) return true
-  if (rolePreviewActive && String(baseRole || '').trim().toLowerCase() !== 'attorney') return true
-  return isAttorneyPersonaPreviewMode()
+  if (rolePreviewActive && String(baseRole || '').trim().toLowerCase() !== 'attorney') return isUnsafeFallbackAllowed()
+  return isUnsafeFallbackAllowed() && isAttorneyPersonaPreviewMode()
 }
 
 export function buildAttorneyDemoFirm() {
@@ -104,4 +105,3 @@ export function buildAttorneyDemoMembership({ userId = '', departmentId = ATTORN
     isActive: true,
   }
 }
-

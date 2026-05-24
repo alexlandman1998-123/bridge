@@ -1,8 +1,15 @@
 import { APP_ROLES, normalizeCanonicalAppRole } from '../../constants/appRoles'
 import { isActiveMembershipStatus, normalizeMembershipStatus } from '../../constants/membershipStatuses'
 import { normalizeOrgRole, ORG_ROLES } from '../../constants/orgRoles'
+import {
+  BRANCH_SCOPES,
+  canAccessWorkspaceRecord as canAccessScopedRecord,
+  getDefaultBranchScope,
+  normalizeBranchScope,
+} from '../../constants/workspaceUnits'
 import { inferWorkspaceTypeFromAppRole, normalizeWorkspaceType } from '../../constants/workspaceTypes'
 import { FEATURE_FLAGS } from '../../lib/featureFlags'
+import { resolveSystemRole, resolveWorkspaceRole, SYSTEM_ROLES } from '../../services/roleResolutionService'
 import {
   ACCESS_SCOPES,
   clientPermissions,
@@ -41,6 +48,7 @@ function activeMembershipFromContext(context = {}) {
 
 export function resolvePermissionContext(context = {}) {
   const profile = context.profile || context.authState?.profile || null
+  const systemRole = resolveSystemRole(profile || context.authState?.profile || {})
   const appRole = normalizeCanonicalAppRole(context.appRole || context.role || context.authState?.appRole || profile?.role, '')
   const currentMembership = activeMembershipFromContext(context.authState || context)
   const workspaceType = normalizeWorkspaceType(
@@ -51,26 +59,47 @@ export function resolvePermissionContext(context = {}) {
       currentMembership?.workspace?.type,
     inferWorkspaceTypeFromAppRole(appRole),
   )
-  const organisationRole = normalizeOrgRole(
-    context.organisationRole || context.membershipRole || currentMembership?.role || currentMembership?.rawRole,
-    { appRole, workspaceType },
-  )
+  const organisationRole = resolveWorkspaceRole({
+    ...currentMembership,
+    workspace_role: context.workspaceRole || context.organisationRole || currentMembership?.workspaceRole || currentMembership?.workspace_role,
+    organisation_role: context.organisationRole || context.membershipRole || currentMembership?.organisationRole || currentMembership?.organisation_role,
+    role: context.membershipRole || currentMembership?.role || currentMembership?.rawRole,
+    app_role: appRole,
+    workspace_type: workspaceType,
+  }, { appRole, workspaceType })
   const membershipStatus = normalizeMembershipStatus(currentMembership?.status || context.membershipStatus || '')
   const userId = normalizeText(context.userId || context.authState?.user?.id || profile?.id)
-  const branchId = normalizeText(context.branchId || currentMembership?.branchId)
+  const primaryBranchId = normalizeText(
+    context.primaryBranchId ||
+      context.primary_branch_id ||
+      currentMembership?.primaryBranchId ||
+      currentMembership?.primary_branch_id ||
+      currentMembership?.branchId ||
+      currentMembership?.branch_id,
+  )
+  const branchId = normalizeText(context.branchId || currentMembership?.branchId || currentMembership?.branch_id || primaryBranchId)
   const departmentId = normalizeText(context.departmentId || currentMembership?.departmentId)
   const teamId = normalizeText(context.teamId || currentMembership?.teamId)
+  const branchScope = normalizeBranchScope(
+    context.branchScope || context.branch_scope || currentMembership?.branchScope || currentMembership?.branch_scope,
+    getDefaultBranchScope(organisationRole, { appRole, workspaceType }),
+  )
 
   return {
     profile,
     userId,
     appRole,
+    systemRole,
     workspaceType,
     organisationRole,
+    workspaceRole: organisationRole,
     membershipStatus,
     membership: currentMembership,
     workspace: context.currentWorkspace || context.authState?.currentWorkspace || currentMembership?.workspace || null,
     branchId,
+    primaryBranchId,
+    assignedBranchId: branchId || primaryBranchId,
+    branchScope,
     departmentId,
     teamId,
     hasActiveMembership: Boolean(currentMembership?.id && isActiveMembershipStatus(currentMembership.status)),
@@ -84,8 +113,8 @@ export function getPermissionMap(context = {}) {
   if (FEATURE_FLAGS.disableRoleRestrictions && !import.meta.env.PROD) {
     return new Proxy({}, { get: () => ACCESS_SCOPES.allWorkspace })
   }
-  if (resolved.appRole === APP_ROLES.platformAdmin) return platformAdminPermissions
-  if (resolved.appRole === APP_ROLES.client) return clientPermissions
+  if (resolved.systemRole === SYSTEM_ROLES.admin || resolved.systemRole === SYSTEM_ROLES.superAdmin || resolved.appRole === APP_ROLES.platformAdmin) return platformAdminPermissions
+  if (resolved.systemRole === SYSTEM_ROLES.client || resolved.appRole === APP_ROLES.client) return clientPermissions
   if (!resolved.hasActiveMembership) return Object.freeze({})
   return permissionsByWorkspaceRole[resolved.workspaceType]?.[resolved.organisationRole] || Object.freeze({})
 }
@@ -99,6 +128,37 @@ export function getPermissionScope(permission, context = {}) {
 
 export function can(permission, context = {}) {
   return getPermissionScope(permission, context) !== ACCESS_SCOPES.none
+}
+
+export function canAccessWorkspaceRecord(permission, context = {}, record = {}) {
+  const permissionScope = getPermissionScope(permission, context)
+  if (permissionScope === ACCESS_SCOPES.none) return false
+  if (permissionScope === ACCESS_SCOPES.clientLinkOnly) return false
+
+  const resolved = resolvePermissionContext(context)
+  const effectiveBranchScope =
+    permissionScope === ACCESS_SCOPES.allWorkspace || resolved.branchScope === BRANCH_SCOPES.allBranches
+      ? BRANCH_SCOPES.allBranches
+      : resolved.branchScope
+
+  return canAccessScopedRecord({
+    branchScope: effectiveBranchScope,
+    assignedBranchId: resolved.assignedBranchId || resolved.branchId || resolved.primaryBranchId || resolved.departmentId || resolved.teamId,
+    userId: resolved.userId,
+    recordBranchId:
+      record.branchId ||
+      record.branch_id ||
+      record.assignedBranchId ||
+      record.assigned_branch_id ||
+      record.officeId ||
+      record.office_id ||
+      record.departmentId ||
+      record.department_id ||
+      record.teamId ||
+      record.team_id,
+    assignedUserId: record.assignedUserId || record.assigned_user_id || record.userId || record.user_id,
+    ownerUserId: record.ownerUserId || record.owner_user_id || record.createdBy || record.created_by,
+  })
 }
 
 export function canAny(permissions = [], context = {}) {
@@ -130,7 +190,8 @@ export function isWorkspaceOwner(context = {}) {
 }
 
 export function isPlatformAdmin(context = {}) {
-  return resolvePermissionContext(context).appRole === APP_ROLES.platformAdmin
+  const resolved = resolvePermissionContext(context)
+  return resolved.systemRole === SYSTEM_ROLES.admin || resolved.systemRole === SYSTEM_ROLES.superAdmin || resolved.appRole === APP_ROLES.platformAdmin
 }
 
 export function createPermissionResolver(context = {}) {
@@ -140,6 +201,7 @@ export function createPermissionResolver(context = {}) {
     canAny: (permissions) => canAny(permissions, context),
     canAll: (permissions) => canAll(permissions, context),
     getPermissionScope: (permission) => getPermissionScope(permission, context),
+    canAccessWorkspaceRecord: (permission, record) => canAccessWorkspaceRecord(permission, context, record),
     hasWorkspaceType: (type) => hasWorkspaceType(type, context),
     hasAppRole: (role) => hasAppRole(role, context),
     hasOrgRole: (role) => hasOrgRole(role, context),
@@ -162,10 +224,14 @@ export function evaluateAccessRequirement(requirement = null, context = {}) {
   const resolved = resolvePermissionContext(context)
   if (!requirement) return { ok: true, reason: '', message: '' }
   if (FEATURE_FLAGS.disableRoleRestrictions && !import.meta.env.PROD) return { ok: true, reason: '', message: '' }
-  if (requirement.appRole && resolved.appRole !== normalizeCanonicalAppRole(requirement.appRole, '')) {
+  if (
+    requirement.appRole &&
+    resolved.appRole !== normalizeCanonicalAppRole(requirement.appRole, '') &&
+    (!requirement.workspaceType || resolved.workspaceType !== normalizeWorkspaceType(requirement.workspaceType))
+  ) {
     return { ok: false, reason: 'wrong_app_role', message: 'Your Bridge role does not include access to this area.' }
   }
-  if (requirement.workspaceType && resolved.appRole !== APP_ROLES.client && resolved.workspaceType !== normalizeWorkspaceType(requirement.workspaceType)) {
+  if (requirement.workspaceType && resolved.systemRole !== SYSTEM_ROLES.client && resolved.appRole !== APP_ROLES.client && resolved.workspaceType !== normalizeWorkspaceType(requirement.workspaceType)) {
     return { ok: false, reason: 'wrong_workspace_type', message: 'This workspace does not include access to this area.' }
   }
   if (resolved.isBlocked) {
@@ -214,4 +280,3 @@ export function assertPermission(permission, context = {}, message = '') {
   }
   return true
 }
-

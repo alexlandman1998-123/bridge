@@ -1,5 +1,7 @@
 import { generateId } from './agentListingStorage'
+import { isUnsafeFallbackAllowed } from './envValidation'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
+import { WorkspaceContextError, logUnsafeFallbackBlocked } from '../services/workspaceResolutionService'
 
 const KEY_AGENT_DEMO_TRANSACTIONS = 'itg:agent-demo-transactions:v1'
 const KEY_TRANSACTION_LIFECYCLE_EVENTS = 'itg:transaction-lifecycle-events:v1'
@@ -8,6 +10,15 @@ const DEFAULT_AGENT_SPLIT_PERCENTAGE = 70
 
 function readJson(key, fallback) {
   if (typeof window === 'undefined') return fallback
+  if (!isUnsafeFallbackAllowed()) {
+    logUnsafeFallbackBlocked({
+      service: 'transactionLifecycleService.readJson',
+      missingContextType: 'transaction_persistence',
+      attemptedFallbackType: 'local_transaction_snapshot',
+      metadata: { storageKey: key },
+    })
+    return fallback
+  }
   try {
     const raw = window.localStorage.getItem(key)
     if (!raw) return fallback
@@ -20,6 +31,15 @@ function readJson(key, fallback) {
 
 function writeJson(key, value) {
   if (typeof window === 'undefined') return
+  if (!isUnsafeFallbackAllowed()) {
+    logUnsafeFallbackBlocked({
+      service: 'transactionLifecycleService.writeJson',
+      missingContextType: 'transaction_persistence',
+      attemptedFallbackType: 'local_transaction_snapshot_write',
+      metadata: { storageKey: key },
+    })
+    return
+  }
   window.localStorage.setItem(key, JSON.stringify(value))
 }
 
@@ -542,6 +562,7 @@ async function insertAgentParticipant({
     user_id: isUuidLike(assignedAgentId) ? assignedAgentId : null,
     role_type: 'agent',
     legal_role: 'none',
+    transaction_role: 'listing_agent',
     status: 'active',
     accepted_at: new Date().toISOString(),
     visibility_scope: 'shared',
@@ -646,8 +667,9 @@ export async function createTransactionFromLeadOverride({
   const nextListingId = normalize(payload?.listingId || listing?.id || created?.transactionRow?.transaction?.unit_id)
   const acceptedOfferId = normalize(payload?.acceptedOfferId || payload?.accepted_offer_id || options?.acceptedOfferId)
   const allowDirectLeadConversion = options?.allowDirectLeadConversion === true
-  const explicitMockMode = payload?.mockMode === true || options?.mockMode === true
-  const allowRuntimeFallback = Boolean(options?.allowRuntimeFallback || explicitMockMode || !isSupabaseConfigured || !supabase)
+  const unsafeFallbackAllowed = isUnsafeFallbackAllowed()
+  const explicitMockMode = unsafeFallbackAllowed && (payload?.mockMode === true || options?.mockMode === true)
+  const allowRuntimeFallback = unsafeFallbackAllowed && Boolean(options?.allowRuntimeFallback || explicitMockMode || !isSupabaseConfigured || !supabase)
   const canPersistToSupabase = Boolean(isSupabaseConfigured && supabase && !explicitMockMode)
 
   if (!nextOrganisationId) {
@@ -665,7 +687,10 @@ export async function createTransactionFromLeadOverride({
 
   if (!canPersistToSupabase) {
     if (!allowRuntimeFallback) {
-      throw new Error('Supabase transaction persistence is unavailable and mock fallback is disabled.')
+      throw new WorkspaceContextError('unsafe_local_fallback_blocked', {
+        service: 'transactionLifecycleService.convertLeadToTransaction',
+        attemptedFallbackType: 'mock_transaction_persistence',
+      })
     }
     return createTransactionFromLeadManualOverride({ lead, listing, actor, payload })
   }

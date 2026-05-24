@@ -12,11 +12,11 @@ import {
   startAgentInviteOnboarding,
 } from '../lib/agentInviteService'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
-import { getUnsafeEnvironmentFlags } from '../lib/envValidation'
+import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { getWorkspaceInviteByToken, joinWorkspaceFromInvite } from '../services/workspaceService'
 
 const PENDING_ORG_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
-const LOCAL_INVITE_FALLBACK_ENABLED = Boolean(getUnsafeEnvironmentFlags().enableLocalFallbacks)
+const LOCAL_INVITE_FALLBACK_ENABLED = isUnsafeFallbackAllowed()
 
 function persistPendingInviteToken(token) {
   if (typeof window === 'undefined') return
@@ -195,7 +195,7 @@ export default function AgentInviteOnboarding() {
       const safeToken = String(token || '').trim()
       if (typeof window !== 'undefined') {
         window.sessionStorage.setItem(PENDING_ORG_INVITE_TOKEN_STORAGE_KEY, safeToken)
-        window.location.assign(`/auth?next=${encodeURIComponent(`/agent/invite/${safeToken}`)}`)
+        window.location.assign(`/auth?next=${encodeURIComponent(`/invite/${safeToken}`)}`)
       }
       return
     }
@@ -219,7 +219,7 @@ export default function AgentInviteOnboarding() {
           const safeToken = String(token || '').trim()
           if (typeof window !== 'undefined') {
             window.sessionStorage.setItem(PENDING_ORG_INVITE_TOKEN_STORAGE_KEY, safeToken)
-            window.location.assign(`/auth?next=${encodeURIComponent(`/agent/invite/${safeToken}`)}`)
+            window.location.assign(`/auth?next=${encodeURIComponent(`/invite/${safeToken}`)}`)
           }
           return
         }
@@ -234,7 +234,7 @@ export default function AgentInviteOnboarding() {
         const signedInEmail = String(sessionResult?.data?.session?.user?.email || '').trim().toLowerCase()
         if (!signedInEmail) {
           const safeToken = String(token || '').trim()
-          const nextPath = `/agent/invite/${safeToken}`
+          const nextPath = `/invite/${safeToken}`
           if (typeof window !== 'undefined') {
             window.sessionStorage.setItem(PENDING_ORG_INVITE_TOKEN_STORAGE_KEY, safeToken)
             console.debug('[REDIRECT] invite:require-signin', { nextPath })

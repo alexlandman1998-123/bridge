@@ -1,3 +1,11 @@
+import {
+  buildRoleHeadcount,
+  getOperationalOwnerKeys,
+  getReportingRole,
+  getReportingRoleLabel,
+  shouldIncludeInAgentLeaderboard,
+} from '../../../lib/reportingRoleLogic'
+
 export const DATE_RANGE_OPTIONS = [
   { key: 'last_7_days', label: 'Last 7 days' },
   { key: 'last_30_days', label: 'Last 30 days' },
@@ -178,7 +186,7 @@ function getLeadStageKey(row = {}) {
 }
 
 function getAgentKey(row = {}) {
-  return normalizeText(row.assigned_user_id || row.owner_user_id || row.assigned_agent_id || row.agent_id || row.assigned_agent_email || row.assigned_agent || 'unassigned').toLowerCase()
+  return getOperationalOwnerKeys(row)[0] || normalizeText(row.assigned_agent || 'unassigned').toLowerCase()
 }
 
 function getAgentLabel(row = {}, usersByKey = new Map()) {
@@ -196,7 +204,8 @@ function normalizeUser(row = {}) {
     name,
     email: normalizeText(row.email).toLowerCase(),
     branchId: normalizeText(row.branch_id),
-    role: normalizeKey(row.role),
+    role: getReportingRole(row),
+    roleLabel: getReportingRoleLabel(getReportingRole(row)),
     status: normalizeKey(row.status),
   }
 }
@@ -524,19 +533,33 @@ function buildPipelineHealth(transactions = [], documentRequests = [], subproces
   }
 }
 
-function buildAgentRows(transactions = [], users = []) {
-  const usersByKey = buildUsersByKey(users)
+function buildOperationalUserRows({ transactions = [], listings = [], leads = [], appointments = [], users = [], usersByKey = buildUsersByKey(users), includeLeadership = false } = {}) {
   const map = new Map()
-  for (const row of transactions) {
+  const ensure = (row = {}) => {
     const key = getAgentKey(row)
+    const user = usersByKey.get(key)
+    if (!user && key === 'unassigned') return null
+    if (user && !shouldIncludeInAgentLeaderboard(user, { includeLeadership })) return null
     const item = map.get(key) || {
       agentId: key,
-      agent: getAgentLabel(row, usersByKey),
+      agent: user?.name || getAgentLabel(row, usersByKey),
+      role: user?.role || '',
+      roleLabel: user?.roleLabel || getReportingRoleLabel(user?.role),
       pipelineValue: 0,
       registrations: 0,
       totalDeals: 0,
+      listings: 0,
+      leads: 0,
+      appointments: 0,
       registrationDays: [],
     }
+    map.set(key, item)
+    return item
+  }
+
+  for (const row of transactions) {
+    const item = ensure(row)
+    if (!item) continue
     item.totalDeals += 1
     if (isActiveTransaction(row)) item.pipelineValue += getDealValue(row)
     if (isRegisteredTransaction(row)) {
@@ -544,7 +567,18 @@ function buildAgentRows(transactions = [], users = []) {
       const days = daysBetween(row.created_at, row.registered_at || row.registration_date || row.completed_at)
       if (days !== null) item.registrationDays.push(days)
     }
-    map.set(key, item)
+  }
+  for (const row of listings) {
+    const item = ensure(row)
+    if (item) item.listings += 1
+  }
+  for (const row of leads) {
+    const item = ensure(row)
+    if (item) item.leads += 1
+  }
+  for (const row of appointments) {
+    const item = ensure(row)
+    if (item) item.appointments += 1
   }
   return [...map.values()]
     .map((item) => ({
@@ -552,8 +586,7 @@ function buildAgentRows(transactions = [], users = []) {
       conversionRate: percentage(item.registrations, item.totalDeals),
       averageDaysToRegistration: Math.round(average(item.registrationDays)),
     }))
-    .sort((left, right) => right.pipelineValue - left.pipelineValue || right.registrations - left.registrations)
-    .slice(0, 5)
+    .sort((left, right) => right.pipelineValue - left.pipelineValue || right.registrations - left.registrations || right.listings - left.listings)
 }
 
 function buildBranchRows(branches = [], transactions = [], listings = [], users = []) {
@@ -562,6 +595,7 @@ function buildBranchRows(branches = [], transactions = [], listings = [], users 
     const branchTransactions = transactions.filter((row) => belongsToBranch(row, scope))
     const branchListings = listings.filter((row) => belongsToBranch(row, scope))
     const branchUsers = users.map(normalizeUser).filter((row) => row.branchId === normalizeText(branch.id))
+    const headcount = buildRoleHeadcount(branchUsers)
     const activeTransactions = branchTransactions.filter(isActiveTransaction)
     const registeredTransactions = branchTransactions.filter(isRegisteredTransaction)
     return {
@@ -572,7 +606,10 @@ function buildBranchRows(branches = [], transactions = [], listings = [], users 
       conversionRate: percentage(registeredTransactions.length, branchTransactions.length),
       listings: branchListings.length || toNumber(branch?.kpis?.activeListings),
       transactions: branchTransactions.length || toNumber(branch?.kpis?.activeTransactions),
-      activeAgents: branchUsers.filter((row) => row.status === 'active' || !row.status).length || toNumber(branch?.kpis?.activeAgents),
+      activeAgents: headcount.activeAgents || toNumber(branch?.kpis?.activeAgents),
+      activePrincipals: headcount.activePrincipals || toNumber(branch?.kpis?.activePrincipals),
+      activeManagers: headcount.activeManagers || toNumber(branch?.kpis?.activeManagers),
+      activeOperationalUsers: headcount.activeOperationalUsers || toNumber(branch?.kpis?.activeOperationalUsers),
     }
   }).sort((left, right) => right.pipelineValue - left.pipelineValue)
 }
@@ -676,6 +713,7 @@ export function buildAgencyAnalyticsModel({
   branchId = 'all',
   dateRangeKey = 'last_30_days',
   comparisonKey = 'previous_30_days',
+  includeLeadershipInLeaderboard = false,
   now = new Date(),
 } = {}) {
   const range = resolveAnalyticsDateRange(dateRangeKey, comparisonKey, now)
@@ -760,7 +798,14 @@ export function buildAgencyAnalyticsModel({
     leadFunnel,
     bankIntelligence: buildBankRows(currentTransactions, scopedSubprocesses),
     pipelineHealth: buildPipelineHealth(currentTransactions, scopedDocumentRequests, scopedSubprocesses),
-    agentPerformance: buildAgentRows(currentTransactions, users),
+    agentPerformance: buildOperationalUserRows({
+      transactions: currentTransactions,
+      listings: currentListings,
+      leads: currentLeads,
+      appointments: currentAppointments,
+      users,
+      includeLeadership: includeLeadershipInLeaderboard,
+    }).slice(0, 5),
     branchPerformance: buildBranchRows(branches, scopedTransactions, scopedListings, users),
     developmentPerformance: buildDevelopmentRows(developments, currentTransactions, currentListings),
     meta: {
@@ -782,4 +827,3 @@ export function buildAgencyAnalyticsModel({
     insights: buildInsights(model),
   }
 }
-

@@ -18,7 +18,7 @@ function resolvePendingInvitePath() {
   if (typeof window === 'undefined') return ''
   const token = String(window.sessionStorage.getItem(PENDING_ORG_INVITE_TOKEN_STORAGE_KEY) || '').trim()
   if (!token) return ''
-  return `/agent/invite/${token}`
+  return `/invite/${token}`
 }
 
 export default function AuthCallback() {

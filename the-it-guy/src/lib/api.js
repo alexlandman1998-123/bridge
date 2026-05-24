@@ -99,6 +99,7 @@ import { DEFAULT_APP_ROLE, normalizeAppRole } from './roles'
 import { createPerfTimer } from './performanceTrace'
 import { normalizePropertyCategory, PROPERTY_CATEGORIES } from './propertyTaxonomy'
 import { getSuggestedRescheduleSlots } from './appointmentAvailabilityEngine'
+import { resolveSystemRole, resolveTransactionRole } from '../services/roleResolutionService'
 
 export {
   EXTERNAL_ACCESS_ROLES,
@@ -7080,6 +7081,7 @@ function buildRequiredChecklistFromRows(requiredRows, documents) {
 
 function normalizeTransactionParticipantRow(row) {
   const roleType = normalizeRoleType(row?.role_type)
+  const transactionRole = resolveTransactionRole(row)
   const fallbackPermissions = getRolePermissions({ role: roleType, financeManagedBy: 'bond_originator' })
   const legalRole = normalizeAttorneyLegalRole(row?.legal_role, roleType === 'attorney' ? 'transfer' : 'none')
   const stakeholderStatus = normalizeStakeholderStatus(row?.status, row?.removed_at ? 'removed' : 'active')
@@ -7105,6 +7107,7 @@ function normalizeTransactionParticipantRow(row) {
     transactionId: row?.transaction_id || null,
     userId: row?.user_id || null,
     roleType,
+    transactionRole,
     roleLabel: legalRoleLabel || roleLabelBase,
     legalRole: roleType === 'attorney' ? legalRole : null,
     stakeholderStatus,
@@ -18952,6 +18955,7 @@ export async function addStakeholder({
     transaction_id: transactionId,
     role_type: normalizedRoleType,
     legal_role: normalizedLegalRole,
+    transaction_role: resolveTransactionRole({ role_type: normalizedRoleType, legal_role: normalizedLegalRole }),
     status: normalizedStatus,
     user_id: resolvedUserId,
     participant_name: normalizeNullableText(participantName),
@@ -18972,7 +18976,7 @@ export async function addStakeholder({
     rows: [payload],
     onConflict: 'transaction_id,role_type,legal_role',
     rowSelect:
-      'id, transaction_id, user_id, role_type, legal_role, status, firm_id, invited_by_user_id, invitation_token, invitation_expires_at, invited_at, accepted_at, removed_at, visibility_scope, is_internal, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
+      'id, transaction_id, user_id, role_type, legal_role, transaction_role, status, firm_id, invited_by_user_id, invitation_token, invitation_expires_at, invited_at, accepted_at, removed_at, visibility_scope, is_internal, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
     matchOnLegalRole: true,
   })
 
@@ -18986,6 +18990,7 @@ export async function addStakeholder({
   if (
     upsertQuery.error &&
     (isMissingColumnError(upsertQuery.error, 'legal_role') ||
+      isMissingColumnError(upsertQuery.error, 'transaction_role') ||
       isMissingColumnError(upsertQuery.error, 'status') ||
       isMissingColumnError(upsertQuery.error, 'firm_id') ||
       isMissingColumnError(upsertQuery.error, 'invited_by_user_id') ||
@@ -19001,6 +19006,7 @@ export async function addStakeholder({
       isMissingColumnError(upsertQuery.error, 'can_edit_core_transaction'))
   ) {
     const missingLegalRoleColumn = isMissingColumnError(upsertQuery.error, 'legal_role')
+    const missingTransactionRoleColumn = isMissingColumnError(upsertQuery.error, 'transaction_role')
     const missingStatusColumn = isMissingColumnError(upsertQuery.error, 'status')
     const missingFirmIdColumn = isMissingColumnError(upsertQuery.error, 'firm_id')
     const missingInvitedByUserIdColumn = isMissingColumnError(upsertQuery.error, 'invited_by_user_id')
@@ -19017,6 +19023,9 @@ export async function addStakeholder({
     const legacyPayload = { ...payload }
     if (missingLegalRoleColumn) {
       delete legacyPayload.legal_role
+    }
+    if (missingTransactionRoleColumn) {
+      delete legacyPayload.transaction_role
     }
     if (missingStatusColumn) {
       delete legacyPayload.status
@@ -19141,6 +19150,7 @@ export async function inviteStakeholder({
     invitation_expires_at: expiresAt,
     invited_at: new Date().toISOString(),
     accepted_at: null,
+    transaction_role: resolveTransactionRole({ role_type: normalizeRoleType(roleType), legal_role: legalRole }),
     status: 'invited',
   }
 
@@ -19149,13 +19159,14 @@ export async function inviteStakeholder({
     .update(invitationUpdatePayload)
     .eq('id', participant.id)
     .select(
-      'id, transaction_id, user_id, role_type, legal_role, status, firm_id, invited_by_user_id, invitation_token, invitation_expires_at, invited_at, accepted_at, removed_at, visibility_scope, is_internal, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
+      'id, transaction_id, user_id, role_type, legal_role, transaction_role, status, firm_id, invited_by_user_id, invitation_token, invitation_expires_at, invited_at, accepted_at, removed_at, visibility_scope, is_internal, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
     )
     .maybeSingle()
 
   if (
     updateQuery.error &&
     (isMissingColumnError(updateQuery.error, 'legal_role') ||
+      isMissingColumnError(updateQuery.error, 'transaction_role') ||
       isMissingColumnError(updateQuery.error, 'status') ||
       isMissingColumnError(updateQuery.error, 'firm_id') ||
       isMissingColumnError(updateQuery.error, 'invited_by_user_id') ||
@@ -19170,6 +19181,7 @@ export async function inviteStakeholder({
     delete legacyUpdatePayload.status
     delete legacyUpdatePayload.accepted_at
     delete legacyUpdatePayload.invited_at
+    if (isMissingColumnError(updateQuery.error, 'transaction_role')) delete legacyUpdatePayload.transaction_role
 
     updateQuery = await client
       .from('transaction_participants')
@@ -19192,10 +19204,31 @@ export async function inviteStakeholder({
     throw updateQuery.error
   }
 
+  try {
+    await client.rpc('bridge_create_invite', {
+      payload: {
+        invite_type: 'transaction_invite',
+        token: invitationToken,
+        expires_at: expiresAt,
+        target_transaction_id: transactionId,
+        target_transaction_role: normalizeRoleType(roleType),
+        email: normalizedEmail,
+        metadata: {
+          legacy_source: 'transaction_participants',
+          legacy_participant_id: participant.id,
+          legal_role: legalRole,
+          firm_id: firmId,
+        },
+      },
+    })
+  } catch (canonicalInviteError) {
+    console.warn('[INVITES] canonical transaction invite mirror failed', canonicalInviteError)
+  }
+
   return {
     participant: normalizeTransactionParticipantRow(updateQuery.data || participant),
     invitationToken,
-    invitationUrl: `/invite/stakeholder/${invitationToken}`,
+    invitationUrl: `/invite/${invitationToken}`,
     expiresAt,
   }
 }
@@ -19207,11 +19240,36 @@ export async function acceptStakeholderInvite({ invitationToken } = {}) {
     throw new Error('Invitation token is required.')
   }
 
+  try {
+    const canonicalResult = await client.rpc('bridge_accept_invite', { p_token: normalizedToken })
+    if (!canonicalResult.error && canonicalResult.data?.success) {
+      return {
+        transactionId: canonicalResult.data.transaction_id || null,
+        participantId: canonicalResult.data.participant_id || null,
+        roleType: 'stakeholder',
+        roleLabel: 'Stakeholder',
+        canonicalInvite: canonicalResult.data,
+      }
+    }
+    if (canonicalResult.error && !isMissingSchemaError(canonicalResult.error)) {
+      throw canonicalResult.error
+    }
+    if (canonicalResult.data?.code && !['invite_not_found', 'missing_token'].includes(canonicalResult.data.code)) {
+      throw new Error(canonicalResult.data.message || canonicalResult.data.code)
+    }
+  } catch (canonicalAcceptError) {
+    if (!String(canonicalAcceptError?.message || '').toLowerCase().includes('invite_not_found')) {
+      throw canonicalAcceptError
+    }
+  }
+
   const actorProfile = await resolveActiveProfileContext(client)
+  const sessionResult = await client.auth.getSession()
+  const signedInEmail = normalizeEmailAddress(sessionResult?.data?.session?.user?.email || '')
   let lookupQuery = await client
     .from('transaction_participants')
     .select(
-      'id, transaction_id, user_id, role_type, legal_role, status, firm_id, invited_by_user_id, invitation_token, invitation_expires_at, invited_at, accepted_at, removed_at, visibility_scope, is_internal, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
+      'id, transaction_id, user_id, role_type, legal_role, transaction_role, status, firm_id, invited_by_user_id, invitation_token, invitation_expires_at, invited_at, accepted_at, removed_at, visibility_scope, is_internal, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
     )
     .eq('invitation_token', normalizedToken)
     .maybeSingle()
@@ -19219,6 +19277,7 @@ export async function acceptStakeholderInvite({ invitationToken } = {}) {
   if (
     lookupQuery.error &&
     (isMissingColumnError(lookupQuery.error, 'legal_role') ||
+      isMissingColumnError(lookupQuery.error, 'transaction_role') ||
       isMissingColumnError(lookupQuery.error, 'status') ||
       isMissingColumnError(lookupQuery.error, 'firm_id') ||
       isMissingColumnError(lookupQuery.error, 'invited_by_user_id') ||
@@ -19258,6 +19317,10 @@ export async function acceptStakeholderInvite({ invitationToken } = {}) {
   if (participant.invitation_expires_at && new Date(participant.invitation_expires_at).getTime() < Date.now()) {
     throw new Error('This invitation has expired.')
   }
+  const invitedEmail = normalizeEmailAddress(participant.participant_email || '')
+  if (invitedEmail && signedInEmail && invitedEmail !== signedInEmail) {
+    throw new Error(`Sign in as ${invitedEmail} to accept this invitation.`)
+  }
 
   const now = new Date().toISOString()
   const updatePayload = {
@@ -19274,13 +19337,14 @@ export async function acceptStakeholderInvite({ invitationToken } = {}) {
     .update(updatePayload)
     .eq('id', participant.id)
     .select(
-      'id, transaction_id, user_id, role_type, legal_role, status, firm_id, invited_by_user_id, invitation_token, invitation_expires_at, invited_at, accepted_at, removed_at, visibility_scope, is_internal, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
+      'id, transaction_id, user_id, role_type, legal_role, transaction_role, status, firm_id, invited_by_user_id, invitation_token, invitation_expires_at, invited_at, accepted_at, removed_at, visibility_scope, is_internal, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
     )
     .single()
 
   if (
     updateQuery.error &&
     (isMissingColumnError(updateQuery.error, 'legal_role') ||
+      isMissingColumnError(updateQuery.error, 'transaction_role') ||
       isMissingColumnError(updateQuery.error, 'status') ||
       isMissingColumnError(updateQuery.error, 'firm_id') ||
       isMissingColumnError(updateQuery.error, 'invited_by_user_id') ||
@@ -30665,6 +30729,7 @@ function buildDefaultProfileFromUser(user) {
     companyName: String(metadata.company_name || metadata.company || '').trim() || '',
     phoneNumber: String(metadata.phone || metadata.phone_number || '').trim() || '',
     role: normalizeAppRole(metadata.role || metadata.role_type || metadata.persona || metadata.app_role || DEFAULT_APP_ROLE),
+    systemRole: resolveSystemRole({ role: metadata.role || metadata.role_type || metadata.persona || metadata.app_role || DEFAULT_APP_ROLE }),
     primaryAttorneyFirmId: null,
     attorneyRole: null,
     onboardingCompleted: false,
@@ -30688,6 +30753,7 @@ function normalizeProfileRow(row, user, fallback = null) {
     companyName: row?.company_name || base.companyName || '',
     phoneNumber: row?.phone_number || base.phoneNumber || '',
     role: normalizeAppRole(row?.role || base.role || DEFAULT_APP_ROLE),
+    systemRole: resolveSystemRole({ system_role: row?.system_role || base.systemRole, role: row?.role || base.role }),
     primaryAttorneyFirmId: row?.primary_attorney_firm_id || base.primaryAttorneyFirmId || null,
     attorneyRole: row?.attorney_role || base.attorneyRole || null,
     onboardingCompleted:
@@ -30709,6 +30775,7 @@ async function ensureProfileRecord(client, user, fallbackProfile) {
     company_name: fallbackProfile.companyName || null,
     phone_number: fallbackProfile.phoneNumber || null,
     role: normalizeAppRole(fallbackProfile.role),
+    system_role: resolveSystemRole(fallbackProfile),
     primary_attorney_firm_id: fallbackProfile.primaryAttorneyFirmId || null,
     attorney_role: fallbackProfile.attorneyRole || null,
     onboarding_completed: Boolean(fallbackProfile.onboardingCompleted),
@@ -30718,17 +30785,18 @@ async function ensureProfileRecord(client, user, fallbackProfile) {
     .from('profiles')
     .upsert(rowPayload, { onConflict: 'id' })
     .select(
-      'id, email, first_name, last_name, full_name, company_name, phone_number, role, primary_attorney_firm_id, attorney_role, onboarding_completed, created_at, updated_at',
+      'id, email, first_name, last_name, full_name, company_name, phone_number, role, system_role, primary_attorney_firm_id, attorney_role, onboarding_completed, created_at, updated_at',
     )
     .single()
 
   if (
     result.error &&
-    (isMissingColumnError(result.error, 'primary_attorney_firm_id') || isMissingColumnError(result.error, 'attorney_role'))
+    (isMissingColumnError(result.error, 'primary_attorney_firm_id') || isMissingColumnError(result.error, 'attorney_role') || isMissingColumnError(result.error, 'system_role'))
   ) {
     const legacyPayload = { ...rowPayload }
     delete legacyPayload.primary_attorney_firm_id
     delete legacyPayload.attorney_role
+    delete legacyPayload.system_role
     result = await client
       .from('profiles')
       .upsert(legacyPayload, { onConflict: 'id' })
@@ -30774,14 +30842,14 @@ export async function getOrCreateUserProfile({ user } = {}) {
   let profileQuery = await client
     .from('profiles')
     .select(
-      'id, email, first_name, last_name, full_name, company_name, phone_number, role, primary_attorney_firm_id, attorney_role, onboarding_completed, created_at, updated_at',
+      'id, email, first_name, last_name, full_name, company_name, phone_number, role, system_role, primary_attorney_firm_id, attorney_role, onboarding_completed, created_at, updated_at',
     )
     .eq('id', activeUser.id)
     .maybeSingle()
 
   if (
     profileQuery.error &&
-    (isMissingColumnError(profileQuery.error, 'primary_attorney_firm_id') || isMissingColumnError(profileQuery.error, 'attorney_role'))
+    (isMissingColumnError(profileQuery.error, 'primary_attorney_firm_id') || isMissingColumnError(profileQuery.error, 'attorney_role') || isMissingColumnError(profileQuery.error, 'system_role'))
   ) {
     profileQuery = await client
       .from('profiles')
@@ -30866,6 +30934,7 @@ export async function updateUserProfile({
 
   if (role !== undefined) {
     payload.role = normalizeAppRole(role)
+    payload.system_role = resolveSystemRole({ role: payload.role })
   }
 
   if (onboardingCompleted !== undefined) {
@@ -30895,17 +30964,18 @@ export async function updateUserProfile({
     .from('profiles')
     .upsert(payload, { onConflict: 'id' })
     .select(
-      'id, email, first_name, last_name, full_name, company_name, phone_number, role, primary_attorney_firm_id, attorney_role, onboarding_completed, created_at, updated_at',
+      'id, email, first_name, last_name, full_name, company_name, phone_number, role, system_role, primary_attorney_firm_id, attorney_role, onboarding_completed, created_at, updated_at',
     )
     .single()
 
   if (
     updateResult.error &&
-    (isMissingColumnError(updateResult.error, 'primary_attorney_firm_id') || isMissingColumnError(updateResult.error, 'attorney_role'))
+    (isMissingColumnError(updateResult.error, 'primary_attorney_firm_id') || isMissingColumnError(updateResult.error, 'attorney_role') || isMissingColumnError(updateResult.error, 'system_role'))
   ) {
     const legacyPayload = { ...payload }
     delete legacyPayload.primary_attorney_firm_id
     delete legacyPayload.attorney_role
+    delete legacyPayload.system_role
     updateResult = await client
       .from('profiles')
       .upsert(legacyPayload, { onConflict: 'id' })
