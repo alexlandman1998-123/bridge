@@ -19,12 +19,18 @@ export async function handleWorkspaceInviteEmail(payload: SendWorkspaceInvitePay
   }
 
   const to = normalizeText(payload.to).toLowerCase();
-  const inviteLink = normalizeText(payload.inviteLink || payload.invite_link);
+  const inviteLink = normalizeText(
+    payload.inviteLink || payload.invite_link || payload.onboardingLink ||
+      payload.onboarding_link,
+  );
   if (!to) return jsonResponse(400, { error: "Missing required field: to" });
   if (!inviteLink) return jsonResponse(400, { error: "Missing required field: inviteLink" });
 
   const organisationName = normalizeText(payload.organisationName || payload.organisation_name) || "Bridge workspace";
-  const inviteeName = normalizeText(payload.inviteeName || payload.invitee_name) || "there";
+  const inviteeName = normalizeText(
+    payload.inviteeName || payload.invitee_name || payload.agentName ||
+      payload.agent_name,
+  ) || "there";
   const inviterName = normalizeText(payload.inviterName || payload.inviter_name) || "your workspace admin";
   const workspaceRole = normalizeText(payload.workspaceRole || payload.workspace_role).replaceAll("_", " ") || "team member";
   const supportEmail = normalizeText(payload.supportEmail || payload.support_email);

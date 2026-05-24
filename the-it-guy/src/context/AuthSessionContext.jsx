@@ -121,6 +121,7 @@ export function AuthSessionProvider({ children }) {
   const [bootAttempt, setBootAttempt] = useState(0)
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('')
   const productionSafetyViolation = getProductionSafetyViolation()
+  const sessionUserId = session?.user?.id || ''
 
   const setDevAuthRole = useCallback((nextRole) => {
     if (!isDevAuthBypassEnabled()) {
@@ -208,8 +209,25 @@ export function AuthSessionProvider({ children }) {
 
     const { data: authSubscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
       console.debug('[AUTH] state-change', { event, hasSession: Boolean(nextSession) })
-      clearWorkspaceScopedRuntimeCaches()
-      setSession(nextSession || null)
+      setSession((previousSession) => {
+        const previousUserId = previousSession?.user?.id || ''
+        const nextUserId = nextSession?.user?.id || ''
+        const previousAccessToken = previousSession?.access_token || ''
+        const nextAccessToken = nextSession?.access_token || ''
+
+        if (previousUserId !== nextUserId) {
+          clearWorkspaceScopedRuntimeCaches()
+        }
+
+        if (
+          previousUserId === nextUserId &&
+          previousAccessToken === nextAccessToken
+        ) {
+          return previousSession
+        }
+
+        return nextSession || null
+      })
     })
 
     return () => {
@@ -222,7 +240,7 @@ export function AuthSessionProvider({ children }) {
     if (productionSafetyViolation || (devAuthRole && isDevAuthBypassEnabled())) return
     if (sessionLoading) return
 
-    if (!session?.user?.id) {
+    if (!sessionUserId) {
       setAuthState({
         ...EMPTY_AUTH_STATE,
         status: 'unauthenticated',
@@ -292,7 +310,7 @@ export function AuthSessionProvider({ children }) {
     return () => {
       active = false
     }
-  }, [bootAttempt, devAuthRole, productionSafetyViolation, selectedWorkspaceId, session, sessionLoading])
+  }, [bootAttempt, devAuthRole, productionSafetyViolation, selectedWorkspaceId, sessionLoading, sessionUserId])
 
   const refreshAuthState = useCallback(() => {
     setBootAttempt((previous) => previous + 1)
@@ -349,8 +367,8 @@ export function AuthSessionProvider({ children }) {
         ...authState,
         refreshAuthState,
       },
-      session: authState.session || session,
-      user: authState.user || session?.user || null,
+      session: session || authState.session,
+      user: session?.user || authState.user || null,
       authLoading: sessionLoading || authState.status === 'loading',
       authError: authState.bootError,
       devAuthRole,

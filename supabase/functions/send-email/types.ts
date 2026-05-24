@@ -38,12 +38,16 @@ export type SendLegacyTestPayload = {
 };
 
 export type SendWorkspaceInvitePayload = {
-  type: "workspace_invite" | "team_invite" | "branch_invite";
+  type: "workspace_invite" | "team_invite" | "branch_invite" | "agent_invite";
   to: string;
   inviteLink?: string;
   invite_link?: string;
+  onboardingLink?: string;
+  onboarding_link?: string;
   inviteeName?: string;
   invitee_name?: string;
+  agentName?: string;
+  agent_name?: string;
   inviterName?: string;
   inviter_name?: string;
   organisationName?: string;

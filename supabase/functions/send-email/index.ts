@@ -337,11 +337,12 @@ Deno.serve(async (req: Request) => {
     }
 
     if (
-      ["workspace_invite", "team_invite", "branch_invite"].includes(type) &&
+      ["workspace_invite", "team_invite", "branch_invite", "agent_invite"].includes(type) &&
       (payload as SendWorkspaceInvitePayload).to
     ) {
       console.log("[send-email] routing template", {
         route: "workspace_invite",
+        requestedType: type,
         recipient: recipient || null,
       });
       return await handleWorkspaceInviteEmail(payload as SendWorkspaceInvitePayload);
@@ -378,6 +379,8 @@ Deno.serve(async (req: Request) => {
           "transaction_roleplayer_intro",
           "transaction_roleplayer_handoff",
           "workspace_invite",
+          "branch_invite",
+          "agent_invite",
           "appointment_scheduled",
           "appointment_confirmed",
           "appointment_updated",
@@ -410,6 +413,9 @@ Deno.serve(async (req: Request) => {
         "offer_decision_notification",
         "transaction_roleplayer_intro",
         "transaction_roleplayer_handoff",
+        "workspace_invite",
+        "branch_invite",
+        "agent_invite",
         "appointment_scheduled",
         "appointment_confirmed",
         "appointment_updated",

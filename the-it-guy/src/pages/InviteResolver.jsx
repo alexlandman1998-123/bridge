@@ -181,10 +181,12 @@ export default function InviteResolver() {
         {sessionEmail ? (
           <p className="text-helper text-textMuted">Signed in as {sessionEmail}</p>
         ) : (
-          <p className="text-helper text-textMuted">Sign in with the invited email address to continue.</p>
+          <p className="text-helper text-textMuted">
+            Sign in, or create an account with the invited email address, to continue.
+          </p>
         )}
         <Button type="button" onClick={() => void handleAccept()} disabled={saving}>
-          {saving ? 'Accepting…' : sessionEmail ? 'Accept Invite' : 'Sign in to Accept'}
+          {saving ? 'Accepting…' : sessionEmail ? 'Accept Invite' : 'Sign in or Create Account'}
         </Button>
       </div>
 

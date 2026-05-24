@@ -5,8 +5,11 @@ import {
   BarChart3,
   Building2,
   CalendarDays,
+  Copy,
+  ExternalLink,
   FileCheck2,
   Files,
+  Mail,
   MapPin,
   MoreHorizontal,
   Plus,
@@ -71,6 +74,35 @@ function buildInviteMessage({ invite, inviteLink }) {
   const agentName = `${invite?.firstName || ''} ${invite?.surname || ''}`.trim() || 'Agent'
   const orgName = invite?.organisationName || 'your organisation'
   return `Hi ${agentName},\n\nYou have been invited to join ${orgName} on Bridge 9.\n\nComplete your agent onboarding here:\n${inviteLink}\n\n- Bridge`
+}
+
+async function sendBranchInviteEmail({ invite, organisationName }) {
+  const recipientEmail = normalizeText(invite?.email)
+  const inviteLink = buildAgentInviteLink(invite?.token)
+  if (!recipientEmail) {
+    throw new Error('Invite email address is missing.')
+  }
+  if (!inviteLink) {
+    throw new Error('Invite link is missing.')
+  }
+  if (!isSupabaseConfigured) {
+    throw new Error('Email sending is unavailable because Supabase is not configured.')
+  }
+
+  const emailResult = await invokeEdgeFunction('send-email', {
+    body: {
+      type: 'branch_invite',
+      to: recipientEmail,
+      inviteeName: invite?.name || `${invite?.firstName || ''} ${invite?.surname || ''}`.trim(),
+      organisationName: organisationName || invite?.organisationName || 'Bridge Organisation',
+      workspaceRole: 'agent',
+      inviteLink,
+    },
+  })
+  if (emailResult?.error) {
+    throw emailResult.error
+  }
+  return inviteLink
 }
 
 function normalizeAgentInviteRole(value) {
@@ -167,17 +199,40 @@ function SimpleTable({ columns, rows }) {
           </tr>
         </thead>
         <tbody className="divide-y divide-[#edf2f7] bg-white text-[#223449]">
-          {rows.map((row, index) => (
-            <tr key={`${index}-${row.join('|')}`} className="transition hover:bg-[#f8fbff]">
-              {row.map((cell, cellIndex) => (
+          {rows.map((row, index) => {
+            const rowConfig = Array.isArray(row) ? { cells: row } : row
+            const cells = rowConfig?.cells || []
+            const clickable = typeof rowConfig?.onClick === 'function'
+            return (
+            <tr
+              key={rowConfig?.key || `${index}-${cells.map((cell) => (typeof cell === 'string' || typeof cell === 'number' ? cell : cellIndexLabel(cell))).join('|')}`}
+              className={`transition hover:bg-[#f8fbff] ${clickable ? 'cursor-pointer focus-within:bg-[#f8fbff]' : ''}`}
+              onClick={rowConfig?.onClick}
+              onKeyDown={(event) => {
+                if (!clickable) return
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  rowConfig.onClick()
+                }
+              }}
+              role={clickable ? 'button' : undefined}
+              tabIndex={clickable ? 0 : undefined}
+            >
+              {cells.map((cell, cellIndex) => (
                 <td key={cellIndex} className="px-4 py-3">{cell}</td>
               ))}
             </tr>
-          ))}
+          )})}
         </tbody>
       </table>
     </div>
   )
+}
+
+function cellIndexLabel(cell) {
+  if (cell == null) return ''
+  if (typeof cell === 'string' || typeof cell === 'number') return String(cell)
+  return 'cell'
 }
 
 function StatusPill({ children, tone = 'slate' }) {
@@ -377,17 +432,13 @@ function BranchAgentInviteModal({
 
     if (recipientEmail && isSupabaseConfigured) {
       try {
-        await invokeEdgeFunction('send-email', {
-          body: {
-            type: 'agent_invite',
-            to: recipientEmail,
-            agentName: `${invite?.firstName || ''} ${invite?.surname || ''}`.trim(),
-            organisationName: invite?.organisationName || organisation?.name || 'Bridge Organisation',
-            onboardingLink: inviteLink,
-          },
+        await sendBranchInviteEmail({
+          invite,
+          organisationName: invite?.organisationName || organisation?.name || 'Bridge Organisation',
         })
       } catch (sendError) {
         console.error('[Branch Agent Invite] email send failed', sendError)
+        throw new Error(sendError?.message || 'Invite was created, but the email could not be sent. Please retry sending the invite.')
       }
     }
 
@@ -587,6 +638,7 @@ async function listPendingBranchInvites(branchId) {
     const displayName = [firstName, lastName].filter(Boolean).join(' ') || normalizeText(invite.email) || 'Invited agent'
     return {
       id: invite.id,
+      token: invite.token,
       name: displayName,
       role: formatRoleLabel(metadata.role || invite.target_workspace_role || 'agent'),
       listings: 0,
@@ -597,12 +649,135 @@ async function listPendingBranchInvites(branchId) {
       status: 'Invited',
       statusTone: 'invited',
       lastActive: invite.created_at,
+      createdAt: invite.created_at,
+      expiresAt: invite.expires_at,
       email: normalizeText(invite.email),
       phone: normalizeText(invite.phone || metadata.mobile),
       commissionStructureName: normalizeText(metadata.commission_structure_name),
+      notes: normalizeText(metadata.notes),
       isPendingInvite: true,
     }
   })
+}
+
+function BranchInviteDetailModal({
+  invite,
+  branch,
+  organisation,
+  open,
+  onClose,
+  onResent,
+}) {
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const inviteLink = buildAgentInviteLink(invite?.token)
+
+  useEffect(() => {
+    if (!open) return
+    setSaving(false)
+    setMessage('')
+    setError('')
+  }, [open, invite?.id])
+
+  async function handleCopyLink() {
+    if (!inviteLink) return
+    try {
+      await navigator.clipboard.writeText(inviteLink)
+      setMessage('Invite link copied.')
+      setError('')
+    } catch {
+      setError('Unable to copy the invite link from this browser.')
+    }
+  }
+
+  async function handleResend() {
+    if (!invite?.isPendingInvite) return
+    try {
+      setSaving(true)
+      setError('')
+      setMessage('')
+      await sendBranchInviteEmail({
+        invite,
+        organisationName: organisation?.name || 'Bridge Organisation',
+      })
+      setMessage(`Invite resent to ${invite.email}.`)
+      onResent?.()
+    } catch (resendError) {
+      setError(resendError?.message || 'Unable to resend this invite.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={saving ? undefined : onClose}
+      title={invite?.isPendingInvite ? 'Agent Invite' : 'Agent'}
+      subtitle={invite?.isPendingInvite ? 'Review or resend this branch invite.' : 'Open this agent workspace.'}
+      className="max-w-2xl"
+      footer={(
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>Close</Button>
+          {invite?.isPendingInvite ? (
+            <Button type="button" onClick={handleResend} disabled={saving || !invite?.email}>
+              {saving ? 'Resending...' : 'Resend Invite'}
+            </Button>
+          ) : null}
+        </div>
+      )}
+    >
+      <div className="space-y-4">
+        <section className="rounded-[18px] border border-[#dfe8f1] bg-[#fbfdff] p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Invitee</p>
+              <h3 className="mt-1 text-lg font-semibold text-[#142132]">{invite?.name || 'Invited agent'}</h3>
+              <p className="mt-1 text-sm text-[#60758b]">{invite?.role || 'Agent'} · {branch?.name || 'Branch'}</p>
+            </div>
+            <StatusPill tone={invite?.statusTone || 'invited'}>{invite?.status || 'Invited'}</StatusPill>
+          </div>
+          <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+            <div>
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Email</p>
+              <p className="mt-1 break-all font-medium text-[#223449]">{invite?.email || 'Not captured'}</p>
+            </div>
+            <div>
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Sent</p>
+              <p className="mt-1 font-medium text-[#223449]">{formatDateShort(invite?.createdAt || invite?.lastActive)}</p>
+            </div>
+            <div>
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Commission</p>
+              <p className="mt-1 font-medium text-[#223449]">{invite?.commissionStructureName || 'Not assigned'}</p>
+            </div>
+            <div>
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Expires</p>
+              <p className="mt-1 font-medium text-[#223449]">{formatDateShort(invite?.expiresAt)}</p>
+            </div>
+          </div>
+        </section>
+
+        {invite?.isPendingInvite ? (
+          <section className="rounded-[18px] border border-[#dfe8f1] bg-white p-4">
+            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Invite Link</p>
+            <p className="mt-2 break-all rounded-[12px] border border-[#e2eaf3] bg-[#f8fbff] px-3 py-2 text-sm text-[#35546c]">
+              {inviteLink || 'Invite link unavailable'}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <ActionButton icon={Copy} onClick={handleCopyLink}>Copy Link</ActionButton>
+              <ActionButton icon={Mail} onClick={handleResend} disabled={saving || !invite?.email}>
+                {saving ? 'Resending...' : 'Resend Email'}
+              </ActionButton>
+            </div>
+          </section>
+        ) : null}
+
+        {message ? <p className="rounded-[12px] border border-[#cfe8d7] bg-[#f3fbf5] px-3 py-2 text-sm text-[#1d7d45]">{message}</p> : null}
+        {error ? <p className="rounded-[12px] border border-[#f2d7d7] bg-[#fff6f6] px-3 py-2 text-sm text-[#b42318]">{error}</p> : null}
+      </div>
+    </Modal>
+  )
 }
 
 export default function AgencyBranchWorkspacePage() {
@@ -618,6 +793,7 @@ export default function AgencyBranchWorkspacePage() {
   const [error, setError] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [agentInviteOpen, setAgentInviteOpen] = useState(false)
+  const [selectedAgentRow, setSelectedAgentRow] = useState(null)
   const [organisationContext, setOrganisationContext] = useState({ organisation: null, profile: null })
   const [commissionStructures, setCommissionStructures] = useState([])
 
@@ -732,6 +908,7 @@ export default function AgencyBranchWorkspacePage() {
   const branchAgentRows = useMemo(() => {
     const activeRows = leaderboard.map((agent) => ({
       id: agent.id || agent.email || agent.name,
+      routeId: agent.id || agent.userId || agent.email || agent.name,
       name: agent.name || 'Agent',
       role: formatRoleLabel(agent.role || 'agent'),
       listings: agent.listings || 0,
@@ -752,6 +929,18 @@ export default function AgencyBranchWorkspacePage() {
     const visiblePendingInvites = pendingInvites.filter((invite) => !activeEmails.has(normalizeLower(invite.email)))
     return [...visiblePendingInvites, ...activeRows]
   }, [leaderboard, pendingInvites])
+
+  function handleAgentRowClick(agent) {
+    if (!agent) return
+    if (agent.isPendingInvite) {
+      setSelectedAgentRow(agent)
+      return
+    }
+    const routeId = normalizeText(agent.routeId || agent.id)
+    if (routeId) {
+      navigate(`/agency/agents/${encodeURIComponent(routeId)}`)
+    }
+  }
 
   if (loading) {
     return (
@@ -941,15 +1130,22 @@ export default function AgencyBranchWorkspacePage() {
           branchAgentRows.length ? (
             <SimpleTable
               columns={['Name', 'Role', 'Listings', 'Transactions', 'Revenue', 'Status', 'Last Update']}
-              rows={branchAgentRows.map((agent) => [
-                agent.name,
-                agent.role,
-                String(agent.listings || 0),
-                String(agent.transactions || 0),
-                formatCurrency(agent.revenue || 0),
-                <StatusPill tone={agent.statusTone}>{agent.status || 'Active'}</StatusPill>,
-                formatDateShort(agent.lastActive),
-              ])}
+              rows={branchAgentRows.map((agent) => ({
+                key: agent.isPendingInvite ? `invite-${agent.id}` : `agent-${agent.id}`,
+                onClick: () => handleAgentRowClick(agent),
+                cells: [
+                  <span className="inline-flex items-center gap-2 font-semibold text-[#142132]">
+                    {agent.name}
+                    {agent.isPendingInvite ? null : <ExternalLink size={13} className="text-[#8ca0b6]" />}
+                  </span>,
+                  agent.role,
+                  String(agent.listings || 0),
+                  String(agent.transactions || 0),
+                  formatCurrency(agent.revenue || 0),
+                  <StatusPill tone={agent.statusTone}>{agent.status || 'Active'}</StatusPill>,
+                  formatDateShort(agent.lastActive),
+                ],
+              }))}
             />
           ) : (
             <EmptyState
@@ -1058,6 +1254,14 @@ export default function AgencyBranchWorkspacePage() {
         branch={branch}
         onClose={() => setSettingsOpen(false)}
         onSaved={handleBranchSaved}
+      />
+      <BranchInviteDetailModal
+        open={Boolean(selectedAgentRow)}
+        invite={selectedAgentRow}
+        branch={branch}
+        organisation={organisationContext.organisation}
+        onClose={() => setSelectedAgentRow(null)}
+        onResent={() => void loadWorkspace()}
       />
       <BranchAgentInviteModal
         open={agentInviteOpen}

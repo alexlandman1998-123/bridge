@@ -3030,17 +3030,22 @@ export function AgentsPage() {
 
     if (recipientEmail && isSupabaseConfigured) {
       try {
-        await invokeEdgeFunction('send-email', {
+        const emailResult = await invokeEdgeFunction('send-email', {
           body: {
-            type: 'agent_invite',
+            type: invite?.branchId ? 'branch_invite' : 'workspace_invite',
             to: recipientEmail,
-            agentName: `${invite?.firstName || ''} ${invite?.surname || ''}`.trim(),
+            inviteeName: `${invite?.firstName || ''} ${invite?.surname || ''}`.trim(),
             organisationName: invite?.organisationName || 'Bridge Organisation',
-            onboardingLink: inviteLink,
+            workspaceRole: 'agent',
+            inviteLink,
           },
         })
+        if (emailResult?.error) {
+          throw emailResult.error
+        }
       } catch (sendError) {
         console.error('[Agent Invite] email send failed', sendError)
+        throw new Error(sendError?.message || 'Invite was created, but the email could not be sent. Please retry sending the invite.')
       }
     }
 
