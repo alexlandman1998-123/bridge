@@ -13,6 +13,7 @@ import { normalizeAppRole } from './roles'
 import {
   BRANDING_BUCKET_CANDIDATES,
   clearSupabaseLocalAuthState,
+  invokeEdgeFunction,
   isSupabaseConfigured,
   isUserFromSubClaimMissingError,
   supabase,
@@ -1249,6 +1250,78 @@ function createAtomicOnboardingError(rpcResult = {}, fallbackMessage = 'Agency s
   return error
 }
 
+function getAppOrigin() {
+  if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin
+  return normalizeText(import.meta.env?.VITE_APP_URL) || 'https://app.bridgenine.co.za'
+}
+
+function getInviteeFirstName(name = '') {
+  return normalizeText(name).split(/\s+/).filter(Boolean)[0] || ''
+}
+
+async function dispatchAgencyInviteEmails({ client, workspaceId, mergedDraft, organisationName, inviterName, supportEmail }) {
+  const inviteDrafts = (mergedDraft?.invitations || [])
+    .map((invite) => ({
+      email: normalizeEmail(invite.email),
+      name: normalizeText(invite.name),
+      workspaceRole: mapAgencyInviteRoleToOrganisationRole(invite.role),
+    }))
+    .filter((invite) => invite.email)
+
+  if (!inviteDrafts.length || !workspaceId) return { sent: [], warnings: [] }
+
+  const inviteEmails = [...new Set(inviteDrafts.map((invite) => invite.email))]
+  const query = await client
+    .from('workspace_invites')
+    .select('id, token, invited_email, organisation_role, status, expires_at')
+    .eq('workspace_id', workspaceId)
+    .in('invited_email', inviteEmails)
+    .eq('status', 'pending')
+
+  if (query.error) {
+    return {
+      sent: [],
+      warnings: [`Invite records were created, but Bridge could not load invite links for email delivery: ${query.error.message}`],
+    }
+  }
+
+  const rowsByEmail = new Map((query.data || []).map((row) => [normalizeEmail(row.invited_email), row]))
+  const sent = []
+  const warnings = []
+  const origin = getAppOrigin()
+
+  for (const invite of inviteDrafts) {
+    const row = rowsByEmail.get(invite.email)
+    if (!row?.token) {
+      warnings.push(`Invite email was not sent to ${invite.email}: invite token was not available.`)
+      continue
+    }
+
+    const inviteLink = `${origin}/invite/${encodeURIComponent(row.token)}`
+    const response = await invokeEdgeFunction('send-email', {
+      body: {
+        type: 'workspace_invite',
+        to: invite.email,
+        inviteeName: getInviteeFirstName(invite.name),
+        inviterName,
+        organisationName,
+        workspaceRole: row.organisation_role || invite.workspaceRole,
+        supportEmail,
+        inviteLink,
+      },
+      client,
+    })
+    const sendError = response?.error || response?.data?.error
+    if (sendError) {
+      warnings.push(`Invite email was not sent to ${invite.email}: ${typeof sendError === 'string' ? sendError : sendError?.message || 'email provider rejected the request.'}`)
+      continue
+    }
+    sent.push({ email: invite.email, inviteId: row.id, token: row.token, emailId: response?.data?.emailId || null })
+  }
+
+  return { sent, warnings }
+}
+
 function normalizeAccountSettings(row, profile) {
   return {
     id: row?.id || profile?.id || null,
@@ -2234,6 +2307,15 @@ export async function completeAgencyOnboarding(input = {}) {
     workspaceId: workspaceResolution.currentWorkspace?.id || completion.workspace_id || null,
   })
 
+  const inviteEmailDelivery = await dispatchAgencyInviteEmails({
+    client,
+    workspaceId: workspaceResolution.currentWorkspace?.id || completion.workspace_id || completion.organisation_id,
+    mergedDraft,
+    organisationName: workspaceResolution.currentWorkspace?.name || completion.organisation?.display_name || completion.organisation?.name || mergedDraft?.agencyInformation?.agencyName,
+    inviterName: mergedDraft?.principalInformation?.principalFullName || context.profile?.fullName || user.email,
+    supportEmail: mergedDraft?.agencyInformation?.mainEmailAddress || context.profile?.email || user.email,
+  })
+
   clearOrganisationRuntimeCache()
   return {
     onboarding: mergedDraft,
@@ -2250,6 +2332,7 @@ export async function completeAgencyOnboarding(input = {}) {
     membershipRole: workspaceResolution.currentMembership?.workspaceRole || workspaceResolution.currentMembership?.role || 'principal',
     workspaceResolution,
     completion,
+    inviteEmailDelivery,
     persisted: true,
   }
 }

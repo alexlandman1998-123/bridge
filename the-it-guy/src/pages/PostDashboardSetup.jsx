@@ -13,7 +13,7 @@ import {
   UploadCloud,
   Users,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -48,9 +48,46 @@ const AGENCY_SETUP_STEPS = [
   { key: 'team', label: 'Team' },
   { key: 'review', label: 'Review' },
 ]
+const SETUP_DRAFT_SCHEMA_VERSION = 1
+const SETUP_DRAFT_STORAGE_PREFIX = 'bridge:post-dashboard-setup-draft'
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function buildSetupDraftStorageKey({ userId = '', profileId = '', intent = null } = {}) {
+  const ownerId = normalizeText(userId || profileId)
+  if (!ownerId) return ''
+  const intentKey = normalizeText(intent?.id || intent?.workspace_type || intent?.app_role || 'workspace')
+  return `${SETUP_DRAFT_STORAGE_PREFIX}:${ownerId}:${intentKey}`
+}
+
+function loadSetupDraft(storageKey) {
+  if (!storageKey || typeof window === 'undefined') return null
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(storageKey) || 'null')
+    if (!parsed || parsed.schemaVersion !== SETUP_DRAFT_SCHEMA_VERSION) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function saveSetupDraft(storageKey, payload = {}) {
+  if (!storageKey || typeof window === 'undefined') return
+  window.localStorage.setItem(
+    storageKey,
+    JSON.stringify({
+      schemaVersion: SETUP_DRAFT_SCHEMA_VERSION,
+      savedAt: new Date().toISOString(),
+      ...payload,
+    }),
+  )
+}
+
+function clearSetupDraft(storageKey) {
+  if (!storageKey || typeof window === 'undefined') return
+  window.localStorage.removeItem(storageKey)
 }
 
 function getWorkspaceNoun(workspaceType = '') {
@@ -212,6 +249,8 @@ export default function PostDashboardSetup() {
   const [error, setError] = useState('')
   const [request, setRequest] = useState(null)
   const [uploadingLogoTarget, setUploadingLogoTarget] = useState('')
+  const autosaveTimerRef = useRef(null)
+  const hydratedDraftKeyRef = useRef('')
   const workspaceNoun = getWorkspaceNoun(intent?.workspace_type)
   const canCreateWorkspace = intent?.workspace_action === SIGNUP_WORKSPACE_ACTIONS.createWorkspace
   const canJoinOrRequest = intent?.workspace_action === SIGNUP_WORKSPACE_ACTIONS.joinOrRequestWorkspace
@@ -221,6 +260,10 @@ export default function PostDashboardSetup() {
     canCreateWorkspace &&
     intent?.workspace_type === WORKSPACE_TYPES.agency &&
     ['owner', 'principal'].includes(intendedRole)
+  const setupDraftStorageKey = useMemo(
+    () => buildSetupDraftStorageKey({ userId: authState.user?.id, profileId: profile?.id, intent }),
+    [authState.user?.id, intent, profile?.id],
+  )
   const agencyCurrentStep = AGENCY_SETUP_STEPS[agencyStepIndex] || AGENCY_SETUP_STEPS[0]
   const pageTitle = useMemo(() => {
     if (isAgencyPrincipalSetup) return 'Set up your agency workspace'
@@ -240,6 +283,50 @@ export default function PostDashboardSetup() {
     }))
     setAgencyDraft((previous) => mergeAgencyOnboardingDraft(getAgencyDraftDefaults(intent, profile), previous, profile))
   }, [intent, profile])
+
+  useEffect(() => {
+    if (!isAgencyPrincipalSetup || !setupDraftStorageKey || hydratedDraftKeyRef.current === setupDraftStorageKey) return
+    hydratedDraftKeyRef.current = setupDraftStorageKey
+    const savedDraft = loadSetupDraft(setupDraftStorageKey)
+    if (!savedDraft) return
+
+    setForm((previous) => ({
+      ...previous,
+      ...(savedDraft.form || {}),
+    }))
+    setAgencyDraft((previous) =>
+      mergeAgencyOnboardingDraft(getAgencyDraftDefaults(intent, profile), savedDraft.agencyDraft || previous, profile),
+    )
+    const savedStepIndex = Number(savedDraft.agencyStepIndex)
+    if (Number.isFinite(savedStepIndex)) {
+      setAgencyStepIndex(Math.max(0, Math.min(AGENCY_SETUP_STEPS.length - 1, savedStepIndex)))
+    }
+    if (savedDraft.savedAt) {
+      setMessage(`Draft restored from ${new Date(savedDraft.savedAt).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}.`)
+    }
+  }, [intent, isAgencyPrincipalSetup, profile, setupDraftStorageKey])
+
+  useEffect(() => {
+    if (!isAgencyPrincipalSetup || !setupDraftStorageKey || hydratedDraftKeyRef.current !== setupDraftStorageKey) return undefined
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current)
+    }
+
+    autosaveTimerRef.current = window.setTimeout(() => {
+      saveSetupDraft(setupDraftStorageKey, {
+        form,
+        agencyDraft,
+        agencyStepIndex,
+      })
+      setMessage(`Draft saved ${new Date().toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}.`)
+    }, 800)
+
+    return () => {
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current)
+      }
+    }
+  }, [agencyDraft, agencyStepIndex, form, isAgencyPrincipalSetup, setupDraftStorageKey])
 
   function updateField(field, value) {
     setForm((previous) => ({ ...previous, [field]: value }))
@@ -384,10 +471,17 @@ export default function PostDashboardSetup() {
       setError('')
       setMessage('')
       const result = await completeAgencyOnboarding(agencyDraft)
+      clearSetupDraft(setupDraftStorageKey)
       refreshAuthState?.()
       const organisationName = result.organisation?.displayName || result.organisation?.name || agencyDraft.agencyInformation.agencyName
       const resumedCopy = result.completion?.resumed_duplicate_workspace ? ' Existing setup resumed and repaired.' : ''
-      setMessage(`${organisationName} is ready.${resumedCopy} Opening your dashboard...`)
+      const inviteWarnings = result.inviteEmailDelivery?.warnings || []
+      const inviteCopy = inviteWarnings.length
+        ? ` ${inviteWarnings[0]}`
+        : result.inviteEmailDelivery?.sent?.length
+          ? ` ${result.inviteEmailDelivery.sent.length} invite email${result.inviteEmailDelivery.sent.length === 1 ? '' : 's'} sent.`
+          : ''
+      setMessage(`${organisationName} is ready.${resumedCopy}${inviteCopy} Opening your dashboard...`)
       window.setTimeout(() => {
         navigate('/dashboard', { replace: true })
       }, 500)

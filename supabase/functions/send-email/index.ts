@@ -8,6 +8,7 @@ import { handleSellerOnboardingSubmittedEmail } from "./handlers/sellerOnboardin
 import { handleSellerMandateSentEmail } from "./handlers/sellerMandateSent.ts";
 import { handleSellerMandateSignedEmail } from "./handlers/sellerMandateSigned.ts";
 import { handleAppointmentEmail } from "./handlers/appointment.ts";
+import { handleWorkspaceInviteEmail } from "./handlers/workspaceInvite.ts";
 import { handleBuyerOfferLinkEmail } from "./handlers/buyerOfferLink.ts";
 import { handleBuyerOfferSubmittedAgentEmail } from "./handlers/buyerOfferSubmittedAgent.ts";
 import { handleOfferDecisionNotificationEmail } from "./handlers/offerDecisionNotification.ts";
@@ -33,6 +34,7 @@ import type {
   SendSellerOnboardingSubmittedPayload,
   SendTransactionRoleplayerHandoffPayload,
   SendTransactionRoleplayerIntroPayload,
+  SendWorkspaceInvitePayload,
 } from "./types.ts";
 import { corsHeaders, jsonResponse } from "./utils/http.ts";
 import { normalizeText } from "./utils/text.ts";
@@ -335,6 +337,17 @@ Deno.serve(async (req: Request) => {
     }
 
     if (
+      ["workspace_invite", "team_invite", "branch_invite"].includes(type) &&
+      (payload as SendWorkspaceInvitePayload).to
+    ) {
+      console.log("[send-email] routing template", {
+        route: "workspace_invite",
+        recipient: recipient || null,
+      });
+      return await handleWorkspaceInviteEmail(payload as SendWorkspaceInvitePayload);
+    }
+
+    if (
       ["legacy_test", "test_email", "bridge_email_test"].includes(type) &&
       (payload as SendLegacyTestPayload).to
     ) {
@@ -364,6 +377,7 @@ Deno.serve(async (req: Request) => {
           "offer_decision_notification",
           "transaction_roleplayer_intro",
           "transaction_roleplayer_handoff",
+          "workspace_invite",
           "appointment_scheduled",
           "appointment_confirmed",
           "appointment_updated",

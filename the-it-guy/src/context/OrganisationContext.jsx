@@ -34,7 +34,7 @@ function resolveOrganisationBranding(snapshot) {
   const logoLightUrl = normalizeText(branding.logoLight)
   const logoDarkUrl = normalizeText(branding.logoDark)
   const organisationLogoUrl = normalizeText(organisation.logoUrl)
-  const logoUrl = logoDarkUrl || organisationLogoUrl || logoLightUrl
+  const logoUrl = logoLightUrl || organisationLogoUrl || logoDarkUrl
   const organisationLabel =
     normalizeText(agencyInformation.tradingName) ||
     normalizeText(agencyInformation.agencyName) ||
@@ -44,6 +44,8 @@ function resolveOrganisationBranding(snapshot) {
 
   return {
     logoUrl,
+    logoLightUrl,
+    logoDarkUrl,
     organisationLabel,
     hasCustomLogo: Boolean(logoUrl),
   }

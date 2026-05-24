@@ -136,17 +136,67 @@ function DashboardSkeleton() {
   )
 }
 
-function DashboardEmptyState({ onRetry, filtered = false }) {
+function DashboardEmptyState({ onRetry, onNavigate, filtered = false }) {
+  const guideItems = [
+    {
+      title: 'Invite your agents',
+      copy: 'Add team members so leads, listings, and transactions can be assigned cleanly.',
+      action: 'Open team setup',
+      path: '/agency/agents',
+      icon: Users,
+    },
+    {
+      title: 'Confirm branches',
+      copy: 'Check your default branch and add any offices before activity starts landing.',
+      action: 'Manage branches',
+      path: '/agency/branches',
+      icon: BriefcaseBusiness,
+    },
+    {
+      title: 'Create first workflow',
+      copy: 'Add a lead, listing, or transaction when you are ready to start live tracking.',
+      action: 'Create record',
+      path: '/pipeline',
+      icon: FileText,
+    },
+  ]
+
   return (
-    <section className="rounded-2xl border border-dashed border-[#cfdbe8] bg-white px-4 py-12 text-center shadow-sm sm:px-6">
+    <section className="rounded-2xl border border-dashed border-[#cfdbe8] bg-white px-4 py-8 shadow-sm sm:px-6">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#edf5ff] text-[#1769d1]">
         <LineChart size={22} />
       </div>
-      <h2 className="mt-4 text-[1.2rem] font-semibold text-[#101828]">{filtered ? 'No data found for this workspace and date range.' : 'Your agency dashboard will appear here once transactions, leads, and activity are added.'}</h2>
-      <p className="mx-auto mt-2 max-w-[560px] text-sm leading-6 text-[#667085]">{filtered ? 'Try another workspace or date preset to broaden the dashboard scope.' : 'The dashboard uses live transaction, lead, document, signing, and activity data. Once those records exist, the KPIs and charts will populate automatically.'}</p>
-      <button type="button" onClick={onRetry} className="mt-5 inline-flex h-10 items-center justify-center rounded-xl border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#1f4f78] shadow-sm">
-        Refresh
-      </button>
+      <div className="text-center">
+        <h2 className="mt-4 text-[1.2rem] font-semibold text-[#101828]">{filtered ? 'No data found for this workspace and date range.' : 'Your agency workspace is ready.'}</h2>
+        <p className="mx-auto mt-2 max-w-[640px] text-sm leading-6 text-[#667085]">{filtered ? 'Try another workspace or date preset to broaden the dashboard scope.' : 'Your live KPIs will populate once leads, listings, appointments, and transactions are added. Start with the setup steps below.'}</p>
+      </div>
+
+      {!filtered ? (
+        <div className="mt-7 grid gap-3 text-left md:grid-cols-3">
+          {guideItems.map((item, index) => {
+            const Icon = item.icon
+            return (
+              <article key={item.title} className="flex min-h-[188px] flex-col rounded-2xl border border-[#dde7f2] bg-[#fbfdff] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#edf5ff] text-[#1f69b3]"><Icon size={18} /></span>
+                  <span className="rounded-full border border-[#dce7f2] bg-white px-2.5 py-1 text-xs font-semibold text-[#60758b]">Step {index + 1}</span>
+                </div>
+                <h3 className="mt-4 text-[0.98rem] font-semibold text-[#172a3d]">{item.title}</h3>
+                <p className="mt-2 flex-1 text-sm leading-6 text-[#667085]">{item.copy}</p>
+                <button type="button" onClick={() => onNavigate?.(item.path)} className="mt-4 inline-flex h-10 items-center justify-center rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#1f4f78] shadow-sm">
+                  {item.action}
+                </button>
+              </article>
+            )
+          })}
+        </div>
+      ) : null}
+
+      <div className="mt-5 flex justify-center">
+        <button type="button" onClick={onRetry} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#1f4f78] shadow-sm">
+          Refresh
+        </button>
+      </div>
     </section>
   )
 }
@@ -1081,7 +1131,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
 
         {isInitialLoading ? <DashboardSkeleton /> : null}
 
-        {!loading && data?.meta?.isEmpty ? <DashboardEmptyState onRetry={loadDashboard} filtered={Boolean(data?.meta?.hasAnyRecords)} /> : null}
+        {!loading && data?.meta?.isEmpty ? <DashboardEmptyState onRetry={loadDashboard} onNavigate={navigate} filtered={Boolean(data?.meta?.hasAnyRecords)} /> : null}
 
         {data && !data.meta?.isEmpty ? (
           <div className={`space-y-5 transition-opacity ${isRefreshing ? 'opacity-60' : 'opacity-100'}`} aria-busy={isRefreshing}>

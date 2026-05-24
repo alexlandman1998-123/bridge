@@ -32,8 +32,26 @@ export type SendReservationDepositReceivedPayload = {
 };
 
 export type SendLegacyTestPayload = {
+  type?: "legacy_test" | "test_email" | "bridge_email_test";
   to: string;
   name?: string;
+};
+
+export type SendWorkspaceInvitePayload = {
+  type: "workspace_invite" | "team_invite" | "branch_invite";
+  to: string;
+  inviteLink?: string;
+  invite_link?: string;
+  inviteeName?: string;
+  invitee_name?: string;
+  inviterName?: string;
+  inviter_name?: string;
+  organisationName?: string;
+  organisation_name?: string;
+  workspaceRole?: string;
+  workspace_role?: string;
+  supportEmail?: string;
+  support_email?: string;
 };
 
 export type SendSellerOnboardingPayload = {
