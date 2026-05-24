@@ -30,7 +30,7 @@ import {
   fetchOrganisationSettings,
   listOrganisationCommissionStructures,
 } from '../../lib/settingsApi'
-import { invokeEdgeFunction, isSupabaseConfigured } from '../../lib/supabaseClient'
+import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../../lib/whatsapp'
 import { createInvite } from '../../services/inviteService'
 import { getAgentLeaderboard } from '../../services/branchAnalyticsService'
@@ -81,6 +81,17 @@ function normalizeAgentInviteRole(value) {
   if (normalized === 'branch_manager') return 'branch_manager'
   if (normalized === 'principal') return 'principal'
   return 'agent'
+}
+
+function formatRoleLabel(value) {
+  const normalized = normalizeText(value).toLowerCase()
+  const matched = AGENT_ROLE_OPTIONS.find((option) => option.value === normalized)
+  if (matched) return matched.label
+  return normalized
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(' ') || 'Agent'
 }
 
 function formatDateShort(value) {
@@ -166,6 +177,20 @@ function SimpleTable({ columns, rows }) {
         </tbody>
       </table>
     </div>
+  )
+}
+
+function StatusPill({ children, tone = 'slate' }) {
+  const className = {
+    invited: 'border-[#e7ddf7] bg-[#f7f1ff] text-[#5c3a9d]',
+    active: 'border-[#d7e7dd] bg-[#edf9f1] text-[#1d7d45]',
+    slate: 'border-[#dce6f1] bg-[#f7f9fc] text-[#53677f]',
+  }[tone] || 'border-[#dce6f1] bg-[#f7f9fc] text-[#53677f]'
+
+  return (
+    <span className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${className}`}>
+      {children}
+    </span>
   )
 }
 
@@ -536,6 +561,50 @@ function BranchAgentInviteModal({
   )
 }
 
+async function listPendingBranchInvites(branchId) {
+  const safeBranchId = normalizeText(branchId)
+  if (!safeBranchId || !isSupabaseConfigured || !supabase) return []
+
+  const query = await supabase
+    .from('invites')
+    .select('id, token, status, email, phone, target_workspace_role, metadata, created_at, expires_at')
+    .eq('target_branch_id', safeBranchId)
+    .in('invite_type', ['branch_invite', 'workspace_invite'])
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+
+  if (query.error) {
+    const code = String(query.error.code || '').toUpperCase()
+    const message = String(query.error.message || '').toLowerCase()
+    if (code === '42P01' || message.includes('invites')) return []
+    throw query.error
+  }
+
+  return (query.data || []).map((invite) => {
+    const metadata = invite.metadata && typeof invite.metadata === 'object' ? invite.metadata : {}
+    const firstName = normalizeText(metadata.first_name || metadata.firstName)
+    const lastName = normalizeText(metadata.last_name || metadata.surname || metadata.lastName)
+    const displayName = [firstName, lastName].filter(Boolean).join(' ') || normalizeText(invite.email) || 'Invited agent'
+    return {
+      id: invite.id,
+      name: displayName,
+      role: formatRoleLabel(metadata.role || invite.target_workspace_role || 'agent'),
+      listings: 0,
+      transactions: 0,
+      registered: 0,
+      revenue: 0,
+      conversionRate: 0,
+      status: 'Invited',
+      statusTone: 'invited',
+      lastActive: invite.created_at,
+      email: normalizeText(invite.email),
+      phone: normalizeText(invite.phone || metadata.mobile),
+      commissionStructureName: normalizeText(metadata.commission_structure_name),
+      isPendingInvite: true,
+    }
+  })
+}
+
 export default function AgencyBranchWorkspacePage() {
   const { branchId = '' } = useParams()
   const navigate = useNavigate()
@@ -544,6 +613,7 @@ export default function AgencyBranchWorkspacePage() {
   const [branchTransactions, setBranchTransactions] = useState([])
   const [branchListings, setBranchListings] = useState([])
   const [leaderboard, setLeaderboard] = useState([])
+  const [pendingInvites, setPendingInvites] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -571,15 +641,20 @@ export default function AgencyBranchWorkspacePage() {
       setBranchListings(listings)
       setLeaderboard(topAgents)
 
-      const [settingsContext, structures] = await Promise.all([
+      const [settingsContext, structures, branchInvites] = await Promise.all([
         fetchOrganisationSettings().catch(() => null),
         listOrganisationCommissionStructures().catch(() => []),
+        listPendingBranchInvites(branchId).catch((inviteError) => {
+          console.warn('[Branch Workspace] pending invites unavailable', inviteError)
+          return []
+        }),
       ])
       setOrganisationContext({
         organisation: settingsContext?.organisation || null,
         profile: settingsContext?.profile || null,
       })
       setCommissionStructures(Array.isArray(structures) ? structures.filter((structure) => structure?.isActive !== false) : [])
+      setPendingInvites(branchInvites)
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load branch workspace right now.')
     } finally {
@@ -653,6 +728,30 @@ export default function AgencyBranchWorkspacePage() {
     formatCurrency(agent.revenue || 0),
     formatPercent(agent.conversionRate || 0),
   ]), [leaderboard])
+
+  const branchAgentRows = useMemo(() => {
+    const activeRows = leaderboard.map((agent) => ({
+      id: agent.id || agent.email || agent.name,
+      name: agent.name || 'Agent',
+      role: formatRoleLabel(agent.role || 'agent'),
+      listings: agent.listings || 0,
+      transactions: agent.transactions || 0,
+      registered: agent.registered || agent.registeredDeals || 0,
+      revenue: agent.revenue || 0,
+      conversionRate: agent.conversionRate || 0,
+      status: agent.status || 'Active',
+      statusTone: normalizeLower(agent.status) === 'invited' ? 'invited' : 'active',
+      lastActive: agent.lastActive,
+      email: agent.email || '',
+      phone: agent.phone || '',
+      commissionStructureName: agent.commissionStructureName || '',
+      isPendingInvite: false,
+    }))
+
+    const activeEmails = new Set(activeRows.map((agent) => normalizeLower(agent.email)).filter(Boolean))
+    const visiblePendingInvites = pendingInvites.filter((invite) => !activeEmails.has(normalizeLower(invite.email)))
+    return [...visiblePendingInvites, ...activeRows]
+  }, [leaderboard, pendingInvites])
 
   if (loading) {
     return (
@@ -839,16 +938,16 @@ export default function AgencyBranchWorkspacePage() {
         ) : null}
 
         {activeTab === 'agents' ? (
-          leaderboard.length ? (
+          branchAgentRows.length ? (
             <SimpleTable
-              columns={['Name', 'Role', 'Listings', 'Transactions', 'Revenue', 'Status', 'Last Active']}
-              rows={leaderboard.map((agent) => [
+              columns={['Name', 'Role', 'Listings', 'Transactions', 'Revenue', 'Status', 'Last Update']}
+              rows={branchAgentRows.map((agent) => [
                 agent.name,
                 agent.role,
                 String(agent.listings || 0),
                 String(agent.transactions || 0),
                 formatCurrency(agent.revenue || 0),
-                agent.status || 'active',
+                <StatusPill tone={agent.statusTone}>{agent.status || 'Active'}</StatusPill>,
                 formatDateShort(agent.lastActive),
               ])}
             />
@@ -969,6 +1068,7 @@ export default function AgencyBranchWorkspacePage() {
         onClose={() => setAgentInviteOpen(false)}
         onSent={() => {
           setAgentInviteOpen(false)
+          setActiveTab('agents')
           void loadWorkspace()
         }}
       />
