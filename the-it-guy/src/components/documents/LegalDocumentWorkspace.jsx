@@ -3418,6 +3418,7 @@ export default function LegalDocumentWorkspace({
       throw new Error('Resend is only available after the document has been sent for signature.')
     }
 
+    const currentStatus = statusStateRef.current || statusState
     const currentRoster = resolveSignerRoster({
       packetType,
       signers: currentStatus?.signingSummary?.signers || [],
@@ -3442,7 +3443,6 @@ export default function LegalDocumentWorkspace({
         ? (linkRecipientRole === 'seller' ? 'sent_to_seller' : 'sent_to_agent')
         : 'sent_for_signature')
 
-    const currentStatus = statusStateRef.current || statusState
     const currentPacketId = normalizeText(linkResult?.packetId || currentStatus?.packet?.id || packetId)
     const currentPacket = currentStatus?.packet || {}
     const versionId = normalizeText(linkResult?.packetVersionId || latestVersion?.id)
