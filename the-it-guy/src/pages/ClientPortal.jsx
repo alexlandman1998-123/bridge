@@ -3489,8 +3489,11 @@ function ClientPortal() {
 
     try {
       setError('')
-      setOpeningDocumentPath(String(document?.file_path || document?.id || 'opening'))
-      const signedUrl = document?.file_path
+      setOpeningDocumentPath(String(document?.file_path || document?.url || document?.id || 'opening'))
+      const openDirectUrl = Boolean(document?.openDirectUrl && document?.url)
+      const signedUrl = openDirectUrl
+        ? document.url
+        : document?.file_path
         ? effectiveWorkspace === 'seller'
           ? await createSellerClientPortalDocumentSignedUrl({
               token,
@@ -4296,6 +4299,7 @@ function ClientPortal() {
   const mandatePacketSignPath = String(mandatePacket?.signPath || '').trim()
   const mandatePacketFinalSignedFilePath = String(mandatePacket?.finalSignedFilePath || '').trim()
   const mandatePacketFinalSignedFileName = String(mandatePacket?.finalSignedFileName || 'Signed Mandate').trim()
+  const mandatePacketFinalSignedDownloadUrl = String(mandatePacket?.finalSignedDownloadUrl || '').trim()
   const mandatePacketGeneratedPreviewFilePath = String(mandatePacket?.generatedPreviewFilePath || '').trim()
   const mandatePacketGeneratedPreviewFileName = String(mandatePacket?.generatedPreviewFileName || 'Mandate').trim()
   const mandatePacketUsingStructuredFlow = effectiveWorkspace === 'seller'
@@ -7703,6 +7707,8 @@ function ClientPortal() {
                                   id: `mandate-final-signed-${mandatePacket?.version?.id || ''}`,
                                   file_path: mandatePacketFinalSignedFilePath,
                                   file_bucket: String(mandatePacket?.finalSignedFileBucket || '').trim(),
+                                  url: mandatePacketFinalSignedDownloadUrl,
+                                  openDirectUrl: Boolean(mandatePacketFinalSignedDownloadUrl),
                                   name: mandatePacketFinalSignedFileName,
                                 })
                               }

@@ -703,9 +703,60 @@ function findUploadedDocumentForRequirement(uploadedDocuments = [], requirement 
   return (uploadedDocuments || []).find((document) => documentMatchesRequirement(document, requirement)) || null
 }
 
+function buildSignedMandateDocumentFromPacket(portalData = {}, workspaceMode = 'buying') {
+  if (workspaceMode !== 'selling') return null
+  const mandatePacket = portalData?.activeSellingContext?.mandatePacket || portalData?.mandate?.packet || null
+  const state = normalizeValue(mandatePacket?.state)
+  const finalSignedFilePath = String(
+    mandatePacket?.finalSignedFilePath ||
+      mandatePacket?.version?.final_signed_file_path ||
+      mandatePacket?.version?.finalSignedFilePath ||
+      '',
+  ).trim()
+  const finalSignedUrl = String(
+    mandatePacket?.finalSignedDownloadUrl ||
+      mandatePacket?.finalSignedFileAccessUrl ||
+      mandatePacket?.version?.final_signed_file_access_url ||
+      mandatePacket?.version?.final_signed_file_url ||
+      '',
+  ).trim()
+  if (state !== 'fully_signed' || (!finalSignedFilePath && !finalSignedUrl)) return null
+
+  const packetId = String(mandatePacket?.packet?.id || mandatePacket?.id || '').trim()
+  const versionId = String(mandatePacket?.version?.id || '').trim()
+  const fileName = String(
+    mandatePacket?.finalSignedFileName ||
+      mandatePacket?.version?.final_signed_file_name ||
+      'Signed Mandate',
+  ).trim()
+  return {
+    id: `mandate-final-signed-${versionId || packetId || finalSignedFilePath || finalSignedUrl}`,
+    name: fileName,
+    document_name: fileName,
+    category: 'mandate_signature',
+    document_type: 'mandate_signature',
+    file_path: finalSignedFilePath,
+    file_bucket: String(mandatePacket?.finalSignedFileBucket || mandatePacket?.version?.final_signed_file_bucket || '').trim(),
+    url: finalSignedUrl,
+    openDirectUrl: Boolean(finalSignedUrl),
+    status: 'completed',
+    visibility: 'seller_visible',
+    created_at:
+      mandatePacket?.version?.finalised_at ||
+      mandatePacket?.version?.finalized_at ||
+      mandatePacket?.version?.generated_at ||
+      mandatePacket?.packet?.updated_at ||
+      null,
+  }
+}
+
 function buildDocumentCenter(portalData, workspaceMode = 'buying') {
   const requiredDocumentsRaw = Array.isArray(portalData?.requiredDocuments) ? portalData.requiredDocuments : []
-  const uploadedDocuments = Array.isArray(portalData?.documents) ? portalData.documents : []
+  const signedMandateDocument = buildSignedMandateDocumentFromPacket(portalData, workspaceMode)
+  const uploadedDocuments = [
+    ...(signedMandateDocument ? [signedMandateDocument] : []),
+    ...(Array.isArray(portalData?.documents) ? portalData.documents : []),
+  ]
   const requiredDocuments = filterRequiredDocumentsByWorkspace(requiredDocumentsRaw, workspaceMode)
     .map((requirement) => {
       const uploadedDocument = findUploadedDocumentForRequirement(uploadedDocuments, requirement)
@@ -745,6 +796,7 @@ function buildDocumentCenter(portalData, workspaceMode = 'buying') {
   const signedDocuments = uploadedDocuments.filter((document) => {
     const documentId = String(document?.id || document?.file_path || document?.storage_path || '').trim()
     if (documentId && linkedUploadedDocumentIds.has(documentId)) return false
+    if (requiredDocuments.some((requirement) => documentMatchesRequirement(document, requirement))) return false
     const source = `${document?.document_type || ''} ${document?.name || ''} ${document?.category || ''}`.toLowerCase()
     return /signed|signature|otp|mandate/.test(source)
   })
@@ -888,7 +940,25 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     hasSellingContext: context.hasSellingContext,
   })
 
-  const portalData = await fetchPortalDataForWorkspace(token, mode)
+  let portalData = await fetchPortalDataForWorkspace(token, mode)
+  const resolvedSellingContext = (Array.isArray(context.contexts) ? context.contexts : []).find((item) => {
+    const type = String(item?.contextType || item?.context_type || '').trim().toLowerCase()
+    const status = String(item?.status || '').trim().toLowerCase()
+    return type === 'selling' && ['active', 'pending'].includes(status)
+  }) || null
+  if (resolvedSellingContext) {
+    portalData = {
+      ...portalData,
+      activeSellingContext: {
+        ...resolvedSellingContext,
+        ...(portalData?.activeSellingContext || {}),
+        mandatePacket:
+          portalData?.activeSellingContext?.mandatePacket ||
+          resolvedSellingContext?.mandatePacket ||
+          null,
+      },
+    }
+  }
 
   const documentCenter = buildDocumentCenter(portalData, workspaceMode)
   const appointments = Array.isArray(portalData?.appointments) ? portalData.appointments : []
