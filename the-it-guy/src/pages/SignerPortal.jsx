@@ -13,7 +13,7 @@ import { renderPacketPreviewHtml } from '../core/documents/packetWorkflow'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
-const BRIDGE9_LOGO_URL = '/brand/bridge_9_dark_background.png'
+const BRIDGE9_LOGO_URL = '/brand/bridge_9_white_background.png'
 
 function normalizeText(value) {
   return String(value || '').trim()

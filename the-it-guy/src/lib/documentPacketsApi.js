@@ -1731,7 +1731,7 @@ export async function resolveDocumentPacketBranding({ organisationId = null } = 
 
   const orgResult = await client
     .from('organisations')
-    .select('id, name, display_name')
+    .select('id, name, display_name, logo_url')
     .eq('id', context.organisationId)
     .maybeSingle()
   if (orgResult.error) throw orgResult.error
@@ -1740,7 +1740,7 @@ export async function resolveDocumentPacketBranding({ organisationId = null } = 
   if (organisationBrandingTableAvailable) {
     const brandingResult = await client
       .from('organisation_branding')
-      .select('organisation_id, logo_light_url, logo_dark_url')
+      .select('organisation_id, logo_light_url, logo_dark_url, logo_high_contrast_url')
       .eq('organisation_id', context.organisationId)
       .maybeSingle()
 
@@ -1759,11 +1759,67 @@ export async function resolveDocumentPacketBranding({ organisationId = null } = 
     }
   }
 
+  const settingsResult = await client
+    .from('organisation_settings')
+    .select('settings_json')
+    .eq('organisation_id', context.organisationId)
+    .maybeSingle()
+  if (settingsResult.error && !isMissingSpecificTableError(settingsResult.error, 'organisation_settings')) {
+    throw settingsResult.error
+  }
+
+  const settings = settingsResult.data?.settings_json && typeof settingsResult.data.settings_json === 'object'
+    ? settingsResult.data.settings_json
+    : {}
+  const onboarding = settings.agencyOnboarding && typeof settings.agencyOnboarding === 'object'
+    ? settings.agencyOnboarding
+    : settings.agency_onboarding && typeof settings.agency_onboarding === 'object'
+      ? settings.agency_onboarding
+      : {}
+  const settingsBranding = onboarding.branding && typeof onboarding.branding === 'object'
+    ? onboarding.branding
+    : settings.branding && typeof settings.branding === 'object'
+      ? settings.branding
+      : {}
+  const resolveBrandingUrl = async ({ bucket = '', path = '', fallbackUrl = '' } = {}) => {
+    const safeBucket = normalizeText(bucket)
+    const safePath = normalizeText(path)
+    const safeFallback = normalizeText(fallbackUrl)
+    if (!safeBucket || !safePath) return safeFallback
+    const signedResult = await client.storage.from(safeBucket).createSignedUrl(safePath, 60 * 60 * 24 * 30)
+    const signedUrl = normalizeText(signedResult?.data?.signedUrl)
+    if (!signedResult?.error && signedUrl) return signedUrl
+    const { data: publicUrlData } = client.storage.from(safeBucket).getPublicUrl(safePath)
+    return normalizeText(publicUrlData?.publicUrl) || safeFallback
+  }
+  const settingsLogoLight = await resolveBrandingUrl({
+    bucket: settingsBranding.logoLightBucket,
+    path: settingsBranding.logoLightPath,
+    fallbackUrl: settingsBranding.logoLight || settingsBranding.logoLightUrl,
+  })
+  const settingsLogoDark = await resolveBrandingUrl({
+    bucket: settingsBranding.logoDarkBucket,
+    path: settingsBranding.logoDarkPath,
+    fallbackUrl: settingsBranding.logoDark || settingsBranding.logoDarkUrl,
+  })
+  const orgLogoUrl = normalizeNullableText(orgResult.data?.logo_url)
+  const logoLightUrl =
+    normalizeNullableText(settingsLogoLight) ||
+    normalizeNullableText(brandingData?.logo_light_url) ||
+    orgLogoUrl
+  const logoDarkUrl =
+    normalizeNullableText(settingsLogoDark) ||
+    normalizeNullableText(brandingData?.logo_dark_url) ||
+    logoLightUrl
+
   return {
     organisationId: context.organisationId,
     organisationName: normalizeText(orgResult.data?.display_name || orgResult.data?.name || 'Bridge Workspace'),
-    logoLightUrl: normalizeNullableText(brandingData?.logo_light_url),
-    logoDarkUrl: normalizeNullableText(brandingData?.logo_dark_url),
+    logoLightUrl,
+    logoDarkUrl,
+    logoHighContrastUrl: normalizeNullableText(brandingData?.logo_high_contrast_url) || logoDarkUrl,
+    organisationLogoUrl: logoLightUrl,
+    organisationLogoDarkUrl: logoDarkUrl,
     bridgeLegalName: 'Bridge Legal',
     bridgeLogoLabel: 'Powered by Bridge 9',
     bridgeLogoLightUrl: '/brand/bridge_9_white_background.png',

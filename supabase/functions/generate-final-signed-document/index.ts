@@ -423,7 +423,24 @@ function isBridgeAssetUrl(value: unknown) {
 function assignBrandingValue(target: Record<string, unknown>, key: string, value: unknown) {
   const normalized = normalizeText(value);
   if (!normalized) return;
+  if (["not provided", "not applicable", "n/a", "none"].includes(normalized.toLowerCase())) return;
   if (key === "organisationName" && normalized.toLowerCase() === "bridge workspace") return;
+  const logoKeys = new Set([
+    "logoLightUrl",
+    "logoDarkUrl",
+    "logoHighContrastUrl",
+    "organisationLogoUrl",
+    "organisationLogoDarkUrl",
+    "organisationLogoHighContrastUrl",
+  ]);
+  if (logoKeys.has(key)) {
+    if (isGeneratedAgencyLogoDataUrl(normalized)) return;
+    const current = normalizeText(target[key]);
+    if (current && isGeneratedAgencyLogoDataUrl(current) && !isGeneratedAgencyLogoDataUrl(normalized)) {
+      target[key] = normalized;
+      return;
+    }
+  }
   target[key] = normalized;
 }
 
@@ -431,16 +448,41 @@ function mergeBrandingPayload(target: Record<string, unknown>, source: unknown) 
   const payload = source && typeof source === "object" && !Array.isArray(source) ? source as Record<string, unknown> : {};
   assignBrandingValue(target, "organisationId", payload.organisationId || payload.organisation_id);
   assignBrandingValue(target, "organisationName", payload.organisationName || payload.organisation_display_name || payload.displayName || payload.name);
-  assignBrandingValue(target, "logoLightUrl", payload.logoLightUrl || payload.logo_light_url);
-  assignBrandingValue(target, "logoDarkUrl", payload.logoDarkUrl || payload.logo_dark_url);
+  assignBrandingValue(target, "logoLightUrl", payload.logoLightUrl || payload.logo_light_url || payload.logoLight || payload.logo_light || payload.logoUrl || payload.logo_url);
+  assignBrandingValue(target, "logoDarkUrl", payload.logoDarkUrl || payload.logo_dark_url || payload.logoDark || payload.logo_dark);
   assignBrandingValue(target, "logoHighContrastUrl", payload.logoHighContrastUrl || payload.logo_high_contrast_url);
-  assignBrandingValue(target, "organisationLogoUrl", payload.organisationLogoUrl || payload.organisation_logo_url);
-  assignBrandingValue(target, "organisationLogoDarkUrl", payload.organisationLogoDarkUrl || payload.organisation_logo_dark_url);
+  assignBrandingValue(target, "organisationLogoUrl", payload.organisationLogoUrl || payload.organisation_logo_url || payload.logoUrl || payload.logo_url || payload.logoLight || payload.logo_light);
+  assignBrandingValue(target, "organisationLogoDarkUrl", payload.organisationLogoDarkUrl || payload.organisation_logo_dark_url || payload.logoDark || payload.logo_dark);
   assignBrandingValue(target, "organisationLogoHighContrastUrl", payload.organisationLogoHighContrastUrl || payload.organisation_logo_high_contrast_url);
   assignBrandingValue(target, "bridgeLogoLightUrl", payload.bridgeLogoLightUrl || payload.bridge_logo_light_url);
   assignBrandingValue(target, "bridgeLogoDarkUrl", payload.bridgeLogoDarkUrl || payload.bridge_logo_dark_url);
   assignBrandingValue(target, "bridgeLogoLabel", payload.bridgeLogoLabel || payload.bridge_logo_label);
   return target;
+}
+
+function normalizeJsonObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function isGeneratedAgencyLogoDataUrl(value: unknown) {
+  const normalized = normalizeText(value);
+  if (normalized.toLowerCase().startsWith("data:image/svg+xml")) return true;
+  const decoded = decodeURIComponent(normalized.split(",", 2)[1] || normalized).toLowerCase();
+  return decoded.includes("<text") && decoded.includes("font-family=\"arial");
+}
+
+function removeGeneratedAgencyLogoFallbacks(branding: Record<string, unknown>) {
+  for (const key of [
+    "logoLightUrl",
+    "logoDarkUrl",
+    "logoHighContrastUrl",
+    "organisationLogoUrl",
+    "organisationLogoDarkUrl",
+    "organisationLogoHighContrastUrl",
+  ]) {
+    if (isGeneratedAgencyLogoDataUrl(branding[key])) delete branding[key];
+  }
+  return branding;
 }
 
 async function createDocumentSignedUrl(supabase: any, path: string) {
@@ -460,6 +502,50 @@ async function createDocumentSignedUrl(supabase: any, path: string) {
   return normalizedPath;
 }
 
+async function createSignedBrandingUrl(supabase: any, bucket: unknown, path: unknown, fallbackUrl: unknown = "") {
+  const safeBucket = normalizeText(bucket);
+  const safePath = normalizeText(path);
+  const safeFallback = normalizeText(fallbackUrl);
+  if (!safeBucket || !safePath) return safeFallback;
+  const result = await supabase.storage.from(safeBucket).createSignedUrl(safePath, 60 * 60 * 24 * 30);
+  if (!result.error && result.data?.signedUrl) return result.data.signedUrl;
+  return safeFallback;
+}
+
+async function mergeOrganisationSettingsBranding(supabase: any, branding: Record<string, unknown>, organisationId: string) {
+  const settingsResult = await supabase
+    .from("organisation_settings")
+    .select("settings_json")
+    .eq("organisation_id", organisationId)
+    .maybeSingle();
+  if (settingsResult.error || !settingsResult.data) return;
+  const settings = normalizeJsonObject(settingsResult.data.settings_json);
+  const agencyOnboarding = normalizeJsonObject(settings.agencyOnboarding || settings.agency_onboarding);
+  const settingsBranding = normalizeJsonObject(agencyOnboarding.branding || settings.branding);
+  if (!Object.keys(settingsBranding).length) return;
+  const brandColours = normalizeJsonObject(settingsBranding.brandColours || settingsBranding.brand_colours);
+  const logoLight = await createSignedBrandingUrl(
+    supabase,
+    settingsBranding.logoLightBucket,
+    settingsBranding.logoLightPath,
+    settingsBranding.logoLight || settingsBranding.logoLightUrl || settingsBranding.logo_url,
+  );
+  const logoDark = await createSignedBrandingUrl(
+    supabase,
+    settingsBranding.logoDarkBucket,
+    settingsBranding.logoDarkPath,
+    settingsBranding.logoDark || settingsBranding.logoDarkUrl,
+  );
+  mergeBrandingPayload(branding, {
+    logoLightUrl: logoLight,
+    logoDarkUrl: logoDark,
+    organisationLogoUrl: logoLight,
+    organisationLogoDarkUrl: logoDark,
+    primaryBrandColor: brandColours.primary,
+    secondaryBrandColor: brandColours.secondary,
+  });
+}
+
 async function fetchOrganisationBranding(supabase: any, organisationId: string) {
   const resolvedOrganisationId = normalizeText(organisationId);
   if (!resolvedOrganisationId) return {};
@@ -467,13 +553,14 @@ async function fetchOrganisationBranding(supabase: any, organisationId: string) 
   const branding: Record<string, unknown> = {};
   const orgResult = await supabase
     .from("organisations")
-    .select("id, name, display_name")
+    .select("id, name, display_name, logo_url")
     .eq("id", resolvedOrganisationId)
     .maybeSingle();
   if (!orgResult.error && orgResult.data) {
     mergeBrandingPayload(branding, {
       organisationId: orgResult.data.id,
       organisationName: orgResult.data.display_name || orgResult.data.name,
+      logoUrl: orgResult.data.logo_url,
     });
   }
 
@@ -490,7 +577,9 @@ async function fetchOrganisationBranding(supabase: any, organisationId: string) 
     mergeBrandingPayload(branding, data);
   }
 
-  return branding;
+  await mergeOrganisationSettingsBranding(supabase, branding, resolvedOrganisationId);
+
+  return removeGeneratedAgencyLogoFallbacks(branding);
 }
 
 function resolveAssetUrl(value: unknown) {

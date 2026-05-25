@@ -676,7 +676,13 @@ function renderEditablePreviewHtml({
   const subtitle = normalizeText(transactionReference)
   const isMandate = normalizeKey(packetType) === 'mandate'
   const orgName = normalizeText(branding?.organisationName) || 'Agency Workspace'
-  const agencyLogo = normalizeText(branding?.organisationLogoDarkUrl) || normalizeText(branding?.organisationLogoUrl)
+  const agencyLogo =
+    normalizeText(branding?.logoDarkUrl) ||
+    normalizeText(branding?.logoHighContrastUrl) ||
+    normalizeText(branding?.organisationLogoDarkUrl) ||
+    normalizeText(branding?.organisationLogoHighContrastUrl) ||
+    normalizeText(branding?.logoLightUrl) ||
+    normalizeText(branding?.organisationLogoUrl)
   const bridgeLogo = normalizeText(branding?.bridgeLogoLightUrl) || BRIDGE_LOGO_LIGHT_URL
   const bridgeFallbackLabel = 'Bridge 9'
   const renderClauseText = (value) =>

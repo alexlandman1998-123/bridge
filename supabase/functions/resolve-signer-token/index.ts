@@ -30,6 +30,10 @@ function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeKey(value: unknown) {
+  return normalizeText(value).toLowerCase();
+}
+
 function isAbsoluteUrl(value: string) {
   return /^https?:\/\//i.test(value);
 }
@@ -92,10 +96,116 @@ function resolveVersionPreviewHtml(version: Record<string, unknown> | null): str
   );
 }
 
+const SIGNATURE_FIELD_POSITION_BY_ROLE: Record<string, { x: number; y: number }> = {
+  seller: { x: 440, y: 692 },
+  agent: { x: 600, y: 692 },
+  purchaser_1: { x: 120, y: 692 },
+  purchaser_2: { x: 280, y: 692 },
+  contractor: { x: 760, y: 692 },
+  other: { x: 120, y: 692 },
+};
+
+function signatureFieldPositionForRole(role: unknown) {
+  return SIGNATURE_FIELD_POSITION_BY_ROLE[normalizeKey(role)] || SIGNATURE_FIELD_POSITION_BY_ROLE.other;
+}
+
+async function ensureSignerSignatureField({
+  supabase,
+  signer,
+  packet,
+  version,
+}: {
+  supabase: any;
+  signer: Record<string, unknown>;
+  packet: Record<string, unknown>;
+  version: Record<string, unknown>;
+}) {
+  const signerRole = normalizeKey(signer.signer_role);
+  const signerId = normalizeText(signer.id);
+  const packetId = normalizeText(packet.id);
+  const versionId = normalizeText(version.id);
+  if (!signerRole || !signerId || !packetId || !versionId) return null;
+  if (["signed", "declined", "expired"].includes(normalizeKey(signer.status))) return null;
+
+  const existing = await supabase
+    .from("document_signing_fields")
+    .select("id")
+    .eq("packet_id", packetId)
+    .eq("packet_version_id", versionId)
+    .eq("signer_role", signerRole)
+    .limit(1);
+  if (existing.error) throw existing.error;
+  if ((existing.data || []).length) return null;
+
+  const position = signatureFieldPositionForRole(signerRole);
+  const insertPayload = {
+    organisation_id: normalizeText(packet.organisation_id) || normalizeText(signer.organisation_id) || null,
+    packet_id: packetId,
+    packet_document_id: normalizeText(signer.packet_document_id) || normalizeText(version.rendered_document_id) || null,
+    packet_version_id: versionId,
+    signer_role: signerRole,
+    signer_name: normalizeText(signer.signer_name) || null,
+    signer_email: normalizeText(signer.signer_email).toLowerCase() || null,
+    field_type: "signature",
+    page_number: 1,
+    x_position: position.x,
+    y_position: position.y,
+    width: 168,
+    height: 44,
+    required: true,
+    status: "pending",
+  };
+
+  const inserted = await supabase
+    .from("document_signing_fields")
+    .insert(insertPayload)
+    .select(
+      "id, packet_id, packet_version_id, signer_role, signer_name, signer_email, field_type, page_number, x_position, y_position, width, height, required, status, completed_at, completed_by_email",
+    )
+    .single();
+  if (inserted.error) throw inserted.error;
+
+  await supabase.from("document_packet_events").insert({
+    packet_id: packetId,
+    organisation_id: insertPayload.organisation_id,
+    version_id: versionId,
+    event_type: "signing_fields_repaired",
+    event_payload_json: {
+      activity_type: "signing_fields_repaired",
+      signer_id: signerId,
+      signer_role: signerRole,
+      field_id: inserted.data?.id || null,
+      reason: "signer_link_missing_required_fields",
+      message: "A missing signing field was restored for an active signing link.",
+    },
+    created_by: null,
+    created_at: new Date().toISOString(),
+  });
+
+  return inserted.data as Record<string, unknown>;
+}
+
 function assignBrandingValue(target: Record<string, unknown>, key: string, value: unknown) {
   const normalized = normalizeText(value);
   if (!normalized) return;
+  if (["not provided", "not applicable", "n/a", "none"].includes(normalized.toLowerCase())) return;
   if (key === "organisationName" && normalized.toLowerCase() === "bridge workspace") return;
+  const logoKeys = new Set([
+    "logoLightUrl",
+    "logoDarkUrl",
+    "logoHighContrastUrl",
+    "organisationLogoUrl",
+    "organisationLogoDarkUrl",
+    "organisationLogoHighContrastUrl",
+  ]);
+  if (logoKeys.has(key)) {
+    if (isGeneratedAgencyLogoDataUrl(normalized)) return;
+    const current = normalizeText(target[key]);
+    if (current && isGeneratedAgencyLogoDataUrl(current) && !isGeneratedAgencyLogoDataUrl(normalized)) {
+      target[key] = normalized;
+      return;
+    }
+  }
   target[key] = normalized;
 }
 
@@ -103,11 +213,11 @@ function mergeBrandingPayload(target: Record<string, unknown>, source: unknown) 
   const payload = normalizeJsonObject(source);
   assignBrandingValue(target, "organisationId", payload.organisationId || payload.organisation_id);
   assignBrandingValue(target, "organisationName", payload.organisationName || payload.organisation_display_name || payload.displayName || payload.name);
-  assignBrandingValue(target, "logoLightUrl", payload.logoLightUrl || payload.logo_light_url);
-  assignBrandingValue(target, "logoDarkUrl", payload.logoDarkUrl || payload.logo_dark_url);
+  assignBrandingValue(target, "logoLightUrl", payload.logoLightUrl || payload.logo_light_url || payload.logoLight || payload.logo_light || payload.logoUrl || payload.logo_url);
+  assignBrandingValue(target, "logoDarkUrl", payload.logoDarkUrl || payload.logo_dark_url || payload.logoDark || payload.logo_dark);
   assignBrandingValue(target, "logoHighContrastUrl", payload.logoHighContrastUrl || payload.logo_high_contrast_url);
-  assignBrandingValue(target, "organisationLogoUrl", payload.organisationLogoUrl || payload.organisation_logo_url);
-  assignBrandingValue(target, "organisationLogoDarkUrl", payload.organisationLogoDarkUrl || payload.organisation_logo_dark_url);
+  assignBrandingValue(target, "organisationLogoUrl", payload.organisationLogoUrl || payload.organisation_logo_url || payload.logoUrl || payload.logo_url || payload.logoLight || payload.logo_light);
+  assignBrandingValue(target, "organisationLogoDarkUrl", payload.organisationLogoDarkUrl || payload.organisation_logo_dark_url || payload.logoDark || payload.logo_dark);
   assignBrandingValue(target, "organisationLogoHighContrastUrl", payload.organisationLogoHighContrastUrl || payload.organisation_logo_high_contrast_url);
   assignBrandingValue(target, "primaryBrandColor", payload.primaryBrandColor || payload.primary_brand_color);
   assignBrandingValue(target, "secondaryBrandColor", payload.secondaryBrandColor || payload.secondary_brand_color);
@@ -142,22 +252,73 @@ function buildAgencyLogoDataUrl(organisationName: unknown) {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
+function isGeneratedAgencyLogoDataUrl(value: unknown) {
+  const normalized = normalizeText(value);
+  if (normalized.toLowerCase().startsWith("data:image/svg+xml")) return true;
+  const decoded = decodeURIComponent(normalized.split(",", 2)[1] || normalized).toLowerCase();
+  return decoded.includes("<text") && decoded.includes("font-family=\"arial");
+}
+
 function ensureAgencyLogoFallback(branding: Record<string, unknown>) {
-  const hasLogo = Boolean(
-    normalizeText(branding.logoDarkUrl) ||
-      normalizeText(branding.logoLightUrl) ||
-      normalizeText(branding.logoHighContrastUrl) ||
-      normalizeText(branding.organisationLogoUrl) ||
-      normalizeText(branding.organisationLogoDarkUrl) ||
-      normalizeText(branding.organisationLogoHighContrastUrl),
-  );
-  if (hasLogo) return branding;
-  const logoDataUrl = buildAgencyLogoDataUrl(branding.organisationName);
-  if (!logoDataUrl) return branding;
-  branding.logoDarkUrl = logoDataUrl;
-  branding.logoLightUrl = logoDataUrl;
-  branding.organisationLogoUrl = logoDataUrl;
   return branding;
+}
+
+function removeGeneratedAgencyLogoFallbacks(branding: Record<string, unknown>) {
+  for (const key of [
+    "logoLightUrl",
+    "logoDarkUrl",
+    "logoHighContrastUrl",
+    "organisationLogoUrl",
+    "organisationLogoDarkUrl",
+    "organisationLogoHighContrastUrl",
+  ]) {
+    if (isGeneratedAgencyLogoDataUrl(branding[key])) delete branding[key];
+  }
+  return branding;
+}
+
+async function createSignedAssetUrl(supabase: SupabaseStorageClient, bucket: unknown, path: unknown, fallbackUrl: unknown = "") {
+  const safeBucket = normalizeText(bucket);
+  const safePath = normalizeText(path);
+  const safeFallback = normalizeText(fallbackUrl);
+  if (!safeBucket || !safePath) return safeFallback;
+  const result = await supabase.storage.from(safeBucket).createSignedUrl(safePath, 60 * 60 * 24 * 30);
+  if (!result.error && result.data?.signedUrl) return result.data.signedUrl;
+  return safeFallback;
+}
+
+async function mergeOrganisationSettingsBranding(supabase: SupabaseStorageClient & { from: (table: string) => any }, branding: Record<string, unknown>, organisationId: string) {
+  const settingsResult = await supabase
+    .from("organisation_settings")
+    .select("settings_json")
+    .eq("organisation_id", organisationId)
+    .maybeSingle();
+  if (settingsResult.error || !settingsResult.data) return;
+  const settings = normalizeJsonObject(settingsResult.data.settings_json);
+  const agencyOnboarding = normalizeJsonObject(settings.agencyOnboarding || settings.agency_onboarding);
+  const settingsBranding = normalizeJsonObject(agencyOnboarding.branding || settings.branding);
+  if (!Object.keys(settingsBranding).length) return;
+
+  const logoLight = await createSignedAssetUrl(
+    supabase,
+    settingsBranding.logoLightBucket,
+    settingsBranding.logoLightPath,
+    settingsBranding.logoLight || settingsBranding.logoLightUrl || settingsBranding.logo_url,
+  );
+  const logoDark = await createSignedAssetUrl(
+    supabase,
+    settingsBranding.logoDarkBucket,
+    settingsBranding.logoDarkPath,
+    settingsBranding.logoDark || settingsBranding.logoDarkUrl,
+  );
+  mergeBrandingPayload(branding, {
+    logoLightUrl: logoLight,
+    logoDarkUrl: logoDark,
+    organisationLogoUrl: logoLight,
+    organisationLogoDarkUrl: logoDark,
+    primaryBrandColor: normalizeJsonObject(settingsBranding.brandColours).primary,
+    secondaryBrandColor: normalizeJsonObject(settingsBranding.brandColours).secondary,
+  });
 }
 
 async function fetchOrganisationBranding(supabase: any, organisationId: string) {
@@ -167,26 +328,29 @@ async function fetchOrganisationBranding(supabase: any, organisationId: string) 
   const branding: Record<string, unknown> = {};
   const orgResult = await supabase
     .from("organisations")
-    .select("id, name, display_name")
+    .select("id, name, display_name, logo_url")
     .eq("id", resolvedOrganisationId)
     .maybeSingle();
   if (!orgResult.error && orgResult.data) {
     mergeBrandingPayload(branding, {
       organisationId: orgResult.data.id,
       organisationName: orgResult.data.display_name || orgResult.data.name,
+      logoUrl: orgResult.data.logo_url,
     });
   }
 
   const brandingResult = await supabase
     .from("organisation_branding")
-    .select("organisation_id, organisation_display_name, logo_light_url, logo_dark_url, primary_brand_color, secondary_brand_color, accent_brand_color")
+    .select("organisation_id, organisation_display_name, logo_light_url, logo_dark_url, logo_high_contrast_url, primary_brand_color, secondary_brand_color, accent_brand_color")
     .eq("organisation_id", resolvedOrganisationId)
     .maybeSingle();
   if (!brandingResult.error && brandingResult.data) {
     mergeBrandingPayload(branding, brandingResult.data);
   }
 
-  return branding;
+  await mergeOrganisationSettingsBranding(supabase, branding, resolvedOrganisationId);
+
+  return removeGeneratedAgencyLogoFallbacks(branding);
 }
 
 function collectSourceContextBucketHints(sourceContext: Record<string, unknown> = {}) {
@@ -407,7 +571,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const fieldsQuery = await supabase
+    let fieldsQuery = await supabase
       .from("document_signing_fields")
       .select(
         "id, packet_id, packet_version_id, signer_role, signer_name, signer_email, field_type, page_number, x_position, y_position, width, height, required, status, completed_at, completed_by_email",
@@ -418,7 +582,23 @@ Deno.serve(async (req: Request) => {
       .order("page_number", { ascending: true })
       .order("created_at", { ascending: true });
     if (fieldsQuery.error) throw fieldsQuery.error;
-    const allFields = (fieldsQuery.data || []) as Record<string, unknown>[];
+    let allFields = (fieldsQuery.data || []) as Record<string, unknown>[];
+
+    if (!allFields.length) {
+      await ensureSignerSignatureField({ supabase, signer, packet, version });
+      fieldsQuery = await supabase
+        .from("document_signing_fields")
+        .select(
+          "id, packet_id, packet_version_id, signer_role, signer_name, signer_email, field_type, page_number, x_position, y_position, width, height, required, status, completed_at, completed_by_email",
+        )
+        .eq("packet_id", String(packet.id || ""))
+        .eq("packet_version_id", String(version.id || ""))
+        .eq("signer_role", normalizeText(signer.signer_role))
+        .order("page_number", { ascending: true })
+        .order("created_at", { ascending: true });
+      if (fieldsQuery.error) throw fieldsQuery.error;
+      allFields = (fieldsQuery.data || []) as Record<string, unknown>[];
+    }
 
     const signerEmail = normalizeText(signer.signer_email).toLowerCase();
     const fields = allFields.filter((field) => {

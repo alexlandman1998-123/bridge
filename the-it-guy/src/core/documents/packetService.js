@@ -1873,6 +1873,7 @@ export async function prepareSigningFields({
 
   if (currentSummary.fieldCount > 0 || currentSummary.signerCount > 0) {
     const currentSigners = Array.isArray(currentSummary.signers) ? currentSummary.signers : []
+    const currentFields = Array.isArray(currentSummary.fields) ? currentSummary.fields : []
     const needsSignerRepair = seed.signers.some((seedSigner) => {
       const existingSigner = currentSigners.find(
         (row) => normalizeText(row?.signer_role || row?.signerRole).toLowerCase() === normalizeText(seedSigner?.signerRole).toLowerCase(),
@@ -1885,6 +1886,16 @@ export async function prepareSigningFields({
       if ((!existingEmail || isSyntheticSigningEmail(existingEmail)) && nextEmail && !isSyntheticSigningEmail(nextEmail)) return true
       return false
     })
+    const missingFields = seed.fields.filter((seedField) => {
+      const role = normalizeText(seedField?.signerRole).toLowerCase()
+      const type = normalizeText(seedField?.fieldType).toLowerCase()
+      const page = Number(seedField?.pageNumber)
+      return !currentFields.some((existingField) => (
+        normalizeText(existingField?.signer_role || existingField?.signerRole).toLowerCase() === role &&
+        normalizeText(existingField?.field_type || existingField?.fieldType).toLowerCase() === type &&
+        Number(existingField?.page_number || existingField?.pageNumber) === page
+      ))
+    })
 
     if (needsSignerRepair && seed.signers.length) {
       await createPacketSignersRecord({
@@ -1892,6 +1903,30 @@ export async function prepareSigningFields({
         packetVersionId: targetVersion.id,
         packetDocumentId: targetVersion?.rendered_document_id || null,
         signers: seed.signers,
+        organisationId,
+        markSigningPrep: true,
+      })
+      const repairedSummary = await getPacketSigningSummaryRecord({
+        packetId: resolvedPacketId,
+        packetVersionId: targetVersion.id,
+        organisationId,
+      })
+      return {
+        alreadyPrepared: false,
+        repairedExisting: true,
+        packet,
+        version: targetVersion,
+        summary: repairedSummary,
+        seed,
+      }
+    }
+
+    if (missingFields.length) {
+      await createPacketSigningFieldRecords({
+        packetId: resolvedPacketId,
+        packetVersionId: targetVersion.id,
+        packetDocumentId: targetVersion?.rendered_document_id || null,
+        fields: missingFields,
         organisationId,
         markSigningPrep: true,
       })
