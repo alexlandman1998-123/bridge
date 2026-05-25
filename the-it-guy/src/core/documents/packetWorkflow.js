@@ -627,13 +627,13 @@ export function renderPacketPreviewHtml({
   const safeTitle = normalizeText(title) || `${toTitleCase(packetType)} Packet Preview`
   const orgName = normalizeText(branding?.organisationName || '') || 'Bridge Workspace'
   const organisationLogo = resolvePublicAssetUrl(
+    normalizeText(branding?.logoLightUrl || '') ||
+    normalizeText(branding?.organisationLogoUrl || '') ||
     normalizeText(branding?.logoDarkUrl || '') ||
     normalizeText(branding?.logoHighContrastUrl || '') ||
     normalizeText(branding?.organisationLogoDarkUrl || '') ||
     normalizeText(branding?.organisationLogoHighContrastUrl || '') ||
     normalizeText(branding?.organisation_high_contrast_logo_url || '') ||
-    normalizeText(branding?.logoLightUrl || '') ||
-    normalizeText(branding?.organisationLogoUrl || '') ||
     '',
   )
   const bridgeLogoLabel = normalizeText(branding?.bridgeLogoLabel || '') || 'Bridge 9'

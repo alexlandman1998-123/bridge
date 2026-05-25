@@ -325,7 +325,7 @@ export function renderStructuredTemplate({
   const safeTitle = normalizeText(title) || `${toTitleCase(packetType)} Document`
   const orgName = normalizeText(branding?.organisationName || branding?.organisation_name) || 'Bridge Workspace'
   const organisationLogo = resolvePublicAssetUrl(
-    normalizeText(branding?.logoDarkUrl || branding?.logoHighContrastUrl || branding?.organisationLogoDarkUrl || branding?.organisationLogoHighContrastUrl || branding?.organisation_high_contrast_logo_url || branding?.logoLightUrl || branding?.organisationLogoUrl || ''),
+    normalizeText(branding?.logoLightUrl || branding?.organisationLogoUrl || branding?.logoDarkUrl || branding?.logoHighContrastUrl || branding?.organisationLogoDarkUrl || branding?.organisationLogoHighContrastUrl || branding?.organisation_high_contrast_logo_url || ''),
     assetBaseUrl,
   )
   const bridgeLogoLabel = normalizeText(branding?.bridgeLogoLabel || '') || 'Bridge 9'

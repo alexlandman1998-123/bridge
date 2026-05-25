@@ -277,6 +277,24 @@ function removeGeneratedAgencyLogoFallbacks(branding: Record<string, unknown>) {
   return branding;
 }
 
+function preferLightSurfaceBranding(branding: Record<string, unknown>) {
+  const copy = { ...branding };
+  const lightLogo =
+    normalizeText(copy.logoLightUrl) ||
+    normalizeText(copy.organisationLogoUrl) ||
+    normalizeText(copy.logoDarkUrl) ||
+    normalizeText(copy.organisationLogoDarkUrl);
+  if (lightLogo) {
+    copy.logoLightUrl = lightLogo;
+    copy.logoDarkUrl = lightLogo;
+    copy.logoHighContrastUrl = lightLogo;
+    copy.organisationLogoUrl = lightLogo;
+    copy.organisationLogoDarkUrl = lightLogo;
+    copy.organisationLogoHighContrastUrl = lightLogo;
+  }
+  return copy;
+}
+
 async function createSignedAssetUrl(supabase: SupabaseStorageClient, bucket: unknown, path: unknown, fallbackUrl: unknown = "") {
   const safeBucket = normalizeText(bucket);
   const safePath = normalizeText(path);
@@ -617,6 +635,7 @@ Deno.serve(async (req: Request) => {
     mergeBrandingPayload(previewBranding, sourceContext.brandingSnapshot || sourceContext.branding_snapshot_json || sourceContext.branding);
     mergeBrandingPayload(previewBranding, packet.branding_snapshot_json);
     ensureAgencyLogoFallback(previewBranding);
+    const documentPreviewBranding = preferLightSurfaceBranding(previewBranding);
     const validationSummary = documentPreviewVersion.validation_summary_json && typeof documentPreviewVersion.validation_summary_json === "object"
       ? documentPreviewVersion.validation_summary_json as Record<string, unknown>
       : {};
@@ -749,7 +768,7 @@ Deno.serve(async (req: Request) => {
           previewHtml: resolveVersionPreviewHtml(previewDataVersion) || resolveVersionPreviewHtml(documentPreviewVersion) || "",
           placeholders: resolveVersionPlaceholders(previewDataVersion),
           sectionManifest: normalizeSectionManifest(previewDataVersion.section_manifest_json),
-          branding: previewBranding,
+          branding: documentPreviewBranding,
         },
         fields,
         fieldSummary: {

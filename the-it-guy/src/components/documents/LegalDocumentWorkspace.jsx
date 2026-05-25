@@ -677,12 +677,12 @@ function renderEditablePreviewHtml({
   const isMandate = normalizeKey(packetType) === 'mandate'
   const orgName = normalizeText(branding?.organisationName) || 'Agency Workspace'
   const agencyLogo =
+    normalizeText(branding?.logoLightUrl) ||
+    normalizeText(branding?.organisationLogoUrl) ||
     normalizeText(branding?.logoDarkUrl) ||
     normalizeText(branding?.logoHighContrastUrl) ||
     normalizeText(branding?.organisationLogoDarkUrl) ||
-    normalizeText(branding?.organisationLogoHighContrastUrl) ||
-    normalizeText(branding?.logoLightUrl) ||
-    normalizeText(branding?.organisationLogoUrl)
+    normalizeText(branding?.organisationLogoHighContrastUrl)
   const bridgeLogo = normalizeText(branding?.bridgeLogoLightUrl) || BRIDGE_LOGO_LIGHT_URL
   const bridgeFallbackLabel = 'Bridge 9'
   const renderClauseText = (value) =>

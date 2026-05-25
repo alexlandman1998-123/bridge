@@ -1195,18 +1195,18 @@ async function buildFallbackMandatePdfBytes({
       "Agency",
   );
   const agencyLogoCandidates = [
-    { value: branding.logoHighContrastUrl, needsDarkPlate: false },
-    { value: branding.logoDarkUrl, needsDarkPlate: false },
-    { value: branding.organisationLogoHighContrastUrl, needsDarkPlate: false },
-    { value: branding.organisationLogoDarkUrl, needsDarkPlate: false },
-    { value: placeholders.agency_logo_url, needsDarkPlate: true },
-    { value: placeholders["agency.logo_url"], needsDarkPlate: true },
-    { value: branding.logoLightUrl, needsDarkPlate: true },
-    { value: branding.organisationLogoUrl, needsDarkPlate: true },
+    { value: branding.logoLightUrl, needsDarkPlate: false },
+    { value: branding.organisationLogoUrl, needsDarkPlate: false },
     { value: placeholders.organisation_logo_url, needsDarkPlate: true },
     { value: placeholders["organisation.logo_url"], needsDarkPlate: true },
     { value: placeholders.logoLightUrl, needsDarkPlate: true },
     { value: placeholders.organisationLogoUrl, needsDarkPlate: true },
+    { value: placeholders.agency_logo_url, needsDarkPlate: true },
+    { value: placeholders["agency.logo_url"], needsDarkPlate: true },
+    { value: branding.logoHighContrastUrl, needsDarkPlate: false },
+    { value: branding.logoDarkUrl, needsDarkPlate: false },
+    { value: branding.organisationLogoHighContrastUrl, needsDarkPlate: false },
+    { value: branding.organisationLogoDarkUrl, needsDarkPlate: false },
   ];
   const agencyLogoChoice = agencyLogoCandidates
     .map((candidate) => ({ ...candidate, value: normalizeText(candidate.value) }))
