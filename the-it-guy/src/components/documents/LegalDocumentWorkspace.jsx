@@ -3418,7 +3418,14 @@ export default function LegalDocumentWorkspace({
       throw new Error('Resend is only available after the document has been sent for signature.')
     }
 
-    const normalizedTargetSignerRole = normalizeKey(targetSignerRole)
+    const currentRoster = resolveSignerRoster({
+      packetType,
+      signers: currentStatus?.signingSummary?.signers || [],
+      mandateSpouseRequired,
+    })
+    const currentAgentSigner = currentRoster.find((row) => normalizeKey(row.role) === 'agent') || null
+    const agentHasSigned = Boolean(currentAgentSigner?.signedAt) || normalizeKey(currentAgentSigner?.statusRaw || currentAgentSigner?.status) === 'signed'
+    const normalizedTargetSignerRole = normalizeKey(targetSignerRole) || (isMandatePacket && !resend && !agentHasSigned ? 'agent' : '')
     setActionProgressMessage(resend ? `Refreshing ${normalizedTargetSignerRole ? normalizedTargetSignerRole.replace(/_/g, ' ') : 'signer'} link…` : 'Preparing signer links…')
     const { linkResult } = await ensureSignerReadinessBeforeSend({ isResend: resend, targetSignerRole: normalizedTargetSignerRole })
     if (!Array.isArray(linkResult?.signers) || !linkResult.signers.some((signer) => normalizeText(signer?.signing_link))) {

@@ -35,7 +35,9 @@ export async function sendViaResendApi({
     }),
   });
 
-  const data = await response.json();
+  const data = await response.json().catch(() => ({
+    message: `Resend returned a non-JSON response with status ${response.status}.`,
+  }));
 
   if (!response.ok) {
     return {

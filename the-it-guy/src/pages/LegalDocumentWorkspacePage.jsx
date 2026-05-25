@@ -26,7 +26,7 @@ import {
 } from '../lib/documentPacketsApi'
 import { fetchTransactionById, updateOtpDocumentWorkflowState } from '../lib/api'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
-import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { fetchAgencyOnboardingSettings } from '../lib/settingsApi'
 import { getSellerOnboardingByToken } from '../services/privateListingService'
 
@@ -1494,7 +1494,7 @@ export default function LegalDocumentWorkspacePage() {
         throw linkError
       }
       if (isSupabaseConfigured && recipientEmail) {
-        await invokeEdgeFunction('send-email', {
+        const emailResponse = await invokeEdgeFunction('send-email', {
           body: {
             type: 'seller_mandate_sent',
             to: recipientEmail,
@@ -1510,6 +1510,7 @@ export default function LegalDocumentWorkspacePage() {
             resend: Boolean(resend),
           },
         })
+        assertEdgeFunctionSuccess(emailResponse, `The mandate signing email could not be sent to the ${recipientRole}.`)
       }
       const nextMandateStatus = normalizeText(signingStatus) || (recipientRole === 'seller' ? 'sent_to_seller' : 'sent_to_agent')
       updateAgencyLead(organisationId, leadContext.lead.leadId, {

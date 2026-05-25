@@ -297,6 +297,35 @@ export async function invokeEdgeFunction(functionName, { body, headers = {}, cli
   return invokeEdgeFunctionWithAnonAuth(functionName, body, headers)
 }
 
+export function getEdgeFunctionInvokeError(result) {
+  if (!result) return { message: 'Edge function did not return a response.' }
+  const error = result.error || result.data?.error || null
+  if (!error) return null
+  if (typeof error === 'string') {
+    return {
+      message: error,
+      details: result.data?.details ?? null,
+      status: result.data?.status ?? null,
+    }
+  }
+  return {
+    ...error,
+    message: error.message || error.error || 'Edge function request failed.',
+    details: error.details ?? result.data?.details ?? null,
+    status: error.status ?? result.data?.status ?? null,
+  }
+}
+
+export function assertEdgeFunctionSuccess(result, fallbackMessage = 'Edge function request failed.') {
+  const error = getEdgeFunctionInvokeError(result)
+  if (!error) return result
+  const wrapped = new Error(error.message || fallbackMessage)
+  wrapped.code = error.code || ''
+  wrapped.details = error.details ?? null
+  wrapped.status = error.status ?? null
+  throw wrapped
+}
+
 export function createScopedSupabaseClient(headers = {}) {
   if (!isSupabaseConfigured) {
     return null

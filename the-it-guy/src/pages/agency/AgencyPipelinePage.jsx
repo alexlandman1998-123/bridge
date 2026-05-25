@@ -65,7 +65,7 @@ import {
   updateSellerWorkflowRecordByToken,
 } from '../../lib/agentListingStorage'
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
-import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
+import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { createPrivateListing, createPrivateListingActivity, getOrganisationPrivateListings, getSellerOnboardingByToken, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
 import { generatePacketVersion, generateSigningLinks, listPacketTemplates, prepareSigningFields } from '../../core/documents/packetService'
 import { createDocumentPacket, fetchDocumentPacket, listDocumentPackets } from '../../lib/documentPacketsApi'
@@ -5983,12 +5983,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  async function handleSendMandateToSeller() {
+  async function handleSendMandateToSeller(sendOptions = {}) {
     if (!selectedLead || !organisationId) return
     if (!selectedLeadIsSeller) return
-    const mandatePacketId = normalizeText(selectedLead?.mandatePacketId)
-    if (!mandatePacketId) {
-      setError('Generate the mandate packet first before sending.')
+    const options = sendOptions && typeof sendOptions === 'object' ? sendOptions : {}
+    const statusPacket =
+      mandatePacketStatus?.packet &&
+      documentPacketBelongsToLead(mandatePacketStatus.packet, selectedLead?.leadId)
+        ? mandatePacketStatus.packet
+        : null
+    const mandatePacketId = normalizeText(
+      options.packetId ||
+      selectedLead?.mandatePacketId ||
+      selectedLead?.mandatePacket?.id ||
+      statusPacket?.id,
+    )
+    if (!mandatePacketId || !isUuidLike(mandatePacketId)) {
+      setError('The mandate packet was not saved yet. Click Generate Mandate again, then send it once the packet is ready.')
       return
     }
 
@@ -6019,11 +6030,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const sellerClientPortalBaseLink = buildSellerClientPortalLink(onboardingToken)
       const sellerMandatePortalLink = sellerClientPortalBaseLink ? `${sellerClientPortalBaseLink}/mandate` : ''
       const sentAtIso = new Date().toISOString()
-      let sellerSigningLink = ''
-      let agentSigningLink = ''
+      const providedSignerLinks = Array.isArray(options.signerLinks) ? options.signerLinks : []
+      let sellerSigningLink = resolveSellerSignerLink(providedSignerLinks, sellerEmail)
+      let agentSigningLink = resolveSignerLinkByRole(providedSignerLinks, 'agent', normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email))
+      const finalMandateStatus = normalizeText(options.signingStatus) || 'sent_to_agent'
       let signingEmailFailed = false
 
-      if (isSupabaseConfigured && isUuidLike(mandatePacketId)) {
+      if (isSupabaseConfigured && isUuidLike(mandatePacketId) && (!agentSigningLink || !sellerSigningLink)) {
         try {
           const signingPreparation = await prepareSigningFields({
             packetId: mandatePacketId,
@@ -6062,10 +6075,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             baseUrl:
               (typeof window !== 'undefined' && window.location?.origin)
                 ? window.location.origin
-                : 'https://app.bridgenine.co.za',
+              : 'https://app.bridgenine.co.za',
           })
-          agentSigningLink = resolveSignerLinkByRole(linkResult?.signers, 'agent', normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email))
-          sellerSigningLink = resolveSellerSignerLink(linkResult?.signers, sellerEmail)
+          agentSigningLink = agentSigningLink || resolveSignerLinkByRole(linkResult?.signers, 'agent', normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email))
+          sellerSigningLink = sellerSigningLink || resolveSellerSignerLink(linkResult?.signers, sellerEmail)
         } catch (linkError) {
           console.warn('[MANDATE] unable to prepare signer link; continuing with client portal selling link', linkError)
         }
@@ -6111,7 +6124,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       if (isSupabaseConfigured) {
         try {
-          await invokeEdgeFunction('send-email', {
+          const emailResponse = await invokeEdgeFunction('send-email', {
             body: {
               type: 'seller_mandate_sent',
               to: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
@@ -6129,26 +6142,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               agentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email),
             },
           })
+          assertEdgeFunctionSuccess(emailResponse, 'Mandate signing email could not be sent.')
         } catch (emailError) {
           signingEmailFailed = true
           console.warn('[MANDATE] signing email failed after link preparation', emailError)
+          throw new Error(emailError?.message || 'Mandate signing email could not be sent. The signing packet is prepared, but the agent was not notified.')
         }
       }
 
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
         stage: 'Mandate Sent',
         status: 'Mandate Sent',
-        mandateStatus: 'sent_to_agent',
+        mandateStatus: finalMandateStatus,
         mandateSentAt: sentAtIso,
         mandateSigningLink: agentSigningLink,
       })
       if (onboardingToken) {
         updateSellerWorkflowRecordByToken(onboardingToken, (row) => ({
           ...row,
-            mandateStatus: 'sent_to_agent',
-            mandate: {
-              ...(row?.mandate || {}),
-            status: 'sent_to_agent',
+          mandateStatus: finalMandateStatus,
+          mandate: {
+            ...(row?.mandate || {}),
+            status: finalMandateStatus,
             sentAt: sentAtIso,
             signerLink: agentSigningLink || row?.mandate?.signerLink || '',
           },
@@ -7883,17 +7898,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               ) : (
               <>
               <div className="hidden max-w-full overflow-x-auto overscroll-x-contain lg:block">
-                <table className="w-full min-w-[1280px] table-fixed text-sm">
+                <table className="w-full min-w-[1120px] table-fixed text-sm">
                   <thead className="sticky top-[38px] z-[1] h-[42px] border-b border-[rgba(15,23,42,0.06)] bg-[#FCFCFD] text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                     <tr>
-                      <th className="w-[44px] px-3 py-3"><span className="sr-only">Select</span></th>
-                      <th className="w-[268px] px-3 py-3">Lead</th>
-                      <th className="w-[220px] px-3 py-3">Opportunity</th>
-                      <th className="w-[112px] px-3 py-3">Stage</th>
-                      <th className="w-[180px] px-3 py-3">Next Action</th>
-                      <th className="w-[135px] px-3 py-3">Owner</th>
-                      <th className="w-[105px] px-3 py-3">Activity</th>
-                      <th className="w-[216px] px-3 py-3 text-right">Quick Actions</th>
+                      <th className="w-[42px] px-3 py-3"><span className="sr-only">Select</span></th>
+                      <th className="w-[25%] px-3 py-3">Lead</th>
+                      <th className="w-[23%] px-3 py-3">Opportunity</th>
+                      <th className="w-[10%] px-3 py-3">Stage</th>
+                      <th className="w-[18%] px-3 py-3">Next Action</th>
+                      <th className="w-[11%] px-3 py-3">Owner</th>
+                      <th className="w-[13%] px-3 py-3">Activity</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[rgba(15,23,42,0.06)] bg-white">
@@ -7940,7 +7954,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         return (
                           <tr
                             key={lead.leadId}
-                            className={`group h-[94px] cursor-pointer text-slate-700 transition-all duration-200 hover:bg-[#f8fbff] hover:shadow-[0_8px_22px_rgba(15,23,42,0.035)] ${isActive ? 'bg-[#f2f7ff]' : 'bg-white'}`}
+                            className={`group min-h-[112px] cursor-pointer text-slate-700 transition-all duration-200 hover:bg-[#f8fbff] hover:shadow-[0_8px_22px_rgba(15,23,42,0.035)] ${isActive ? 'bg-[#f2f7ff]' : 'bg-white'}`}
                             onClick={() => {
                               setSelectedLeadId(lead.leadId)
                               navigate(`/pipeline/leads/${lead.leadId}`)
@@ -7957,24 +7971,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 >
                                   {getInitials(leadName)}
                                 </span>
-                                <div className="min-w-0">
+                                <div className="min-w-0 flex-1">
                                   <div className="flex min-w-0 items-center gap-2">
-                                    <p className="truncate text-[14px] font-semibold leading-5 text-slate-950">{leadName}</p>
+                                    <p className="min-w-0 break-words text-[14px] font-semibold leading-5 text-slate-950">{leadName}</p>
                                     <span className={`inline-flex shrink-0 rounded-full border px-2 py-0.5 text-[0.58rem] font-bold uppercase tracking-[0.08em] ${categoryMeta.className}`}>
                                       {categoryMeta.label}
                                     </span>
                                   </div>
-                                <div className="mt-1 flex min-w-0 items-center gap-2 text-[12px] font-medium text-slate-500">
+                                  <div className="mt-1 grid min-w-0 gap-0.5 text-[12px] font-medium text-slate-500">
                                     <span className="flex min-w-0 items-center gap-1.5">
                                       <Phone size={12} className="shrink-0 text-slate-400" />
-                                      <span className="truncate">{leadPhone || 'No phone'}</span>
+                                      <span className="min-w-0 break-all">{leadPhone || 'No phone'}</span>
                                     </span>
                                     <span className="flex min-w-0 items-center gap-1.5">
                                       <Mail size={12} className="shrink-0 text-slate-400" />
-                                      <span className="truncate">{leadEmail || 'No email'}</span>
+                                      <span className="min-w-0 break-all">{leadEmail || 'No email'}</span>
                                     </span>
                                   </div>
-                                  <p className="mt-1 truncate text-[0.7rem] font-medium text-slate-400">
+                                  <p className="mt-1 text-[0.7rem] font-medium leading-4 text-slate-400">
                                     {lead.leadSource || 'Manual'} • {formatDateShort(lead?.createdAt)}
                                   </p>
                                 </div>
@@ -7997,11 +8011,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       />
                                     ) : null}
                                   </div>
-                                  <div className="min-w-0">
-                                    <p className="truncate text-[13px] font-semibold text-slate-950">{opportunity.title}</p>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="break-words text-[13px] font-semibold leading-5 text-slate-950">{opportunity.title}</p>
                                     {opportunity.price ? <p className="mt-0.5 text-[12px] font-semibold text-[#1f4f78]">{opportunity.price}</p> : null}
-                                    <p className="mt-0.5 truncate text-[12px] font-medium text-slate-500">{opportunity.specs || 'Property details pending'}</p>
-                                    <p className="mt-0.5 truncate text-[11px] font-medium text-slate-400">{opportunity.subtitle}</p>
+                                    <p className="mt-0.5 line-clamp-2 text-[12px] font-medium leading-4 text-slate-500">{opportunity.specs || 'Property details pending'}</p>
+                                    <p className="mt-0.5 line-clamp-2 text-[11px] font-medium leading-4 text-slate-400">{opportunity.subtitle}</p>
                                   </div>
                                 </div>
                               ) : (
@@ -8024,15 +8038,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     <span key={`${lead.leadId}:score:${dotIndex}`} className={`h-1.5 w-1.5 rounded-full ${dotIndex < statusMeta.score ? statusMeta.dotClassName : 'bg-slate-200'}`} />
                                   ))}
                                 </div>
-                                <p className="mt-1 truncate text-[11px] font-medium text-slate-400">Stage {statusMeta.score}/5 · {funnelStage}</p>
+                                <p className="mt-1 text-[11px] font-medium leading-4 text-slate-400">Stage {statusMeta.score}/5 · {funnelStage}</p>
                               </div>
                             </td>
                             <td className="px-3 py-3 align-middle">
                               <div className="min-w-0 border-l-2 border-[#dbe7f2] pl-3">
-                                <p className="truncate text-[13px] font-semibold text-slate-950">{actionMeta.title}</p>
+                                <p className="line-clamp-2 text-[13px] font-semibold leading-5 text-slate-950">{actionMeta.title}</p>
                                 <div className="mt-1 flex min-w-0 items-center gap-2">
                                   <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${actionMeta.meta.toLowerCase().includes('overdue') ? 'bg-[#d96b5f]' : actionMeta.meta.toLowerCase().includes('today') ? 'bg-[#d79d3f]' : 'bg-[#35a66d]'}`} />
-                                  <p className="truncate text-[12px] font-semibold text-slate-500">{actionMeta.meta}</p>
+                                  <p className="min-w-0 break-words text-[12px] font-semibold text-slate-500">{actionMeta.meta}</p>
                                 </div>
                                 <span className="mt-1 inline-flex items-center gap-1 text-[12px] font-semibold text-[#1f4f78]">Take action <ArrowUpRight size={12} /></span>
                               </div>
@@ -8041,8 +8055,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               <div className="flex min-w-0 items-center gap-2.5">
                                 <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[0.68rem] font-bold text-white shadow-sm" style={{ backgroundColor: agentColor }}>{getInitials(assignedAgent)}</span>
                                 <div className="min-w-0">
-                                  <p className="truncate text-[13px] font-semibold text-slate-800">{assignedAgent}</p>
-                                  <p className="truncate text-[11px] font-medium text-slate-400">Agent</p>
+                                  <p className="line-clamp-2 text-[13px] font-semibold leading-5 text-slate-800">{assignedAgent}</p>
+                                  <p className="text-[11px] font-medium text-slate-400">Agent</p>
                                 </div>
                               </div>
                             </td>
@@ -8052,73 +8066,71 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   <Clock3 size={12} className="shrink-0 text-slate-400" />
                                   {formatRelativeTime(activityReference)}
                                 </p>
-                                <p className="mt-0.5 line-clamp-1 text-[12px] font-medium text-slate-500">{latestActivityTitle || lastActivityLabel}</p>
-                              </div>
-                            </td>
-                            <td className="px-3 py-3 text-right align-middle">
-                              <div className="ml-auto flex items-center justify-end gap-0.5 opacity-0 transition-all duration-200 group-hover:opacity-100 group-focus-within:opacity-100" onClick={(event) => event.stopPropagation()}>
-                                {leadPhone ? (
-                                  <a href={`tel:${leadPhone}`} className={quickActionButtonClass} aria-label={`Call ${leadName}`} title="Call">
-                                    <Phone size={14} />
-                                  </a>
-                                ) : null}
-                                {whatsappPhone ? (
-                                  <a href={`https://wa.me/${whatsappPhone}`} target="_blank" rel="noreferrer" className={quickActionButtonClass} aria-label={`WhatsApp ${leadName}`} title="WhatsApp">
-                                    <MessageCircle size={14} />
-                                  </a>
-                                ) : null}
-                                {leadEmail ? (
-                                  <a href={`mailto:${leadEmail}`} className={quickActionButtonClass} aria-label={`Email ${leadName}`} title="Email">
-                                    <Mail size={14} />
-                                  </a>
-                                ) : null}
-                                <button
-                                  type="button"
-                                  className={quickActionButtonClass}
-                                  aria-label={`Book viewing for ${leadName}`}
-                                  title="Book Viewing"
-                                  onClick={() => {
-                                    setSelectedLeadId(lead.leadId)
-                                    setLeadWorkspaceTab('appointments')
-                                    navigate(`/pipeline/leads/${lead.leadId}`)
-                                  }}
-                                >
-                                  <CalendarDays size={14} />
-                                </button>
-                                <button
-                                  type="button"
-                                  className={quickActionButtonClass}
-                                  aria-label={`Generate OTP for ${leadName}`}
-                                  title="Generate OTP"
-                                  onClick={() => {
-                                    setSelectedLeadId(lead.leadId)
-                                    setLeadWorkspaceTab('offers')
-                                    navigate(`/pipeline/leads/${lead.leadId}`)
-                                  }}
-                                >
-                                  <CheckSquare size={14} />
-                                </button>
-                                <button
-                                  type="button"
-                                  className={quickActionButtonClass}
-                                  aria-label={`Open ${leadName}`}
-                                  title="Open Lead"
-                                  onClick={() => {
-                                    setSelectedLeadId(lead.leadId)
-                                    navigate(`/pipeline/leads/${lead.leadId}`)
-                                  }}
-                                >
-                                  <ArrowUpRight size={14} />
-                                </button>
-                                <button
-                                  type="button"
-                                  className={quickActionButtonClass}
-                                  aria-label={`More actions for ${leadName}`}
-                                  title="More"
-                                  onClick={() => openArchiveLeadModal(lead.leadId)}
-                                >
-                                  <MoreHorizontal size={15} />
-                                </button>
+                                <p className="mt-0.5 line-clamp-2 text-[12px] font-medium leading-4 text-slate-500">{latestActivityTitle || lastActivityLabel}</p>
+                                <div className="mt-2 flex flex-wrap items-center gap-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100" onClick={(event) => event.stopPropagation()}>
+                                  {leadPhone ? (
+                                    <a href={`tel:${leadPhone}`} className={quickActionButtonClass} aria-label={`Call ${leadName}`} title="Call">
+                                      <Phone size={14} />
+                                    </a>
+                                  ) : null}
+                                  {whatsappPhone ? (
+                                    <a href={`https://wa.me/${whatsappPhone}`} target="_blank" rel="noreferrer" className={quickActionButtonClass} aria-label={`WhatsApp ${leadName}`} title="WhatsApp">
+                                      <MessageCircle size={14} />
+                                    </a>
+                                  ) : null}
+                                  {leadEmail ? (
+                                    <a href={`mailto:${leadEmail}`} className={quickActionButtonClass} aria-label={`Email ${leadName}`} title="Email">
+                                      <Mail size={14} />
+                                    </a>
+                                  ) : null}
+                                  <button
+                                    type="button"
+                                    className={quickActionButtonClass}
+                                    aria-label={`Book viewing for ${leadName}`}
+                                    title="Book Viewing"
+                                    onClick={() => {
+                                      setSelectedLeadId(lead.leadId)
+                                      setLeadWorkspaceTab('appointments')
+                                      navigate(`/pipeline/leads/${lead.leadId}`)
+                                    }}
+                                  >
+                                    <CalendarDays size={14} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={quickActionButtonClass}
+                                    aria-label={`Generate OTP for ${leadName}`}
+                                    title="Generate OTP"
+                                    onClick={() => {
+                                      setSelectedLeadId(lead.leadId)
+                                      setLeadWorkspaceTab('offers')
+                                      navigate(`/pipeline/leads/${lead.leadId}`)
+                                    }}
+                                  >
+                                    <CheckSquare size={14} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={quickActionButtonClass}
+                                    aria-label={`Open ${leadName}`}
+                                    title="Open Lead"
+                                    onClick={() => {
+                                      setSelectedLeadId(lead.leadId)
+                                      navigate(`/pipeline/leads/${lead.leadId}`)
+                                    }}
+                                  >
+                                    <ArrowUpRight size={14} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={quickActionButtonClass}
+                                    aria-label={`More actions for ${leadName}`}
+                                    title="More"
+                                    onClick={() => openArchiveLeadModal(lead.leadId)}
+                                  >
+                                    <MoreHorizontal size={15} />
+                                  </button>
+                                </div>
                               </div>
                             </td>
                           </tr>
@@ -8126,7 +8138,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       })
                     ) : (
                       <tr>
-                        <td className="px-6 py-12" colSpan={8}>
+                        <td className="px-6 py-12" colSpan={7}>
                           <div className="mx-auto max-w-md rounded-[18px] border border-dashed border-slate-200 bg-[#fbfdff] px-6 py-8 text-center">
                             <div className="mx-auto grid h-12 w-12 place-items-center rounded-[14px] bg-[#edf4fb] text-[#35546c]">
                               <UserRound size={21} />

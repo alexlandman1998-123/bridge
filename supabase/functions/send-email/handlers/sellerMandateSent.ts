@@ -177,6 +177,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
       recipientRole,
       recipientEmailPresent: Boolean(to),
       emailProviderStatus: emailResult.status || null,
+      providerMessage: emailResult.error?.message || emailResult.error?.error || null,
     });
     return jsonResponse(500, {
       error: emailResult.error?.message || "Failed to send seller mandate email.",
