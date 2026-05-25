@@ -3335,7 +3335,7 @@ function ClientPortal() {
       (normalizedDocumentKey.includes('proof') || normalizedDocumentKey.includes('payment'))
 
     try {
-      setUploadingDocumentKey(documentKey)
+      setUploadingDocumentKey(options.uploadingKey || documentKey)
       setError('')
       if (isReservationProofUpload) {
         setReservationProofUploadFeedback({
@@ -3348,6 +3348,7 @@ function ClientPortal() {
             token,
             file,
             requirementKey: documentKey,
+            requirementInstanceId: options.requirementInstanceId || null,
             category: options.category || 'Seller Document',
             documentType: options.documentType || documentKey,
           })
@@ -3389,6 +3390,19 @@ function ClientPortal() {
       void handleUploadRequiredDocument(`additional_request_${requestId}`, file, {
         documentRequestId: requestId,
         category: 'Additional Requests',
+      })
+      return
+    }
+
+    if (uploadSpec.type === 'canonical_requirement') {
+      const requirementInstanceId = String(uploadSpec.requirementInstanceId || '').trim()
+      const requirementKey = String(uploadSpec.requirementKey || uploadSpec.documentDefinitionKey || '').trim()
+      if (!requirementInstanceId || !requirementKey) return
+      void handleUploadRequiredDocument(requirementKey, file, {
+        requirementInstanceId,
+        uploadingKey: requirementInstanceId,
+        category: uploadSpec.category || 'Canonical Document Requirement',
+        documentType: uploadSpec.documentType || requirementKey,
       })
       return
     }

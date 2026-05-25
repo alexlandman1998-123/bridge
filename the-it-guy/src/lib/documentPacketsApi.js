@@ -1,5 +1,6 @@
 import { isOrganisationAdminMembershipRole, normalizeOrganisationMembershipRole } from './organisationAccess'
 import { DOCUMENTS_BUCKET_CANDIDATES, supabase } from './supabaseClient'
+import { linkPacketToRequirement } from '../services/documents/canonicalDocumentLifecycleService'
 
 export const DOCUMENT_PACKET_TYPES = ['otp', 'mandate', 'addendum', 'supporting_legal', 'custom']
 export const DOCUMENT_PACKET_STATUSES = [
@@ -719,6 +720,43 @@ function canManagePacketSigning(context = {}, packet = {}) {
       normalizeText(packet?.assigned_agent_id) === userId ||
       normalizeText(packet?.created_by) === userId,
   )
+}
+
+async function linkPacketVersionToCanonicalRequirementSafely(client, {
+  packet = {},
+  version = {},
+  actorUserId = null,
+  metadata = {},
+} = {}) {
+  const packetSourceContext = packet.source_context_json && typeof packet.source_context_json === 'object'
+    ? packet.source_context_json
+    : {}
+  const listingId = normalizeNullableText(
+    packetSourceContext.private_listing_id ||
+    packetSourceContext.privateListingId ||
+    packetSourceContext.listing_id ||
+    packetSourceContext.listingId,
+  )
+  return linkPacketToRequirement({
+    packetId: packet.id || null,
+    packetVersionId: version.id || null,
+    packet,
+    version,
+    contextType: listingId ? 'private_listing' : packet.transaction_id ? 'transaction' : '',
+    contextId: listingId || packet.transaction_id || '',
+    transactionId: packet.transaction_id || null,
+    listingId: listingId || null,
+    actorRole: 'system',
+    actorUserId,
+    metadata: {
+      source_system: 'document_packets_api',
+      ...metadata,
+    },
+    client,
+  }).catch((error) => {
+    console.warn('[Document Packets] canonical packet satisfaction skipped', error)
+    return null
+  })
 }
 
 async function promotePacketToSigningPrep(packet = {}) {
@@ -1643,6 +1681,18 @@ export async function createDocumentPacketVersion(input = {}) {
       renderedDocumentId: data.rendered_document_id,
     },
   })
+
+  if (normalizeText(resolvedRenderStatus).toLowerCase() === 'generated') {
+    await linkPacketVersionToCanonicalRequirementSafely(client, {
+      packet,
+      version: data,
+      actorUserId: input.generatedBy || null,
+      metadata: {
+        render_status: resolvedRenderStatus,
+        rendered_file_path: data.rendered_file_path || null,
+      },
+    })
+  }
 
   return hydratePacketVersionAccessUrls(client, data)
 }
@@ -2581,6 +2631,19 @@ export async function generateFinalSignedDocument({
       packetVersionId: versionId || null,
       finalArtifactPath,
       sourceFormat: normalizeText(response?.sourceFormat || ''),
+    },
+  })
+
+  await linkPacketVersionToCanonicalRequirementSafely(client, {
+    packet,
+    version: {
+      ...(packetVersion || {}),
+      id: versionId || packetVersion?.id || null,
+    },
+    actorUserId: context.user.id,
+    metadata: {
+      final_artifact_path: finalArtifactPath,
+      source_format: normalizeText(response?.sourceFormat || ''),
     },
   })
 

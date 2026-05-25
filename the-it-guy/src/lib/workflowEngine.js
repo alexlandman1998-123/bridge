@@ -1,6 +1,7 @@
 import { createAgencyCrmLeadActivity, createAgencyCrmLeadTask, updateAgencyCrmLeadRecord } from './agencyCrmRepository'
 import { refreshBridgeIntelligenceForLifecycleEvent } from './bridgeIntelligenceEngine'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
+import { canAdvanceWorkflowStage } from '../services/documents/canonicalWorkflowGateService'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -428,6 +429,50 @@ export async function validateBuyerStageTransition({
     }
   }
 
+  let canonicalGate = null
+  const scopedTransactionId = normalizeText(transactionId || lead?.convertedTransactionId || lead?.convertedDealId)
+  if (isSupabaseConfigured && supabase && scopedTransactionId) {
+    canonicalGate = await canAdvanceWorkflowStage({
+      contextType: 'transaction',
+      contextId: scopedTransactionId,
+      targetStage: nextStage,
+      actorRole,
+      actorUserId: actor?.id || null,
+      client: supabase,
+      override: overrideAllowed,
+    }).catch((error) => ({
+      allowed: true,
+      can_advance: true,
+      skipped: true,
+      reason: null,
+      warning: null,
+      error: error?.message || 'canonical_gate_evaluation_failed',
+    }))
+    if (canonicalGate?.allowed === false && !overrideAllowed) {
+      await recordWorkflowAudit({
+        organisationId,
+        leadId: scopedLeadId,
+        transactionId: scopedTransactionId,
+        fromStage: currentStage,
+        toStage: nextStage,
+        eventType: WORKFLOW_EVENTS.MANUAL_STAGE_TRANSITION,
+        actor,
+        allowed: false,
+        metadata: {
+          reason: 'canonical_workflow_gate_blocked',
+          gateKey: canonicalGate.gate_key,
+          blockerCount: canonicalGate.blockers?.length || 0,
+        },
+      }).catch(() => null)
+      return {
+        allowed: false,
+        reason: canonicalGate.reason || 'Canonical document readiness is blocking this workflow stage.',
+        requirements: requirementResults,
+        canonicalGate,
+      }
+    }
+  }
+
   return {
     allowed: true,
     reason: null,
@@ -435,6 +480,7 @@ export async function validateBuyerStageTransition({
     toStage: nextStage,
     override: overrideAllowed,
     requirements: requirementResults,
+    canonicalGate,
   }
 }
 

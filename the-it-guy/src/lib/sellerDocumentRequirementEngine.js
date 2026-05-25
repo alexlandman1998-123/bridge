@@ -7,6 +7,13 @@ import {
   normalizePropertyStructureType,
 } from './propertyTaxonomy'
 
+// Phase 9 canonical document consolidation:
+// This legacy seller requirement engine is retained as a compatibility fallback.
+// New requirement generation should route through canonicalDocumentResolverService
+// once CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH / LEGACY_DOCUMENT_GENERATION_DISABLED
+// are enabled and parity reports are clean. Remove only after adapters, backfill
+// and production rollback checks have passed.
+
 const COMPLETED_REQUIREMENT_STATUSES = new Set(['approved', 'completed'])
 const ACTIVE_REQUIREMENT_STATUSES = new Set(['required', 'requested', 'uploaded', 'under_review', 'rejected'])
 

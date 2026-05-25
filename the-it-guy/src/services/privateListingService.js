@@ -29,6 +29,11 @@ import {
   normalizePropertyCategory,
   normalizePropertyStructureType,
 } from '../lib/propertyTaxonomy'
+import { syncCanonicalToPrivateListingRequirements } from './documents/canonicalDocumentAdapterService'
+import { linkUploadedDocumentToRequirement } from './documents/canonicalDocumentLifecycleService'
+import { resolveRequirements } from './documents/canonicalDocumentResolverService'
+import { canAdvanceWorkflowStage } from './documents/canonicalWorkflowGateService'
+import { buildSellerResolverInputFromFacts } from './documents/sellerOnboardingFactTransformer'
 
 const LISTING_STATUSES = PRIVATE_LISTING_LIFECYCLE.STATUSES
 
@@ -37,6 +42,7 @@ const SELLER_ONBOARDING_STATUSES = ['not_started', 'sent', 'in_progress', 'compl
 const MANDATE_STATUSES = ['not_started', 'ready', 'generated', 'sent', 'viewed', 'signed', 'rejected', 'expired']
 const DELETED_LISTING_STATUSES = new Set(['withdrawn', 'deleted', 'archived'])
 const DELETED_LISTING_VISIBILITIES = new Set(['archived', 'deleted'])
+const CANONICAL_ONBOARDING_RESOLVER_FLAG = 'VITE_CANONICAL_ONBOARDING_RESOLVER_ENABLED'
 
 function requireClient() {
   if (!isSupabaseConfigured || !supabase) {
@@ -51,6 +57,80 @@ function normalizeText(value) {
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function isTruthyFlag(value) {
+  return ['1', 'true', 'yes', 'on', 'enabled'].includes(normalizeKey(value))
+}
+
+function isCanonicalOnboardingResolverEnabled(options = {}) {
+  if (typeof options.enabled === 'boolean') return options.enabled
+  if (typeof options.force === 'boolean' && options.force) return true
+  return isTruthyFlag(import.meta.env?.[CANONICAL_ONBOARDING_RESOLVER_FLAG])
+}
+
+function getCanonicalSellerPayloadFromFormData(formData = {}) {
+  if (!formData || typeof formData !== 'object') return { facts: null, readiness: null }
+  const facts = formData.canonicalSellerFacts && typeof formData.canonicalSellerFacts === 'object'
+    ? formData.canonicalSellerFacts
+    : formData.canonicalFacts && typeof formData.canonicalFacts === 'object'
+      ? formData.canonicalFacts
+      : null
+  const readiness = formData.canonicalSellerFactReadiness && typeof formData.canonicalSellerFactReadiness === 'object'
+    ? formData.canonicalSellerFactReadiness
+    : formData.canonicalFactReadiness && typeof formData.canonicalFactReadiness === 'object'
+      ? formData.canonicalFactReadiness
+      : null
+  return { facts, readiness }
+}
+
+async function persistCanonicalSellerFactPayload(client, { listingId = '', onboardingId = '', formData = {} } = {}) {
+  const { facts, readiness } = getCanonicalSellerPayloadFromFormData(formData)
+  if (!facts) return { skipped: true, reason: 'canonical_seller_facts_missing' }
+
+  const nowIso = new Date().toISOString()
+  const updates = []
+  if (onboardingId) {
+    updates.push(
+      client
+        .from('private_listing_seller_onboarding')
+        .update({
+          canonical_facts_json: facts,
+          canonical_fact_readiness_json: readiness || {},
+          canonical_facts_updated_at: nowIso,
+        })
+        .eq('id', onboardingId),
+    )
+  }
+  if (listingId) {
+    updates.push(
+      client
+        .from('private_listings')
+        .update({
+          seller_canonical_facts_json: facts,
+          seller_canonical_fact_readiness_json: readiness || {},
+          seller_canonical_facts_updated_at: nowIso,
+        })
+        .eq('id', listingId),
+    )
+  }
+
+  const results = await Promise.all(updates)
+  const blockingError = results.find((result) => {
+    const error = result?.error
+    return error && !isMissingColumnError(error, 'canonical_facts_json') &&
+      !isMissingColumnError(error, 'canonical_fact_readiness_json') &&
+      !isMissingColumnError(error, 'canonical_facts_updated_at') &&
+      !isMissingColumnError(error, 'seller_canonical_facts_json') &&
+      !isMissingColumnError(error, 'seller_canonical_fact_readiness_json') &&
+      !isMissingColumnError(error, 'seller_canonical_facts_updated_at')
+  })?.error
+  if (blockingError) throw blockingError
+  return {
+    skipped: false,
+    persisted: results.filter((result) => !result?.error).length,
+    missingColumns: results.filter((result) => result?.error).map((result) => result.error?.message).filter(Boolean),
+  }
 }
 
 function isDeletedPrivateListingRow(row = {}) {
@@ -303,13 +383,13 @@ export async function uploadPrivateListingMediaAsset(file, { listingId = '', typ
 }
 
 const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS =
-  'id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, applies_to, document_visibility, status, is_required, generated_from, created_at, updated_at'
+  'id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, applies_to, document_visibility, status, is_required, generated_from, canonical_requirement_instance_id, created_at, updated_at'
 const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_LEGACY =
   'id, private_listing_id, requirement_key, status, is_required, created_at, updated_at'
 const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_MIN =
   'id, private_listing_id, requirement_key, status, is_required, created_at, updated_at'
 const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS =
-  'id, private_listing_id, requirement_id, document_type, document_name, storage_path, file_url, uploaded_by, status, visibility, uploaded_at, created_at, updated_at'
+  'id, private_listing_id, requirement_id, document_type, document_name, storage_path, file_url, uploaded_by, status, visibility, canonical_requirement_instance_id, uploaded_at, created_at, updated_at'
 const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_LEGACY =
   'id, private_listing_id, requirement_id, document_type, document_name, status, uploaded_at, created_at'
 const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_MIN =
@@ -444,6 +524,7 @@ function normalizeRequirementRows(rows = []) {
       status: normalizeText(row?.status || 'required'),
       is_required: row?.is_required !== false,
       generated_from: row?.generated_from && typeof row.generated_from === 'object' ? row.generated_from : {},
+      canonical_requirement_instance_id: normalizeText(row?.canonical_requirement_instance_id || ''),
       created_at: row?.created_at || null,
       updated_at: row?.updated_at || row?.created_at || null,
     }))
@@ -464,6 +545,7 @@ function normalizeDocumentRows(rows = []) {
       uploaded_by: normalizeText(row?.uploaded_by || ''),
       status: normalizeText(row?.status || 'uploaded'),
       visibility: normalizeText(row?.visibility || row?.document_visibility || 'seller_visible'),
+      canonical_requirement_instance_id: normalizeText(row?.canonical_requirement_instance_id || ''),
       uploaded_at: normalizeText(row?.uploaded_at || ''),
       created_at: row?.created_at || null,
       updated_at: row?.updated_at || row?.created_at || null,
@@ -516,6 +598,22 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     'not_started',
   )
   const onboardingFormData = onboarding?.form_data && typeof onboarding.form_data === 'object' ? onboarding.form_data : {}
+  const canonicalSellerFacts =
+    row.seller_canonical_facts_json && typeof row.seller_canonical_facts_json === 'object'
+      ? row.seller_canonical_facts_json
+      : onboarding?.canonical_facts_json && typeof onboarding.canonical_facts_json === 'object'
+        ? onboarding.canonical_facts_json
+        : onboardingFormData.canonicalSellerFacts && typeof onboardingFormData.canonicalSellerFacts === 'object'
+          ? onboardingFormData.canonicalSellerFacts
+          : {}
+  const canonicalSellerFactReadiness =
+    row.seller_canonical_fact_readiness_json && typeof row.seller_canonical_fact_readiness_json === 'object'
+      ? row.seller_canonical_fact_readiness_json
+      : onboarding?.canonical_fact_readiness_json && typeof onboarding.canonical_fact_readiness_json === 'object'
+        ? onboarding.canonical_fact_readiness_json
+        : onboardingFormData.canonicalSellerFactReadiness && typeof onboardingFormData.canonicalSellerFactReadiness === 'object'
+          ? onboardingFormData.canonicalSellerFactReadiness
+          : {}
   const portalBranding = onboardingFormData.portalBranding && typeof onboardingFormData.portalBranding === 'object'
     ? onboardingFormData.portalBranding
     : {}
@@ -678,6 +776,8 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
           completedAt: onboarding.submitted_at || null,
           currentStep: Number(onboarding?.form_data?.currentStep || 0),
           formData: onboarding.form_data || {},
+          canonicalFacts: canonicalSellerFacts,
+          canonicalFactReadiness: canonicalSellerFactReadiness,
         }
       : {
           token: '',
@@ -687,7 +787,11 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
           completedAt: null,
           currentStep: 0,
           formData: {},
+          canonicalFacts: canonicalSellerFacts,
+          canonicalFactReadiness: canonicalSellerFactReadiness,
         },
+    sellerCanonicalFacts: canonicalSellerFacts,
+    sellerCanonicalFactReadiness: canonicalSellerFactReadiness,
   }
 
   return {
@@ -1309,6 +1413,14 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
       .select('*')
       .single()
     if (inserted.error) throw inserted.error
+    await persistCanonicalSellerFactPayload(client, {
+      listingId: normalizedId,
+      onboardingId: inserted.data?.id,
+      formData,
+    }).catch((factError) => {
+      console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding form insert', factError)
+      return null
+    })
     return inserted.data
   }
 
@@ -1332,6 +1444,14 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
     .select('*')
     .single()
   if (update.error) throw update.error
+  await persistCanonicalSellerFactPayload(client, {
+    listingId: normalizedId,
+    onboardingId: update.data?.id,
+    formData: nextFormData,
+  }).catch((factError) => {
+    console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding form update', factError)
+    return null
+  })
   return update.data
 }
 
@@ -1906,6 +2026,51 @@ export async function getSellerOnboardingByToken(token, options = {}) {
   }
 }
 
+async function maybeResolveCanonicalSellerRequirements({ listing, formData, client = supabase, reason = 'seller_onboarding_progress', force = false } = {}) {
+  if (!isCanonicalOnboardingResolverEnabled({ force })) {
+    return {
+      skipped: true,
+      reason: 'canonical_onboarding_resolver_disabled',
+      flag: CANONICAL_ONBOARDING_RESOLVER_FLAG,
+    }
+  }
+
+  const { facts } = getCanonicalSellerPayloadFromFormData(formData)
+  if (!facts) {
+    return { skipped: true, reason: 'canonical_seller_facts_missing' }
+  }
+
+  const listingId = normalizeText(listing?.id || facts?.context?.listing_id || facts?.context?.id)
+  if (!listingId) {
+    return { skipped: true, reason: 'listing_id_missing' }
+  }
+
+  const resolverInput = buildSellerResolverInputFromFacts(facts, {
+    contextType: 'private_listing',
+    contextId: listingId,
+    listingId,
+    options: {
+      regenerate: true,
+      sourceSystem: 'seller_onboarding',
+      resolverVersion: facts?.context?.facts_version || 'seller_onboarding_facts_v1',
+      metadata: {
+        reason,
+      },
+    },
+  })
+
+  const resolution = await resolveRequirements(resolverInput, { client })
+  await syncCanonicalToPrivateListingRequirements({
+    contextId: listingId,
+    listingId,
+    client,
+  }).catch((adapterError) => {
+    console.warn('[Private Listings] canonical seller requirement legacy projection skipped', adapterError)
+    return null
+  })
+  return resolution
+}
+
 export async function submitSellerOnboarding(token, payload = {}) {
   const client = requireClient()
   const normalizedToken = normalizeText(token)
@@ -1937,6 +2102,22 @@ export async function submitSellerOnboarding(token, payload = {}) {
     }).catch((contextError) => {
       console.warn('[Private Listings] seller client portal context sync skipped after onboarding submit', contextError)
       return null
+    })
+    await persistCanonicalSellerFactPayload(client, {
+      listingId: rpcContext.listing.id,
+      onboardingId: rpcContext.onboarding?.id,
+      formData: payload.formData,
+    }).catch((factError) => {
+      console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding submit', factError)
+      return null
+    })
+    void maybeResolveCanonicalSellerRequirements({
+      listing: rpcContext.listing,
+      formData: payload.formData,
+      client,
+      reason: 'seller_onboarding_completed',
+    }).catch((canonicalError) => {
+      console.warn('[Private Listings] canonical seller requirement resolution skipped after onboarding submit', canonicalError)
     })
     return rpcContext
   }
@@ -2058,6 +2239,22 @@ export async function submitSellerOnboarding(token, payload = {}) {
     console.warn('[Private Listings] seller client portal context sync skipped after onboarding fallback submit', contextError)
     return null
   })
+  await persistCanonicalSellerFactPayload(client, {
+    listingId: listingForContext?.id || context.listing.id,
+    onboardingId: updateOnboarding.data?.id,
+    formData: nextFormData,
+  }).catch((factError) => {
+    console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding fallback submit', factError)
+    return null
+  })
+  void maybeResolveCanonicalSellerRequirements({
+    listing: listingForContext,
+    formData: nextFormData,
+    client,
+    reason: 'seller_onboarding_completed',
+  }).catch((canonicalError) => {
+    console.warn('[Private Listings] canonical seller requirement resolution skipped after onboarding fallback submit', canonicalError)
+  })
 
   return {
     onboarding: updateOnboarding.data,
@@ -2089,6 +2286,22 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
     if (!rpcContext?.listing) {
       throw new Error('Seller onboarding link is invalid or inactive.')
     }
+    await persistCanonicalSellerFactPayload(client, {
+      listingId: rpcContext.listing.id,
+      onboardingId: rpcContext.onboarding?.id,
+      formData: payload.formData,
+    }).catch((factError) => {
+      console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding progress update', factError)
+      return null
+    })
+    void maybeResolveCanonicalSellerRequirements({
+      listing: rpcContext.listing,
+      formData: payload.formData,
+      client,
+      reason: 'seller_onboarding_progress',
+    }).catch((canonicalError) => {
+      console.warn('[Private Listings] canonical seller requirement resolution skipped after onboarding progress update', canonicalError)
+    })
     return rpcContext
   }
 
@@ -2131,9 +2344,27 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
     ).catch(() => {})
   }
 
+  const refreshedListing = await getPrivateListing(context.listing.id, { includeRequirementsAndDocuments: false })
+  await persistCanonicalSellerFactPayload(client, {
+    listingId: refreshedListing?.id || context.listing.id,
+    onboardingId: updateQuery.data?.id,
+    formData: nextFormData,
+  }).catch((factError) => {
+    console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding fallback progress update', factError)
+    return null
+  })
+  void maybeResolveCanonicalSellerRequirements({
+    listing: refreshedListing || context.listing,
+    formData: nextFormData,
+    client,
+    reason: 'seller_onboarding_progress',
+  }).catch((canonicalError) => {
+    console.warn('[Private Listings] canonical seller requirement resolution skipped after onboarding fallback progress update', canonicalError)
+  })
+
   return {
     onboarding: updateQuery.data,
-    listing: await getPrivateListing(context.listing.id, { includeRequirementsAndDocuments: false }),
+    listing: refreshedListing,
   }
 }
 
@@ -2148,10 +2379,32 @@ export async function validatePrivateListingTransition(listingId, targetStatus, 
     allowOverride: Boolean(options?.allowOverride),
     metadata: options?.metadata || {},
   })
+  const canonicalGate = await canAdvanceWorkflowStage({
+    contextType: 'private_listing',
+    contextId: listing.id,
+    targetStage: targetStatus,
+    actorRole: options?.actorRole || 'agent',
+    actorUserId: options?.actorUserId || options?.performedBy || null,
+    client: supabase,
+    override: Boolean(options?.allowOverride),
+  }).catch((error) => ({
+    allowed: true,
+    can_advance: true,
+    skipped: true,
+    reason: null,
+    warning: null,
+    error: error?.message || 'canonical_gate_evaluation_failed',
+  }))
+  const canonicalBlockers = canonicalGate?.allowed === false
+    ? [canonicalGate.reason || 'Canonical document readiness is blocking this listing stage.']
+    : []
 
   return {
     listing,
     ...evaluation,
+    canonicalGate,
+    allowed: evaluation.allowed && canonicalBlockers.length === 0,
+    blockers: [...(evaluation.blockers || []), ...canonicalBlockers],
   }
 }
 
@@ -2263,6 +2516,7 @@ export async function uploadSellerClientPortalDocument({
   token,
   file,
   requirementKey = '',
+  requirementInstanceId = '',
   documentType = '',
   category = 'Seller Document',
 } = {}) {
@@ -2276,6 +2530,7 @@ export async function uploadSellerClientPortalDocument({
   if (!listing?.id) throw new Error('Seller client portal link is invalid or inactive.')
 
   const normalizedRequirementKey = normalizeText(requirementKey)
+  const canonicalRequirementInstanceId = normalizeUuid(requirementInstanceId)
   const requiredDocuments = Array.isArray(listing.documentRequirements) ? listing.documentRequirements : []
   const matchedRequirement = normalizedRequirementKey
     ? requiredDocuments.find((item) => normalizeKey(item?.requirement_key || item?.key) === normalizeKey(normalizedRequirementKey)) || null
@@ -2330,8 +2585,9 @@ export async function uploadSellerClientPortalDocument({
       status: 'uploaded',
       visibility: 'seller_visible',
       uploaded_at: new Date().toISOString(),
+      ...(canonicalRequirementInstanceId ? { canonical_requirement_instance_id: canonicalRequirementInstanceId } : {}),
     }
-    const inserted = await runSelectWithFallback(
+    let inserted = await runSelectWithFallback(
       (selectFields) => client
         .from('private_listing_documents')
         .insert(insertPayload)
@@ -2340,6 +2596,19 @@ export async function uploadSellerClientPortalDocument({
       PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS,
       'private_listing_documents',
     )
+    if (inserted.error && canonicalRequirementInstanceId && isMissingColumnError(inserted.error, 'canonical_requirement_instance_id')) {
+      const fallbackInsertPayload = { ...insertPayload }
+      delete fallbackInsertPayload.canonical_requirement_instance_id
+      inserted = await runSelectWithFallback(
+        (selectFields) => client
+          .from('private_listing_documents')
+          .insert(fallbackInsertPayload)
+          .select(selectFields)
+          .single(),
+        PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS,
+        'private_listing_documents',
+      )
+    }
     if (inserted.error && !isMissingColumnError(inserted.error) && !isMissingTableError(inserted.error, 'private_listing_documents')) {
       throw inserted.error
     }
@@ -2348,6 +2617,29 @@ export async function uploadSellerClientPortalDocument({
     if (matchedRequirement?.id) {
       await updatePrivateListingRequirementStatus(matchedRequirement.id, 'uploaded').catch(() => null)
     }
+  }
+
+  if (canonicalRequirementInstanceId) {
+    await linkUploadedDocumentToRequirement({
+      requirementInstanceId: canonicalRequirementInstanceId,
+      documentId: documentRow?.id || null,
+      documentTable: 'private_listing_documents',
+      contextType: 'private_listing',
+      contextId: listing.id,
+      actorRole: 'seller',
+      metadata: {
+        private_listing_document_id: documentRow?.id || null,
+        requirement_key: normalizedRequirementKey || matchedRequirement?.requirement_key || null,
+        storage_path: documentRow?.storage_path || filePath,
+        uploaded_at: documentRow?.uploaded_at || new Date().toISOString(),
+        source_system: 'seller_client_portal_upload',
+      },
+      client,
+      force: true,
+    }).catch((linkError) => {
+      console.warn('[Private Listings] canonical seller upload link skipped', linkError)
+      return null
+    })
   }
 
   return {
@@ -2366,6 +2658,7 @@ export async function uploadSellerClientPortalDocument({
     privateListingId: listing.id,
     requirementId: documentRow?.requirement_id || matchedRequirement?.id || null,
     requirementKey: normalizedRequirementKey || matchedRequirement?.requirement_key || null,
+    canonicalRequirementInstanceId: canonicalRequirementInstanceId || null,
   }
 }
 

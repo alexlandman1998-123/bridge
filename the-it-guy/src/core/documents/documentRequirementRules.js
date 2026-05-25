@@ -1,3 +1,10 @@
+// Phase 9 canonical document consolidation:
+// These legacy default requirement rules are retained as compatibility fallback
+// metadata. Canonical document_definitions and document_requirement_rules are
+// the target source of truth once parity/source-of-truth flags are enabled.
+// Do not extend this list for new production requirements unless legacy fallback
+// support specifically requires it.
+
 export const DEFAULT_DOCUMENT_REQUIREMENTS = [
   { key: 'otp', label: 'OTP', sortOrder: 1, keywords: ['otp', 'offer to purchase'] },
   { key: 'id_document', label: 'ID Document', sortOrder: 2, keywords: ['id', 'identity'] },

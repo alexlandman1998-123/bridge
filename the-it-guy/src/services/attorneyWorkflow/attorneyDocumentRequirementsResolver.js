@@ -1,5 +1,12 @@
 import { resolveTransactionFacts } from './transactionFactsResolver.js'
 
+// Phase 9 canonical document consolidation:
+// This attorney document resolver is retained as a compatibility fallback.
+// Canonical requirements, gate readiness and review/reminder state should come
+// from services/documents/* once source-of-truth flags are enabled and parity
+// reports are clean. Remove only after attorney dashboard parity and rollback
+// checks have passed.
+
 export const ATTORNEY_DOCUMENT_CATEGORIES = [
   'fica',
   'entity_documents',

@@ -35,6 +35,10 @@ import {
   updateSellerOnboardingProgress,
 } from '../services/privateListingService'
 import {
+  buildCanonicalSellerOnboardingPayload,
+  validateSellerOnboardingFacts,
+} from '../services/documents/sellerOnboardingFactTransformer'
+import {
   getPropertyCategoryLabel,
   getPropertyStructureTypeLabel,
   normalizePropertyCategory,
@@ -71,7 +75,40 @@ const OWNERSHIP_TYPES = [
   { value: 'married_anc', label: 'Married (ANC)' },
   { value: 'company', label: 'Company' },
   { value: 'trust', label: 'Trust' },
+  { value: 'deceased_estate', label: 'Deceased estate' },
+  { value: 'power_of_attorney', label: 'Power of attorney' },
   { value: 'multiple_owners', label: 'Multiple owners' },
+  { value: 'other', label: 'Other' },
+]
+
+const CANONICAL_PROPERTY_TYPES = [
+  { value: 'freehold', label: 'Freehold' },
+  { value: 'sectional_title', label: 'Sectional Title' },
+  { value: 'share_block', label: 'Share Block' },
+  { value: 'estate', label: 'Estate / HOA' },
+  { value: 'commercial', label: 'Commercial' },
+  { value: 'farm', label: 'Farm' },
+  { value: 'industrial', label: 'Industrial' },
+  { value: 'mixed_use', label: 'Mixed Use' },
+  { value: 'vacant_land', label: 'Vacant Land' },
+  { value: 'other', label: 'Other' },
+]
+
+const OCCUPANCY_STATUSES = [
+  { value: 'unknown', label: 'Unknown' },
+  { value: 'vacant', label: 'Vacant' },
+  { value: 'owner_occupied', label: 'Owner occupied' },
+  { value: 'tenant_occupied', label: 'Tenant occupied' },
+  { value: 'partially_occupied', label: 'Partially occupied' },
+]
+
+const MARITAL_REGIMES = [
+  { value: 'not_applicable', label: 'Not applicable' },
+  { value: 'in_community', label: 'In community of property' },
+  { value: 'out_of_community', label: 'Out of community of property' },
+  { value: 'anc', label: 'ANC' },
+  { value: 'foreign_marriage', label: 'Foreign marriage' },
+  { value: 'unknown', label: 'Unknown' },
 ]
 
 const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[1120px]'
@@ -82,6 +119,7 @@ const INNER_PANEL_CLASS =
 const DETAIL_INPUT_CLASS =
   'w-full min-h-[48px] sm:min-h-[52px] rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2.5 sm:px-4 sm:py-3 text-base text-[#162334] outline-none transition duration-150 ease-out placeholder:text-[#8aa0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12'
 const SELLER_ONBOARDING_NOTIFICATION_TIMEOUT_MS = 8000
+const CANONICAL_SELLER_FACTS_FLAG = 'VITE_CANONICAL_SELLER_FACTS_ENABLED'
 const STEP_META = [
   {
     label: 'Seller Information',
@@ -112,6 +150,11 @@ function resolveSellerOnboardingSubmitError(error) {
     return 'We could not reach the onboarding service. Please check your connection and try again.'
   }
   return message
+}
+
+function areCanonicalSellerFactsEnabled() {
+  const raw = String(import.meta.env?.[CANONICAL_SELLER_FACTS_FLAG] ?? '').trim().toLowerCase()
+  return !['0', 'false', 'no', 'off', 'disabled'].includes(raw)
 }
 
 async function notifyAssignedAgentOfSellerOnboarding(updated = {}, form = {}) {
@@ -323,6 +366,13 @@ function normalizeFormData(listing) {
     residentialAddress: existing.residentialAddress || '',
 
     ownershipType: normalizeOwnershipType(existing),
+    sellerLegalType: existing.sellerLegalType || existing.legalType || normalizeOwnershipType(existing),
+    sellerTaxNumber: existing.sellerTaxNumber || existing.taxNumber || '',
+    vatRegistered: Boolean(existing.vatRegistered),
+    vatNumber: existing.vatNumber || '',
+    maritalStatus: existing.maritalStatus || (String(normalizeOwnershipType(existing)).includes('married') ? 'married' : 'not_married'),
+    maritalRegime: existing.maritalRegime || (normalizeOwnershipType(existing) === 'married_cop' ? 'in_community' : normalizeOwnershipType(existing) === 'married_anc' ? 'anc' : 'not_applicable'),
+    authorisedRepresentative: existing.authorisedRepresentative || '',
     spouseName: existing.spouseName || '',
     spouseIdNumber: existing.spouseIdNumber || '',
     spouseEmail: existing.spouseEmail || '',
@@ -339,6 +389,15 @@ function normalizeFormData(listing) {
     trusteeName: existing.trusteeName || existing.entityRepresentative || '',
     trusteeEmail: existing.trusteeEmail || '',
     trusteePhone: existing.trusteePhone || '',
+
+    executorName: existing.executorName || '',
+    executorEmail: existing.executorEmail || '',
+    executorPhone: existing.executorPhone || '',
+    estateReference: existing.estateReference || '',
+
+    powerOfAttorneyName: existing.powerOfAttorneyName || existing.authorisedRepresentative || '',
+    powerOfAttorneyEmail: existing.powerOfAttorneyEmail || '',
+    powerOfAttorneyPhone: existing.powerOfAttorneyPhone || '',
 
     multipleOwners: Array.isArray(existing.multipleOwners) && existing.multipleOwners.length
       ? existing.multipleOwners
@@ -360,13 +419,29 @@ function normalizeFormData(listing) {
 
     propertyCategory: normalizePropertyCategory(existing.propertyCategory || listing?.propertyCategory || listing?.property_category, { fallback: 'residential' }),
     propertyStructureType: normalizePropertyStructureType(existing.propertyStructureType || listing?.propertyStructureType || listing?.property_structure_type || existing.propertyType, { fallback: 'other' }),
+    canonicalPropertyType: existing.canonicalPropertyType || existing.propertyClassification || '',
+    sectionalTitle: Boolean(existing.sectionalTitle),
+    shareBlock: Boolean(existing.shareBlock),
+    estateOrHoa: Boolean(existing.estateOrHoa),
+    bodyCorporate: Boolean(existing.bodyCorporate),
+    commercialProperty: Boolean(existing.commercialProperty),
     propertyType: existing.propertyType || listing?.propertyType || 'house',
     propertyAddress: existing.propertyAddress || [listing?.listingTitle, listing?.suburb, listing?.city].filter(Boolean).join(', '),
     suburb: existing.suburb || listing?.suburb || '',
     city: existing.city || listing?.city || '',
     province: existing.province || '',
+    municipality: existing.municipality || existing.city || listing?.city || '',
     estateComplexName: existing.estateComplexName || '',
+    estateName: existing.estateName || existing.estateComplexName || '',
     unitNumber: existing.unitNumber || '',
+    sectionNumber: existing.sectionNumber || '',
+    schemeName: existing.schemeName || '',
+    erfNumber: existing.erfNumber || '',
+    titleDeedAvailable: Boolean(existing.titleDeedAvailable),
+    sgDiagramAvailable: Boolean(existing.sgDiagramAvailable),
+    erfDiagramAvailable: Boolean(existing.erfDiagramAvailable),
+    approvedBuildingPlansAvailable: Boolean(existing.approvedBuildingPlansAvailable),
+    floorPlanAvailable: Boolean(existing.floorPlanAvailable),
 
     erfSize: existing.erfSize || '',
     floorSize: existing.floorSize || '',
@@ -388,6 +463,41 @@ function normalizeFormData(listing) {
     views: existing.views || '',
     recentRenovations: existing.recentRenovations || '',
     propertyNotes: existing.propertyNotes || '',
+
+    occupancyStatus: existing.occupancyStatus || 'unknown',
+    leaseExists: Boolean(existing.leaseExists),
+    leaseExpiryDate: existing.leaseExpiryDate || '',
+    monthlyRental: existing.monthlyRental || '',
+    rentalDeposit: existing.rentalDeposit || '',
+    tenantName: existing.tenantName || '',
+    tenantContactDetails: existing.tenantContactDetails || '',
+    noticePeriodDetails: existing.noticePeriodDetails || '',
+    rentalScheduleAvailable: Boolean(existing.rentalScheduleAvailable),
+
+    existingBond: Boolean(existing.existingBond || existing.sellerHasExistingBond || existing.bondedProperty),
+    bondBank: existing.bondBank || existing.currentBondBank || '',
+    bondAccountReference: existing.bondAccountReference || existing.currentBondAccountNumber || '',
+    multipleBonds: Boolean(existing.multipleBonds),
+    accessBond: Boolean(existing.accessBond),
+    estimatedSettlementAmount: existing.estimatedSettlementAmount || '',
+    cancellationRequired: existing.cancellationRequired !== undefined ? Boolean(existing.cancellationRequired) : Boolean(existing.existingBond),
+    cancellationAttorneyKnown: Boolean(existing.cancellationAttorneyKnown),
+    cancellationAttorneyDetails: existing.cancellationAttorneyDetails || '',
+
+    gasInstallation: Boolean(existing.gasInstallation),
+    electricFence: Boolean(existing.electricFence),
+    solarInstallation: Boolean(existing.solarInstallation),
+    swimmingPool: Boolean(existing.swimmingPool || existing.pool),
+    borehole: Boolean(existing.borehole),
+    generatorInstallation: Boolean(existing.generatorInstallation),
+    beetleCertificateRegion: Boolean(existing.beetleCertificateRegion),
+    plumbingCertificateRequired: Boolean(existing.plumbingCertificateRequired),
+    occupationCertificateAvailable: Boolean(existing.occupationCertificateAvailable),
+    electricalCocAvailable: Boolean(existing.electricalCocAvailable),
+    gasCocAvailable: Boolean(existing.gasCocAvailable),
+    electricFenceCertificateAvailable: Boolean(existing.electricFenceCertificateAvailable),
+    plumbingCertificateAvailable: Boolean(existing.plumbingCertificateAvailable),
+    solarComplianceAvailable: Boolean(existing.solarComplianceAvailable),
   }
 }
 
@@ -862,6 +972,17 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     [ficaRequirements, listing],
   )
 
+  function buildCanonicalPayload(nextForm = form, options = {}) {
+    if (!areCanonicalSellerFactsEnabled()) return {}
+    return buildCanonicalSellerOnboardingPayload(nextForm || {}, listing || {}, {
+      contextType: 'private_listing',
+      contextId: listing?.id || '',
+      listingId: listing?.id || '',
+      source: options.source || 'seller_onboarding',
+      draft: Boolean(options.draft),
+    })
+  }
+
   async function persistListingUpdate(updater, options = {}) {
     if (useDbFirstSellerOnboarding) {
       const current = listing || {}
@@ -896,6 +1017,25 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
   function handleFormUpdate(key, value) {
     setForm((previous) => ({ ...(previous || {}), [key]: value }))
+  }
+
+  function handleOwnershipTypeChange(value) {
+    setForm((previous) => {
+      const next = { ...(previous || {}), ownershipType: value, sellerLegalType: value }
+      if (value === 'married_cop') {
+        next.maritalStatus = 'married'
+        next.maritalRegime = 'in_community'
+      } else if (value === 'married_anc') {
+        next.maritalStatus = 'married'
+        next.maritalRegime = 'anc'
+      } else if (next.maritalStatus === 'married' && !next.maritalRegime) {
+        next.maritalRegime = 'unknown'
+      } else if (!String(value || '').startsWith('married') && !next.maritalStatus) {
+        next.maritalStatus = 'not_married'
+        next.maritalRegime = 'not_applicable'
+      }
+      return next
+    })
   }
 
   function handleFeatureToggle(featureKey) {
@@ -949,13 +1089,18 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     if (!form) return
     setSaving(true)
     setError('')
+    const canonicalPayload = buildCanonicalPayload({ ...(form || {}), currentStep: nextStep }, {
+      draft: true,
+      source: 'seller_onboarding_draft',
+    })
+    const draftFormData = { ...(form || {}), currentStep: nextStep, ...canonicalPayload }
     await persistListingUpdate((row) => ({
       ...row,
       sellerOnboarding: {
         ...(row?.sellerOnboarding || {}),
         status: SELLER_ONBOARDING_STATUS.IN_PROGRESS,
         currentStep: nextStep,
-        formData: { ...(form || {}) },
+        formData: draftFormData,
         updatedAt: new Date().toISOString(),
       },
     }))
@@ -994,6 +1139,14 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         return 'Trust name, registration number, and trustee details are required.'
       }
 
+      if (ownershipType === 'deceased_estate' && !form.executorName) {
+        return 'Executor details are required for a deceased estate seller.'
+      }
+
+      if (ownershipType === 'power_of_attorney' && !form.powerOfAttorneyName) {
+        return 'Representative details are required for a power of attorney seller.'
+      }
+
       if (ownershipType === 'multiple_owners') {
         const owners = form.multipleOwners || []
         const hasInvalid = owners.some((owner) => !owner.name || !owner.surname || !owner.idNumber)
@@ -1006,6 +1159,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     if (currentStep === 1) {
       if (!form.propertyCategory || !form.propertyType || !form.propertyAddress || !form.suburb || !form.province) {
         return 'Property category, property type, address, suburb, and province are required.'
+      }
+      if (form.existingBond && !form.bondBank) {
+        return 'Bond bank is required when there is an existing bond.'
+      }
+      if (form.occupancyStatus === 'tenant_occupied' && form.leaseExists && !form.leaseExpiryDate) {
+        return 'Lease expiry date is required when a lease exists.'
       }
     }
 
@@ -1045,11 +1204,22 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     setSuccess('')
 
     try {
+      const canonicalPayload = buildCanonicalPayload({ ...(form || {}), currentStep: 3 }, {
+        draft: false,
+        source: 'seller_onboarding_submit',
+      })
+      if (canonicalPayload.canonicalSellerFacts) {
+        const factValidation = validateSellerOnboardingFacts(canonicalPayload.canonicalSellerFacts, { draft: false })
+        if (!factValidation.ok) {
+          throw new Error(factValidation.required[0]?.message || 'Please complete the required seller onboarding facts before submitting.')
+        }
+      }
+      const submitFormData = { ...(form || {}), currentStep: 3, ...canonicalPayload }
       let updated = null
       if (useDbFirstSellerOnboarding) {
         const submitted = await submitSellerOnboarding(token, {
           status: 'completed',
-          formData: { ...(form || {}), currentStep: 3 },
+          formData: submitFormData,
           sellerType: String(form?.ownershipType || '').trim().toLowerCase() || null,
           ownershipStructure: String(form?.ownershipType || '').trim().toLowerCase() || null,
           maritalRegime: String(form?.ownershipType || '').trim().toLowerCase().includes('married')
@@ -1069,7 +1239,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             submittedAt: new Date().toISOString(),
             completedAt: new Date().toISOString(),
             currentStep: 3,
-            formData: { ...(form || {}) },
+            formData: submitFormData,
           },
         }))
       }
@@ -1150,9 +1320,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     )
   }
 
-  const showUnitDetails = isCompactPropertyType(form)
+  const showUnitDetails = isCompactPropertyType(form) || Boolean(form.sectionalTitle || form.shareBlock || form.bodyCorporate)
   const showLandDetails = isLandOrAgricultural(form)
-  const showCommercialDetails = isCommercialProperty(form)
+  const showCommercialDetails = isCommercialProperty(form) || Boolean(form.commercialProperty)
   const sellerMissing = [
     !form.sellerFirstName && 'Seller name',
     !form.sellerSurname && 'Seller surname',
@@ -1207,6 +1377,39 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     Residential Address
                     <input className={DETAIL_INPUT_CLASS} value={form.residentialAddress} onChange={(event) => handleFormUpdate('residentialAddress', event.target.value)} />
                   </label>
+                  <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                    Tax Number (optional)
+                    <input className={DETAIL_INPUT_CLASS} value={form.sellerTaxNumber} onChange={(event) => handleFormUpdate('sellerTaxNumber', event.target.value)} />
+                  </label>
+                  <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                    Marital Status
+                    <select className={DETAIL_INPUT_CLASS} value={form.maritalStatus} onChange={(event) => handleFormUpdate('maritalStatus', event.target.value)}>
+                      <option value="not_married">Not married</option>
+                      <option value="married">Married</option>
+                      <option value="divorced">Divorced</option>
+                      <option value="widowed">Widowed</option>
+                    </select>
+                  </label>
+                  {form.maritalStatus === 'married' ? (
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Marital Regime
+                      <select className={DETAIL_INPUT_CLASS} value={form.maritalRegime} onChange={(event) => handleFormUpdate('maritalRegime', event.target.value)}>
+                        {MARITAL_REGIMES.filter((item) => item.value !== 'not_applicable').map((item) => (
+                          <option key={item.value} value={item.value}>{item.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                    <input type="checkbox" checked={form.vatRegistered} onChange={(event) => handleFormUpdate('vatRegistered', event.target.checked)} />
+                    VAT registered
+                  </label>
+                  {form.vatRegistered ? (
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      VAT Number
+                      <input className={DETAIL_INPUT_CLASS} value={form.vatNumber} onChange={(event) => handleFormUpdate('vatNumber', event.target.value)} />
+                    </label>
+                  ) : null}
                 </div>
               </FormSection>
 
@@ -1217,7 +1420,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     return (
                       <ChoiceCard
                         key={item.value}
-                        onClick={() => handleFormUpdate('ownershipType', item.value)}
+                        onClick={() => handleOwnershipTypeChange(item.value)}
                         active={active}
                         title={item.label}
                         description={active ? 'Selected for this seller profile.' : ''}
@@ -1285,6 +1488,44 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       Trustee Email / Phone (optional)
                       <input className={DETAIL_INPUT_CLASS} value={form.trusteeEmail} onChange={(event) => handleFormUpdate('trusteeEmail', event.target.value)} placeholder="Email" />
+                    </label>
+                  </div>
+                ) : null}
+
+                {form.ownershipType === 'deceased_estate' ? (
+                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Executor Name
+                      <input className={DETAIL_INPUT_CLASS} value={form.executorName} onChange={(event) => handleFormUpdate('executorName', event.target.value)} />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Estate Reference (optional)
+                      <input className={DETAIL_INPUT_CLASS} value={form.estateReference} onChange={(event) => handleFormUpdate('estateReference', event.target.value)} />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Executor Email (optional)
+                      <input className={DETAIL_INPUT_CLASS} value={form.executorEmail} onChange={(event) => handleFormUpdate('executorEmail', event.target.value)} />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Executor Phone (optional)
+                      <input className={DETAIL_INPUT_CLASS} value={form.executorPhone} onChange={(event) => handleFormUpdate('executorPhone', event.target.value)} />
+                    </label>
+                  </div>
+                ) : null}
+
+                {form.ownershipType === 'power_of_attorney' ? (
+                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Representative Name
+                      <input className={DETAIL_INPUT_CLASS} value={form.powerOfAttorneyName} onChange={(event) => handleFormUpdate('powerOfAttorneyName', event.target.value)} />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Representative Email (optional)
+                      <input className={DETAIL_INPUT_CLASS} value={form.powerOfAttorneyEmail} onChange={(event) => handleFormUpdate('powerOfAttorneyEmail', event.target.value)} />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Representative Phone (optional)
+                      <input className={DETAIL_INPUT_CLASS} value={form.powerOfAttorneyPhone} onChange={(event) => handleFormUpdate('powerOfAttorneyPhone', event.target.value)} />
                     </label>
                   </div>
                 ) : null}
@@ -1404,6 +1645,29 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                           <option value="vacant_land">Vacant Land</option>
                         </select>
                       </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Legal Property Classification
+                        <select className={DETAIL_INPUT_CLASS} value={form.canonicalPropertyType} onChange={(event) => handleFormUpdate('canonicalPropertyType', event.target.value)}>
+                          <option value="">Infer from property type</option>
+                          {CANONICAL_PROPERTY_TYPES.map((item) => (
+                            <option key={item.value} value={item.value}>{item.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="grid grid-cols-1 gap-2 md:col-span-2 sm:grid-cols-2 lg:grid-cols-5">
+                        {[
+                          ['sectionalTitle', 'Sectional title'],
+                          ['shareBlock', 'Share block'],
+                          ['estateOrHoa', 'Estate / HOA'],
+                          ['bodyCorporate', 'Body corporate'],
+                          ['commercialProperty', 'Commercial'],
+                        ].map(([key, label]) => (
+                          <label key={key} className="flex min-h-[44px] items-center gap-2 rounded-[10px] border border-[#d6e1ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                            <input type="checkbox" checked={Boolean(form[key])} onChange={(event) => handleFormUpdate(key, event.target.checked)} />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
                       {(showUnitDetails || showLandDetails || showCommercialDetails) ? (
                         <div className="rounded-[14px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm leading-6 text-[#60748b] md:col-span-2">
                           {showUnitDetails ? 'Because this appears to be a sectional title or complex property, unit and complex details are shown.' : null}
@@ -1427,6 +1691,14 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         Province
                         <input className={DETAIL_INPUT_CLASS} value={form.province} onChange={(event) => handleFormUpdate('province', event.target.value)} />
                       </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Municipality
+                        <input className={DETAIL_INPUT_CLASS} value={form.municipality} onChange={(event) => handleFormUpdate('municipality', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Erf Number (optional)
+                        <input className={DETAIL_INPUT_CLASS} value={form.erfNumber} onChange={(event) => handleFormUpdate('erfNumber', event.target.value)} />
+                      </label>
                       {showUnitDetails ? (
                         <>
                           <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
@@ -1437,8 +1709,36 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                             Unit Number (optional)
                             <input className={DETAIL_INPUT_CLASS} value={form.unitNumber} onChange={(event) => handleFormUpdate('unitNumber', event.target.value)} />
                           </label>
+                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                            Section Number (optional)
+                            <input className={DETAIL_INPUT_CLASS} value={form.sectionNumber} onChange={(event) => handleFormUpdate('sectionNumber', event.target.value)} />
+                          </label>
+                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                            Scheme Name (optional)
+                            <input className={DETAIL_INPUT_CLASS} value={form.schemeName} onChange={(event) => handleFormUpdate('schemeName', event.target.value)} />
+                          </label>
                         </>
                       ) : null}
+                      {form.estateOrHoa ? (
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Estate / HOA Name
+                          <input className={DETAIL_INPUT_CLASS} value={form.estateName} onChange={(event) => handleFormUpdate('estateName', event.target.value)} />
+                        </label>
+                      ) : null}
+                      <div className="grid grid-cols-1 gap-2 md:col-span-2 sm:grid-cols-2 lg:grid-cols-5">
+                        {[
+                          ['titleDeedAvailable', 'Title deed copy'],
+                          ['sgDiagramAvailable', 'SG diagram'],
+                          ['erfDiagramAvailable', 'Erf diagram'],
+                          ['approvedBuildingPlansAvailable', 'Building plans'],
+                          ['floorPlanAvailable', 'Floor plan'],
+                        ].map(([key, label]) => (
+                          <label key={key} className="flex min-h-[44px] items-center gap-2 rounded-[10px] border border-[#d6e1ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                            <input type="checkbox" checked={Boolean(form[key])} onChange={(event) => handleFormUpdate(key, event.target.checked)} />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
                     </div>
                   </article>
 
@@ -1485,6 +1785,106 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         <input type="checkbox" checked={form.pool} onChange={(event) => handleFormUpdate('pool', event.target.checked)} />
                         Pool
                       </label>
+                    </div>
+                  </article>
+
+                  <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
+                    <h3 className="text-sm font-semibold text-[#22364a]">Occupancy</h3>
+                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Occupancy Status
+                        <select className={DETAIL_INPUT_CLASS} value={form.occupancyStatus} onChange={(event) => handleFormUpdate('occupancyStatus', event.target.value)}>
+                          {OCCUPANCY_STATUSES.map((item) => (
+                            <option key={item.value} value={item.value}>{item.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      {form.occupancyStatus === 'tenant_occupied' || form.occupancyStatus === 'partially_occupied' ? (
+                        <>
+                          <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                            <input type="checkbox" checked={form.leaseExists} onChange={(event) => handleFormUpdate('leaseExists', event.target.checked)} />
+                            Lease exists
+                          </label>
+                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                            Tenant Name (optional)
+                            <input className={DETAIL_INPUT_CLASS} value={form.tenantName} onChange={(event) => handleFormUpdate('tenantName', event.target.value)} />
+                          </label>
+                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                            Tenant Contact Details (optional)
+                            <input className={DETAIL_INPUT_CLASS} value={form.tenantContactDetails} onChange={(event) => handleFormUpdate('tenantContactDetails', event.target.value)} />
+                          </label>
+                          {form.leaseExists ? (
+                            <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                              Lease Expiry Date
+                              <input className={DETAIL_INPUT_CLASS} type="date" value={form.leaseExpiryDate} onChange={(event) => handleFormUpdate('leaseExpiryDate', event.target.value)} />
+                            </label>
+                          ) : null}
+                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                            Monthly Rental (optional)
+                            <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.monthlyRental} onChange={(event) => handleFormUpdate('monthlyRental', event.target.value)} />
+                          </label>
+                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                            Rental Deposit (optional)
+                            <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.rentalDeposit} onChange={(event) => handleFormUpdate('rentalDeposit', event.target.value)} />
+                          </label>
+                          <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                            Notice Period Details (optional)
+                            <input className={DETAIL_INPUT_CLASS} value={form.noticePeriodDetails} onChange={(event) => handleFormUpdate('noticePeriodDetails', event.target.value)} />
+                          </label>
+                          <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                            <input type="checkbox" checked={form.rentalScheduleAvailable} onChange={(event) => handleFormUpdate('rentalScheduleAvailable', event.target.checked)} />
+                            Rental schedule available
+                          </label>
+                        </>
+                      ) : null}
+                    </div>
+                  </article>
+
+                  <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
+                    <h3 className="text-sm font-semibold text-[#22364a]">Existing Bond</h3>
+                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                        <input type="checkbox" checked={form.existingBond} onChange={(event) => handleFormUpdate('existingBond', event.target.checked)} />
+                        Existing bond on the property
+                      </label>
+                      {form.existingBond ? (
+                        <>
+                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                            Bond Bank
+                            <input className={DETAIL_INPUT_CLASS} value={form.bondBank} onChange={(event) => handleFormUpdate('bondBank', event.target.value)} />
+                          </label>
+                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                            Bond Account / Reference (optional)
+                            <input className={DETAIL_INPUT_CLASS} value={form.bondAccountReference} onChange={(event) => handleFormUpdate('bondAccountReference', event.target.value)} />
+                          </label>
+                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                            Estimated Settlement Amount (optional)
+                            <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.estimatedSettlementAmount} onChange={(event) => handleFormUpdate('estimatedSettlementAmount', event.target.value)} />
+                          </label>
+                          <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                            <input type="checkbox" checked={form.multipleBonds} onChange={(event) => handleFormUpdate('multipleBonds', event.target.checked)} />
+                            Multiple bonds
+                          </label>
+                          <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                            <input type="checkbox" checked={form.accessBond} onChange={(event) => handleFormUpdate('accessBond', event.target.checked)} />
+                            Access bond
+                          </label>
+                          <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                            <input type="checkbox" checked={form.cancellationRequired} onChange={(event) => handleFormUpdate('cancellationRequired', event.target.checked)} />
+                            Bond cancellation required
+                          </label>
+                          <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                            <input type="checkbox" checked={form.cancellationAttorneyKnown} onChange={(event) => handleFormUpdate('cancellationAttorneyKnown', event.target.checked)} />
+                            Cancellation attorney known
+                          </label>
+                          {form.cancellationAttorneyKnown ? (
+                            <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                              Cancellation Attorney Details
+                              <input className={DETAIL_INPUT_CLASS} value={form.cancellationAttorneyDetails} onChange={(event) => handleFormUpdate('cancellationAttorneyDetails', event.target.value)} />
+                            </label>
+                          ) : null}
+                        </>
+                      ) : null}
                     </div>
                   </article>
 
@@ -1576,6 +1976,41 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               title="Your document requirements"
               description="These requirements are based on the seller and ownership information you provided. Your agent may request additional documents after review."
             >
+              <article className="mb-4 rounded-[18px] border border-[#dce6f2] bg-[#f8fbff] p-4">
+                <h3 className="text-sm font-semibold text-[#22364a]">Installations & Compliance Signals</h3>
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {[
+                    ['gasInstallation', 'Gas installation'],
+                    ['electricFence', 'Electric fence'],
+                    ['solarInstallation', 'Solar installation'],
+                    ['swimmingPool', 'Swimming pool'],
+                    ['borehole', 'Borehole'],
+                    ['generatorInstallation', 'Generator'],
+                    ['beetleCertificateRegion', 'Beetle certificate region'],
+                    ['plumbingCertificateRequired', 'Plumbing certificate required'],
+                  ].map(([key, label]) => (
+                    <label key={key} className="flex min-h-[44px] items-center gap-2 rounded-[10px] border border-[#d6e1ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                      <input type="checkbox" checked={Boolean(form[key])} onChange={(event) => handleFormUpdate(key, event.target.checked)} />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {[
+                    ['occupationCertificateAvailable', 'Occupation certificate available'],
+                    ['electricalCocAvailable', 'Electrical COC available'],
+                    ['gasCocAvailable', 'Gas COC available'],
+                    ['electricFenceCertificateAvailable', 'Electric fence certificate available'],
+                    ['plumbingCertificateAvailable', 'Plumbing certificate available'],
+                    ['solarComplianceAvailable', 'Solar compliance available'],
+                  ].map(([key, label]) => (
+                    <label key={key} className="flex min-h-[44px] items-center gap-2 rounded-[10px] border border-[#d6e1ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                      <input type="checkbox" checked={Boolean(form[key])} onChange={(event) => handleFormUpdate(key, event.target.checked)} />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </article>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-[0.85fr_1.15fr]">
                 <article className="rounded-[22px] border border-[#dbe6f2] bg-[#f7fbff] p-5">
                   <span className="inline-flex h-11 w-11 items-center justify-center rounded-[15px] bg-white text-[#35546c] shadow-[0_10px_22px_rgba(15,23,42,0.06)]">
@@ -1636,8 +2071,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   items={[
                     { label: 'Property Type', value: `${getPropertyCategoryLabel(form.propertyCategory)} / ${formatValue(form.propertyType)}` },
                     { label: 'Title / Structure', value: getPropertyStructureTypeLabel(form.propertyStructureType) },
+                    { label: 'Legal Classification', value: formatValue(form.canonicalPropertyType || 'inferred') },
                     { label: 'Address', value: [form.propertyAddress, form.suburb, form.city, form.province].filter(Boolean).join(', ') },
                     { label: showUnitDetails ? 'Unit / Complex' : 'Erf / Size', value: showUnitDetails ? [form.unitNumber, form.estateComplexName].filter(Boolean).join(' / ') : `${form.erfSize || 'Not provided'} m2` },
+                  ]}
+                />
+                <ReviewCard
+                  title="Occupancy & Finance"
+                  onEdit={() => setCurrentStep(1)}
+                  items={[
+                    { label: 'Occupancy', value: formatValue(form.occupancyStatus) },
+                    { label: 'Lease', value: form.leaseExists ? `Exists${form.leaseExpiryDate ? ` until ${form.leaseExpiryDate}` : ''}` : 'Not indicated' },
+                    { label: 'Existing Bond', value: form.existingBond ? `Yes${form.bondBank ? ` - ${form.bondBank}` : ''}` : 'No' },
+                    { label: 'Cancellation', value: form.existingBond ? (form.cancellationRequired ? 'Required' : 'Not indicated') : 'Not applicable' },
                   ]}
                 />
                 <ReviewCard

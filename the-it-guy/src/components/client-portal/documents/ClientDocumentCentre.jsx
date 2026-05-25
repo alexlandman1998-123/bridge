@@ -2,6 +2,8 @@ import { useState } from 'react'
 import ClientDocumentSection from './ClientDocumentSection'
 import { normalizeDocumentStatus } from '../../../lib/clientPortalDocumentStatus'
 import { getEducationalContentForRequirement } from '../../../content/clientPortalEducation'
+import CanonicalDocumentWorkspace from './canonical/CanonicalDocumentWorkspace'
+import { isCanonicalDocumentWorkspaceEnabled } from '../../../services/documents/canonicalDocumentWorkspaceService'
 
 function toArray(value) {
   return Array.isArray(value) ? value : []
@@ -267,6 +269,22 @@ function ClientDocumentCentre({
   onUpload = null,
   onOpenDocument = null,
 }) {
+  const [activeSellerDocumentTab, setActiveSellerDocumentTab] = useState('property')
+  const canonicalRequirements = toArray(documentCenter?.canonicalRequirements)
+  if (isCanonicalDocumentWorkspaceEnabled() && canonicalRequirements.length) {
+    return (
+      <CanonicalDocumentWorkspace
+        requirements={canonicalRequirements}
+        documentCenter={documentCenter}
+        role={workspace === 'selling' ? 'seller' : 'buyer'}
+        uploadingDocumentKey={uploadingDocumentKey}
+        openingDocumentPath={openingDocumentPath}
+        onUpload={onUpload}
+        onOpenDocument={onOpenDocument}
+      />
+    )
+  }
+
   const sections = buildDocumentCentreSections(documentCenter, workspace)
   const isSelling = workspace === 'selling'
   const sellerFicaDocuments = sections.allRequired.filter((item) => sellerRequirementGroup(item) === 'fica')
@@ -302,7 +320,6 @@ function ClientDocumentCentre({
       emptyState: 'No additional document requests yet.',
     },
   ]
-  const [activeSellerDocumentTab, setActiveSellerDocumentTab] = useState('property')
   const activeSellerDocumentSection =
     sellerDocumentTabs.find((tab) => tab.key === activeSellerDocumentTab) || sellerDocumentTabs[0]
 

@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom'
 import ProgressTimeline from '../components/ProgressTimeline'
 import TransactionProgressPanel from '../components/TransactionProgressPanel'
 import { fetchTransactionStatusByToken } from '../lib/api'
-import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS } from '../lib/stages'
+import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS, getClientStageExplainer } from '../lib/stages'
 
 function formatDateTime(value) {
   if (!value) {
@@ -115,6 +115,7 @@ function TransactionStatusShare() {
     updatedAt,
   } = statusData
   const resolvedTransferSummary = transferSummary || attorneySummary || null
+  const stageExplainer = getClientStageExplainer(mainStage || stage)
 
   const externalProgressItems = [
     latestStatusComment

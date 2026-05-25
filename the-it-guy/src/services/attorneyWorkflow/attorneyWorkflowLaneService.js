@@ -15,6 +15,7 @@ import {
 import { resolveLegalDocumentRequirements } from './attorneyDocumentRequirementsResolver.js'
 import { resolveAttorneyWorkflowForTransaction } from './attorneyWorkflowService'
 import { ATTORNEY_LANE_STAGES } from './attorneyWorkflowResolver.js'
+import { canAdvanceWorkflowStage } from '../documents/canonicalWorkflowGateService'
 
 const LANE_META = {
   transfer: {
@@ -894,6 +895,28 @@ export async function updateAttorneyWorkflowLaneStage({
   const normalizedNote = String(note || '').trim()
   if (isRegression && !normalizedNote) {
     throw new Error('Please provide a reason when moving a workflow backwards.')
+  }
+
+  if (!isRegression) {
+    const canonicalGate = await canAdvanceWorkflowStage({
+      contextType: 'transaction',
+      contextId: normalizedTransactionId,
+      targetStage: normalizedStageKey,
+      actorRole: permissionContext?.membershipRole || LANE_META[normalizedLaneKey].attorneyRole,
+      actorUserId: actor.id,
+      client,
+      metadata: {
+        lane_key: normalizedLaneKey,
+        source: 'attorney_workflow_lane_stage_update',
+      },
+    }).catch((error) => ({
+      allowed: true,
+      skipped: true,
+      error: error?.message || 'canonical_gate_evaluation_failed',
+    }))
+    if (canonicalGate?.allowed === false) {
+      throw new Error(canonicalGate.reason || 'Canonical document readiness is blocking this workflow stage.')
+    }
   }
 
   const finalStage = targetIndex === stages.length - 1

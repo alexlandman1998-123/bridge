@@ -24,6 +24,10 @@ import {
 import { getTransactionWorkflowReadModel } from './transactionWorkflowReadModelService'
 import { getSellerOnboardingByToken } from './privateListingService'
 import { generateSellerDocumentRequirements } from '../lib/privateListingRequirementEngine'
+import {
+  getCanonicalRequirementsForContext,
+  isCanonicalDocumentWorkspaceEnabled,
+} from './documents/canonicalDocumentWorkspaceService'
 
 function normalizeWorkspace(value = 'shared') {
   const normalized = String(value || 'shared').trim().toLowerCase()
@@ -84,6 +88,8 @@ function mapSellerRequiredDocument(requirement = {}) {
     expectedFromRole: 'seller',
     visibility_scope: 'client',
     visibility: requirement?.visibility || requirement?.document_visibility || 'seller_visible',
+    canonicalRequirementInstanceId: requirement?.canonicalRequirementInstanceId || requirement?.canonical_requirement_instance_id || '',
+    canonical_requirement_instance_id: requirement?.canonical_requirement_instance_id || requirement?.canonicalRequirementInstanceId || '',
   }
 }
 
@@ -96,9 +102,12 @@ function mapSellerUploadedDocument(document = {}) {
     category: document?.category || document?.document_type || 'Seller Documents',
     document_type: document?.document_type || document?.category || 'seller_document',
     file_path: document?.file_path || document?.storage_path || '',
+    storage_path: document?.storage_path || document?.file_path || '',
     url: document?.url || document?.file_url || '',
     status: document?.status || 'uploaded',
     visibility: document?.visibility || document?.document_visibility || 'seller_visible',
+    canonicalRequirementInstanceId: document?.canonicalRequirementInstanceId || document?.canonical_requirement_instance_id || '',
+    canonical_requirement_instance_id: document?.canonical_requirement_instance_id || document?.canonicalRequirementInstanceId || '',
     created_at: document?.created_at || document?.uploaded_at || document?.uploadedAt || null,
   }
 }
@@ -808,6 +817,26 @@ function buildDocumentCenter(portalData, workspaceMode = 'buying') {
     approvedDocuments,
     rejectedDocuments,
     signedDocuments,
+    canonicalRequirements: Array.isArray(portalData?.canonicalRequirements) ? portalData.canonicalRequirements : [],
+  }
+}
+
+async function fetchCanonicalDocumentRequirementsForPortal(portalData = {}, workspaceMode = 'buying') {
+  if (!isCanonicalDocumentWorkspaceEnabled()) return []
+  const contextType = workspaceMode === 'selling' ? 'private_listing' : 'transaction'
+  const contextId = workspaceMode === 'selling'
+    ? String(portalData?.activeSellingContext?.listingId || portalData?.listing?.id || '').trim()
+    : String(portalData?.transaction?.id || '').trim()
+  if (!contextId) return []
+  try {
+    return await getCanonicalRequirementsForContext({ contextType, contextId })
+  } catch (error) {
+    console.warn('[client-portal-documents] Canonical document requirements unavailable', {
+      contextType,
+      contextId,
+      error,
+    })
+    return []
   }
 }
 
@@ -960,7 +989,11 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     }
   }
 
-  const documentCenter = buildDocumentCenter(portalData, workspaceMode)
+  const canonicalRequirements = await fetchCanonicalDocumentRequirementsForPortal(portalData, workspaceMode)
+  const documentCenter = {
+    ...buildDocumentCenter(portalData, workspaceMode),
+    canonicalRequirements,
+  }
   const appointments = Array.isArray(portalData?.appointments) ? portalData.appointments : []
   const lifecycle = buildLifecycle(portalData)
   const timeline = buildTimeline(portalData)

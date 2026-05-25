@@ -6,6 +6,13 @@ import {
 } from './purchaserPersonas'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 
+// Phase 9 canonical document consolidation:
+// This legacy buyer requirement engine is retained as a compatibility fallback.
+// New requirement generation should route through canonicalDocumentResolverService
+// once CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH / LEGACY_DOCUMENT_GENERATION_DISABLED
+// are enabled and parity reports are clean. Remove only after adapters, backfill
+// and production rollback checks have passed.
+
 function normalizeStatus(value = '') {
   const normalized = String(value || '').trim().toLowerCase()
   if (normalized === 'accepted') return 'completed'
