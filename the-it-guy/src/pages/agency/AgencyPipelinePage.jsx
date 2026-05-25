@@ -6315,6 +6315,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!opened) window.location.href = selectedLeadMandateViewLink
   }
 
+  function handleWorkspaceViewSignedMandate() {
+    const versions = Array.isArray(mandatePacketStatus?.versions) ? mandatePacketStatus.versions : []
+    const signedVersion =
+      versions.find((version) => normalizeText(version?.final_signed_file_access_url || version?.final_signed_file_url)) ||
+      null
+    const signedUrl = normalizeText(signedVersion?.final_signed_file_access_url || signedVersion?.final_signed_file_url)
+    if (!signedUrl) {
+      setError('Signed mandate PDF is not available yet. Complete all signatures and finalize the signed record first.')
+      return
+    }
+    const opened = window.open(signedUrl, '_blank', 'noopener,noreferrer')
+    if (!opened) window.location.href = signedUrl
+  }
+
   async function handleUpdateParticipantRsvp(participant, nextStatus) {
     if (!organisationId || !selectedAppointmentId || !participant?.participantId) return
     try {
@@ -10603,7 +10617,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         onSend={handleSendMandateToSeller}
         onEdit={handleGenerateMandateFromSellerLead}
         onView={handleWorkspaceViewMandate}
-        onViewSigned={handleWorkspaceViewMandate}
+        onViewSigned={handleWorkspaceViewSignedMandate}
         onRefreshContext={async () => {
           if (!organisationId) return
           await reloadRecords(organisationId)

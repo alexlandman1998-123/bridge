@@ -33,11 +33,60 @@ function resolveRequirementUploadSpec(requirement = {}) {
   }
 }
 
-function normalizeRequiredDocument(requirement = {}, uploadedDocumentsById = new Map()) {
+function normalizeDocumentMatchKey(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+function getDocumentLookupKeys(document = {}) {
+  return [
+    document?.id,
+    document?.file_path,
+    document?.storage_path,
+    document?.url,
+    document?.file_url,
+  ]
+    .map((value) => toText(value))
+    .filter(Boolean)
+}
+
+function documentMatchesRequirement(document = {}, requirement = {}) {
+  const requirementId = toText(requirement?.id || requirement?.requirement_id)
+  const documentRequirementId = toText(document?.requirementId || document?.requirement_id)
+  if (requirementId && documentRequirementId && requirementId === documentRequirementId) return true
+
+  const requirementKey = normalizeDocumentMatchKey(requirement?.key || requirement?.requirement_key)
+  const documentRequirementKey = normalizeDocumentMatchKey(document?.requirementKey || document?.requirement_key)
+  const documentType = normalizeDocumentMatchKey(document?.document_type || document?.documentType)
+  const documentCategory = normalizeDocumentMatchKey(document?.category || document?.document_category)
+  return Boolean(
+    requirementKey &&
+      (
+        documentRequirementKey === requirementKey ||
+        documentType === requirementKey ||
+        documentCategory === requirementKey
+      ),
+  )
+}
+
+function findUploadedDocumentForRequirement(uploadedDocuments = [], requirement = {}) {
+  return uploadedDocuments.find((document) => documentMatchesRequirement(document, requirement)) || null
+}
+
+function normalizeRequiredDocument(requirement = {}, uploadedDocumentsById = new Map(), uploadedDocuments = []) {
   const key = toText(requirement?.key || requirement?.requirement_key || requirement?.id || requirement?.label || 'required-document')
-  const status = resolveRequirementStatus(requirement)
+  const requirementStatus = resolveRequirementStatus(requirement)
   const uploadedDocumentId = toText(requirement?.uploadedDocumentId || requirement?.uploaded_document_id)
-  const linkedDocument = uploadedDocumentId ? uploadedDocumentsById.get(uploadedDocumentId) || null : null
+  const linkedDocument = uploadedDocumentId
+    ? uploadedDocumentsById.get(uploadedDocumentId) || null
+    : findUploadedDocumentForRequirement(uploadedDocuments, requirement)
+  const linkedStatus = linkedDocument ? normalizeDocumentStatus(linkedDocument?.status || 'uploaded') : ''
+  const status = linkedDocument && ['required', 'requested'].includes(requirementStatus)
+    ? linkedStatus
+    : requirementStatus
   const education = getEducationalContentForRequirement(requirement?.key || requirement?.label || '')
   return {
     id: `required_${key}`,
@@ -134,12 +183,15 @@ function uniqueById(items = []) {
 
 function buildDocumentCentreSections(documentCenter = {}, workspace = 'buying') {
   const uploadedDocuments = toArray(documentCenter?.uploadedDocuments).filter((item) => isClientVisible(item))
-  const uploadedDocumentsById = new Map(uploadedDocuments.map((item) => [toText(item?.id), item]))
+  const uploadedDocumentsById = new Map()
+  uploadedDocuments.forEach((item) => {
+    getDocumentLookupKeys(item).forEach((key) => uploadedDocumentsById.set(key, item))
+  })
 
   const normalizedRequired = uniqueById(
     toArray(documentCenter?.requiredDocuments)
       .filter((item) => isClientVisible(item) && matchesWorkspace(item, workspace))
-      .map((item) => normalizeRequiredDocument(item, uploadedDocumentsById)),
+      .map((item) => normalizeRequiredDocument(item, uploadedDocumentsById, uploadedDocuments)),
   )
 
   const normalizedAdditional = uniqueById(
@@ -148,10 +200,22 @@ function buildDocumentCentreSections(documentCenter = {}, workspace = 'buying') 
       .map((item) => normalizeAdditionalRequest(item, uploadedDocumentsById)),
   )
 
-  const normalizedUploaded = uniqueById(uploadedDocuments.map((item) => normalizeUploadedDocument(item)))
+  const linkedUploadedDocumentKeys = new Set(
+    [...normalizedRequired, ...normalizedAdditional]
+      .flatMap((item) => getDocumentLookupKeys(item?.linkedDocument || {})),
+  )
+  const isLinkedUpload = (document = {}) =>
+    getDocumentLookupKeys(document).some((key) => linkedUploadedDocumentKeys.has(key))
+
+  const normalizedUploaded = uniqueById(
+    uploadedDocuments
+      .filter((item) => !isLinkedUpload(item))
+      .map((item) => normalizeUploadedDocument(item)),
+  )
   const normalizedSigned = uniqueById(
     toArray(documentCenter?.signedDocuments)
       .filter((item) => isClientVisible(item))
+      .filter((item) => !isLinkedUpload(item))
       .map((item) => normalizeSignedDocument(item)),
   )
 
@@ -171,7 +235,7 @@ function buildDocumentCentreSections(documentCenter = {}, workspace = 'buying') 
     ...normalizedAdditional.filter((item) => ['approved', 'completed'].includes(item.status)),
     ...toArray(documentCenter?.approvedDocuments)
       .filter((item) => isClientVisible(item))
-      .map((item) => normalizeRequiredDocument(item, uploadedDocumentsById)),
+      .map((item) => normalizeRequiredDocument(item, uploadedDocumentsById, uploadedDocuments)),
   ]
 
   return {

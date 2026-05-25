@@ -672,13 +672,65 @@ function filterAdditionalRequestsByWorkspace(requests = [], workspaceMode = 'buy
   })
 }
 
+function normalizeDocumentMatchKey(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+function documentMatchesRequirement(document = {}, requirement = {}) {
+  const requirementId = String(requirement?.id || requirement?.requirement_id || '').trim()
+  const documentRequirementId = String(document?.requirementId || document?.requirement_id || '').trim()
+  if (requirementId && documentRequirementId && requirementId === documentRequirementId) return true
+
+  const requirementKey = normalizeDocumentMatchKey(requirement?.key || requirement?.requirement_key)
+  const documentRequirementKey = normalizeDocumentMatchKey(document?.requirementKey || document?.requirement_key)
+  const documentType = normalizeDocumentMatchKey(document?.document_type || document?.documentType)
+  const documentCategory = normalizeDocumentMatchKey(document?.category || document?.document_category)
+  return Boolean(
+    requirementKey &&
+      (
+        documentRequirementKey === requirementKey ||
+        documentType === requirementKey ||
+        documentCategory === requirementKey
+      ),
+  )
+}
+
+function findUploadedDocumentForRequirement(uploadedDocuments = [], requirement = {}) {
+  return (uploadedDocuments || []).find((document) => documentMatchesRequirement(document, requirement)) || null
+}
+
 function buildDocumentCenter(portalData, workspaceMode = 'buying') {
   const requiredDocumentsRaw = Array.isArray(portalData?.requiredDocuments) ? portalData.requiredDocuments : []
-  const requiredDocuments = filterRequiredDocumentsByWorkspace(requiredDocumentsRaw, workspaceMode)
   const uploadedDocuments = Array.isArray(portalData?.documents) ? portalData.documents : []
+  const requiredDocuments = filterRequiredDocumentsByWorkspace(requiredDocumentsRaw, workspaceMode)
+    .map((requirement) => {
+      const uploadedDocument = findUploadedDocumentForRequirement(uploadedDocuments, requirement)
+      if (!uploadedDocument) return requirement
+      const uploadedStatus = normalizeDocumentStatus(uploadedDocument?.status || 'uploaded')
+      return {
+        ...requirement,
+        status: ['required', 'requested'].includes(normalizeDocumentStatus(requirement?.status || requirement?.requiredDocumentStatus || ''))
+          ? uploadedStatus
+          : requirement?.status || uploadedStatus,
+        requiredDocumentStatus: uploadedStatus,
+        complete: ['approved', 'completed'].includes(uploadedStatus),
+        isUploaded: true,
+        uploadedDocumentId: uploadedDocument.id || uploadedDocument.file_path || uploadedDocument.storage_path || null,
+        uploaded_document_id: uploadedDocument.id || uploadedDocument.file_path || uploadedDocument.storage_path || null,
+      }
+    })
   const additionalRequests = filterAdditionalRequestsByWorkspace(
     Array.isArray(portalData?.additionalDocumentRequests) ? portalData.additionalDocumentRequests : [],
     workspaceMode,
+  )
+  const linkedUploadedDocumentIds = new Set(
+    requiredDocuments
+      .map((item) => String(item?.uploadedDocumentId || item?.uploaded_document_id || '').trim())
+      .filter(Boolean),
   )
 
   const statusFromDocument = (document = {}) =>
@@ -691,6 +743,8 @@ function buildDocumentCenter(portalData, workspaceMode = 'buying') {
 
   const rejectedDocuments = requiredDocuments.filter((item) => statusFromDocument(item) === 'rejected')
   const signedDocuments = uploadedDocuments.filter((document) => {
+    const documentId = String(document?.id || document?.file_path || document?.storage_path || '').trim()
+    if (documentId && linkedUploadedDocumentIds.has(documentId)) return false
     const source = `${document?.document_type || ''} ${document?.name || ''} ${document?.category || ''}`.toLowerCase()
     return /signed|signature|otp|mandate/.test(source)
   })
