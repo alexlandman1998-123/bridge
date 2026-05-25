@@ -1,5 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
+import { handleSellerMandateSentEmail } from "../send-email/handlers/sellerMandateSent.ts";
+import { handleSellerMandateSignedEmail } from "../send-email/handlers/sellerMandateSigned.ts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -161,6 +163,88 @@ function safeEmailPresent(value: unknown) {
   return Boolean(normalizeText(value));
 }
 
+function isUsableEmail(value: unknown) {
+  const email = normalizeText(value).toLowerCase();
+  return Boolean(email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && !email.endsWith("@bridge.local"));
+}
+
+function firstNonEmpty(...values: unknown[]) {
+  for (const value of values) {
+    const text = normalizeText(value);
+    if (text) return text;
+  }
+  return "";
+}
+
+function resolveSellerInviteSeed(
+  packet: Record<string, unknown>,
+  existingSourceContext: Record<string, unknown>,
+  extraPlaceholders: Record<string, unknown> = {},
+) {
+  const generatedSnapshot = existingSourceContext.generatedDataSnapshot && typeof existingSourceContext.generatedDataSnapshot === "object"
+    ? existingSourceContext.generatedDataSnapshot as Record<string, unknown>
+    : {};
+  const placeholders = generatedSnapshot.placeholders && typeof generatedSnapshot.placeholders === "object"
+    ? generatedSnapshot.placeholders as Record<string, unknown>
+    : {};
+  const nestedSource = generatedSnapshot.sourceContext && typeof generatedSnapshot.sourceContext === "object"
+    ? generatedSnapshot.sourceContext as Record<string, unknown>
+    : {};
+  const sellerOnboarding = existingSourceContext.sellerOnboarding && typeof existingSourceContext.sellerOnboarding === "object"
+    ? existingSourceContext.sellerOnboarding as Record<string, unknown>
+    : {};
+  const onboardingFormData = sellerOnboarding.formData && typeof sellerOnboarding.formData === "object"
+    ? sellerOnboarding.formData as Record<string, unknown>
+    : {};
+
+  const sellerName = firstNonEmpty(
+    extraPlaceholders.seller_full_name,
+    extraPlaceholders.sellerFullName,
+    extraPlaceholders["seller.display_name"],
+    extraPlaceholders["seller.name"],
+    placeholders.seller_full_name,
+    placeholders.sellerFullName,
+    placeholders["seller.display_name"],
+    placeholders["seller.name"],
+    existingSourceContext.sellerName,
+    existingSourceContext.seller_name,
+    nestedSource.sellerName,
+    nestedSource.seller_name,
+    sellerOnboarding.sellerName,
+    sellerOnboarding.seller_name,
+    sellerOnboarding.fullName,
+    onboardingFormData.sellerName,
+    onboardingFormData.seller_name,
+    onboardingFormData.fullName,
+    onboardingFormData.name,
+    normalizeText(packet.title).replace(/^Mandate\s*[-•]\s*/i, ""),
+    "Seller",
+  );
+  const sellerEmail = firstNonEmpty(
+    extraPlaceholders.seller_email,
+    extraPlaceholders.sellerEmail,
+    extraPlaceholders["seller.email"],
+    placeholders.seller_email,
+    placeholders.sellerEmail,
+    placeholders["seller.email"],
+    existingSourceContext.sellerEmail,
+    existingSourceContext.seller_email,
+    nestedSource.sellerEmail,
+    nestedSource.seller_email,
+    sellerOnboarding.email,
+    sellerOnboarding.sellerEmail,
+    sellerOnboarding.seller_email,
+    onboardingFormData.email,
+    onboardingFormData.sellerEmail,
+    onboardingFormData.seller_email,
+  ).toLowerCase();
+
+  return {
+    signerName: sellerName || "Seller",
+    signerEmail: sellerEmail,
+  };
+}
+
 function decodeDataUrl(dataUrl: string) {
   const normalized = normalizeText(dataUrl);
   const matched = normalized.match(/^data:(.+?);base64,(.+)$/);
@@ -294,31 +378,23 @@ function resolveSigningStatusFromSigners(signers: Record<string, unknown>[]) {
 }
 
 async function invokeSendEmail({
-  supabaseUrl,
-  serviceRoleKey,
   body,
 }: {
-  supabaseUrl: string;
-  serviceRoleKey: string;
   body: Record<string, unknown>;
 }) {
-  const response = await fetch(`${supabaseUrl.replace(/\/$/, "")}/functions/v1/send-email`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "apikey": serviceRoleKey,
-      "Authorization": `Bearer ${serviceRoleKey}`,
-    },
-    body: JSON.stringify(body),
-  });
+  const type = normalizeText(body.type).toLowerCase();
+  const response =
+    type === "seller_mandate_sent"
+      ? await handleSellerMandateSentEmail(body as never)
+      : type === "seller_mandate_signed"
+        ? await handleSellerMandateSignedEmail(body as never)
+        : jsonResponse(400, { error: `Unsupported internal email type: ${type || "unknown"}.` });
   const responseBody = await response.json().catch(() => ({}));
   return { ok: response.ok, status: response.status, body: responseBody as Record<string, unknown> };
 }
 
 async function maybeSendSellerMandateInvite({
   supabase,
-  supabaseUrl,
-  serviceRoleKey,
   packet,
   existingSourceContext,
   allSigners,
@@ -329,8 +405,6 @@ async function maybeSendSellerMandateInvite({
   nowIso,
 }: {
   supabase: any;
-  supabaseUrl: string;
-  serviceRoleKey: string;
   packet: Record<string, unknown>;
   existingSourceContext: Record<string, unknown>;
   allSigners: Record<string, unknown>[];
@@ -340,7 +414,60 @@ async function maybeSendSellerMandateInvite({
   agentSigner: Record<string, unknown>;
   nowIso: string;
 }) {
-  const sellerSigner = allSigners.find((item) => isMandateSeller(item.signer_role));
+  let workingSigners = allSigners;
+  let sellerSigner = workingSigners.find((item) => isMandateSeller(item.signer_role));
+  if (!sellerSigner?.id) {
+    let sellerSeed = resolveSellerInviteSeed(packet, existingSourceContext);
+    if (!isUsableEmail(sellerSeed.signerEmail)) {
+      const versionPlaceholders = await supabase
+        .from("document_packet_versions")
+        .select("placeholders_resolved_json")
+        .eq("id", packetVersionId)
+        .eq("packet_id", packetId)
+        .maybeSingle();
+      if (versionPlaceholders.error) throw versionPlaceholders.error;
+      const placeholders = versionPlaceholders.data?.placeholders_resolved_json && typeof versionPlaceholders.data.placeholders_resolved_json === "object"
+        ? versionPlaceholders.data.placeholders_resolved_json as Record<string, unknown>
+        : {};
+      sellerSeed = resolveSellerInviteSeed(packet, existingSourceContext, placeholders);
+    }
+    if (isUsableEmail(sellerSeed.signerEmail)) {
+      const maxSigningOrder = Math.max(
+        1,
+        ...workingSigners.map((item) => Number(item.signing_order || 0)).filter((value) => Number.isFinite(value)),
+      );
+      const createSeller = await supabase
+        .from("document_packet_signers")
+        .insert({
+          organisation_id: organisationId,
+          packet_id: packetId,
+          packet_version_id: packetVersionId,
+          signer_role: "seller",
+          signer_name: sellerSeed.signerName,
+          signer_email: sellerSeed.signerEmail,
+          signing_order: Math.max(2, maxSigningOrder + 1),
+          status: "ready_to_send",
+        })
+        .select("id, signer_role, signer_name, signer_email, signing_order, signing_token, token_expires_at, status, signed_at")
+        .single();
+      if (createSeller.error) throw createSeller.error;
+      sellerSigner = createSeller.data as Record<string, unknown>;
+      workingSigners = [...workingSigners, sellerSigner];
+      await appendPacketEvent({
+        supabase,
+        packetId,
+        organisationId,
+        versionId: packetVersionId,
+        eventType: "seller_signer_auto_created",
+        payload: {
+          signerId: sellerSigner.id,
+          signerRole: "seller",
+          recipientEmailPresent: true,
+          createdAt: nowIso,
+        },
+      });
+    }
+  }
   const sellerStatus = normalizeText(sellerSigner?.status).toLowerCase();
   const sellerEmail = normalizeText(sellerSigner?.signer_email).toLowerCase();
   const sellerToken = normalizeText(sellerSigner?.signing_token);
@@ -362,7 +489,7 @@ async function maybeSendSellerMandateInvite({
 
   if (!sellerSigner?.id || !sellerEmail || alreadySentSellerInvite) {
     return {
-      allSigners,
+      allSigners: workingSigners,
       sellerInviteSent: false,
     };
   }
@@ -383,8 +510,6 @@ async function maybeSendSellerMandateInvite({
 
   const appBaseUrl = normalizeText(Deno.env.get("PUBLIC_APP_URL") || Deno.env.get("CLIENT_APP_URL") || Deno.env.get("VITE_PUBLIC_APP_URL") || "https://app.bridgenine.co.za").replace(/\/$/, "");
   const emailResult = await invokeSendEmail({
-    supabaseUrl,
-    serviceRoleKey,
     body: {
       type: "seller_mandate_sent",
       to: sellerEmail,
@@ -433,7 +558,7 @@ async function maybeSendSellerMandateInvite({
       },
     });
     return {
-      allSigners: allSigners.map((item) =>
+      allSigners: workingSigners.map((item) =>
         normalizeText(item.id) === normalizeText(sellerUpdate.data?.id)
           ? { ...(sellerUpdate.data as Record<string, unknown>), status: "ready_to_send" }
           : item
@@ -442,7 +567,7 @@ async function maybeSendSellerMandateInvite({
     };
   }
 
-  const updatedSigners = allSigners.map((item) =>
+  const updatedSigners = workingSigners.map((item) =>
     normalizeText(item.id) === normalizeText(sellerUpdate.data?.id) ? sellerUpdate.data as Record<string, unknown> : item
   );
   await appendPacketEvent({
@@ -467,8 +592,6 @@ async function maybeSendSellerMandateInvite({
 
 async function sendFinalSignedMandateEmails({
   supabase,
-  supabaseUrl,
-  serviceRoleKey,
   packet,
   packetId,
   organisationId,
@@ -477,8 +600,6 @@ async function sendFinalSignedMandateEmails({
   nowIso,
 }: {
   supabase: any;
-  supabaseUrl: string;
-  serviceRoleKey: string;
   packet: Record<string, unknown>;
   packetId: string;
   organisationId: string;
@@ -513,8 +634,6 @@ async function sendFinalSignedMandateEmails({
   let sentCount = 0;
   for (const [email, signer] of recipients.entries()) {
     const emailResult = await invokeSendEmail({
-      supabaseUrl,
-      serviceRoleKey,
       body: {
         type: "seller_mandate_signed",
         to: email,
@@ -622,6 +741,12 @@ Deno.serve(async (req: Request) => {
         error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.",
       });
     }
+    const SUPABASE_FUNCTION_AUTH_KEY =
+      Deno.env.get("SUPABASE_ANON_KEY") ||
+      Deno.env.get("SUPABASE_FUNCTION_AUTH_KEY") ||
+      Deno.env.get("FUNCTION_AUTH_KEY") ||
+      Deno.env.get("VITE_SUPABASE_ANON_KEY") ||
+      SUPABASE_SERVICE_ROLE_KEY;
 
     const payload = (await req.json()) as {
       action?: string;
@@ -900,8 +1025,6 @@ Deno.serve(async (req: Request) => {
         if (normalizeText(packet.packet_type).toLowerCase() === "mandate" && isMandateAgent(signer.signer_role)) {
           const inviteResult = await maybeSendSellerMandateInvite({
             supabase,
-            supabaseUrl: SUPABASE_URL,
-            serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
             packet,
             existingSourceContext,
             allSigners,
@@ -1031,8 +1154,6 @@ Deno.serve(async (req: Request) => {
       if (normalizeText(packet.packet_type).toLowerCase() === "mandate" && isMandateAgent(signer.signer_role)) {
         const inviteResult = await maybeSendSellerMandateInvite({
           supabase,
-          supabaseUrl: SUPABASE_URL,
-          serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
           packet,
           existingSourceContext,
           allSigners,
@@ -1110,8 +1231,8 @@ Deno.serve(async (req: Request) => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "apikey": SUPABASE_SERVICE_ROLE_KEY,
-            "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            "apikey": SUPABASE_FUNCTION_AUTH_KEY,
+            "Authorization": `Bearer ${SUPABASE_FUNCTION_AUTH_KEY}`,
           },
           body: JSON.stringify({
             packetId,
@@ -1141,8 +1262,6 @@ Deno.serve(async (req: Request) => {
           try {
             await sendFinalSignedMandateEmails({
               supabase,
-              supabaseUrl: SUPABASE_URL,
-              serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
               packet,
               packetId,
               organisationId,

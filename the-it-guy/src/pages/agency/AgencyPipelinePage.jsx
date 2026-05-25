@@ -6031,9 +6031,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const sellerMandatePortalLink = sellerClientPortalBaseLink ? `${sellerClientPortalBaseLink}/mandate` : ''
       const sentAtIso = new Date().toISOString()
       const providedSignerLinks = Array.isArray(options.signerLinks) ? options.signerLinks : []
+      const assignedAgentEmail = normalizeText(selectedLead?.assignedAgentEmail).toLowerCase()
+      const currentAgentEmail = normalizeText(currentAgent.email).toLowerCase()
+      const agentRecipientEmail = isValidEmail(assignedAgentEmail) ? assignedAgentEmail : currentAgentEmail
+      const agentRecipientName = normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email)
+      const existingSignerRows = Array.isArray(mandatePacketStatus?.signingSummary?.signers)
+        ? mandatePacketStatus.signingSummary.signers
+        : []
+      const agentAlreadySigned = existingSignerRows.some((signer) =>
+        normalizeText(signer?.signer_role || signer?.role).toLowerCase() === 'agent' &&
+        normalizeText(signer?.status || signer?.statusRaw).toLowerCase() === 'signed'
+      )
       let sellerSigningLink = resolveSellerSignerLink(providedSignerLinks, sellerEmail)
-      let agentSigningLink = resolveSignerLinkByRole(providedSignerLinks, 'agent', normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email))
-      const finalMandateStatus = normalizeText(options.signingStatus) || 'sent_to_agent'
+      let agentSigningLink = resolveSignerLinkByRole(providedSignerLinks, 'agent', agentRecipientEmail)
+      const finalMandateStatus = normalizeText(options.signingStatus) || (agentAlreadySigned ? 'sent_to_seller' : 'sent_to_agent')
+      const targetSignerRole = finalMandateStatus === 'sent_to_seller' ? 'seller' : 'agent'
       let signingEmailFailed = false
 
       if (isSupabaseConfigured && isUuidLike(mandatePacketId) && (!agentSigningLink || !sellerSigningLink)) {
@@ -6045,8 +6057,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             placeholders: {
               'seller.display_name': sellerName,
               'seller.email': sellerEmail,
-              'agent.display_name': normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName),
-              'agent.email': normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
+              'agent.display_name': agentRecipientName,
+              'agent.email': agentRecipientEmail,
               'property.address': propertyTitle,
               'property.listing_title': propertyTitle,
               'mandate.asking_price': String(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
@@ -6060,9 +6072,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               mandateDraft: {
                 sellerEmail,
               },
-              generatedByName: normalizeText(currentAgent.fullName),
-              generatedByUserEmail: normalizeText(currentAgent.email),
-              agentEmail: normalizeText(currentAgent.email),
+              generatedByName: agentRecipientName,
+              generatedByUserEmail: agentRecipientEmail,
+              agentEmail: agentRecipientEmail,
             },
           })
           const signingVersionId = normalizeText(signingPreparation?.version?.id)
@@ -6076,38 +6088,55 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               (typeof window !== 'undefined' && window.location?.origin)
                 ? window.location.origin
               : 'https://app.bridgenine.co.za',
+            targetSignerRole,
           })
-          agentSigningLink = agentSigningLink || resolveSignerLinkByRole(linkResult?.signers, 'agent', normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email))
+          agentSigningLink = agentSigningLink || resolveSignerLinkByRole(linkResult?.signers, 'agent', agentRecipientEmail)
           sellerSigningLink = sellerSigningLink || resolveSellerSignerLink(linkResult?.signers, sellerEmail)
         } catch (linkError) {
           console.warn('[MANDATE] unable to prepare signer link; continuing with client portal selling link', linkError)
         }
 
-        if (!sellerSigningLink && supabase) {
+        if ((!sellerSigningLink || !agentSigningLink) && supabase) {
           try {
             const signerLookup = await supabase
               .from('document_packet_signers')
-              .select('signing_token, signer_role, signer_email')
+              .select('signing_token, signer_role, signer_email, status')
               .eq('packet_id', mandatePacketId)
-              .eq('signer_role', 'seller')
               .order('created_at', { ascending: true })
 
             if (!signerLookup.error) {
               const normalizedSellerEmail = sellerEmail.toLowerCase()
+              const normalizedAgentEmail = agentRecipientEmail.toLowerCase()
               const signerRows = Array.isArray(signerLookup.data) ? signerLookup.data : []
-              const matchedSigner =
-                signerRows.find(
-                  (row) => normalizeText(row?.signer_email).toLowerCase() === normalizedSellerEmail && normalizeText(row?.signing_token),
-                ) ||
-                signerRows.find((row) => normalizeText(row?.signing_token)) ||
-                null
-              const signerToken = normalizeText(matchedSigner?.signing_token)
-              if (signerToken) {
-                const origin =
-                  (typeof window !== 'undefined' && window.location?.origin)
-                    ? window.location.origin
-                    : 'https://app.bridgenine.co.za'
-                sellerSigningLink = `${origin}/sign/${signerToken}`
+              const origin =
+                (typeof window !== 'undefined' && window.location?.origin)
+                  ? window.location.origin
+                  : 'https://app.bridgenine.co.za'
+              if (!sellerSigningLink) {
+                const matchedSeller =
+                  signerRows.find(
+                    (row) =>
+                      normalizeText(row?.signer_role).toLowerCase() === 'seller' &&
+                      normalizeText(row?.signer_email).toLowerCase() === normalizedSellerEmail &&
+                      normalizeText(row?.signing_token),
+                  ) ||
+                  signerRows.find((row) => normalizeText(row?.signer_role).toLowerCase() === 'seller' && normalizeText(row?.signing_token)) ||
+                  null
+                const signerToken = normalizeText(matchedSeller?.signing_token)
+                if (signerToken) sellerSigningLink = `${origin}/sign/${signerToken}`
+              }
+              if (!agentSigningLink) {
+                const matchedAgent =
+                  signerRows.find(
+                    (row) =>
+                      normalizeText(row?.signer_role).toLowerCase() === 'agent' &&
+                      normalizeText(row?.signer_email).toLowerCase() === normalizedAgentEmail &&
+                      normalizeText(row?.signing_token),
+                  ) ||
+                  signerRows.find((row) => normalizeText(row?.signer_role).toLowerCase() === 'agent' && normalizeText(row?.signing_token)) ||
+                  null
+                const signerToken = normalizeText(matchedAgent?.signing_token)
+                if (signerToken) agentSigningLink = `${origin}/sign/${signerToken}`
               }
             }
           } catch (signerLookupError) {
@@ -6116,22 +6145,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }
       }
 
-      const outboundMandateLink = agentSigningLink || sellerSigningLink || sellerMandatePortalLink
-      if (!agentSigningLink) {
-        setError('Agent signing link could not be generated yet. Confirm the assigned agent has an email address, then click Generate Mandate and Send Mandate again.')
+      const shouldSendToSeller = finalMandateStatus === 'sent_to_seller' || (!agentSigningLink && agentAlreadySigned && sellerSigningLink)
+      const outboundMandateLink = shouldSendToSeller
+        ? (sellerSigningLink || sellerMandatePortalLink)
+        : (agentSigningLink || sellerSigningLink || sellerMandatePortalLink)
+      const recipientRole = shouldSendToSeller ? 'seller' : 'agent'
+      const recipientEmail = recipientRole === 'seller' ? sellerEmail : agentRecipientEmail
+      const recipientName = recipientRole === 'seller' ? sellerName : agentRecipientName
+      const requiredSigningLink = recipientRole === 'seller' ? sellerSigningLink : agentSigningLink
+      if (!requiredSigningLink) {
+        setError(
+          recipientRole === 'seller'
+            ? 'Seller signing link could not be generated yet. Confirm the seller has an email address, then click Generate Mandate and Send Mandate again.'
+            : 'Agent signing link could not be generated yet. Confirm the assigned agent has an email address, then click Generate Mandate and Send Mandate again.',
+        )
         return
       }
 
       if (isSupabaseConfigured) {
         try {
-          const emailResponse = await invokeEdgeFunction('send-email', {
+          const emailResponse = await invokeEdgeFunction('send-mandate-signing-email', {
             body: {
               type: 'seller_mandate_sent',
-              to: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
+              to: recipientEmail,
               organisationId,
               packetId: mandatePacketId,
-              recipientRole: 'agent',
-              recipientName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email),
+              recipientRole,
+              recipientName,
               sellerName,
               propertyTitle,
               mandateType: 'Mandate',
@@ -6139,7 +6179,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               mandateEndDate: '',
               askingPrice: formatCurrency(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
               portalLink: outboundMandateLink,
-              agentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email),
+              agentName: agentRecipientName,
             },
           })
           assertEdgeFunctionSuccess(emailResponse, 'Mandate signing email could not be sent.')
@@ -6155,7 +6195,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         status: 'Mandate Sent',
         mandateStatus: finalMandateStatus,
         mandateSentAt: sentAtIso,
-        mandateSigningLink: agentSigningLink,
+        mandateSigningLink: outboundMandateLink,
       })
       if (onboardingToken) {
         updateSellerWorkflowRecordByToken(onboardingToken, (row) => ({

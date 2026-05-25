@@ -1494,7 +1494,7 @@ export default function LegalDocumentWorkspacePage() {
         throw linkError
       }
       if (isSupabaseConfigured && recipientEmail) {
-        const emailResponse = await invokeEdgeFunction('send-email', {
+        const emailResponse = await invokeEdgeFunction('send-mandate-signing-email', {
           body: {
             type: 'seller_mandate_sent',
             to: recipientEmail,
