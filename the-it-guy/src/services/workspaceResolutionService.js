@@ -100,6 +100,7 @@ function normalizeOrganisationRow(row = null, fallback = {}) {
   return {
     id: row.id,
     type,
+    workspaceKind: normalizeText(row.workspace_kind || row.workspaceKind),
     name: normalizeText(row.display_name || row.name) || 'Workspace',
     legalName: normalizeText(row.legal_name || row.name),
     email: normalizeEmail(row.company_email || row.support_email),
@@ -665,8 +666,15 @@ async function fetchOrganisationRows(client, organisationIds = []) {
 
   let query = await client
     .from('organisations')
-    .select('id, name, display_name, company_email, company_phone, support_email, support_phone, legal_name, type')
+    .select('id, name, display_name, company_email, company_phone, support_email, support_phone, legal_name, type, workspace_kind')
     .in('id', ids)
+
+  if (query.error && isMissingColumnError(query.error, 'workspace_kind')) {
+    query = await client
+      .from('organisations')
+      .select('id, name, display_name, company_email, company_phone, support_email, support_phone, legal_name, type')
+      .in('id', ids)
+  }
 
   if (query.error && isMissingColumnError(query.error, 'type')) {
     query = await client

@@ -5,7 +5,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  ALLOWED_ORGANISATION_USER_ROLE_VALUES,
   buildFixturePlan,
+  mapCanonicalBondWorkspaceRoleToLegacyOrganisationUserRole,
   prepareRowsForUpsert,
   runSeeder,
   writeFixtureMetadata,
@@ -21,6 +23,14 @@ import {
 import { buildRuntimeChecklistReport } from './bond-rls-phase5h-runtime-smoke-checklist.mjs'
 
 const DEFAULT_AUTH_STATE_PATH = '/tmp/bond-runtime-auth-state.json'
+
+function escapeRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function getFixtureUserByRole(report, roleKey) {
+  return (report.users || []).find((item) => item.roleKey === roleKey) || null
+}
 
 function createMockSession({ email, userId, expiresAtUnix }) {
   return {
@@ -46,8 +56,12 @@ function createMockSession({ email, userId, expiresAtUnix }) {
   }
 }
 
-function createMockApplyAdapter({ includeAllUsers = false } = {}) {
+function createMockApplyAdapter({ missingEmails = [] } = {}) {
+  const normalizedMissingEmails = new Set(missingEmails.map((email) => String(email || '').trim().toLowerCase()))
+  const writes = []
+
   return {
+    writes,
     async getTableColumns(table) {
       if (table === 'organisations') {
         return ['id', 'name', 'display_name', 'slug', 'type', 'workspace_type', 'workspace_kind', 'metadata']
@@ -57,13 +71,18 @@ function createMockApplyAdapter({ includeAllUsers = false } = {}) {
     async lookupUsersByEmails(emails = []) {
       return new Map(
         emails
-          .filter((email) => includeAllUsers || (!email.includes('+participant@') && !email.includes('+unrelated@')))
+          .map((email) => String(email || '').trim().toLowerCase())
+          .filter((email) => !normalizedMissingEmails.has(email))
           .map((email, index) => [email, { id: `auth-user-${index + 1}`, email }]),
       )
     },
-    async upsertRows(_table, rows = []) {
+    async upsertRows(table, rows = []) {
+      writes.push({
+        table,
+        rows: rows.map((row) => ({ ...row })),
+      })
       return {
-        data: rows.map((row) => ({ id: row.id || `${_table}-id` })),
+        data: rows.map((row) => ({ id: row.id || `${table}-id` })),
         skippedColumns: [],
       }
     },
@@ -130,6 +149,134 @@ test('apply metadata reports applied true only after real write path', async () 
   assert.equal(report.target, 'staging')
   assert.equal(report.applyReason, null)
   assert.ok(report.createdOrUpdated.organisations.rowCount >= 2)
+})
+
+test('canonical Bond workspace roles map to allowed organisation_users.role values', () => {
+  const expectedMappings = {
+    owner: 'admin',
+    director: 'admin',
+    hq_manager: 'admin',
+    regional_manager: 'admin',
+    branch_manager: 'branch_manager',
+    team_lead: 'branch_manager',
+    consultant: 'bond_originator',
+    processor: 'bond_originator',
+    compliance: 'bond_originator',
+    admin_staff: 'admin',
+  }
+
+  for (const [workspaceRole, legacyRole] of Object.entries(expectedMappings)) {
+    assert.equal(mapCanonicalBondWorkspaceRoleToLegacyOrganisationUserRole(workspaceRole), legacyRole)
+    assert.ok(ALLOWED_ORGANISATION_USER_ROLE_VALUES.includes(legacyRole))
+  }
+
+  assert.equal(mapCanonicalBondWorkspaceRoleToLegacyOrganisationUserRole('bond_originator'), 'bond_originator')
+  assert.equal(mapCanonicalBondWorkspaceRoleToLegacyOrganisationUserRole('admin'), 'admin')
+  assert.throws(
+    () => mapCanonicalBondWorkspaceRoleToLegacyOrganisationUserRole('not_a_real_role'),
+    /cannot map workspace role/i,
+  )
+})
+
+test('organisation_users writes only allowed legacy role values while preserving canonical role fields', async () => {
+  const adapter = createMockApplyAdapter()
+  const { report } = await runSeeder(
+    {
+      BOND_RUNTIME_FIXTURE_APPLY: 'true',
+      BOND_RUNTIME_FIXTURE_TARGET: 'staging',
+      SUPABASE_URL: `https://${STAGING_PROJECT_REF}.supabase.co`,
+      SUPABASE_SERVICE_ROLE_KEY: 'service-role-placeholder',
+    },
+    {
+      adapter,
+      applyConfig: {
+        supabaseUrl: `https://${STAGING_PROJECT_REF}.supabase.co`,
+        serviceRoleKey: 'service-role-placeholder',
+        projectRef: STAGING_PROJECT_REF,
+        target: 'staging',
+      },
+    },
+  )
+
+  const membershipWrite = adapter.writes.find((entry) => entry.table === 'organisation_users')
+  assert.ok(membershipWrite)
+  assert.equal(membershipWrite.rows.length, report.createdOrUpdated.organisationUsers.rowCount)
+
+  for (const row of membershipWrite.rows) {
+    assert.ok(ALLOWED_ORGANISATION_USER_ROLE_VALUES.includes(row.role))
+    assert.ok(row.workspace_role)
+    assert.equal(row.organisation_role, row.workspace_role)
+    assert.equal(Object.prototype.hasOwnProperty.call(row, 'branch_id'), false)
+    assert.equal(Object.prototype.hasOwnProperty.call(row, 'primary_branch_id'), false)
+    assert.equal(Object.prototype.hasOwnProperty.call(row, 'branch_scope'), false)
+    assert.equal(typeof row.scope_metadata?.canonical_workspace_role, 'string')
+    assert.equal(typeof row.scope_metadata?.legacy_membership_role, 'string')
+    assert.equal(row.scope_metadata.legacy_membership_role, row.role)
+    assert.equal(row.scope_metadata.organisation_branch_id, null)
+    assert.equal(row.scope_metadata.organisation_branch_linked, false)
+  }
+
+  const ownerRow = membershipWrite.rows.find((row) => row.workspace_role === 'owner')
+  assert.ok(ownerRow)
+  assert.equal(ownerRow.role, 'admin')
+
+  const branchManagerRow = membershipWrite.rows.find((row) => row.workspace_role === 'branch_manager')
+  assert.ok(branchManagerRow)
+  assert.equal(branchManagerRow.role, 'branch_manager')
+  assert.ok(branchManagerRow.workspace_unit_id)
+  assert.equal(Object.prototype.hasOwnProperty.call(branchManagerRow, 'branch_id'), false)
+
+  const processorRow = membershipWrite.rows.find((row) => row.workspace_role === 'processor')
+  assert.ok(processorRow)
+  assert.equal(processorRow.role, 'bond_originator')
+  assert.ok(processorRow.workspace_unit_id)
+
+  const branchScopedUser = membershipWrite.rows.find((row) => row.workspace_role === 'consultant')
+  assert.ok(branchScopedUser)
+  assert.ok(branchScopedUser.workspace_unit_id)
+
+  const regionalManagerRow = membershipWrite.rows.find((row) => row.workspace_role === 'regional_manager')
+  assert.ok(regionalManagerRow)
+  assert.ok(regionalManagerRow.region_id)
+  assert.equal(regionalManagerRow.workspace_unit_id, null)
+
+  const personalOriginatorRow = membershipWrite.rows.find((row) => row.workspace_role === 'owner' && row.organisation_id !== ownerRow.organisation_id)
+  assert.ok(personalOriginatorRow)
+  assert.equal(personalOriginatorRow.workspace_unit_id, null)
+  assert.equal(Object.prototype.hasOwnProperty.call(personalOriginatorRow, 'branch_id'), false)
+})
+
+test('apply hard-fails before document_requests when a required fixture user is missing', async () => {
+  const consultantUser = getFixtureUserByRole(buildFixturePlan({}), 'consultant')
+  assert.ok(consultantUser?.email)
+  const adapter = createMockApplyAdapter({
+    missingEmails: [consultantUser.email],
+  })
+
+  await assert.rejects(
+    () =>
+      runSeeder(
+        {
+          BOND_RUNTIME_FIXTURE_APPLY: 'true',
+          BOND_RUNTIME_FIXTURE_TARGET: 'staging',
+          SUPABASE_URL: `https://${STAGING_PROJECT_REF}.supabase.co`,
+          SUPABASE_SERVICE_ROLE_KEY: 'service-role-placeholder',
+        },
+        {
+          adapter,
+          applyConfig: {
+            supabaseUrl: `https://${STAGING_PROJECT_REF}.supabase.co`,
+            serviceRoleKey: 'service-role-placeholder',
+            projectRef: STAGING_PROJECT_REF,
+            target: 'staging',
+          },
+        },
+      ),
+    new RegExp(`Missing required Bond runtime users:\\n- consultant: ${escapeRegExp(consultantUser.email)}`),
+  )
+
+  assert.equal(adapter.writes.some((entry) => entry.table === 'document_requests'), false)
+  assert.equal(adapter.writes.length, 0)
 })
 
 test('bond company hierarchy, all roles, and all runtime scenarios are represented', () => {
@@ -261,8 +408,15 @@ test('auth bootstrap rejects attorney fixture, missing credentials, and users no
 
 test('runtime checklist blocks dry-run metadata, fake auth, and requires applied fixture metadata', async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bond-runtime-phase5h-'))
+  const fixturePlan = buildFixturePlan({})
+  const consultantUser = getFixtureUserByRole(fixturePlan, 'consultant')
+  const participantOnlyUser = getFixtureUserByRole(fixturePlan, 'participant_only')
+  const unrelatedUser = getFixtureUserByRole(fixturePlan, 'unrelated_user')
+  assert.ok(consultantUser?.email)
+  assert.ok(participantOnlyUser?.email)
+  assert.ok(unrelatedUser?.email)
   const dryRunMetadataPath = path.join(tmpDir, 'dry-run.json')
-  writeFixtureMetadata(buildFixturePlan({ BOND_RUNTIME_FIXTURE_METADATA: dryRunMetadataPath }), dryRunMetadataPath)
+  writeFixtureMetadata({ ...fixturePlan, metadataPath: dryRunMetadataPath }, dryRunMetadataPath)
 
   const dryRunReport = buildRuntimeChecklistReport({
     metadataPath: dryRunMetadataPath,
@@ -271,25 +425,26 @@ test('runtime checklist blocks dry-run metadata, fake auth, and requires applied
   assert.equal(dryRunReport.runtimeReady, false)
   assert.equal(dryRunReport.blocked, 'fixture_not_applied')
 
-  const { report: appliedReport } = await runSeeder(
-    {
-      BOND_RUNTIME_FIXTURE_APPLY: 'true',
-      BOND_RUNTIME_FIXTURE_TARGET: 'staging',
-      SUPABASE_URL: `https://${STAGING_PROJECT_REF}.supabase.co`,
-      SUPABASE_SERVICE_ROLE_KEY: 'service-role-placeholder',
-      BOND_RUNTIME_FIXTURE_METADATA: path.join(tmpDir, 'applied.json'),
-    },
-    {
-      adapter: createMockApplyAdapter(),
-      applyConfig: {
-        supabaseUrl: `https://${STAGING_PROJECT_REF}.supabase.co`,
-        serviceRoleKey: 'service-role-placeholder',
-        projectRef: STAGING_PROJECT_REF,
-        target: 'staging',
-      },
-    },
-  )
   const appliedMetadataPath = path.join(tmpDir, 'applied.json')
+  const appliedReport = {
+    ...fixturePlan,
+    metadataPath: appliedMetadataPath,
+    executionMode: 'apply',
+    applied: true,
+    applyReason: null,
+    missingAuthUsers: [
+      {
+        role: 'participant_only',
+        email: participantOnlyUser.email,
+        requiredForRuntimeSmoke: true,
+      },
+      {
+        role: 'unrelated_user',
+        email: unrelatedUser.email,
+        requiredForRuntimeSmoke: true,
+      },
+    ],
+  }
   writeFixtureMetadata(appliedReport, appliedMetadataPath)
 
   const fakeAuthPath = path.join(tmpDir, 'fake-auth.json')
@@ -299,7 +454,7 @@ test('runtime checklist blocks dry-run metadata, fake auth, and requires applied
       buildBondRuntimeStorageState({
         projectRef: STAGING_PROJECT_REF,
         session: createMockSession({
-          email: 'bond-runtime+consultant@bridgenine.co.za',
+          email: consultantUser.email,
           userId: 'auth-user-1',
           expiresAtUnix: Math.floor(Date.now() / 1000) + 3600,
         }),
@@ -325,7 +480,7 @@ test('runtime checklist blocks dry-run metadata, fake auth, and requires applied
       BOND_RUNTIME_FIXTURE_METADATA: path.join(tmpDir, 'fully-hydrated.json'),
     },
     {
-      adapter: createMockApplyAdapter({ includeAllUsers: true }),
+      adapter: createMockApplyAdapter(),
       applyConfig: {
         supabaseUrl: `https://${STAGING_PROJECT_REF}.supabase.co`,
         serviceRoleKey: 'service-role-placeholder',
@@ -336,6 +491,9 @@ test('runtime checklist blocks dry-run metadata, fake auth, and requires applied
   )
   const fullyHydratedMetadataPath = path.join(tmpDir, 'fully-hydrated.json')
   writeFixtureMetadata(fullyHydratedReport, fullyHydratedMetadataPath)
+  const hydratedConsultant = getFixtureUserByRole(fullyHydratedReport, 'consultant')
+  assert.ok(hydratedConsultant?.email)
+  assert.ok(fullyHydratedReport.resolvedUserIds.consultant)
 
   const fakeAuthAgainstHydratedReport = buildRuntimeChecklistReport({
     metadataPath: fullyHydratedMetadataPath,
@@ -351,15 +509,15 @@ test('runtime checklist blocks dry-run metadata, fake auth, and requires applied
       buildBondRuntimeStorageState({
         projectRef: STAGING_PROJECT_REF,
         session: createMockSession({
-          email: 'bond-runtime+consultant@bridgenine.co.za',
-          userId: 'auth-user-1',
+          email: hydratedConsultant.email,
+          userId: fullyHydratedReport.resolvedUserIds.consultant,
           expiresAtUnix: Math.floor(Date.now() / 1000) + 3600,
         }),
         meta: {
           source: 'real_staging_auth_bootstrap',
           fixtureNamespace: BOND_RUNTIME_FIXTURE_NAMESPACE,
           generatedAt: new Date().toISOString(),
-          email: 'bond-runtime+consultant@bridgenine.co.za',
+          email: hydratedConsultant.email,
           stagingVerified: true,
         },
       }),

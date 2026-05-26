@@ -16,6 +16,31 @@ const DEFAULT_REGION_NAME = 'Gauteng Region'
 const DEFAULT_BRANCH_NAME = 'Sandton Branch'
 const DEFAULT_TEAM_NAME = 'Processing Team A'
 
+export const ALLOWED_ORGANISATION_USER_ROLE_VALUES = [
+  'super_admin',
+  'principal',
+  'admin',
+  'branch_manager',
+  'developer',
+  'agent',
+  'attorney',
+  'bond_originator',
+  'viewer',
+]
+
+const CANONICAL_BOND_WORKSPACE_ROLE_TO_ORGANISATION_USER_ROLE = {
+  owner: 'admin',
+  director: 'admin',
+  hq_manager: 'admin',
+  regional_manager: 'admin',
+  branch_manager: 'branch_manager',
+  team_lead: 'branch_manager',
+  consultant: 'bond_originator',
+  processor: 'bond_originator',
+  compliance: 'bond_originator',
+  admin_staff: 'admin',
+}
+
 const REQUIRED_APPLICATION_KEYS = [
   'canonical_consultant_assigned',
   'canonical_processor_assigned',
@@ -257,6 +282,113 @@ function unique(values = []) {
 
 function deepClone(value) {
   return JSON.parse(JSON.stringify(value))
+}
+
+export function mapCanonicalBondWorkspaceRoleToLegacyOrganisationUserRole(workspaceRole = '') {
+  const normalizedRole = normalizeText(workspaceRole).toLowerCase()
+  if (!normalizedRole) {
+    throw new Error('Bond runtime membership rows require a workspace role before mapping organisation_users.role.')
+  }
+
+  if (ALLOWED_ORGANISATION_USER_ROLE_VALUES.includes(normalizedRole)) {
+    return normalizedRole
+  }
+
+  const mappedRole = CANONICAL_BOND_WORKSPACE_ROLE_TO_ORGANISATION_USER_ROLE[normalizedRole]
+  if (mappedRole && ALLOWED_ORGANISATION_USER_ROLE_VALUES.includes(mappedRole)) {
+    return mappedRole
+  }
+
+  throw new Error(`Bond runtime fixture cannot map workspace role "${workspaceRole}" to an allowed organisation_users.role value.`)
+}
+
+function formatMissingRequiredUsers(missingUsers = []) {
+  return [
+    'Missing required Bond runtime users:',
+    ...missingUsers
+      .map((item) => ({
+        role: normalizeText(item.role),
+        email: normalizeEmail(item.email),
+      }))
+      .sort((left, right) => left.role.localeCompare(right.role) || left.email.localeCompare(right.email))
+      .map((item) => `- ${item.role}: ${item.email}`),
+  ].join('\n')
+}
+
+function buildKnownUserIdSet(users = []) {
+  return new Set(
+    users
+      .map((user) => normalizeText(user?.userId))
+      .filter(Boolean),
+  )
+}
+
+function assertRequiredRuntimeUsersPresent(plan) {
+  const missingUsers = (plan.missingAuthUsers || []).filter((item) => item?.requiredForRuntimeSmoke)
+  if (missingUsers.length) {
+    throw new Error(formatMissingRequiredUsers(missingUsers))
+  }
+}
+
+function assertSupportingRowsUseVerifiedUserIds(plan) {
+  const verifiedUserIds = buildKnownUserIdSet(plan.users)
+  const violations = []
+
+  const requiredUserFields = [
+    {
+      table: 'document_requests',
+      field: 'created_by',
+      rows: plan._raw.supporting.documentRequests,
+      label: (row) => row.id || row.transaction_id || 'unknown-row',
+    },
+    {
+      table: 'documents',
+      field: 'uploaded_by_user_id',
+      rows: plan._raw.supporting.documents,
+      label: (row) => row.id || row.transaction_id || 'unknown-row',
+    },
+    {
+      table: 'transaction_events',
+      field: 'created_by',
+      rows: plan._raw.supporting.transactionEvents,
+      label: (row) => row.id || row.transaction_id || 'unknown-row',
+    },
+    {
+      table: 'transaction_notifications',
+      field: 'user_id',
+      rows: plan._raw.supporting.transactionNotifications,
+      label: (row) => row.id || row.transaction_id || 'unknown-row',
+    },
+    {
+      table: 'transaction_participants',
+      field: 'user_id',
+      rows: plan._raw.supporting.transactionParticipants,
+      label: (row) => row.id || row.transaction_id || 'unknown-row',
+    },
+    {
+      table: 'transaction_role_players',
+      field: 'user_id',
+      rows: plan._raw.supporting.transactionRolePlayers,
+      label: (row) => row.id || row.transaction_id || 'unknown-row',
+    },
+  ]
+
+  for (const requirement of requiredUserFields) {
+    for (const row of requirement.rows || []) {
+      const userId = normalizeText(row?.[requirement.field])
+      if (!userId) {
+        violations.push(`${requirement.table}.${requirement.field} missing for ${requirement.label(row)}`)
+        continue
+      }
+      if (!verifiedUserIds.has(userId)) {
+        violations.push(`${requirement.table}.${requirement.field} is not a verified fixture user for ${requirement.label(row)}: ${userId}`)
+      }
+    }
+  }
+
+  if (violations.length) {
+    throw new Error(`Bond runtime supporting rows require verified fixture user ids:\n${violations.join('\n')}`)
+  }
 }
 
 export function prepareRowsForUpsert(table, rows = [], { knownColumns = null } = {}) {
@@ -683,6 +815,7 @@ function createApplicationSpecs(hierarchy, usersByRole) {
     const manager = spec.managerRoleKey ? usersByRole.get(spec.managerRoleKey) : null
     const compliance = spec.complianceRoleKey ? usersByRole.get(spec.complianceRoleKey) : null
     const participant = spec.participantOnlyRoleKey ? usersByRole.get(spec.participantOnlyRoleKey) : null
+    const consultantFallback = usersByRole.get('consultant') || null
 
     return {
       id: deterministicUuid(`transaction:${spec.applicationKey}`),
@@ -692,9 +825,10 @@ function createApplicationSpecs(hierarchy, usersByRole) {
       ...spec,
       consultantEmail: consultant?.email || null,
       participantEmail: participant?.email || null,
-      assignedBondOriginatorEmail: spec.legacyOnly ? consultant?.email || usersByRole.get('consultant')?.email || null : consultant?.email || null,
-      bondOriginatorName: spec.legacyOnly ? consultant?.displayName || usersByRole.get('consultant')?.displayName || 'Bond Runtime Consultant' : consultant?.displayName || null,
-      primaryBondConsultantUserId: consultant?.userId || null,
+      participantUserId: participant?.userId || null,
+      assignedBondOriginatorEmail: spec.legacyOnly ? consultant?.email || consultantFallback?.email || null : consultant?.email || null,
+      bondOriginatorName: spec.legacyOnly ? consultant?.displayName || consultantFallback?.displayName || 'Bond Runtime Consultant' : consultant?.displayName || null,
+      primaryBondConsultantUserId: spec.legacyOnly ? consultant?.userId || consultantFallback?.userId || null : consultant?.userId || null,
       assignedBondProcessorUserId: processor?.userId || null,
       assignedBondManagerUserId: manager?.userId || null,
       assignedBondComplianceUserId: compliance?.userId || null,
@@ -876,7 +1010,7 @@ function createSupportingRecordPlan(applications) {
         legal_role: 'none',
         participant_email: application.participantEmail,
         participant_name: 'Bond Runtime Participant',
-        user_id: null,
+        user_id: application.participantUserId,
         status: 'active',
         removed_at: null,
         metadata: buildFixtureManagedMetadata({ application_key: application.applicationKey, participant_only: true }),
@@ -940,7 +1074,7 @@ export function buildFixturePlan(inputEnv = {}) {
   const supporting = createSupportingRecordPlan(applications)
 
   return {
-    phase: '5H-Fix-2',
+    phase: '5H-Fix-4',
     fixtureNamespace: BOND_RUNTIME_FIXTURE_NAMESPACE,
     fixturePhase: BOND_RUNTIME_FIXTURE_PHASE,
     executionMode,
@@ -1257,6 +1391,25 @@ function buildWorkspaceUnitRows(plan) {
   ]
 }
 
+function resolveOrganisationBranchMembershipFields(user, plan) {
+  const explicitOrganisationBranchId = normalizeText(
+    user.organisationBranchId ||
+      user.branchId ||
+      plan?._raw?.resolvedOrganisationBranchIds?.[user.roleKey] ||
+      '',
+  )
+
+  if (!explicitOrganisationBranchId) {
+    return {}
+  }
+
+  return {
+    branch_id: explicitOrganisationBranchId,
+    primary_branch_id: explicitOrganisationBranchId,
+    branch_scope: 'branch',
+  }
+}
+
 function buildMembershipRows(plan) {
   return plan.users
     .filter((user) => user.membershipEnabled && user.userId && user.workspaceId)
@@ -1264,19 +1417,17 @@ function buildMembershipRows(plan) {
       const nameParts = user.displayName.split(' ')
       const firstName = nameParts.shift() || user.displayName
       const lastName = nameParts.join(' ') || null
-      const branchId =
-        user.scopeLevel === 'branch' ? user.workspaceUnitId : user.scopeLevel === 'team' ? plan._raw.hierarchy.branch.id : null
+      const legacyMembershipRole = mapCanonicalBondWorkspaceRoleToLegacyOrganisationUserRole(user.workspaceRole)
+      const organisationBranchFields = resolveOrganisationBranchMembershipFields(user, plan)
 
       return {
         organisation_id: user.workspaceId,
         user_id: user.userId,
-        branch_id: branchId,
-        primary_branch_id: branchId,
-        branch_scope: branchId ? 'branch' : null,
+        ...organisationBranchFields,
         first_name: firstName,
         last_name: lastName,
         email: user.email,
-        role: user.workspaceRole,
+        role: legacyMembershipRole,
         workspace_role: user.workspaceRole,
         organisation_role: user.workspaceRole,
         app_role: 'bond_originator',
@@ -1285,7 +1436,13 @@ function buildMembershipRows(plan) {
         scope_level: user.scopeLevel,
         region_id: user.regionId,
         workspace_unit_id: user.workspaceUnitId,
-        scope_metadata: buildFixtureManagedMetadata({ role_key: user.roleKey }),
+        scope_metadata: buildFixtureManagedMetadata({
+          role_key: user.roleKey,
+          canonical_workspace_role: user.workspaceRole,
+          legacy_membership_role: legacyMembershipRole,
+          organisation_branch_id: organisationBranchFields.branch_id || null,
+          organisation_branch_linked: Boolean(organisationBranchFields.branch_id),
+        }),
         is_primary_owner: Boolean(user.isPrimaryOwner),
         active_workspace_selected_at: nowIso(),
         invited_at: nowIso(),
@@ -1413,6 +1570,8 @@ async function performRealApply(plan, adapter) {
   const authUserMap = await adapter.lookupUsersByEmails(plan.users.map((user) => user.email))
   const hydrated = hydrateResolvedUsers(plan, authUserMap)
 
+  assertRequiredRuntimeUsersPresent(hydrated)
+
   await applyCount(hydrated, 'organisations', 'organisations', buildOrganisationRows(hydrated), adapter, { onConflict: 'id' })
   await applyCount(hydrated, 'workspaceRegions', 'workspace_regions', buildWorkspaceRegionRows(hydrated), adapter, { onConflict: 'id' })
   await applyCount(hydrated, 'workspaceUnits', 'workspace_units', buildWorkspaceUnitRows(hydrated), adapter, { onConflict: 'id' })
@@ -1449,11 +1608,11 @@ async function performRealApply(plan, adapter) {
   await applyCount(hydrated, 'transactionFinanceDetails', 'transaction_finance_details', hydrated._raw.supporting.transactionFinanceDetails, adapter, {
     onConflict: 'transaction_id',
   })
+  hydrated._raw.supporting.transactionNotifications = buildNotificationRows(hydrated)
+  assertSupportingRowsUseVerifiedUserIds(hydrated)
   await applyCount(hydrated, 'documentRequests', 'document_requests', hydrated._raw.supporting.documentRequests, adapter, { onConflict: 'id' })
   await applyCount(hydrated, 'documents', 'documents', hydrated._raw.supporting.documents, adapter, { onConflict: 'id' })
   await applyCount(hydrated, 'transactionEvents', 'transaction_events', hydrated._raw.supporting.transactionEvents, adapter, { onConflict: 'id' })
-
-  hydrated._raw.supporting.transactionNotifications = buildNotificationRows(hydrated)
   await applyCount(
     hydrated,
     'transactionNotifications',

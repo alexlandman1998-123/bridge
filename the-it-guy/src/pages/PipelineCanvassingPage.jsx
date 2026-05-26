@@ -939,64 +939,109 @@ function PipelineCanvassingPage() {
         </div>
 
         <div className="mt-4 overflow-x-auto rounded-[14px] border border-[#e4ebf4]">
-          <table className="min-w-[1080px] w-full text-sm">
+          <table className="w-full min-w-[980px] text-sm">
             <thead className="bg-[#f7faff] text-left text-[0.7rem] uppercase tracking-[0.08em] text-[#6f839a]">
               <tr>
-                <th className="px-3 py-2">Prospect</th>
-                <th className="px-3 py-2">Contact</th>
-                {prospectView === 'buyer' ? (
-                  <>
-                    <th className="px-3 py-2">Budget</th>
-                    <th className="px-3 py-2">Area of Interest</th>
-                  </>
-                ) : (
-                  <>
-                    <th className="px-3 py-2">Property</th>
-                    <th className="px-3 py-2">Estimated Value</th>
-                  </>
-                )}
-                <th className="px-3 py-2">Next Step</th>
-                <th className="px-3 py-2">Assigned Agent</th>
-                <th className="px-3 py-2">Last Activity</th>
-                <th className="px-3 py-2">Actions</th>
+                <th className="w-[30%] px-4 py-3">Prospect</th>
+                <th className="w-[25%] px-4 py-3">{prospectView === 'buyer' ? 'Requirements' : 'Property Profile'}</th>
+                <th className="w-[25%] px-4 py-3">Follow-Up</th>
+                <th className="w-[20%] px-4 py-3">Actions</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-[#e8eef5] bg-white">
               {filteredProspects.length ? (
                 filteredProspects.map((prospect) => {
                   const lastActivity = scopedActivities
                     .filter((row) => normalizeText(row?.prospectId) === normalizeText(prospect?.id))
                     .sort((a, b) => new Date(b?.activityDate || b?.createdAt || 0) - new Date(a?.activityDate || a?.createdAt || 0))[0]
+                  const displayName = getProspectDisplayName(prospect)
+                  const profileSummary = prospectView === 'buyer'
+                    ? prospect.propertyType || 'Requirement type pending'
+                    : prospect.propertyType || 'Property type pending'
+                  const profileDetail = prospect.area || (prospectView === 'buyer' ? 'Area of interest not set' : 'Property area not set')
+                  const valueLabel = formatCurrency(prospect.estimatedValue)
+                  const followUpLabel = prospect.followUpNote || 'Follow up with prospect'
+                  const followUpDateLabel = prospect.nextFollowUpDate ? formatDate(prospect.nextFollowUpDate) : 'No follow-up date set'
+                  const assignedAgentLabel = prospect.assignedAgentName || prospect.assignedAgentEmail || 'Unassigned'
 
                   return (
                     <tr
                       key={prospect.id}
-                      className="cursor-pointer border-t border-[#e8eef5] text-[#2d4560] transition hover:bg-[#f8fbff]"
+                      className="cursor-pointer text-[#2d4560] transition hover:bg-[#f8fbff]"
                       onClick={() => handleOpenProspectDetail(prospect)}
                     >
-                      <td className="px-3 py-2">
-                        <p className="font-medium text-[#2d4560]">{[prospect.firstName, prospect.lastName].filter(Boolean).join(' ') || 'Prospect'}</p>
-                        <p className="text-xs text-[#6f839c]">{prospect.prospectType || 'Prospect'}</p>
+                      <td className="px-4 py-4 align-top">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[linear-gradient(135deg,#8b5cf6,#1f4f78)] text-sm font-bold text-white shadow-[0_10px_24px_rgba(31,79,120,0.18)]">
+                            {getProspectInitials(prospect)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="break-words text-[0.96rem] font-semibold text-[#2d4560]">{displayName}</p>
+                              <span className={`rounded-full border px-2.5 py-1 text-[0.64rem] font-semibold ${getStatusPillClass(prospect.status)}`}>
+                                {prospect.status || 'New'}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs font-medium text-[#6f839c]">{prospect.prospectType || 'Prospect'}</p>
+                            <div className="mt-2 grid gap-1 text-[0.8rem] text-[#60758b]">
+                              <span className="flex min-w-0 items-center gap-1.5">
+                                <Phone size={12} className="shrink-0 text-[#90a0b4]" />
+                                <span className="min-w-0 break-all">{prospect.phone || 'No phone'}</span>
+                              </span>
+                              <span className="flex min-w-0 items-center gap-1.5">
+                                <Mail size={12} className="shrink-0 text-[#90a0b4]" />
+                                <span className="min-w-0 break-all">{prospect.email || 'No email'}</span>
+                              </span>
+                            </div>
+                            <p className="mt-2 text-[0.72rem] font-medium text-[#90a0b4]">
+                              {prospect.canvassingMethod || 'Other'} • Added {formatDate(prospect.createdAt)}
+                            </p>
+                          </div>
+                        </div>
                       </td>
-                      <td className="px-3 py-2">
-                        <p>{prospect.phone || '—'}</p>
-                        <p className="text-xs text-[#6f839c]">{prospect.email || 'No email'}</p>
+                      <td className="px-4 py-4 align-top">
+                        <div className="grid gap-3">
+                          <div className="rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-2.5">
+                            <p className="text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-[#8a9ab0]">
+                              {prospectView === 'buyer' ? 'Budget' : 'Estimated value'}
+                            </p>
+                            <p className="mt-1 text-[0.92rem] font-semibold text-[#1f4f78]">{valueLabel}</p>
+                          </div>
+                          <div>
+                            <p className="text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-[#8a9ab0]">
+                              {prospectView === 'buyer' ? 'Search brief' : 'Property profile'}
+                            </p>
+                            <p className="mt-1 break-words text-[0.88rem] font-semibold text-[#2d4560]">{profileSummary}</p>
+                            <p className="mt-1 break-words text-[0.8rem] text-[#60758b]">{profileDetail}</p>
+                          </div>
+                        </div>
                       </td>
-                      {prospectView === 'buyer' ? (
-                        <>
-                          <td className="px-3 py-2">{formatCurrency(prospect.estimatedValue)}</td>
-                          <td className="px-3 py-2">{prospect.area || 'Not set'}</td>
-                        </>
-                      ) : (
-                        <>
-                          <td className="px-3 py-2">{prospect.propertyType || prospect.area || 'Property not set'}</td>
-                          <td className="px-3 py-2">{formatCurrency(prospect.estimatedValue)}</td>
-                        </>
-                      )}
-                      <td className="px-3 py-2">{prospect.followUpNote || prospect.nextFollowUpDate || 'Follow up with prospect'}</td>
-                      <td className="px-3 py-2">{prospect.assignedAgentName || prospect.assignedAgentEmail || 'Unassigned'}</td>
-                      <td className="px-3 py-2">{lastActivity ? formatDate(lastActivity.activityDate || lastActivity.createdAt) : 'No activity yet'}</td>
-                      <td className="px-3 py-2">
+                      <td className="px-4 py-4 align-top">
+                        <div className="grid gap-3">
+                          <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3 py-2.5 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+                            <p className="text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-[#8a9ab0]">Next step</p>
+                            <p className="mt-1 break-words text-[0.88rem] font-semibold leading-5 text-[#2d4560]">{followUpLabel}</p>
+                            <p className="mt-1 text-[0.76rem] font-medium text-[#6f839c]">{followUpDateLabel}</p>
+                          </div>
+                          <div className="grid gap-2 text-[0.8rem] text-[#60758b]">
+                            <div className="flex min-w-0 items-start gap-2">
+                              <UserRound size={13} className="mt-0.5 shrink-0 text-[#90a0b4]" />
+                              <div className="min-w-0">
+                                <p className="text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-[#8a9ab0]">Assigned agent</p>
+                                <p className="mt-0.5 break-words font-medium text-[#2d4560]">{assignedAgentLabel}</p>
+                              </div>
+                            </div>
+                            <div className="flex min-w-0 items-start gap-2">
+                              <Clock3 size={13} className="mt-0.5 shrink-0 text-[#90a0b4]" />
+                              <div className="min-w-0">
+                                <p className="text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-[#8a9ab0]">Last activity</p>
+                                <p className="mt-0.5 break-words font-medium text-[#2d4560]">{lastActivity ? formatDate(lastActivity.activityDate || lastActivity.createdAt) : 'No activity yet'}</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 align-top">
                         <div className="flex flex-wrap gap-1" onClick={(event) => event.stopPropagation()}>
                           <button
                             type="button"
@@ -1047,7 +1092,7 @@ function PipelineCanvassingPage() {
                 })
               ) : (
                 <tr>
-                  <td className="px-3 py-6 text-sm text-[#6f839c]" colSpan={8}>
+                  <td className="px-3 py-6 text-sm text-[#6f839c]" colSpan={4}>
                     {prospectView === 'seller'
                       ? 'No seller prospects yet. Add seller canvassing prospects to track valuation and mandate potential.'
                       : 'No buyer prospects yet. Add buyer canvassing prospects to track criteria and conversion readiness.'}

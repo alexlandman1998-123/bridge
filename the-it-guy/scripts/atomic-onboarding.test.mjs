@@ -4,13 +4,17 @@ import { resolve } from 'node:path'
 const root = resolve(import.meta.dirname, '../..')
 const migrationPath = resolve(root, 'supabase/migrations/202605240010_atomic_workspace_onboarding.sql')
 const auditColumnsMigrationPath = resolve(root, 'supabase/migrations/202605240014_organisation_users_onboarding_audit_columns.sql')
+const workspaceKindSyncMigrationPath = resolve(root, 'supabase/migrations/202605260001_sync_workspace_kind_from_settings.sql')
 const settingsApiPath = resolve(root, 'the-it-guy/src/lib/settingsApi.js')
 const workspaceServicePath = resolve(root, 'the-it-guy/src/services/workspaceService.js')
+const workspaceResolutionServicePath = resolve(root, 'the-it-guy/src/services/workspaceResolutionService.js')
 
 const migration = readFileSync(migrationPath, 'utf8')
 const auditColumnsMigration = readFileSync(auditColumnsMigrationPath, 'utf8')
+const workspaceKindSyncMigration = readFileSync(workspaceKindSyncMigrationPath, 'utf8')
 const settingsApi = readFileSync(settingsApiPath, 'utf8')
 const workspaceService = readFileSync(workspaceServicePath, 'utf8')
+const workspaceResolutionService = readFileSync(workspaceResolutionServicePath, 'utf8')
 
 function assert(condition, message) {
   if (!condition) {
@@ -53,6 +57,9 @@ assertIncludes(migration, "onboarding_completed = true", 'profile completion fla
 assertIncludes(auditColumnsMigration, 'invited_by_user_id uuid', 'forward migration for existing databases')
 assertIncludes(auditColumnsMigration, 'last_active_at timestamptz', 'last active audit forward migration')
 assertIncludes(auditColumnsMigration, 'permissions_json jsonb', 'permissions json forward migration')
+assertIncludes(workspaceKindSyncMigration, 'bridge_sync_organisation_workspace_kind', 'workspace kind sync trigger function')
+assertIncludes(workspaceKindSyncMigration, 'organisations_sync_workspace_kind', 'workspace kind sync trigger')
+assertIncludes(workspaceKindSyncMigration, "'bond_company'", 'bond company normalization')
 
 for (const table of requiredTables) {
   assertIncludes(migration, table, `write or reference to ${table}`)
@@ -91,6 +98,9 @@ assertIncludes(workspaceService, "client.rpc('bridge_repair_workspace_onboarding
 assertIncludes(workspaceService, 'resolveCurrentWorkspace(userId', 'repair verifies workspace resolution')
 assertIncludes(workspaceService, 'buildAtomicWorkspaceOnboardingPayload', 'generic atomic workspace payload builder')
 assertIncludes(workspaceService, "client.rpc('bridge_complete_workspace_onboarding'", 'generic organisation setup calls atomic RPC')
+assertIncludes(workspaceService, 'inferWorkspaceKindFromWorkspaceType', 'workspace kind inference import')
+assertIncludes(workspaceService, 'workspace_kind: workspaceKind', 'generic payload writes normalized workspace kind')
+assertIncludes(workspaceResolutionService, 'workspace_kind', 'workspace resolution loads workspace kind')
 
 const createOrganisationMatch = workspaceService.match(/async function createOrganisationWorkspaceFromIntent[\s\S]*?\n}\n\nexport async function validateWorkspaceCompletion/)
 assert(createOrganisationMatch, 'Expected createOrganisationWorkspaceFromIntent in workspaceService.js')

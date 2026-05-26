@@ -4,7 +4,13 @@ import { ONBOARDING_EVENT_TYPES, ONBOARDING_STATUSES, ONBOARDING_STEPS } from '.
 import { normalizeOrgRole, ORG_ROLES } from '../constants/orgRoles'
 import { SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
 import { getDefaultBranchScope, getDefaultBondScope, getWorkspaceUnitLabels, normalizeScopeLevel } from '../constants/workspaceUnits'
-import { WORKSPACE_TYPES, inferWorkspaceTypeFromAppRole, normalizeWorkspaceType } from '../constants/workspaceTypes'
+import {
+  WORKSPACE_TYPES,
+  inferWorkspaceKindFromWorkspaceType,
+  inferWorkspaceTypeFromAppRole,
+  normalizeWorkspaceKind,
+  normalizeWorkspaceType,
+} from '../constants/workspaceTypes'
 import { normalizeSignupIntent } from '../lib/signupIntent'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { assertPermission } from '../auth/permissions/permissionResolver'
@@ -58,6 +64,10 @@ function splitFullName(name = '') {
   return { firstName: parts[0], lastName: parts.slice(1).join(' ') }
 }
 
+function safeObject(value, fallback = {}) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : fallback
+}
+
 function mapOwnerRole(intent) {
   const workspaceType = normalizeWorkspaceType(intent?.workspace_type, inferWorkspaceTypeFromAppRole(intent?.app_role))
   const intended = normalizeOrgRole(intent?.intended_org_role, { appRole: intent?.app_role, workspaceType })
@@ -70,10 +80,18 @@ function mapOwnerRole(intent) {
 
 function buildAtomicWorkspaceOnboardingPayload({ intent, user, form = {} } = {}) {
   const workspaceType = normalizeWorkspaceType(intent.workspace_type)
+  const workspaceKind = normalizeWorkspaceKind(
+    form.workspaceKind || form.workspace_kind,
+    inferWorkspaceKindFromWorkspaceType(workspaceType) || workspaceType,
+  ) || workspaceType
   const name = normalizeText(form.name || form.companyName || form.agencyName || form.firmName || form.businessName)
   const ownerRole = mapOwnerRole(intent)
+  const ownerName = normalizeText(form.ownerFullName || form.primaryContactName || user.user_metadata?.full_name || user.email)
+  const ownerNameParts = splitFullName(ownerName)
   const settings = {
+    ...safeObject(form.settings),
     workspaceType,
+    workspaceKind,
     onboardingPath: intent.onboarding_path,
     workspaceAction: intent.workspace_action,
     profile: {
@@ -92,23 +110,43 @@ function buildAtomicWorkspaceOnboardingPayload({ intent, user, form = {} } = {})
     },
   }
 
-  const branches =
-    [WORKSPACE_TYPES.agency, WORKSPACE_TYPES.attorneyFirm, WORKSPACE_TYPES.bondOriginator].includes(workspaceType)
-      ? [{
-          name: normalizeText(form.mainBranchName || form.defaultTeamName) || getWorkspaceUnitLabels(workspaceType).defaultName,
-          province: normalizeText(form.province),
-          city: normalizeText(form.city || form.operatingArea),
-          location: normalizeText(form.location || form.province || form.operatingArea),
-          phone: normalizeText(form.contactNumber || form.phone),
-          email: normalizeEmail(form.businessEmail || form.email || user.email),
-        }]
+  const defaultBranch = {
+    name: normalizeText(form.mainBranchName || form.defaultTeamName) || getWorkspaceUnitLabels(workspaceType).defaultName,
+    province: normalizeText(form.province),
+    city: normalizeText(form.city || form.operatingArea),
+    location: normalizeText(form.location || form.province || form.operatingArea),
+    phone: normalizeText(form.contactNumber || form.phone || form.ownerPhone),
+    email: normalizeEmail(form.businessEmail || form.email || form.ownerEmail || user.email),
+  }
+  const branches = Array.isArray(form.branches) && form.branches.length
+    ? form.branches
+      .map((branch) => ({
+        name: normalizeText(branch.name || branch.branchName) || defaultBranch.name,
+        province: normalizeText(branch.province) || defaultBranch.province,
+        city: normalizeText(branch.city) || defaultBranch.city,
+        location: normalizeText(branch.location || branch.address || branch.officeLocation) || defaultBranch.location,
+        phone: normalizeText(branch.phone) || defaultBranch.phone,
+        email: normalizeEmail(branch.email) || defaultBranch.email,
+      }))
+      .filter((branch) => branch.name)
+    : [WORKSPACE_TYPES.agency, WORKSPACE_TYPES.attorneyFirm, WORKSPACE_TYPES.bondOriginator].includes(workspaceType)
+      ? [defaultBranch]
       : []
+  const invites = Array.isArray(form.invites)
+    ? form.invites
+      .map((invite) => ({
+        email: normalizeEmail(invite.email || invite.invited_email),
+        workspace_role: normalizeText(invite.workspace_role || invite.organisation_role || invite.role || 'viewer'),
+        name: normalizeText(invite.name),
+      }))
+      .filter((invite) => invite.email)
+    : []
 
   return {
     signup_intent_id: intent.id || null,
-    idempotency_key: `${workspaceType}:${intent.id || user.id}:${name.toLowerCase()}`,
+    idempotency_key: `${workspaceKind}:${intent.id || user.id}:${name.toLowerCase()}`,
     workspace_type: workspaceType,
-    workspace_kind: workspaceType,
+    workspace_kind: workspaceKind,
     workspace_action: SIGNUP_WORKSPACE_ACTIONS.createWorkspace,
     onboarding_path: intent.onboarding_path,
     organisation: {
@@ -126,13 +164,15 @@ function buildAtomicWorkspaceOnboardingPayload({ intent, user, form = {} } = {})
     owner: {
       user_id: user.id,
       workspace_role: ownerRole,
-      full_name: normalizeText(form.primaryContactName || user.user_metadata?.full_name || user.email),
-      email: normalizeEmail(user.email),
-      phone: normalizeText(form.contactNumber || form.phone),
+      first_name: normalizeText(form.ownerFirstName || ownerNameParts.firstName),
+      last_name: normalizeText(form.ownerLastName || ownerNameParts.lastName),
+      full_name: ownerName,
+      email: normalizeEmail(form.ownerEmail || user.email),
+      phone: normalizeText(form.ownerPhone || form.contactNumber || form.phone),
     },
     branches,
     settings,
-    invites: [],
+    invites,
   }
 }
 
@@ -469,11 +509,19 @@ export async function loadWorkspace(workspaceId) {
   const client = requireClient()
   const id = normalizeText(workspaceId)
   if (!id) return null
-  const result = await client
+  let result = await client
     .from('organisations')
-    .select('id, name, display_name, type, legal_name, registration_number, company_email, company_phone, province, city, status, created_by')
+    .select('id, name, display_name, type, workspace_kind, legal_name, registration_number, company_email, company_phone, province, city, status, created_by')
     .eq('id', id)
     .maybeSingle()
+
+  if (result.error && isMissingColumnError(result.error, 'workspace_kind')) {
+    result = await client
+      .from('organisations')
+      .select('id, name, display_name, type, legal_name, registration_number, company_email, company_phone, province, city, status, created_by')
+      .eq('id', id)
+      .maybeSingle()
+  }
 
   if (result.error) throw result.error
   return result.data || null

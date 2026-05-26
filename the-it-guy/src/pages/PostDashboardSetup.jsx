@@ -21,7 +21,7 @@ import OnboardingProgressLayout from '../components/onboarding/OnboardingProgres
 import { APP_ROLE_LABELS } from '../lib/roles'
 import { ONBOARDING_STATUSES, ONBOARDING_STEPS } from '../constants/onboardingStatuses'
 import { SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
-import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
+import { WORKSPACE_KINDS, WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import {
   AGENCY_BUSINESS_FOCUS_OPTIONS,
   AGENCY_INVITE_ROLE_OPTIONS,
@@ -47,6 +47,18 @@ const AGENCY_SETUP_STEPS = [
   { key: 'branding', label: 'Branding' },
   { key: 'team', label: 'Team' },
   { key: 'review', label: 'Review' },
+]
+const BOND_SETUP_STEPS = [
+  { key: 'business', label: 'Business' },
+  { key: 'owner', label: 'Owner' },
+  { key: 'team', label: 'Team' },
+  { key: 'review', label: 'Review' },
+]
+const BOND_INVITE_ROLE_OPTIONS = [
+  { value: 'consultant', label: 'Consultant' },
+  { value: 'processor', label: 'Processor' },
+  { value: 'manager', label: 'Manager' },
+  { value: 'admin_staff', label: 'Admin Staff' },
 ]
 const SETUP_DRAFT_SCHEMA_VERSION = 1
 const SETUP_DRAFT_STORAGE_PREFIX = 'bridge:post-dashboard-setup-draft'
@@ -115,6 +127,204 @@ function getDefaultForm(intent, profile) {
     workspaceNameForRequest: '',
     requestMessage: `Please approve my access to your ${workspaceNoun} on Bridge.`,
     inviteToken: normalizeText(intent?.invite_token),
+  }
+}
+
+function splitFullName(value = '') {
+  const parts = normalizeText(value).split(/\s+/).filter(Boolean)
+  if (parts.length <= 1) {
+    return {
+      firstName: parts[0] || '',
+      lastName: '',
+    }
+  }
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(' '),
+  }
+}
+
+function createBondInviteDraft(seed = {}) {
+  return {
+    id: seed.id || `bond-invite-${Math.random().toString(36).slice(2, 10)}`,
+    name: normalizeText(seed.name),
+    email: normalizeText(seed.email),
+    role: normalizeText(seed.role) || 'consultant',
+  }
+}
+
+function getBondDraftDefaults(intent, profile) {
+  const companyName = normalizeText(profile?.companyName)
+  return {
+    businessInformation: {
+      businessName: companyName || '',
+      legalName: companyName || '',
+      tradingName: companyName || '',
+      registrationNumber: '',
+      businessEmail: normalizeText(profile?.email),
+      contactNumber: normalizeText(profile?.phoneNumber),
+      website: '',
+      province: '',
+      city: '',
+      physicalAddress: '',
+      supportEmail: normalizeText(profile?.email),
+    },
+    ownerInformation: {
+      fullName: normalizeText(profile?.fullName),
+      title: 'Owner',
+      email: normalizeText(profile?.email),
+      phoneNumber: normalizeText(profile?.phoneNumber),
+    },
+    teamStructure: {
+      defaultTeamName: 'Main Team',
+      launchRoles: {
+        ownerHandlesConsulting: true,
+        ownerHandlesProcessing: true,
+      },
+      expectedMonthlyApplications: '',
+      notes: '',
+    },
+    invitations: [createBondInviteDraft()],
+    meta: {
+      workspaceKind: WORKSPACE_KINDS.bondCompany,
+      onboardingPath: intent?.onboarding_path || 'bond_owner',
+    },
+  }
+}
+
+function mergeBondOnboardingDraft(defaultDraft, incomingDraft = {}) {
+  return {
+    ...defaultDraft,
+    ...(incomingDraft || {}),
+    businessInformation: {
+      ...defaultDraft.businessInformation,
+      ...((incomingDraft && incomingDraft.businessInformation) || {}),
+    },
+    ownerInformation: {
+      ...defaultDraft.ownerInformation,
+      ...((incomingDraft && incomingDraft.ownerInformation) || {}),
+    },
+    teamStructure: {
+      ...defaultDraft.teamStructure,
+      ...((incomingDraft && incomingDraft.teamStructure) || {}),
+      launchRoles: {
+        ...defaultDraft.teamStructure.launchRoles,
+        ...((incomingDraft && incomingDraft.teamStructure?.launchRoles) || {}),
+      },
+    },
+    invitations:
+      Array.isArray(incomingDraft?.invitations) && incomingDraft.invitations.length
+        ? incomingDraft.invitations.map((invite) => createBondInviteDraft(invite))
+        : defaultDraft.invitations,
+    meta: {
+      ...defaultDraft.meta,
+      ...((incomingDraft && incomingDraft.meta) || {}),
+    },
+  }
+}
+
+function countBondInvitesByRole(invites = [], role = '') {
+  return (Array.isArray(invites) ? invites : []).filter((invite) => normalizeText(invite.role) === role && normalizeText(invite.email)).length
+}
+
+function resolveBondStepError(stepKey, draft) {
+  const business = draft?.businessInformation || {}
+  const owner = draft?.ownerInformation || {}
+  const team = draft?.teamStructure || {}
+  const invites = Array.isArray(draft?.invitations) ? draft.invitations : []
+
+  if (stepKey === 'business') {
+    if (!normalizeText(business.businessName)) return 'Bond originator business name is required.'
+    if (!normalizeText(business.legalName)) return 'Legal name is required.'
+    if (!normalizeText(business.businessEmail)) return 'Business email is required.'
+    if (!normalizeText(business.contactNumber)) return 'Business contact number is required.'
+    if (!normalizeText(business.province)) return 'Province is required.'
+    if (!normalizeText(business.city)) return 'City is required.'
+    if (!normalizeText(business.physicalAddress)) return 'Physical address is required.'
+  }
+
+  if (stepKey === 'owner') {
+    if (!normalizeText(owner.fullName)) return 'Owner full name is required.'
+    if (!normalizeText(owner.email)) return 'Owner email is required.'
+    if (!normalizeText(owner.phoneNumber)) return 'Owner phone number is required.'
+  }
+
+  if (stepKey === 'team') {
+    if (!normalizeText(team.defaultTeamName)) return 'Default team name is required.'
+    for (const invite of invites) {
+      const hasRowData = normalizeText(invite.name || invite.email)
+      if (!hasRowData) continue
+      if (!normalizeText(invite.name)) return 'Each invited teammate needs a name.'
+      if (!normalizeText(invite.email)) return 'Each invited teammate needs an email address.'
+    }
+    if (!team.launchRoles?.ownerHandlesConsulting && countBondInvitesByRole(invites, 'consultant') === 0) {
+      return 'Add a consultant invite or confirm that the owner will handle consulting at launch.'
+    }
+    if (!team.launchRoles?.ownerHandlesProcessing && countBondInvitesByRole(invites, 'processor') === 0) {
+      return 'Add a processor invite or confirm that the owner will handle processing at launch.'
+    }
+  }
+
+  return ''
+}
+
+function buildBondWorkspaceSubmission(draft, profile) {
+  const business = draft?.businessInformation || {}
+  const owner = draft?.ownerInformation || {}
+  const team = draft?.teamStructure || {}
+  const ownerName = normalizeText(owner.fullName || profile?.fullName)
+  const ownerNameParts = splitFullName(ownerName)
+  const cleanedInvites = (Array.isArray(draft?.invitations) ? draft.invitations : [])
+    .map((invite) => ({
+      email: normalizeText(invite.email),
+      name: normalizeText(invite.name),
+      workspace_role: normalizeText(invite.role) || 'consultant',
+    }))
+    .filter((invite) => invite.email)
+
+  return {
+    name: normalizeText(business.businessName),
+    legalName: normalizeText(business.legalName),
+    tradingName: normalizeText(business.tradingName || business.businessName),
+    registrationNumber: normalizeText(business.registrationNumber),
+    businessEmail: normalizeText(business.businessEmail),
+    contactNumber: normalizeText(business.contactNumber),
+    website: normalizeText(business.website),
+    province: normalizeText(business.province),
+    city: normalizeText(business.city),
+    physicalAddress: normalizeText(business.physicalAddress),
+    mainBranchName: normalizeText(team.defaultTeamName) || 'Main Team',
+    primaryContactName: ownerName,
+    ownerFullName: ownerName,
+    ownerFirstName: ownerNameParts.firstName,
+    ownerLastName: ownerNameParts.lastName,
+    ownerEmail: normalizeText(owner.email),
+    ownerPhone: normalizeText(owner.phoneNumber),
+    firstName: ownerNameParts.firstName,
+    lastName: ownerNameParts.lastName,
+    workspaceKind: draft?.meta?.workspaceKind || WORKSPACE_KINDS.bondCompany,
+    branches: [{
+      name: normalizeText(team.defaultTeamName) || 'Main Team',
+      province: normalizeText(business.province),
+      city: normalizeText(business.city),
+      location: normalizeText(business.city || business.province),
+      phone: normalizeText(business.contactNumber),
+      email: normalizeText(business.businessEmail),
+    }],
+    invites: cleanedInvites,
+    settings: {
+      workspaceType: WORKSPACE_TYPES.bondOriginator,
+      workspaceKind: draft?.meta?.workspaceKind || WORKSPACE_KINDS.bondCompany,
+      bondOnboarding: draft,
+      bondWorkspace: {
+        teamName: normalizeText(team.defaultTeamName) || 'Main Team',
+        supportEmail: normalizeText(business.supportEmail || business.businessEmail),
+        ownerHandlesConsulting: Boolean(team.launchRoles?.ownerHandlesConsulting),
+        ownerHandlesProcessing: Boolean(team.launchRoles?.ownerHandlesProcessing),
+        expectedMonthlyApplications: normalizeText(team.expectedMonthlyApplications),
+        launchNotes: normalizeText(team.notes),
+      },
+    },
   }
 }
 
@@ -244,6 +454,8 @@ export default function PostDashboardSetup() {
   const [form, setForm] = useState(() => getDefaultForm(intent, profile))
   const [agencyDraft, setAgencyDraft] = useState(() => getAgencyDraftDefaults(intent, profile))
   const [agencyStepIndex, setAgencyStepIndex] = useState(0)
+  const [bondDraft, setBondDraft] = useState(() => getBondDraftDefaults(intent, profile))
+  const [bondStepIndex, setBondStepIndex] = useState(0)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -260,21 +472,29 @@ export default function PostDashboardSetup() {
     canCreateWorkspace &&
     intent?.workspace_type === WORKSPACE_TYPES.agency &&
     ['owner', 'principal'].includes(intendedRole)
+  const isBondOwnerSetup =
+    canCreateWorkspace &&
+    intent?.workspace_type === WORKSPACE_TYPES.bondOriginator &&
+    ['owner', 'director', 'manager'].includes(intendedRole)
   const setupDraftStorageKey = useMemo(
     () => buildSetupDraftStorageKey({ userId: authState.user?.id, profileId: profile?.id, intent }),
     [authState.user?.id, intent, profile?.id],
   )
   const agencyCurrentStep = AGENCY_SETUP_STEPS[agencyStepIndex] || AGENCY_SETUP_STEPS[0]
+  const bondCurrentStep = BOND_SETUP_STEPS[bondStepIndex] || BOND_SETUP_STEPS[0]
   const pageTitle = useMemo(() => {
     if (isAgencyPrincipalSetup) return 'Set up your agency workspace'
+    if (isBondOwnerSetup) return 'Set up your bond originator business'
     if (canCreateWorkspace) return `Create your ${workspaceNoun}`
     if (canAcceptInvite) return 'Accept your workspace invite'
     if (canJoinOrRequest) return `Join a ${workspaceNoun}`
     return 'Workspace setup'
-  }, [canAcceptInvite, canCreateWorkspace, canJoinOrRequest, isAgencyPrincipalSetup, workspaceNoun])
+  }, [canAcceptInvite, canCreateWorkspace, canJoinOrRequest, isAgencyPrincipalSetup, isBondOwnerSetup, workspaceNoun])
   const pageDescription = isAgencyPrincipalSetup
     ? 'Create the operating profile your agents will enter: agency details, branches, branding, permissions, and team invitations.'
-    : 'Bridge has your profile and signup path. The last step is creating or joining a real backend workspace so dashboard access is tied to an active membership.'
+    : isBondOwnerSetup
+      ? 'Capture the business, owner, and launch-team details Bridge needs to create a proper bond company workspace and avoid incomplete setup states.'
+      : 'Bridge has your profile and signup path. The last step is creating or joining a real backend workspace so dashboard access is tied to an active membership.'
 
   useEffect(() => {
     setForm((previous) => ({
@@ -282,6 +502,7 @@ export default function PostDashboardSetup() {
       ...previous,
     }))
     setAgencyDraft((previous) => mergeAgencyOnboardingDraft(getAgencyDraftDefaults(intent, profile), previous, profile))
+    setBondDraft((previous) => mergeBondOnboardingDraft(getBondDraftDefaults(intent, profile), previous))
   }, [intent, profile])
 
   useEffect(() => {
@@ -330,6 +551,65 @@ export default function PostDashboardSetup() {
 
   function updateField(field, value) {
     setForm((previous) => ({ ...previous, [field]: value }))
+  }
+
+  function updateBondDraft(nextDraftOrUpdater) {
+    setBondDraft((previous) => {
+      const nextDraft = typeof nextDraftOrUpdater === 'function' ? nextDraftOrUpdater(previous) : nextDraftOrUpdater
+      return mergeBondOnboardingDraft(previous, nextDraft)
+    })
+  }
+
+  function updateBondSection(section, field, value) {
+    updateBondDraft((previous) => ({
+      ...previous,
+      [section]: {
+        ...(previous?.[section] || {}),
+        [field]: value,
+      },
+    }))
+  }
+
+  function updateBondLaunchRole(field, value) {
+    updateBondDraft((previous) => ({
+      ...previous,
+      teamStructure: {
+        ...(previous?.teamStructure || {}),
+        launchRoles: {
+          ...(previous?.teamStructure?.launchRoles || {}),
+          [field]: value,
+        },
+      },
+    }))
+  }
+
+  function updateBondInvite(inviteId, patch) {
+    updateBondDraft((previous) => ({
+      ...previous,
+      invitations: (previous?.invitations || []).map((invite) =>
+        invite.id === inviteId ? { ...invite, ...patch } : invite,
+      ),
+    }))
+  }
+
+  function addBondInvite() {
+    updateBondDraft((previous) => ({
+      ...previous,
+      invitations: [
+        ...(previous?.invitations || []),
+        createBondInviteDraft(),
+      ],
+    }))
+  }
+
+  function removeBondInvite(inviteId) {
+    updateBondDraft((previous) => {
+      const nextRows = (previous?.invitations || []).filter((invite) => invite.id !== inviteId)
+      return {
+        ...previous,
+        invitations: nextRows.length ? nextRows : [createBondInviteDraft()],
+      }
+    })
   }
 
   function updateAgencyDraft(nextDraftOrUpdater) {
@@ -508,6 +788,49 @@ export default function PostDashboardSetup() {
     void completeAgencyPrincipalSetup()
   }
 
+  async function completeBondOwnerSetup() {
+    const allStepError = BOND_SETUP_STEPS
+      .map((step) => resolveBondStepError(step.key, bondDraft))
+      .find(Boolean)
+    if (allStepError) {
+      setError(allStepError)
+      return
+    }
+
+    try {
+      setSaving(true)
+      setError('')
+      setMessage('')
+      const submission = buildBondWorkspaceSubmission(bondDraft, profile)
+      const result = await createWorkspaceFromIntent(intent, authState.user, submission)
+      refreshAuthState?.()
+      setMessage(`${result.workspace.name} is ready. Opening your dashboard...`)
+      window.setTimeout(() => {
+        navigate(getDashboardPath(intent?.app_role || baseRole), { replace: true })
+      }, 500)
+    } catch (setupError) {
+      setError(setupError?.message || 'Bond originator setup failed.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function handleBondStepSubmit(event) {
+    event.preventDefault()
+    const stepError = resolveBondStepError(bondCurrentStep.key, bondDraft)
+    if (stepError) {
+      setError(stepError)
+      return
+    }
+
+    setError('')
+    if (bondStepIndex < BOND_SETUP_STEPS.length - 1) {
+      setBondStepIndex((previous) => Math.min(previous + 1, BOND_SETUP_STEPS.length - 1))
+      return
+    }
+    void completeBondOwnerSetup()
+  }
+
   async function handleCreateWorkspace(event) {
     event.preventDefault()
     if (!intent) {
@@ -615,9 +938,207 @@ export default function PostDashboardSetup() {
   const agency = agencyDraft?.agencyInformation || {}
   const principal = agencyDraft?.principalInformation || {}
   const branding = agencyDraft?.branding || {}
+  const bondBusiness = bondDraft?.businessInformation || {}
+  const bondOwner = bondDraft?.ownerInformation || {}
+  const bondTeam = bondDraft?.teamStructure || {}
+  const bondInvites = Array.isArray(bondDraft?.invitations) ? bondDraft.invitations : []
   const inviteCount = invites.filter((invite) => normalizeText(invite.name || invite.email)).length
   const currentStepReady = resolveAgencyStepError(agencyCurrentStep.key, agencyDraft) ? 0 : 1
   const completedStepCount = Math.min(AGENCY_SETUP_STEPS.length, agencyStepIndex + currentStepReady)
+  const bondInviteCount = bondInvites.filter((invite) => normalizeText(invite.name || invite.email)).length
+  const bondCurrentStepReady = resolveBondStepError(bondCurrentStep.key, bondDraft) ? 0 : 1
+  const bondCompletedStepCount = Math.min(BOND_SETUP_STEPS.length, bondStepIndex + bondCurrentStepReady)
+
+  function renderBondStep() {
+    if (bondCurrentStep.key === 'business') {
+      return (
+        <div className="agency-setup-card">
+          <SetupSectionHeader
+            eyebrow="Foundation"
+            title="Business profile"
+            copy="This becomes the finance business identity, support contact, and default reporting home for the workspace."
+            icon={Building2}
+          />
+          <div className="setup-field-grid">
+            <SetupField label="Business name">
+              <input className="setup-input" value={bondBusiness.businessName || ''} onChange={(event) => updateBondSection('businessInformation', 'businessName', event.target.value)} />
+            </SetupField>
+            <SetupField label="Legal name">
+              <input className="setup-input" value={bondBusiness.legalName || ''} onChange={(event) => updateBondSection('businessInformation', 'legalName', event.target.value)} />
+            </SetupField>
+            <SetupField label="Trading name">
+              <input className="setup-input" value={bondBusiness.tradingName || ''} onChange={(event) => updateBondSection('businessInformation', 'tradingName', event.target.value)} />
+            </SetupField>
+            <SetupField label="Registration number" hint="Optional, but useful for duplicate protection and legal records.">
+              <input className="setup-input" value={bondBusiness.registrationNumber || ''} onChange={(event) => updateBondSection('businessInformation', 'registrationNumber', event.target.value)} />
+            </SetupField>
+            <SetupField label="Business email">
+              <input className="setup-input" type="email" value={bondBusiness.businessEmail || ''} onChange={(event) => updateBondSection('businessInformation', 'businessEmail', event.target.value)} />
+            </SetupField>
+            <SetupField label="Contact number">
+              <input className="setup-input" value={bondBusiness.contactNumber || ''} onChange={(event) => updateBondSection('businessInformation', 'contactNumber', event.target.value)} />
+            </SetupField>
+            <SetupField label="Support email">
+              <input className="setup-input" type="email" value={bondBusiness.supportEmail || ''} onChange={(event) => updateBondSection('businessInformation', 'supportEmail', event.target.value)} />
+            </SetupField>
+            <SetupField label="Website">
+              <input className="setup-input" value={bondBusiness.website || ''} onChange={(event) => updateBondSection('businessInformation', 'website', event.target.value)} placeholder="https://" />
+            </SetupField>
+            <SetupField label="Province">
+              <input className="setup-input" value={bondBusiness.province || ''} onChange={(event) => updateBondSection('businessInformation', 'province', event.target.value)} />
+            </SetupField>
+            <SetupField label="City">
+              <input className="setup-input" value={bondBusiness.city || ''} onChange={(event) => updateBondSection('businessInformation', 'city', event.target.value)} />
+            </SetupField>
+            <SetupField label="Physical address">
+              <textarea className="setup-input setup-textarea" value={bondBusiness.physicalAddress || ''} onChange={(event) => updateBondSection('businessInformation', 'physicalAddress', event.target.value)} />
+            </SetupField>
+          </div>
+        </div>
+      )
+    }
+
+    if (bondCurrentStep.key === 'owner') {
+      return (
+        <div className="agency-setup-card">
+          <SetupSectionHeader
+            eyebrow="Account owner"
+            title="Launch owner details"
+            copy="The owner receives HQ-level workspace access and becomes the first accountable contact for invites, operations, and recovery."
+            icon={ShieldCheck}
+          />
+          <div className="setup-field-grid">
+            <SetupField label="Full name">
+              <input className="setup-input" value={bondOwner.fullName || ''} onChange={(event) => updateBondSection('ownerInformation', 'fullName', event.target.value)} />
+            </SetupField>
+            <SetupField label="Title / position">
+              <input className="setup-input" value={bondOwner.title || ''} onChange={(event) => updateBondSection('ownerInformation', 'title', event.target.value)} />
+            </SetupField>
+            <SetupField label="Email">
+              <input className="setup-input" type="email" value={bondOwner.email || ''} onChange={(event) => updateBondSection('ownerInformation', 'email', event.target.value)} />
+            </SetupField>
+            <SetupField label="Phone number">
+              <input className="setup-input" value={bondOwner.phoneNumber || ''} onChange={(event) => updateBondSection('ownerInformation', 'phoneNumber', event.target.value)} />
+            </SetupField>
+          </div>
+        </div>
+      )
+    }
+
+    if (bondCurrentStep.key === 'team') {
+      return (
+        <div className="agency-setup-card">
+          <SetupSectionHeader
+            eyebrow="Operating setup"
+            title="Default team and launch roles"
+            copy="Bridge creates one finance team immediately, then uses these launch choices to avoid leaving the workspace without coverage."
+            icon={Users}
+          />
+          <div className="setup-field-grid">
+            <SetupField label="Default team name">
+              <input className="setup-input" value={bondTeam.defaultTeamName || ''} onChange={(event) => updateBondSection('teamStructure', 'defaultTeamName', event.target.value)} />
+            </SetupField>
+            <SetupField label="Expected monthly applications" hint="Optional planning signal for future dashboards and staffing.">
+              <input className="setup-input" value={bondTeam.expectedMonthlyApplications || ''} onChange={(event) => updateBondSection('teamStructure', 'expectedMonthlyApplications', event.target.value)} />
+            </SetupField>
+            <label className="setup-field">
+              <span>Owner covers consulting at launch</span>
+              <button
+                type="button"
+                className="setup-secondary-button"
+                onClick={() => updateBondLaunchRole('ownerHandlesConsulting', !bondTeam.launchRoles?.ownerHandlesConsulting)}
+              >
+                {bondTeam.launchRoles?.ownerHandlesConsulting ? 'Yes, owner covers consulting' : 'No, invite a consultant'}
+              </button>
+            </label>
+            <label className="setup-field">
+              <span>Owner covers processing at launch</span>
+              <button
+                type="button"
+                className="setup-secondary-button"
+                onClick={() => updateBondLaunchRole('ownerHandlesProcessing', !bondTeam.launchRoles?.ownerHandlesProcessing)}
+              >
+                {bondTeam.launchRoles?.ownerHandlesProcessing ? 'Yes, owner covers processing' : 'No, invite a processor'}
+              </button>
+            </label>
+            <SetupField label="Launch notes" hint="Optional handoff notes for the first finance team.">
+              <textarea className="setup-input setup-textarea" value={bondTeam.notes || ''} onChange={(event) => updateBondSection('teamStructure', 'notes', event.target.value)} />
+            </SetupField>
+          </div>
+
+          <div className="agency-setup-divider" />
+          <SetupSectionHeader
+            eyebrow="Invites"
+            title="Invite the first operating team"
+            copy="Add consultants, processors, or admin staff who should enter the new workspace immediately after creation."
+            icon={Mail}
+          />
+          <div className="agency-setup-list">
+            {bondInvites.map((invite, index) => (
+              <section key={invite.id} className="agency-setup-row-card">
+                <div className="agency-setup-row-head">
+                  <strong>{normalizeText(invite.name) || `Teammate ${index + 1}`}</strong>
+                  <button type="button" className="setup-icon-button" onClick={() => removeBondInvite(invite.id)} disabled={bondInvites.length <= 1} aria-label="Remove invite">
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+                <div className="setup-field-grid">
+                  <SetupField label="Name">
+                    <input className="setup-input" value={invite.name || ''} onChange={(event) => updateBondInvite(invite.id, { name: event.target.value })} />
+                  </SetupField>
+                  <SetupField label="Email">
+                    <input className="setup-input" type="email" value={invite.email || ''} onChange={(event) => updateBondInvite(invite.id, { email: event.target.value })} />
+                  </SetupField>
+                  <SetupField label="Role">
+                    <select className="setup-input" value={invite.role || 'consultant'} onChange={(event) => updateBondInvite(invite.id, { role: event.target.value })}>
+                      {BOND_INVITE_ROLE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </SetupField>
+                </div>
+              </section>
+            ))}
+          </div>
+          <button type="button" className="setup-secondary-button" onClick={addBondInvite}>
+            <Plus size={16} />
+            Add teammate invite
+          </button>
+        </div>
+      )
+    }
+
+    return (
+      <div className="agency-setup-card">
+        <SetupSectionHeader
+          eyebrow="Final check"
+          title="Create the bond company workspace"
+          copy="Bridge will create the company workspace, activate the owner membership, create the default team, and queue the launch invites."
+          icon={CheckCircle2}
+        />
+        <div className="agency-review-grid">
+          <div>
+            <Building2 size={18} />
+            <span>Business</span>
+            <strong>{bondBusiness.businessName || 'Not set'}</strong>
+            <small>{bondBusiness.province || 'Province missing'}</small>
+          </div>
+          <div>
+            <ShieldCheck size={18} />
+            <span>Owner</span>
+            <strong>{bondOwner.fullName || 'Not set'}</strong>
+            <small>{bondOwner.email || 'Owner email missing'}</small>
+          </div>
+          <div>
+            <Users size={18} />
+            <span>Team</span>
+            <strong>{bondTeam.defaultTeamName || 'Main Team'}</strong>
+            <small>{bondInviteCount} {bondInviteCount === 1 ? 'invite' : 'invites'} ready</small>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   function renderAgencyStep() {
     if (agencyCurrentStep.key === 'organisation') {
@@ -896,8 +1417,14 @@ export default function PostDashboardSetup() {
     <OnboardingProgressLayout
       title={pageTitle}
       description={pageDescription}
-      activeStep={isAgencyPrincipalSetup ? agencyCurrentStep.key : onboardingState?.onboardingStep || ONBOARDING_STEPS.createOrJoinWorkspace}
-      steps={isAgencyPrincipalSetup ? AGENCY_SETUP_STEPS : undefined}
+      activeStep={
+        isAgencyPrincipalSetup
+          ? agencyCurrentStep.key
+          : isBondOwnerSetup
+            ? bondCurrentStep.key
+            : onboardingState?.onboardingStep || ONBOARDING_STEPS.createOrJoinWorkspace
+      }
+      steps={isAgencyPrincipalSetup ? AGENCY_SETUP_STEPS : isBondOwnerSetup ? BOND_SETUP_STEPS : undefined}
     >
       {isAgencyPrincipalSetup ? (
         <form className="agency-setup-shell" onSubmit={handleAgencyStepSubmit}>
@@ -961,6 +1488,78 @@ export default function PostDashboardSetup() {
                   ? 'Creating agency...'
                   : agencyStepIndex === AGENCY_SETUP_STEPS.length - 1
                     ? 'Create agency and send invites'
+                    : (
+                        <>
+                          Continue
+                          <ArrowRight size={16} />
+                        </>
+                      )}
+              </button>
+            </div>
+          </section>
+        </form>
+      ) : isBondOwnerSetup ? (
+        <form className="agency-setup-shell" onSubmit={handleBondStepSubmit}>
+          <aside className="agency-setup-command">
+            <div>
+              <p className="agency-setup-kicker">Bond company setup</p>
+              <h2>{bondBusiness.businessName || 'New bond business'}</h2>
+              <span>{APP_ROLE_LABELS[intent.app_role] || 'Bond Originator'} · {intendedRole.replace(/_/g, ' ')}</span>
+            </div>
+            <div className="agency-setup-progress">
+              <strong>{bondCompletedStepCount}/{BOND_SETUP_STEPS.length}</strong>
+              <span>setup sections ready</span>
+              <div><i style={{ width: `${Math.round((bondCompletedStepCount / BOND_SETUP_STEPS.length) * 100)}%` }} /></div>
+            </div>
+            <nav className="agency-setup-nav" aria-label="Bond setup steps">
+              {BOND_SETUP_STEPS.map((step, index) => {
+                const isActive = index === bondStepIndex
+                const hasError = Boolean(resolveBondStepError(step.key, bondDraft))
+                return (
+                  <button
+                    key={step.key}
+                    type="button"
+                    className={isActive ? 'is-active' : ''}
+                    onClick={() => {
+                      setBondStepIndex(index)
+                      setError('')
+                    }}
+                  >
+                    <span>{index + 1}</span>
+                    <strong>{step.label}</strong>
+                    {!hasError ? <CheckCircle2 size={15} /> : null}
+                  </button>
+                )
+              })}
+            </nav>
+            <div className="agency-setup-snapshot">
+              <p><Mail size={14} />{bondBusiness.businessEmail || 'Business email missing'}</p>
+              <p><Phone size={14} />{bondBusiness.contactNumber || 'Business phone missing'}</p>
+              <p><Users size={14} />{bondTeam.defaultTeamName || 'Main Team'}</p>
+            </div>
+          </aside>
+
+          <section className="agency-setup-main">
+            {renderBondStep()}
+            {message ? <p className="setup-message success">{message}</p> : null}
+            {error ? <p className="setup-message error">{error}</p> : null}
+            <div className="agency-setup-actions">
+              <button
+                type="button"
+                className="setup-secondary-button"
+                onClick={() => {
+                  setError('')
+                  setBondStepIndex((previous) => Math.max(previous - 1, 0))
+                }}
+                disabled={saving || bondStepIndex === 0}
+              >
+                Back
+              </button>
+              <button type="submit" className="setup-primary-button" disabled={saving}>
+                {saving
+                  ? 'Creating bond workspace...'
+                  : bondStepIndex === BOND_SETUP_STEPS.length - 1
+                    ? 'Create bond business workspace'
                     : (
                         <>
                           Continue

@@ -7976,16 +7976,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               ) : (
               <>
               <div className="hidden max-w-full overflow-x-auto overscroll-x-contain lg:block">
-                <table className="w-full min-w-[1120px] table-fixed text-sm">
+                <table className="w-full min-w-[1040px] text-sm">
                   <thead className="sticky top-[38px] z-[1] h-[42px] border-b border-[rgba(15,23,42,0.06)] bg-[#FCFCFD] text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                     <tr>
                       <th className="w-[42px] px-3 py-3"><span className="sr-only">Select</span></th>
-                      <th className="w-[25%] px-3 py-3">Lead</th>
+                      <th className="w-[31%] px-3 py-3">Lead</th>
                       <th className="w-[23%] px-3 py-3">Opportunity</th>
-                      <th className="w-[10%] px-3 py-3">Stage</th>
-                      <th className="w-[18%] px-3 py-3">Next Action</th>
-                      <th className="w-[11%] px-3 py-3">Owner</th>
-                      <th className="w-[13%] px-3 py-3">Activity</th>
+                      <th className="w-[20%] px-3 py-3">Pipeline</th>
+                      <th className="w-[26%] px-3 py-3">Owner & Activity</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[rgba(15,23,42,0.06)] bg-white">
@@ -8027,6 +8025,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const leadPhone = normalizeText(leadContact?.phone || lead?.phone)
                         const leadEmail = normalizeText(leadContact?.email || lead?.email)
                         const whatsappPhone = leadPhone.replace(/[^\d+]/g, '').replace(/^\+/, '')
+                        const activityTimeLabel = formatRelativeTime(activityReference)
                         const quickActionButtonClass = 'inline-flex h-7 w-7 items-center justify-center rounded-[9px] border border-transparent bg-transparent text-slate-400 transition hover:border-slate-200 hover:bg-white hover:text-slate-800'
 
                         return (
@@ -8038,11 +8037,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               navigate(`/pipeline/leads/${lead.leadId}`)
                             }}
                           >
-                            <td className="px-3 py-3 align-middle" onClick={(event) => event.stopPropagation()}>
+                            <td className="px-3 py-4 align-top" onClick={(event) => event.stopPropagation()}>
                               <input type="checkbox" className="h-4 w-4 rounded-[5px] border-slate-300 text-[#2563eb] shadow-sm focus:ring-2 focus:ring-[#dbeafe]" aria-label={`Select ${leadName}`} />
                             </td>
-                            <td className="px-3 py-3 align-middle">
-                              <div className="flex min-w-0 items-center gap-3">
+                            <td className="px-3 py-4 align-top">
+                              <div className="flex min-w-0 items-start gap-3">
                                 <span
                                   className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[0.72rem] font-bold text-white shadow-[0_8px_18px_rgba(24,45,68,0.12)] ring-1 ring-white/70"
                                   style={{ backgroundImage: `linear-gradient(135deg, ${agentColor}, #1f4f78)` }}
@@ -8050,13 +8049,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   {getInitials(leadName)}
                                 </span>
                                 <div className="min-w-0 flex-1">
-                                  <div className="flex min-w-0 items-center gap-2">
+                                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <p className="min-w-0 break-words text-[14px] font-semibold leading-5 text-slate-950">{leadName}</p>
                                     <span className={`inline-flex shrink-0 rounded-full border px-2 py-0.5 text-[0.58rem] font-bold uppercase tracking-[0.08em] ${categoryMeta.className}`}>
                                       {categoryMeta.label}
                                     </span>
                                   </div>
-                                  <div className="mt-1 grid min-w-0 gap-0.5 text-[12px] font-medium text-slate-500">
+                                  <div className="mt-1 grid min-w-0 gap-1 text-[12px] font-medium text-slate-500">
                                     <span className="flex min-w-0 items-center gap-1.5">
                                       <Phone size={12} className="shrink-0 text-slate-400" />
                                       <span className="min-w-0 break-all">{leadPhone || 'No phone'}</span>
@@ -8066,15 +8065,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       <span className="min-w-0 break-all">{leadEmail || 'No email'}</span>
                                     </span>
                                   </div>
-                                  <p className="mt-1 text-[0.7rem] font-medium leading-4 text-slate-400">
+                                  <p className="mt-2 text-[0.7rem] font-medium leading-4 text-slate-400">
                                     {lead.leadSource || 'Manual'} • {formatDateShort(lead?.createdAt)}
                                   </p>
                                 </div>
                               </div>
                             </td>
-                            <td className="px-3 py-3 align-middle">
+                            <td className="px-3 py-4 align-top">
                               {opportunity.hasListing ? (
-                                <div className="flex min-w-0 items-center gap-2.5">
+                                <div className="flex min-w-0 items-start gap-2.5">
                                   <div className="relative grid h-12 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border border-slate-200 bg-slate-100" style={{ backgroundImage: `linear-gradient(135deg, ${agentColor}1f, #f8fafc 72%)` }}>
                                     <Home size={16} className="text-slate-400" />
                                     {opportunity.thumbnailUrl ? (
@@ -8092,60 +8091,60 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   <div className="min-w-0 flex-1">
                                     <p className="break-words text-[13px] font-semibold leading-5 text-slate-950">{opportunity.title}</p>
                                     {opportunity.price ? <p className="mt-0.5 text-[12px] font-semibold text-[#1f4f78]">{opportunity.price}</p> : null}
-                                    <p className="mt-0.5 line-clamp-2 text-[12px] font-medium leading-4 text-slate-500">{opportunity.specs || 'Property details pending'}</p>
-                                    <p className="mt-0.5 line-clamp-2 text-[11px] font-medium leading-4 text-slate-400">{opportunity.subtitle}</p>
+                                    <p className="mt-0.5 break-words text-[12px] font-medium leading-4 text-slate-500">{opportunity.specs || 'Property details pending'}</p>
+                                    <p className="mt-0.5 break-words text-[11px] font-medium leading-4 text-slate-400">{opportunity.subtitle}</p>
                                   </div>
                                 </div>
                               ) : (
-                                <div className="flex min-w-0 items-center gap-2.5">
+                                <div className="flex min-w-0 items-start gap-2.5">
                                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-slate-100 text-slate-400">
                                     <ImageIcon size={15} />
                                   </span>
                                   <div className="min-w-0">
-                                    <p className="truncate text-[13px] font-semibold text-slate-700">No listing assigned</p>
+                                    <p className="break-words text-[13px] font-semibold text-slate-700">No listing assigned</p>
                                     <p className="mt-0.5 inline-flex items-center gap-1 text-[12px] font-semibold text-[#1f4f78]">Assign listing <ArrowUpRight size={12} /></p>
                                   </div>
                                 </div>
                               )}
                             </td>
-                            <td className="px-3 py-3 align-middle">
-                              <div className="min-w-0">
-                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.08em] ${statusMeta.className}`}>{statusMeta.label}</span>
-                                <div className="mt-1.5 flex items-center gap-1" aria-label={`${statusMeta.label} lead score ${statusMeta.score} out of 5`}>
-                                  {Array.from({ length: 5 }).map((_, dotIndex) => (
-                                    <span key={`${lead.leadId}:score:${dotIndex}`} className={`h-1.5 w-1.5 rounded-full ${dotIndex < statusMeta.score ? statusMeta.dotClassName : 'bg-slate-200'}`} />
-                                  ))}
+                            <td className="px-3 py-4 align-top">
+                              <div className="grid min-w-0 gap-3">
+                                <div>
+                                  <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.08em] ${statusMeta.className}`}>{statusMeta.label}</span>
+                                  <div className="mt-1.5 flex items-center gap-1" aria-label={`${statusMeta.label} lead score ${statusMeta.score} out of 5`}>
+                                    {Array.from({ length: 5 }).map((_, dotIndex) => (
+                                      <span key={`${lead.leadId}:score:${dotIndex}`} className={`h-1.5 w-1.5 rounded-full ${dotIndex < statusMeta.score ? statusMeta.dotClassName : 'bg-slate-200'}`} />
+                                    ))}
+                                  </div>
+                                  <p className="mt-1 text-[11px] font-medium leading-4 text-slate-400">Stage {statusMeta.score}/5 · {funnelStage}</p>
                                 </div>
-                                <p className="mt-1 text-[11px] font-medium leading-4 text-slate-400">Stage {statusMeta.score}/5 · {funnelStage}</p>
-                              </div>
-                            </td>
-                            <td className="px-3 py-3 align-middle">
-                              <div className="min-w-0 border-l-2 border-[#dbe7f2] pl-3">
-                                <p className="line-clamp-2 text-[13px] font-semibold leading-5 text-slate-950">{actionMeta.title}</p>
-                                <div className="mt-1 flex min-w-0 items-center gap-2">
-                                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${actionMeta.meta.toLowerCase().includes('overdue') ? 'bg-[#d96b5f]' : actionMeta.meta.toLowerCase().includes('today') ? 'bg-[#d79d3f]' : 'bg-[#35a66d]'}`} />
-                                  <p className="min-w-0 break-words text-[12px] font-semibold text-slate-500">{actionMeta.meta}</p>
-                                </div>
-                                <span className="mt-1 inline-flex items-center gap-1 text-[12px] font-semibold text-[#1f4f78]">Take action <ArrowUpRight size={12} /></span>
-                              </div>
-                            </td>
-                            <td className="px-3 py-3 align-middle">
-                              <div className="flex min-w-0 items-center gap-2.5">
-                                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[0.68rem] font-bold text-white shadow-sm" style={{ backgroundColor: agentColor }}>{getInitials(assignedAgent)}</span>
-                                <div className="min-w-0">
-                                  <p className="line-clamp-2 text-[13px] font-semibold leading-5 text-slate-800">{assignedAgent}</p>
-                                  <p className="text-[11px] font-medium text-slate-400">Agent</p>
+                                <div className="rounded-[14px] border border-[#dbe7f2] bg-[#fbfdff] px-3 py-2.5">
+                                  <p className="text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-slate-400">Next action</p>
+                                  <p className="mt-1 break-words text-[13px] font-semibold leading-5 text-slate-950">{actionMeta.title}</p>
+                                  <div className="mt-1 flex min-w-0 items-center gap-2">
+                                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${actionMeta.meta.toLowerCase().includes('overdue') ? 'bg-[#d96b5f]' : actionMeta.meta.toLowerCase().includes('today') ? 'bg-[#d79d3f]' : 'bg-[#35a66d]'}`} />
+                                    <p className="min-w-0 break-words text-[12px] font-semibold text-slate-500">{actionMeta.meta}</p>
+                                  </div>
                                 </div>
                               </div>
                             </td>
-                            <td className="px-3 py-3 align-middle">
-                              <div className="min-w-0">
-                                <p className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-800">
-                                  <Clock3 size={12} className="shrink-0 text-slate-400" />
-                                  {formatRelativeTime(activityReference)}
-                                </p>
-                                <p className="mt-0.5 line-clamp-2 text-[12px] font-medium leading-4 text-slate-500">{latestActivityTitle || lastActivityLabel}</p>
-                                <div className="mt-2 flex flex-wrap items-center gap-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100" onClick={(event) => event.stopPropagation()}>
+                            <td className="px-3 py-4 align-top">
+                              <div className="grid min-w-0 gap-3">
+                                <div className="flex min-w-0 items-start gap-2.5">
+                                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[0.68rem] font-bold text-white shadow-sm" style={{ backgroundColor: agentColor }}>{getInitials(assignedAgent)}</span>
+                                  <div className="min-w-0">
+                                    <p className="break-words text-[13px] font-semibold leading-5 text-slate-800">{assignedAgent}</p>
+                                    <p className="text-[11px] font-medium text-slate-400">Agent</p>
+                                  </div>
+                                </div>
+                                <div className="rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2.5">
+                                  <p className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-800">
+                                    <Clock3 size={12} className="shrink-0 text-slate-400" />
+                                    {activityTimeLabel}
+                                  </p>
+                                  <p className="mt-1 break-words text-[12px] font-medium leading-4 text-slate-500">{latestActivityTitle || lastActivityLabel}</p>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-1" onClick={(event) => event.stopPropagation()}>
                                   {leadPhone ? (
                                     <a href={`tel:${leadPhone}`} className={quickActionButtonClass} aria-label={`Call ${leadName}`} title="Call">
                                       <Phone size={14} />
@@ -8216,7 +8215,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       })
                     ) : (
                       <tr>
-                        <td className="px-6 py-12" colSpan={7}>
+                        <td className="px-6 py-12" colSpan={5}>
                           <div className="mx-auto max-w-md rounded-[18px] border border-dashed border-slate-200 bg-[#fbfdff] px-6 py-8 text-center">
                             <div className="mx-auto grid h-12 w-12 place-items-center rounded-[14px] bg-[#edf4fb] text-[#35546c]">
                               <UserRound size={21} />
