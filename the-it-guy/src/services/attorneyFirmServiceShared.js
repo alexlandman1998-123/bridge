@@ -1,4 +1,4 @@
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
 
 export const DEFAULT_ATTORNEY_DEPARTMENTS = [
   { name: 'Transfer Department', department_type: 'transfer' },

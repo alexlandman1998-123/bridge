@@ -101,6 +101,25 @@ import { normalizePropertyCategory, PROPERTY_CATEGORIES } from './propertyTaxono
 import { getSuggestedRescheduleSlots } from './appointmentAvailabilityEngine'
 import { resolveSystemRole, resolveTransactionRole } from '../services/roleResolutionService'
 
+const CANONICAL_PILOT_BUILD_MARKER = 'CANONICAL_PILOT_BUILD_MARKER_20260525'
+const CANONICAL_PILOT_TRANSACTION_ALLOWLIST =
+  import.meta.env?.VITE_CANONICAL_DOCUMENTS_PRIMARY_TRANSACTION_ALLOWLIST || ''
+const CANONICAL_PILOT_DEPLOYMENT_MARKERS = [
+  'canonical_primary',
+  'canonical_requirement_instance_id',
+  'bridge_link_document_to_canonical_requirement',
+  'bridge_link_document_to_canonical_requirement_by_key',
+  'bridge_upload_document_to_canonical_requirement',
+  'bridge_review_canonical_requirement',
+]
+
+if (CANONICAL_PILOT_TRANSACTION_ALLOWLIST) {
+  console.info('Canonical pilot allowlist:', CANONICAL_PILOT_TRANSACTION_ALLOWLIST, {
+    marker: CANONICAL_PILOT_BUILD_MARKER,
+    markers: CANONICAL_PILOT_DEPLOYMENT_MARKERS,
+  })
+}
+
 export {
   EXTERNAL_ACCESS_ROLES,
   FINANCE_MANAGED_BY_OPTIONS,
@@ -159,6 +178,17 @@ export const RESERVATION_STATUSES = ['not_required', 'pending', 'paid', 'verifie
 export const FUNDING_SOURCE_STATUSES = ['planned', 'pending', 'paid', 'verified']
 const DISCUSSION_TYPES = ['operational', 'blocker', 'document', 'decision', 'client', 'finance', 'legal', 'system', 'workflow', 'reminder', 'internal_note', 'client_update']
 const WORKFLOW_COMMENT_META_PREFIX = '__bridge_workflow_meta__'
+const CANONICAL_UPLOAD_CATEGORY_KEY_HINTS = {
+  'instruction / otp documents': 'signed_otp',
+  'buyer fica / compliance': 'buyer_id_document',
+  'seller fica / compliance': 'seller_id_document',
+  'drafting documents': 'transfer_documents',
+  'signing documents': 'signed_transfer_documents',
+  guarantees: 'guarantees',
+  'clearance documents': 'rates_clearance_certificate',
+  'lodgement documents': 'lodgement_confirmation',
+  'registration / close-out documents': 'registration_confirmation',
+}
 export const TRANSACTION_EVENT_TYPES = [
   'TransactionCreated',
   'TransactionUpdated',
@@ -646,6 +676,16 @@ function isMissingColumnError(error, columnName) {
     return hasNamedColumnMatch
   }
   return normalizedColumnName ? message.includes('column') && message.includes(normalizedColumnName) : message.includes('column')
+}
+
+function isMissingFunctionError(error, functionName = '') {
+  if (!error) return false
+  const code = String(error.code || '').toUpperCase()
+  const message = String(error.message || error.details || error.hint || '').toLowerCase()
+  const normalizedFunctionName = String(functionName || '').trim().toLowerCase()
+  if (message.includes('permission denied')) return false
+  const functionMissing = code === '42883' || code === 'PGRST202' || message.includes('function') || message.includes('schema cache')
+  return functionMissing && (!normalizedFunctionName || message.includes(normalizedFunctionName))
 }
 
 const knownMissingSchemaColumns = new Set()
@@ -6396,7 +6436,11 @@ function normalizeRequiredDocumentRows(rows = [], metadataByKey = {}) {
         verifiedAt: row.verified_at || null,
         rejectedAt: row.rejected_at || null,
         notes: row.notes || '',
+        rejectionReason: row.rejected_note || row.rejection_reason || row.notes || '',
+        rejection_reason: row.rejected_note || row.rejection_reason || row.notes || '',
         sortOrder: row.sort_order ?? 999,
+        canonicalRequirementInstanceId: row.canonical_requirement_instance_id || null,
+        canonical_requirement_instance_id: row.canonical_requirement_instance_id || null,
         portalDocumentType: portalMetadata.portalDocumentType,
         portalWorkspaceCategory: portalMetadata.portalWorkspaceCategory,
         portalMappingSource: portalMetadata.portalMappingSource,
@@ -6661,7 +6705,7 @@ async function ensureTransactionRequiredDocuments(
   }, {})
   const templateMap = buildTemplateMap(templates)
   const fullRowSelect =
-    'id, transaction_id, document_key, document_label, is_required, is_uploaded, status, enabled, group_key, group_label, description, required_from_role, visibility_scope, allow_multiple, uploaded_document_id, uploaded_at, verified_at, rejected_at, notes, sort_order'
+    'id, transaction_id, document_key, document_label, is_required, is_uploaded, status, enabled, group_key, group_label, description, required_from_role, visibility_scope, allow_multiple, uploaded_document_id, uploaded_at, verified_at, rejected_at, notes, sort_order, canonical_requirement_instance_id'
   const legacyRowSelect =
     'id, transaction_id, document_key, document_label, is_required, is_uploaded, uploaded_document_id, sort_order'
 
@@ -6678,6 +6722,7 @@ async function ensureTransactionRequiredDocuments(
       isMissingColumnError(existingRowsQuery.error, 'required_from_role') ||
       isMissingColumnError(existingRowsQuery.error, 'visibility_scope') ||
       isMissingColumnError(existingRowsQuery.error, 'allow_multiple') ||
+      isMissingColumnError(existingRowsQuery.error, 'canonical_requirement_instance_id') ||
       isMissingColumnError(existingRowsQuery.error, 'enabled')
     ) {
       existingRowsQuery = await client
@@ -6729,6 +6774,7 @@ async function ensureTransactionRequiredDocuments(
       rejected_at: existing?.rejected_at || null,
       notes: existing?.notes || null,
       sort_order: index + 1,
+      canonical_requirement_instance_id: existing?.canonical_requirement_instance_id || null,
     }
   })
 
@@ -6748,6 +6794,7 @@ async function ensureTransactionRequiredDocuments(
       isMissingColumnError(upsertError, 'required_from_role') ||
       isMissingColumnError(upsertError, 'visibility_scope') ||
       isMissingColumnError(upsertError, 'allow_multiple') ||
+      isMissingColumnError(upsertError, 'canonical_requirement_instance_id') ||
       isMissingColumnError(upsertError, 'enabled'))
   ) {
     const legacyRows = upsertRows.map((row) => ({
@@ -6834,6 +6881,7 @@ async function ensureTransactionRequiredDocuments(
       isMissingColumnError(refreshedQuery.error, 'required_from_role') ||
       isMissingColumnError(refreshedQuery.error, 'visibility_scope') ||
       isMissingColumnError(refreshedQuery.error, 'allow_multiple') ||
+      isMissingColumnError(refreshedQuery.error, 'canonical_requirement_instance_id') ||
       isMissingColumnError(refreshedQuery.error, 'enabled')
     ) {
       refreshedQuery = await client
@@ -6859,95 +6907,11 @@ async function ensureTransactionRequiredDocuments(
   return normalizeRequiredDocumentRows(refreshedQuery.data || [], metadataByKey)
 }
 
-async function resolveRuleDrivenDocumentTemplates(
-  client,
-  { purchaserType = 'individual', financeType = 'cash', reservationRequired = false } = {},
-) {
-  const normalizedType = normalizePurchaserType(purchaserType)
-  const normalizedFinanceType = normalizeFinanceType(financeType || 'cash')
-  const normalizedReservationRequired = Boolean(reservationRequired)
-
-  const rulesQuery = await client
-    .from('document_requirement_rules')
-    .select('id, purchaser_type, marital_structure, finance_type, reservation_required, template_key, required, enabled')
-    .eq('purchaser_type', normalizedType)
-    .eq('enabled', true)
-    .eq('required', true)
-
-  if (rulesQuery.error) {
-    if (
-      isMissingTableError(rulesQuery.error, 'document_requirement_rules') ||
-      isMissingColumnError(rulesQuery.error, 'template_key')
-    ) {
-      return []
-    }
-    throw rulesQuery.error
-  }
-
-  const applicableRules = (rulesQuery.data || []).filter((rule) => {
-    const financeMatches = !rule.finance_type || normalizeFinanceType(rule.finance_type, { allowUnknown: true }) === normalizedFinanceType
-    const reservationMatches =
-      rule.reservation_required === null || rule.reservation_required === undefined
-        ? true
-        : Boolean(rule.reservation_required) === normalizedReservationRequired
-
-    return financeMatches && reservationMatches
-  })
-
-  if (!applicableRules.length) {
-    return []
-  }
-
-  const templateKeys = [...new Set(applicableRules.map((rule) => String(rule.template_key || '').trim()).filter(Boolean))]
-  if (!templateKeys.length) {
-    return []
-  }
-
-  const templatesQuery = await client
-    .from('document_templates')
-    .select(
-      'key, label, description, group_key, expected_from_role, default_visibility, allow_multiple, sort_order, is_active',
-    )
-    .in('key', templateKeys)
-    .eq('is_active', true)
-
-  if (templatesQuery.error) {
-    if (
-      isMissingTableError(templatesQuery.error, 'document_templates') ||
-      isMissingColumnError(templatesQuery.error, 'group_key')
-    ) {
-      return []
-    }
-    throw templatesQuery.error
-  }
-
-  const templateByKey = (templatesQuery.data || []).reduce((accumulator, row) => {
-    const key = String(row.key || '').trim()
-    if (!key) {
-      return accumulator
-    }
-
-    const group = getGroupByKey(row.group_key || 'buyer_fica')
-    accumulator[key] = {
-      key,
-      label: row.label || key,
-      group: group.label,
-      groupKey: group.key,
-      groupLabel: group.label,
-      description: row.description || '',
-      expectedFromRole: row.expected_from_role || 'client',
-      defaultVisibility: row.default_visibility || 'client',
-      allowMultiple: Boolean(row.allow_multiple),
-      keywords: [String(row.label || key).toLowerCase(), key.replaceAll('_', ' ')],
-      sortOrder: Number.isFinite(Number(row.sort_order)) ? Number(row.sort_order) : 0,
-    }
-    return accumulator
-  }, {})
-
-  return templateKeys
-    .map((key) => templateByKey[key])
-    .filter(Boolean)
-    .sort((left, right) => (left.sortOrder || 0) - (right.sortOrder || 0))
+async function resolveRuleDrivenDocumentTemplates() {
+  // Canonical operational rules are intentionally hidden from browser roles.
+  // Browser reads rely on transaction_required_documents, with static templates
+  // as the legacy fallback when no projection rows exist.
+  return []
 }
 
 async function fetchTransactionRequiredDocumentsByTransactionIds(client, transactionIds = []) {
@@ -6958,7 +6922,7 @@ async function fetchTransactionRequiredDocumentsByTransactionIds(client, transac
   let query = await client
     .from('transaction_required_documents')
     .select(
-      'id, transaction_id, document_key, document_label, is_required, is_uploaded, status, enabled, group_key, group_label, description, required_from_role, visibility_scope, allow_multiple, uploaded_document_id, uploaded_at, verified_at, rejected_at, notes, sort_order',
+      'id, transaction_id, document_key, document_label, is_required, is_uploaded, status, enabled, group_key, group_label, description, required_from_role, visibility_scope, allow_multiple, uploaded_document_id, uploaded_at, verified_at, rejected_at, notes, sort_order, canonical_requirement_instance_id',
     )
     .in('transaction_id', transactionIds)
     .order('sort_order', { ascending: true })
@@ -6971,6 +6935,7 @@ async function fetchTransactionRequiredDocumentsByTransactionIds(client, transac
       isMissingColumnError(query.error, 'required_from_role') ||
       isMissingColumnError(query.error, 'visibility_scope') ||
       isMissingColumnError(query.error, 'allow_multiple') ||
+      isMissingColumnError(query.error, 'canonical_requirement_instance_id') ||
       isMissingColumnError(query.error, 'enabled'))
   ) {
     query = await client
@@ -7056,6 +7021,8 @@ function buildRequiredChecklistFromRows(requiredRows, documents) {
       requirementLevel: row.requirementLevel || 'required',
       expectedFromRole: row.expectedFromRole || 'client',
       visibilityScope: row.visibilityScope || 'client',
+      rejectionReason: row.rejectionReason || row.rejection_reason || row.notes || '',
+      rejection_reason: row.rejectionReason || row.rejection_reason || row.notes || '',
       status: resolvedStatus,
       isRequired: row.isRequired !== false,
       isEnabled: row.isEnabled !== false,
@@ -7066,6 +7033,8 @@ function buildRequiredChecklistFromRows(requiredRows, documents) {
       portalMappingSource: row.portalMappingSource || 'fallback',
       portalMappingConfidence: row.portalMappingConfidence || 'fallback',
       portalMappingAmbiguous: Boolean(row.portalMappingAmbiguous),
+      canonicalRequirementInstanceId: row.canonicalRequirementInstanceId || row.canonical_requirement_instance_id || null,
+      canonical_requirement_instance_id: row.canonicalRequirementInstanceId || row.canonical_requirement_instance_id || null,
     }
   })
 
@@ -9329,7 +9298,7 @@ async function updateDocumentRequestFromUploadIfPossible(
   let requestQuery = client
     .from('document_requests')
     .select(
-      'id, transaction_id, category, document_type, title, priority, status, requires_review, requested_document_id, assigned_to_role, requested_from, visibility_scope, request_type, notes, created_at',
+      'id, transaction_id, category, document_type, title, priority, status, assigned_to_role, created_at',
     )
     .eq('transaction_id', transactionId)
 
@@ -9352,7 +9321,7 @@ async function updateDocumentRequestFromUploadIfPossible(
   ) {
     requestsResult = await client
       .from('document_requests')
-      .select('id, transaction_id, category, document_type, title, priority, status, assigned_to_role, requested_from, visibility_scope, request_type, notes, created_at')
+      .select('id, transaction_id, category, document_type, title, priority, status, assigned_to_role, created_at')
       .eq('transaction_id', transactionId)
       .order('created_at', { ascending: false })
   }
@@ -9565,7 +9534,7 @@ async function loadTransactionDocumentRequestsByIds(client, transactionIds = [])
   let query = await client
     .from('document_requests')
     .select(
-      'id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, assigned_to_user_id, request_group_id, status, requires_review, requested_document_id, created_by, created_by_role, completed_at, rejected_reason, resend_count, last_resent_at, requested_from, visibility_scope, request_type, notes, created_at, updated_at',
+      'id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, status, created_by, created_by_role, completed_at, created_at',
     )
     .in('transaction_id', ids)
     .order('created_at', { ascending: false })
@@ -12137,6 +12106,11 @@ function normalizeSharedDocumentRow(row, { hasClientVisibilityColumn = true } = 
     uploaded_by_role: row?.uploaded_by_role || null,
     uploaded_by_email: row?.uploaded_by_email || null,
     external_access_id: row?.external_access_id || null,
+    canonicalRequirementInstanceId: row?.canonical_requirement_instance_id || null,
+    canonical_requirement_instance_id: row?.canonical_requirement_instance_id || null,
+    status: row?.status || row?.review_status || null,
+    review_status: row?.review_status || row?.status || null,
+    rejection_reason: row?.rejection_reason || row?.rejected_reason || null,
     archived_at: archivedAt,
     is_archived: Boolean(archivedAt || inferredArchivedFromCategory),
     portal_document_type: portalMetadata.portalDocumentType,
@@ -12179,54 +12153,48 @@ async function fetchSharedDocumentRowsByTransactionIds(client, transactionIds = 
     }
   }
 
+  const documentSelectCandidates = [
+    {
+      select:
+        'id, transaction_id, name, file_path, category, document_type, status, review_status, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, external_access_id, canonical_requirement_instance_id, created_at, updated_at',
+      hasClientVisibilityColumn: true,
+    },
+    {
+      select:
+        'id, transaction_id, name, file_path, category, document_type, status, review_status, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, external_access_id, canonical_requirement_instance_id, created_at',
+      hasClientVisibilityColumn: true,
+    },
+    {
+      select:
+        'id, transaction_id, name, file_path, category, is_client_visible, uploaded_by_role, uploaded_by_email, external_access_id, created_at',
+      hasClientVisibilityColumn: true,
+    },
+    {
+      select: 'id, transaction_id, name, file_path, category, uploaded_by_role, uploaded_by_email, external_access_id, created_at',
+      hasClientVisibilityColumn: false,
+    },
+    {
+      select: 'id, transaction_id, name, file_path, category, created_at',
+      hasClientVisibilityColumn: false,
+    },
+  ]
+
   let hasClientVisibilityColumn = true
-  let query = await client
-    .from('documents')
-    .select(
-      'id, transaction_id, name, file_path, category, document_type, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, external_access_id, archived_at, created_at',
-    )
-    .in('transaction_id', ids)
-    .order('created_at', { ascending: false })
-
-  if (
-    query.error &&
-    (isMissingColumnError(query.error, 'document_type') ||
-      isMissingColumnError(query.error, 'visibility_scope') ||
-      isMissingColumnError(query.error, 'stage_key') ||
-      isMissingColumnError(query.error, 'uploaded_by_user_id'))
-  ) {
+  let query = { data: [], error: null }
+  for (const candidate of documentSelectCandidates) {
     query = await client
       .from('documents')
-      .select(
-        'id, transaction_id, name, file_path, category, is_client_visible, uploaded_by_role, uploaded_by_email, external_access_id, archived_at, created_at',
-      )
+      .select(candidate.select)
       .in('transaction_id', ids)
       .order('created_at', { ascending: false })
-  }
 
-  if (query.error && isMissingColumnError(query.error, 'is_client_visible')) {
-    hasClientVisibilityColumn = false
-    query = await client
-      .from('documents')
-      .select('id, transaction_id, name, file_path, category, uploaded_by_role, uploaded_by_email, external_access_id, archived_at, created_at')
-      .in('transaction_id', ids)
-      .order('created_at', { ascending: false })
-  }
-
-  if (
-    query.error &&
-    (isMissingColumnError(query.error, 'uploaded_by_role') ||
-      isMissingColumnError(query.error, 'uploaded_by_email') ||
-      isMissingColumnError(query.error, 'external_access_id'))
-  ) {
-    // Legacy schemas may not have uploader metadata columns. Treat client visibility
-    // as unavailable so rows default to shared visibility instead of being hidden.
-    hasClientVisibilityColumn = false
-    query = await client
-      .from('documents')
-      .select('id, transaction_id, name, file_path, category, created_at')
-      .in('transaction_id', ids)
-      .order('created_at', { ascending: false })
+    if (!query.error) {
+      hasClientVisibilityColumn = candidate.hasClientVisibilityColumn
+      break
+    }
+    if (!isMissingSchemaError(query.error)) {
+      break
+    }
   }
 
   if (query.error) {
@@ -16772,7 +16740,7 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = []) {
   }
 
   const allowedRoleTypes = new Set(['transfer_attorney', 'bond_originator', 'bond_attorney'])
-  const allowedSources = new Set(['agency_preferred', 'buyer_appointed', 'manual'])
+  const allowedSources = new Set(['agency_preferred', 'buyer_appointed', 'manual', 'connected_partner', 'preferred_partner'])
 
   return rolePlayers
     .map((item) => {
@@ -16794,6 +16762,8 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = []) {
         roleType,
         selectionSource: normalizedSource,
         preferredPartnerId: normalizeNullableText(item?.preferredPartnerId || partner.partnerId),
+        partnerRelationshipId: normalizeNullableText(item?.partnerRelationshipId || partner.partnerRelationshipId),
+        partnerOrganisationId: normalizeNullableText(item?.partnerOrganisationId || partner.partnerOrganisationId),
         partnerName: partnerName || null,
         contactPerson: normalizeNullableText(partner.contactPerson),
         email: normalizeNullableText(partner.email)?.toLowerCase() || null,
@@ -16806,6 +16776,8 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = []) {
           roleType,
           selectionSource: normalizedSource,
           preferredPartnerId: normalizeNullableText(item?.preferredPartnerId || partner.partnerId),
+          partnerRelationshipId: normalizeNullableText(item?.partnerRelationshipId || partner.partnerRelationshipId),
+          partnerOrganisationId: normalizeNullableText(item?.partnerOrganisationId || partner.partnerOrganisationId),
           partner: {
             companyName: normalizeNullableText(partner.companyName),
             contactPerson: normalizeNullableText(partner.contactPerson),
@@ -17108,6 +17080,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
 
   const deferFinanceType = Boolean(options?.deferFinanceType)
   const rolePlayerSelections = normalizeTransactionRolePlayerInputs(options?.rolePlayers || [])
+  const primaryPartnerSelection = rolePlayerSelections.find((item) => item.partnerOrganisationId || item.partnerRelationshipId) || null
   const normalizedFinanceType = deferFinanceType
     ? normalizeFinanceType(setup.financeType || '', { allowUnknown: true })
     : normalizeFinanceType(setup.financeType || 'cash')
@@ -17209,6 +17182,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     expected_transfer_date: finance.expectedTransferDate || null,
     assigned_attorney_email: normalizeNullableText(finance.attorneyEmail)?.toLowerCase() || null,
     assigned_bond_originator_email: normalizeNullableText(finance.bondOriginatorEmail)?.toLowerCase() || null,
+    originating_partner_organisation_id: primaryPartnerSelection?.partnerOrganisationId || null,
+    referral_source_organisation_id: normalizeNullableText(options?.referralSourceOrganisationId) || null,
+    relationship_owner_user_id: actorProfile.userId || null,
+    partner_relationship_id: primaryPartnerSelection?.partnerRelationshipId || null,
     owner_user_id: actorProfile.userId || null,
     access_level: normalizeTransactionAccessLevel(setup.accessLevel, transactionType === 'private_property' ? 'private' : 'shared'),
     is_active: true,
@@ -17243,6 +17220,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     assigned_attorney_email: normalizeNullableText(finance.attorneyEmail)?.toLowerCase() || null,
     bond_originator: finance.bondOriginator || null,
     assigned_bond_originator_email: normalizeNullableText(finance.bondOriginatorEmail)?.toLowerCase() || null,
+    originating_partner_organisation_id: primaryPartnerSelection?.partnerOrganisationId || null,
+    referral_source_organisation_id: normalizeNullableText(options?.referralSourceOrganisationId) || null,
+    relationship_owner_user_id: actorProfile.userId || null,
+    partner_relationship_id: primaryPartnerSelection?.partnerRelationshipId || null,
     next_action: status.nextAction || finance.nextAction || null,
     comment: status.nextAction || finance.nextAction || null,
     gross_commission_percentage: snapshotGrossCommissionPercentage,
@@ -17333,6 +17314,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       isMissingColumnError(transactionResult.error, 'assigned_agent_email') ||
       isMissingColumnError(transactionResult.error, 'assigned_attorney_email') ||
       isMissingColumnError(transactionResult.error, 'assigned_bond_originator_email') ||
+      isMissingColumnError(transactionResult.error, 'originating_partner_organisation_id') ||
+      isMissingColumnError(transactionResult.error, 'referral_source_organisation_id') ||
+      isMissingColumnError(transactionResult.error, 'relationship_owner_user_id') ||
+      isMissingColumnError(transactionResult.error, 'partner_relationship_id') ||
       isMissingColumnError(transactionResult.error, 'gross_commission_percentage') ||
       isMissingColumnError(transactionResult.error, 'gross_commission_amount') ||
       isMissingColumnError(transactionResult.error, 'agent_split_percentage_snapshot') ||
@@ -17368,6 +17353,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     delete fallbackPayload.assigned_agent_email
     delete fallbackPayload.assigned_attorney_email
     delete fallbackPayload.assigned_bond_originator_email
+    delete fallbackPayload.originating_partner_organisation_id
+    delete fallbackPayload.referral_source_organisation_id
+    delete fallbackPayload.relationship_owner_user_id
+    delete fallbackPayload.partner_relationship_id
     delete fallbackPayload.gross_commission_percentage
     delete fallbackPayload.gross_commission_amount
     delete fallbackPayload.agent_split_percentage_snapshot
@@ -17451,6 +17440,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         isMissingColumnError(transactionResult.error, 'assigned_agent_email') ||
         isMissingColumnError(transactionResult.error, 'assigned_attorney_email') ||
         isMissingColumnError(transactionResult.error, 'assigned_bond_originator_email') ||
+        isMissingColumnError(transactionResult.error, 'originating_partner_organisation_id') ||
+        isMissingColumnError(transactionResult.error, 'referral_source_organisation_id') ||
+        isMissingColumnError(transactionResult.error, 'relationship_owner_user_id') ||
+        isMissingColumnError(transactionResult.error, 'partner_relationship_id') ||
         isMissingColumnError(transactionResult.error, 'gross_commission_percentage') ||
         isMissingColumnError(transactionResult.error, 'gross_commission_amount') ||
         isMissingColumnError(transactionResult.error, 'agent_split_percentage_snapshot') ||
@@ -17488,6 +17481,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.assigned_agent_email
       delete fallbackPayload.assigned_attorney_email
       delete fallbackPayload.assigned_bond_originator_email
+      delete fallbackPayload.originating_partner_organisation_id
+      delete fallbackPayload.referral_source_organisation_id
+      delete fallbackPayload.relationship_owner_user_id
+      delete fallbackPayload.partner_relationship_id
       delete fallbackPayload.gross_commission_percentage
       delete fallbackPayload.gross_commission_amount
       delete fallbackPayload.agent_split_percentage_snapshot
@@ -17529,6 +17526,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         isMissingColumnError(transactionResult.error, 'assigned_agent_email') ||
         isMissingColumnError(transactionResult.error, 'assigned_attorney_email') ||
         isMissingColumnError(transactionResult.error, 'assigned_bond_originator_email') ||
+        isMissingColumnError(transactionResult.error, 'originating_partner_organisation_id') ||
+        isMissingColumnError(transactionResult.error, 'referral_source_organisation_id') ||
+        isMissingColumnError(transactionResult.error, 'relationship_owner_user_id') ||
+        isMissingColumnError(transactionResult.error, 'partner_relationship_id') ||
         isMissingColumnError(transactionResult.error, 'gross_commission_percentage') ||
         isMissingColumnError(transactionResult.error, 'gross_commission_amount') ||
         isMissingColumnError(transactionResult.error, 'agent_split_percentage_snapshot') ||
@@ -17565,6 +17566,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.assigned_agent_email
       delete fallbackPayload.assigned_attorney_email
       delete fallbackPayload.assigned_bond_originator_email
+      delete fallbackPayload.originating_partner_organisation_id
+      delete fallbackPayload.referral_source_organisation_id
+      delete fallbackPayload.relationship_owner_user_id
+      delete fallbackPayload.partner_relationship_id
       delete fallbackPayload.gross_commission_percentage
       delete fallbackPayload.gross_commission_amount
       delete fallbackPayload.agent_split_percentage_snapshot
@@ -26835,14 +26840,19 @@ export async function fetchClientPortalByToken(token) {
     throw new Error('Transaction not found.')
   }
 
-  const { data: unit, error: unitError } = await client
-    .from('units')
-    .select('id, development_id, unit_number, phase, status, development:developments(id, name)')
-    .eq('id', transaction.unit_id)
-    .maybeSingle()
+  let unit = null
+  if (transaction.unit_id) {
+    const { data: unitData, error: unitError } = await client
+      .from('units')
+      .select('id, development_id, unit_number, phase, status, development:developments(id, name)')
+      .eq('id', transaction.unit_id)
+      .maybeSingle()
 
-  if (unitError) {
-    throw unitError
+    if (unitError) {
+      throw unitError
+    }
+
+    unit = unitData
   }
 
   let buyer = null
@@ -26923,7 +26933,7 @@ export async function fetchClientPortalByToken(token) {
   const homeownerDashboardEnabled = handover.status === 'completed'
 
   let issues = []
-  if (settings.snag_reporting_enabled) {
+  if (settings.snag_reporting_enabled && transaction.unit_id) {
     const { data: clientIssuesData, error: clientIssuesError } = await client
       .from('client_issues')
       .select('id, category, description, location, priority, photo_path, status, created_at, updated_at')
@@ -26943,7 +26953,7 @@ export async function fetchClientPortalByToken(token) {
   }
 
   let alterations = []
-  if (settings.alteration_requests_enabled) {
+  if (settings.alteration_requests_enabled && transaction.unit_id) {
     const { data: alterationData, error: alterationError } = await client
       .from('alteration_requests')
       .select(
@@ -26967,7 +26977,7 @@ export async function fetchClientPortalByToken(token) {
   }
 
   let reviews = []
-  if (settings.service_reviews_enabled) {
+  if (settings.service_reviews_enabled && transaction.unit_id) {
     const { data: reviewsData, error: reviewsError } = await client
       .from('service_reviews')
       .select('id, rating, review_text, positives, improvements, allow_marketing_use, created_at, updated_at')
@@ -27229,19 +27239,21 @@ export async function fetchClientPortalCoreByToken(token) {
     throw new Error('Transaction not found.')
   }
 
-  const [{ data: unit, error: unitError }, buyerQuery] = await Promise.all([
-    client
-      .from('units')
-      .select('id, development_id, unit_number, phase, status, development:developments(id, name)')
-      .eq('id', transaction.unit_id)
-      .maybeSingle(),
+  const [unitQuery, buyerQuery] = await Promise.all([
+    transaction.unit_id
+      ? client
+        .from('units')
+        .select('id, development_id, unit_number, phase, status, development:developments(id, name)')
+        .eq('id', transaction.unit_id)
+        .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
     transaction.buyer_id
       ? client.from('buyers').select('id, name, phone, email').eq('id', transaction.buyer_id).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
   ])
 
-  if (unitError) {
-    throw unitError
+  if (unitQuery.error) {
+    throw unitQuery.error
   }
   if (buyerQuery.error) {
     throw buyerQuery.error
@@ -27301,7 +27313,7 @@ export async function fetchClientPortalCoreByToken(token) {
   return {
     link,
     settings,
-    unit,
+    unit: unitQuery.data || null,
     transaction,
     buyer: buyerQuery.data || null,
     appointments,
@@ -30584,6 +30596,193 @@ export async function uploadExternalDocument({ accessToken, transactionId = null
   }
 }
 
+function isUuidLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())
+}
+
+function normalizeCanonicalUploadActorRole(role = '') {
+  const normalized = normalizeDocumentKeyCandidate(role)
+  if (normalized === 'attorney') return 'transferring_attorney'
+  if (normalized === 'client') return 'buyer'
+  return normalized || 'system'
+}
+
+function getCanonicalUploadKeyCandidates({ requiredDocumentKey = null, documentType = null, category = null } = {}) {
+  const values = [
+    requiredDocumentKey,
+    documentType,
+    CANONICAL_UPLOAD_CATEGORY_KEY_HINTS[String(category || '').trim().toLowerCase()],
+    category,
+  ]
+  return [...new Set(values.map(normalizeDocumentKeyCandidate).filter(Boolean))]
+}
+
+async function resolveCanonicalRequirementTargetForUpload(
+  client,
+  {
+    transactionId,
+    canonicalRequirementInstanceId = null,
+    requiredDocumentKey = null,
+    documentType = null,
+    category = null,
+  } = {},
+) {
+  if (!transactionId) return null
+  if (isUuidLike(canonicalRequirementInstanceId)) {
+    return {
+      canonicalRequirementInstanceId,
+      requiredDocumentKey: normalizeDocumentKeyCandidate(requiredDocumentKey || documentType),
+      matchReason: 'explicit_canonical_requirement_instance_id',
+    }
+  }
+
+  const keyCandidates = getCanonicalUploadKeyCandidates({ requiredDocumentKey, documentType, category })
+  if (!keyCandidates.length) return null
+
+  const query = await client
+    .from('transaction_required_documents')
+    .select('id, transaction_id, document_key, document_label, canonical_requirement_instance_id')
+    .eq('transaction_id', transactionId)
+    .in('document_key', keyCandidates)
+    .not('canonical_requirement_instance_id', 'is', null)
+    .limit(2)
+
+  if (query.error) {
+    if (
+      isMissingTableError(query.error, 'transaction_required_documents') ||
+      isMissingColumnError(query.error, 'canonical_requirement_instance_id') ||
+      isPermissionDeniedError(query.error)
+    ) {
+      return null
+    }
+    throw query.error
+  }
+
+  const rows = query.data || []
+  if (rows.length === 1) {
+    const row = rows[0]
+    return {
+      canonicalRequirementInstanceId: row.canonical_requirement_instance_id,
+      requiredDocumentKey: row.document_key,
+      legacyRequirementId: row.id,
+      matchReason: 'transaction_required_document_key',
+    }
+  }
+
+  const instanceQuery = await client
+    .from('document_requirement_instances')
+    .select('id, document_definition_key')
+    .eq('transaction_id', transactionId)
+    .in('document_definition_key', keyCandidates)
+    .neq('status', 'not_applicable')
+    .limit(2)
+
+  if (instanceQuery.error) {
+    if (
+      isMissingTableError(instanceQuery.error, 'document_requirement_instances') ||
+      isMissingColumnError(instanceQuery.error, 'document_definition_key') ||
+      isPermissionDeniedError(instanceQuery.error)
+    ) {
+      return null
+    }
+    throw instanceQuery.error
+  }
+
+  const instances = instanceQuery.data || []
+  if (instances.length !== 1) return null
+  return {
+    canonicalRequirementInstanceId: instances[0].id,
+    requiredDocumentKey: instances[0].document_definition_key,
+    matchReason: 'canonical_definition_key',
+  }
+}
+
+async function linkInternalUploadToCanonicalRequirementIfPossible(
+  client,
+  {
+    transactionId,
+    documentId,
+    canonicalRequirementInstanceId,
+    actorRole = '',
+    actorUserId = null,
+    metadata = {},
+  } = {},
+) {
+  if (!transactionId || !documentId || !canonicalRequirementInstanceId) return null
+
+  const rpc = await client.rpc('bridge_link_document_to_canonical_requirement', {
+    p_document_id: documentId,
+    p_requirement_instance_id: canonicalRequirementInstanceId,
+    p_actor_role: normalizeCanonicalUploadActorRole(actorRole),
+    p_actor_user_id: actorUserId || null,
+    p_metadata: {
+      source: 'internal_browser_upload',
+      ...metadata,
+    },
+  })
+
+  if (rpc.error) {
+    if (
+      isMissingFunctionError(rpc.error, 'bridge_link_document_to_canonical_requirement') ||
+      isMissingColumnError(rpc.error, 'canonical_requirement_instance_id')
+    ) {
+      console.warn('[canonical-documents] Canonical upload linkage skipped; RPC or link column is unavailable.', rpc.error)
+      return null
+    }
+    throw rpc.error
+  }
+
+  return rpc.data || null
+}
+
+async function linkInternalUploadToCanonicalRequirementByKeyIfPossible(
+  client,
+  {
+    transactionId,
+    documentId,
+    keyCandidates = [],
+    actorRole = '',
+    actorUserId = null,
+    metadata = {},
+  } = {},
+) {
+  if (!transactionId || !documentId || !keyCandidates.length) return null
+
+  for (const documentKey of keyCandidates) {
+    const rpc = await client.rpc('bridge_link_document_to_canonical_requirement_by_key', {
+      p_document_id: documentId,
+      p_transaction_id: transactionId,
+      p_document_key: documentKey,
+      p_actor_role: normalizeCanonicalUploadActorRole(actorRole),
+      p_actor_user_id: actorUserId || null,
+      p_metadata: {
+        source: 'internal_browser_upload',
+        ...metadata,
+      },
+    })
+
+    if (rpc.error) {
+      if (
+        isMissingFunctionError(rpc.error, 'bridge_link_document_to_canonical_requirement_by_key') ||
+        isMissingColumnError(rpc.error, 'canonical_requirement_instance_id')
+      ) {
+        console.warn('[canonical-documents] Canonical upload key linkage skipped; RPC or link column is unavailable.', rpc.error)
+        return null
+      }
+      throw rpc.error
+    }
+
+    if (rpc.data?.ok && rpc.data?.requirementInstanceId) {
+      return {
+        ...rpc.data,
+        documentKey,
+      }
+    }
+  }
+
+  return null
+}
+
 export async function uploadDocument({
   transactionId,
   file,
@@ -30594,31 +30793,45 @@ export async function uploadDocument({
   stageKey = null,
   requiredDocumentKey = null,
   documentRequestId = null,
+  canonicalRequirementInstanceId = null,
 }) {
   const client = requireClient()
   const activeProfile = await resolveActiveProfileContext(client)
+  const canonicalTarget = await resolveCanonicalRequirementTargetForUpload(client, {
+    transactionId,
+    canonicalRequirementInstanceId,
+    requiredDocumentKey,
+    documentType,
+    category,
+  })
+  const canonicalKeyCandidates = getCanonicalUploadKeyCandidates({ requiredDocumentKey, documentType, category })
 
   const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '-')
   const filePath = `transaction-${transactionId}/${Date.now()}-${safeName}`
   const normalizedDocumentType =
-    normalizePortalDocumentType(documentType || requiredDocumentKey || category || file.name) || 'general'
+    normalizePortalDocumentType(documentType || canonicalTarget?.requiredDocumentKey || requiredDocumentKey || category || file.name) || 'general'
 
   await uploadToDocumentsBucket(client, filePath, file)
 
+  const documentInsertPayload = {
+    transaction_id: transactionId,
+    name: file.name,
+    file_path: filePath,
+    category: category || 'General',
+    document_type: normalizedDocumentType,
+    visibility_scope: visibilityScope || (isClientVisible ? 'shared' : 'internal'),
+    uploaded_by_user_id: activeProfile.userId || null,
+    stage_key: stageKey || null,
+    is_client_visible: Boolean(isClientVisible),
+    ...(canonicalTarget?.canonicalRequirementInstanceId
+      ? { canonical_requirement_instance_id: canonicalTarget.canonicalRequirementInstanceId }
+      : {}),
+  }
+
   let result = await client
     .from('documents')
-    .insert({
-      transaction_id: transactionId,
-      name: file.name,
-      file_path: filePath,
-      category: category || 'General',
-      document_type: normalizedDocumentType,
-      visibility_scope: visibilityScope || (isClientVisible ? 'shared' : 'internal'),
-      uploaded_by_user_id: activeProfile.userId || null,
-      stage_key: stageKey || null,
-      is_client_visible: Boolean(isClientVisible),
-    })
-    .select('id, transaction_id, name, file_path, category, document_type, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, created_at')
+    .insert(documentInsertPayload)
+    .select('id, transaction_id, name, file_path, category, document_type, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, canonical_requirement_instance_id, created_at')
     .single()
 
   if (
@@ -30627,7 +30840,8 @@ export async function uploadDocument({
       isMissingColumnError(result.error, 'visibility_scope') ||
       isMissingColumnError(result.error, 'stage_key') ||
       isMissingColumnError(result.error, 'uploaded_by_user_id') ||
-      isMissingColumnError(result.error, 'is_client_visible'))
+      isMissingColumnError(result.error, 'is_client_visible') ||
+      isMissingColumnError(result.error, 'canonical_requirement_instance_id'))
   ) {
     result = await client
       .from('documents')
@@ -30645,6 +30859,49 @@ export async function uploadDocument({
     throw result.error
   }
 
+  let canonicalUploadResult = null
+  if (canonicalTarget?.canonicalRequirementInstanceId) {
+    canonicalUploadResult = await linkInternalUploadToCanonicalRequirementIfPossible(client, {
+      transactionId,
+      documentId: result.data.id,
+      canonicalRequirementInstanceId: canonicalTarget.canonicalRequirementInstanceId,
+      actorRole: activeProfile.role || 'developer',
+      actorUserId: activeProfile.userId || null,
+      metadata: {
+        document_name: result.data.name,
+        document_type: normalizedDocumentType,
+        category: result.data.category || category || 'General',
+        required_document_key: canonicalTarget.requiredDocumentKey || requiredDocumentKey || null,
+        match_reason: canonicalTarget.matchReason || null,
+      },
+    })
+  } else if (canonicalKeyCandidates.length) {
+    canonicalUploadResult = await linkInternalUploadToCanonicalRequirementByKeyIfPossible(client, {
+      transactionId,
+      documentId: result.data.id,
+      keyCandidates: canonicalKeyCandidates,
+      actorRole: activeProfile.role || 'developer',
+      actorUserId: activeProfile.userId || null,
+      metadata: {
+        document_name: result.data.name,
+        document_type: normalizedDocumentType,
+        category: result.data.category || category || 'General',
+        required_document_key: requiredDocumentKey || null,
+        match_reason: 'document_key_rpc',
+      },
+    })
+  }
+  const linkedCanonicalRequirementInstanceId =
+    canonicalTarget?.canonicalRequirementInstanceId ||
+    canonicalUploadResult?.requirementInstanceId ||
+    result.data.canonical_requirement_instance_id ||
+    null
+  const linkedRequiredDocumentKey =
+    canonicalTarget?.requiredDocumentKey ||
+    canonicalUploadResult?.canonicalKey ||
+    canonicalUploadResult?.documentKey ||
+    requiredDocumentKey
+
   await logTransactionEventIfPossible(client, {
     transactionId,
     eventType: 'DocumentUploaded',
@@ -30656,6 +30913,7 @@ export async function uploadDocument({
       category: result.data.category || category || 'General',
       visibilityScope: result.data.visibility_scope || (isClientVisible ? 'shared' : 'internal'),
       stageKey: result.data.stage_key || stageKey || null,
+      canonicalRequirementInstanceId: linkedCanonicalRequirementInstanceId,
       source: 'internal',
     },
   })
@@ -30675,7 +30933,7 @@ export async function uploadDocument({
     documentId: result.data.id,
     documentName: result.data.name,
     category: result.data.category || category || 'General',
-    requiredDocumentKey,
+    requiredDocumentKey: linkedRequiredDocumentKey,
   })
 
   await runDocumentAutomationIfPossible(client, {
@@ -30683,7 +30941,8 @@ export async function uploadDocument({
     documentId: result.data.id,
     documentName: result.data.name,
     category: result.data.category || category || 'General',
-    requiredDocumentKey,
+    requiredDocumentKey: linkedRequiredDocumentKey,
+    canonicalRequirementInstanceId: linkedCanonicalRequirementInstanceId,
     actorRole: activeProfile.role || 'developer',
     actorUserId: activeProfile.userId || null,
     source: 'internal_upload',
@@ -30691,8 +30950,41 @@ export async function uploadDocument({
 
   return {
     ...result.data,
+    canonicalRequirementInstanceId: linkedCanonicalRequirementInstanceId,
+    canonicalUploadResult,
     url: await getSignedUrl(result.data.file_path),
   }
+}
+
+export async function reviewCanonicalDocumentRequirement({
+  requirementInstanceId,
+  documentId = null,
+  action,
+  reason = '',
+  notes = '',
+} = {}) {
+  const client = requireClient()
+  const activeProfile = await resolveActiveProfileContext(client)
+  const normalizedAction = String(action || '').trim().toLowerCase()
+  if (!requirementInstanceId) throw new Error('A canonical requirement is required for review.')
+  if (!['approve', 'reject', 'waive'].includes(normalizedAction)) {
+    throw new Error('Unsupported canonical document review action.')
+  }
+
+  const rpc = await client.rpc('bridge_review_canonical_requirement', {
+    p_requirement_instance_id: requirementInstanceId,
+    p_document_id: documentId || null,
+    p_action: normalizedAction,
+    p_reason: reason || notes || null,
+    p_actor_role: normalizeCanonicalUploadActorRole(activeProfile.role || 'attorney'),
+    p_actor_user_id: activeProfile.userId || null,
+  })
+
+  if (rpc.error) {
+    throw rpc.error
+  }
+
+  return rpc.data || null
 }
 
 function splitFullName(fullName) {

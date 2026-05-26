@@ -3,7 +3,7 @@ import { MEMBERSHIP_STATUSES, normalizeMembershipStatus } from '../constants/mem
 import { ONBOARDING_EVENT_TYPES, ONBOARDING_STATUSES, ONBOARDING_STEPS } from '../constants/onboardingStatuses'
 import { normalizeOrgRole, ORG_ROLES } from '../constants/orgRoles'
 import { SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
-import { getDefaultBranchScope, getWorkspaceUnitLabels } from '../constants/workspaceUnits'
+import { getDefaultBranchScope, getDefaultBondScope, getWorkspaceUnitLabels, normalizeScopeLevel } from '../constants/workspaceUnits'
 import { WORKSPACE_TYPES, inferWorkspaceTypeFromAppRole, normalizeWorkspaceType } from '../constants/workspaceTypes'
 import { normalizeSignupIntent } from '../lib/signupIntent'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
@@ -43,6 +43,13 @@ function isMissingSchemaError(error, token = '') {
   const code = String(error.code || '').toLowerCase()
   const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
   return code === '42p01' || code === '42703' || code === 'pgrst204' || code === 'pgrst205' || message.includes(token.toLowerCase())
+}
+
+function isMissingColumnError(error, columnName = '') {
+  if (!error) return false
+  const code = String(error.code || '').toLowerCase()
+  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
+  return code === '42703' || code === 'pgrst204' || (columnName && message.includes(String(columnName).toLowerCase()))
 }
 
 function splitFullName(name = '') {
@@ -221,35 +228,61 @@ export async function createMembership(user, workspace, role, options = {}) {
   const branchScope = options.branchScope || options.branch_scope || getDefaultBranchScope(organisationRole, { appRole, workspaceType })
   const nameParts = splitFullName(options.fullName || user.user_metadata?.full_name || '')
   const email = normalizeEmail(options.email || user.email)
+  const defaultScopeLevel =
+    workspaceType === WORKSPACE_TYPES.bondOriginator ? getDefaultBondScope(organisationRole, { appRole, workspaceType }) : null
+  const scopeLevel =
+    workspaceType === WORKSPACE_TYPES.bondOriginator
+      ? normalizeScopeLevel(options.scopeLevel || options.scope_level || '', defaultScopeLevel)
+      : null
+  const membershipPayload = {
+    organisation_id: workspaceId,
+    user_id: user.id,
+    branch_id: branchId,
+    primary_branch_id: options.primaryBranchId || options.primary_branch_id || branchId,
+    branch_scope: branchScope,
+    first_name: normalizeText(options.firstName || nameParts.firstName) || null,
+    last_name: normalizeText(options.lastName || nameParts.lastName) || null,
+    email,
+    role: organisationRole,
+    workspace_role: organisationRole,
+    organisation_role: organisationRole,
+    app_role: appRole || null,
+    workspace_type: workspaceType || null,
+    status: normalizeMembershipStatus(options.status || MEMBERSHIP_STATUSES.active),
+    scope_level: scopeLevel,
+    region_id: options.regionId || options.region_id || null,
+    workspace_unit_id: options.workspaceUnitId || options.workspace_unit_id || null,
+    scope_metadata: options.scopeMetadata || options.scope_metadata || null,
+    is_primary_owner: Boolean(options.isPrimaryOwner),
+    active_workspace_selected_at: options.activeWorkspaceSelectedAt || options.active_workspace_selected_at || null,
+    invited_by_user_id: options.invitedBy || options.invited_by || null,
+    created_by: options.createdBy || options.created_by || null,
+    invited_at: options.invitedAt || new Date().toISOString(),
+    accepted_at: options.acceptedAt || new Date().toISOString(),
+    joined_at: options.joinedAt || new Date().toISOString(),
+  }
 
-  const result = await client
+  const selectWithScopeFields =
+    'id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, role, workspace_role, organisation_role, app_role, workspace_type, status, email, created_at, updated_at, scope_level, region_id, workspace_unit_id, scope_metadata, is_primary_owner, active_workspace_selected_at'
+  const fallbackSelect =
+    'id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, role, workspace_role, organisation_role, app_role, workspace_type, status, email, created_at, updated_at'
+  const optionalColumns = ['scope_level', 'region_id', 'workspace_unit_id', 'scope_metadata', 'is_primary_owner', 'active_workspace_selected_at']
+
+  let result = await client
     .from('organisation_users')
-    .upsert(
-      {
-        organisation_id: workspaceId,
-        user_id: user.id,
-        branch_id: branchId,
-        primary_branch_id: options.primaryBranchId || options.primary_branch_id || branchId,
-        branch_scope: branchScope,
-        first_name: normalizeText(options.firstName || nameParts.firstName) || null,
-        last_name: normalizeText(options.lastName || nameParts.lastName) || null,
-        email,
-        role: organisationRole,
-        workspace_role: organisationRole,
-        organisation_role: organisationRole,
-        app_role: appRole || null,
-        workspace_type: workspaceType || null,
-        status: normalizeMembershipStatus(options.status || MEMBERSHIP_STATUSES.active),
-        invited_by_user_id: options.invitedBy || options.invited_by || null,
-        created_by: options.createdBy || options.created_by || null,
-        invited_at: options.invitedAt || new Date().toISOString(),
-        accepted_at: options.acceptedAt || new Date().toISOString(),
-        joined_at: options.joinedAt || new Date().toISOString(),
-      },
-      { onConflict: 'organisation_id,email' },
-    )
-    .select('id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, email, role, workspace_role, organisation_role, app_role, workspace_type, status, created_at, updated_at')
+    .upsert(membershipPayload, { onConflict: 'organisation_id,email' })
+    .select(selectWithScopeFields)
     .single()
+
+  if (result.error && optionalColumns.some((name) => isMissingColumnError(result.error, name))) {
+    const fallbackPayload = { ...membershipPayload }
+    optionalColumns.forEach((name) => delete fallbackPayload[name])
+    result = await client
+      .from('organisation_users')
+      .upsert(fallbackPayload, { onConflict: 'organisation_id,email' })
+      .select(fallbackSelect)
+      .single()
+  }
 
   if (result.error) {
     throw result.error
@@ -449,10 +482,30 @@ export async function loadWorkspace(workspaceId) {
 export async function loadUserMemberships(userId) {
   const client = requireClient()
   if (!userId) return []
-  const result = await client
+  const selectWithScopeFields =
+    'id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, email, role, workspace_role, organisation_role, app_role, workspace_type, status, created_at, updated_at, scope_level, region_id, workspace_unit_id, scope_metadata, is_primary_owner, active_workspace_selected_at, organisations:organisation_id(id, name, display_name, type)'
+  const selectWithoutScopeFields =
+    'id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, email, role, workspace_role, organisation_role, app_role, workspace_type, status, created_at, updated_at, organisations:organisation_id(id, name, display_name, type)'
+
+  let result = await client
     .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, email, role, workspace_role, organisation_role, app_role, workspace_type, status, created_at, updated_at, organisations:organisation_id(id, name, display_name, type)')
+    .select(selectWithScopeFields)
     .eq('user_id', userId)
+
+  if (
+    result.error &&
+    (isMissingColumnError(result.error, 'scope_level') ||
+      isMissingColumnError(result.error, 'region_id') ||
+      isMissingColumnError(result.error, 'workspace_unit_id') ||
+      isMissingColumnError(result.error, 'scope_metadata') ||
+      isMissingColumnError(result.error, 'is_primary_owner') ||
+      isMissingColumnError(result.error, 'active_workspace_selected_at'))
+  ) {
+    result = await client
+      .from('organisation_users')
+      .select(selectWithoutScopeFields)
+      .eq('user_id', userId)
+  }
 
   if (result.error) throw result.error
   return result.data || []

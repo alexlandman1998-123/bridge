@@ -22,6 +22,16 @@ export const LEGACY_DOCUMENT_GENERATION_DISABLED_FLAG = 'VITE_LEGACY_DOCUMENT_GE
 export const LEGACY_DOCUMENT_READS_DISABLED_FLAG = 'VITE_LEGACY_DOCUMENT_READS_DISABLED'
 export const LEGACY_DOCUMENT_ADAPTER_WRITEBACK_ENABLED_FLAG = 'VITE_LEGACY_DOCUMENT_ADAPTER_WRITEBACK_ENABLED'
 export const LEGACY_DOCUMENT_PARITY_MODE_FLAG = 'VITE_LEGACY_DOCUMENT_PARITY_MODE'
+export const CANONICAL_DOCUMENTS_PRIMARY_TRANSACTION_ALLOWLIST_FLAG = 'VITE_CANONICAL_DOCUMENTS_PRIMARY_TRANSACTION_ALLOWLIST'
+export const CANONICAL_DOCUMENTS_PRIMARY_ORGANISATION_ALLOWLIST_FLAG = 'VITE_CANONICAL_DOCUMENTS_PRIMARY_ORGANISATION_ALLOWLIST'
+export const CANONICAL_PILOT_BUILD_MARKER = 'CANONICAL_PILOT_BUILD_MARKER_20260525'
+const CANONICAL_PILOT_DIAGNOSTIC_RPC_MARKERS = [
+  'bridge_link_document_to_canonical_requirement',
+  'bridge_link_document_to_canonical_requirement_by_key',
+  'bridge_upload_document_to_canonical_requirement',
+  'bridge_review_canonical_requirement',
+  'canonical_requirement_instance_id',
+]
 
 export const DOCUMENT_ROLLOUT_MODES = Object.freeze({
   legacyPrimary: 'legacy_primary',
@@ -31,6 +41,18 @@ export const DOCUMENT_ROLLOUT_MODES = Object.freeze({
 })
 
 export const CONSOLIDATION_SOURCE = 'canonical_document_consolidation'
+
+function logCanonicalPilotDeploymentDiagnostic() {
+  const transactionAllowlist = getEnvFlag(CANONICAL_DOCUMENTS_PRIMARY_TRANSACTION_ALLOWLIST_FLAG)
+  if (!transactionAllowlist) return
+  console.info('Canonical pilot allowlist:', transactionAllowlist, {
+    marker: CANONICAL_PILOT_BUILD_MARKER,
+    mode: DOCUMENT_ROLLOUT_MODES.canonicalPrimary,
+    rpcMarkers: CANONICAL_PILOT_DIAGNOSTIC_RPC_MARKERS,
+  })
+}
+
+logCanonicalPilotDeploymentDiagnostic()
 
 export const VALID_CANONICAL_ROLES = Object.freeze([
   'seller',
@@ -107,6 +129,14 @@ function normalizeArray(value) {
   return Array.isArray(value) ? value : [value]
 }
 
+function normalizeAllowlist(value) {
+  if (!value) return []
+  return normalizeArray(value)
+    .flatMap((item) => String(item || '').split(/[\s,;]+/))
+    .map(normalizeKey)
+    .filter(Boolean)
+}
+
 function unique(values = []) {
   return [...new Set(values.filter(Boolean))]
 }
@@ -129,9 +159,44 @@ function requireClient(client = supabase) {
 }
 
 export function isCanonicalDocumentsSourceOfTruthEnabled(options = {}) {
+  if (isGlobalCanonicalDocumentsSourceOfTruthEnabled(options)) return true
+  return isScopedCanonicalPrimaryEnabled(options)
+}
+
+export function isGlobalCanonicalDocumentsSourceOfTruthEnabled(options = {}) {
   if (typeof options.sourceOfTruth === 'boolean') return options.sourceOfTruth
   if (typeof options.forceCanonical === 'boolean' && options.forceCanonical) return true
   return isTruthyFlag(getEnvFlag(CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH_FLAG))
+}
+
+export function isScopedCanonicalPrimaryEnabled(options = {}) {
+  if (options.sourceOfTruth === false) return false
+
+  const transactionId = normalizeKey(options.transactionId || options.transaction_id)
+  const organisationId = normalizeKey(
+    options.organisationId ||
+    options.organizationId ||
+    options.organisation_id ||
+    options.organization_id,
+  )
+
+  const transactionAllowlist = normalizeAllowlist(
+    options.canonicalPrimaryTransactionAllowlist ||
+    options.transactionAllowlist ||
+    getEnvFlag(CANONICAL_DOCUMENTS_PRIMARY_TRANSACTION_ALLOWLIST_FLAG),
+  )
+  const organisationAllowlist = normalizeAllowlist(
+    options.canonicalPrimaryOrganisationAllowlist ||
+    options.canonicalPrimaryOrganizationAllowlist ||
+    options.organisationAllowlist ||
+    options.organizationAllowlist ||
+    getEnvFlag(CANONICAL_DOCUMENTS_PRIMARY_ORGANISATION_ALLOWLIST_FLAG),
+  )
+
+  return Boolean(
+    (transactionId && transactionAllowlist.includes(transactionId)) ||
+    (organisationId && organisationAllowlist.includes(organisationId)),
+  )
 }
 
 export function isLegacyDocumentGenerationDisabled(options = {}) {
@@ -157,12 +222,14 @@ export function isLegacyDocumentParityModeEnabled(options = {}) {
 export function getCanonicalDocumentRolloutMode(options = {}) {
   const explicit = normalizeKey(options.mode)
   if (Object.values(DOCUMENT_ROLLOUT_MODES).includes(explicit)) return explicit
-  const sourceOfTruth = isCanonicalDocumentsSourceOfTruthEnabled(options)
+  const globalSourceOfTruth = isGlobalCanonicalDocumentsSourceOfTruthEnabled(options)
+  const scopedSourceOfTruth = !globalSourceOfTruth && isScopedCanonicalPrimaryEnabled(options)
+  const sourceOfTruth = globalSourceOfTruth || scopedSourceOfTruth
   const generationDisabled = isLegacyDocumentGenerationDisabled(options)
   const readsDisabled = areLegacyDocumentReadsDisabled(options)
   const parity = isLegacyDocumentParityModeEnabled(options)
 
-  if (sourceOfTruth && generationDisabled && readsDisabled) return DOCUMENT_ROLLOUT_MODES.canonicalOnly
+  if (globalSourceOfTruth && generationDisabled && readsDisabled) return DOCUMENT_ROLLOUT_MODES.canonicalOnly
   if (sourceOfTruth) return DOCUMENT_ROLLOUT_MODES.canonicalPrimary
   if (parity) return DOCUMENT_ROLLOUT_MODES.parity
   return DOCUMENT_ROLLOUT_MODES.legacyPrimary

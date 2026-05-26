@@ -4,6 +4,9 @@ export const ORG_ROLES = Object.freeze({
   director: 'director',
   partner: 'partner',
   branchManager: 'branch_manager',
+  hqManager: 'hq_manager',
+  regionalManager: 'regional_manager',
+  teamLead: 'team_lead',
   manager: 'manager',
   salesManager: 'sales_manager',
   developmentManager: 'development_manager',
@@ -13,6 +16,7 @@ export const ORG_ROLES = Object.freeze({
   bondOriginator: 'bond_originator',
   consultant: 'consultant',
   processor: 'processor',
+  compliance: 'compliance',
   agent: 'agent',
   adminStaff: 'admin_staff',
   paralegal: 'paralegal',
@@ -20,6 +24,21 @@ export const ORG_ROLES = Object.freeze({
 })
 
 export const ORG_ROLE_VALUES = Object.freeze(Object.values(ORG_ROLES))
+
+export const BOND_CANONICAL_ROLES = Object.freeze([
+  ORG_ROLES.owner,
+  ORG_ROLES.director,
+  ORG_ROLES.hqManager,
+  ORG_ROLES.regionalManager,
+  ORG_ROLES.branchManager,
+  ORG_ROLES.teamLead,
+  ORG_ROLES.consultant,
+  ORG_ROLES.processor,
+  ORG_ROLES.compliance,
+  ORG_ROLES.adminStaff,
+])
+
+const BOND_CANONICAL_ROLE_VALUES = Object.freeze(new Set(BOND_CANONICAL_ROLES))
 
 export function normalizeOrgRole(value, { appRole = '', workspaceType = '' } = {}) {
   const normalized = String(value || '').trim().toLowerCase()
@@ -32,8 +51,12 @@ export function normalizeOrgRole(value, { appRole = '', workspaceType = '' } = {
   if (normalized === 'admin' || normalized === 'branch_admin') return ORG_ROLES.adminStaff
   if (normalized === 'principal / owner' || normalized === 'agency_owner') return ORG_ROLES.principal
   if (normalized === 'branch manager') return ORG_ROLES.branchManager
+  if (normalized === 'hq manager') return ORG_ROLES.hqManager
+  if (normalized === 'regional manager') return ORG_ROLES.regionalManager
+  if (normalized === 'team lead') return ORG_ROLES.teamLead
   if (normalized === 'firm_admin') return ORG_ROLES.owner
   if (normalized === 'director_partner') return ORG_ROLES.partner
+  if (normalized === 'compliance') return ORG_ROLES.compliance
   if (normalized === 'transfer_attorney' || normalized === 'bond_attorney' || normalized === 'candidate_attorney') {
     return ORG_ROLES.attorney
   }
@@ -57,8 +80,15 @@ export function isWorkspaceAuthorityRole(value) {
     ORG_ROLES.director,
     ORG_ROLES.partner,
     ORG_ROLES.branchManager,
+    ORG_ROLES.hqManager,
+    ORG_ROLES.regionalManager,
+    ORG_ROLES.teamLead,
     ORG_ROLES.manager,
     ORG_ROLES.salesManager,
     ORG_ROLES.developmentManager,
   ].includes(normalized)
+}
+
+export function isBondCanonicalRole(value) {
+  return BOND_CANONICAL_ROLE_VALUES.has(normalizeOrgRole(value))
 }

@@ -29,14 +29,29 @@ export async function loadMembershipsForUser(userId) {
   const id = normalizeText(userId)
   if (!id) return []
   const client = requireClient()
+  const selectWithScopeFields =
+    'id, organisation_id, user_id, branch_id, email, role, workspace_role, organisation_role, app_role, workspace_type, status, scope_level, region_id, workspace_unit_id, scope_metadata, is_primary_owner, active_workspace_selected_at, organisations:organisation_id(id, type, name, display_name)'
+  const fallbackSelect =
+    'id, organisation_id, user_id, branch_id, email, role, organisation_role, app_role, workspace_type, status, organisations:organisation_id(id, type, name, display_name)'
+
   let result = await client
     .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, email, role, workspace_role, organisation_role, app_role, workspace_type, status, organisations:organisation_id(id, type, name, display_name)')
+    .select(selectWithScopeFields)
     .eq('user_id', id)
-  if (result.error && isMissingSchemaError(result.error, 'workspace_role')) {
+
+  if (
+    result.error &&
+    (isMissingSchemaError(result.error, 'workspace_role') ||
+      isMissingSchemaError(result.error, 'scope_level') ||
+      isMissingSchemaError(result.error, 'region_id') ||
+      isMissingSchemaError(result.error, 'workspace_unit_id') ||
+      isMissingSchemaError(result.error, 'scope_metadata') ||
+      isMissingSchemaError(result.error, 'is_primary_owner') ||
+      isMissingSchemaError(result.error, 'active_workspace_selected_at'))
+  ) {
     result = await client
       .from('organisation_users')
-      .select('id, organisation_id, user_id, branch_id, email, role, organisation_role, app_role, workspace_type, status, organisations:organisation_id(id, type, name, display_name)')
+      .select(fallbackSelect)
       .eq('user_id', id)
   }
 

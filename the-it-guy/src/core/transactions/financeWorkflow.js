@@ -150,7 +150,7 @@ export function resolveFinanceWorkflowSnapshot({
       normalizedFinanceType === 'cash'
         ? 'Transaction owner'
         : normalizedFinanceType === 'bond'
-          ? 'Bond originator / transaction owner'
-          : 'Bond originator + transaction owner',
+          ? 'Bond consultant / processor / manager'
+          : 'Bond consultant + processor + transaction owner',
   }
 }

@@ -52,7 +52,7 @@ const LEGACY_GROUP_TO_KEY = {
   handover: 'handover',
 }
 
-const REQUIRED_DOCUMENT_STATUSES = ['missing', 'uploaded', 'under_review', 'accepted', 'reupload_required', 'not_required']
+const REQUIRED_DOCUMENT_STATUSES = ['missing', 'requested', 'uploaded', 'under_review', 'accepted', 'approved', 'rejected', 'reupload_required', 'waived', 'completed', 'not_required']
 
 function normalizeGroupKey(value, fallback = 'buyer_fica') {
   const normalized = String(value || '')

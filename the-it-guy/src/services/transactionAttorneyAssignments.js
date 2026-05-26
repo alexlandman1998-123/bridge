@@ -8,6 +8,7 @@ import {
 } from './attorneyFirmServiceShared'
 import { getAttorneyFirmMembers } from './attorneyFirmMembers'
 import { getAttorneyFirmById, getAttorneyFirmDepartments } from './attorneyFirms'
+import { prepareBondAssignmentPayload } from './bondAssignmentService'
 
 export const ATTORNEY_ASSIGNMENT_TYPES = ['transfer', 'bond', 'transfer_and_bond', 'cancellation']
 export const TRANSACTION_ATTORNEY_ROLES = ['transfer_attorney', 'bond_attorney', 'cancellation_attorney']
@@ -1038,21 +1039,24 @@ export async function syncTransactionAssignmentLegacyFields(transactionId, assig
 
   const resolvedAssignments = assignments || (await getTransactionAttorneyAssignments(normalizedTransactionId))
 
-  const activePrimaryAssignments = resolvedAssignments.filter((item) => item.status !== 'removed' && item.isPrimary !== false)
-  const transferAssignment = activePrimaryAssignments.find((item) => item.attorneyRole === 'transfer_attorney' || item.assignmentType === 'transfer' || item.assignmentType === 'transfer_and_bond') || null
-  const bondAssignment = activePrimaryAssignments.find((item) => item.attorneyRole === 'bond_attorney' || item.assignmentType === 'bond' || item.assignmentType === 'transfer_and_bond') || null
-
+  const assignmentPayload = prepareBondAssignmentPayload({
+    transaction: {},
+    assignments: resolvedAssignments,
+  })
   const updatePayload = {
-    attorney: transferAssignment?.attorneyUser?.name || transferAssignment?.primaryAttorney?.name || transferAssignment?.firm?.name || null,
-    assigned_attorney_email: (transferAssignment?.attorneyUser?.email || transferAssignment?.primaryAttorney?.email || '').toLowerCase() || null,
-    assigned_bond_originator_email: null,
+    attorney: assignmentPayload.attorney,
+    assigned_attorney_email: assignmentPayload.assigned_attorney_email,
+    assigned_bond_originator_email: assignmentPayload.assigned_bond_originator_email,
+    bond_originator: assignmentPayload.bond_originator,
   }
 
-  if (bondAssignment?.attorneyUser?.email || bondAssignment?.primaryAttorney?.email) {
-    updatePayload.assigned_bond_originator_email = (bondAssignment?.attorneyUser?.email || bondAssignment?.primaryAttorney?.email || '').toLowerCase()
+  let query = await client.from('transactions').update(updatePayload).eq('id', normalizedTransactionId)
+  if (query.error && isMissingColumnError(query.error, 'bond_originator')) {
+    const fallbackPayload = { ...updatePayload }
+    delete fallbackPayload.bond_originator
+    query = await client.from('transactions').update(fallbackPayload).eq('id', normalizedTransactionId)
   }
 
-  const query = await client.from('transactions').update(updatePayload).eq('id', normalizedTransactionId)
   if (query.error) {
     if (
       isMissingTableError(query.error, 'transactions') ||

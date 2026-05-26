@@ -27,7 +27,11 @@ function buildCapabilitySet({
     capabilities.add('agent')
   }
 
-  if (normalizedRole === 'bond_originator' || canEditFinanceWorkflow || isFinanceOwner) {
+  if (
+    ['bond_originator', 'consultant', 'processor', 'branch_manager', 'team_lead', 'regional_manager', 'hq_manager', 'owner', 'director'].includes(normalizedRole) ||
+    canEditFinanceWorkflow ||
+    isFinanceOwner
+  ) {
     capabilities.add('finance_owner')
   }
 
@@ -35,7 +39,7 @@ function buildCapabilitySet({
     capabilities.add('attorney')
   }
 
-  if (normalizedRole === 'bond_originator') {
+  if (normalizedRole === 'bond_originator' || normalizedRole === 'consultant') {
     capabilities.add('bond_owner')
   }
 

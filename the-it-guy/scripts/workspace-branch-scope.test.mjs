@@ -104,6 +104,41 @@ try {
   }
   assert.equal(canAccessWorkspaceRecord(PERMISSIONS.viewApplications, bondManager, { branch_id: 'team-1' }), true)
   assert.equal(canAccessWorkspaceRecord(PERMISSIONS.viewApplications, bondManager, { branch_id: 'team-2' }), false)
+  assert.equal(canAccessWorkspaceRecord(PERMISSIONS.viewRegionApplications, bondManager, { region_id: 'region-1' }), false)
+
+  const bondRegionalManager = {
+    appRole: 'bond_originator',
+    workspaceType: 'bond_originator',
+    currentWorkspace: { id: 'bond-workspace', type: 'bond_originator' },
+    currentMembership: {
+      id: 'bond-regional-manager',
+      workspaceId: 'bond-workspace',
+      workspace: { id: 'bond-workspace', type: 'bond_originator' },
+      status: 'active',
+      role: 'regional_manager',
+      region_id: 'region-1',
+      branchId: 'team-3',
+      branchScope: 'all_branches',
+      scopeLevel: 'region',
+    },
+    userId: 'regional-user',
+  }
+  assert.equal(canAccessWorkspaceRecord(PERMISSIONS.viewRegionApplications, bondRegionalManager, { branch_id: 'team-3', region_id: 'region-1' }), true)
+  assert.equal(canAccessWorkspaceRecord(PERMISSIONS.viewRegionApplications, bondRegionalManager, { branch_id: 'team-3', region_id: 'region-2' }), false)
+
+  const bondTeamConsultant = {
+    ...bondManager,
+    currentMembership: {
+      ...bondManager.currentMembership,
+      role: 'consultant',
+      workspaceRole: 'consultant',
+      branchScope: 'own',
+      scopeLevel: 'assigned',
+    },
+    userId: 'team-consultant-user',
+  }
+  assert.equal(canAccessWorkspaceRecord(PERMISSIONS.viewApplications, bondTeamConsultant, { branch_id: 'team-1', assigned_user_id: 'team-consultant-user' }), true)
+  assert.equal(canAccessWorkspaceRecord(PERMISSIONS.viewApplications, bondTeamConsultant, { branch_id: 'team-1', assigned_user_id: 'other-user' }), false)
 
   const originator = {
     ...bondManager,

@@ -140,14 +140,20 @@ function buildWarningsError(message, error = null) {
 async function fetchTransactionContext(client, transactionId, warnings) {
   let query = await client
     .from('transactions')
-    .select('id, finance_type, property_type, onboarding_completed_at, assigned_agent_email, assigned_attorney_email, assigned_bond_originator_email')
+    .select('id, finance_type, property_type, assigned_agent_email, assigned_attorney_email, assigned_bond_originator_email')
     .eq('id', transactionId)
     .maybeSingle()
 
-  if (query.error && isMissingColumnError(query.error, 'property_type')) {
+  if (
+    query.error &&
+    (isMissingColumnError(query.error, 'property_type') ||
+      isMissingColumnError(query.error, 'assigned_agent_email') ||
+      isMissingColumnError(query.error, 'assigned_attorney_email') ||
+      isMissingColumnError(query.error, 'assigned_bond_originator_email'))
+  ) {
     query = await client
       .from('transactions')
-      .select('id, finance_type, onboarding_completed_at, assigned_agent_email, assigned_attorney_email, assigned_bond_originator_email')
+      .select('id, finance_type')
       .eq('id', transactionId)
       .maybeSingle()
   }

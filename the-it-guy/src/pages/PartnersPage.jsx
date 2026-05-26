@@ -1,0 +1,586 @@
+import {
+  ArrowUpRight,
+  BarChart3,
+  CheckCircle2,
+  Clock3,
+  Filter,
+  Handshake,
+  LockKeyhole,
+  Network,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
+  UserPlus,
+} from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
+import { useOrganisation } from '../context/OrganisationContext'
+import { useWorkspace } from '../context/WorkspaceContext'
+import {
+  canConnectPartnerTypes,
+  createPartnerInvitation,
+  filterDiscoverablePartners,
+  getPartnerAssignmentOptions,
+  getPartnerTypeLabel,
+  PARTNER_PROVINCES,
+  PARTNER_SPECIALTIES,
+  PARTNER_TYPES,
+  fetchPartnersSnapshot,
+  updatePartnerRelationshipStatus,
+} from '../lib/partnersRepository'
+import { recordWorkspaceAuditEvent } from '../services/auditLogService'
+
+const TABS = [
+  { key: 'connected', label: 'Connected Partners' },
+  { key: 'pending', label: 'Pending Invitations' },
+  { key: 'discover', label: 'Discover Partners' },
+  { key: 'referrals', label: 'Referrals & Opportunities' },
+  { key: 'analytics', label: 'Partner Analytics' },
+]
+
+function formatNumber(value) {
+  return new Intl.NumberFormat('en-ZA', { maximumFractionDigits: 0 }).format(Number(value || 0))
+}
+
+function formatCurrency(value) {
+  return new Intl.NumberFormat('en-ZA', {
+    style: 'currency',
+    currency: 'ZAR',
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0))
+}
+
+function formatDate(value) {
+  if (!value) return 'Not recorded'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Not recorded'
+  return new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(date)
+}
+
+function initials(value = '') {
+  return String(value || 'Bridge')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'B9'
+}
+
+function relationshipBadgeClass(type) {
+  if (type === 'preferred') return 'border-[#d9e7ff] bg-[#f3f7ff] text-[#1e4d82]'
+  if (type === 'internal') return 'border-[#eadffc] bg-[#f8f4ff] text-[#5b3c8f]'
+  return 'border-[#d8efe4] bg-[#f1fbf6] text-[#17613d]'
+}
+
+function StatusBadge({ children, className = '' }) {
+  return (
+    <span className={`inline-flex h-7 items-center rounded-full border px-2.5 text-xs font-semibold ${className}`}>
+      {children}
+    </span>
+  )
+}
+
+function MetricCard({ label, value, subtext }) {
+  return (
+    <div className="rounded-[8px] border border-[#dde7f2] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">{label}</p>
+      <strong className="mt-2 block text-2xl font-semibold tracking-[-0.02em] text-[#10243a]">{value}</strong>
+      {subtext ? <p className="mt-1 text-sm leading-5 text-[#60758d]">{subtext}</p> : null}
+    </div>
+  )
+}
+
+function PartnerLogo({ partner }) {
+  if (partner?.logoUrl) {
+    return (
+      <img
+        src={partner.logoUrl}
+        alt=""
+        className="h-12 w-12 rounded-[8px] border border-[#e2eaf4] object-cover"
+      />
+    )
+  }
+
+  return (
+    <div className="flex h-12 w-12 items-center justify-center rounded-[8px] border border-[#dfe8f3] bg-[#f6f9fc] text-sm font-semibold text-[#35546c]">
+      {initials(partner?.name)}
+    </div>
+  )
+}
+
+function PartnerCard({ partner, relationship, action, actionLabel, muted = false }) {
+  return (
+    <article className={`rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)] ${muted ? 'opacity-75' : ''}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <PartnerLogo partner={partner} />
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="truncate text-base font-semibold tracking-[-0.01em] text-[#10243a]">{partner?.name || 'Partner organisation'}</h3>
+              {partner?.verificationStatus === 'verified' ? (
+                <StatusBadge className="border-[#d8efe4] bg-[#f1fbf6] text-[#17613d]">Verified</StatusBadge>
+              ) : null}
+            </div>
+            <p className="mt-1 text-sm text-[#60758d]">
+              {getPartnerTypeLabel(partner?.type)} · {[partner?.city, partner?.province].filter(Boolean).join(', ') || 'Location pending'}
+            </p>
+          </div>
+        </div>
+        {relationship ? (
+          <StatusBadge className={relationshipBadgeClass(relationship.relationshipType)}>
+            {relationship.relationshipType === 'preferred' ? 'Preferred' : relationship.relationshipType === 'internal' ? 'Internal' : 'Approved'}
+          </StatusBadge>
+        ) : null}
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {(partner?.specialties || []).slice(0, 4).map((specialty) => (
+          <span key={specialty} className="rounded-full border border-[#e4ebf4] bg-[#f8fafc] px-2.5 py-1 text-xs font-semibold text-[#52677f]">
+            {specialty}
+          </span>
+        ))}
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-2 border-t border-[#edf2f7] pt-4">
+        <div>
+          <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#8ba0b8]">Active</span>
+          <strong className="mt-1 block text-sm text-[#10243a]">{formatNumber(partner?.transactionStats?.activeTransactions)}</strong>
+        </div>
+        <div>
+          <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#8ba0b8]">Speed</span>
+          <strong className="mt-1 block text-sm text-[#10243a]">{formatNumber(partner?.transactionStats?.avgDealSpeedDays)}d</strong>
+        </div>
+        <div>
+          <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#8ba0b8]">Response</span>
+          <strong className="mt-1 block text-sm text-[#10243a]">{formatNumber(partner?.transactionStats?.responseTimeHours)}h</strong>
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <Link
+          to={`/partners/${partner?.id || ''}`}
+          className="inline-flex h-9 items-center gap-2 rounded-[8px] border border-[#d9e4ef] bg-white px-3 text-sm font-semibold text-[#264563] transition hover:bg-[#f8fafc]"
+        >
+          Profile <ArrowUpRight size={14} />
+        </Link>
+        {action ? (
+          <button
+            type="button"
+            className="inline-flex h-9 items-center gap-2 rounded-[8px] bg-[#10243a] px-3 text-sm font-semibold text-white transition hover:bg-[#173a5e]"
+            onClick={action}
+          >
+            {actionLabel}
+          </button>
+        ) : null}
+      </div>
+    </article>
+  )
+}
+
+function ProfilePanel({ partner, relationship }) {
+  if (!partner) {
+    return (
+      <aside className="rounded-[8px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+        <p className="text-sm font-semibold text-[#10243a]">Select a partner profile</p>
+        <p className="mt-2 text-sm leading-6 text-[#60758d]">Profiles show operating areas, relationship status, shared visibility, and performance signals.</p>
+      </aside>
+    )
+  }
+
+  return (
+    <aside className="rounded-[8px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)] xl:sticky xl:top-4">
+      <div className="flex items-start gap-3">
+        <PartnerLogo partner={partner} />
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#10243a]">{partner.name}</h2>
+          <p className="text-sm text-[#60758d]">{getPartnerTypeLabel(partner.type)}</p>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3">
+        <div className="rounded-[8px] border border-[#e4ebf4] bg-[#f8fafc] p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Overview</p>
+          <p className="mt-2 text-sm leading-6 text-[#40556c]">
+            Verified Bridge organisation operating in {[partner.city, partner.province].filter(Boolean).join(', ') || 'selected markets'} with a focus on {(partner.specialties || []).join(', ') || 'property transactions'}.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <MetricCard label="Active Deals" value={formatNumber(partner.transactionStats?.activeTransactions)} />
+          <MetricCard label="Avg Speed" value={`${formatNumber(partner.transactionStats?.avgDealSpeedDays)}d`} />
+        </div>
+        <div className="rounded-[8px] border border-[#e4ebf4] bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Active Areas</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {(partner.activeAreas || []).map((area) => (
+              <span key={area} className="rounded-full border border-[#e4ebf4] bg-[#f8fafc] px-2.5 py-1 text-xs font-semibold text-[#52677f]">{area}</span>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-[8px] border border-[#e4ebf4] bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Relationship Controls</p>
+          <div className="mt-3 grid gap-2 text-sm text-[#40556c]">
+            <span className="inline-flex items-center gap-2"><LockKeyhole size={14} /> Listing visibility remains permission-gated.</span>
+            <span className="inline-flex items-center gap-2"><ShieldCheck size={14} /> Access is role-based and organisation-scoped.</span>
+            <span className="inline-flex items-center gap-2"><Handshake size={14} /> Status: {relationship?.relationshipStatus || 'Not connected'}</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+  )
+}
+
+export default function PartnersPage() {
+  const { partnerId = '' } = useParams()
+  const { workspace, workspaceType, role, profile } = useWorkspace()
+  const { organisation } = useOrganisation()
+  const organisationId = organisation?.id || workspace?.id || ''
+  const resolvedWorkspaceType = organisation?.type || workspaceType || role
+  const [activeTab, setActiveTab] = useState('connected')
+  const [snapshot, setSnapshot] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [filters, setFilters] = useState({ query: '', type: '', province: '', specialty: '' })
+
+  const loadSnapshot = useCallback(async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const nextSnapshot = await fetchPartnersSnapshot({
+        organisationId,
+        workspaceType: resolvedWorkspaceType,
+      })
+      setSnapshot(nextSnapshot)
+    } catch (loadError) {
+      setError(loadError?.message || 'Unable to load partner network.')
+    } finally {
+      setLoading(false)
+    }
+  }, [organisationId, resolvedWorkspaceType])
+
+  useEffect(() => {
+    void loadSnapshot()
+  }, [loadSnapshot])
+
+  const relationships = useMemo(() => snapshot?.relationships || [], [snapshot?.relationships])
+  const connectedRelationships = useMemo(
+    () => relationships.filter((item) => item.relationshipStatus === 'accepted'),
+    [relationships],
+  )
+  const pendingRelationships = useMemo(
+    () => relationships.filter((item) => item.relationshipStatus === 'pending'),
+    [relationships],
+  )
+  const invitations = useMemo(() => snapshot?.invitations || [], [snapshot?.invitations])
+  const referrals = useMemo(() => snapshot?.referrals || [], [snapshot?.referrals])
+  const metrics = snapshot?.metrics || {}
+  const currentType = resolvedWorkspaceType
+
+  const discoverablePartners = useMemo(() => {
+    const connectedIds = new Set(relationships.map((item) => item.counterpartOrganisationId || item.partner?.id))
+    return filterDiscoverablePartners(snapshot?.organisations || [], filters).filter((partner) => {
+      if (!canConnectPartnerTypes(currentType, partner.type)) return false
+      return !connectedIds.has(partner.id)
+    })
+  }, [currentType, filters, relationships, snapshot?.organisations])
+
+  const selectedPartner = useMemo(() => {
+    if (!partnerId) return connectedRelationships[0]?.partner || discoverablePartners[0] || null
+    return (
+      (snapshot?.organisations || []).find((item) => item.id === partnerId) ||
+      connectedRelationships.find((item) => item.partner?.id === partnerId)?.partner ||
+      null
+    )
+  }, [connectedRelationships, discoverablePartners, partnerId, snapshot?.organisations])
+
+  const selectedRelationship = useMemo(
+    () => connectedRelationships.find((item) => item.partner?.id === selectedPartner?.id) || pendingRelationships.find((item) => item.partner?.id === selectedPartner?.id) || null,
+    [connectedRelationships, pendingRelationships, selectedPartner?.id],
+  )
+
+  const transactionPartnerOptions = useMemo(
+    () => ({
+      attorneys: getPartnerAssignmentOptions(snapshot || {}, 'transfer_attorney'),
+      bondOriginators: getPartnerAssignmentOptions(snapshot || {}, 'bond_originator'),
+    }),
+    [snapshot],
+  )
+
+  async function handleInvite(event) {
+    event.preventDefault()
+    try {
+      setError('')
+      setMessage('')
+      await createPartnerInvitation({
+        organisationId,
+        recipientEmail: inviteEmail,
+        userId: profile?.id || '',
+        workspaceType: resolvedWorkspaceType,
+      })
+      await recordWorkspaceAuditEvent('partner_invite_sent', {
+        userId: profile?.id || '',
+        workspaceId: organisationId,
+        metadata: { recipientEmail: inviteEmail },
+      })
+      setInviteEmail('')
+      setMessage('Partner invitation sent.')
+      await loadSnapshot()
+    } catch (inviteError) {
+      setError(inviteError?.message || 'Unable to send partner invitation.')
+    }
+  }
+
+  async function handleConnect(partner) {
+    try {
+      setError('')
+      setMessage('')
+      await createPartnerInvitation({
+        organisationId,
+        recipientEmail: '',
+        recipientOrganisationId: partner.id,
+        relationshipType: 'approved',
+        userId: profile?.id || '',
+        workspaceType: resolvedWorkspaceType,
+      })
+      await recordWorkspaceAuditEvent('partner_connection_requested', {
+        userId: profile?.id || '',
+        workspaceId: organisationId,
+        targetType: 'organisation',
+        targetId: partner.id,
+        metadata: { partnerType: partner.type },
+      })
+      setMessage(`Connection request sent to ${partner.name}.`)
+      await loadSnapshot()
+    } catch (connectError) {
+      setError(connectError?.message || 'Unable to request partner connection.')
+    }
+  }
+
+  async function handleMarkPreferred(relationship) {
+    try {
+      setError('')
+      await updatePartnerRelationshipStatus({
+        relationshipId: relationship.id,
+        status: 'accepted',
+        relationshipType: relationship.relationshipType === 'preferred' ? 'approved' : 'preferred',
+        workspaceType: resolvedWorkspaceType,
+        organisationId,
+      })
+      await recordWorkspaceAuditEvent('partner_preferred_status_changed', {
+        userId: profile?.id || '',
+        workspaceId: organisationId,
+        targetType: 'partner_relationship',
+        targetId: relationship.id,
+      })
+      await loadSnapshot()
+    } catch (updateError) {
+      setError(updateError?.message || 'Unable to update preferred status.')
+    }
+  }
+
+  return (
+    <div className="min-h-full bg-[#f6f8fb] pb-10 text-[#10243a]">
+      <section className="rounded-[8px] border border-[#d9e4ef] bg-white p-5 shadow-[0_16px_38px_rgba(15,23,42,0.06)] sm:p-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#7890aa]">Partners</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] text-[#10243a]">Professional relationship infrastructure</h1>
+            <p className="mt-3 max-w-3xl text-sm leading-6 text-[#60758d]">
+              Manage trusted organisations, reusable transaction role players, controlled shared visibility, referrals, and relationship performance.
+            </p>
+          </div>
+          <form onSubmit={handleInvite} className="w-full rounded-[8px] border border-[#e0e8f2] bg-[#f8fafc] p-3 lg:max-w-md">
+            <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Invite partner</label>
+            <div className="mt-2 flex gap-2">
+              <input
+                type="email"
+                value={inviteEmail}
+                onChange={(event) => setInviteEmail(event.target.value)}
+                placeholder="partner@firm.co.za"
+                className="min-w-0 flex-1 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+              />
+              <button type="submit" className="inline-flex h-10 items-center gap-2 rounded-[8px] bg-[#10243a] px-3 text-sm font-semibold text-white">
+                <UserPlus size={15} /> Invite
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {snapshot?.source === 'demo' ? (
+          <p className="mt-4 rounded-[8px] border border-[#f0dfb8] bg-[#fff9ec] px-4 py-3 text-sm font-semibold text-[#8a5a12]">
+            Demo partner data is shown until the Partners migration is available in this environment.
+          </p>
+        ) : null}
+        {error ? <p className="mt-4 rounded-[8px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-semibold text-[#b42318]">{error}</p> : null}
+        {message ? <p className="mt-4 rounded-[8px] border border-[#cfe8dc] bg-[#f1fbf6] px-4 py-3 text-sm font-semibold text-[#17613d]">{message}</p> : null}
+      </section>
+
+      <section className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Active Partners" value={formatNumber(metrics.activePartners)} subtext={`${formatNumber(metrics.preferredPartners)} preferred`} />
+        <MetricCard label="Invite Acceptance" value={`${formatNumber(metrics.inviteAcceptanceRate)}%`} subtext={`${formatNumber(metrics.newPartnerGrowth)} new in 30 days`} />
+        <MetricCard label="Shared Deals" value={formatNumber(metrics.activeSharedDeals)} subtext={`${formatNumber(metrics.completedDeals)} completed registrations`} />
+        <MetricCard label="Referral Influence" value={formatCurrency(metrics.revenueInfluenced)} subtext={`${formatNumber(metrics.referralConversionRate)}% conversion`} />
+      </section>
+
+      <nav className="mt-5 flex gap-2 overflow-x-auto rounded-[8px] border border-[#dbe5f0] bg-white p-1.5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveTab(tab.key)}
+            className={`h-10 shrink-0 rounded-[8px] px-3 text-sm font-semibold transition ${activeTab === tab.key ? 'bg-[#10243a] text-white' : 'text-[#52677f] hover:bg-[#f6f8fb] hover:text-[#10243a]'}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+
+      {loading ? (
+        <section className="mt-5 rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm font-semibold text-[#60758d]">
+          Loading partner network...
+        </section>
+      ) : (
+        <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <main className="min-w-0">
+            {activeTab === 'connected' ? (
+              <section className="grid gap-4 md:grid-cols-2">
+                {connectedRelationships.map((relationship) => (
+                  <PartnerCard
+                    key={relationship.id}
+                    partner={relationship.partner}
+                    relationship={relationship}
+                    action={() => handleMarkPreferred(relationship)}
+                    actionLabel={relationship.relationshipType === 'preferred' ? 'Remove Preferred' : 'Make Preferred'}
+                  />
+                ))}
+                {!connectedRelationships.length ? (
+                  <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">No accepted partner relationships yet.</div>
+                ) : null}
+              </section>
+            ) : null}
+
+            {activeTab === 'pending' ? (
+              <section className="space-y-3">
+                {[...pendingRelationships, ...invitations].map((item) => (
+                  <div key={item.id} className="flex flex-col gap-3 rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)] sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-[8px] border border-[#e4ebf4] bg-[#f8fafc] text-[#52677f]"><Clock3 size={18} /></span>
+                      <div>
+                        <p className="font-semibold text-[#10243a]">{item.partner?.name || item.recipientEmail || 'Pending partner'}</p>
+                        <p className="text-sm text-[#60758d]">Status: {item.relationshipStatus || item.status} · Sent {formatDate(item.createdAt)}</p>
+                      </div>
+                    </div>
+                    <StatusBadge className="border-[#f0dfb8] bg-[#fff9ec] text-[#8a5a12]">Pending</StatusBadge>
+                  </div>
+                ))}
+              </section>
+            ) : null}
+
+            {activeTab === 'discover' ? (
+              <section>
+                <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-[#10243a]"><Filter size={16} /> Discovery filters</div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-4">
+                    <label className="relative md:col-span-1">
+                      <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8ba0b8]" />
+                      <input
+                        value={filters.query}
+                        onChange={(event) => setFilters((previous) => ({ ...previous, query: event.target.value }))}
+                        placeholder="Search firms"
+                        className="h-10 w-full rounded-[8px] border border-[#d7e2ee] bg-white pl-9 pr-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                      />
+                    </label>
+                    <select className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm" value={filters.type} onChange={(event) => setFilters((previous) => ({ ...previous, type: event.target.value }))}>
+                      <option value="">All organisation types</option>
+                      {PARTNER_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+                    </select>
+                    <select className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm" value={filters.province} onChange={(event) => setFilters((previous) => ({ ...previous, province: event.target.value }))}>
+                      <option value="">All provinces</option>
+                      {PARTNER_PROVINCES.map((province) => <option key={province} value={province}>{province}</option>)}
+                    </select>
+                    <select className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm" value={filters.specialty} onChange={(event) => setFilters((previous) => ({ ...previous, specialty: event.target.value }))}>
+                      <option value="">All specialties</option>
+                      {PARTNER_SPECIALTIES.map((specialty) => <option key={specialty} value={specialty}>{specialty}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  {discoverablePartners.map((partner) => (
+                    <PartnerCard key={partner.id} partner={partner} action={() => handleConnect(partner)} actionLabel="Connect" />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {activeTab === 'referrals' ? (
+              <section className="space-y-3">
+                {referrals.map((referral) => {
+                  const partner = (snapshot?.organisations || []).find((item) => [referral.referringOrganisationId, referral.referredOrganisationId].includes(item.id))
+                  return (
+                    <div key={referral.id} className="grid gap-3 rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)] md:grid-cols-[1fr_auto]">
+                      <div>
+                        <p className="font-semibold text-[#10243a]">{partner?.name || 'Referral partner'}</p>
+                        <p className="mt-1 text-sm text-[#60758d]">Transaction {referral.transactionId || 'unlinked'} · {formatDate(referral.referralDate)}</p>
+                      </div>
+                      <div className="text-left md:text-right">
+                        <StatusBadge className="border-[#d9e7ff] bg-[#f3f7ff] text-[#1e4d82]">{referral.referralStatus}</StatusBadge>
+                        <p className="mt-2 text-sm font-semibold text-[#10243a]">{formatCurrency(referral.referralValue)}</p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </section>
+            ) : null}
+
+            {activeTab === 'analytics' ? (
+              <section className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-3">
+                  <MetricCard label="Avg Response" value={`${formatNumber(metrics.avgResponseTimeHours)}h`} subtext="Connected partner average" />
+                  <MetricCard label="Document Turnaround" value={`${formatNumber(metrics.documentTurnaroundDays)}d`} subtext="Operational signal" />
+                  <MetricCard label="Finance Approval" value={`${formatNumber(metrics.financeApprovalRate)}%`} subtext="Bond collaboration signal" />
+                </div>
+                <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-[#10243a]"><BarChart3 size={16} /> Internal scoring framework</div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {['Fastest Attorney', 'Highest Bond Approval Rate', 'Most Active Agency', 'Highest Conversion Rate'].map((label, index) => (
+                      <div key={label} className="rounded-[8px] border border-[#e4ebf4] bg-[#f8fafc] p-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">{label}</p>
+                        <p className="mt-2 text-sm font-semibold text-[#10243a]">{connectedRelationships[index % Math.max(connectedRelationships.length, 1)]?.partner?.name || 'Benchmark pending'}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            ) : null}
+          </main>
+
+          <div className="space-y-5">
+            <ProfilePanel partner={selectedPartner} relationship={selectedRelationship} />
+            <section className="rounded-[8px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+              <div className="flex items-center gap-2 text-sm font-semibold text-[#10243a]"><SlidersHorizontal size={16} /> Transaction defaults</div>
+              <div className="mt-4 grid gap-3">
+                <div className="rounded-[8px] border border-[#e4ebf4] bg-[#f8fafc] p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Attorney Dropdown</p>
+                  <p className="mt-2 text-sm font-semibold text-[#10243a]">{transactionPartnerOptions.attorneys[0]?.companyName || 'No connected attorney selected'}</p>
+                </div>
+                <div className="rounded-[8px] border border-[#e4ebf4] bg-[#f8fafc] p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Bond Originator Dropdown</p>
+                  <p className="mt-2 text-sm font-semibold text-[#10243a]">{transactionPartnerOptions.bondOriginators[0]?.companyName || 'No connected bond originator selected'}</p>
+                </div>
+              </div>
+            </section>
+            <section className="rounded-[8px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+              <div className="flex items-center gap-2 text-sm font-semibold text-[#10243a]"><Network size={16} /> Shared visibility</div>
+              <div className="mt-4 space-y-3 text-sm text-[#40556c]">
+                <p className="flex items-center gap-2"><CheckCircle2 size={15} className="text-[#17613d]" /> Listings: connected partners only</p>
+                <p className="flex items-center gap-2"><CheckCircle2 size={15} className="text-[#17613d]" /> Developments: preferred partners only</p>
+                <p className="flex items-center gap-2"><LockKeyhole size={15} className="text-[#52677f]" /> Editing remains private to the owning organisation</p>
+              </div>
+            </section>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

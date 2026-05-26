@@ -62,6 +62,7 @@ export const APP_NAV_BY_ROLE = {
     { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'pipeline', label: 'Pipeline', to: '/pipeline' },
     { key: 'documents', label: 'Documents', to: '/documents' },
+    { key: 'partners', label: 'Partners', to: '/partners' },
     { key: 'snags', label: 'Snags', to: '/snags' },
     { key: 'reports', label: 'Reports', to: '/reports' },
     ...(SHOW_INTELLIGENCE_BETA
@@ -104,6 +105,7 @@ export const APP_NAV_BY_ROLE = {
     },
     { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'documents', label: 'Documents', to: '/documents' },
+    { key: 'partners', label: 'Partners', to: '/partners' },
     { key: 'reports', label: 'Reports', to: '/reports' },
     ...(SHOW_INTELLIGENCE_BETA
       ? [
@@ -144,6 +146,7 @@ export const APP_NAV_BY_ROLE = {
     { key: 'scheduling', label: 'Calendar', to: '/attorney/scheduling' },
     { key: 'clients', label: 'Clients & Parties', to: '/clients' },
     { key: 'documents', label: 'Documents', to: '/documents' },
+    { key: 'partners', label: 'Partners', to: '/partners' },
     { key: 'financials', label: 'Finance', to: '/financials' },
     { key: 'team_departments', label: 'Team', to: '/users' },
     { key: 'reports', label: 'Reports', to: '/reports' },
@@ -170,6 +173,7 @@ export const APP_NAV_BY_ROLE = {
     { key: 'applications', label: 'Applications', to: '/applications' },
     { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'documents', label: 'Documents', to: '/documents' },
+    { key: 'partners', label: 'Partners', to: '/partners' },
     { key: 'reports', label: 'Reports', to: '/reports' },
   ],
   client: [
@@ -307,6 +311,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
     },
     { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'documents', label: 'Documents', to: '/documents' },
+    { key: 'partners', label: 'Partners', to: '/partners' },
     { key: 'reports', label: 'Reports', to: '/reports' },
   ]
 

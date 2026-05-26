@@ -136,6 +136,12 @@ function createMembershipRecord({
   branchScope = '',
   departmentId = null,
   teamId = null,
+  regionId = null,
+  workspaceUnitId = null,
+  scopeLevel = '',
+  scopeMetadata = null,
+  isPrimaryOwner = false,
+  activeWorkspaceSelectedAt = null,
   invitedBy = null,
   joinedAt = null,
   acceptedAt = null,
@@ -168,6 +174,12 @@ function createMembershipRecord({
     branchScope: resolvedBranchScope,
     departmentId,
     teamId,
+    regionId,
+    workspaceUnitId,
+    scopeLevel,
+    scopeMetadata,
+    isPrimaryOwner: Boolean(isPrimaryOwner),
+    activeWorkspaceSelectedAt,
     invitedBy,
     joinedAt,
     acceptedAt,
@@ -348,6 +360,12 @@ export function buildWorkspaceResolution({
       branchId: row.branch_id || null,
       primaryBranchId: row.primary_branch_id || row.branch_id || null,
       branchScope: row.branch_scope || null,
+      regionId: row.region_id || null,
+      workspaceUnitId: row.workspace_unit_id || null,
+      scopeLevel: row.scope_level || '',
+      scopeMetadata: row.scope_metadata || null,
+      isPrimaryOwner: Boolean(row.is_primary_owner),
+      activeWorkspaceSelectedAt: row.active_workspace_selected_at || null,
       teamId: row.team_id || null,
       departmentId: row.department_id || null,
       invitedBy: row.invited_by_user_id || null,
@@ -568,7 +586,8 @@ export async function setActiveWorkspacePreference(userId, workspaceId, options 
 async function fetchOrganisationMembershipRows(client, user, profile) {
   const userId = normalizeText(user?.id)
   const userEmail = normalizeEmail(user?.email || profile?.email)
-  const membershipSelect = 'id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, department_id, team_id, first_name, last_name, email, role, workspace_role, organisation_role, app_role, workspace_type, status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at'
+  const membershipSelect =
+    'id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, region_id, workspace_unit_id, scope_level, scope_metadata, is_primary_owner, active_workspace_selected_at, department_id, team_id, first_name, last_name, email, role, workspace_role, organisation_role, app_role, workspace_type, status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at'
   const fallbackSelect = 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, organisation_role, app_role, workspace_type, status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at'
   let byUserId = await client
     .from('organisation_users')
@@ -576,7 +595,17 @@ async function fetchOrganisationMembershipRows(client, user, profile) {
     .eq('user_id', userId)
 
   if (byUserId.error) {
-    if (isMissingColumnError(byUserId.error, 'branch_scope') || isMissingColumnError(byUserId.error, 'primary_branch_id') || isMissingColumnError(byUserId.error, 'workspace_role')) {
+    if (
+      isMissingColumnError(byUserId.error, 'branch_scope') ||
+      isMissingColumnError(byUserId.error, 'primary_branch_id') ||
+      isMissingColumnError(byUserId.error, 'workspace_role') ||
+      isMissingColumnError(byUserId.error, 'scope_level') ||
+      isMissingColumnError(byUserId.error, 'region_id') ||
+      isMissingColumnError(byUserId.error, 'workspace_unit_id') ||
+      isMissingColumnError(byUserId.error, 'scope_metadata') ||
+      isMissingColumnError(byUserId.error, 'is_primary_owner') ||
+      isMissingColumnError(byUserId.error, 'active_workspace_selected_at')
+    ) {
       byUserId = await client
         .from('organisation_users')
         .select(fallbackSelect)
@@ -597,7 +626,18 @@ async function fetchOrganisationMembershipRows(client, user, profile) {
       .eq('email', userEmail)
       .in('status', [MEMBERSHIP_STATUSES.invited, MEMBERSHIP_STATUSES.pending])
 
-    if (byEmail.error && (isMissingColumnError(byEmail.error, 'branch_scope') || isMissingColumnError(byEmail.error, 'primary_branch_id') || isMissingColumnError(byEmail.error, 'workspace_role'))) {
+    if (
+      byEmail.error &&
+      (isMissingColumnError(byEmail.error, 'branch_scope') ||
+        isMissingColumnError(byEmail.error, 'primary_branch_id') ||
+        isMissingColumnError(byEmail.error, 'workspace_role') ||
+        isMissingColumnError(byEmail.error, 'scope_level') ||
+        isMissingColumnError(byEmail.error, 'region_id') ||
+        isMissingColumnError(byEmail.error, 'workspace_unit_id') ||
+        isMissingColumnError(byEmail.error, 'scope_metadata') ||
+        isMissingColumnError(byEmail.error, 'is_primary_owner') ||
+        isMissingColumnError(byEmail.error, 'active_workspace_selected_at'))
+    ) {
       byEmail = await client
         .from('organisation_users')
         .select(fallbackSelect)

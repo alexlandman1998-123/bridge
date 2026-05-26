@@ -18,6 +18,7 @@ try {
     buildProductionReadinessChecklist,
     buildRollbackPlan,
     getCanonicalDocumentRolloutMode,
+    isScopedCanonicalPrimaryEnabled,
     shouldRunLegacyGeneration,
     shouldUseCanonicalReads,
     shouldUseCanonicalWrites,
@@ -31,6 +32,45 @@ try {
   assert.equal(getCanonicalDocumentRolloutMode(), DOCUMENT_ROLLOUT_MODES.legacyPrimary)
   assert.equal(getCanonicalDocumentRolloutMode({ parityMode: true }), DOCUMENT_ROLLOUT_MODES.parity)
   assert.equal(getCanonicalDocumentRolloutMode({ sourceOfTruth: true }), DOCUMENT_ROLLOUT_MODES.canonicalPrimary)
+  assert.equal(
+    getCanonicalDocumentRolloutMode({
+      transactionId: 'fixture-transaction',
+      canonicalPrimaryTransactionAllowlist: ['fixture-transaction'],
+    }),
+    DOCUMENT_ROLLOUT_MODES.canonicalPrimary,
+  )
+  assert.equal(
+    getCanonicalDocumentRolloutMode({
+      transactionId: 'fixture-transaction',
+      canonicalPrimaryTransactionAllowlist: ['other-transaction'],
+      parityMode: true,
+    }),
+    DOCUMENT_ROLLOUT_MODES.parity,
+  )
+  assert.equal(
+    getCanonicalDocumentRolloutMode({
+      transactionId: 'fixture-transaction',
+      canonicalPrimaryTransactionAllowlist: ['fixture-transaction'],
+      legacyGenerationDisabled: true,
+      legacyReadsDisabled: true,
+    }),
+    DOCUMENT_ROLLOUT_MODES.canonicalPrimary,
+  )
+  assert.equal(
+    isScopedCanonicalPrimaryEnabled({
+      transactionId: 'fixture-transaction',
+      canonicalPrimaryTransactionAllowlist: 'other-transaction, fixture-transaction',
+    }),
+    true,
+  )
+  assert.equal(
+    isScopedCanonicalPrimaryEnabled({
+      sourceOfTruth: false,
+      transactionId: 'fixture-transaction',
+      canonicalPrimaryTransactionAllowlist: ['fixture-transaction'],
+    }),
+    false,
+  )
   assert.equal(
     getCanonicalDocumentRolloutMode({
       sourceOfTruth: true,

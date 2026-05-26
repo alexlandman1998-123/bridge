@@ -53,6 +53,7 @@ import {
   markTransactionCompleted,
   markTransactionRegistered,
   removeStakeholder,
+  reviewCanonicalDocumentRequirement,
   undoTransactionRegistration,
   unarchiveTransactionLifecycle,
   updateTransactionAccessControl,
@@ -138,6 +139,23 @@ const ATTORNEY_DOCUMENT_GROUPS = [
     categories: ['Registration / Close-Out Documents'],
   },
 ]
+
+function getAttorneyCategoryForRequiredDocument(requirement = {}) {
+  const groupKey = String(requirement?.groupKey || requirement?.group || '').trim().toLowerCase()
+  const key = String(requirement?.key || '').trim().toLowerCase()
+  if (groupKey.includes('buyer') || key.startsWith('buyer_') || ['proof_of_funds', 'bond_approval', 'bank_statements', 'payslips', 'proof_of_income', 'grant_letter'].includes(key)) {
+    return 'Buyer FICA / Compliance'
+  }
+  if (groupKey.includes('seller') || key.startsWith('seller_')) return 'Seller FICA / Compliance'
+  if (key.includes('guarantee')) return 'Guarantees'
+  if (key.includes('clearance') || key.includes('rates') || key.includes('levy')) return 'Clearance Documents'
+  if (key.includes('lodgement')) return 'Lodgement Documents'
+  if (key.includes('registration')) return 'Registration / Close-Out Documents'
+  if (key.includes('signed') || key.includes('signature')) return 'Signing Documents'
+  if (key.includes('otp') || key.includes('instruction')) return 'Instruction / OTP Documents'
+  if (key.includes('transfer')) return 'Drafting Documents'
+  return 'Internal Working Documents'
+}
 
 const DOCUMENT_VISIBILITY_OPTIONS = [
   { key: 'shared', label: 'Shared' },
@@ -615,9 +633,48 @@ function getStepClasses(step = {}, currentStep = null) {
 
 function getDocumentStatus(document = {}) {
   const raw = String(document.review_status || document.status || '').trim().toLowerCase()
-  if (raw === 'under_review') return 'Uploaded'
+  if (raw === 'under_review') return 'Under Review'
   if (raw === 'completed') return 'Approved'
   return toTitle(raw || 'Uploaded')
+}
+
+function getRequirementStatusLabel(status) {
+  const raw = String(status || '').trim().toLowerCase()
+  if (raw === 'under_review') return 'Under Review'
+  if (raw === 'not_applicable') return 'Not Applicable'
+  return toTitle(raw || 'Pending')
+}
+
+function getRequirementDocumentId(requirement = {}) {
+  return requirement.uploadedDocumentId || requirement.uploaded_document_id || requirement.matchedDocument?.id || null
+}
+
+function getRequirementCanonicalId(requirement = {}) {
+  return requirement.canonicalRequirementInstanceId || requirement.canonical_requirement_instance_id || null
+}
+
+function getDocumentCanonicalId(document = {}) {
+  return document.canonicalRequirementInstanceId || document.canonical_requirement_instance_id || null
+}
+
+function canReviewDocumentRequirement(requirement = {}, document = {}) {
+  const status = String(requirement.status || document.review_status || document.status || '').trim().toLowerCase()
+  return Boolean(getRequirementCanonicalId(requirement) && ['uploaded', 'under_review'].includes(status))
+}
+
+function canReplaceDocumentRequirement(requirement = {}, document = {}) {
+  const status = String(requirement.status || document.review_status || document.status || '').trim().toLowerCase()
+  return Boolean(getRequirementCanonicalId(requirement) && status === 'rejected')
+}
+
+function uniqueDocumentsByRenderKey(items = []) {
+  const seen = new Set()
+  return items.filter((item) => {
+    const key = String(item?.id || `${item?.name || ''}:${item?.file_path || ''}`)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 function getParticipantDisplayName(participant) {
@@ -1541,7 +1598,16 @@ function AttorneyTransactionDetail() {
   const [uploadDraft, setUploadDraft] = useState({
     category: ATTORNEY_DOCUMENT_CATEGORIES[0],
     visibility: 'shared',
+    requiredDocumentKey: '',
+    canonicalRequirementInstanceId: '',
     file: null,
+  })
+  const [reviewActionDraft, setReviewActionDraft] = useState({
+    open: false,
+    action: '',
+    document: null,
+    requirement: null,
+    reason: '',
   })
   const [uploadInputVersion, setUploadInputVersion] = useState(0)
   const [activeDocumentGroup, setActiveDocumentGroup] = useState(ATTORNEY_DOCUMENT_GROUPS[0]?.key || 'sales_documents')
@@ -1770,6 +1836,35 @@ function AttorneyTransactionDetail() {
   const unit = data?.unit || null
   const documents = data?.documents ?? EMPTY_ARRAY
   const requiredDocumentChecklist = data?.requiredDocumentChecklist || []
+  const requiredDocumentsByDocumentId = useMemo(() => {
+    const map = new Map()
+    for (const requirement of requiredDocumentChecklist) {
+      const documentId = getRequirementDocumentId(requirement)
+      if (documentId) map.set(String(documentId), requirement)
+    }
+    return map
+  }, [requiredDocumentChecklist])
+  const requiredDocumentsByCanonicalId = useMemo(() => {
+    const map = new Map()
+    for (const requirement of requiredDocumentChecklist) {
+      const canonicalId = getRequirementCanonicalId(requirement)
+      if (canonicalId) map.set(String(canonicalId), requirement)
+    }
+    return map
+  }, [requiredDocumentChecklist])
+  const getLinkedRequirementForDocument = useCallback(
+    (document = {}) => {
+      const canonicalId = getDocumentCanonicalId(document)
+      if (canonicalId && requiredDocumentsByCanonicalId.has(String(canonicalId))) {
+        return requiredDocumentsByCanonicalId.get(String(canonicalId))
+      }
+      if (document?.id && requiredDocumentsByDocumentId.has(String(document.id))) {
+        return requiredDocumentsByDocumentId.get(String(document.id))
+      }
+      return null
+    },
+    [requiredDocumentsByCanonicalId, requiredDocumentsByDocumentId],
+  )
   const transactionDiscussion = data?.transactionDiscussion ?? EMPTY_ARRAY
   const canViewInternalDiscussion =
     workspaceRole !== 'attorney' || attorneyPermissionState.hasPermission('can_view_internal_comments')
@@ -1899,22 +1994,35 @@ function AttorneyTransactionDetail() {
       accumulator[group.key] = []
       return accumulator
     }, {})
+    const seenDocumentIds = new Set()
 
     for (const document of documents) {
-      const category = ATTORNEY_DOCUMENT_CATEGORIES.includes(document?.category) ? document.category : 'Internal Working Documents'
+      const linkedRequirement = getLinkedRequirementForDocument(document)
+      const currentRequirementDocumentId = linkedRequirement ? getRequirementDocumentId(linkedRequirement) : null
+      if (currentRequirementDocumentId && document?.id && String(currentRequirementDocumentId) !== String(document.id)) {
+        continue
+      }
+      const category = ATTORNEY_DOCUMENT_CATEGORIES.includes(document?.category)
+        ? document.category
+        : linkedRequirement
+          ? getAttorneyCategoryForRequiredDocument(linkedRequirement)
+          : 'Internal Working Documents'
       const groupKey = getAttorneyDocumentGroupKey(category)
-      const normalizedDocument = { ...document, normalizedCategory: category }
+      const normalizedDocument = { ...document, normalizedCategory: category, linkedRequirement }
+      const documentKey = String(document?.id || `${document?.name || ''}:${document?.file_path || ''}`)
+      if (seenDocumentIds.has(documentKey)) continue
+      seenDocumentIds.add(documentKey)
       groups.all_documents.push(normalizedDocument)
       groups[groupKey].push(normalizedDocument)
     }
 
     return groups
-  }, [documents])
+  }, [documents, getLinkedRequirementForDocument])
   const attorneyDocumentSections = useMemo(
     () =>
       ATTORNEY_DOCUMENT_GROUPS.map((group) => ({
         ...group,
-        items: groupedDocuments[group.key] || [],
+        items: uniqueDocumentsByRenderKey(groupedDocuments[group.key] || []),
       })),
     [groupedDocuments],
   )
@@ -1931,6 +2039,7 @@ function AttorneyTransactionDetail() {
     () => documents.filter((document) => String(document.uploaded_by_role || '').toLowerCase() === 'client').length,
     [documents],
   )
+  const canShowWaiverAction = ['attorney', 'developer', 'internal_admin', 'admin', 'agency_admin'].includes(String(workspaceRole || '').toLowerCase())
 
   useEffect(() => {
     if (!attorneyDocumentSections.length) return
@@ -3256,6 +3365,9 @@ function AttorneyTransactionDetail() {
         category: uploadDraft.category,
         isClientVisible: uploadDraft.visibility === 'shared',
         stageKey: transferStageKey,
+        requiredDocumentKey: uploadDraft.requiredDocumentKey || null,
+        documentType: uploadDraft.requiredDocumentKey || null,
+        canonicalRequirementInstanceId: uploadDraft.canonicalRequirementInstanceId || null,
       })
       setUploadDraft((previous) => ({ ...previous, file: null }))
       setUploadInputVersion((previous) => previous + 1)
@@ -3276,6 +3388,54 @@ function AttorneyTransactionDetail() {
       await loadData()
     } catch (archiveError) {
       setError(archiveError.message || 'Unable to archive document.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function openReviewAction(action, document, requirement) {
+    setReviewActionDraft({
+      open: true,
+      action,
+      document,
+      requirement,
+      reason: '',
+    })
+  }
+
+  function handleReplaceDocument(document, requirement) {
+    const canonicalRequirementInstanceId = getRequirementCanonicalId(requirement) || getDocumentCanonicalId(document)
+    setUploadDraft((previous) => ({
+      ...previous,
+      canonicalRequirementInstanceId: canonicalRequirementInstanceId || '',
+      requiredDocumentKey: requirement?.key || document?.document_type || '',
+      category: requirement ? getAttorneyCategoryForRequiredDocument(requirement) : previous.category,
+      visibility: document?.visibility_scope === 'internal' ? 'internal' : previous.visibility,
+    }))
+    setWorkspaceMenu('documents')
+    setActiveDocumentGroup('all_documents')
+  }
+
+  async function handleSubmitReviewAction() {
+    const requirement = reviewActionDraft.requirement || null
+    const document = reviewActionDraft.document || null
+    const action = reviewActionDraft.action
+    const requirementInstanceId = getRequirementCanonicalId(requirement) || getDocumentCanonicalId(document)
+    if (!requirementInstanceId || !action) return
+
+    try {
+      setSaving(true)
+      setError('')
+      await reviewCanonicalDocumentRequirement({
+        requirementInstanceId,
+        documentId: document?.id || getRequirementDocumentId(requirement),
+        action,
+        reason: reviewActionDraft.reason,
+      })
+      setReviewActionDraft({ open: false, action: '', document: null, requirement: null, reason: '' })
+      await loadData()
+    } catch (reviewError) {
+      setError(reviewError.message || 'Unable to update canonical document review.')
     } finally {
       setSaving(false)
     }
@@ -3967,6 +4127,37 @@ function AttorneyTransactionDetail() {
                 ) : null}
               </div>
               <form onSubmit={handleUploadDocument} className="mt-4 grid gap-3 lg:grid-cols-12 lg:items-end">
+                <label className="flex flex-col gap-1.5 lg:col-span-12">
+                  <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Required document</span>
+                  <Field
+                    as="select"
+                    value={uploadDraft.canonicalRequirementInstanceId || ''}
+                    onChange={(event) => {
+                      const canonicalRequirementInstanceId = event.target.value
+                      const requirement = requiredDocumentChecklist.find((item) =>
+                        String(item?.canonicalRequirementInstanceId || item?.canonical_requirement_instance_id || '') === canonicalRequirementInstanceId
+                      )
+                      setUploadDraft((previous) => ({
+                        ...previous,
+                        canonicalRequirementInstanceId,
+                        requiredDocumentKey: requirement?.key || '',
+                        category: requirement ? getAttorneyCategoryForRequiredDocument(requirement) : previous.category,
+                      }))
+                    }}
+                  >
+                    <option value="">General upload - do not satisfy a requirement</option>
+                    {requiredDocumentChecklist
+                      .filter((item) => item?.canonicalRequirementInstanceId || item?.canonical_requirement_instance_id)
+                      .map((item) => {
+                        const canonicalId = item.canonicalRequirementInstanceId || item.canonical_requirement_instance_id
+                        return (
+                          <option key={`${item.key}:${canonicalId}`} value={canonicalId}>
+                            {item.label || item.key} · {item.status || 'pending'}
+                          </option>
+                        )
+                      })}
+                  </Field>
+                </label>
                 <label className="flex flex-col gap-1.5 lg:col-span-4">
                   <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Category</span>
                   <Field
@@ -4054,6 +4245,12 @@ function AttorneyTransactionDetail() {
                         const visibility = String(document.visibility_scope || 'shared').toLowerCase()
                         const isShared = visibility === 'shared'
                         const isArchived = Boolean(document.archived_at)
+                        const linkedRequirement = document.linkedRequirement || getLinkedRequirementForDocument(document)
+                        const linkedRequirementLabel = linkedRequirement?.label || linkedRequirement?.key || ''
+                        const requirementStatus = linkedRequirement?.status || document.review_status || document.status || ''
+                        const isRejectedRequirement = String(requirementStatus || '').trim().toLowerCase() === 'rejected'
+                        const showReviewActions = canReviewDocumentRequirement(linkedRequirement, document)
+                        const showReplaceAction = canReplaceDocumentRequirement(linkedRequirement, document)
                         return (
                           <article key={document.id} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-5 py-5">
                             <div className="flex items-start justify-between gap-3">
@@ -4076,6 +4273,8 @@ function AttorneyTransactionDetail() {
                             <div className="mt-4 grid gap-2 text-xs text-[#60758d]">
                               {[
                                 ['Status', getDocumentStatus(document)],
+                                ['Linked requirement', linkedRequirementLabel || 'General upload'],
+                                ['Requirement status', linkedRequirementLabel ? getRequirementStatusLabel(requirementStatus) : 'Not linked'],
                                 ['Uploaded by', document.uploaded_by_role || document.uploadedByRole || 'Internal user'],
                                 ['Requested by', document.requested_by_role || document.requestedByRole || document.requested_by || 'Not recorded'],
                                 ['Reviewed by', document.reviewed_by_name || document.reviewedByName || document.reviewed_by || 'Not reviewed'],
@@ -4087,9 +4286,9 @@ function AttorneyTransactionDetail() {
                                 </div>
                               ))}
                             </div>
-                            {document.rejection_reason || document.rejected_reason ? (
+                            {isRejectedRequirement && (document.rejection_reason || document.rejected_reason || linkedRequirement?.rejectionReason || linkedRequirement?.rejection_reason) ? (
                               <p className="mt-3 rounded-[12px] border border-red-100 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
-                                {document.rejection_reason || document.rejected_reason}
+                                {document.rejection_reason || document.rejected_reason || linkedRequirement?.rejectionReason || linkedRequirement?.rejection_reason}
                               </p>
                             ) : null}
                             {isArchived ? <p className="mt-1 text-xs font-semibold text-[#b42318]">Archived</p> : null}
@@ -4123,6 +4322,50 @@ function AttorneyTransactionDetail() {
                               >
                                 Archive
                               </Button>
+                              {showReviewActions ? (
+                                <>
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => openReviewAction('approve', document, linkedRequirement)}
+                                    disabled={saving}
+                                  >
+                                    Approve
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => openReviewAction('reject', document, linkedRequirement)}
+                                    disabled={saving}
+                                  >
+                                    Reject
+                                  </Button>
+                                </>
+                              ) : null}
+                              {showReplaceAction ? (
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => handleReplaceDocument(document, linkedRequirement)}
+                                  disabled={saving}
+                                >
+                                  Replace
+                                </Button>
+                              ) : null}
+                              {canShowWaiverAction && linkedRequirementLabel ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => openReviewAction('waive', document, linkedRequirement)}
+                                  disabled={saving}
+                                >
+                                  Waive
+                                </Button>
+                              ) : null}
                             </div>
                           </article>
                         )
@@ -5472,6 +5715,62 @@ function AttorneyTransactionDetail() {
         onCancel={() => setRemoveDialog({ open: false, stakeholderId: null, title: '', description: '' })}
         onConfirm={() => void confirmRemoveStakeholder()}
       />
+
+      <Modal
+        open={reviewActionDraft.open}
+        onClose={saving ? undefined : () => setReviewActionDraft({ open: false, action: '', document: null, requirement: null, reason: '' })}
+        title={
+          reviewActionDraft.action === 'approve'
+            ? 'Approve Document'
+            : reviewActionDraft.action === 'waive'
+              ? 'Waive Requirement'
+              : 'Reject Document'
+        }
+        subtitle={reviewActionDraft.requirement?.label || reviewActionDraft.requirement?.key || reviewActionDraft.document?.name || ''}
+        footer={(
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setReviewActionDraft({ open: false, action: '', document: null, requirement: null, reason: '' })}
+              disabled={saving}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className={reviewActionDraft.action === 'reject' ? 'bg-danger text-textInverse hover:brightness-95' : ''}
+              onClick={() => void handleSubmitReviewAction()}
+              disabled={saving || (['reject', 'waive'].includes(reviewActionDraft.action) && !reviewActionDraft.reason.trim())}
+            >
+              {saving
+                ? 'Saving…'
+                : reviewActionDraft.action === 'approve'
+                  ? 'Approve'
+                  : reviewActionDraft.action === 'waive'
+                    ? 'Waive'
+                    : 'Reject'}
+            </Button>
+          </div>
+        )}
+      >
+        <label className="flex flex-col gap-1.5">
+          <span className="text-label font-semibold uppercase text-textMuted">
+            {reviewActionDraft.action === 'approve' ? 'Review note (optional)' : 'Reason (required)'}
+          </span>
+          <Field
+            as="textarea"
+            rows={4}
+            value={reviewActionDraft.reason}
+            onChange={(event) => setReviewActionDraft((previous) => ({ ...previous, reason: event.target.value }))}
+            placeholder={
+              reviewActionDraft.action === 'approve'
+                ? 'Add an optional note for the approval event...'
+                : 'Add the reason that should appear on the document card...'
+            }
+          />
+        </label>
+      </Modal>
 
       <Modal
         open={reasonDialog.open}

@@ -122,6 +122,7 @@ export const CANONICAL_TO_LEGACY_REQUIREMENT_KEYS = Object.freeze({
   settlement_figure: 'settlement_figures',
   bond_instruction_to_attorneys: 'bond_instruction',
   signed_packet_version: 'final_signed_packet',
+  signed_addendum: 'signed_addendum',
   bond_application_form: 'bond_application_form',
 })
 
@@ -207,6 +208,7 @@ export const LEGACY_TO_CANONICAL_REQUIREMENT_KEYS = Object.freeze({
   cancellation_instruction: 'bond_cancellation_notice',
   final_signed_packet: 'signed_packet_version',
   closing_pack: 'signed_packet_version',
+  signed_addendum: 'signed_addendum',
   registration_confirmation: 'registration_confirmation',
   bond_application_form: 'bond_application_form',
   bond_application: 'bond_application_form',

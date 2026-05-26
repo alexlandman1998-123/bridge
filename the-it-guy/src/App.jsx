@@ -140,6 +140,7 @@ const Pipeline = lazy(() => import('./pages/Pipeline'))
 const PipelineCanvassingPage = lazy(() => import('./pages/PipelineCanvassingPage'))
 const PipelineOverviewPage = lazy(() => import('./pages/PipelineOverviewPage'))
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'))
+const PartnersPage = lazy(() => import('./pages/PartnersPage'))
 const PlatformDiagnosticsPage = lazy(() => import('./pages/PlatformDiagnosticsPage'))
 const PostDashboardSetup = lazy(() => import('./pages/PostDashboardSetup'))
 const Report = lazy(() => import('./pages/Report'))
@@ -1769,6 +1770,26 @@ function AppRoutes() {
                 }
               />
               <Route path="/documents" element={<AppErrorBoundary scope="documents-module" title="Documents module failed to load"><ClientAwareDocuments /></AppErrorBoundary>} />
+              <Route
+                path="/partners"
+                element={
+                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                    <AppErrorBoundary scope="partners-module" title="Partners module failed to load">
+                      <PartnersPage />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/partners/:partnerId"
+                element={
+                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                    <AppErrorBoundary scope="partners-module" title="Partners module failed to load">
+                      <PartnersPage />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
               <Route
                 path="/handover"
                 element={

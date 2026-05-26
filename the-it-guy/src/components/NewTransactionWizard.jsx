@@ -7,7 +7,9 @@ import {
   resolveTransactionWhatsAppContacts,
   fetchUnitsForTransactionSetup,
 } from '../lib/api'
+import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partnersRepository'
 import { resolveTransactionOnboardingLink } from '../lib/onboardingLinks'
+import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
@@ -171,10 +173,13 @@ function BooleanField({ label, value, onChange, error }) {
 
 function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSaved }) {
   const navigate = useNavigate()
-  const { role } = useWorkspace()
+  const { role, workspace, workspaceType } = useWorkspace()
+  const { organisation } = useOrganisation()
   const [form, setForm] = useState(createInitialForm(initialDevelopmentId))
   const [developments, setDevelopments] = useState([])
   const [units, setUnits] = useState([])
+  const [partnerSnapshot, setPartnerSnapshot] = useState(null)
+  const [loadingPartners, setLoadingPartners] = useState(false)
   const [loadingMeta, setLoadingMeta] = useState(false)
   const [loadingUnits, setLoadingUnits] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -212,6 +217,35 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
 
     void loadDevelopments()
   }, [open, initialDevelopmentId])
+
+  useEffect(() => {
+    if (!open) return
+    let active = true
+
+    async function loadPartners() {
+      try {
+        setLoadingPartners(true)
+        const snapshot = await fetchPartnersSnapshot({
+          organisationId: organisation?.id || workspace?.id || '',
+          workspaceType: organisation?.type || workspaceType || role,
+        })
+        if (!active) return
+        setPartnerSnapshot(snapshot)
+      } catch (error) {
+        if (active) {
+          console.warn('[NewTransactionWizard] partner defaults unavailable', error)
+        }
+      } finally {
+        if (active) setLoadingPartners(false)
+      }
+    }
+
+    void loadPartners()
+
+    return () => {
+      active = false
+    }
+  }, [open, organisation?.id, organisation?.type, role, workspace?.id, workspaceType])
 
   useEffect(() => {
     if (!open || !form.setup.developmentId || !isSupabaseConfigured) {
@@ -294,6 +328,48 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     hasDevelopmentReservationDefault &&
     selectedReservationAmount !== null &&
     Number(selectedReservationAmount) === Number(developmentDefaultReservationAmount)
+  const attorneyPartnerOptions = useMemo(
+    () => getPartnerAssignmentOptions(partnerSnapshot || {}, 'transfer_attorney'),
+    [partnerSnapshot],
+  )
+  const bondOriginatorPartnerOptions = useMemo(
+    () => getPartnerAssignmentOptions(partnerSnapshot || {}, 'bond_originator'),
+    [partnerSnapshot],
+  )
+  const selectedAttorneyPartner = useMemo(
+    () => attorneyPartnerOptions.find((partner) => partner.id === form.finance.attorneyPartnerRelationshipId) || null,
+    [attorneyPartnerOptions, form.finance.attorneyPartnerRelationshipId],
+  )
+  const selectedBondOriginatorPartner = useMemo(
+    () => bondOriginatorPartnerOptions.find((partner) => partner.id === form.finance.bondOriginatorPartnerRelationshipId) || null,
+    [bondOriginatorPartnerOptions, form.finance.bondOriginatorPartnerRelationshipId],
+  )
+
+  useEffect(() => {
+    if (!open || !partnerSnapshot) return
+    setForm((previous) => {
+      const defaultAttorney = attorneyPartnerOptions[0] || null
+      const defaultBondOriginator = bondOriginatorPartnerOptions[0] || null
+      const nextFinance = { ...previous.finance }
+      let changed = false
+
+      if (defaultAttorney && !nextFinance.attorney && !nextFinance.attorneyPartnerRelationshipId) {
+        nextFinance.attorney = defaultAttorney.companyName
+        nextFinance.attorneyEmail = defaultAttorney.email || ''
+        nextFinance.attorneyPartnerRelationshipId = defaultAttorney.id
+        changed = true
+      }
+
+      if (defaultBondOriginator && !nextFinance.bondOriginator && !nextFinance.bondOriginatorPartnerRelationshipId) {
+        nextFinance.bondOriginator = defaultBondOriginator.companyName
+        nextFinance.bondOriginatorEmail = defaultBondOriginator.email || ''
+        nextFinance.bondOriginatorPartnerRelationshipId = defaultBondOriginator.id
+        changed = true
+      }
+
+      return changed ? { ...previous, finance: nextFinance } : previous
+    })
+  }, [attorneyPartnerOptions, bondOriginatorPartnerOptions, open, partnerSnapshot])
 
   useEffect(() => {
     if (!open || !form.setup.developmentId || isPrivateMatter || reservationDecisionTouched) {
@@ -452,6 +528,36 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     }))
   }
 
+  function selectPartnerField(field, partnerId) {
+    if (partnerId === '__add_partner__') {
+      onClose?.()
+      navigate('/partners')
+      return
+    }
+
+    const partner =
+      field === 'attorneyPartnerRelationshipId'
+        ? attorneyPartnerOptions.find((item) => item.id === partnerId)
+        : bondOriginatorPartnerOptions.find((item) => item.id === partnerId)
+
+    setForm((previous) => ({
+      ...previous,
+      finance: {
+        ...previous.finance,
+        [field]: partnerId,
+        ...(field === 'attorneyPartnerRelationshipId'
+          ? {
+              attorney: partner?.companyName || '',
+              attorneyEmail: partner?.email || '',
+            }
+          : {
+              bondOriginator: partner?.companyName || '',
+              bondOriginatorEmail: partner?.email || '',
+            }),
+      },
+    }))
+  }
+
   function setReservationRequired(required) {
     setReservationDecisionTouched(true)
     setForm((previous) => ({
@@ -465,16 +571,6 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             ? 'pending'
             : previous.finance.reservationStatus
           : 'not_required',
-      },
-    }))
-  }
-
-  function setStatusField(field, value) {
-    setForm((previous) => ({
-      ...previous,
-      status: {
-        ...previous.status,
-        [field]: value,
       },
     }))
   }
@@ -589,6 +685,36 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         },
         options: {
           allowIncomplete: Boolean(form.setup.allowIncomplete),
+          rolePlayers: [
+            selectedAttorneyPartner
+              ? {
+                  roleType: 'transfer_attorney',
+                  source: 'connected_partner',
+                  selectionSource: selectedAttorneyPartner.relationshipType === 'preferred' ? 'preferred_partner' : 'connected_partner',
+                  preferredPartnerId: null,
+                  partnerRelationshipId: selectedAttorneyPartner.relationshipId,
+                  partnerOrganisationId: selectedAttorneyPartner.organisationId,
+                  partner: {
+                    companyName: selectedAttorneyPartner.companyName,
+                    email: selectedAttorneyPartner.email,
+                  },
+                }
+              : null,
+            selectedBondOriginatorPartner
+              ? {
+                  roleType: 'bond_originator',
+                  source: 'connected_partner',
+                  selectionSource: selectedBondOriginatorPartner.relationshipType === 'preferred' ? 'preferred_partner' : 'connected_partner',
+                  preferredPartnerId: null,
+                  partnerRelationshipId: selectedBondOriginatorPartner.relationshipId,
+                  partnerOrganisationId: selectedBondOriginatorPartner.organisationId,
+                  partner: {
+                    companyName: selectedBondOriginatorPartner.companyName,
+                    email: selectedBondOriginatorPartner.email,
+                  },
+                }
+              : null,
+          ].filter(Boolean),
         },
       })
 
@@ -1285,6 +1411,52 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                       </Field>
                     </>
                   ) : null}
+
+                  <div className="md:col-span-2 rounded-[18px] border border-[#dbe4ef] bg-[#f8fbff] p-4">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-[#142132]">Connected Transaction Partners</p>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                          Preferred and approved organisations are reusable defaults for transaction setup.
+                        </p>
+                      </div>
+                      {loadingPartners ? <span className="text-xs font-semibold text-[#6b7d93]">Loading partners...</span> : null}
+                    </div>
+
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <Field label="Attorney Selection">
+                        <select
+                          value={form.finance.attorneyPartnerRelationshipId || ''}
+                          onChange={(event) => selectPartnerField('attorneyPartnerRelationshipId', event.target.value)}
+                        >
+                          <option value="">Select connected attorney</option>
+                          {attorneyPartnerOptions.map((partner) => (
+                            <option key={partner.id} value={partner.id}>
+                              {partner.companyName}
+                              {partner.relationshipType === 'preferred' ? ' • Preferred' : ''}
+                            </option>
+                          ))}
+                          <option value="__add_partner__">Add New Partner</option>
+                        </select>
+                      </Field>
+
+                      <Field label="Bond Originator Selection">
+                        <select
+                          value={form.finance.bondOriginatorPartnerRelationshipId || ''}
+                          onChange={(event) => selectPartnerField('bondOriginatorPartnerRelationshipId', event.target.value)}
+                        >
+                          <option value="">Select connected bond originator</option>
+                          {bondOriginatorPartnerOptions.map((partner) => (
+                            <option key={partner.id} value={partner.id}>
+                              {partner.companyName}
+                              {partner.relationshipType === 'preferred' ? ' • Preferred' : ''}
+                            </option>
+                          ))}
+                          <option value="__add_partner__">Add New Partner</option>
+                        </select>
+                      </Field>
+                    </div>
+                  </div>
                 </div>
               </section>
 
