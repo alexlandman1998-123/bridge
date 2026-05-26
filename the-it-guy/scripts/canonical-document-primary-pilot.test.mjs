@@ -34,31 +34,40 @@ try {
     transactionId: TRANSACTION_ID,
     canonicalPrimaryTransactionAllowlist: [TRANSACTION_ID],
   }
+  const globalPilotOptions = {
+    sourceOfTruth: true,
+    transactionId: TRANSACTION_ID,
+  }
   const nonPilotOptions = {
     transactionId: '00000000-0000-4000-8000-000000000000',
     canonicalPrimaryTransactionAllowlist: [TRANSACTION_ID],
   }
   const rollbackOptions = {
+    sourceOfTruth: false,
     transactionId: TRANSACTION_ID,
     canonicalPrimaryTransactionAllowlist: [],
   }
 
-  assert.notEqual(consolidation.getCanonicalDocumentRolloutMode(), consolidation.DOCUMENT_ROLLOUT_MODES.canonicalPrimary)
+  const defaultMode = consolidation.getCanonicalDocumentRolloutMode()
   assert.notEqual(consolidation.getCanonicalDocumentRolloutMode(), consolidation.DOCUMENT_ROLLOUT_MODES.canonicalOnly)
+  assert.equal(consolidation.getCanonicalDocumentRolloutMode(globalPilotOptions), consolidation.DOCUMENT_ROLLOUT_MODES.canonicalPrimary)
+  assert.equal(consolidation.shouldUseCanonicalReads(globalPilotOptions), true)
+  assert.equal(consolidation.shouldUseCanonicalWrites(globalPilotOptions), true)
+  assert.equal(consolidation.shouldUseLegacyReadFallback(globalPilotOptions), true)
   assert.equal(consolidation.getCanonicalDocumentRolloutMode(pilotOptions), consolidation.DOCUMENT_ROLLOUT_MODES.canonicalPrimary)
   assert.equal(consolidation.shouldUseCanonicalReads(pilotOptions), true)
   assert.equal(consolidation.shouldUseCanonicalWrites(pilotOptions), true)
   assert.equal(consolidation.shouldUseLegacyReadFallback(pilotOptions), true)
-  assert.equal(consolidation.getCanonicalDocumentRolloutMode(nonPilotOptions), consolidation.DOCUMENT_ROLLOUT_MODES.legacyPrimary)
-  assert.equal(consolidation.getCanonicalDocumentRolloutMode(rollbackOptions), consolidation.DOCUMENT_ROLLOUT_MODES.legacyPrimary)
-  assert.equal(
-    consolidation.getCanonicalDocumentRolloutMode({
-      ...pilotOptions,
-      legacyGenerationDisabled: true,
-      legacyReadsDisabled: true,
-    }),
-    consolidation.DOCUMENT_ROLLOUT_MODES.canonicalPrimary,
+  assert.ok(
+    [
+      consolidation.DOCUMENT_ROLLOUT_MODES.legacyPrimary,
+      consolidation.DOCUMENT_ROLLOUT_MODES.canonicalPrimary,
+    ].includes(consolidation.getCanonicalDocumentRolloutMode(nonPilotOptions)),
+    'non-pilot transaction may remain legacy in scoped mode or become canonical_primary when global source-of-truth is enabled',
   )
+  assert.equal(consolidation.getCanonicalDocumentRolloutMode(rollbackOptions), consolidation.DOCUMENT_ROLLOUT_MODES.legacyPrimary)
+  assert.equal(consolidation.isLegacyDocumentGenerationDisabled(), false)
+  assert.equal(consolidation.areLegacyDocumentReadsDisabled(), false)
   assert.equal(gates.areCanonicalWorkflowGateHardBlocksEnabled(), false)
   assert.equal(reminders.areCanonicalEmailRemindersEnabled(), false)
   assert.equal(reminders.areCanonicalWhatsappRemindersEnabled(), false)
@@ -160,16 +169,15 @@ try {
       reference: REFERENCE,
     },
     rollout: {
-      globalMode: consolidation.getCanonicalDocumentRolloutMode(),
+      defaultMode,
+      globalPilotMode: consolidation.getCanonicalDocumentRolloutMode(globalPilotOptions),
       scopedMode: consolidation.getCanonicalDocumentRolloutMode(pilotOptions),
       nonPilotMode: consolidation.getCanonicalDocumentRolloutMode(nonPilotOptions),
       rollbackMode: consolidation.getCanonicalDocumentRolloutMode(rollbackOptions),
-      legacyFallbackAvailable: consolidation.shouldUseLegacyReadFallback(pilotOptions),
-      canonicalOnlyDisabledForScopedAllowlist: consolidation.getCanonicalDocumentRolloutMode({
-        ...pilotOptions,
-        legacyGenerationDisabled: true,
-        legacyReadsDisabled: true,
-      }) !== consolidation.DOCUMENT_ROLLOUT_MODES.canonicalOnly,
+      legacyFallbackAvailable: consolidation.shouldUseLegacyReadFallback(globalPilotOptions),
+      legacyGenerationDisabled: consolidation.isLegacyDocumentGenerationDisabled(),
+      legacyReadsDisabled: consolidation.areLegacyDocumentReadsDisabled(),
+      canonicalOnlyDisabledForOperationalPilot: defaultMode !== consolidation.DOCUMENT_ROLLOUT_MODES.canonicalOnly,
     },
     safety: {
       hardBlocksEnabled: gates.areCanonicalWorkflowGateHardBlocksEnabled(),

@@ -43,11 +43,14 @@ export const DOCUMENT_ROLLOUT_MODES = Object.freeze({
 export const CONSOLIDATION_SOURCE = 'canonical_document_consolidation'
 
 function logCanonicalPilotDeploymentDiagnostic() {
+  const sourceOfTruth = getEnvFlag(CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH_FLAG)
   const transactionAllowlist = getEnvFlag(CANONICAL_DOCUMENTS_PRIMARY_TRANSACTION_ALLOWLIST_FLAG)
-  if (!transactionAllowlist) return
-  console.info('Canonical pilot allowlist:', transactionAllowlist, {
+  if (!sourceOfTruth && !transactionAllowlist) return
+  console.info('Canonical document rollout:', {
     marker: CANONICAL_PILOT_BUILD_MARKER,
     mode: DOCUMENT_ROLLOUT_MODES.canonicalPrimary,
+    sourceOfTruth,
+    transactionAllowlist,
     rpcMarkers: CANONICAL_PILOT_DIAGNOSTIC_RPC_MARKERS,
   })
 }

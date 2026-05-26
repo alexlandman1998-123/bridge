@@ -13,8 +13,10 @@ import { isUnsafeFallbackAllowed } from './envValidation'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 import { assertResolvedWorkspaceContext } from '../services/workspaceResolutionService'
 
-const LEAD_SELECT_FIELDS =
+const LEGACY_LEAD_SELECT_FIELDS =
   'lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, lead_direction, lead_source, stage, status, priority, budget, area_interest, property_interest, seller_property_address, estimated_value, notes, converted_transaction_id, created_at, updated_at'
+const LEAD_SELECT_FIELDS =
+  `${LEGACY_LEAD_SELECT_FIELDS}, branch_id, assigned_user_id, created_by`
 const LEAD_SELECT_FIELDS_EXTENDED =
   `${LEAD_SELECT_FIELDS}, listing_id, mandate_packet_id, seller_onboarding_token, seller_onboarding_status`
 const LEAD_ACTIVITY_SELECT_FIELDS =
@@ -111,6 +113,9 @@ function mapSupabaseLead(row = {}) {
   return {
     leadId: normalizeText(row?.lead_id),
     organisationId: normalizeText(row?.organisation_id),
+    branchId: normalizeText(row?.branch_id),
+    assignedUserId: normalizeText(row?.assigned_user_id),
+    createdBy: normalizeText(row?.created_by),
     assignedAgentId: normalizeText(row?.assigned_agent_id),
     assignedAgentName: '',
     assignedAgentEmail: '',
@@ -183,6 +188,9 @@ function buildLocalLeadAndContactRows(payload = {}, organisationId = '') {
   const contactId = normalizeText(payload?.contact?.contactId) || createUuid()
   const leadId = normalizeText(leadPayload?.leadId) || createUuid()
   const assignedAgent = payload?.assignedAgent || {}
+  const branchId = normalizeText(leadPayload?.branchId || payload?.branchId || assignedAgent?.branchId)
+  const assignedUserId = normalizeText(leadPayload?.assignedUserId || payload?.assignedUserId || assignedAgent?.userId || assignedAgent?.id)
+  const createdBy = normalizeText(leadPayload?.createdBy || payload?.createdBy)
   const contact = {
     contactId,
     organisationId,
@@ -201,6 +209,9 @@ function buildLocalLeadAndContactRows(payload = {}, organisationId = '') {
   const lead = {
     leadId,
     organisationId,
+    branchId,
+    assignedUserId,
+    createdBy,
     assignedAgentId: normalizeText(assignedAgent?.id),
     assignedAgentName: normalizeText(assignedAgent?.name || assignedAgent?.fullName),
     assignedAgentEmail: normalizeText(assignedAgent?.email).toLowerCase(),
@@ -253,6 +264,9 @@ function buildRemoteLeadUpdatePayload(patch = {}) {
   const corePayload = {}
   const bridgePayload = {}
 
+  if (hasOwn(patch, 'branchId')) corePayload.branch_id = normalizeNullableUuid(patch.branchId)
+  if (hasOwn(patch, 'assignedUserId')) corePayload.assigned_user_id = normalizeNullableUuid(patch.assignedUserId)
+  if (hasOwn(patch, 'createdBy')) corePayload.created_by = normalizeNullableUuid(patch.createdBy)
   if (hasOwn(patch, 'assignedAgentId')) corePayload.assigned_agent_id = normalizeNullableUuid(patch.assignedAgentId)
   if (hasOwn(patch, 'contactId')) corePayload.contact_id = normalizeNullableUuid(patch.contactId)
   if (hasOwn(patch, 'leadCategory')) corePayload.lead_category = normalizeText(patch.leadCategory) || 'Buyer'
@@ -295,25 +309,59 @@ function buildRemoteLeadUpdatePayload(patch = {}) {
   }
 }
 
+function buildRemoteLeadCreatePayload(lead = {}, workspaceId = '', actor = null) {
+  const resolvedAssignedAgentId = normalizeNullableUuid(lead?.assignedAgentId)
+  const resolvedAssignedUserId = normalizeNullableUuid(lead?.assignedUserId) || resolvedAssignedAgentId
+  const resolvedCreatedBy = normalizeNullableUuid(lead?.createdBy) || normalizeNullableUuid(actor?.id)
+  return {
+    lead_id: normalizeText(lead.leadId),
+    organisation_id: workspaceId,
+    branch_id: normalizeNullableUuid(lead?.branchId),
+    assigned_user_id: resolvedAssignedUserId,
+    created_by: resolvedCreatedBy,
+    assigned_agent_id: resolvedAssignedAgentId,
+    contact_id: normalizeText(lead.contactId) || null,
+    lead_category: normalizeText(lead.leadCategory) || 'Buyer',
+    lead_direction: normalizeText(lead.leadDirection) || 'Inbound',
+    lead_source: normalizeText(lead.leadSource) || 'Other',
+    stage: normalizeText(lead.stage) || 'New Lead',
+    status: normalizeText(lead.status) || 'New Lead',
+    priority: normalizeText(lead.priority) || 'Medium',
+    budget: Number(lead.budget || 0) || 0,
+    area_interest: normalizeText(lead.areaInterest) || null,
+    property_interest: normalizeText(lead.propertyInterest) || null,
+    seller_property_address: normalizeText(lead.sellerPropertyAddress) || null,
+    estimated_value: Number(lead.estimatedValue || 0) || 0,
+    listing_id: normalizeText(lead.listingId) || null,
+    notes: normalizeText(lead.notes) || null,
+    updated_at: lead.updatedAt,
+  }
+}
+
+async function selectLeadsWithCompatibility(queryBuilderFactory) {
+  let leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_EXTENDED)
+  if (leadResult.error && isMissingColumnError(leadResult.error)) {
+    leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS)
+  }
+  if (leadResult.error && isMissingColumnError(leadResult.error)) {
+    leadResult = await queryBuilderFactory(LEGACY_LEAD_SELECT_FIELDS)
+  }
+  return leadResult
+}
+
 export async function listAgencyCrmLeadContacts(organisationId) {
   const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.listAgencyCrmLeadContacts')
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Supabase is required before loading agency CRM data.')
   }
 
-  let leadResult = await supabase
-    .from('leads')
-    .select(LEAD_SELECT_FIELDS_EXTENDED)
-    .eq('organisation_id', workspaceId)
-    .order('updated_at', { ascending: false })
-
-  if (leadResult.error && isMissingColumnError(leadResult.error)) {
-    leadResult = await supabase
+  const leadResult = await selectLeadsWithCompatibility((fields) =>
+    supabase
       .from('leads')
-      .select(LEAD_SELECT_FIELDS)
+      .select(fields)
       .eq('organisation_id', workspaceId)
-      .order('updated_at', { ascending: false })
-  }
+      .order('updated_at', { ascending: false }),
+  )
 
   const contactResult = await supabase
     .from('contacts')
@@ -379,21 +427,14 @@ export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId) {
     throw new Error('Supabase is required before loading agency CRM lead data.')
   }
 
-  let leadResult = await supabase
-    .from('leads')
-    .select(LEAD_SELECT_FIELDS_EXTENDED)
-    .eq('organisation_id', workspaceId)
-    .eq('lead_id', leadUuid)
-    .maybeSingle()
-
-  if (leadResult.error && isMissingColumnError(leadResult.error)) {
-    leadResult = await supabase
+  const leadResult = await selectLeadsWithCompatibility((fields) =>
+    supabase
       .from('leads')
-      .select(LEAD_SELECT_FIELDS)
+      .select(fields)
       .eq('organisation_id', workspaceId)
       .eq('lead_id', leadUuid)
-      .maybeSingle()
-  }
+      .maybeSingle(),
+  )
 
   const leadBlocked = leadResult.error && (isPermissionDeniedError(leadResult.error) || isMissingSchemaOrTableError(leadResult.error))
   if (leadResult.error && !leadBlocked) throw leadResult.error
@@ -446,13 +487,16 @@ export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId) {
   }
 }
 
-export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { actor = null, requireRemote = false } = {}) {
+export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { actor = null } = {}) {
   const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.createAgencyCrmLeadRecord')
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Supabase is required before creating agency CRM data.')
   }
 
-  const { contact, lead } = buildLocalLeadAndContactRows(payload, workspaceId)
+  const { contact, lead } = buildLocalLeadAndContactRows({
+    ...payload,
+    createdBy: payload?.createdBy || actor?.id,
+  }, workspaceId)
 
   try {
     const contactResult = await supabase.from('contacts').upsert({
@@ -469,31 +513,32 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
     }, { onConflict: 'contact_id' })
     if (contactResult.error) throw contactResult.error
 
-    const leadPayloadForRemote = {
-      lead_id: normalizeText(lead.leadId),
-      organisation_id: workspaceId,
-      assigned_agent_id: normalizeNullableUuid(lead.assignedAgentId),
-      contact_id: normalizeText(lead.contactId) || null,
-      lead_category: normalizeText(lead.leadCategory) || 'Buyer',
-      lead_direction: normalizeText(lead.leadDirection) || 'Inbound',
-      lead_source: normalizeText(lead.leadSource) || 'Other',
-      stage: normalizeText(lead.stage) || 'New Lead',
-      status: normalizeText(lead.status) || 'New Lead',
-      priority: normalizeText(lead.priority) || 'Medium',
-      budget: Number(lead.budget || 0) || 0,
-      area_interest: normalizeText(lead.areaInterest) || null,
-      property_interest: normalizeText(lead.propertyInterest) || null,
-      seller_property_address: normalizeText(lead.sellerPropertyAddress) || null,
-      estimated_value: Number(lead.estimatedValue || 0) || 0,
-      listing_id: normalizeText(lead.listingId) || null,
-      notes: normalizeText(lead.notes) || null,
-      updated_at: lead.updatedAt,
-    }
+    const leadPayloadForRemote = buildRemoteLeadCreatePayload(lead, workspaceId, actor)
     let leadResult = await supabase.from('leads').upsert(leadPayloadForRemote, { onConflict: 'lead_id' })
-    if (leadResult.error && isMissingColumnError(leadResult.error, 'listing_id')) {
+    if (leadResult.error && isMissingColumnError(leadResult.error)) {
       const fallbackLeadPayload = { ...leadPayloadForRemote }
-      delete fallbackLeadPayload.listing_id
-      leadResult = await supabase.from('leads').upsert(fallbackLeadPayload, { onConflict: 'lead_id' })
+      const optionalColumns = ['listing_id', 'branch_id', 'assigned_user_id', 'created_by']
+      let recovered = false
+      for (const column of optionalColumns) {
+        if (!Object.prototype.hasOwnProperty.call(fallbackLeadPayload, column)) continue
+        delete fallbackLeadPayload[column]
+        leadResult = await supabase.from('leads').upsert(fallbackLeadPayload, { onConflict: 'lead_id' })
+        if (!leadResult.error) {
+          recovered = true
+          break
+        }
+        if (!isMissingColumnError(leadResult.error)) {
+          break
+        }
+      }
+      if (!recovered && leadResult.error && isMissingColumnError(leadResult.error)) {
+        const legacyLeadPayload = { ...fallbackLeadPayload }
+        delete legacyLeadPayload.listing_id
+        delete legacyLeadPayload.branch_id
+        delete legacyLeadPayload.assigned_user_id
+        delete legacyLeadPayload.created_by
+        leadResult = await supabase.from('leads').upsert(legacyLeadPayload, { onConflict: 'lead_id' })
+      }
     }
     if (leadResult.error) throw leadResult.error
 
@@ -510,6 +555,11 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
     console.error('[agencyCrmRepository] create lead failed without local fallback', error)
     throw error
   }
+}
+
+export const __agencyCrmRepositoryTestUtils = {
+  buildLocalLeadAndContactRows,
+  buildRemoteLeadCreatePayload,
 }
 
 export async function ensureAgencyCrmLeadRecordPersisted(organisationId, lead = {}, contact = {}, { actor = null } = {}) {

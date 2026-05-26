@@ -94,6 +94,7 @@ const ClientProfile = lazy(() => import('./pages/ClientProfile'))
 const Clients = lazy(() => import('./pages/Clients'))
 const ConveyancerDevelopments = lazy(() => import('./pages/ConveyancerDevelopments'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
+const BondDashboardPage = lazy(() => import('./pages/bond/BondDashboardPage'))
 const CommercialLayout = lazy(() => import('./modules/commercial/components/CommercialLayout'))
 const CommercialActivityPage = lazy(() => import('./modules/commercial/pages/CommercialActivityPage'))
 const CommercialBrokerPerformancePage = lazy(() => import('./modules/commercial/pages/CommercialBrokerPerformancePage'))
@@ -2044,6 +2045,9 @@ function ClientAwareDashboard() {
   const access = evaluateAccessRequirement({ permission: dashboardPermission }, workspaceContext)
   if (!access.ok) {
     return <AccessState type="permission_required" description={access.message} />
+  }
+  if (role === 'bond_originator') {
+    return <BondDashboardPage />
   }
   return <Dashboard />
 }

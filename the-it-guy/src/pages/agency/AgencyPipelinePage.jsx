@@ -1980,8 +1980,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const currentAgent = useMemo(
     () => ({
       id: normalizeText(profile?.id || profile?.email),
+      userId: normalizeText(profile?.id || profile?.email),
       email: normalizeText(profile?.email).toLowerCase(),
       fullName: normalizeText(profile?.fullName || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ')) || 'Current Agent',
+      branchId: '',
     }),
     [profile?.email, profile?.firstName, profile?.fullName, profile?.id, profile?.lastName],
   )
@@ -2000,8 +2002,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const normalized = rows
       .map((row) => ({
         id: normalizeText(row?.userId || row?.email),
+        userId: normalizeText(row?.userId || row?.id || row?.email),
         name: normalizeText(row?.fullName || `${row?.firstName || ''} ${row?.lastName || ''}`) || normalizeText(row?.email) || 'Agent',
         email: normalizeText(row?.email).toLowerCase(),
+        branchId: normalizeText(row?.branchId),
       }))
       .filter((row) => row.id)
 
@@ -2011,13 +2015,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!hasCurrent) {
       normalized.push({
         id: currentAgent.id,
+        userId: currentAgent.userId,
         name: currentAgent.fullName,
         email: currentAgent.email,
+        branchId: currentAgent.branchId,
       })
     }
 
     return normalized
-  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, users])
+  }, [currentAgent.branchId, currentAgent.email, currentAgent.fullName, currentAgent.id, currentAgent.userId, users])
 
   const resolveAgentById = useCallback(
     (id) => {
@@ -2028,11 +2034,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (found) return found
       return {
         id: currentAgent.id,
+        userId: currentAgent.userId,
         name: currentAgent.fullName,
         email: currentAgent.email,
+        branchId: currentAgent.branchId,
       }
     },
-    [agentOptions, currentAgent.email, currentAgent.fullName, currentAgent.id],
+    [agentOptions, currentAgent.branchId, currentAgent.email, currentAgent.fullName, currentAgent.id, currentAgent.userId],
   )
 
   useEffect(() => {
@@ -4347,6 +4355,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             contactType: leadForm.leadCategory,
           },
           assignedAgent,
+          branchId: normalizeText(assignedAgent?.branchId),
+          assignedUserId: normalizeText(assignedAgent?.userId || assignedAgent?.id),
+          createdBy: normalizeText(currentAgent.userId || currentAgent.id),
           leadCategory: leadForm.leadCategory,
           leadDirection: leadForm.leadDirection,
           leadSource: leadForm.leadSource,

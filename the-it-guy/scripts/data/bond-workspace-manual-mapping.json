@@ -1,0 +1,234 @@
+[
+  {
+    "transactionId": "37d5d895-b23c-4cd6-9f01-b7d0a38b8d5d",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "9f46b2ba-1324-4419-b975-cb00818718f0",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "a33aca0e-c04e-487a-9565-0c6f252a51bd",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "e258512d-8ad4-4ef4-b388-16786e505f78",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "495ffeb3-ba1f-4918-8a37-e5a8cfa6a9b5",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "09095fa1-77bd-45ae-96c4-0ea5e2549a3c",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "4e639151-3bdb-4919-af34-d6bcbb55fec4",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "51b80dff-4d0d-4fe7-80fc-5abebfc9e74f",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "4a558d8c-4d0e-4d96-a3b1-e9f7e7313fb8",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "3e611ebb-be0f-46b1-9495-9bf150cd967a",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "63af1887-4277-4a8c-8dab-5fc4bf80089c",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "7d57cb2e-fa54-4372-b701-caf90b40fa0a",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "f3de5516-a6c9-4f5d-88ca-d51114c5a84d",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "88f73094-c2bd-4dd5-b51b-ac0425fe4689",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "2c5ea588-71f5-4983-a6a5-b4591eecc16b",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "dd6abab9-0539-4536-9c83-07986ee0fa6a",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "8edb6e1a-0589-4030-be7e-da688b58c552",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "f9a71ea2-4e2d-46af-8fa9-3f58901f8220",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "2aee9f3a-a0db-4324-b7bd-74c4cc6d2b30",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "b7077c3e-e94e-41e3-b33b-f1ecca06b381",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "7c0dfa4f-28e8-4a59-b3e8-d44f3e25458a",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "db6c858c-7bf7-4d2c-a7cb-37cc93adadeb",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "30439b5f-2c48-48e1-a15b-dd795505402d",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "9cb5076e-894e-4874-8671-f5bc65b01523",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "de2f97c2-19d1-48f1-b8f6-ef6fa7d1afa4",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "0e414217-9aea-4550-ab9d-b42130ac7905",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "5fae7e2a-59e9-4583-ac0b-6235b41a4f02",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "15657ffb-50df-433d-90da-4bed2fc22f9b",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  },
+  {
+    "transactionId": "711ec65a-c24c-4184-90e0-d1bddb01dcea",
+    "action": "accepted_unresolved",
+    "reason": "Legacy bond row has participant signal but no deterministic workspace candidate in staging export.",
+    "confidence": "manual_reviewed",
+    "reviewedBy": "codex-phase4f",
+    "reviewedAt": "2026-05-26"
+  }
+]

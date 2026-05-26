@@ -11,6 +11,7 @@
     "build": "vite build",
     "test:workspace-resolution": "node scripts/workspace-resolution.test.mjs",
     "test:workspace-branch-scope": "node scripts/workspace-branch-scope.test.mjs",
+    "test:agency-crm-lead-persistence": "node scripts/agency-crm-lead-persistence.test.mjs",
     "test:atomic-onboarding": "node scripts/atomic-onboarding.test.mjs",
     "test:reporting-role-logic": "node scripts/reporting-role-logic.test.mjs",
     "test:unsafe-fallbacks": "node scripts/unsafe-fallbacks.test.mjs",

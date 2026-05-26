@@ -1,0 +1,20 @@
+[
+  {
+    "transaction_id": "8f157001-0010-4710-8710-000000000010",
+    "exclusion_type": "manual_review",
+    "reason": "Multiple participant signals require manual ownership review before strict canonical enforcement.",
+    "source": "phase4f",
+    "reviewed_by": "codex-phase5a",
+    "reviewed_at": "2026-05-26",
+    "active": true
+  },
+  {
+    "transaction_id": "8f157001-0012-4712-8712-000000000012",
+    "exclusion_type": "legacy_compatibility_required",
+    "reason": "Canonical legacy mismatch remains on assignment/originator fallback path.",
+    "source": "phase5b_validation",
+    "reviewed_by": "codex-validation",
+    "reviewed_at": "2026-05-26",
+    "active": true
+  }
+]

@@ -102,9 +102,13 @@ import { getSuggestedRescheduleSlots } from './appointmentAvailabilityEngine'
 import { resolveSystemRole, resolveTransactionRole } from '../services/roleResolutionService'
 
 const CANONICAL_PILOT_BUILD_MARKER = 'CANONICAL_PILOT_BUILD_MARKER_20260525'
+const CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH_FLAG = 'VITE_CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH'
+const CANONICAL_PILOT_SOURCE_OF_TRUTH =
+  import.meta.env?.VITE_CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH || ''
 const CANONICAL_PILOT_TRANSACTION_ALLOWLIST =
   import.meta.env?.VITE_CANONICAL_DOCUMENTS_PRIMARY_TRANSACTION_ALLOWLIST || ''
 const CANONICAL_PILOT_DEPLOYMENT_MARKERS = [
+  CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH_FLAG,
   'canonical_primary',
   'canonical_requirement_instance_id',
   'bridge_link_document_to_canonical_requirement',
@@ -113,9 +117,11 @@ const CANONICAL_PILOT_DEPLOYMENT_MARKERS = [
   'bridge_review_canonical_requirement',
 ]
 
-if (CANONICAL_PILOT_TRANSACTION_ALLOWLIST) {
-  console.info('Canonical pilot allowlist:', CANONICAL_PILOT_TRANSACTION_ALLOWLIST, {
+if (CANONICAL_PILOT_SOURCE_OF_TRUTH || CANONICAL_PILOT_TRANSACTION_ALLOWLIST) {
+  console.info('Canonical document rollout:', {
     marker: CANONICAL_PILOT_BUILD_MARKER,
+    sourceOfTruth: CANONICAL_PILOT_SOURCE_OF_TRUTH,
+    transactionAllowlist: CANONICAL_PILOT_TRANSACTION_ALLOWLIST,
     markers: CANONICAL_PILOT_DEPLOYMENT_MARKERS,
   })
 }
