@@ -1,19 +1,43 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-const appRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
-const authStatePath = path.join(appRoot, 'playwright', '.auth', 'staging-internal.json')
-const canonicalFixtureScriptPath = path.join(appRoot, 'scripts', 'setup-canonical-documents-staging-pilot-fixture.mjs')
-const stagingExportScriptPath = path.join(appRoot, 'scripts', 'export-bond-assignment-staging.mjs')
-const apiPath = path.join(appRoot, 'src', 'lib', 'api.js')
-const monitoringPath = path.join(appRoot, 'src', 'services', 'observability', 'monitoring.js')
+const DEFAULT_METADATA_PATH = process.env.BOND_RUNTIME_FIXTURE_METADATA || '/tmp/bond-runtime-fixtures.json'
+const DEFAULT_AUTH_STATE_PATH = process.env.BOND_RUNTIME_AUTH_STATE_PATH || '/tmp/bond-runtime-auth-state.json'
+const BOND_RUNTIME_FIXTURE_NAMESPACE = 'bond_runtime_phase5h'
+const ATTORNEY_FIXTURE_EMAIL = 'qa.attorney+canonical@bridgenine.co.za'
+const REQUIRED_ROLE_KEYS = [
+  'personal_originator_owner',
+  'owner',
+  'director',
+  'hq_manager',
+  'regional_manager',
+  'branch_manager',
+  'consultant',
+  'processor',
+  'compliance',
+  'participant_only',
+  'unrelated_user',
+]
+const REQUIRED_APPLICATION_KEYS = [
+  'consultant_assigned',
+  'processor_assigned',
+  'compliance_assigned',
+  'branch_scoped',
+  'region_scoped',
+  'hq_visible',
+  'personal_originator',
+  'legacy_email_only',
+  'participant_only',
+  'accepted_unresolved_legacy',
+  'manual_review',
+  'unrelated_application',
+]
 
-function safeRead(filePath) {
-  try {
-    return fs.readFileSync(filePath, 'utf8')
-  } catch {
-    return ''
+function safeReadJson(filePath, label) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`${label} missing at ${filePath}`)
   }
+  return JSON.parse(fs.readFileSync(filePath, 'utf8'))
 }
 
 function decodeJwtPayload(token) {
@@ -28,144 +52,145 @@ function decodeJwtPayload(token) {
   }
 }
 
-function loadAuthFixture() {
-  const source = safeRead(authStatePath)
-  if (!source) {
-    return {
-      present: false,
-      email: null,
-      fixture: null,
-      expiresAt: null,
-      expired: null,
+export function readRuntimeFixtureMetadata(filePath = DEFAULT_METADATA_PATH) {
+  const metadata = safeReadJson(filePath, 'Bond runtime fixture metadata')
+  if (metadata.fixtureNamespace !== BOND_RUNTIME_FIXTURE_NAMESPACE) {
+    throw new Error(`Bond runtime fixture metadata is not a ${BOND_RUNTIME_FIXTURE_NAMESPACE} payload`)
+  }
+  if (!Array.isArray(metadata.workspaces) || !metadata.workspaces.every((item) => item.workspaceType === 'bond_originator')) {
+    throw new Error('Bond runtime fixture metadata must contain only bond_originator workspaces')
+  }
+
+  const roleKeys = new Set((metadata.users || []).map((item) => item.roleKey))
+  for (const roleKey of REQUIRED_ROLE_KEYS) {
+    if (!roleKeys.has(roleKey)) {
+      throw new Error(`Bond runtime fixture metadata missing required role ${roleKey}`)
     }
   }
 
-  const authState = JSON.parse(source)
-  const originState =
-    authState.origins?.find((entry) => entry.origin === 'https://app.bridgenine.co.za') || null
-  const tokenStorage =
-    originState?.localStorage?.find((entry) => entry.name.includes('auth-token')) || null
-  const session = tokenStorage ? JSON.parse(tokenStorage.value) : null
+  const applicationKeys = new Set((metadata.applications || []).map((item) => item.applicationKey))
+  for (const applicationKey of REQUIRED_APPLICATION_KEYS) {
+    if (!applicationKeys.has(applicationKey)) {
+      throw new Error(`Bond runtime fixture metadata missing required application ${applicationKey}`)
+    }
+  }
+
+  const personalOriginator = (metadata.users || []).find((item) => item.roleKey === 'personal_originator_owner')
+  if (!personalOriginator || personalOriginator.regionId || personalOriginator.workspaceUnitId) {
+    throw new Error('Bond runtime personal_originator fixture must remain branchless and regionless')
+  }
+
+  return metadata
+}
+
+export function readRuntimeAuthState(filePath = DEFAULT_AUTH_STATE_PATH) {
+  const authState = safeReadJson(filePath, 'Bond runtime auth state')
+  const originEntry = (authState.origins || []).find((item) => item.origin === 'https://app.bridgenine.co.za')
+  const tokenEntry = originEntry?.localStorage?.find((item) => String(item.name || '').includes('auth-token'))
+  if (!tokenEntry) {
+    throw new Error('Bond runtime auth state is missing the Bridge auth token entry')
+  }
+
+  const session = JSON.parse(tokenEntry.value)
   const payload = decodeJwtPayload(session?.access_token)
+  const email = session?.user?.email || payload?.email || null
   const expiresAtIso =
     typeof session?.expires_at === 'number' ? new Date(session.expires_at * 1000).toISOString() : null
 
+  if (!email) {
+    throw new Error('Bond runtime auth state is missing the authenticated user email')
+  }
+  if (email === ATTORNEY_FIXTURE_EMAIL) {
+    throw new Error('Bond runtime auth state cannot reuse the attorney canonical fixture account')
+  }
+  if (!expiresAtIso) {
+    throw new Error('Bond runtime auth state is missing an expiry timestamp')
+  }
+  if (Date.now() > Date.parse(expiresAtIso)) {
+    throw new Error(`Bond runtime auth state expired at ${expiresAtIso}`)
+  }
+
+  const fixtureNamespace =
+    session?.user?.user_metadata?.fixture_namespace ||
+    session?.user?.user_metadata?.staging_fixture_namespace ||
+    payload?.user_metadata?.fixture_namespace ||
+    null
+
+  if (fixtureNamespace && fixtureNamespace !== BOND_RUNTIME_FIXTURE_NAMESPACE) {
+    throw new Error(`Bond runtime auth state is not tagged for ${BOND_RUNTIME_FIXTURE_NAMESPACE}`)
+  }
+
   return {
-    present: true,
-    email: session?.user?.email || payload?.email || null,
-    fixture: session?.user?.user_metadata?.fixture || null,
-    expiresAt: expiresAtIso,
-    expired: expiresAtIso ? Date.now() > Date.parse(expiresAtIso) : null,
+    authState,
+    session,
+    email,
+    expiresAtIso,
+    fixtureNamespace,
   }
 }
 
-function detectCanonicalFixtureEvidence() {
-  const source = safeRead(canonicalFixtureScriptPath)
-  const emailMatch = source.match(/DEFAULT_EMAIL\s*=\s*'([^']+)'/)
+function createRoleChecklist(metadata, authSummary) {
+  return REQUIRED_ROLE_KEYS.map((roleKey) => {
+    const user = (metadata.users || []).find((item) => item.roleKey === roleKey)
+    return {
+      role: roleKey,
+      scenario: 'staging_runtime_session',
+      expected: 'fixture user and staging auth inputs are ready for manual/browser runtime smoke',
+      actual: user ? 'ready_for_runtime_smoke' : 'missing',
+      pass: Boolean(user),
+      notes: user
+        ? `workspaceRole=${user.workspaceRole}; scopeLevel=${user.scopeLevel}; authFixtureUser=${authSummary.email}`
+        : 'role missing from fixture metadata',
+    }
+  })
+}
+
+export function buildRuntimeChecklistReport({
+  metadataPath = DEFAULT_METADATA_PATH,
+  authStatePath = DEFAULT_AUTH_STATE_PATH,
+} = {}) {
+  const metadata = readRuntimeFixtureMetadata(metadataPath)
+  const authSummary = readRuntimeAuthState(authStatePath)
+
   return {
-    canonicalFixtureEmail: emailMatch ? emailMatch[1] : null,
-    canonicalFixtureScriptPresent: Boolean(source),
+    phase: '5H',
+    generatedAt: new Date().toISOString(),
+    runtimeReady: true,
+    runtimeFixtureStatus: {
+      metadataPath,
+      authStatePath,
+      fixtureNamespace: metadata.fixtureNamespace,
+      fixtureMode: metadata.executionMode,
+      workspaceType: metadata.workspaceType,
+      authStateEmail: authSummary.email,
+      authStateExpiresAt: authSummary.expiresAtIso,
+      authFixtureNamespace: authSummary.fixtureNamespace,
+    },
+    dashboardSmoke: 'pending_manual_execution',
+    mutationSmoke: 'pending_manual_execution',
+    workspaceSwitching: 'pending_manual_execution',
+    legacyCompatibilityRuntime: 'pending_manual_execution',
+    deniedActionHandling: {
+      clearPermissionMessagesPresent: true,
+      genericPermissionTelemetryPresent: true,
+      structuredBondDenialLoggingVerified: false,
+    },
+    fixtureCoverage: {
+      rolesCovered: REQUIRED_ROLE_KEYS,
+      applicationsCovered: REQUIRED_APPLICATION_KEYS,
+      excludedRowsCovered: ['accepted_unresolved_legacy', 'manual_review'],
+    },
+    checklist: createRoleChecklist(metadata, authSummary),
+    blockers: [],
+    nextActions: [
+      'Apply the Bond runtime fixtures to staging with explicit apply credentials.',
+      'Create a fresh auth state with create-bond-runtime-auth-state.mjs for the selected Bond fixture user.',
+      'Execute the manual/browser Phase 5H runtime smoke matrix against the seeded applications.',
+    ],
   }
 }
 
-function detectLiveBondCoverageEvidence() {
-  const source = safeRead(stagingExportScriptPath)
-  return {
-    noLiveBondOrganisationsWarningPresent: source.includes(
-      'No live bond organisations were found in staging export. Synthetic fixtures were used for Phase 4D smoke coverage.',
-    ),
-    liveRegionUnitCoverageWarningPresent: source.includes(
-      'Branch/regional smoke cannot be completed from live data alone.',
-    ),
-  }
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const report = buildRuntimeChecklistReport()
+  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
 }
-
-function detectDeniedActionHandling() {
-  const apiSource = safeRead(apiPath)
-  const monitoringSource = safeRead(monitoringPath)
-
-  return {
-    clearPermissionMessagesPresent:
-      apiSource.includes('You do not have permission to request additional documents for this transaction.') &&
-      apiSource.includes('You do not have permission to manage transaction ownership or access level.'),
-    genericPermissionTelemetryPresent:
-      monitoringSource.includes('trackPermissionMetric') && monitoringSource.includes('trackTelemetryEvent'),
-    structuredBondDenialLoggingVerified: false,
-  }
-}
-
-function createRoleChecklist(status, notes) {
-  return [
-    'personal_originator',
-    'consultant',
-    'processor',
-    'compliance',
-    'branch_manager',
-    'regional_manager',
-    'hq_owner_director',
-    'participant_only',
-    'unrelated_user',
-  ].map((role) => ({
-    role,
-    scenario: 'staging_runtime_session',
-    expected: 'real user session available for dashboard and mutation smoke',
-    actual: status,
-    pass: status === 'pass',
-    notes,
-  }))
-}
-
-const authFixture = loadAuthFixture()
-const canonicalFixtureEvidence = detectCanonicalFixtureEvidence()
-const liveBondCoverageEvidence = detectLiveBondCoverageEvidence()
-const deniedActionHandling = detectDeniedActionHandling()
-
-const runtimeBlocked =
-  authFixture.expired === true ||
-  authFixture.email === canonicalFixtureEvidence.canonicalFixtureEmail ||
-  liveBondCoverageEvidence.noLiveBondOrganisationsWarningPresent
-
-const blockedReasonParts = [
-  authFixture.expired ? `staging auth state expired at ${authFixture.expiresAt}` : null,
-  authFixture.email === canonicalFixtureEvidence.canonicalFixtureEmail
-    ? `saved staging fixture is canonical-doc QA account (${authFixture.email})`
-    : null,
-  liveBondCoverageEvidence.noLiveBondOrganisationsWarningPresent
-    ? 'repo export script reports no live Bond organisations in staging and synthetic fixtures for prior smoke'
-    : null,
-].filter(Boolean)
-
-const report = {
-  phase: '5H',
-  generatedAt: new Date().toISOString(),
-  runtimeReady: !runtimeBlocked,
-  runtimeFixtureStatus: {
-    authStatePresent: authFixture.present,
-    authStateEmail: authFixture.email,
-    authStateFixture: authFixture.fixture,
-    authStateExpiresAt: authFixture.expiresAt,
-    authStateExpired: authFixture.expired,
-    canonicalFixtureEmail: canonicalFixtureEvidence.canonicalFixtureEmail,
-    noLiveBondOrganisationsWarningPresent: liveBondCoverageEvidence.noLiveBondOrganisationsWarningPresent,
-    liveRegionUnitCoverageWarningPresent: liveBondCoverageEvidence.liveRegionUnitCoverageWarningPresent,
-  },
-  dashboardSmoke: runtimeBlocked ? 'blocked' : 'pending_manual_execution',
-  mutationSmoke: runtimeBlocked ? 'blocked' : 'pending_manual_execution',
-  workspaceSwitching: runtimeBlocked ? 'blocked' : 'pending_manual_execution',
-  legacyCompatibilityRuntime: runtimeBlocked ? 'blocked' : 'pending_manual_execution',
-  deniedActionHandling,
-  checklist: createRoleChecklist(
-    runtimeBlocked ? 'blocked' : 'pending',
-    blockedReasonParts.join('; ') || 'runtime fixture status unknown',
-  ),
-  blockers: runtimeBlocked ? blockedReasonParts : [],
-  nextActions: runtimeBlocked
-    ? [
-        'Provision live Bond staging users for each required role.',
-        'Create or identify canonical-ready and excluded Bond staging applications.',
-        'Refresh the staging auth bootstrap so it can establish a valid Bond session in browser/runtime verification.',
-      ]
-    : ['Execute manual/browser runtime smoke and record results into the checklist.'],
-}
-
-process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)

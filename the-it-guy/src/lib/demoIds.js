@@ -8,6 +8,18 @@ export const DEV_BYPASS_USER_IDS = {
   client: '00000000-0000-0000-0000-000000000105',
 }
 
+export const DEV_BYPASS_WORKSPACE_IDS = {
+  developer: '00000000-0000-4000-8000-000000000201',
+  agent: '00000000-0000-4000-8000-000000000202',
+  attorney: '00000000-0000-4000-8000-000000000203',
+  bond_originator: '00000000-0000-4000-8000-000000000204',
+  client: '00000000-0000-4000-8000-000000000205',
+}
+
 export function getDevBypassUserId(role) {
   return DEV_BYPASS_USER_IDS[role] || DEV_BYPASS_USER_IDS.developer
+}
+
+export function getDevBypassWorkspaceId(role) {
+  return DEV_BYPASS_WORKSPACE_IDS[role] || DEV_BYPASS_WORKSPACE_IDS.developer
 }

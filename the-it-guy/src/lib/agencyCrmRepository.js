@@ -252,6 +252,113 @@ function normalizeNullableUuid(value) {
   return isUuidLike(raw) ? raw : null
 }
 
+async function lookupOrganisationUserScope(workspaceId = '', { userId = '', email = '' } = {}) {
+  if (!isSupabaseConfigured || !supabase || !isUuidLike(workspaceId)) {
+    return null
+  }
+
+  const normalizedUserId = normalizeNullableUuid(userId)
+  const normalizedEmail = normalizeText(email).toLowerCase()
+
+  if (normalizedUserId) {
+    const byUserId = await supabase
+      .from('organisation_users')
+      .select('user_id, email, branch_id')
+      .eq('organisation_id', workspaceId)
+      .eq('user_id', normalizedUserId)
+      .eq('status', 'active')
+      .limit(1)
+      .maybeSingle()
+    if (!byUserId.error && byUserId.data) return byUserId.data
+    if (byUserId.error && !isMissingColumnError(byUserId.error) && !isMissingSchemaOrTableError(byUserId.error) && !isPermissionDeniedError(byUserId.error)) {
+      throw byUserId.error
+    }
+  }
+
+  if (normalizedEmail) {
+    const byEmail = await supabase
+      .from('organisation_users')
+      .select('user_id, email, branch_id')
+      .eq('organisation_id', workspaceId)
+      .ilike('email', normalizedEmail)
+      .eq('status', 'active')
+      .limit(1)
+      .maybeSingle()
+    if (!byEmail.error && byEmail.data) return byEmail.data
+    if (byEmail.error && !isMissingColumnError(byEmail.error) && !isMissingSchemaOrTableError(byEmail.error) && !isPermissionDeniedError(byEmail.error)) {
+      throw byEmail.error
+    }
+  }
+
+  return null
+}
+
+async function resolveLeadScopeContext(workspaceId = '', payload = {}, actor = null, lookupScope = lookupOrganisationUserScope) {
+  const leadPayload = payload?.lead && typeof payload.lead === 'object' ? payload.lead : {}
+  const assignedAgentInput = payload?.assignedAgent && typeof payload.assignedAgent === 'object' ? payload.assignedAgent : {}
+
+  let assignedAgentId = normalizeNullableUuid(
+    assignedAgentInput?.id ||
+    assignedAgentInput?.assignedAgentId ||
+    leadPayload?.assignedAgentId ||
+    payload?.assignedAgentId,
+  )
+  let assignedUserId = normalizeNullableUuid(
+    assignedAgentInput?.userId ||
+    payload?.assignedUserId ||
+    leadPayload?.assignedUserId ||
+    assignedAgentInput?.id ||
+    leadPayload?.assignedAgentId ||
+    payload?.assignedAgentId,
+  ) || assignedAgentId
+  let branchId = normalizeNullableUuid(
+    assignedAgentInput?.branchId ||
+    payload?.branchId ||
+    leadPayload?.branchId,
+  )
+  const assignedAgentEmail = normalizeText(
+    assignedAgentInput?.email ||
+    payload?.assignedAgentEmail ||
+    leadPayload?.assignedAgentEmail ||
+    actor?.email,
+  ).toLowerCase()
+  const createdBy = normalizeNullableUuid(
+    payload?.createdBy ||
+    leadPayload?.createdBy ||
+    actor?.id,
+  )
+
+  if ((!assignedUserId || !branchId) && typeof lookupScope === 'function') {
+    const membership = await lookupScope(workspaceId, {
+      userId: assignedUserId || assignedAgentId || actor?.id,
+      email: assignedAgentEmail,
+    })
+    if (membership) {
+      assignedUserId = assignedUserId || normalizeNullableUuid(membership.user_id)
+      branchId = branchId || normalizeNullableUuid(membership.branch_id)
+    }
+  }
+
+  if (!assignedAgentId && assignedUserId) {
+    assignedAgentId = assignedUserId
+  }
+
+  return {
+    branchId,
+    assignedUserId,
+    createdBy,
+    assignedAgent: {
+      ...assignedAgentInput,
+      id: normalizeText(assignedAgentInput?.id || assignedAgentId || assignedUserId || actor?.id),
+      userId: normalizeText(assignedAgentInput?.userId || assignedUserId || assignedAgentId || actor?.id),
+      email: assignedAgentEmail,
+      branchId: normalizeText(assignedAgentInput?.branchId || branchId),
+      name: normalizeText(assignedAgentInput?.name || assignedAgentInput?.fullName || actor?.name || actor?.fullName),
+      fullName: normalizeText(assignedAgentInput?.fullName || assignedAgentInput?.name || actor?.fullName || actor?.name),
+    },
+  }
+}
+
 function normalizeSellerOnboardingStatusValue(value) {
   const normalized = normalizeLowerText(value).replace(/\s+/g, '_')
   if (['not_started', 'sent', 'in_progress', 'completed', 'rejected'].includes(normalized)) {
@@ -493,9 +600,13 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
     throw new Error('Supabase is required before creating agency CRM data.')
   }
 
+  const resolvedScope = await resolveLeadScopeContext(workspaceId, payload, actor)
   const { contact, lead } = buildLocalLeadAndContactRows({
     ...payload,
-    createdBy: payload?.createdBy || actor?.id,
+    branchId: payload?.branchId || payload?.lead?.branchId || resolvedScope.branchId,
+    assignedUserId: payload?.assignedUserId || payload?.lead?.assignedUserId || resolvedScope.assignedUserId,
+    createdBy: payload?.createdBy || payload?.lead?.createdBy || resolvedScope.createdBy || actor?.id,
+    assignedAgent: resolvedScope.assignedAgent,
   }, workspaceId)
 
   try {
@@ -560,6 +671,7 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
 export const __agencyCrmRepositoryTestUtils = {
   buildLocalLeadAndContactRows,
   buildRemoteLeadCreatePayload,
+  resolveLeadScopeContext,
 }
 
 export async function ensureAgencyCrmLeadRecordPersisted(organisationId, lead = {}, contact = {}, { actor = null } = {}) {
@@ -640,6 +752,9 @@ export async function ensureAgencyCrmLeadRecordPersisted(organisationId, lead = 
     normalizedOrganisationId,
     {
       assignedAgent,
+      branchId: normalizeText(lead?.branchId || lead?.branch_id),
+      assignedUserId: normalizeText(lead?.assignedUserId || lead?.assigned_user_id || assignedAgent.id),
+      createdBy: normalizeText(lead?.createdBy || lead?.created_by || actor?.id),
       contact: {
         contactId,
         firstName: firstName || 'Lead',
@@ -665,9 +780,12 @@ export async function ensureAgencyCrmLeadRecordPersisted(organisationId, lead = 
         estimatedValue: Number(lead?.estimatedValue || lead?.estimated_value || 0) || 0,
         listingId: normalizeText(lead?.listingId || lead?.listing_id),
         notes: normalizeText(lead?.notes),
+        branchId: normalizeText(lead?.branchId || lead?.branch_id),
+        assignedUserId: normalizeText(lead?.assignedUserId || lead?.assigned_user_id || assignedAgent.id),
+        createdBy: normalizeText(lead?.createdBy || lead?.created_by || actor?.id),
       },
     },
-    { actor, requireRemote: true },
+    { actor },
   )
 
   return {

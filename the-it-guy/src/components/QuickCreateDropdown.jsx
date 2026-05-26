@@ -631,8 +631,10 @@ function QuickCreateDropdown({ className = '' }) {
     const fullName = normalizeText(profile?.fullName || [profile?.firstName, profile?.lastName].filter(Boolean).join(' '))
     return {
       id: normalizeText(profile?.id),
+      userId: normalizeText(profile?.id),
       name: fullName || 'Current user',
       email: normalizeText(profile?.email),
+      branchId: '',
     }
   }, [profile?.email, profile?.firstName, profile?.fullName, profile?.id, profile?.lastName])
 
@@ -781,6 +783,8 @@ function QuickCreateDropdown({ className = '' }) {
           organisationId,
           {
             assignedAgent: actor,
+            assignedUserId: normalizeText(actor.userId || actor.id),
+            createdBy: normalizeText(actor.userId || actor.id),
             contact: {
               firstName: nameParts.firstName,
               lastName: nameParts.lastName,
@@ -812,6 +816,8 @@ function QuickCreateDropdown({ className = '' }) {
           organisationId,
           {
             assignedAgent: actor,
+            assignedUserId: normalizeText(actor.userId || actor.id),
+            createdBy: normalizeText(actor.userId || actor.id),
             contact: {
               firstName: nameParts.firstName,
               lastName: nameParts.lastName,

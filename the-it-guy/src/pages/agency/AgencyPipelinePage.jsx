@@ -508,6 +508,11 @@ function normalizeLeadIdentityKey(value) {
   return normalizeLeadUuid(value) || normalizeText(value)
 }
 
+function isAuthSessionMissingError(error) {
+  const message = normalizeText(error?.message || error).toLowerCase()
+  return message.includes('auth session missing') || message.includes('missing auth session')
+}
+
 function getCanvassingStorageKey(organisationId) {
   const workspaceId = normalizeText(organisationId)
   if (!workspaceId) throw new Error('A resolved workspace is required before loading canvassing data.')
@@ -1853,7 +1858,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const { leadId: routeLeadIdParam = '' } = useParams()
   const routeLeadId = normalizeText(routeLeadIdParam)
   const isLeadWorkspaceRoute = !initialViewMode || (initialViewMode !== 'calendar' && routeLeadId.length > 0)
-  const { role, profile } = useWorkspace()
+  const { role, profile, currentWorkspace } = useWorkspace()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -2336,7 +2341,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const contextDenied = isPermissionDeniedError(contextError)
       const usersDenied = isPermissionDeniedError(usersError)
 
-      if (contextError && !contextDenied) {
+      if (contextError && !contextDenied && (!isAuthSessionMissingError(contextError) || !normalizeText(currentWorkspace?.id))) {
         console.warn('[PIPELINE] organisation context load failed.', contextError)
       }
       if (usersError && !usersDenied) {
@@ -2345,7 +2350,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       const context = contextResult.status === 'fulfilled' ? contextResult.value : null
       const organisationUsers = usersResult.status === 'fulfilled' ? usersResult.value : []
-      const rawOrganisationId = normalizeText(context?.organisation?.id)
+      const rawOrganisationId = normalizeText(context?.organisation?.id || currentWorkspace?.id)
       const resolvedOrgId = isUuidLike(rawOrganisationId) ? rawOrganisationId : ''
       if (!resolvedOrgId) {
         throw new Error('A resolved workspace is required before loading agency pipeline data.')
@@ -2356,7 +2361,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const resolvedMembershipRole = normalizeText(context?.membershipRole || fallbackMembershipRole) || fallbackMembershipRole
 
       setOrganisationId(effectiveOrgId)
-      setOrganisationName(normalizeText(context?.organisation?.display_name || context?.organisation?.displayName || context?.organisation?.name))
+      setOrganisationName(
+        normalizeText(
+          context?.organisation?.display_name ||
+            context?.organisation?.displayName ||
+            context?.organisation?.name ||
+            currentWorkspace?.name,
+        ),
+      )
       setMembershipRole(resolvedMembershipRole)
       if (effectiveOrgId && isUnsafeFallbackAllowed()) {
         const recovery = recoverAgencyPipelineStoreForOrganisation(effectiveOrgId)
@@ -2389,7 +2401,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     } finally {
       setLoading(false)
     }
-  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, isCalendarMode, profile?.firstName, profile?.lastName, reloadRecords, role])
+  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, currentWorkspace?.id, currentWorkspace?.name, isCalendarMode, profile?.firstName, profile?.lastName, reloadRecords, role])
 
   useEffect(() => {
     void loadContext()

@@ -106,6 +106,11 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
 
+function isAuthSessionMissingError(error) {
+  const message = normalizeText(error?.message || error).toLowerCase()
+  return message.includes('auth session missing') || message.includes('missing auth session')
+}
+
 function getProspectPropertyTypeOptions(value = '') {
   const current = normalizeText(value)
   if (!current || PROSPECT_PROPERTY_TYPES.includes(current)) {
@@ -248,10 +253,15 @@ function buildLeadPayloadFromProspect(prospect = {}, leadCategory = 'Buyer', cur
     },
     assignedAgent: {
       id: prospect.assignedAgentId || currentAgent.id,
+      userId: prospect.assignedUserId || prospect.assignedAgentId || currentAgent.userId || currentAgent.id,
+      branchId: prospect.branchId || currentAgent.branchId || '',
       fullName: prospect.assignedAgentName || currentAgent.fullName,
       name: prospect.assignedAgentName || currentAgent.fullName,
       email: prospect.assignedAgentEmail || currentAgent.email,
     },
+    branchId: normalizeText(prospect.branchId || currentAgent.branchId),
+    assignedUserId: normalizeText(prospect.assignedUserId || prospect.assignedAgentId || currentAgent.userId || currentAgent.id),
+    createdBy: normalizeText(prospect.createdBy || currentAgent.userId || currentAgent.id),
     lead: {
       leadId: normalizeText(leadId) || undefined,
     },
@@ -277,7 +287,7 @@ function buildLeadPayloadFromProspect(prospect = {}, leadCategory = 'Buyer', cur
 
 function PipelineCanvassingPage() {
   const navigate = useNavigate()
-  const { profile } = useWorkspace()
+  const { profile, currentWorkspace } = useWorkspace()
   const [organisationId, setOrganisationId] = useState('')
   const [organisationName, setOrganisationName] = useState('Organisation')
   const [loading, setLoading] = useState(true)
@@ -323,9 +333,11 @@ function PipelineCanvassingPage() {
   const currentAgent = useMemo(
     () => ({
       id: normalizeText(profile?.id || profile?.email),
+      userId: normalizeText(profile?.id || profile?.email),
       email: normalizeText(profile?.email).toLowerCase(),
       fullName:
         normalizeText(profile?.fullName || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ')) || 'Current Agent',
+      branchId: '',
     }),
     [profile?.email, profile?.firstName, profile?.fullName, profile?.id, profile?.lastName],
   )
@@ -355,13 +367,22 @@ function PipelineCanvassingPage() {
             'Organisation context is taking too long to load.',
           )
         } catch (contextError) {
-          console.warn('[CANVASSING] organisation context load failed.', contextError)
+          if (!isAuthSessionMissingError(contextError) || !normalizeText(currentWorkspace?.id)) {
+            console.warn('[CANVASSING] organisation context load failed.', contextError)
+          }
         }
         if (!active) return
-        const orgId = normalizeText(context?.organisation?.id)
+        const orgId = normalizeText(context?.organisation?.id || currentWorkspace?.id)
         if (!orgId) throw new Error('A resolved workspace is required before loading canvassing data.')
         setOrganisationId(orgId)
-        setOrganisationName(normalizeText(context?.organisation?.displayName || context?.organisation?.name || 'Organisation'))
+        setOrganisationName(
+          normalizeText(
+            context?.organisation?.displayName ||
+              context?.organisation?.name ||
+              currentWorkspace?.name ||
+              'Organisation',
+          ),
+        )
         const store = readStore(orgId)
         setProspects(Array.isArray(store.prospects) ? store.prospects : [])
         setActivities(Array.isArray(store.activities) ? store.activities : [])
@@ -377,7 +398,7 @@ function PipelineCanvassingPage() {
     return () => {
       active = false
     }
-  }, [])
+  }, [currentWorkspace?.id, currentWorkspace?.name])
 
   const scopedProspects = useMemo(() => {
     const agentKey = normalizeKey(currentAgent.id || currentAgent.email)
@@ -524,8 +545,10 @@ function PipelineCanvassingPage() {
       id: createId('prospect'),
       organisationId,
       assignedAgentId: currentAgent.id || null,
+      assignedUserId: currentAgent.userId || currentAgent.id || null,
       assignedAgentName: currentAgent.fullName || null,
       assignedAgentEmail: currentAgent.email || null,
+      branchId: currentAgent.branchId || null,
       firstName: normalizeText(prospectForm.firstName),
       lastName: normalizeText(prospectForm.lastName),
       phone: normalizeText(prospectForm.phone),

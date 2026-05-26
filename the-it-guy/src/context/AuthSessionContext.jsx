@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { clearStoredDevAuthRole, createDevAuthSession, getStoredDevAuthRole, isDevAuthBypassEnabled } from '../lib/devAuth'
+import { getDevBypassWorkspaceId } from '../lib/demoIds'
 import { loadBridgeAuthState } from '../lib/authBoot'
 import { clearSupabaseLocalAuthState, isSupabaseConfigured, isUnsupportedJwtAlgorithmError, supabase } from '../lib/supabaseClient'
 import { getProductionSafetyViolation } from '../lib/envValidation'
@@ -49,7 +50,7 @@ function createDevOnlyAuthState(devAuthRole) {
           ? WORKSPACE_TYPES.bondOriginator
           : WORKSPACE_TYPES.agency
   const workspace = {
-    id: `dev-${workspaceType}`,
+    id: getDevBypassWorkspaceId(appRole),
     type: workspaceType,
     name: `Dev ${APP_ROLE_LABELS[appRole] || 'Workspace'}`,
   }

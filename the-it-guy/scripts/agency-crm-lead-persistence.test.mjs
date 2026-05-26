@@ -9,7 +9,8 @@ const server = await createServer({
 
 try {
   const { __agencyCrmRepositoryTestUtils } = await server.ssrLoadModule('/src/lib/agencyCrmRepository.js')
-  const { buildLocalLeadAndContactRows, buildRemoteLeadCreatePayload } = __agencyCrmRepositoryTestUtils
+  const { reconcileAgencyPipelineSnapshot } = await server.ssrLoadModule('/src/lib/agencyPipelineService.js')
+  const { buildLocalLeadAndContactRows, buildRemoteLeadCreatePayload, resolveLeadScopeContext } = __agencyCrmRepositoryTestUtils
 
   const organisationId = '11111111-1111-4111-8111-111111111111'
   const branchId = '22222222-2222-4222-8222-222222222222'
@@ -70,6 +71,56 @@ try {
   const fallbackPayload = buildRemoteLeadCreatePayload(fallbackLead, organisationId, { id: actorId })
   assert.equal(fallbackPayload.assigned_user_id, assignedUserId)
   assert.equal(fallbackPayload.created_by, actorId)
+
+  const resolvedScope = await resolveLeadScopeContext(
+    organisationId,
+    {
+      assignedAgent: {
+        id: assignedUserId,
+        email: 'casey@example.com',
+      },
+    },
+    { id: actorId, email: 'actor@example.com' },
+    async () => ({
+      user_id: assignedUserId,
+      email: 'casey@example.com',
+      branch_id: branchId,
+    }),
+  )
+  assert.equal(resolvedScope.assignedUserId, assignedUserId)
+  assert.equal(resolvedScope.branchId, branchId)
+  assert.equal(resolvedScope.createdBy, actorId)
+  assert.equal(resolvedScope.assignedAgent.userId, assignedUserId)
+  assert.equal(resolvedScope.assignedAgent.branchId, branchId)
+
+  const reconciled = reconcileAgencyPipelineSnapshot(organisationId, {
+    leads: [{
+      leadId: lead.leadId,
+      organisationId,
+      branchId,
+      assignedUserId,
+      createdBy: actorId,
+      assignedAgentId: assignedUserId,
+      assignedAgentEmail: 'casey@example.com',
+      contactId: lead.contactId,
+      leadCategory: 'Buyer',
+      leadDirection: 'Inbound',
+      leadSource: 'Walk-in',
+      stage: 'New Lead',
+      status: 'New Lead',
+      priority: 'Medium',
+      budget: 0,
+      estimatedValue: 0,
+      notes: 'Regression check',
+      createdAt: lead.createdAt,
+      updatedAt: lead.updatedAt,
+    }],
+  }, {
+    replaceCollections: ['leads'],
+  })
+  assert.equal(reconciled.leads[0].branchId, branchId)
+  assert.equal(reconciled.leads[0].assignedUserId, assignedUserId)
+  assert.equal(reconciled.leads[0].createdBy, actorId)
 
   console.log('agency-crm-lead-persistence tests passed')
 } finally {

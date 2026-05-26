@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 
 const viteEnv = typeof import.meta !== 'undefined' && import.meta?.env ? import.meta.env : {}
-const supabaseUrl = viteEnv.VITE_SUPABASE_URL || process?.env?.VITE_SUPABASE_URL || ''
+const processEnv = typeof globalThis !== 'undefined' && globalThis?.process?.env ? globalThis.process.env : {}
+const supabaseUrl = viteEnv.VITE_SUPABASE_URL || processEnv.VITE_SUPABASE_URL || ''
 
 function normalizeConfigValue(value) {
   return String(value || '').trim()
@@ -42,8 +43,8 @@ function decodeJwtPayload(token = '') {
 }
 
 function resolveSupabaseFrontendKey() {
-  const anonCandidate = normalizeConfigValue(viteEnv.VITE_SUPABASE_ANON_KEY || process?.env?.VITE_SUPABASE_ANON_KEY)
-  const legacyCandidate = normalizeConfigValue(viteEnv.VITE_SUPABASE_KEY || process?.env?.VITE_SUPABASE_KEY)
+  const anonCandidate = normalizeConfigValue(viteEnv.VITE_SUPABASE_ANON_KEY || processEnv.VITE_SUPABASE_ANON_KEY)
+  const legacyCandidate = normalizeConfigValue(viteEnv.VITE_SUPABASE_KEY || processEnv.VITE_SUPABASE_KEY)
   const selectedCandidate = anonCandidate || legacyCandidate
 
   if (!selectedCandidate) {
@@ -357,10 +358,10 @@ export function createScopedSupabaseClient(headers = {}) {
 }
 
 const configuredDocumentsBuckets = [
-  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_DOCUMENTS_BUCKET || process?.env?.VITE_SUPABASE_DOCUMENTS_BUCKET),
-  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_DOCUMENT_BUCKET || process?.env?.VITE_SUPABASE_DOCUMENT_BUCKET),
-  ...parseBucketCandidates(viteEnv.VITE_DOCUMENTS_BUCKET || process?.env?.VITE_DOCUMENTS_BUCKET),
-  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_STORAGE_BUCKET || process?.env?.VITE_SUPABASE_STORAGE_BUCKET),
+  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_DOCUMENTS_BUCKET || processEnv.VITE_SUPABASE_DOCUMENTS_BUCKET),
+  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_DOCUMENT_BUCKET || processEnv.VITE_SUPABASE_DOCUMENT_BUCKET),
+  ...parseBucketCandidates(viteEnv.VITE_DOCUMENTS_BUCKET || processEnv.VITE_DOCUMENTS_BUCKET),
+  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_STORAGE_BUCKET || processEnv.VITE_SUPABASE_STORAGE_BUCKET),
 ]
 
 export const DOCUMENTS_BUCKET = configuredDocumentsBuckets[0] || 'documents'
@@ -370,9 +371,9 @@ export const DOCUMENTS_BUCKET_CANDIDATES = Array.from(
 )
 
 const configuredBrandingBuckets = [
-  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_BRANDING_BUCKET || process?.env?.VITE_SUPABASE_BRANDING_BUCKET),
-  ...parseBucketCandidates(viteEnv.VITE_BRANDING_BUCKET || process?.env?.VITE_BRANDING_BUCKET),
-  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_STORAGE_BUCKET || process?.env?.VITE_SUPABASE_STORAGE_BUCKET),
+  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_BRANDING_BUCKET || processEnv.VITE_SUPABASE_BRANDING_BUCKET),
+  ...parseBucketCandidates(viteEnv.VITE_BRANDING_BUCKET || processEnv.VITE_BRANDING_BUCKET),
+  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_STORAGE_BUCKET || processEnv.VITE_SUPABASE_STORAGE_BUCKET),
 ]
 
 export const BRANDING_BUCKET = configuredBrandingBuckets[0] || DOCUMENTS_BUCKET

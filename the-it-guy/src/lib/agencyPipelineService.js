@@ -977,6 +977,9 @@ function normalizeLeadRecord(lead = {}, organisationId) {
   return {
     leadId: normalizeText(lead.leadId),
     organisationId: normalizeText(lead.organisationId || organisationId) || null,
+    branchId: normalizeText(lead.branchId || lead.branch_id),
+    assignedUserId: normalizeText(lead.assignedUserId || lead.assigned_user_id),
+    createdBy: normalizeText(lead.createdBy || lead.created_by),
     assignedAgentId: normalizeText(lead.assignedAgentId),
     assignedAgentName: normalizeText(lead.assignedAgentName),
     assignedAgentEmail: normalizeText(lead.assignedAgentEmail).toLowerCase(),
@@ -1215,6 +1218,9 @@ export function createAgencyLead(organisationId, payload = {}, { actor = null } 
     {
       leadId: normalizeText(leadPayload?.leadId) || createUuid(),
       organisationId,
+      branchId: normalizeText(leadPayload?.branchId || payload?.branchId || assignedAgent.branchId),
+      assignedUserId: normalizeText(leadPayload?.assignedUserId || payload?.assignedUserId || assignedAgent.userId || assignedAgent.id),
+      createdBy: normalizeText(leadPayload?.createdBy || payload?.createdBy || actor?.id),
       assignedAgentId: assignedAgent.id || null,
       assignedAgentName: assignedAgent.name || null,
       assignedAgentEmail: assignedAgent.email || null,
