@@ -104,6 +104,7 @@ import { isBuyerWorkflowStage, transitionBuyerLeadStage } from '../../lib/workfl
 
 const PIPELINE_CONTEXT_TIMEOUT_MS = 3500
 const PIPELINE_RECORDS_TIMEOUT_MS = 3500
+const PIPELINE_CRM_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS = 15000
 const SELLER_ONBOARDING_COMPLETION_POLL_MS = 7000
 const LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS = 2500
@@ -2192,7 +2193,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           const crmSnapshot = await withPipelineTimeout(
             listAgencyCrmLeadContacts(orgId),
             'Lead data is taking too long to load.',
-            PIPELINE_RECORDS_TIMEOUT_MS,
+            PIPELINE_CRM_RECORDS_TIMEOUT_MS,
           )
 
           let privateListingFallbackContacts = []

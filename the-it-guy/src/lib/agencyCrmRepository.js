@@ -462,7 +462,22 @@ export async function listAgencyCrmLeadContacts(organisationId) {
     throw new Error('Supabase is required before loading agency CRM data.')
   }
 
-  const leadResult = await selectLeadsWithCompatibility((fields) =>
+  const contactPromise = supabase
+    .from('contacts')
+    .select('contact_id, organisation_id, assigned_agent_id, first_name, last_name, phone, email, contact_type, notes, created_at, updated_at')
+    .eq('organisation_id', workspaceId)
+    .order('updated_at', { ascending: false })
+  const activityPromise = supabase
+    .from('lead_activities')
+    .select(LEAD_ACTIVITY_SELECT_FIELDS)
+    .eq('organisation_id', workspaceId)
+    .order('activity_date', { ascending: false })
+  const taskPromise = supabase
+    .from('tasks')
+    .select(TASK_SELECT_FIELDS)
+    .eq('organisation_id', workspaceId)
+    .order('updated_at', { ascending: false })
+  const leadPromise = selectLeadsWithCompatibility((fields) =>
     supabase
       .from('leads')
       .select(fields)
@@ -470,21 +485,12 @@ export async function listAgencyCrmLeadContacts(organisationId) {
       .order('updated_at', { ascending: false }),
   )
 
-  const contactResult = await supabase
-    .from('contacts')
-    .select('contact_id, organisation_id, assigned_agent_id, first_name, last_name, phone, email, contact_type, notes, created_at, updated_at')
-    .eq('organisation_id', workspaceId)
-    .order('updated_at', { ascending: false })
-  const activityResult = await supabase
-    .from('lead_activities')
-    .select(LEAD_ACTIVITY_SELECT_FIELDS)
-    .eq('organisation_id', workspaceId)
-    .order('activity_date', { ascending: false })
-  const taskResult = await supabase
-    .from('tasks')
-    .select(TASK_SELECT_FIELDS)
-    .eq('organisation_id', workspaceId)
-    .order('updated_at', { ascending: false })
+  const [leadResult, contactResult, activityResult, taskResult] = await Promise.all([
+    leadPromise,
+    contactPromise,
+    activityPromise,
+    taskPromise,
+  ])
 
   const leadBlocked = leadResult.error && (isPermissionDeniedError(leadResult.error) || isMissingSchemaOrTableError(leadResult.error))
   const contactBlocked = contactResult.error && (isPermissionDeniedError(contactResult.error) || isMissingSchemaOrTableError(contactResult.error))

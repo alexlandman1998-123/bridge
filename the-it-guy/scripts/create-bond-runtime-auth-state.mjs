@@ -1,12 +1,13 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { chromium } from 'playwright'
 import { createClient } from '@supabase/supabase-js'
 
 export const BOND_RUNTIME_AUTH_DEFAULT_PATH = process.env.BOND_RUNTIME_AUTH_STATE_PATH || '/tmp/bond-runtime-auth-state.json'
-const ATTORNEY_FIXTURE_EMAIL = 'qa.attorney+canonical@bridgenine.co.za'
+export const BOND_RUNTIME_FIXTURE_NAMESPACE = 'bond_runtime_phase5h'
+export const ATTORNEY_FIXTURE_EMAIL = 'qa.attorney+canonical@bridgenine.co.za'
 const ATTORNEY_AUTH_STATE_PATH = path.join('playwright', '.auth', 'staging-internal.json')
 const DEFAULT_APP_URL = 'https://app.bridgenine.co.za'
-const BOND_RUNTIME_FIXTURE_NAMESPACE = 'bond_runtime_phase5h'
 
 function parseEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return {}
@@ -16,9 +17,9 @@ function parseEnvFile(filePath) {
       .map((line) => line.trim())
       .filter((line) => line && !line.startsWith('#'))
       .map((line) => {
-        const index = line.indexOf('=')
-        if (index === -1) return [line, '']
-        return [line.slice(0, index), line.slice(index + 1)]
+        const separator = line.indexOf('=')
+        if (separator === -1) return [line, '']
+        return [line.slice(0, separator), line.slice(separator + 1)]
       }),
   )
 }
@@ -32,8 +33,20 @@ function loadEnv() {
   }
 }
 
+function normalizeText(value) {
+  return String(value || '').trim()
+}
+
+function normalizeEmail(value) {
+  return normalizeText(value).toLowerCase()
+}
+
+function normalizeUrl(value) {
+  return normalizeText(value).replace(/\/+$/, '')
+}
+
 function deriveProjectRef(supabaseUrl) {
-  const match = String(supabaseUrl || '').match(/^https:\/\/([a-z0-9-]+)\.supabase\.co/i)
+  const match = normalizeText(supabaseUrl).match(/^https:\/\/([a-z0-9-]+)\.supabase\.co/i)
   return match ? match[1] : ''
 }
 
@@ -53,17 +66,42 @@ function decodeJwtPayload(token) {
   }
 }
 
+function readFixtureMetadata(filePath) {
+  if (!filePath) return null
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Bond runtime fixture metadata missing at ${filePath}`)
+  }
+  return JSON.parse(fs.readFileSync(filePath, 'utf8'))
+}
+
+function getFixtureUsers(metadata) {
+  if (!metadata) return []
+  return Array.isArray(metadata.users) ? metadata.users : []
+}
+
+export function assertFixtureUserIncluded(metadata, email) {
+  if (!metadata) return
+  const normalizedEmail = normalizeEmail(email)
+  if (metadata.fixtureNamespace !== BOND_RUNTIME_FIXTURE_NAMESPACE) {
+    throw new Error(`Bond runtime fixture metadata is not tagged as ${BOND_RUNTIME_FIXTURE_NAMESPACE}`)
+  }
+  const match = getFixtureUsers(metadata).find((item) => normalizeEmail(item.email) === normalizedEmail)
+  if (!match) {
+    throw new Error(`Bond runtime auth bootstrap user ${normalizedEmail} is not present in fixture metadata`)
+  }
+}
+
 export function assertBondRuntimeCredentials({ email, password, outputPath }) {
-  if (!email || !password) {
+  if (!normalizeEmail(email) || !normalizeText(password)) {
     throw new Error('BOND_RUNTIME_AUTH_EMAIL and BOND_RUNTIME_AUTH_PASSWORD are required')
   }
-  if (email === ATTORNEY_FIXTURE_EMAIL) {
+  if (normalizeEmail(email) === ATTORNEY_FIXTURE_EMAIL) {
     throw new Error('Bond runtime auth bootstrap cannot reuse the attorney canonical fixture account')
   }
-  if (!outputPath) {
+  if (!normalizeText(outputPath)) {
     throw new Error('BOND_RUNTIME_AUTH_STATE_PATH is required')
   }
-  if (outputPath.endsWith(ATTORNEY_AUTH_STATE_PATH)) {
+  if (normalizeText(outputPath).endsWith(ATTORNEY_AUTH_STATE_PATH)) {
     throw new Error('Bond runtime auth bootstrap cannot overwrite the attorney auth state path')
   }
 }
@@ -72,6 +110,7 @@ export function buildBondRuntimeStorageState({
   appUrl = DEFAULT_APP_URL,
   projectRef,
   session,
+  meta = null,
 }) {
   if (!projectRef) {
     throw new Error('Supabase project ref is required to build Bond runtime auth state')
@@ -80,7 +119,16 @@ export function buildBondRuntimeStorageState({
     throw new Error('Verified Bond runtime session is required to build auth state')
   }
 
-  return {
+  const payload = {
+    access_token: session.access_token,
+    token_type: session.token_type || 'bearer',
+    expires_in: session.expires_in,
+    expires_at: session.expires_at,
+    refresh_token: session.refresh_token,
+    user: session.user,
+  }
+
+  const storageState = {
     cookies: [],
     origins: [
       {
@@ -88,18 +136,34 @@ export function buildBondRuntimeStorageState({
         localStorage: [
           {
             name: buildAuthTokenStorageName(projectRef),
-            value: JSON.stringify({
-              access_token: session.access_token,
-              token_type: session.token_type || 'bearer',
-              expires_in: session.expires_in,
-              expires_at: session.expires_at,
-              refresh_token: session.refresh_token,
-              user: session.user,
-            }),
+            value: JSON.stringify(payload),
           },
         ],
       },
     ],
+  }
+
+  if (meta) {
+    storageState.__bondRuntimeMeta = meta
+  }
+
+  return storageState
+}
+
+async function verifyBrowserSession({ appUrl, outputPath }) {
+  const browser = await chromium.launch({ headless: true })
+  try {
+    const context = await browser.newContext({ storageState: outputPath })
+    const page = await context.newPage()
+    await page.goto(appUrl, { waitUntil: 'networkidle', timeout: 60_000 })
+    const finalUrl = page.url()
+    if (new URL(finalUrl).pathname.startsWith('/auth')) {
+      throw new Error(`Bond runtime auth state did not unlock the app. Final URL remained ${finalUrl}`)
+    }
+    await context.close()
+    return finalUrl
+  } finally {
+    await browser.close()
   }
 }
 
@@ -129,20 +193,11 @@ async function signInAndBuildState(config) {
   if (!payload?.sub || !payload?.email) {
     throw new Error('Bond runtime auth bootstrap could not verify the returned access token payload')
   }
-  if (payload.email !== config.email) {
+  if (normalizeEmail(payload.email) !== normalizeEmail(config.email)) {
     throw new Error('Bond runtime auth bootstrap verified a session for the wrong email address')
   }
 
-  const storageState = buildBondRuntimeStorageState({
-    appUrl: config.appUrl,
-    projectRef: config.projectRef,
-    session,
-  })
-
-  return {
-    storageState,
-    session,
-  }
+  return { session, payload }
 }
 
 export function resolveAuthConfig(env = process.env) {
@@ -151,19 +206,23 @@ export function resolveAuthConfig(env = process.env) {
     ...env,
   }
 
-  const supabaseUrl = String(merged.VITE_SUPABASE_URL || '').trim()
-  const supabaseAnonKey = String(merged.VITE_SUPABASE_ANON_KEY || merged.VITE_SUPABASE_KEY || '').trim()
+  const supabaseUrl = normalizeText(merged.SUPABASE_URL || merged.VITE_SUPABASE_URL)
+  const supabaseAnonKey = normalizeText(merged.VITE_SUPABASE_ANON_KEY || merged.VITE_SUPABASE_KEY)
   const projectRef = deriveProjectRef(supabaseUrl)
-  const appUrl = String(merged.BOND_RUNTIME_AUTH_APP_URL || DEFAULT_APP_URL).trim().replace(/\/+$/, '')
-  const email = String(merged.BOND_RUNTIME_AUTH_EMAIL || '').trim()
-  const password = String(merged.BOND_RUNTIME_AUTH_PASSWORD || '').trim()
-  const outputPath = String(merged.BOND_RUNTIME_AUTH_STATE_PATH || BOND_RUNTIME_AUTH_DEFAULT_PATH).trim()
+  const appUrl = normalizeUrl(merged.BOND_RUNTIME_AUTH_APP_URL || DEFAULT_APP_URL)
+  const email = normalizeEmail(merged.BOND_RUNTIME_AUTH_EMAIL || '')
+  const password = normalizeText(merged.BOND_RUNTIME_AUTH_PASSWORD || '')
+  const outputPath = normalizeText(merged.BOND_RUNTIME_AUTH_STATE_PATH || BOND_RUNTIME_AUTH_DEFAULT_PATH)
+  const metadataPath = normalizeText(merged.BOND_RUNTIME_FIXTURE_METADATA || '')
 
   assertBondRuntimeCredentials({ email, password, outputPath })
 
   if (!supabaseUrl || !supabaseAnonKey || !projectRef) {
-    throw new Error('VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are required for Bond runtime auth bootstrap')
+    throw new Error('SUPABASE_URL and VITE_SUPABASE_ANON_KEY are required for Bond runtime auth bootstrap')
   }
+
+  const metadata = metadataPath ? readFixtureMetadata(metadataPath) : null
+  assertFixtureUserIncluded(metadata, email)
 
   return {
     supabaseUrl,
@@ -173,34 +232,50 @@ export function resolveAuthConfig(env = process.env) {
     email,
     password,
     outputPath,
+    metadataPath: metadataPath || null,
+    metadata,
   }
 }
 
 async function main() {
   const config = resolveAuthConfig(process.env)
-  const { storageState, session } = await signInAndBuildState(config)
+  const { session, payload } = await signInAndBuildState(config)
 
   const fixtureNamespace =
     session?.user?.user_metadata?.fixture_namespace ||
     session?.user?.user_metadata?.staging_fixture_namespace ||
+    payload?.user_metadata?.fixture_namespace ||
     null
 
   if (fixtureNamespace && fixtureNamespace !== BOND_RUNTIME_FIXTURE_NAMESPACE) {
     throw new Error(`Bond runtime auth bootstrap signed into a non-Bond runtime fixture namespace: ${fixtureNamespace}`)
   }
 
+  const storageState = buildBondRuntimeStorageState({
+    appUrl: config.appUrl,
+    projectRef: config.projectRef,
+    session,
+    meta: {
+      source: 'real_staging_auth_bootstrap',
+      fixtureNamespace: BOND_RUNTIME_FIXTURE_NAMESPACE,
+      generatedAt: new Date().toISOString(),
+      email: config.email,
+      metadataPath: config.metadataPath,
+      stagingVerified: true,
+    },
+  })
+
   fs.mkdirSync(path.dirname(config.outputPath), { recursive: true })
   fs.writeFileSync(config.outputPath, `${JSON.stringify(storageState, null, 2)}\n`)
+  const finalUrl = await verifyBrowserSession({ appUrl: config.appUrl, outputPath: config.outputPath })
 
   process.stdout.write(
     `${JSON.stringify(
       {
-        ok: true,
-        outputPath: config.outputPath,
         email: config.email,
-        projectRef: config.projectRef,
-        expiresAt: typeof session?.expires_at === 'number' ? new Date(session.expires_at * 1000).toISOString() : null,
-        fixtureNamespace,
+        outputPath: config.outputPath,
+        fixtureNamespace: BOND_RUNTIME_FIXTURE_NAMESPACE,
+        finalUrl,
       },
       null,
       2,
@@ -210,7 +285,7 @@ async function main() {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((error) => {
-    console.error(error)
+    process.stderr.write(`${error.message}\n`)
     process.exitCode = 1
   })
 }
