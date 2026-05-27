@@ -21,6 +21,7 @@ import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { createAgencyCrmLeadActivity, createAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
+import { readAgentPrivateListings } from '../lib/agentListingStorage'
 import {
   CANVASSING_UPDATED_EVENT,
   createCanvassingActivity,
@@ -30,6 +31,7 @@ import {
   updateCanvassingProspect,
 } from '../lib/canvassingRepository'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../lib/settingsApi'
+import { getOrganisationPrivateListings } from '../services/privateListingService'
 
 const CANVASSING_CONTEXT_TIMEOUT_MS = 20000
 const BRIDGE9_PRINCIPAL_DEMO_AGENT_EMAIL = 'principal.demo@bridgenine.co.za'
@@ -142,6 +144,76 @@ function formatCurrency(value) {
   }).format(amount)
 }
 
+function normalizeListingOption(listing = {}) {
+  const id = normalizeText(listing?.id || listing?.listingId || listing?.listing_id)
+  if (!id) return null
+  const title = normalizeText(
+    listing?.title ||
+      listing?.label ||
+      listing?.listingTitle ||
+      listing?.listing_title ||
+      listing?.propertyTitle ||
+      listing?.property_title ||
+      listing?.propertyAddress ||
+      listing?.property_address ||
+      listing?.address,
+  )
+  const suburb = normalizeText(listing?.suburb || listing?.area || listing?.city)
+  const price = Number(listing?.askingPrice || listing?.asking_price || listing?.price || 0) || 0
+  const labelParts = [
+    title || `Listing ${id.slice(0, 8)}`,
+    suburb,
+    price ? formatCurrency(price) : '',
+  ].filter(Boolean)
+  return {
+    id,
+    label: labelParts.join(' - '),
+    title: title || labelParts[0] || `Listing ${id.slice(0, 8)}`,
+    suburb,
+    propertyType: normalizeText(listing?.propertyType || listing?.property_type),
+    askingPrice: price,
+  }
+}
+
+function dedupeListingOptions(rows = []) {
+  const map = new Map()
+  for (const row of rows) {
+    const option = normalizeListingOption(row)
+    if (option && !map.has(option.id)) map.set(option.id, option)
+  }
+  return Array.from(map.values()).sort((left, right) => left.label.localeCompare(right.label))
+}
+
+function resolveListingIdFromProspect(prospect = {}) {
+  const direct = normalizeText(prospect?.listingId || prospect?.linkedListingId)
+  if (direct) return direct
+  const notes = normalizeText(prospect?.notes)
+  const match = notes.match(/Linked Listing ID:\s*([^|]+)/i)
+  return normalizeText(match?.[1])
+}
+
+function resolveListingLabelFromProspect(prospect = {}) {
+  const direct = normalizeText(prospect?.listingLabel || prospect?.linkedListingLabel)
+  if (direct) return direct
+  const notes = normalizeText(prospect?.notes)
+  const match = notes.match(/Linked Listing:\s*([^|]+)/i)
+  return normalizeText(match?.[1])
+}
+
+function appendLinkedListingNote(notes = '', listing = null) {
+  const base = normalizeText(notes)
+  if (!listing?.id) return base
+  const filtered = base
+    .split('|')
+    .map((part) => normalizeText(part))
+    .filter((part) => part && !/^Linked Listing/i.test(part))
+  return [
+    ...filtered,
+    `Linked Listing: ${listing.label || listing.title || listing.id}`,
+    `Linked Listing ID: ${listing.id}`,
+  ].join(' | ')
+}
+
 function getProspectDisplayName(prospect = {}) {
   return [prospect?.firstName, prospect?.lastName].map(normalizeText).filter(Boolean).join(' ') || 'Unnamed prospect'
 }
@@ -199,6 +271,8 @@ function resolveProspectAudience(prospect = {}) {
 function buildLeadPayloadFromProspect(prospect = {}, leadCategory = 'Buyer', currentAgent = {}, leadId = '') {
   const { firstName, lastName } = splitProspectName(prospect)
   const normalizedCategory = resolveLeadCategoryFromProspect(leadCategory, resolveDefaultLeadCategory(prospect))
+  const linkedListingId = resolveListingIdFromProspect(prospect)
+  const linkedListingLabel = resolveListingLabelFromProspect(prospect)
   const notes = [
     normalizeText(prospect.notes),
     `Canvassing Method: ${normalizeText(prospect.canvassingMethod) || 'Other'}`,
@@ -238,8 +312,9 @@ function buildLeadPayloadFromProspect(prospect = {}, leadCategory = 'Buyer', cur
     priority: normalizeText(prospect.followUpPriority) || 'Medium',
     budget: Number(prospect.estimatedValue || 0) || 0,
     estimatedValue: Number(prospect.estimatedValue || 0) || 0,
-    areaInterest: normalizeText(prospect.area),
-    propertyInterest: normalizeText(prospect.propertyType),
+    areaInterest: normalizeText(prospect.area || linkedListingLabel),
+    propertyInterest: normalizeText(linkedListingLabel || prospect.propertyType),
+    listingId: linkedListingId,
     sellerPropertyAddress: normalizedCategory === 'Seller' ? normalizeText(prospect.area) : '',
     canvassingProspectId: prospect.id,
     sellerName: firstName,
@@ -261,6 +336,7 @@ function PipelineCanvassingPage() {
   const [prospects, setProspects] = useState([])
   const [activities, setActivities] = useState([])
   const [agentUsers, setAgentUsers] = useState([])
+  const [listingOptions, setListingOptions] = useState([])
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [selectedProspectId, setSelectedProspectId] = useState('')
   const [detailOpen, setDetailOpen] = useState(false)
@@ -287,6 +363,7 @@ function PipelineCanvassingPage() {
     propertyType: '',
     canvassingMethod: 'Cold Call',
     assignedAgentId: '',
+    linkedListingId: '',
     status: 'New',
     nextFollowUpDate: '',
     followUpPriority: 'Medium',
@@ -416,6 +493,17 @@ function PipelineCanvassingPage() {
         } catch (usersError) {
           console.warn('[CANVASSING] organisation users load failed.', usersError)
           if (active) setAgentUsers([])
+        }
+        try {
+          const localListings = readAgentPrivateListings()
+          const remoteListings = await getOrganisationPrivateListings(orgId, { includeRequirementsAndDocuments: false }).catch((listingError) => {
+            console.warn('[CANVASSING] organisation listings load failed.', listingError)
+            return []
+          })
+          if (active) setListingOptions(dedupeListingOptions([...(Array.isArray(localListings) ? localListings : []), ...(Array.isArray(remoteListings) ? remoteListings : [])]))
+        } catch (listingError) {
+          console.warn('[CANVASSING] listing options unavailable.', listingError)
+          if (active) setListingOptions([])
         }
       } catch (contextError) {
         if (!active) return
@@ -557,6 +645,7 @@ function PipelineCanvassingPage() {
       propertyType: '',
       canvassingMethod: 'Cold Call',
       assignedAgentId: preferredDemoAgentId || normalizeText(currentAgent.id || currentAgent.email),
+      linkedListingId: '',
       status: 'New',
       nextFollowUpDate: '',
       followUpPriority: 'Medium',
@@ -583,6 +672,7 @@ function PipelineCanvassingPage() {
       return
     }
     const assignedAgent = resolveAgentById(prospectForm.assignedAgentId || preferredDemoAgentId || currentAgent.id || currentAgent.email)
+    const selectedListing = listingOptions.find((listing) => normalizeText(listing.id) === normalizeText(prospectForm.linkedListingId)) || null
 
     const createdPayload = {
       organisationId,
@@ -597,14 +687,16 @@ function PipelineCanvassingPage() {
       email: normalizeText(prospectForm.email).toLowerCase(),
       prospectType: normalizeText(prospectForm.prospectType) || 'Other',
       area: normalizeText(prospectForm.area),
-      propertyType: normalizeText(prospectForm.propertyType),
+      propertyType: normalizeText(prospectForm.propertyType || selectedListing?.propertyType),
       canvassingMethod: normalizeText(prospectForm.canvassingMethod) || 'Other',
       status: normalizeText(prospectForm.status) || 'New',
       nextFollowUpDate: normalizeText(prospectForm.nextFollowUpDate),
       followUpPriority: normalizeText(prospectForm.followUpPriority) || 'Medium',
       followUpNote: normalizeText(prospectForm.followUpNote),
-      estimatedValue: Number(prospectForm.estimatedValue || 0) || 0,
-      notes: normalizeText(prospectForm.notes),
+      estimatedValue: Number(prospectForm.estimatedValue || selectedListing?.askingPrice || 0) || 0,
+      notes: appendLinkedListingNote(prospectForm.notes, selectedListing),
+      listingId: normalizeText(selectedListing?.id),
+      listingLabel: normalizeText(selectedListing?.label),
       convertedLeadId: null,
       createdBy: currentAgent.id || currentAgent.email,
       createdAt: new Date().toISOString(),
@@ -1168,7 +1260,7 @@ function PipelineCanvassingPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setProspectForm((previous) => ({ ...previous, prospectType: 'Seller Prospect' }))}
+                onClick={() => setProspectForm((previous) => ({ ...previous, prospectType: 'Seller Prospect', linkedListingId: '' }))}
                 className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
                   resolveProspectAudience({ prospectType: prospectForm.prospectType }) === 'seller'
                     ? 'bg-[#1f4f78] text-white'
@@ -1223,6 +1315,32 @@ function PipelineCanvassingPage() {
                   ))}
                 </Field>
               </label>
+              {resolveProspectAudience({ prospectType: prospectForm.prospectType }) === 'buyer' ? (
+                <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">
+                  Listing / Property
+                  <Field
+                    as="select"
+                    value={prospectForm.linkedListingId}
+                    onChange={(event) => {
+                      const selectedListing = listingOptions.find((listing) => normalizeText(listing.id) === normalizeText(event.target.value))
+                      setProspectForm((previous) => ({
+                        ...previous,
+                        linkedListingId: event.target.value,
+                        area: normalizeText(previous.area) || normalizeText(selectedListing?.suburb),
+                        propertyType: normalizeText(previous.propertyType) || normalizeText(selectedListing?.propertyType),
+                        estimatedValue: normalizeText(previous.estimatedValue) || (selectedListing?.askingPrice ? String(selectedListing.askingPrice) : ''),
+                      }))
+                    }}
+                  >
+                    <option value="">Select listing/property</option>
+                    {listingOptions.map((listing) => (
+                      <option key={listing.id} value={listing.id}>
+                        {listing.label}
+                      </option>
+                    ))}
+                  </Field>
+                </label>
+              ) : null}
               <Field
                 as="select"
                 value={prospectForm.canvassingMethod}
