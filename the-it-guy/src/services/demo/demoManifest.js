@@ -4,7 +4,9 @@ export const DEMO_ENVIRONMENT_DOMAINS = Object.freeze({
 })
 
 export const DEMO_ACCOUNTS = Object.freeze([
-  { key: 'agency_principal', workspaceType: 'agency', role: 'principal', email: 'agency.principal@demo.bridge9.io', purpose: 'Agency owner/principal demo' },
+  { key: 'agency_principal', workspaceType: 'agency', role: 'principal', email: 'principal.demo@bridgenine.co.za', purpose: 'Bridge9 Realty principal demo' },
+  { key: 'bridge9_agency_agent', workspaceType: 'agency', role: 'agent', email: 'lerato.mokoena@bridgenine.co.za', purpose: 'Bridge9 Realty senior agent demo' },
+  { key: 'bridge9_agency_admin', workspaceType: 'agency', role: 'admin', email: 'nandi.khumalo@bridgenine.co.za', purpose: 'Bridge9 Realty coordinator demo' },
   { key: 'agency_branch_manager', workspaceType: 'agency', role: 'branch_manager', email: 'agency.branch@demo.bridge9.io', purpose: 'Agency branch management demo' },
   { key: 'agency_agent', workspaceType: 'agency', role: 'agent', email: 'agency.agent@demo.bridge9.io', purpose: 'Assigned-only agent demo' },
   { key: 'agency_admin', workspaceType: 'agency', role: 'admin_staff', email: 'agency.admin@demo.bridge9.io', purpose: 'Agency admin staff demo' },
@@ -20,17 +22,36 @@ export const DEMO_ACCOUNTS = Object.freeze([
 
 export const DEMO_SEED_MANIFEST = Object.freeze([
   {
+    key: 'bridge9_principal_demo',
+    workspaceType: 'agency',
+    ownerAccount: 'agency_principal',
+    seedScripts: ['supabase/seed/reset-bridge9-principal-demo-data.sql', 'supabase/seed/seed-bridge9-principal-demo-data.sql'],
+    expectedRecords: {
+      branches: 4,
+      users: 10,
+      canvassingRecords: 120,
+      buyerLeads: 160,
+      sellerProspects: 120,
+      listings: 45,
+      appointments: 22,
+      transactions: 22,
+      heroTransactions: 1,
+      documentsMinimum: 88,
+      activityEventsMinimum: 500,
+    },
+  },
+  {
     key: 'agency_demo',
     workspaceType: 'agency',
     ownerAccount: 'agency_principal',
     expectedRecords: {
-      branches: 2,
-      users: 4,
-      leads: 12,
-      listings: 8,
-      appointments: 6,
-      transactions: 6,
-      clients: 10,
+      branches: 4,
+      users: 10,
+      leads: 280,
+      listings: 45,
+      appointments: 22,
+      transactions: 22,
+      clients: 280,
     },
   },
   {
@@ -83,7 +104,7 @@ export const DEMO_SEED_MANIFEST = Object.freeze([
 ])
 
 export const DEMO_FLOWS = Object.freeze([
-  { key: 'agency', title: 'Agency Demo', steps: ['Principal dashboard', 'Leads', 'Listings', 'Transactions', 'Appointments'] },
+  { key: 'agency', title: 'Bridge9 Realty Principal Demo', steps: ['Principal dashboard', 'Canvassing', 'Leads', 'Listings', 'Transactions', 'Client portal'] },
   { key: 'developer', title: 'Developer Demo', steps: ['Developments', 'Units', 'Sales pipeline', 'Reporting'] },
   { key: 'attorney', title: 'Attorney Demo', steps: ['Matters', 'Transfer workflow', 'Document requests', 'Signing appointments'] },
   { key: 'bond', title: 'Bond Demo', steps: ['Applications', 'Bank submission', 'Consultant assignment', 'Finance statuses'] },

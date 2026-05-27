@@ -195,7 +195,12 @@ begin
     'scope', coalesce(nullif(p_reset_scope, ''), 'all'),
     'dryRun', coalesce(p_dry_run, true),
     'resetPolicy', 'Only data marked as demo seed data may be reset. Production data is never eligible.',
-    'seedScripts', jsonb_build_array('supabase/seed/reset-dalawyer-demo-data.sql', 'supabase/seed/seed-dalawyer-demo-data.sql'),
+    'seedScripts', jsonb_build_array(
+      'supabase/seed/reset-bridge9-principal-demo-data.sql',
+      'supabase/seed/seed-bridge9-principal-demo-data.sql',
+      'supabase/seed/reset-dalawyer-demo-data.sql',
+      'supabase/seed/seed-dalawyer-demo-data.sql'
+    ),
     'nextStep', case when coalesce(p_dry_run, true) then 'Review the dry-run and run the staging seed/reset pipeline.' else 'Run the staging seed/reset pipeline and verify manifests.' end
   );
 

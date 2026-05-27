@@ -2,7 +2,6 @@ import {
   ArrowUpRight,
   BarChart3,
   CheckCircle2,
-  Clock3,
   Filter,
   Handshake,
   LockKeyhole,
@@ -10,15 +9,17 @@ import {
   Search,
   ShieldCheck,
   SlidersHorizontal,
-  UserPlus,
+  UserPlus as InviteIcon,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
+  acceptPartnerInvitation,
   canConnectPartnerTypes,
   createPartnerInvitation,
+  declinePartnerInvitation,
   filterDiscoverablePartners,
   getPartnerAssignmentOptions,
   getPartnerTypeLabel,
@@ -32,7 +33,8 @@ import { recordWorkspaceAuditEvent } from '../services/auditLogService'
 
 const TABS = [
   { key: 'connected', label: 'Connected Partners' },
-  { key: 'pending', label: 'Pending Invitations' },
+  { key: 'sent', label: 'Sent Invitations' },
+  { key: 'received', label: 'Received Invitations' },
   { key: 'discover', label: 'Discover Partners' },
   { key: 'referrals', label: 'Referrals & Opportunities' },
   { key: 'analytics', label: 'Partner Analytics' },
@@ -57,6 +59,14 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(date)
 }
 
+function normalizeText(value = '') {
+  return String(value || '').trim()
+}
+
+function normalizeLower(value = '') {
+  return normalizeText(value).toLowerCase()
+}
+
 function initials(value = '') {
   return String(value || 'Bridge')
     .split(/\s+/)
@@ -64,6 +74,26 @@ function initials(value = '') {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join('') || 'B9'
+}
+
+function isBridgeInternalToken(value = '') {
+  const normalized = normalizeLower(value)
+  return normalized.includes('@bridge.internal') || normalized.startsWith('organisation-')
+}
+
+function normalizeInvitationName(value, fallback) {
+  const candidate = normalizeText(value)
+  if (candidate && !isBridgeInternalToken(candidate)) return candidate
+  const fallbackCandidate = normalizeText(fallback)
+  return fallbackCandidate && !isBridgeInternalToken(fallbackCandidate) ? fallbackCandidate : 'Unknown organisation'
+}
+
+function statusBadgeClass(status) {
+  const normalized = normalizeLower(status)
+  if (normalized === 'accepted') return 'border-[#d8efe4] bg-[#f1fbf6] text-[#17613d]'
+  if (normalized === 'declined' || normalized === 'rejected') return 'border-[#f8d7da] bg-[#fff5f6] text-[#8d2831]'
+  if (normalized === 'cancelled') return 'border-[#f0dfb8] bg-[#fff9ec] text-[#8a5a12]'
+  return 'border-[#f0dfb8] bg-[#fff9ec] text-[#8a5a12]'
 }
 
 function relationshipBadgeClass(type) {
@@ -103,7 +133,7 @@ function PartnerLogo({ partner }) {
 
   return (
     <div className="flex h-12 w-12 items-center justify-center rounded-[8px] border border-[#dfe8f3] bg-[#f6f9fc] text-sm font-semibold text-[#35546c]">
-      {initials(partner?.name)}
+      {initials(partner?.name || partner?.companyName)}
     </div>
   )
 }
@@ -229,18 +259,41 @@ function ProfilePanel({ partner, relationship }) {
   )
 }
 
+function invitationPartnerName(invitation, currentOrganisationId) {
+  const currentId = normalizeText(currentOrganisationId)
+  const raw =
+    normalizeText(invitation?.toOrganisationId) === currentId
+      ? invitation?.fromOrganisationName
+      : invitation?.toOrganisationName || invitation?.fromOrganisationName
+
+  return normalizeInvitationName(raw, invitation?.invitedEmail)
+}
+
+function invitationPartnerType(invitation, currentOrganisationId) {
+  const currentId = normalizeText(currentOrganisationId)
+  const direction = normalizeText(invitation?.toOrganisationId) === currentId ? invitation.fromWorkspaceType : invitation.toWorkspaceType
+  return getPartnerTypeLabel(direction || 'agency')
+}
+
 export default function PartnersPage() {
   const { partnerId = '' } = useParams()
   const { workspace, workspaceType, role, profile } = useWorkspace()
   const { organisation } = useOrganisation()
   const organisationId = organisation?.id || workspace?.id || ''
   const resolvedWorkspaceType = organisation?.type || workspaceType || role
+
   const [activeTab, setActiveTab] = useState('connected')
   const [snapshot, setSnapshot] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+
   const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteOrganisationQuery, setInviteOrganisationQuery] = useState('')
+  const [selectedInviteOrganisationId, setSelectedInviteOrganisationId] = useState('')
+  const [inviteType, setInviteType] = useState('agency')
+  const [inviteNote, setInviteNote] = useState('')
+
   const [filters, setFilters] = useState({ query: '', type: '', province: '', specialty: '' })
 
   const loadSnapshot = useCallback(async () => {
@@ -268,15 +321,25 @@ export default function PartnersPage() {
     () => relationships.filter((item) => item.relationshipStatus === 'accepted'),
     [relationships],
   )
-  const pendingRelationships = useMemo(
-    () => relationships.filter((item) => item.relationshipStatus === 'pending'),
-    [relationships],
-  )
   const invitations = useMemo(() => snapshot?.invitations || [], [snapshot?.invitations])
-  const referrals = useMemo(() => snapshot?.referrals || [], [snapshot?.referrals])
+
+  const sentInvitations = useMemo(
+    () => invitations.filter((item) => item.fromOrganisationId === organisationId),
+    [invitations, organisationId],
+  )
+
+  const receivedInvitations = useMemo(
+    () => invitations.filter((item) => item.toOrganisationId === organisationId),
+    [invitations, organisationId],
+  )
+
+  const pendingReceivedInvitations = useMemo(
+    () => receivedInvitations.filter((item) => (normalizeLower(item.status) || 'pending') === 'pending'),
+    [receivedInvitations],
+  )
+
   const metrics = snapshot?.metrics || {}
   const currentType = resolvedWorkspaceType
-
   const discoverablePartners = useMemo(() => {
     const connectedIds = new Set(relationships.map((item) => item.counterpartOrganisationId || item.partner?.id))
     return filterDiscoverablePartners(snapshot?.organisations || [], filters).filter((partner) => {
@@ -284,6 +347,29 @@ export default function PartnersPage() {
       return !connectedIds.has(partner.id)
     })
   }, [currentType, filters, relationships, snapshot?.organisations])
+
+  const selectedInviteOrganisation = useMemo(() => {
+    if (selectedInviteOrganisationId) {
+      return (snapshot?.organisations || []).find((item) => item.id === selectedInviteOrganisationId) || null
+    }
+
+    const email = normalizeLower(inviteEmail)
+    if (!email) return null
+
+    return (
+      (snapshot?.organisations || []).find((organisation) =>
+        (organisation.contactEmails || []).some((candidate) => normalizeLower(candidate) === email),
+      ) || null
+    )
+  }, [inviteEmail, selectedInviteOrganisationId, snapshot?.organisations])
+
+  const inviteOrganisationResults = useMemo(() => {
+    const query = normalizeLower(inviteOrganisationQuery)
+    if (!query) return []
+    return (snapshot?.organisations || [])
+      .filter((item) => normalizeLower(item.name).includes(query))
+      .slice(0, 5)
+  }, [inviteOrganisationQuery, snapshot?.organisations])
 
   const selectedPartner = useMemo(() => {
     if (!partnerId) return connectedRelationships[0]?.partner || discoverablePartners[0] || null
@@ -295,8 +381,8 @@ export default function PartnersPage() {
   }, [connectedRelationships, discoverablePartners, partnerId, snapshot?.organisations])
 
   const selectedRelationship = useMemo(
-    () => connectedRelationships.find((item) => item.partner?.id === selectedPartner?.id) || pendingRelationships.find((item) => item.partner?.id === selectedPartner?.id) || null,
-    [connectedRelationships, pendingRelationships, selectedPartner?.id],
+    () => connectedRelationships.find((item) => item.partner?.id === selectedPartner?.id) || null,
+    [connectedRelationships, selectedPartner?.id],
   )
 
   const transactionPartnerOptions = useMemo(
@@ -309,21 +395,39 @@ export default function PartnersPage() {
 
   async function handleInvite(event) {
     event.preventDefault()
+
+    const email = normalizeText(inviteEmail).toLowerCase()
+    const targetId = selectedInviteOrganisation?.id || ''
+
+    if (!targetId && !email) {
+      setError('Choose an organisation or enter a destination email.')
+      return
+    }
+
     try {
       setError('')
       setMessage('')
       await createPartnerInvitation({
         organisationId,
-        recipientEmail: inviteEmail,
+        organisationName: organisation?.name,
+        recipientEmail: email,
+        recipientOrganisationId: targetId,
+        recipientOrganisationName: selectedInviteOrganisation?.name || '',
+        toWorkspaceType: selectedInviteOrganisation?.type || inviteType,
+        message: inviteNote,
         userId: profile?.id || '',
         workspaceType: resolvedWorkspaceType,
       })
       await recordWorkspaceAuditEvent('partner_invite_sent', {
         userId: profile?.id || '',
         workspaceId: organisationId,
-        metadata: { recipientEmail: inviteEmail },
+        metadata: { recipientEmail: email, recipientOrganisationId: targetId },
       })
       setInviteEmail('')
+      setInviteOrganisationQuery('')
+      setSelectedInviteOrganisationId('')
+      setInviteType('agency')
+      setInviteNote('')
       setMessage('Partner invitation sent.')
       await loadSnapshot()
     } catch (inviteError) {
@@ -337,9 +441,11 @@ export default function PartnersPage() {
       setMessage('')
       await createPartnerInvitation({
         organisationId,
+        organisationName: organisation?.name,
         recipientEmail: '',
         recipientOrganisationId: partner.id,
-        relationshipType: 'approved',
+        toWorkspaceType: partner.type,
+        recipientOrganisationName: partner.name,
         userId: profile?.id || '',
         workspaceType: resolvedWorkspaceType,
       })
@@ -379,6 +485,51 @@ export default function PartnersPage() {
     }
   }
 
+  async function handleAcceptInvitation(invitation) {
+    try {
+      setError('')
+      await acceptPartnerInvitation({
+        invitationId: invitation.id,
+        organisationId,
+        userId: profile?.id || '',
+        workspaceType: resolvedWorkspaceType,
+      })
+      setMessage('Partner connection accepted')
+      await loadSnapshot()
+    } catch (acceptError) {
+      setError(acceptError?.message || 'Unable to accept partner invitation.')
+    }
+  }
+
+  async function handleDeclineInvitation(invitation) {
+    try {
+      setError('')
+      await declinePartnerInvitation({
+        invitationId: invitation.id,
+        organisationId,
+        userId: profile?.id || '',
+        workspaceType: resolvedWorkspaceType,
+      })
+      setMessage('Partner invitation declined')
+      await loadSnapshot()
+    } catch (declineError) {
+      setError(declineError?.message || 'Unable to decline partner invitation.')
+    }
+  }
+
+  function selectInviteOrganisation(nextId) {
+    setSelectedInviteOrganisationId(nextId)
+    const nextOrganisation = (snapshot?.organisations || []).find((item) => item.id === nextId)
+    setInviteOrganisationQuery(nextOrganisation?.name || '')
+  }
+
+  function clearInviteOrganisation() {
+    setSelectedInviteOrganisationId('')
+    setInviteOrganisationQuery('')
+  }
+
+  const detectedInviteType = selectedInviteOrganisation?.type
+
   return (
     <div className="min-h-full bg-[#f6f8fb] pb-10 text-[#10243a]">
       <section className="rounded-[8px] border border-[#d9e4ef] bg-white p-5 shadow-[0_16px_38px_rgba(15,23,42,0.06)] sm:p-6">
@@ -390,19 +541,99 @@ export default function PartnersPage() {
               Manage trusted organisations, reusable transaction role players, controlled shared visibility, referrals, and relationship performance.
             </p>
           </div>
-          <form onSubmit={handleInvite} className="w-full rounded-[8px] border border-[#e0e8f2] bg-[#f8fafc] p-3 lg:max-w-md">
+          <form onSubmit={handleInvite} className="w-full rounded-[8px] border border-[#e0e8f2] bg-[#f8fafc] p-3 lg:max-w-xl">
             <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Invite partner</label>
-            <div className="mt-2 flex gap-2">
+            <div className="mt-2 grid gap-2">
               <input
                 type="email"
                 value={inviteEmail}
-                onChange={(event) => setInviteEmail(event.target.value)}
+                onChange={(event) => {
+                  setInviteEmail(event.target.value)
+                  if (selectedInviteOrganisationId) {
+                    setSelectedInviteOrganisationId('')
+                  }
+                }}
                 placeholder="partner@firm.co.za"
-                className="min-w-0 flex-1 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
               />
-              <button type="submit" className="inline-flex h-10 items-center gap-2 rounded-[8px] bg-[#10243a] px-3 text-sm font-semibold text-white">
-                <UserPlus size={15} /> Invite
-              </button>
+              <input
+                type="text"
+                value={inviteOrganisationQuery}
+                onChange={(event) => {
+                  setInviteOrganisationQuery(event.target.value)
+                  if (selectedInviteOrganisationId) {
+                    setSelectedInviteOrganisationId('')
+                  }
+                }}
+                placeholder="Search existing organisation by name"
+                className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+              />
+              <textarea
+                value={inviteNote}
+                onChange={(event) => setInviteNote(event.target.value)}
+                placeholder="Optional message for this invitation"
+                className="min-h-[72px] rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+              />
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  type="submit"
+                  className="inline-flex h-10 items-center gap-2 rounded-[8px] bg-[#10243a] px-3 text-sm font-semibold text-white"
+                >
+                  <InviteIcon size={15} /> Invite
+                </button>
+                {detectedInviteType ? (
+                  <button
+                    type="button"
+                    onClick={clearInviteOrganisation}
+                    className="inline-flex h-10 items-center rounded-[8px] border border-[#d3deea] bg-white px-3 text-sm font-semibold text-[#35546c] hover:bg-[#f8fafc]"
+                  >
+                    Clear selected
+                  </button>
+                ) : null}
+                <div className="inline-flex h-10 items-center rounded-[8px] border border-[#d3deea] bg-white px-3 text-sm text-[#35546c]">
+                  <span className="inline-block rounded-full border border-[#c3d0e3] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.11em]">
+                    {getPartnerTypeLabel(detectedInviteType || inviteType)}
+                  </span>
+                </div>
+                {!selectedInviteOrganisation && (
+                  <select
+                    value={inviteType}
+                    onChange={(event) => setInviteType(event.target.value)}
+                    className="rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
+                  >
+                    {PARTNER_TYPES.map((type) => (
+                      <option key={type.value} value={type.value}>
+                        {type.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              {selectedInviteOrganisation ? (
+                <p className="text-sm text-[#10243a]">
+                  Resolved to: <span className="font-semibold">{selectedInviteOrganisation.name}</span> · {getPartnerTypeLabel(selectedInviteOrganisation.type)}
+                </p>
+              ) : inviteEmail ? (
+                <p className="text-sm text-[#10243a]">Resolved to: {normalizeInvitationName('', inviteEmail)}</p>
+              ) : null}
+              {!!inviteOrganisationResults.length && !selectedInviteOrganisationId ? (
+                <div className="rounded-[8px] border border-[#e4ebf4] bg-white p-2">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8ba3]">Organisation suggestions</p>
+                  <div className="grid gap-2">
+                    {inviteOrganisationResults.map((organisation) => (
+                      <button
+                        type="button"
+                        key={organisation.id}
+                        onClick={() => selectInviteOrganisation(organisation.id)}
+                        className="rounded-[8px] border border-[#dbe5f0] bg-white p-2 text-left text-sm text-[#10243a] hover:bg-[#f6f9ff]"
+                      >
+                        <p className="font-semibold">{organisation.name}</p>
+                        <p className="text-xs text-[#60758d]">{getPartnerTypeLabel(organisation.type)} · {organisation.city || 'Unspecified city'}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           </form>
         </div>
@@ -429,7 +660,9 @@ export default function PartnersPage() {
             key={tab.key}
             type="button"
             onClick={() => setActiveTab(tab.key)}
-            className={`h-10 shrink-0 rounded-[8px] px-3 text-sm font-semibold transition ${activeTab === tab.key ? 'bg-[#10243a] text-white' : 'text-[#52677f] hover:bg-[#f6f8fb] hover:text-[#10243a]'}`}
+            className={`h-10 shrink-0 rounded-[8px] px-3 text-sm font-semibold transition ${
+              activeTab === tab.key ? 'bg-[#10243a] text-white' : 'text-[#52677f] hover:bg-[#f6f8fb] hover:text-[#10243a]'
+            }`}
           >
             {tab.label}
           </button>
@@ -455,25 +688,89 @@ export default function PartnersPage() {
                   />
                 ))}
                 {!connectedRelationships.length ? (
-                  <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">No accepted partner relationships yet.</div>
+                  <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">
+                    No connected partners yet. Invite trusted organisations to collaborate on transactions.
+                  </div>
                 ) : null}
               </section>
             ) : null}
 
-            {activeTab === 'pending' ? (
+            {activeTab === 'sent' ? (
               <section className="space-y-3">
-                {[...pendingRelationships, ...invitations].map((item) => (
-                  <div key={item.id} className="flex flex-col gap-3 rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)] sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-10 w-10 items-center justify-center rounded-[8px] border border-[#e4ebf4] bg-[#f8fafc] text-[#52677f]"><Clock3 size={18} /></span>
-                      <div>
-                        <p className="font-semibold text-[#10243a]">{item.partner?.name || item.recipientEmail || 'Pending partner'}</p>
-                        <p className="text-sm text-[#60758d]">Status: {item.relationshipStatus || item.status} · Sent {formatDate(item.createdAt)}</p>
+                {sentInvitations.map((invitation) => {
+                  const organisationName = invitationPartnerName(invitation, organisationId)
+                  const organisationType = invitationPartnerType(invitation, organisationId)
+                  return (
+                    <div
+                      key={invitation.id}
+                      className="flex flex-col gap-3 rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)] sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="flex items-center gap-3">
+                        <PartnerLogo partner={{ name: organisationName }} />
+                        <div>
+                          <p className="font-semibold text-[#10243a]">{organisationName}</p>
+                          <p className="text-sm text-[#60758d]">{organisationType}</p>
+                          <p className="mt-1 text-sm text-[#60758d]">Status: {invitation.status || 'pending'} · Sent {formatDate(invitation.createdAt)}</p>
+                          {invitation.message ? <p className="mt-2 text-sm text-[#40556c]">{invitation.message}</p> : null}
+                          {invitation.invitedByUserId ? <p className="mt-1 text-xs text-[#8a9ab2]">Invited by user {invitation.invitedByUserId}</p> : null}
+                        </div>
+                      </div>
+                      <StatusBadge className={statusBadgeClass(invitation.status)}>
+                        Status: {(normalizeLower(invitation.status) || 'pending').charAt(0).toUpperCase() + (normalizeLower(invitation.status) || 'pending').slice(1)}
+                      </StatusBadge>
+                    </div>
+                  )
+                })}
+                {!sentInvitations.length ? (
+                  <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">No pending invitations sent.</div>
+                ) : null}
+              </section>
+            ) : null}
+
+            {activeTab === 'received' ? (
+              <section className="space-y-3">
+                {pendingReceivedInvitations.map((invitation) => {
+                  const fromName = invitationPartnerName(invitation, organisationId)
+                  const fromType = invitationPartnerType(invitation, organisationId)
+                  const requestMessage = invitation.message || 'Wants to connect with your organisation.'
+                  return (
+                    <div
+                      key={invitation.id}
+                      className="rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]"
+                    >
+                      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                        <div className="flex min-w-0 gap-3">
+                          <PartnerLogo partner={{ name: fromName }} />
+                          <div>
+                            <p className="font-semibold text-[#10243a]">{fromName}</p>
+                            <p className="text-sm text-[#60758d]">{fromType}</p>
+                            <p className="mt-2 text-sm text-[#40556c]">{requestMessage}</p>
+                            <p className="mt-1 text-xs text-[#6f7f95]">Sent {formatDate(invitation.createdAt)}</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleAcceptInvitation(invitation)}
+                            className="inline-flex h-10 items-center justify-center rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white transition hover:bg-[#173a5e]"
+                          >
+                            Accept
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeclineInvitation(invitation)}
+                            className="inline-flex h-10 items-center justify-center rounded-[8px] border border-[#d7e2ee] bg-white px-4 text-sm font-semibold text-[#35546c] transition hover:bg-[#f8fafc]"
+                          >
+                            Decline
+                          </button>
+                        </div>
                       </div>
                     </div>
-                    <StatusBadge className="border-[#f0dfb8] bg-[#fff9ec] text-[#8a5a12]">Pending</StatusBadge>
-                  </div>
-                ))}
+                  )
+                })}
+                {!pendingReceivedInvitations.length ? (
+                  <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">No partner requests waiting for your response.</div>
+                ) : null}
               </section>
             ) : null}
 
@@ -515,7 +812,7 @@ export default function PartnersPage() {
 
             {activeTab === 'referrals' ? (
               <section className="space-y-3">
-                {referrals.map((referral) => {
+                {snapshot?.referrals?.map((referral) => {
                   const partner = (snapshot?.organisations || []).find((item) => [referral.referringOrganisationId, referral.referredOrganisationId].includes(item.id))
                   return (
                     <div key={referral.id} className="grid gap-3 rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)] md:grid-cols-[1fr_auto]">

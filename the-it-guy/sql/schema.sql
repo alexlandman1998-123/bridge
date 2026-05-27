@@ -1085,6 +1085,7 @@ create table if not exists transactions (
   assigned_bond_originator_email text,
   finance_managed_by text not null default 'bond_originator',
   bank text,
+  finance_status text,
   expected_transfer_date date,
   next_action text,
   owner_user_id uuid references profiles(id) on delete set null,
@@ -1163,6 +1164,7 @@ alter table if exists transactions add column if not exists assigned_attorney_em
 alter table if exists transactions add column if not exists assigned_bond_originator_email text;
 alter table if exists transactions add column if not exists finance_managed_by text not null default 'bond_originator';
 alter table if exists transactions add column if not exists bank text;
+alter table if exists transactions add column if not exists finance_status text;
 alter table if exists transactions add column if not exists expected_transfer_date date;
 alter table if exists transactions add column if not exists owner_user_id uuid references profiles(id) on delete set null;
 alter table if exists transactions add column if not exists access_level text not null default 'shared';

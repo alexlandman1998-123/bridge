@@ -21,7 +21,14 @@ import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { createAgencyCrmLeadActivity, createAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
-import { isUnsafeFallbackAllowed } from '../lib/envValidation'
+import {
+  CANVASSING_UPDATED_EVENT,
+  createCanvassingActivity,
+  createCanvassingProspect,
+  deleteCanvassingProspect,
+  listCanvassingWorkspace,
+  updateCanvassingProspect,
+} from '../lib/canvassingRepository'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 
 const CANVASSING_CONTEXT_TIMEOUT_MS = 20000
@@ -95,8 +102,6 @@ const PROSPECT_LOST_REASONS = [
 ]
 
 const ACTIVITY_TYPES = ['Call', 'WhatsApp', 'Email', 'Door Knock', 'Note', 'Follow-Up']
-const STORAGE_PREFIX = 'itg:agency-canvassing:v1'
-const CANVASSING_UPDATED_EVENT = 'itg:agency-canvassing-updated'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -117,47 +122,6 @@ function getProspectPropertyTypeOptions(value = '') {
     return PROSPECT_PROPERTY_TYPES
   }
   return [current, ...PROSPECT_PROPERTY_TYPES]
-}
-
-function createId(prefix) {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return `${prefix}_${crypto.randomUUID()}`
-  }
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
-}
-
-function getStorageKey(organisationId) {
-  const id = normalizeText(organisationId)
-  if (!id) throw new Error('A resolved workspace is required before loading canvassing data.')
-  return `${STORAGE_PREFIX}:${id}`
-}
-
-function readStore(organisationId) {
-  if (typeof window === 'undefined') {
-    return { prospects: [], activities: [] }
-  }
-  if (!isUnsafeFallbackAllowed()) {
-    return { prospects: [], activities: [] }
-  }
-
-  try {
-    const raw = window.localStorage.getItem(getStorageKey(organisationId))
-    if (!raw) return { prospects: [], activities: [] }
-    const parsed = JSON.parse(raw)
-    return {
-      prospects: Array.isArray(parsed?.prospects) ? parsed.prospects : [],
-      activities: Array.isArray(parsed?.activities) ? parsed.activities : [],
-    }
-  } catch {
-    return { prospects: [], activities: [] }
-  }
-}
-
-function writeStore(organisationId, store) {
-  if (typeof window === 'undefined') return
-  if (!isUnsafeFallbackAllowed()) return
-  window.localStorage.setItem(getStorageKey(organisationId), JSON.stringify(store))
-  window.dispatchEvent(new CustomEvent(CANVASSING_UPDATED_EVENT, { detail: { organisationId } }))
 }
 
 function formatDate(value) {
