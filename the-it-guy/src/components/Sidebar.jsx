@@ -142,7 +142,7 @@ const BRIDGE_BRAND_SUBTITLE = 'Property Transaction OS'
 const BRIDGE_POWERED_LABEL = 'Powered by Bridge'
 const ATTORNEY_SECONDARY_KEYS = new Set(['financials', 'team_departments', 'reports'])
 const BOND_NAV_SECTIONS = [
-  { key: 'main', label: 'Workspace', itemKeys: ['dashboard', 'bond_pipeline', 'transactions', 'bond_developments', 'clients', 'partners', 'bond_reports', 'settings'] },
+  { key: 'main', label: 'Workspace', itemKeys: ['dashboard', 'bond_pipeline', 'transactions', 'bond_developments', 'clients', 'partners', 'bond_reports'] },
 ]
 
 function routeMatches(pathname, target = '') {
@@ -221,13 +221,25 @@ function Sidebar() {
       ),
     [role, workspaceContext],
   )
+  const roleSecondaryNavItems = useMemo(
+    () => roleNavItems.filter((item) => item.navSection === 'secondary'),
+    [roleNavItems],
+  )
   const primaryNavItems = useMemo(
-    () => (role === 'attorney' ? roleNavItems.filter((item) => !ATTORNEY_SECONDARY_KEYS.has(item.key)) : roleNavItems),
+    () => {
+      if (role === 'attorney') return roleNavItems.filter((item) => !ATTORNEY_SECONDARY_KEYS.has(item.key))
+      if (role === 'bond_originator') return roleNavItems.filter((item) => item.navSection !== 'secondary')
+      return roleNavItems
+    },
     [role, roleNavItems],
   )
   const firmNavItems = useMemo(
-    () => (role === 'attorney' ? [...roleNavItems.filter((item) => ATTORNEY_SECONDARY_KEYS.has(item.key)), ...secondaryItems] : secondaryItems),
-    [role, roleNavItems, secondaryItems],
+    () => {
+      if (role === 'attorney') return [...roleNavItems.filter((item) => ATTORNEY_SECONDARY_KEYS.has(item.key)), ...secondaryItems]
+      if (role === 'bond_originator') return roleSecondaryNavItems.length ? roleSecondaryNavItems : secondaryItems
+      return secondaryItems
+    },
+    [role, roleNavItems, roleSecondaryNavItems, secondaryItems],
   )
   const bondGroupedNavSections = useMemo(() => {
     if (role !== 'bond_originator') return []
@@ -404,9 +416,9 @@ function Sidebar() {
         )}
       </div>
 
-      {role !== 'bond_originator' && firmNavItems.length ? <div className="ui-sidebar-divider" /> : null}
+      {firmNavItems.length ? <div className="ui-sidebar-divider" /> : null}
 
-      {role !== 'bond_originator' ? (
+      {firmNavItems.length ? (
         <nav className="ui-nav-stack ui-sidebar-secondary" aria-label="Secondary Navigation">
           {role === 'attorney' ? <p className="ui-sidebar-section-label px-3">Firm</p> : null}
           {firmNavItems.map((item) => renderNavItem(item))}
