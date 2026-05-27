@@ -4,6 +4,24 @@ import {
   canViewFinanceWorkflow,
   resolveFinanceWorkflowOwners,
 } from './bondFinanceWorkflowOwnershipService'
+import {
+  BOND_INTAKE_STATUS_LABELS,
+  BOND_INTAKE_STATUSES,
+  getBondApplicationProgress,
+  getBondIntakeSummary,
+} from '../core/transactions/bondIntakeSelectors'
+import { financeTypeShortLabel } from '../core/transactions/financeType'
+
+export const BOND_OPERATIONAL_QUEUE_KEYS = Object.freeze({
+  NEW_APPLICATIONS: 'new_applications',
+})
+
+const NEW_APPLICATION_INTAKE_STATUSES = new Set([
+  BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION,
+  BOND_INTAKE_STATUSES.BUYER_IN_PROGRESS,
+  BOND_INTAKE_STATUSES.AWAITING_DOCUMENTS,
+  BOND_INTAKE_STATUSES.READY_FOR_REVIEW,
+])
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -24,6 +42,20 @@ function toIso(value) {
   const date = new Date(raw)
   if (Number.isNaN(date.getTime())) return null
   return date.toISOString()
+}
+
+function getTimestamp(value) {
+  const date = new Date(value || 0)
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime()
+}
+
+function getAgeLabel(value) {
+  const timestamp = getTimestamp(value)
+  if (!timestamp) return 'Date pending'
+  const days = Math.max(0, Math.floor((Date.now() - timestamp) / (24 * 60 * 60 * 1000)))
+  if (days === 0) return 'Today'
+  if (days === 1) return '1 day ago'
+  return `${days} days ago`
 }
 
 function isOverdueTransaction(transaction = {}) {
@@ -79,6 +111,158 @@ function normalizeQueueItem(transaction = {}, owners = {}, source = 'canonical')
       toIso(transaction.updated_at || transaction.updatedAt || transaction.last_updated_at || transaction.lastUpdatedAt),
     source,
   }
+}
+
+function getBuyerName(row = {}) {
+  return (
+    normalizeText(row?.buyer?.name) ||
+    normalizeText(row?.transaction?.buyer_name || row?.transaction?.buyerName) ||
+    normalizeText(row?.transaction?.client_name || row?.transaction?.clientName) ||
+    'Buyer pending'
+  )
+}
+
+function getDevelopmentName(row = {}) {
+  return normalizeText(row?.development?.name || row?.transaction?.development_name || row?.transaction?.developmentName) || 'Development pending'
+}
+
+function getPropertyLabel(row = {}) {
+  const unitNumber = normalizeText(row?.unit?.unit_number || row?.transaction?.unit_number || row?.transaction?.unitNumber)
+  const developmentName = getDevelopmentName(row)
+  const privateProperty = normalizeText(
+    row?.transaction?.property_description ||
+      row?.transaction?.property_address_line_1 ||
+      [row?.transaction?.suburb, row?.transaction?.city].map(normalizeText).filter(Boolean).join(', '),
+  )
+  if (unitNumber) return `Unit ${unitNumber}`
+  return privateProperty || developmentName || 'Property pending'
+}
+
+function getAgentName(row = {}) {
+  return (
+    normalizeText(row?.transaction?.assigned_agent || row?.transaction?.assignedAgent) ||
+    normalizeText(row?.transaction?.assigned_agent_email || row?.transaction?.assignedAgentEmail) ||
+    'Source agent pending'
+  )
+}
+
+function looksLikeInternalIdentifier(value = '') {
+  const normalized = normalizeText(value).toLowerCase()
+  return (
+    !normalized ||
+    normalized.includes('@bridge.internal') ||
+    /^organisation-[0-9a-f-]+/.test(normalized) ||
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)
+  )
+}
+
+function getRolePlayers(row = {}) {
+  if (Array.isArray(row.rolePlayers)) return row.rolePlayers
+  if (Array.isArray(row.transactionRolePlayers)) return row.transactionRolePlayers
+  if (Array.isArray(row.transaction_role_players)) return row.transaction_role_players
+  if (Array.isArray(row?.transaction?.rolePlayers)) return row.transaction.rolePlayers
+  if (Array.isArray(row?.transaction?.transactionRolePlayers)) return row.transaction.transactionRolePlayers
+  if (Array.isArray(row?.transaction?.transaction_role_players)) return row.transaction.transaction_role_players
+  return []
+}
+
+function getPreferredOriginatorName(row = {}) {
+  const transaction = row?.transaction || {}
+  const rolePlayer = getRolePlayers(row).find((item) => {
+    const role = normalizeText(item?.role_type || item?.roleType || item?.role || item?.participant_role || item?.participantRole).toLowerCase()
+    return role === 'bond_originator' || role === 'bond originator'
+  })
+  const candidates = [
+    rolePlayer?.display_name,
+    rolePlayer?.displayName,
+    rolePlayer?.name,
+    rolePlayer?.full_name,
+    rolePlayer?.fullName,
+    rolePlayer?.organisation_name,
+    rolePlayer?.organisationName,
+    transaction.preferred_bond_originator_name,
+    transaction.preferredBondOriginatorName,
+    transaction.bond_originator,
+    transaction.bondOriginator,
+  ]
+  const displayName = candidates.map(normalizeText).find((value) => value && !looksLikeInternalIdentifier(value))
+  return displayName || 'Unassigned originator'
+}
+
+function getBondIntakeInput(row = {}) {
+  return {
+    transaction: row?.transaction || row || {},
+    onboardingFormData:
+      row?.onboardingFormData ||
+      row?.onboarding_form_data ||
+      row?.onboarding?.formData ||
+      row?.onboarding?.form_data ||
+      null,
+    documentRequests: row?.documentRequests || row?.document_requests || [],
+    documents: row?.documents || [],
+    rolePlayers: getRolePlayers(row),
+    currentOrganisationId: row?.transaction?.bond_workspace_id || row?.transaction?.organisation_id || null,
+  }
+}
+
+function getIntakeHref(row = {}) {
+  const transactionId = normalizeText(row?.transaction?.id)
+  if (transactionId) return `/transactions/${transactionId}`
+  const unitId = normalizeText(row?.unit?.id)
+  if (unitId) return `/units/${unitId}`
+  return '/applications'
+}
+
+function normalizeToneForUi(tone = '') {
+  if (tone === 'success') return 'emerald'
+  if (tone === 'danger') return 'rose'
+  if (tone === 'warning') return 'amber'
+  if (tone === 'muted') return 'slate'
+  return 'neutral'
+}
+
+export function buildBondNewApplicationViewModel(row = {}) {
+  const intakeInput = getBondIntakeInput(row)
+  const intakeSummary = getBondIntakeSummary(intakeInput)
+  const applicationProgress = getBondApplicationProgress(intakeInput)
+  const documentReadiness = intakeSummary.documentReadiness
+  const transaction = row?.transaction || row || {}
+
+  return {
+    id: normalizeText(transaction.id || row?.unit?.id || row?.buyer?.id) || `${getBuyerName(row)}-${getPropertyLabel(row)}`,
+    transactionId: normalizeText(transaction.id) || null,
+    buyerName: getBuyerName(row),
+    propertyLabel: getPropertyLabel(row),
+    developmentName: getDevelopmentName(row),
+    agentName: getAgentName(row),
+    financeType: financeTypeShortLabel(transaction.finance_type || transaction.financeType),
+    preferredOriginatorName: getPreferredOriginatorName(row),
+    intakeStatus: intakeSummary.intakeStatus,
+    intakeLabel: intakeSummary.readinessLabel,
+    intakeTone: intakeSummary.readinessTone,
+    intakeUiTone: normalizeToneForUi(intakeSummary.readinessTone),
+    bondApplicationStatus: applicationProgress.status,
+    bondApplicationSubmittedAt: applicationProgress.submittedAt,
+    documentRequiredCount: documentReadiness.requiredCount,
+    documentUploadedCount: documentReadiness.uploadedCount,
+    documentMissingCount: documentReadiness.missingCount,
+    missingDocumentLabels: documentReadiness.missingLabels,
+    canAccept: intakeSummary.canAccept,
+    ageLabel: getAgeLabel(applicationProgress.submittedAt || applicationProgress.startedAt || transaction.created_at || transaction.updated_at),
+    href: getIntakeHref(row),
+    sourceRow: row,
+  }
+}
+
+export function isNewBondApplicationRow(row = {}) {
+  const intakeSummary = getBondIntakeSummary(getBondIntakeInput(row))
+  return NEW_APPLICATION_INTAKE_STATUSES.has(intakeSummary.intakeStatus)
+}
+
+export function getNewApplicationsQueue(rows = []) {
+  return (Array.isArray(rows) ? rows : [])
+    .filter(isNewBondApplicationRow)
+    .map(buildBondNewApplicationViewModel)
 }
 
 function hasMissingDocuments(transaction = {}) {
@@ -251,7 +435,9 @@ export function getManagerEscalationsQueue(user = {}, transactions = []) {
 }
 
 export function resolveBondOperationalQueues(user = {}, transactions = []) {
+  const transactionRows = (Array.isArray(transactions) ? transactions : []).map((transaction) => ({ transaction }))
   return {
+    [BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS]: getNewApplicationsQueue(transactionRows),
     my_applications: getMyApplicationsQueue(user, transactions),
     processing_queue: getProcessingQueue(user, transactions),
     missing_documents: getMissingDocumentsQueue(user, transactions),

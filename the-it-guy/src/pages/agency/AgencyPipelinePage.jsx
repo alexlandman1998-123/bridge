@@ -7753,7 +7753,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
           <section className="grid gap-4">
             {!isLeadWorkspaceRoute ? (
-            <article className="min-w-0 overflow-hidden rounded-[18px] border border-[rgba(15,23,42,0.06)] bg-white shadow-[0_16px_42px_rgba(15,23,42,0.045)]">
+            <article className="flex max-h-[calc(100dvh-15rem)] min-h-[520px] min-w-0 flex-col overflow-hidden rounded-[18px] border border-[rgba(15,23,42,0.06)] bg-white shadow-[0_16px_42px_rgba(15,23,42,0.045)]">
               <div className="border-b border-[rgba(15,23,42,0.06)] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-3 py-3 sm:px-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div className="min-w-0">
@@ -7815,7 +7815,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </div>
               </div>
               {!isLeadWorkspaceRoute ? (
-                <div className="sticky top-0 z-[2] border-b border-[rgba(15,23,42,0.06)] bg-white/95 px-3 py-2 backdrop-blur sm:px-4">
+                <div className="shrink-0 border-b border-[rgba(15,23,42,0.06)] bg-white/95 px-3 py-2 backdrop-blur sm:px-4">
                   <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-2 text-[0.78rem]">
                     {[
                       ['Leads', leadOperationalSummary.total],
@@ -7833,7 +7833,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </div>
               ) : null}
               {pipelineViewMode === 'kanban' ? (
-                <div className="max-w-full overflow-x-auto pb-2">
+                <div className="min-h-0 max-w-full flex-1 overflow-x-auto pb-2">
                   <div className="flex min-h-[560px] gap-3 pr-1">
                     {kanbanColumns.map((column) => (
                       <section
@@ -7984,9 +7984,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </div>
               ) : (
               <>
-              <div className="hidden max-w-full overflow-x-auto overscroll-x-contain lg:block">
+              <div className="hidden min-h-0 max-w-full flex-1 overflow-auto overscroll-contain lg:block">
                 <table className="w-full min-w-[1040px] text-sm">
-                  <thead className="sticky top-[38px] z-[1] h-[42px] border-b border-[rgba(15,23,42,0.06)] bg-[#FCFCFD] text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                  <thead className="sticky top-0 z-[1] h-[42px] border-b border-[rgba(15,23,42,0.06)] bg-[#FCFCFD] text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                     <tr>
                       <th className="w-[42px] px-3 py-3"><span className="sr-only">Select</span></th>
                       <th className="w-[31%] px-3 py-3">Lead</th>

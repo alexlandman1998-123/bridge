@@ -19941,6 +19941,116 @@ export async function fetchTransactionsByParticipantSummary({ userId, roleType =
   return rows
 }
 
+export async function enrichRowsWithBondIntakeContext(rows = []) {
+  const safeRows = Array.isArray(rows) ? rows : []
+  if (!safeRows.length) return safeRows
+
+  const transactionIds = [...new Set(safeRows.map((row) => row?.transaction?.id).filter(Boolean))]
+  if (!transactionIds.length) return safeRows
+
+  const client = requireClient()
+
+  const onboardingPromise = (async () => {
+    const query = await client
+      .from('onboarding_form_data')
+      .select('id, transaction_id, purchaser_type, form_data, created_at, updated_at')
+      .in('transaction_id', transactionIds)
+    if (query.error) {
+      if (isMissingTableError(query.error, 'onboarding_form_data') || isMissingSchemaError(query.error) || isPermissionDeniedError(query.error)) {
+        return {}
+      }
+      throw query.error
+    }
+    return (query.data || []).reduce((accumulator, row) => {
+      accumulator[row.transaction_id] = row
+      return accumulator
+    }, {})
+  })()
+
+  const documentsPromise = (async () => {
+    let query = await client
+      .from('documents')
+      .select('id, transaction_id, name, category, document_type, status, uploaded_at, created_at')
+      .in('transaction_id', transactionIds)
+    if (query.error && (isMissingColumnError(query.error, 'document_type') || isMissingColumnError(query.error, 'status') || isMissingColumnError(query.error, 'uploaded_at'))) {
+      query = await client
+        .from('documents')
+        .select('id, transaction_id, name, category, created_at')
+        .in('transaction_id', transactionIds)
+    }
+    if (query.error) {
+      if (isMissingTableError(query.error, 'documents') || isMissingSchemaError(query.error) || isPermissionDeniedError(query.error)) {
+        return {}
+      }
+      throw query.error
+    }
+    return (query.data || []).reduce((accumulator, row) => {
+      if (!accumulator[row.transaction_id]) accumulator[row.transaction_id] = []
+      accumulator[row.transaction_id].push(row)
+      return accumulator
+    }, {})
+  })()
+
+  const documentRequestsPromise = loadTransactionDocumentRequestsByIds(client, transactionIds)
+
+  const rolePlayersPromise = (async () => {
+    let query = await client
+      .from('transaction_role_players')
+      .select('id, transaction_id, role_type, status, name, full_name, display_name, email, organisation_id, organisation_name, workspace_id, created_at, updated_at')
+      .in('transaction_id', transactionIds)
+    if (
+      query.error &&
+      (isMissingColumnError(query.error, 'full_name') ||
+        isMissingColumnError(query.error, 'display_name') ||
+        isMissingColumnError(query.error, 'organisation_id') ||
+        isMissingColumnError(query.error, 'organisation_name') ||
+        isMissingColumnError(query.error, 'workspace_id'))
+    ) {
+      query = await client
+        .from('transaction_role_players')
+        .select('id, transaction_id, role_type, status, name, email, created_at, updated_at')
+        .in('transaction_id', transactionIds)
+    }
+    if (query.error) {
+      if (isMissingTableError(query.error, 'transaction_role_players') || isMissingSchemaError(query.error) || isPermissionDeniedError(query.error)) {
+        return {}
+      }
+      throw query.error
+    }
+    return (query.data || []).reduce((accumulator, row) => {
+      if (!accumulator[row.transaction_id]) accumulator[row.transaction_id] = []
+      accumulator[row.transaction_id].push(row)
+      return accumulator
+    }, {})
+  })()
+
+  const [onboardingByTransactionId, documentsByTransactionId, documentRequestsByTransactionId, rolePlayersByTransactionId] = await Promise.all([
+    onboardingPromise,
+    documentsPromise,
+    documentRequestsPromise,
+    rolePlayersPromise,
+  ])
+
+  return safeRows.map((row) => {
+    const transactionId = row?.transaction?.id
+    if (!transactionId) return row
+    const documentRequests = documentRequestsByTransactionId[transactionId] || []
+    const documents = documentsByTransactionId[transactionId] || []
+    return {
+      ...row,
+      onboardingFormData: onboardingByTransactionId[transactionId] || null,
+      documentRequests,
+      documents,
+      rolePlayers: rolePlayersByTransactionId[transactionId] || [],
+      documentSummary: row.documentSummary || {
+        uploadedCount: documents.length,
+        totalRequired: documentRequests.length,
+        missingCount: Math.max(documentRequests.length - documents.length, 0),
+      },
+    }
+  })
+}
+
 export async function fetchTransactionsListSummary({
   developmentId = null,
   organisationId = '',

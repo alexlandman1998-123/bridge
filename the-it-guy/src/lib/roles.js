@@ -176,6 +176,7 @@ export const APP_NAV_BY_ROLE = {
       navSection: 'main',
       activeMatch: ['/applications', '/pipeline'],
       children: [
+        { key: 'applications_new', label: 'New Applications', to: '/applications?queue=new_applications' },
         { key: 'applications_all', label: 'All Applications', to: '/applications' },
         { key: 'applications_mine', label: 'My Applications', to: '/applications?queue=my_applications' },
         { key: 'applications_ready', label: 'Ready for Submission', to: '/applications?queue=submission_readiness' },

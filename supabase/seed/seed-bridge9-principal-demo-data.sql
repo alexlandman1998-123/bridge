@@ -150,6 +150,246 @@ create table if not exists public.canvassing_activities (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.private_listings (
+  id uuid primary key default gen_random_uuid(),
+  organisation_id uuid not null references public.organisations(id) on delete cascade,
+  assigned_agent_id uuid references public.profiles(id) on delete set null,
+  originating_crm_lead_id text,
+  listing_reference text,
+  listing_status text not null default 'active',
+  listing_visibility text,
+  property_type text,
+  listing_category text,
+  title text,
+  description text,
+  asking_price numeric(14, 2),
+  estimated_value numeric(14, 2),
+  address_line_1 text,
+  address_line_2 text,
+  suburb text,
+  city text,
+  province text,
+  postal_code text,
+  seller_type text,
+  finance_context text,
+  mandate_type text,
+  mandate_status text,
+  seller_onboarding_status text,
+  is_active boolean not null default true,
+  created_by uuid references public.profiles(id) on delete set null,
+  bedrooms numeric,
+  bathrooms numeric,
+  erf_size_sqm numeric,
+  floor_size_sqm numeric,
+  levy_amount numeric(14, 2),
+  rates_amount numeric(14, 2),
+  view_count integer not null default 0,
+  enquiry_count integer not null default 0,
+  listing_age_days integer not null default 0,
+  bridge_listing_status text,
+  branch_id uuid,
+  assigned_agent_name text,
+  assigned_agent_email text,
+  is_demo_data boolean not null default false,
+  demo_metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table if exists public.private_listings
+  add column if not exists organisation_id uuid,
+  add column if not exists assigned_agent_id uuid,
+  add column if not exists originating_crm_lead_id text,
+  add column if not exists listing_reference text,
+  add column if not exists listing_status text not null default 'active',
+  add column if not exists listing_visibility text,
+  add column if not exists property_type text,
+  add column if not exists listing_category text,
+  add column if not exists title text,
+  add column if not exists description text,
+  add column if not exists asking_price numeric(14, 2),
+  add column if not exists estimated_value numeric(14, 2),
+  add column if not exists address_line_1 text,
+  add column if not exists suburb text,
+  add column if not exists city text,
+  add column if not exists province text,
+  add column if not exists postal_code text,
+  add column if not exists seller_type text,
+  add column if not exists finance_context text,
+  add column if not exists mandate_type text,
+  add column if not exists mandate_status text,
+  add column if not exists seller_onboarding_status text,
+  add column if not exists is_active boolean not null default true,
+  add column if not exists created_by uuid,
+  add column if not exists bedrooms numeric,
+  add column if not exists bathrooms numeric,
+  add column if not exists erf_size_sqm numeric,
+  add column if not exists floor_size_sqm numeric,
+  add column if not exists levy_amount numeric(14, 2),
+  add column if not exists rates_amount numeric(14, 2),
+  add column if not exists view_count integer not null default 0,
+  add column if not exists enquiry_count integer not null default 0,
+  add column if not exists listing_age_days integer not null default 0,
+  add column if not exists bridge_listing_status text,
+  add column if not exists is_demo_data boolean not null default false,
+  add column if not exists demo_metadata jsonb not null default '{}'::jsonb,
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now();
+
+create table if not exists public.private_listing_seller_onboarding (
+  id uuid primary key default gen_random_uuid(),
+  private_listing_id uuid not null references public.private_listings(id) on delete cascade,
+  token text not null unique,
+  token_expires_at timestamptz,
+  seller_type text,
+  ownership_structure text,
+  marital_regime text,
+  form_data jsonb not null default '{}'::jsonb,
+  status text not null default 'not_started',
+  submitted_at timestamptz,
+  is_demo_data boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.private_listing_activity (
+  id uuid primary key default gen_random_uuid(),
+  private_listing_id uuid not null references public.private_listings(id) on delete cascade,
+  activity_type text not null,
+  activity_title text,
+  activity_description text,
+  performed_by uuid,
+  visibility text not null default 'internal',
+  metadata jsonb not null default '{}'::jsonb,
+  is_demo_data boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.organisation_preferred_partners (
+  id uuid primary key default gen_random_uuid(),
+  organisation_id uuid not null references public.organisations(id) on delete cascade,
+  partner_type text not null,
+  company_name text not null,
+  contact_person text,
+  email_address text,
+  phone_number text,
+  website text,
+  physical_address text,
+  province text,
+  notes text,
+  is_active boolean not null default true,
+  is_preferred_default boolean not null default false,
+  is_demo_data boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.transaction_finance_details (
+  id uuid primary key default gen_random_uuid(),
+  transaction_id uuid not null unique references public.transactions(id) on delete cascade,
+  proof_of_funds_received boolean,
+  deposit_required boolean,
+  deposit_paid boolean,
+  bond_submitted boolean,
+  bond_approved boolean,
+  grant_signed boolean,
+  proceed_to_attorneys boolean,
+  cash_portion numeric(12, 2),
+  bond_portion numeric(12, 2),
+  bond_originator text,
+  bank text,
+  attorney text,
+  expected_transfer_date date,
+  next_action text,
+  is_demo_data boolean not null default false,
+  updated_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.transaction_role_players (
+  id uuid primary key default gen_random_uuid(),
+  transaction_id uuid not null references public.transactions(id) on delete cascade,
+  role_type text not null,
+  selection_source text not null default 'manual',
+  preferred_partner_id uuid references public.organisation_preferred_partners(id) on delete set null,
+  partner_name text,
+  contact_person text,
+  email_address text,
+  phone_number text,
+  website text,
+  physical_address text,
+  province text,
+  notes text,
+  snapshot_json jsonb not null default '{}'::jsonb,
+  is_demo_data boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.transaction_onboarding (
+  id uuid primary key default gen_random_uuid(),
+  transaction_id uuid not null unique references public.transactions(id) on delete cascade,
+  token text not null unique,
+  purchaser_type text not null default 'individual',
+  status text not null default 'Not Started',
+  is_active boolean not null default true,
+  submitted_at timestamptz,
+  is_demo_data boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.onboarding_form_data (
+  id uuid primary key default gen_random_uuid(),
+  transaction_id uuid not null unique references public.transactions(id) on delete cascade,
+  purchaser_type text not null default 'individual',
+  form_data jsonb not null default '{}'::jsonb,
+  is_demo_data boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.transaction_readiness_states (
+  id uuid primary key default gen_random_uuid(),
+  transaction_id uuid not null unique references public.transactions(id) on delete cascade,
+  onboarding_status text not null default 'Not Started',
+  onboarding_complete boolean not null default false,
+  docs_complete boolean not null default false,
+  missing_required_docs integer not null default 0,
+  uploaded_required_docs integer not null default 0,
+  total_required_docs integer not null default 0,
+  finance_lane_ready boolean not null default false,
+  attorney_lane_ready boolean not null default false,
+  stage_ready boolean not null default false,
+  is_demo_data boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.client_portal_notifications (
+  id uuid primary key default gen_random_uuid(),
+  transaction_id uuid not null references public.transactions(id) on delete cascade,
+  client_portal_token text,
+  client_role text not null default 'buyer',
+  notification_type text not null,
+  title text not null,
+  description text,
+  priority text not null default 'normal',
+  status text not null default 'unread',
+  related_entity_type text,
+  related_entity_id uuid,
+  action_label text,
+  action_route text,
+  visibility text not null default 'client_visible',
+  metadata jsonb not null default '{}'::jsonb,
+  dedupe_key text not null default '',
+  is_demo_data boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  read_at timestamptz,
+  dismissed_at timestamptz
+);
+
 create or replace function pg_temp.bridge9_demo_uuid(p_key text)
 returns uuid
 language sql
@@ -164,6 +404,8 @@ as $$
   )::uuid
 $$;
 
+drop table if exists pg_temp.bridge9_demo_staff;
+
 create temporary table bridge9_demo_staff (
   sort_order integer primary key,
   email text not null,
@@ -172,7 +414,7 @@ create temporary table bridge9_demo_staff (
   profile_role text not null default 'agent',
   phone text not null,
   branch_key text not null
-) on commit drop;
+);
 
 insert into bridge9_demo_staff (sort_order, email, full_name, workspace_role, profile_role, phone, branch_key)
 values
@@ -1037,13 +1279,13 @@ begin
     insert into public.transaction_events (id, transaction_id, event_type, event_data, created_by, created_by_role, visibility_scope, is_demo_data, created_at, updated_at)
     values
       (pg_temp.bridge9_demo_uuid('event-created:' || v_i), v_tx_id, 'TransactionCreated', jsonb_build_object('reference', v_reference, 'seed', 'bridge9_principal_demo'), v_agent.id, 'agent', 'shared', true, v_now - interval '18 days', v_now - interval '18 days'),
-      (pg_temp.bridge9_demo_uuid('event-finance:' || v_i), v_tx_id, 'FinanceUpdated', jsonb_build_object('financeType', v_finance_type, 'bank', case when v_finance_type = 'cash' then 'Proof of funds' else 'Standard Bank' end), v_agent.id, 'bond_originator', 'shared', true, v_now - interval '8 days', v_now - interval '8 days'),
-      (pg_temp.bridge9_demo_uuid('event-portal:' || v_i), v_tx_id, 'ClientPortalUpdated', jsonb_build_object('milestone', v_stage, 'clientVisible', true), v_agent.id, 'system', 'client', true, v_now - interval '1 day', v_now - interval '1 day');
+      (pg_temp.bridge9_demo_uuid('event-finance:' || v_i), v_tx_id, 'TransactionUpdated', jsonb_build_object('updateType', 'FinanceUpdated', 'financeType', v_finance_type, 'bank', case when v_finance_type = 'cash' then 'Proof of funds' else 'Standard Bank' end), v_agent.id, 'bond_originator', 'shared', true, v_now - interval '8 days', v_now - interval '8 days'),
+      (pg_temp.bridge9_demo_uuid('event-portal:' || v_i), v_tx_id, 'WorkflowStepUpdated', jsonb_build_object('updateType', 'ClientPortalUpdated', 'milestone', v_stage, 'clientVisible', true, 'clientVisibility', 'client_portal_notification'), v_agent.id, 'system', 'shared', true, v_now - interval '1 day', v_now - interval '1 day');
 
     insert into public.transaction_notifications (id, transaction_id, user_id, role_type, notification_type, title, message, is_read, dedupe_key, event_type, event_data, is_demo_data, created_at, updated_at)
     values
-      (pg_temp.bridge9_demo_uuid('notification-principal:' || v_i), v_tx_id, v_principal_id, 'principal', case when v_i in (20, 21, 22) then 'risk_alert' else 'workflow_update' end, case when v_i in (20, 21, 22) then 'Deal needs attention' else 'Workflow updated' end, case when v_i = 1 then 'Hero transaction is presentation-ready: bond approval, attorney instruction and buyer portal are active.' else 'Bridge9 demo transaction activity updated.' end, v_i % 3 = 0, 'bridge9-principal-' || v_reference, 'TransactionUpdated', jsonb_build_object('seed', 'bridge9_principal_demo', 'reference', v_reference), true, v_now - ((v_i % 7) || ' days')::interval, v_now),
-      (pg_temp.bridge9_demo_uuid('notification-agent:' || v_i), v_tx_id, v_agent.id, 'agent', 'next_action', 'Next action due', case when v_i in (20, 21, 22) then 'Please update the delayed workflow note before the principal review.' else 'Client-facing milestone is ready for review.' end, false, 'bridge9-agent-' || v_reference, 'NextActionDue', jsonb_build_object('seed', 'bridge9_principal_demo'), true, v_now - ((v_i % 5) || ' days')::interval, v_now);
+      (pg_temp.bridge9_demo_uuid('notification-principal:' || v_i), v_tx_id, v_principal_id, 'internal_admin', case when v_i in (20, 21, 22) then 'overdue_missing_docs' else 'readiness_updated' end, case when v_i in (20, 21, 22) then 'Deal needs attention' else 'Workflow updated' end, case when v_i = 1 then 'Hero transaction is presentation-ready: bond approval, attorney instruction and buyer portal are active.' else 'Bridge9 demo transaction activity updated.' end, v_i % 3 = 0, 'bridge9-principal-' || v_reference, 'TransactionUpdated', jsonb_build_object('seed', 'bridge9_principal_demo', 'reference', v_reference, 'demoRole', 'principal', 'demoNotificationType', case when v_i in (20, 21, 22) then 'risk_alert' else 'workflow_update' end), true, v_now - ((v_i % 7) || ' days')::interval, v_now),
+      (pg_temp.bridge9_demo_uuid('notification-agent:' || v_i), v_tx_id, v_agent.id, 'agent', 'lane_handoff', 'Next action due', case when v_i in (20, 21, 22) then 'Please update the delayed workflow note before the principal review.' else 'Client-facing milestone is ready for review.' end, false, 'bridge9-agent-' || v_reference, 'WorkflowStepUpdated', jsonb_build_object('seed', 'bridge9_principal_demo', 'demoNotificationType', 'next_action'), true, v_now - ((v_i % 5) || ' days')::interval, v_now);
 
     insert into public.client_portal_notifications (id, transaction_id, client_portal_token, client_role, notification_type, title, description, priority, status, related_entity_type, related_entity_id, action_label, action_route, visibility, metadata, dedupe_key, is_demo_data, created_at, updated_at)
     values

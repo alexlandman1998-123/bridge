@@ -30,7 +30,12 @@ import { TRANSACTION_SCOPE_OPTIONS, getTransactionScopeForRow } from '../core/tr
 import { useWorkspace } from '../context/WorkspaceContext'
 import { resolveEffectiveBondAssignment } from '../services/bondAssignmentService'
 import {
+  BOND_OPERATIONAL_QUEUE_KEYS,
+  isNewBondApplicationRow,
+} from '../services/bondOperationalQueueService'
+import {
   deleteTransactionEverywhere,
+  enrichRowsWithBondIntakeContext,
   fetchDevelopmentOptions,
   fetchTransactionsByParticipantSummary,
   fetchTransactionsListSummary,
@@ -493,6 +498,10 @@ function isBondQueueMatch(row, queue, profile = null) {
     )
   }
 
+  if (normalizedQueue === BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS) {
+    return isNewBondApplicationRow(row)
+  }
+
   if (normalizedQueue === 'missing_documents') {
     return missingDocuments > 0 || stage === 'docs_requested'
   }
@@ -709,7 +718,7 @@ function Units() {
     const allowedRiskValues = new Set(['all', 'stale', 'blocked', 'healthy'])
     const allowedBlockedValues = new Set(['all', 'blocked', 'clear'])
     const allowedAssignedValues = new Set(['all', 'mine'])
-    const allowedQueueValues = new Set(['all', 'my_applications', 'missing_documents', 'submission_readiness', 'bank_feedback', 'overdue_applications', 'compliance_review'])
+    const allowedQueueValues = new Set([BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS, 'all', 'my_applications', 'missing_documents', 'submission_readiness', 'bank_feedback', 'overdue_applications', 'compliance_review'])
     const allowedTransactionStatusValues = new Set(['all', 'active', 'registered', 'completed', 'archived', 'cancelled'])
     const allowedDateRangeValues = new Set(['all', '7d', '30d', '90d'])
     const allowedSourceValues = new Set(ATTORNEY_SOURCE_OPTIONS.map((item) => item.value))
@@ -925,6 +934,10 @@ function Units() {
               }),
           fetchDevelopmentOptions(),
         ])
+      }
+
+      if (isBondRole) {
+        unitsData = await enrichRowsWithBondIntakeContext(unitsData || [])
       }
       timer.mark('fetch_end', { fetchedRows: unitsData.length })
 
@@ -1713,7 +1726,8 @@ function Units() {
         isBondRole ? (
           <BondApplicationsTable
             rows={rows}
-            title="Applications Queue"
+            title={filters.queue === BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS ? 'New Applications' : 'Applications Queue'}
+            queue={filters.queue}
             onRowClick={(row) => handleOpenBondApplication(row)}
           />
         ) : isAttorneyRole ? (
