@@ -197,11 +197,11 @@ function makeSnapshot(overrides = {}) {
       },
     })
     assert.doesNotMatch(commandCenterMarkup, /Good morning, Alex/)
-    assert.match(commandCenterMarkup, /Bond Originator Command Center/)
-    assert.match(commandCenterMarkup, /13 active applications • 4 awaiting documents • 2 ready for review • 3 bank responses today/)
-    assert.match(commandCenterMarkup, /Create Application/)
-    assert.match(commandCenterMarkup, /Invite Partner/)
-    assert.match(commandCenterMarkup, /Export Report/)
+    assert.doesNotMatch(commandCenterMarkup, /Bond Originator Command Center/)
+    assert.doesNotMatch(commandCenterMarkup, /13 active applications • 4 awaiting documents • 2 ready for review • 3 bank responses today/)
+    assert.doesNotMatch(commandCenterMarkup, /Create Application/)
+    assert.doesNotMatch(commandCenterMarkup, /Invite Partner/)
+    assert.doesNotMatch(commandCenterMarkup, /Export Report/)
 
     const kpiOrder = [
       'Active Applications',

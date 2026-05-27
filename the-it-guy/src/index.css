@@ -543,6 +543,16 @@
     box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
   }
 
+  .ui-workspace-switcher-static .ui-workspace-switcher-trigger {
+    cursor: default;
+  }
+
+  .ui-workspace-switcher-static .ui-workspace-switcher-trigger:hover {
+    border-color: #d9e4ef;
+    background: rgba(255, 255, 255, 0.74);
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.035);
+  }
+
   .ui-workspace-switcher-trigger:focus-visible {
     outline: 3px solid rgba(47, 111, 159, 0.2);
     outline-offset: 2px;

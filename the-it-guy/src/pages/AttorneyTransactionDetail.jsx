@@ -4,6 +4,7 @@ import {
   AtSign,
   Building2,
   CalendarDays,
+  Check,
   ChevronRight,
   CircleDollarSign,
   Clock3,
@@ -74,6 +75,15 @@ const ATTORNEY_WORKSPACE_TABS = [
   { id: 'transfer', label: 'Transfer' },
   { id: 'tasks', label: 'Tasks' },
   { id: 'activity', label: 'Activity' },
+]
+
+const AGENT_WORKSPACE_TABS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'documents', label: 'Documents' },
+  { id: 'finance', label: 'Finance' },
+  { id: 'transfer', label: 'Transfer' },
+  { id: 'activity', label: 'Activity' },
+  { id: 'stakeholders', label: 'Roleplayers' },
 ]
 
 const ATTORNEY_DOCUMENT_CATEGORIES = [
@@ -359,7 +369,8 @@ const currency = new Intl.NumberFormat('en-ZA', {
 })
 
 function formatDate(value) {
-  const date = new Date(value || 0)
+  if (!value) return 'Not set'
+  const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'Not set'
   return date.toLocaleDateString('en-ZA', {
     day: '2-digit',
@@ -369,7 +380,8 @@ function formatDate(value) {
 }
 
 function formatDateTime(value) {
-  const date = new Date(value || 0)
+  if (!value) return 'Not set'
+  const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'Not set'
   return date.toLocaleString('en-ZA', {
     day: '2-digit',
@@ -737,6 +749,19 @@ function getMatterStageProgressIndex({ transferStageKey = '', transferStageLabel
   return 0
 }
 
+function getMatterStageExplanation(stage = {}) {
+  const key = String(stage?.key || '').trim().toLowerCase()
+  if (key === 'instruction') return 'The transaction has been opened and the instruction details are being confirmed.'
+  if (key === 'fica') return 'Client onboarding and FICA requirements are being collected and reviewed.'
+  if (key === 'drafting') return 'Transfer documents are being prepared before signing can be scheduled.'
+  if (key === 'signing') return 'Signature packs and signing appointments are being coordinated with the parties.'
+  if (key === 'guarantees') return 'Finance guarantees and related bank requirements are being confirmed.'
+  if (key === 'lodgement') return 'The matter is being prepared for lodgement at the Deeds Office.'
+  if (key === 'registration') return 'Registration is in progress or ready to be confirmed with the transaction team.'
+  if (key === 'complete') return 'The transaction has reached completion and close-out activity can be finalised.'
+  return 'The transaction team is updating the current workflow stage.'
+}
+
 const ACTIVITY_FILTER_OPTIONS = [
   { key: 'all', label: 'All' },
   { key: 'transfer', label: 'Transfer' },
@@ -1068,11 +1093,12 @@ function buildMatterPreviewShell(matterPreview, transactionId) {
   }
 }
 
-function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange }) {
+function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange, premium = false }) {
   const iconByTab = {
     overview: Workflow,
     transfer: Workflow,
     parties: UsersRound,
+    stakeholders: UsersRound,
     documents: FileText,
     finance: CircleDollarSign,
     tasks: Clock3,
@@ -1080,8 +1106,11 @@ function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange }) {
   }
 
   return (
-    <nav className="no-print rounded-[16px] border border-borderDefault bg-white px-2 py-2 shadow-[0_10px_22px_rgba(15,23,42,0.04)]" aria-label="Matter workspace tabs">
-      <div className="flex min-w-0 gap-1 overflow-x-auto">
+    <nav
+      className={`${premium ? 'rounded-[22px] p-2 shadow-[0_14px_32px_rgba(15,23,42,0.055)]' : 'rounded-[16px] px-2 py-2 shadow-[0_10px_22px_rgba(15,23,42,0.04)]'} no-print w-full border border-borderDefault bg-white`}
+      aria-label="Transaction workspace tabs"
+    >
+      <div className={`${premium ? 'flex min-w-0 gap-2 overflow-x-auto xl:grid xl:grid-cols-6' : 'flex min-w-0 gap-1 overflow-x-auto'}`}>
         {tabs.map((tab) => {
           const active = activeTab === tab.id
           const Icon = iconByTab[tab.id] || FileText
@@ -1089,9 +1118,11 @@ function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange }) {
             <button
               key={tab.id}
               type="button"
-              className={`inline-flex min-h-[38px] shrink-0 items-center gap-2 rounded-[11px] border px-3 text-sm font-semibold transition ${
+              className={`${premium ? 'min-h-[46px] flex-1 justify-center rounded-[15px] px-4' : 'min-h-[38px] shrink-0 rounded-[11px] px-3'} inline-flex items-center gap-2 border text-sm font-semibold transition ${
                 active
-                  ? 'border-primary/15 bg-primarySoft text-primary shadow-[0_4px_12px_rgba(15,70,110,0.08)]'
+                  ? premium
+                    ? 'border-primary bg-primary text-white shadow-[0_10px_20px_rgba(15,70,110,0.16)]'
+                    : 'border-primary/15 bg-primarySoft text-primary shadow-[0_4px_12px_rgba(15,70,110,0.08)]'
                   : 'border-transparent text-textMuted hover:border-borderSoft hover:bg-surfaceAlt hover:text-textStrong'
               }`}
               onClick={() => onChange?.(tab.id)}
@@ -1112,6 +1143,9 @@ function MatterOverviewHeader({
   statusClassName,
   propertyLabel,
   subtitle,
+  clientTitle = '',
+  transactionReference = '',
+  transactionStageLabel = '',
   buyerName,
   sellerName,
   agentName,
@@ -1122,7 +1156,110 @@ function MatterOverviewHeader({
   daysActiveLabel = '',
   updatedLabel = '',
   onAction,
+  isAgentView = false,
 }) {
+  const currentStage = MATTER_STAGE_MILESTONES[Math.min(progressIndex, MATTER_STAGE_MILESTONES.length - 1)] || MATTER_STAGE_MILESTONES[0]
+
+  if (isAgentView) {
+    return (
+      <div className="space-y-4">
+        <section className="rounded-[26px] border border-borderDefault bg-white px-6 py-6 shadow-[0_18px_42px_rgba(15,23,42,0.065)] lg:px-7">
+          <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusClassName}`}>
+                  {statusLabel}
+                </span>
+                <span className="inline-flex items-center rounded-full border border-success/25 bg-successSoft px-2.5 py-1 text-[0.72rem] font-semibold text-success">
+                  {matterHealthLabel}
+                </span>
+              </div>
+              <h1 className="mt-4 truncate text-[2rem] font-bold tracking-[-0.04em] text-textStrong md:text-[2.45rem]">
+                {clientTitle || buyerName || 'Client'}
+              </h1>
+              <p className="mt-1.5 max-w-4xl text-base leading-7 text-textMuted">
+                {propertyLabel || subtitle || 'Property details pending'}
+              </p>
+              <div className="mt-5 flex flex-wrap gap-2.5 text-sm">
+                <span className="rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1.5 text-textBody">
+                  <span className="font-semibold text-textStrong">Transaction:</span> {transactionReference || title}
+                </span>
+                <span className="rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1.5 text-textBody">
+                  <span className="font-semibold text-textStrong">Status:</span> {statusLabel}
+                </span>
+                <span className="rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1.5 text-textBody">
+                  <span className="font-semibold text-textStrong">Stage:</span> {transactionStageLabel || currentStage.label}
+                </span>
+              </div>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2 xl:justify-end">
+              <div className="min-w-[210px] rounded-[18px] border border-borderSoft bg-surfaceAlt px-4 py-3">
+                <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Health Summary</span>
+                <strong className="mt-1 block text-sm text-textStrong">{matterHealthLabel}</strong>
+                <span className="mt-1 block text-xs text-textMuted">{daysActiveLabel}{updatedLabel ? ` • Updated ${updatedLabel}` : ''}</span>
+              </div>
+              <Button type="button" variant="secondary" onClick={onAction}>
+                <MoreHorizontal size={14} />
+                Actions
+              </Button>
+            </div>
+          </div>
+        </section>
+
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {metrics.map((item) => {
+            const Icon = item.icon || FileText
+            return (
+              <article key={item.label} className="flex min-h-[118px] min-w-0 items-center gap-3 rounded-[18px] border border-borderDefault bg-white px-4 py-3.5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-[12px] ${item.tone || 'bg-primarySoft text-primary'}`}>
+                  {createElement(Icon, { size: 16 })}
+                </span>
+                <div className="min-w-0">
+                  <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-textMuted">{item.label}</span>
+                  <strong className="mt-1.5 block truncate text-[0.98rem] font-bold text-textStrong">{item.value || 'Not captured'}</strong>
+                </div>
+              </article>
+            )
+          })}
+        </section>
+
+        <section className="rounded-[22px] border border-borderDefault bg-white px-5 py-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-textStrong">Current Stage Progress</h2>
+              <p className="mt-1 text-sm text-textMuted">Current stage: <span className="font-semibold text-textStrong">{currentStage.label}</span></p>
+            </div>
+            <span className="rounded-full border border-primary/15 bg-primarySoft px-3 py-1 text-xs font-semibold text-primary">
+              {currentStage.label}
+            </span>
+          </div>
+          <div className="overflow-x-auto pb-1">
+            <div className="grid min-w-[920px] grid-cols-8 gap-3">
+              {MATTER_STAGE_MILESTONES.map((step, index) => {
+                const completed = index < progressIndex
+                const current = index === progressIndex
+                return (
+                  <div key={step.key} className="min-w-0">
+                    <div className={`h-2.5 rounded-full ${completed ? 'bg-success' : current ? 'bg-primary' : 'bg-slate-200'}`} />
+                    <div className="mt-3 flex items-center gap-2">
+                      <span className={`inline-flex size-4 shrink-0 items-center justify-center rounded-full ${completed ? 'bg-success text-white' : current ? 'bg-primary text-white ring-4 ring-primary/10' : 'bg-slate-300 text-white'}`}>
+                        {completed ? <Check size={11} strokeWidth={3} /> : null}
+                      </span>
+                      <span className={`truncate text-sm font-semibold ${completed || current ? 'text-textStrong' : 'text-textMuted'}`}>
+                        {step.label}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+          <p className="mt-5 max-w-3xl text-sm leading-6 text-textMuted">{getMatterStageExplanation(currentStage)}</p>
+        </section>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
       <section className="rounded-[24px] border border-borderDefault bg-white px-5 py-6 shadow-[0_14px_34px_rgba(15,23,42,0.06)] md:px-6">
@@ -1912,12 +2049,17 @@ function AttorneyTransactionDetail() {
   )
   const transactionEvents = data?.transactionEvents ?? EMPTY_ARRAY
   const transactionParticipants = data?.transactionParticipants ?? EMPTY_ARRAY
+  const isAgentTransactionView = workspaceRole === 'agent'
   const requestedWorkspaceMenu = useMemo(() => {
     if (workspaceMenu === 'financials' || workspaceMenu === 'bond') return 'finance'
     if (workspaceMenu === 'cancellation') return 'transfer'
+    if (isAgentTransactionView && (workspaceMenu === 'parties' || workspaceMenu === 'tasks' || workspaceMenu === 'buyer' || workspaceMenu === 'seller')) {
+      return 'overview'
+    }
     return workspaceMenu
-  }, [workspaceMenu])
-  const activeWorkspaceMenu = ATTORNEY_WORKSPACE_TABS.some((tab) => tab.id === requestedWorkspaceMenu) ? requestedWorkspaceMenu : 'overview'
+  }, [isAgentTransactionView, workspaceMenu])
+  const availableWorkspaceTabs = isAgentTransactionView ? AGENT_WORKSPACE_TABS : ATTORNEY_WORKSPACE_TABS
+  const activeWorkspaceMenu = availableWorkspaceTabs.some((tab) => tab.id === requestedWorkspaceMenu) ? requestedWorkspaceMenu : 'overview'
 
   useEffect(() => {
     let active = true
@@ -1993,7 +2135,7 @@ function AttorneyTransactionDetail() {
     : documents.length
       ? `${documents.length} files uploaded`
       : 'No requirements configured'
-  const workspaceMenuTabs = ATTORNEY_WORKSPACE_TABS.map((tab) => {
+  const workspaceMenuTabs = availableWorkspaceTabs.map((tab) => {
     if (tab.id === 'parties') {
       return { ...tab, meta: `${transactionParticipants.length} parties` }
     }
@@ -2649,7 +2791,7 @@ function AttorneyTransactionDetail() {
         description: 'Matter-level next action',
         dueDate: transaction?.target_registration_date || transaction?.expected_transfer_date,
         workflow: 'Overview',
-        action: 'View matter',
+        action: isAgentTransactionView ? 'View transaction' : 'View matter',
       })
     }
     if (blockedLane) {
@@ -2680,7 +2822,7 @@ function AttorneyTransactionDetail() {
       })
     }
     return rows.slice(0, 4)
-  }, [transaction?.expected_transfer_date, transaction?.next_action, transaction?.target_registration_date, transaction?.updated_at, workflowLanes])
+  }, [isAgentTransactionView, transaction?.expected_transfer_date, transaction?.next_action, transaction?.target_registration_date, transaction?.updated_at, workflowLanes])
   const getWorkspaceMenuForTask = useCallback((item) => {
     const workflowLabel = `${item?.workflow || ''} ${item?.action || ''}`.toLowerCase()
     if (workflowLabel.includes('document') || workflowLabel.includes('upload')) return 'documents'
@@ -3668,9 +3810,12 @@ function AttorneyTransactionDetail() {
           </Link>
             <MatterOverviewHeader
               title={workspaceReference}
+              clientTitle={buyer?.name || transaction?.buyer_name || 'Client'}
+              transactionReference={workspaceReference}
+              transactionStageLabel={transferStageLabel}
               statusLabel={hydratingDetail ? 'Refreshing' : lifecycleLabel}
               statusClassName={getLifecycleStateClasses(lifecycleState)}
-              propertyLabel={matterHeadline}
+              propertyLabel={isAgentTransactionView ? (propertyAddress || matterHeadline) : matterHeadline}
               subtitle={matterSubtitle}
               buyerName={buyer?.name}
               sellerName={transaction?.seller_name}
@@ -3682,33 +3827,13 @@ function AttorneyTransactionDetail() {
               daysActiveLabel={daysBetween(transaction?.created_at)}
               updatedLabel={formatShortDayMonth(transaction?.updated_at || transaction?.created_at)}
               onAction={() => void handleOpenRegistrationFlow()}
+              isAgentView={isAgentTransactionView}
             />
-          <MatterWorkspaceTabs tabs={workspaceMenuTabs} activeTab={activeWorkspaceMenu} onChange={setWorkspaceMenu} />
+          <MatterWorkspaceTabs tabs={workspaceMenuTabs} activeTab={activeWorkspaceMenu} onChange={setWorkspaceMenu} premium={isAgentTransactionView} />
         </div>
       )}
     >
       <div className="space-y-6">
-        <div className="sticky top-0 z-30 -mx-1 rounded-b-[16px] border border-t-0 border-borderDefault bg-white/95 px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.08)] backdrop-blur no-print">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <strong className="truncate text-sm text-textStrong">{workspaceReference}</strong>
-                <span className={`rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold ${getLifecycleStateClasses(lifecycleState)}`}>
-                  {lifecycleLabel}
-                </span>
-                <span className="rounded-full border border-borderSoft bg-surfaceAlt px-2 py-0.5 text-[0.68rem] font-semibold text-textMuted">
-                  {transferStageLabel}
-                </span>
-              </div>
-              <p className="mt-1 truncate text-xs text-textMuted">{buyer?.name || 'Buyer pending'} / {transaction?.seller_name || 'Seller pending'} • {propertyAddress || matterHeadline}</p>
-            </div>
-            <Button type="button" size="sm" variant="secondary" onClick={() => void handleOpenRegistrationFlow()}>
-              <MoreHorizontal size={14} />
-              Actions
-            </Button>
-          </div>
-        </div>
-
         {['overview', 'transfer'].includes(activeWorkspaceMenu) ? (
           <>
             <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
@@ -3796,8 +3921,12 @@ function AttorneyTransactionDetail() {
                 <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <h3 className="text-sm font-semibold text-textStrong">Matter Feed</h3>
-                      <p className="mt-1 text-sm text-textMuted">Collaborative matter updates, notes, documents, and workflow movement.</p>
+                      <h3 className="text-sm font-semibold text-textStrong">{isAgentTransactionView ? 'Transaction Feed' : 'Matter Feed'}</h3>
+                      <p className="mt-1 text-sm text-textMuted">
+                        {isAgentTransactionView
+                          ? 'Client, property, document, and transfer updates for this transaction.'
+                          : 'Collaborative matter updates, notes, documents, and workflow movement.'}
+                      </p>
                     </div>
                     <Button type="button" variant="ghost" size="sm" onClick={() => setWorkspaceMenu('activity')}>
                       View all activity
@@ -3918,7 +4047,7 @@ function AttorneyTransactionDetail() {
                   </div>
                 </OverviewSidePanel>
 
-                <OverviewSidePanel title="Matter Health">
+                <OverviewSidePanel title={isAgentTransactionView ? 'Health Summary' : 'Matter Health'}>
                   <div className="space-y-3">
                     {[
                       ['Workflow Health', matterHealthLabel, GaugeCircle],

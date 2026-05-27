@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowRight, Banknote, CircleCheck, CircleDashed, CircleAlert, Clock3, FileCheck2, FileText, HandCoins, UsersRound } from 'lucide-react'
-import BondDashboardHeader from './BondDashboardHeader'
 import BondEmptyState from './BondEmptyState'
 import BondPageShell from './BondPageShell'
 import BondSectionCard from './BondSectionCard'
@@ -56,7 +55,7 @@ export default function BondDashboard({
 }) {
   const safeWorkspaceId = normalizeText(workspaceId)
   const [rangeKey] = useState('this_month')
-  const [developmentId, setDevelopmentId] = useState('all')
+  const developmentId = 'all'
   const [state, setState] = useState(
     initialState || {
       loading: true,
@@ -103,24 +102,8 @@ export default function BondDashboard({
     void loadDashboard()
   }, [loadDashboard])
 
-  function onCreateApplication() {
-    if (typeof window === 'undefined') return
-    window.dispatchEvent(new Event('itg:open-new-transaction'))
-  }
-
-  function onInvitePartner() {
-    if (typeof window === 'undefined') return
-    window.dispatchEvent(new Event('itg:open-invite-partner'))
-  }
-
-  function onExportReport() {
-    if (typeof window === 'undefined') return
-    window.dispatchEvent(new Event('itg:export-bond-dashboard-report'))
-  }
-
   const snapshot = state.snapshot || {}
   const heroKpis = snapshot.heroKpis || []
-  const headerSummary = snapshot.headerSummary || {}
   const visibleActiveApplications = useMemo(
     () => {
       const activeApplications = Array.isArray(snapshot.activeApplications) ? snapshot.activeApplications : []
@@ -142,7 +125,6 @@ export default function BondDashboard({
   const teamPerformance = snapshot.teamPerformance || []
   const connectedPartners = snapshot.connectedPartners || []
   const heatmapRows = snapshot.operationalHeatmap || []
-  const developmentOptions = snapshot.developmentOptions || [{ id: 'all', value: 'all', label: 'All Developments' }]
 
   if (!safeWorkspaceId) {
     return (
@@ -164,31 +146,6 @@ export default function BondDashboard({
 
   return (
     <BondPageShell className="space-y-4">
-      <BondDashboardHeader
-        summaryText={state.loading ? 'Loading active applications, document queues, review-ready applications, and bank responses.' : headerSummary.text}
-        developmentControl={
-          !state.loading && snapshot ? (
-            <label className="block">
-              <span className="sr-only">Development filter</span>
-              <select
-                value={developmentId}
-                onChange={(event) => setDevelopmentId(event.target.value)}
-                className="h-10 w-full rounded-[12px] border border-[#dbe5f0] bg-[#fbfdff] px-3 text-sm font-semibold text-[#17324d] outline-none transition focus:border-[#bbcbdd]"
-              >
-                {developmentOptions.map((option) => (
-                  <option key={option.id || option.value} value={option.value || option.id}>
-                    {option.label || option.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null
-        }
-        onCreate={onCreateApplication}
-        onInvitePartner={onInvitePartner}
-        onExportReport={onExportReport}
-      />
-
       {state.loading ? (
         <BondEmptyState
           title="Loading bond command center…"

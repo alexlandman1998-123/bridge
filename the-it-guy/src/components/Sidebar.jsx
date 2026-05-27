@@ -394,10 +394,24 @@ function Sidebar() {
           )}
         </div>
         <div className="ui-sidebar-workspace">
-          <WorkspaceSwitcher
-            currentPath={`${location.pathname}${location.search || ''}`}
-            onSelectWorkspace={(path) => navigate(path)}
-          />
+          {role === 'bond_originator' ? (
+            <div className="ui-workspace-switcher ui-workspace-switcher-static" aria-label="Bond originator module">
+              <div className="ui-workspace-switcher-trigger">
+                <span className="ui-workspace-switcher-icon">
+                  <KeyRound size={16} />
+                </span>
+                <span className="min-w-0 flex-1 text-left">
+                  <span className="ui-workspace-switcher-kicker">Module</span>
+                  <span className="ui-workspace-switcher-label">Bond Originator</span>
+                </span>
+              </div>
+            </div>
+          ) : (
+            <WorkspaceSwitcher
+              currentPath={`${location.pathname}${location.search || ''}`}
+              onSelectWorkspace={(path) => navigate(path)}
+            />
+          )}
         </div>
       </div>
 
