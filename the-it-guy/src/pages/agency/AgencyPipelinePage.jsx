@@ -3202,6 +3202,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedLeadOnboardingCompleted =
     selectedLeadStageKey.includes('onboarding completed') ||
     selectedLeadOnboardingStatusKey === 'completed'
+  const selectedLeadBuyerOnboardingStatusKey = normalizeText(
+    selectedLeadLifecycleDiagnostic?.onboarding?.status ||
+      selectedLeadLifecycleDiagnostic?.transaction?.onboarding_status ||
+      selectedLead?.buyerOnboardingStatus ||
+      selectedLead?.clientOnboardingStatus,
+  ).toLowerCase()
+  const selectedLeadBuyerOnboardingSubmitted = Boolean(
+    selectedLeadBuyerOnboardingStatusKey.includes('submitted') ||
+      selectedLeadBuyerOnboardingStatusKey.includes('complete') ||
+      selectedLeadLifecycleDiagnostic?.onboarding?.submitted_at ||
+      selectedLeadLifecycleDiagnostic?.transaction?.onboarding_completed_at,
+  )
+  const selectedLeadBuyerOnboardingActionLabel =
+    canonicalOfferActionId === `lead:${selectedLead?.leadId}:buyer-onboarding`
+      ? 'Sending...'
+      : selectedLeadBuyerOnboardingSubmitted
+        ? 'Resend Link to Portal'
+        : selectedLeadLinkedTransactionId
+          ? 'Resend Buyer Onboarding'
+          : 'Send Buyer Onboarding'
+  const selectedLeadSellerOnboardingActionLabel = isSellerOnboardingSending
+    ? 'Sending...'
+    : selectedLeadOnboardingCompleted
+      ? 'Resend Link to Portal'
+      : selectedLeadOnboardingStatusKey === 'not_sent'
+        ? 'Send Seller Onboarding'
+        : 'Resend Seller Onboarding'
 
   useEffect(() => {
     if (!selectedLead || !selectedLeadIsSeller || selectedLeadOnboardingCompleted || !organisationId) return
@@ -8618,15 +8645,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           variant="secondary"
                           size="sm"
                           onClick={handleSendSellerOnboarding}
-                          disabled={selectedLeadOnboardingCompleted || isSellerOnboardingSending}
+                          disabled={isSellerOnboardingSending}
                         >
-	                          {selectedLeadOnboardingCompleted
-	                            ? 'Onboarding Completed'
-	                            : isSellerOnboardingSending
-	                              ? 'Sending…'
-	                              : selectedLeadOnboardingStatusKey === 'not_sent'
-	                                ? 'Send Seller Onboarding'
-	                                : 'Resend Seller Onboarding'}
+                          {selectedLeadSellerOnboardingActionLabel}
                         </Button>
                         <Button type="button" variant="secondary" size="sm" onClick={handleScheduleSellerAppointment}>
                           Schedule
@@ -8665,6 +8686,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           disabled={Boolean(selectedLead.convertedTransactionId || selectedLead.convertedDealId)}
                         >
                           {selectedLead.convertedTransactionId || selectedLead.convertedDealId ? 'Transaction Created' : 'Create Offer'}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => void handleSendBuyerOnboardingFromLead()}
+                          disabled={canonicalOfferActionId === `lead:${selectedLead?.leadId}:buyer-onboarding`}
+                        >
+                          {selectedLeadBuyerOnboardingActionLabel}
                         </Button>
                         <Button type="button" variant="secondary" size="sm" onClick={() => handleOpenAppointmentModal()}>
                           Schedule
@@ -9901,7 +9931,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           disabled={canonicalOfferActionId === `lead:${selectedLead?.leadId}:buyer-onboarding`}
                           onClick={() => void handleSendBuyerOnboardingFromLead()}
                         >
-                          {selectedLeadLinkedTransactionId ? 'Send Buyer Onboarding' : 'Create Transaction & Send Onboarding'}
+                          {selectedLeadBuyerOnboardingActionLabel}
                         </Button>
                       ) : null}
                     </section>

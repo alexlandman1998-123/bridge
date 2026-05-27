@@ -1513,7 +1513,7 @@ function AppRoutes() {
               <Route
                 path="/transactions/:transactionId"
                 element={
-                  <RoleRoute allowedRoles={['developer', 'attorney', 'bond_originator']}>
+                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
                     <AppErrorBoundary scope="transaction-workspace" title="Transaction workspace failed to load">
                       <AttorneyTransactionDetail />
                     </AppErrorBoundary>
