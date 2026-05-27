@@ -30,15 +30,15 @@ function makeReadyRow(overrides = {}) {
       buyer_name: 'Buyer Ready',
       ...overrides.transaction,
     },
-    onboardingFormData: overrides.onboardingFormData || submittedOnboarding(),
-    documentRequests: overrides.documentRequests || [
+    onboardingFormData: Object.prototype.hasOwnProperty.call(overrides, 'onboardingFormData') ? overrides.onboardingFormData : submittedOnboarding(),
+    documentRequests: Object.prototype.hasOwnProperty.call(overrides, 'documentRequests') ? overrides.documentRequests : [
       { id: 'req-id', category: 'bond', title: 'ID document', status: 'uploaded' },
       { id: 'req-bank', category: 'finance', title: 'Bank statement', status: 'requested' },
     ],
-    documents: overrides.documents || [
+    documents: Object.prototype.hasOwnProperty.call(overrides, 'documents') ? overrides.documents : [
       { document_request_id: 'req-bank', status: 'uploaded', uploaded_at: '2026-05-03T11:00:00.000Z' },
     ],
-    rolePlayers: overrides.rolePlayers || [],
+    rolePlayers: Object.prototype.hasOwnProperty.call(overrides, 'rolePlayers') ? overrides.rolePlayers : [],
   }
 }
 
@@ -105,6 +105,34 @@ function createMockClient() {
             },
           }
         },
+        select(columns) {
+          const query = {
+            filters: [],
+            eq(column, value) {
+              query.filters.push({ column, value })
+              return query
+            },
+            in(column, values) {
+              query.filters.push({ column, values })
+              return query
+            },
+            order() {
+              return query
+            },
+            limit() {
+              return query
+            },
+            maybeSingle() {
+              calls.push({ table, action: 'selectMaybeSingle', columns, filters: query.filters })
+              return Promise.resolve({ data: null, error: null })
+            },
+            then(resolve) {
+              calls.push({ table, action: 'select', columns, filters: query.filters })
+              resolve({ data: [], error: null })
+            },
+          }
+          return query
+        },
       }
     },
   }
@@ -133,7 +161,7 @@ try {
   })
   assert.equal(acceptResult.message, 'Application accepted and moved to My Applications.')
   assert.equal(acceptClient.calls.some((call) => call.table === 'transaction_role_players' && call.action === 'upsert'), true)
-  assert.equal(acceptClient.calls.some((call) => call.table === 'transaction_events' && call.payload.event_type === 'bond_intake_accepted'), true)
+  assert.equal(acceptClient.calls.some((call) => call.table === 'transaction_events' && call.payload?.event_type === 'BOND_APPLICATION_ACCEPTED'), true)
   const acceptTransactionUpdate = acceptClient.calls.find((call) => call.table === 'transactions' && call.action === 'update')
   assert.equal(acceptTransactionUpdate.payload.bond_assignment_status, 'consultant_assigned')
   assert.equal(acceptTransactionUpdate.payload.primary_bond_consultant_user_id, 'user-consultant-1')
@@ -185,7 +213,7 @@ try {
   })
   const assignUpdate = assignClient.calls.find((call) => call.table === 'transactions' && call.action === 'update')
   assert.equal(assignUpdate.payload.primary_bond_consultant_user_id, 'user-consultant-2')
-  assert.equal(assignClient.calls.some((call) => call.table === 'transaction_events' && call.payload.event_type === 'bond_intake_assigned'), true)
+  assert.equal(assignClient.calls.some((call) => call.table === 'transaction_events' && call.payload?.event_type === 'BOND_APPLICATION_ASSIGNED'), true)
 
   await assert.rejects(
     () => assignBondIntakeApplication({
@@ -217,7 +245,7 @@ try {
   })
   const declineUpdate = declineClient.calls.find((call) => call.table === 'transactions' && call.action === 'update')
   assert.equal(declineUpdate.payload.bond_assignment_status, 'declined')
-  assert.equal(declineClient.calls.some((call) => call.table === 'transaction_events' && call.payload.event_type === 'bond_intake_declined'), true)
+  assert.equal(declineClient.calls.some((call) => call.table === 'transaction_events' && call.payload?.event_type === 'BOND_APPLICATION_DECLINED'), true)
 
   const declinedRow = makeReadyRow({ transaction: { bond_assignment_status: 'declined' } })
   assert.equal(getNewApplicationsQueue([declinedRow]).length, 0)

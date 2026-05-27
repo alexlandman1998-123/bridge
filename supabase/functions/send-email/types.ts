@@ -13,6 +13,17 @@ export type SendOnboardingSubmittedPayload = {
   resend?: boolean;
 };
 
+export type SendBondIntakeNotificationPayload = {
+  type: "bond_intake_notification" | "bond_originator_intake";
+  transactionId?: string;
+  to: string;
+  recipientName?: string;
+  subject?: string;
+  title?: string;
+  message?: string;
+  metadata?: JsonRecord;
+};
+
 export type SendReservationDepositPayload = {
   type: "reservation_deposit";
   transactionId: string;

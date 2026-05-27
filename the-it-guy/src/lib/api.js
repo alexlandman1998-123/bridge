@@ -57,6 +57,10 @@ import {
   normalizeFinanceType,
 } from '../core/transactions/financeType'
 import {
+  BOND_APPLICATION_PROGRESS_STATUSES,
+  getBondApplicationProgress,
+} from '../core/transactions/bondIntakeSelectors'
+import {
   OTP_DOCUMENT_TYPES,
   normalizeOtpDocumentType,
   resolveSalesWorkflowSnapshot,
@@ -100,6 +104,12 @@ import { createPerfTimer } from './performanceTrace'
 import { normalizePropertyCategory, PROPERTY_CATEGORIES } from './propertyTaxonomy'
 import { getSuggestedRescheduleSlots } from './appointmentAvailabilityEngine'
 import { resolveSystemRole, resolveTransactionRole } from '../services/roleResolutionService'
+import {
+  BOND_NOTIFICATION_EVENTS,
+  checkAndNotifyBondDocumentsComplete,
+  notifyBondIntakeEvent,
+  notifyBondIntakeStartedForOnboarding,
+} from '../services/bondIntakeNotificationService'
 
 const CANONICAL_PILOT_BUILD_MARKER = 'CANONICAL_PILOT_BUILD_MARKER_20260525'
 const CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH_FLAG = 'VITE_CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH'
@@ -25583,6 +25593,27 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
     } catch (notificationError) {
       console.warn('Onboarding submitted owner notification failed', notificationError)
     }
+
+    try {
+      await notifyBondIntakeStartedForOnboarding({
+        transaction: {
+          ...transaction,
+          finance_type: financeSnapshot.financeType || transaction.finance_type,
+          buyer_name: buyer?.name || null,
+          buyer_email: buyer?.email || null,
+          unit_number: unit?.unit_number || null,
+          development_name:
+            unit?.development && Array.isArray(unit.development)
+              ? unit.development[0]?.name || null
+              : unit?.development?.name || null,
+        },
+        formData: normalizedFormData,
+        actor: { roleType: 'client' },
+        client,
+      })
+    } catch (bondNotificationError) {
+      console.warn('Bond intake started notification failed', bondNotificationError)
+    }
   }
 
   return normalizeOnboardingRow(updatedOnboarding, purchaserType)
@@ -25613,6 +25644,15 @@ async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
     ...formData,
     purchaser_type: purchaserType,
   }
+  const previousFormDataRow = await fetchOnboardingFormDataForTransaction(client, transaction.id, purchaserType)
+  const previousBondProgress = getBondApplicationProgress({
+    transaction,
+    onboardingFormData: previousFormDataRow?.formData || {},
+  })
+  const nextBondProgress = getBondApplicationProgress({
+    transaction,
+    onboardingFormData: normalizedFormData,
+  })
   const fundingSources = getOnboardingFundingSources(normalizedFormData)
   const now = new Date().toISOString()
 
@@ -25691,6 +25731,50 @@ async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
     }
   }
 
+  if (isBondFinanceType(financeSnapshot.financeType || transaction.finance_type)) {
+    const transactionForNotification = {
+      ...transaction,
+      finance_type: financeSnapshot.financeType || transaction.finance_type,
+    }
+    try {
+      const wasStarted = previousBondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.IN_PROGRESS ||
+        previousBondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED
+      const isStarted = nextBondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.IN_PROGRESS ||
+        nextBondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED
+      if (!wasStarted && isStarted) {
+        await notifyBondIntakeEvent({
+          eventType: BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_STARTED,
+          transaction: transactionForNotification,
+          actor: { roleType: 'client' },
+          metadata: {
+            source: 'client_portal_bond_application_save',
+            onboardingFormData: normalizedFormData,
+          },
+          client,
+        })
+      }
+
+      if (
+        previousBondProgress.status !== BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED &&
+        nextBondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED
+      ) {
+        await notifyBondIntakeEvent({
+          eventType: BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_SUBMITTED,
+          transaction: transactionForNotification,
+          actor: { roleType: 'client' },
+          metadata: {
+            source: 'client_portal_bond_application_submit',
+            submittedAt: nextBondProgress.submittedAt || now,
+            onboardingFormData: normalizedFormData,
+          },
+          client,
+        })
+      }
+    } catch (bondNotificationError) {
+      console.warn('Bond application notification failed', bondNotificationError)
+    }
+  }
+
   return fetchOnboardingFormDataForTransaction(client, transaction.id, purchaserType)
 }
 
@@ -25731,6 +25815,8 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
   if (!file) {
     throw new Error('Select a file to upload.')
   }
+
+  const previousReadiness = await computeTransactionReadinessSnapshot(client, transaction.id)
 
   const safeName = String(file.name || 'document').replace(/[^a-zA-Z0-9.-]/g, '-')
   const filePath = `onboarding/${transaction.id}/${requiredDocument.key}/${Date.now()}-${safeName}`
@@ -25844,7 +25930,7 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
     },
   })
 
-  await runDocumentAutomationIfPossible(client, {
+  const readiness = await runDocumentAutomationIfPossible(client, {
     transactionId: transaction.id,
     documentId: insertResult.data.id,
     documentName: insertResult.data?.name || `${requiredDocument.label} - ${safeName}`,
@@ -25854,6 +25940,30 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
     source: 'onboarding_upload',
     requiredDocumentKey: requiredDocument.key,
   })
+
+  if (isBondFinanceType(financeSnapshot.financeType)) {
+    try {
+      await checkAndNotifyBondDocumentsComplete({
+        transaction: {
+          ...transaction,
+          finance_type: financeSnapshot.financeType || transaction.finance_type,
+          buyer_name: buyer?.name || null,
+          buyer_email: buyer?.email || null,
+        },
+        previousMissingCount: previousReadiness?.missingRequiredDocs,
+        readiness,
+        actor: { roleType: 'client' },
+        metadata: {
+          source: 'onboarding_upload',
+          documentKey: requiredDocument.key,
+          documentId: insertResult.data.id,
+        },
+        client,
+      })
+    } catch (bondNotificationError) {
+      console.warn('Bond document completion notification failed', bondNotificationError)
+    }
+  }
 
   return {
     documentId: insertResult.data.id,
@@ -25889,6 +25999,7 @@ export async function updateTransactionRequiredDocumentStatus({
   const effectiveActorRole = normalizedActorRole || actorProfile.role || 'developer'
   const effectiveActorUserId = actorProfile.userId || null
   let uploadedDocumentId = null
+  const previousReadiness = await computeTransactionReadinessSnapshot(client, transactionId)
 
   const requirementLookup = await client
     .from('transaction_required_documents')
@@ -26011,6 +26122,26 @@ export async function updateTransactionRequiredDocumentStatus({
         dedupePrefix: `reservation-pop-uploaded:${transactionId}`,
         excludeUserId: effectiveActorUserId,
       })
+    }
+  }
+
+  const readiness = await computeTransactionReadinessSnapshot(client, transactionId)
+  if (isBondFinanceType(readiness?.financeType)) {
+    try {
+      await checkAndNotifyBondDocumentsComplete({
+        transaction: { id: transactionId, finance_type: readiness?.financeType },
+        previousMissingCount: previousReadiness?.missingRequiredDocs,
+        readiness,
+        actor: { id: effectiveActorUserId, roleType: effectiveActorRole },
+        metadata: {
+          source: 'required_document_status_update',
+          documentKey,
+          status: normalizedStatus,
+        },
+        client,
+      })
+    } catch (bondNotificationError) {
+      console.warn('Bond document completion notification failed', bondNotificationError)
     }
   }
 

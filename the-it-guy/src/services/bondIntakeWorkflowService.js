@@ -1,5 +1,9 @@
 import { BOND_INTAKE_STATUSES, getBondIntakeSummary } from '../core/transactions/bondIntakeSelectors'
 import { supabase } from '../lib/supabaseClient'
+import {
+  BOND_NOTIFICATION_EVENTS,
+  notifyBondIntakeEvent,
+} from './bondIntakeNotificationService'
 
 export const BOND_INTAKE_DECLINE_REASONS = Object.freeze([
   'Buyer not finance-ready',
@@ -253,34 +257,6 @@ async function updateByIdWithMissingColumnFallback(client, table, id, payload = 
   return null
 }
 
-async function insertEventIfPossible(client, { transactionId, eventType, eventData, actor }) {
-  const payload = compactObject({
-    transaction_id: transactionId,
-    event_type: eventType,
-    event_data: eventData || {},
-    created_by: actor.id || null,
-    created_by_role: actor.roleKey || actor.appRole || null,
-  })
-
-  let remainingPayload = payload
-  while (Object.keys(remainingPayload).length) {
-    const result = await client
-      .from('transaction_events')
-      .insert(remainingPayload)
-      .select('id, transaction_id, event_type, event_data, created_at')
-      .single()
-
-    if (!result.error) return result.data || null
-    if (isMissingTableError(result.error, 'transaction_events') || isPermissionDeniedError(result.error)) return null
-
-    const missingColumn = Object.keys(remainingPayload).find((key) => isMissingColumnError(result.error, key))
-    if (!missingColumn) throw result.error
-    remainingPayload = { ...remainingPayload }
-    delete remainingPayload[missingColumn]
-  }
-  return null
-}
-
 async function upsertRolePlayerMarker(client, {
   transactionId,
   actor,
@@ -399,7 +375,7 @@ async function persistAcceptedAssignment(client, { transactionId, actor, assigne
   )
 }
 
-async function persistDecline(client, { transactionId, actor, reason, note }) {
+async function persistDecline(client, { transactionId, reason }) {
   const now = new Date().toISOString()
   return updateByIdWithMissingColumnFallback(
     client,
@@ -444,20 +420,20 @@ export async function acceptBondIntakeApplication({ row = {}, transactionId = ''
 
   await upsertRolePlayerMarker(db, { transactionId: id, actor, assignee: resolvedAssignee, action: 'accept', note })
   const transaction = await persistAcceptedAssignment(db, { transactionId: id, actor, assignee: resolvedAssignee, action: 'accept' })
-  const activity = await insertEventIfPossible(db, {
-    transactionId: id,
-    eventType: 'bond_intake_accepted',
+  const notification = await notifyBondIntakeEvent({
+    eventType: BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_ACCEPTED,
+    transaction: { ...(row?.transaction || row || {}), ...(transaction || {}), id },
     actor,
-    eventData: {
-      message: `Bond application accepted by ${actor.name}`,
-      assigned_user_id: resolvedAssignee.id,
-      assigned_user_name: resolvedAssignee.name,
-      intake_status: 'ACCEPTED',
+    metadata: {
+      assignee: resolvedAssignee,
+      note,
       source: 'new_applications_queue',
     },
+    client: db,
   })
+  const activity = notification.activity || null
 
-  return { transaction, activity, message: 'Application accepted and moved to My Applications.' }
+  return { transaction, activity, notification, message: 'Application accepted and moved to My Applications.' }
 }
 
 export async function assignBondIntakeApplication({ row = {}, transactionId = '', user = {}, assignee = {}, note = '', client = null } = {}) {
@@ -473,21 +449,21 @@ export async function assignBondIntakeApplication({ row = {}, transactionId = ''
 
   await upsertRolePlayerMarker(db, { transactionId: id, actor, assignee: resolvedAssignee, action: 'assign', note })
   const transaction = await persistAcceptedAssignment(db, { transactionId: id, actor, assignee: resolvedAssignee, action: 'assign' })
-  const activity = await insertEventIfPossible(db, {
-    transactionId: id,
-    eventType: 'bond_intake_assigned',
+  const notification = await notifyBondIntakeEvent({
+    eventType: BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_ASSIGNED,
+    transaction: { ...(row?.transaction || row || {}), ...(transaction || {}), id },
     actor,
-    eventData: {
-      message: `Bond application assigned to ${resolvedAssignee.name}`,
-      assigned_user_id: resolvedAssignee.id,
-      assigned_user_name: resolvedAssignee.name,
+    metadata: {
+      assignee: resolvedAssignee,
+      assigneeId: resolvedAssignee.id,
       note,
-      intake_status: 'ACCEPTED',
       source: 'new_applications_queue',
     },
+    client: db,
   })
+  const activity = notification.activity || null
 
-  return { transaction, activity, message: 'Application assigned and moved to My Applications.' }
+  return { transaction, activity, notification, message: 'Application assigned and moved to My Applications.' }
 }
 
 export async function declineBondIntakeApplication({ row = {}, transactionId = '', user = {}, reason = '', note = '', client = null } = {}) {
@@ -506,18 +482,18 @@ export async function declineBondIntakeApplication({ row = {}, transactionId = '
 
   await upsertRolePlayerMarker(db, { transactionId: id, actor, assignee, action: 'decline', reason: declineReason, note })
   const transaction = await persistDecline(db, { transactionId: id, actor, reason: declineReason, note })
-  const activity = await insertEventIfPossible(db, {
-    transactionId: id,
-    eventType: 'bond_intake_declined',
+  const notification = await notifyBondIntakeEvent({
+    eventType: BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_DECLINED,
+    transaction: { ...(row?.transaction || row || {}), ...(transaction || {}), id },
     actor,
-    eventData: {
-      message: `Bond application declined: ${declineReason}`,
+    metadata: {
       reason: declineReason,
       note,
-      intake_status: 'DECLINED',
       source: 'new_applications_queue',
     },
+    client: db,
   })
+  const activity = notification.activity || null
 
-  return { transaction, activity, message: 'Bond application declined.' }
+  return { transaction, activity, notification, message: 'Bond application declined.' }
 }

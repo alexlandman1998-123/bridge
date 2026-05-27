@@ -11,6 +11,7 @@ import { handleAppointmentEmail } from "./handlers/appointment.ts";
 import { handleWorkspaceInviteEmail } from "./handlers/workspaceInvite.ts";
 import { handleBuyerOfferLinkEmail } from "./handlers/buyerOfferLink.ts";
 import { handleBuyerOfferSubmittedAgentEmail } from "./handlers/buyerOfferSubmittedAgent.ts";
+import { handleBondIntakeNotificationEmail } from "./handlers/bondIntakeNotification.ts";
 import { handleOfferDecisionNotificationEmail } from "./handlers/offerDecisionNotification.ts";
 import { handleSellerOfferReviewEmail } from "./handlers/sellerOfferReview.ts";
 import {
@@ -19,6 +20,7 @@ import {
 } from "./handlers/transactionRoleplayerIntro.ts";
 import type {
   SendAppointmentEmailPayload,
+  SendBondIntakeNotificationPayload,
   SendBuyerOfferLinkPayload,
   SendBuyerOfferSubmittedAgentPayload,
   SendClientOnboardingPayload,
@@ -271,6 +273,24 @@ Deno.serve(async (req: Request) => {
 
     if (
       [
+        "bond_intake_notification",
+        "bond_originator_intake",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "bond_intake_notification",
+        recipient: recipient || null,
+        transactionId: transactionId || null,
+      });
+      return await handleBondIntakeNotificationEmail({
+        ...(payload as SendBondIntakeNotificationPayload),
+        type: "bond_intake_notification",
+        transactionId,
+      });
+    }
+
+    if (
+      [
         "transaction_roleplayer_intro",
         "roleplayer_intro",
         "transaction_handoff_intro",
@@ -376,6 +396,7 @@ Deno.serve(async (req: Request) => {
           "buyer_offer_submitted_agent",
           "seller_offer_review",
           "offer_decision_notification",
+          "bond_intake_notification",
           "transaction_roleplayer_intro",
           "transaction_roleplayer_handoff",
           "workspace_invite",
@@ -411,6 +432,7 @@ Deno.serve(async (req: Request) => {
         "buyer_offer_submitted_agent",
         "seller_offer_review",
         "offer_decision_notification",
+        "bond_intake_notification",
         "transaction_roleplayer_intro",
         "transaction_roleplayer_handoff",
         "workspace_invite",
