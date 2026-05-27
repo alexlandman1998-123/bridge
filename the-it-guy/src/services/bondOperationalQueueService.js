@@ -11,6 +11,13 @@ import {
   getBondIntakeSummary,
 } from '../core/transactions/bondIntakeSelectors'
 import { financeTypeShortLabel } from '../core/transactions/financeType'
+import { getFinanceReadinessSummary } from '../core/finance/financeReadinessSelectors'
+import {
+  calculateApprovalProbability,
+  calculateOperationalRisk,
+  calculateTransactionVelocity,
+  generateFinanceInsights,
+} from './financeIntelligenceService'
 
 export const BOND_OPERATIONAL_QUEUE_KEYS = Object.freeze({
   NEW_APPLICATIONS: 'new_applications',
@@ -231,6 +238,11 @@ export function buildBondNewApplicationViewModel(row = {}) {
   const applicationProgress = getBondApplicationProgress(intakeInput)
   const documentReadiness = intakeSummary.documentReadiness
   const transaction = row?.transaction || row || {}
+  const financeReadiness = getFinanceReadinessSummary(row)
+  const approvalConfidence = calculateApprovalProbability(row)
+  const operationalRisk = calculateOperationalRisk(row)
+  const velocity = calculateTransactionVelocity(row)
+  const financeInsights = generateFinanceInsights(row)
 
   return {
     id: normalizeText(transaction.id || row?.unit?.id || row?.buyer?.id) || `${getBuyerName(row)}-${getPropertyLabel(row)}`,
@@ -251,6 +263,21 @@ export function buildBondNewApplicationViewModel(row = {}) {
     documentUploadedCount: documentReadiness.uploadedCount,
     documentMissingCount: documentReadiness.missingCount,
     missingDocumentLabels: documentReadiness.missingLabels,
+    financeReadinessScore: financeReadiness.readinessScore?.score || 0,
+    financeReadinessLabel: financeReadiness.readinessScore?.label || 'Incomplete',
+    financeReadinessTone: financeReadiness.readinessScore?.tone || 'neutral',
+    affordabilityEstimate: financeReadiness.affordabilityEstimate,
+    repaymentEstimate: financeReadiness.repaymentEstimate,
+    depositStrength: financeReadiness.depositStrength,
+    financeRiskFlags: financeReadiness.riskFlags || [],
+    financeMissingItems: financeReadiness.missingItems || [],
+    financeNextRecommendedAction: financeReadiness.nextRecommendedAction,
+    financeReadinessDisclaimer: financeReadiness.disclaimer,
+    approvalConfidence,
+    operationalRisk,
+    velocity,
+    financeInsights,
+    transactionConfidence: Math.round((approvalConfidence.score * 0.55) + ((100 - operationalRisk.riskScore) * 0.25) + (velocity.velocityScore * 0.2)),
     canAccept: intakeSummary.canAccept,
     ageLabel: getAgeLabel(applicationProgress.submittedAt || applicationProgress.startedAt || transaction.created_at || transaction.updated_at),
     href: getIntakeHref(row),

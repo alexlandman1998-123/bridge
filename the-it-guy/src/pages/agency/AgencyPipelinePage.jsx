@@ -102,6 +102,20 @@ import {
   upsertAppointmentViewedListings,
 } from '../../lib/buyerLifecycleService'
 import { isBuyerWorkflowStage, transitionBuyerLeadStage } from '../../lib/workflowEngine'
+import {
+  FINANCE_READINESS_DISCLAIMER,
+  getFinanceReadinessSummary,
+  saveFinanceReadinessDraft,
+  shouldShowBondReadinessCta,
+  shouldShowFinanceReadinessSection,
+} from '../../services/financeReadinessService'
+import {
+  calculateApprovalProbability,
+  calculateOperationalRisk,
+  calculateTransactionVelocity,
+  generateFinanceInsights,
+  FINANCE_INTELLIGENCE_DISCLAIMER,
+} from '../../services/financeIntelligenceService'
 
 const PIPELINE_CONTEXT_TIMEOUT_MS = 3500
 const PIPELINE_RECORDS_TIMEOUT_MS = 3500
@@ -1854,6 +1868,37 @@ const LEAD_DETAIL_DEFAULTS = {
   notes: '',
 }
 
+const FINANCE_READINESS_FORM_DEFAULTS = {
+  monthlyIncome: '',
+  otherIncome: '',
+  monthlyDebt: '',
+  monthlyExpenses: '',
+  deposit: '',
+  employmentType: 'Permanent',
+  employmentDurationMonths: '',
+  dependants: '',
+  estimatedPurchaseRange: '',
+  interestRate: '11.75',
+  repaymentYears: '20',
+}
+
+function financeFormFromSummary(summary = {}) {
+  const inputs = summary.inputs || {}
+  return {
+    monthlyIncome: inputs.monthlyIncome ? String(inputs.monthlyIncome) : '',
+    otherIncome: inputs.otherIncome ? String(inputs.otherIncome) : '',
+    monthlyDebt: inputs.monthlyDebt ? String(inputs.monthlyDebt) : '',
+    monthlyExpenses: inputs.monthlyExpenses ? String(inputs.monthlyExpenses) : '',
+    deposit: inputs.deposit ? String(inputs.deposit) : '',
+    employmentType: inputs.employmentType || 'Permanent',
+    employmentDurationMonths: inputs.employmentDurationMonths ? String(inputs.employmentDurationMonths) : '',
+    dependants: inputs.dependants ? String(inputs.dependants) : '',
+    estimatedPurchaseRange: inputs.estimatedPurchaseRange ? String(inputs.estimatedPurchaseRange) : '',
+    interestRate: inputs.interestRate ? String(inputs.interestRate) : '11.75',
+    repaymentYears: inputs.repaymentYears ? String(inputs.repaymentYears) : '20',
+  }
+}
+
 function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const navigate = useNavigate()
   const { leadId: routeLeadIdParam = '' } = useParams()
@@ -1907,6 +1952,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   })
   const [leadDetailForm, setLeadDetailForm] = useState(LEAD_DETAIL_DEFAULTS)
   const [isLeadDetailSaving, setIsLeadDetailSaving] = useState(false)
+  const [financeReadinessForm, setFinanceReadinessForm] = useState(FINANCE_READINESS_FORM_DEFAULTS)
+  const [isFinanceReadinessSaving, setIsFinanceReadinessSaving] = useState(false)
   const [activityForm, setActivityForm] = useState(LEAD_DETAIL_DEFAULT_ACTIVITY)
   const [activityComposerMode, setActivityComposerMode] = useState('activity')
   const [activityTimelineFilter, setActivityTimelineFilter] = useState('all')
@@ -3229,6 +3276,86 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       : selectedLeadOnboardingStatusKey === 'not_sent'
         ? 'Send Seller Onboarding'
         : 'Resend Seller Onboarding'
+  const selectedLeadFinanceFormData = useMemo(() => (
+    selectedLeadLifecycleDiagnostic?.onboardingPrefill?.form_data ||
+    selectedLeadLifecycleDiagnostic?.onboardingPrefill?.formData ||
+    {}
+  ), [selectedLeadLifecycleDiagnostic?.onboardingPrefill])
+  const selectedLeadFinanceReadinessSummary = useMemo(() => getFinanceReadinessSummary({
+    transaction: selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || {
+      id: selectedLeadLinkedTransactionId,
+      finance_type: selectedLead?.financeType || selectedLead?.finance_type,
+      purchase_price: selectedLead?.budget || selectedLead?.estimatedValue,
+      deposit_amount: selectedLead?.depositAmount,
+    },
+    onboardingFormData: selectedLeadFinanceFormData,
+    documentSummary: selectedLeadLinkedTransaction?.documentSummary || {},
+    onboardingPrefill: selectedLeadLifecycleDiagnostic?.onboardingPrefill || null,
+  }), [
+    selectedLead?.budget,
+    selectedLead?.depositAmount,
+    selectedLead?.estimatedValue,
+    selectedLead?.financeType,
+    selectedLead?.finance_type,
+    selectedLeadFinanceFormData,
+    selectedLeadLifecycleDiagnostic?.onboardingPrefill,
+    selectedLeadLinkedTransaction,
+    selectedLeadLinkedTransactionId,
+  ])
+  const selectedLeadShowFinanceReadiness =
+    !selectedLeadIsSeller &&
+    shouldShowFinanceReadinessSection(selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || selectedLead || {})
+  const selectedLeadShowBondReadinessCta = shouldShowBondReadinessCta(selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || selectedLead || {})
+  const selectedLeadFinanceIntelligenceSource = useMemo(() => ({
+    transaction: selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || {
+      id: selectedLeadLinkedTransactionId,
+      finance_type: selectedLead?.financeType || selectedLead?.finance_type,
+      purchase_price: selectedLead?.budget || selectedLead?.estimatedValue,
+      deposit_amount: selectedLead?.depositAmount,
+    },
+    onboardingFormData: selectedLeadFinanceFormData,
+    documentSummary: selectedLeadLinkedTransaction?.documentSummary || {},
+    onboardingPrefill: selectedLeadLifecycleDiagnostic?.onboardingPrefill || null,
+  }), [
+    selectedLead?.budget,
+    selectedLead?.depositAmount,
+    selectedLead?.estimatedValue,
+    selectedLead?.financeType,
+    selectedLead?.finance_type,
+    selectedLeadFinanceFormData,
+    selectedLeadLifecycleDiagnostic?.onboardingPrefill,
+    selectedLeadLinkedTransaction,
+    selectedLeadLinkedTransactionId,
+  ])
+  const selectedLeadApprovalConfidence = useMemo(
+    () => calculateApprovalProbability(selectedLeadFinanceIntelligenceSource),
+    [selectedLeadFinanceIntelligenceSource],
+  )
+  const selectedLeadOperationalRisk = useMemo(
+    () => calculateOperationalRisk(selectedLeadFinanceIntelligenceSource),
+    [selectedLeadFinanceIntelligenceSource],
+  )
+  const selectedLeadVelocity = useMemo(
+    () => calculateTransactionVelocity(selectedLeadFinanceIntelligenceSource),
+    [selectedLeadFinanceIntelligenceSource],
+  )
+  const selectedLeadFinanceInsights = useMemo(
+    () => generateFinanceInsights(selectedLeadFinanceIntelligenceSource),
+    [selectedLeadFinanceIntelligenceSource],
+  )
+  const selectedLeadTransactionConfidence = Math.round(
+    (selectedLeadApprovalConfidence.score * 0.55) +
+      ((100 - selectedLeadOperationalRisk.riskScore) * 0.25) +
+      (selectedLeadVelocity.velocityScore * 0.2),
+  )
+
+  useEffect(() => {
+    if (!selectedLead || selectedLeadIsSeller) {
+      setFinanceReadinessForm(FINANCE_READINESS_FORM_DEFAULTS)
+      return
+    }
+    setFinanceReadinessForm(financeFormFromSummary(selectedLeadFinanceReadinessSummary))
+  }, [selectedLead?.leadId, selectedLeadIsSeller, selectedLeadFinanceReadinessSummary])
 
   useEffect(() => {
     if (!selectedLead || !selectedLeadIsSeller || selectedLeadOnboardingCompleted || !organisationId) return
@@ -7318,6 +7445,45 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  function updateFinanceReadinessField(field, value) {
+    setFinanceReadinessForm((previous) => ({ ...previous, [field]: value }))
+  }
+
+  async function handleSaveFinanceReadinessDraft(event) {
+    event?.preventDefault?.()
+    if (!selectedLead || selectedLeadIsSeller) return
+    const transactionId = normalizeText(selectedLeadLinkedTransactionId)
+    if (!transactionId) {
+      setError('Create or link a transaction before saving finance readiness.')
+      return
+    }
+
+    setIsFinanceReadinessSaving(true)
+    try {
+      await saveFinanceReadinessDraft({
+        transactionId,
+        purchaserType: selectedLeadLinkedTransaction?.transaction?.purchaser_type || 'individual',
+        input: financeReadinessForm,
+        existingFormData: selectedLeadFinanceFormData,
+      })
+      await recordBuyerLeadActivity({
+        organisationId,
+        leadId: selectedLead.leadId,
+        activityType: 'Finance Readiness Updated',
+        activityNote: 'Buyer finance readiness draft was saved.',
+        outcome: 'Readiness saved',
+        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+      }).catch(() => null)
+      setMessage('Finance readiness draft saved.')
+      setError('')
+      setSelectedLeadOffersRefreshTick((value) => value + 1)
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to save finance readiness right now.')
+    } finally {
+      setIsFinanceReadinessSaving(false)
+    }
+  }
+
   async function handleCancelAppointment() {
     if (!organisationId || !selectedAppointmentId) return
     try {
@@ -8841,6 +9007,129 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         ))}
                       </div>
                     </section>
+
+                    {selectedLeadShowFinanceReadiness ? (
+                      <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.06)] sm:p-8">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Buyer Readiness</p>
+                            <h3 className="mt-2 text-[1.35rem] font-semibold tracking-[-0.035em] text-[#102033]">Finance Readiness</h3>
+                            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#60758b]">
+                              Estimate buyer preparedness before the full bond intake moves forward. This is a transaction-readiness view, not a bank decision.
+                            </p>
+                          </div>
+                          <div className="rounded-[20px] border border-[#dbe8f2] bg-[#f8fbff] px-4 py-3 text-right">
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">Readiness Score</p>
+                            <p className="mt-1 text-3xl font-bold tracking-[-0.05em] text-[#102033]">{selectedLeadFinanceReadinessSummary.readinessScore.score}%</p>
+                            <p className="text-sm font-semibold text-[#2f6f8f]">{selectedLeadFinanceReadinessSummary.readinessScore.label} Readiness</p>
+                          </div>
+                        </div>
+
+                        <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.9fr)]">
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            {[
+                              ['Estimated Affordability', `${formatCurrency(selectedLeadFinanceReadinessSummary.affordabilityEstimate.estimatedPurchaseRangeMin)} - ${formatCurrency(selectedLeadFinanceReadinessSummary.affordabilityEstimate.estimatedPurchaseRangeMax)}`],
+                              ['Estimated Monthly Repayment', `~${formatCurrency(selectedLeadFinanceReadinessSummary.repaymentEstimate)}/month`],
+                              ['Deposit Position', selectedLeadFinanceReadinessSummary.depositStrength],
+                              ['Confidence', selectedLeadFinanceReadinessSummary.confidenceLabel],
+                            ].map(([label, value]) => (
+                              <div key={label} className="rounded-[18px] border border-[#edf2f7] bg-[#fbfdff] p-4">
+                                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#8aa0b7]">{label}</p>
+                                <p className="mt-2 text-base font-semibold text-[#20364c]">{value}</p>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="rounded-[20px] border border-[#edf2f7] bg-[#fbfdff] p-4">
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#8aa0b7]">Transaction Confidence Meter</p>
+                            <p className="mt-2 text-4xl font-bold tracking-[-0.05em] text-[#102033]">{selectedLeadTransactionConfidence}%</p>
+                            <p className="mt-1 text-sm font-semibold text-[#2f6f8f]">Transaction Confidence</p>
+                            <div className="mt-4 grid gap-2 text-xs text-[#60758b]">
+                              <span>Estimated approval confidence: {selectedLeadApprovalConfidence.score}% · {selectedLeadApprovalConfidence.probabilityBand}</span>
+                              <span>Operational risk: {selectedLeadOperationalRisk.riskScore}% · {selectedLeadOperationalRisk.riskLevel}</span>
+                              <span>Velocity: {selectedLeadVelocity.velocityScore}% · {selectedLeadVelocity.expectedApprovalDays}d estimated approval path</span>
+                            </div>
+                            <div className="my-4 h-px bg-[#e4edf6]" />
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#8aa0b7]">Next Recommended Action</p>
+                            <p className="mt-2 text-lg font-semibold text-[#102033]">{selectedLeadFinanceReadinessSummary.nextRecommendedAction}</p>
+                            <p className="mt-2 text-sm leading-6 text-[#60758b]">
+                              {selectedLeadFinanceInsights.recommendations?.[0] || selectedLeadFinanceInsights.operationalWarnings?.[0] || 'Keep buyer readiness and documents moving.'}
+                            </p>
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              <Button type="button" size="sm" onClick={handleSaveFinanceReadinessDraft} disabled={!selectedLeadLinkedTransactionId || isFinanceReadinessSaving}>
+                                {isFinanceReadinessSaving ? 'Saving...' : 'Save Draft'}
+                              </Button>
+                              {selectedLeadShowBondReadinessCta ? (
+                                <>
+                                  <Button type="button" variant="secondary" size="sm" onClick={() => void handleSendBuyerOnboardingFromLead()}>
+                                    Send Finance Form
+                                  </Button>
+                                  <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/applications?queue=new_applications')}>
+                                    Open Bond Workflow
+                                  </Button>
+                                  <Button type="button" variant="secondary" size="sm" onClick={() => setMessage('Request income proof, bank statements, ID, and deposit confirmation from this buyer.')}>
+                                    Request Documents
+                                  </Button>
+                                </>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+
+                        <form className="mt-6 rounded-[22px] border border-[#edf2f7] bg-[#fbfdff] p-4" onSubmit={handleSaveFinanceReadinessDraft}>
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <h4 className="text-base font-semibold text-[#172b3f]">Bond Readiness Form</h4>
+                              <p className="mt-1 text-xs text-[#6d839b]">Lightweight affordability inputs for buyer or agent-assisted completion.</p>
+                            </div>
+                            <Button type="submit" size="sm" disabled={!selectedLeadLinkedTransactionId || isFinanceReadinessSaving}>
+                              {isFinanceReadinessSaving ? 'Saving...' : 'Save Finance Readiness'}
+                            </Button>
+                          </div>
+                          <div className="mt-4 grid gap-3 md:grid-cols-3">
+                            <Field type="number" placeholder="Monthly income" value={financeReadinessForm.monthlyIncome} onChange={(event) => updateFinanceReadinessField('monthlyIncome', event.target.value)} />
+                            <Field type="number" placeholder="Other income" value={financeReadinessForm.otherIncome} onChange={(event) => updateFinanceReadinessField('otherIncome', event.target.value)} />
+                            <Field type="number" placeholder="Monthly debt" value={financeReadinessForm.monthlyDebt} onChange={(event) => updateFinanceReadinessField('monthlyDebt', event.target.value)} />
+                            <Field type="number" placeholder="Monthly expenses" value={financeReadinessForm.monthlyExpenses} onChange={(event) => updateFinanceReadinessField('monthlyExpenses', event.target.value)} />
+                            <Field type="number" placeholder="Deposit available" value={financeReadinessForm.deposit} onChange={(event) => updateFinanceReadinessField('deposit', event.target.value)} />
+                            <Field type="number" placeholder="Dependants" value={financeReadinessForm.dependants} onChange={(event) => updateFinanceReadinessField('dependants', event.target.value)} />
+                            <Field as="select" value={financeReadinessForm.employmentType} onChange={(event) => updateFinanceReadinessField('employmentType', event.target.value)}>
+                              {['Permanent', 'Contract', 'Self-employed', 'Commission', 'Other'].map((option) => (
+                                <option key={option} value={option}>{option}</option>
+                              ))}
+                            </Field>
+                            <Field type="number" placeholder="Employment duration months" value={financeReadinessForm.employmentDurationMonths} onChange={(event) => updateFinanceReadinessField('employmentDurationMonths', event.target.value)} />
+                            <Field type="number" placeholder="Estimated purchase range" value={financeReadinessForm.estimatedPurchaseRange} onChange={(event) => updateFinanceReadinessField('estimatedPurchaseRange', event.target.value)} />
+                          </div>
+                        </form>
+
+                        <div className="mt-5 grid gap-4 md:grid-cols-2">
+                          <div className="rounded-[18px] border border-[#e6f0e8] bg-[#f8fcf9] p-4">
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#6b8f78]">Strengths</p>
+                            <ul className="mt-3 space-y-2 text-sm text-[#284c38]">
+                              {(selectedLeadFinanceReadinessSummary.strengths.length ? selectedLeadFinanceReadinessSummary.strengths : ['Finance readiness inputs are being collected.']).slice(0, 4).map((item) => (
+                                <li key={item}>✓ {item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div className="rounded-[18px] border border-[#f0dfb8] bg-[#fffaf0] p-4">
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#9a711c]">Risk Flags</p>
+                            <ul className="mt-3 space-y-2 text-sm text-[#6a4b13]">
+                              {(selectedLeadFinanceReadinessSummary.riskFlags.length ? selectedLeadFinanceReadinessSummary.riskFlags : ['No finance readiness risks captured yet.']).slice(0, 4).map((item) => (
+                                <li key={item}>Attention: {item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+
+                        <p className="mt-5 rounded-[16px] border border-[#dbe5f0] bg-[#f8fbff] px-4 py-3 text-xs leading-5 text-[#60758b]">
+                          {FINANCE_READINESS_DISCLAIMER}
+                        </p>
+                        <p className="mt-3 rounded-[16px] border border-[#dbe5f0] bg-[#f8fbff] px-4 py-3 text-xs leading-5 text-[#60758b]">
+                          {FINANCE_INTELLIGENCE_DISCLAIMER}
+                        </p>
+                      </section>
+                    ) : null}
 
                     <form className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)] sm:p-8" onSubmit={handleSaveLeadDetails}>
                       <div className="flex items-center justify-between gap-3">

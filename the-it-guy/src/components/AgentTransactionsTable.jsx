@@ -1,6 +1,8 @@
 import { ArrowRight, ArrowUpRight, BriefcaseBusiness, CheckCircle2, MoreHorizontal, Plus, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
+import { getFinanceReadinessSummary, shouldShowBondReadinessCta } from '../core/finance/financeReadinessSelectors'
+import { calculateApprovalProbability, calculateOperationalRisk, calculateTransactionVelocity } from '../services/financeIntelligenceService'
 import Button from './ui/Button'
 import DataTable, { DataTableInner } from './ui/DataTable'
 import StatusBadge from './ui/StatusBadge'
@@ -346,6 +348,10 @@ function AgentTransactionsTable({
             const financeStage = formatFinanceStage(row)
             const health = getHealth(row, mainStage.key)
             const progressPercent = getProgressPercent(row, mainStage.key)
+            const approvalConfidence = calculateApprovalProbability(row)
+            const operationalRisk = calculateOperationalRisk(row)
+            const velocity = calculateTransactionVelocity(row)
+            const transactionConfidence = Math.round((approvalConfidence.score * 0.55) + ((100 - operationalRisk.riskScore) * 0.25) + (velocity.velocityScore * 0.2))
             const buyerName = row?.buyer?.name || 'Buyer pending'
             const propertyLabel = getPropertyLabel(row)
             const developmentLabel = getDevelopmentLabel(row)
@@ -382,8 +388,9 @@ function AgentTransactionsTable({
                 <td data-label="Progress">
                   <div className="transaction-progress-cell">
                     <div className="transaction-progress-summary">
-                      <strong>{progressPercent}%</strong>
-                    </div>
+                    <strong>{progressPercent}%</strong>
+                    <small>{transactionConfidence}% confidence</small>
+                  </div>
                     <div className="transaction-progress-track" aria-hidden="true">
                       <span style={{ width: `${Math.max(progressPercent > 0 ? 8 : 0, progressPercent)}%` }} />
                     </div>
@@ -395,6 +402,13 @@ function AgentTransactionsTable({
                 </td>
                 <td data-label="Finance Type">
                   <StatusBadge className="transaction-workflow-chip transaction-chip-info">{financeStage.label}</StatusBadge>
+                  {shouldShowBondReadinessCta(row) ? (
+                    <small className="transaction-cell-secondary">
+                      {getFinanceReadinessSummary(row).readinessScore.score}% buyer readiness · {approvalConfidence.probabilityBand}
+                    </small>
+                  ) : (
+                    <small className="transaction-cell-secondary">Proof of funds readiness</small>
+                  )}
                 </td>
                 <td data-label="Last Updated">
                   <span className="transaction-cell-secondary">{formatRelativeDate(updatedAt)}</span>

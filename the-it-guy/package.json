@@ -15,6 +15,8 @@
     "test:atomic-onboarding": "node scripts/atomic-onboarding.test.mjs",
     "test:bond-demo-runtime-data": "node scripts/bond-demo-runtime-data.test.mjs",
     "test:bond-intake-notifications": "node src/services/__tests__/bondIntakeNotificationService.test.js",
+    "test:finance-readiness": "node src/core/finance/__tests__/financeReadinessSelectors.test.js",
+    "test:finance-intelligence": "node src/services/__tests__/financeIntelligenceService.test.js",
     "test:reporting-role-logic": "node scripts/reporting-role-logic.test.mjs",
     "test:unsafe-fallbacks": "node scripts/unsafe-fallbacks.test.mjs",
     "test:unified-invites": "node scripts/unified-invites.test.mjs",

@@ -7,6 +7,7 @@ export default function BondEmptyState({
   className = '',
   icon = Inbox,
   compact = false,
+  action = null,
 }) {
   const Icon = icon
 
@@ -25,6 +26,7 @@ export default function BondEmptyState({
         <div className="min-w-0">
           <p className="text-sm font-semibold text-[#142132]">{title}</p>
           {description ? <p className="mt-1.5 text-sm leading-6 text-[#60758d]">{description}</p> : null}
+          {action ? <div className="mt-3">{action}</div> : null}
         </div>
       </div>
     </div>

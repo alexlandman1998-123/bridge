@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import '../App.css'
 import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
+import { buildFinanceReadinessPayload } from '../core/finance/financeReadinessSelectors'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { LatestUpdatesCard, PurchaseJourneyCard } from '../components/client-portal/ClientJourneySection'
 import ClientDocumentCentre from '../components/client-portal/documents/ClientDocumentCentre'
@@ -3036,6 +3037,24 @@ function ClientPortal() {
 
       const nextFormData = cloneMyDetailsFormData(portal?.onboardingFormData?.formData || {})
       nextFormData.bond_application = draftToPersist
+      const primaryIncomeExpenses = draftToPersist?.income_deductions_expenses?.primary || {}
+      const primaryEmployment = draftToPersist?.employment?.primary || {}
+      nextFormData.finance_readiness = buildFinanceReadinessPayload({
+        monthlyIncome: primaryIncomeExpenses.gross_salary || draftToPersist?.income?.salary || nextFormData.gross_monthly_income,
+        monthlyDebt:
+          primaryIncomeExpenses.total_monthly_debt ||
+          primaryIncomeExpenses.total_debt_repayments ||
+          draftToPersist?.banking_liabilities?.other_finance_1_monthly_payment,
+        monthlyExpenses: primaryIncomeExpenses.total_monthly_expenses || primaryIncomeExpenses.living_expenses,
+        deposit: draftToPersist?.summary?.deposit_amount || draftToPersist?.summary?.cash_contribution || nextFormData.deposit_amount,
+        employmentType: primaryEmployment.occupation_status || primaryEmployment.employment_type,
+        employmentDurationMonths:
+          (Number(primaryEmployment.employment_years || 0) * 12) + Number(primaryEmployment.employment_months || 0),
+        dependants: draftToPersist?.personal_details?.primary?.dependants || nextFormData.dependants,
+        estimatedPurchaseRange: draftToPersist?.summary?.purchase_price || nextFormData.purchase_price,
+        documentReadiness: submitted ? 1 : 0.5,
+        onboardingCompleteness: submitted ? 1 : 0.65,
+      }, nextFormData).finance_readiness
 
       await saveClientPortalOnboardingDraft({
         token,

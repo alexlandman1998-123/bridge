@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
-import { ArrowRight, CircleCheck, CircleDashed, CircleAlert, FileText, HandCoins, UsersRound } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ArrowRight, Building2, CircleCheck, CircleDashed, CircleAlert, FileCheck2, FileText, HandCoins, MoreHorizontal, UsersRound } from 'lucide-react'
 import BondDashboardHeader from './BondDashboardHeader'
 import BondEmptyState from './BondEmptyState'
 import BondPageShell from './BondPageShell'
 import BondSectionCard from './BondSectionCard'
+import OperationalHeatmap from '../analytics/OperationalHeatmap'
 import * as bondCommandCenterService from '../../services/bondCommandCenterService'
+import { FINANCE_INTELLIGENCE_DISCLAIMER } from '../../services/financeIntelligenceService'
 import { Link } from 'react-router-dom'
 
 function normalizeText(value) {
@@ -29,25 +31,29 @@ const KPI_PROGRESS_COLORS = {
   active_applications: '#315f8c',
   approval_rate: '#2f8a63',
   average_approval_time: '#8a6a2a',
-  bond_value_in_progress: '#315f8c',
+  bond_value: '#315f8c',
   registration_conversion: '#2f6b4a',
   commission_pipeline: '#8b4f7e',
 }
 
-function getBankVisual(bank = '') {
-  return BANK_VISUALS[bank] || BANK_VISUALS.Others
+const KPI_TONE_CLASSES = {
+  neutral: 'border-[#dbe5f0] bg-white',
+  success: 'border-[#cde8d4] bg-[#fbfffc]',
+  warning: 'border-[#efdcb8] bg-[#fffdf7]',
+  danger: 'border-[#f0d1d8] bg-[#fff8f9]',
 }
 
-function getSparklineProgress(sparkline = []) {
-  const values = Array.isArray(sparkline)
-    ? sparkline.map((point) => normalizeNumber(point, 0)).filter((point) => point > 0)
-    : []
-  if (!values.length) return 18
+const ACTIVE_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'awaiting_docs', label: 'Awaiting Docs' },
+  { key: 'ready_for_review', label: 'Ready For Review' },
+  { key: 'submitted', label: 'Submitted' },
+  { key: 'bank_feedback', label: 'Bank Feedback' },
+  { key: 'approved', label: 'Approved' },
+]
 
-  const latest = values[values.length - 1]
-  const max = Math.max(...values, 1)
-  const percent = latest <= 100 ? latest : (latest / max) * 100
-  return Math.max(18, Math.min(100, Math.round(percent)))
+function getBankVisual(bank = '') {
+  return BANK_VISUALS[bank] || BANK_VISUALS.Others
 }
 
 export default function BondDashboard({
@@ -66,6 +72,7 @@ export default function BondDashboard({
       reportingScope: null,
     },
   )
+  const [activeFilter, setActiveFilter] = useState('all')
 
   const loadDashboard = useCallback(async () => {
     if (!safeWorkspaceId) {
@@ -120,18 +127,28 @@ export default function BondDashboard({
 
   const snapshot = state.snapshot || {}
   const heroKpis = snapshot.heroKpis || []
+  const headerSummary = snapshot.headerSummary || {}
+  const visibleActiveApplications = useMemo(
+    () => {
+      const activeApplications = Array.isArray(snapshot.activeApplications) ? snapshot.activeApplications : []
+      return activeApplications.filter((application) => activeFilter === 'all' || application.filterKeys?.includes(activeFilter))
+    },
+    [snapshot.activeApplications, activeFilter],
+  )
   const bankBreakdown = snapshot.bankBreakdown || []
   const bankLeadTimes = snapshot.bankLeadTimes || []
   const pipelineFlow = snapshot.pipelineFlow || []
   const buyerDemographics = snapshot.buyerDemographics || {}
+  const approvalConfidenceDistribution = snapshot.approvalConfidenceDistribution || []
+  const readinessFunnel = snapshot.readinessFunnel || []
+  const bankEfficiency = snapshot.bankEfficiency || []
+  const buyerQualityDistribution = snapshot.buyerQualityDistribution || {}
+  const operationalRiskMatrix = snapshot.operationalRiskMatrix || []
   const operationalRisk = snapshot.operationalRisk || []
   const recentBankActivity = snapshot.recentBankActivity || []
   const teamPerformance = snapshot.teamPerformance || []
   const connectedPartners = snapshot.connectedPartners || []
-  const heroSummary = snapshot.heroSummary || {}
   const heatmapRows = snapshot.operationalHeatmap || []
-  const displayName = normalizeText(snapshot?.userDisplayName)
-  const safeUserDisplayName = displayName && displayName.toLowerCase() !== 'undefined' ? displayName : 'there'
 
   if (!safeWorkspaceId) {
     return (
@@ -154,12 +171,7 @@ export default function BondDashboard({
   return (
     <BondPageShell>
       <BondDashboardHeader
-        userDisplayName={safeUserDisplayName}
-        applicationsMovedText={
-          state.loading ? 'Loading this week’s movement' : `${heroSummary.applicationsMoved || 0} applications moved`
-        }
-        velocityText={state.loading ? 'calculating' : heroSummary.approvalVelocity || 'up 0%'}
-        focusChips={snapshot?.roleFocus?.focusChips || []}
+        summaryText={state.loading ? 'Loading active applications, document queues, review-ready files, and bank responses.' : headerSummary.text}
         onCreate={onCreateApplication}
         onInvitePartner={onInvitePartner}
         onExportReport={onExportReport}
@@ -183,6 +195,12 @@ export default function BondDashboard({
           ) : (
             <>
               <KpiStrip items={heroKpis} />
+
+              <ActiveApplicationsSection
+                items={visibleActiveApplications}
+                activeFilter={activeFilter}
+                onFilterChange={setActiveFilter}
+              />
 
               <section className="grid gap-6 xl:grid-cols-2">
                 <BondSectionCard
@@ -210,7 +228,7 @@ export default function BondDashboard({
               <BondSectionCard
                 eyebrow="Operational Flow"
                 title="Pipeline Overview"
-                description="A full-width view of how applications are moving from lead capture to registration."
+                description="Operational flow through core finance and approval stages."
                 className="flex min-h-[310px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
                 headerClassName="gap-3"
                 contentClassName="mt-6 min-h-0 flex-1"
@@ -218,10 +236,10 @@ export default function BondDashboard({
                 <PipelineFlowPanel items={pipelineFlow} />
               </BondSectionCard>
 
-              <section className="grid gap-6 xl:grid-cols-2">
+              <section className="grid gap-6 xl:grid-cols-3">
                 <BondSectionCard
                   eyebrow="Buyer Demographics"
-                  title="Bond vs Cash"
+                  title="Finance Mix"
                   description="Finance mix across the active book."
                   className="flex min-h-[340px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
                   headerClassName="gap-3"
@@ -239,12 +257,22 @@ export default function BondDashboard({
                 >
                   <DonutAnalyticsPanel items={buyerDemographics.clientType} />
                 </BondSectionCard>
+                <BondSectionCard
+                  eyebrow="Buyer Demographics"
+                  title="Bank Distribution"
+                  description="Application volume and submitted movement by bank."
+                  className="flex min-h-[340px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                  headerClassName="gap-3"
+                  contentClassName="mt-6 min-h-0 flex-1"
+                >
+                  <BankDistributionPanel items={buyerDemographics.bankDistribution} />
+                </BondSectionCard>
               </section>
 
               <BondSectionCard
                 eyebrow="Application Heatmap"
                 title="Operational Bottleneck Heatmap"
-                description="Stage congestion and risk concentration by bank."
+                description="Where files are slowing down across the finance workflow."
                 className="flex min-h-[360px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
                 headerClassName="gap-3"
                 contentClassName="mt-6 min-h-0 flex-1"
@@ -252,26 +280,64 @@ export default function BondDashboard({
                 <OperationalHeatmapPanel rows={heatmapRows} />
               </BondSectionCard>
 
-              <section className="grid gap-6 xl:grid-cols-3">
+              <section className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                 <BondSectionCard
-                  eyebrow="Secondary Operations"
-                  title="Operational Risk"
-                  description="Immediate risks to cycle-time and quality."
-                  action={
-                    <Link
-                      to="/applications?queue=overdue_applications"
-                      className="text-sm font-semibold text-[#204b84] hover:text-[#17324d]"
-                    >
-                      View all
-                    </Link>
-                  }
-                  className="flex min-h-[340px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                  eyebrow="Predictive Intelligence"
+                  title="Approval Confidence Distribution"
+                  description="Estimated confidence bands based on readiness, documents, and workflow signals. Not a bank decision."
+                  className="flex min-h-[360px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
                   headerClassName="gap-3"
                   contentClassName="mt-6 min-h-0 flex-1"
                 >
-                  <OperationalRiskPanel items={operationalRisk} />
+                  <ApprovalConfidencePanel items={approvalConfidenceDistribution} />
                 </BondSectionCard>
+                <BondSectionCard
+                  eyebrow="Readiness Funnel"
+                  title="Buyer Finance Readiness Funnel"
+                  description="Conversion from lead to readiness, application, documents, submission, approval, and registration."
+                  className="flex min-h-[360px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                  headerClassName="gap-3"
+                  contentClassName="mt-6 min-h-0 flex-1"
+                >
+                  <ReadinessFunnelPanel items={readinessFunnel} />
+                </BondSectionCard>
+              </section>
 
+              <section className="grid gap-6 xl:grid-cols-2">
+                <BondSectionCard
+                  eyebrow="Bank Intelligence"
+                  title="Bank Efficiency Layer"
+                  description="Estimated response quality by lender based on volume, timing, and outcome movement."
+                  className="flex min-h-[360px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                  headerClassName="gap-3"
+                  contentClassName="mt-6 min-h-0 flex-1"
+                >
+                  <BankEfficiencyPanel rows={bankEfficiency} />
+                </BondSectionCard>
+                <BondSectionCard
+                  eyebrow="Attention Matrix"
+                  title="Files Needing Attention"
+                  description="Highest-risk workflow files ranked by bottlenecks, predicted delays, and velocity."
+                  className="flex min-h-[360px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                  headerClassName="gap-3"
+                  contentClassName="mt-6 min-h-0 flex-1"
+                >
+                  <OperationalRiskMatrix rows={operationalRiskMatrix} />
+                </BondSectionCard>
+              </section>
+
+              <BondSectionCard
+                eyebrow="Buyer Quality Distribution"
+                title="Readiness Quality Mix"
+                description="Portfolio quality distribution using buyer readiness ranges, deposit strength and captured affordability signals."
+                className="flex min-h-[250px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                headerClassName="gap-3"
+                contentClassName="mt-6 min-h-0 flex-1"
+              >
+                <BuyerQualityPanel distribution={buyerQualityDistribution} />
+              </BondSectionCard>
+
+              <section className="grid gap-6 xl:grid-cols-2">
                 <BondSectionCard
                   eyebrow="Secondary Operations"
                   title="Recent Bank Activity"
@@ -329,6 +395,29 @@ export default function BondDashboard({
                   )}
                 </div>
               </section>
+
+              <BondSectionCard
+                eyebrow="Secondary Operations"
+                title="Operational Risk"
+                description="Immediate risks to cycle-time and quality."
+                action={
+                  <Link
+                    to="/applications?queue=overdue_applications"
+                    className="text-sm font-semibold text-[#204b84] hover:text-[#17324d]"
+                  >
+                    View all
+                  </Link>
+                }
+                className="flex min-h-[300px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                headerClassName="gap-3"
+                contentClassName="mt-6 min-h-0 flex-1"
+              >
+                <OperationalRiskPanel items={operationalRisk} />
+              </BondSectionCard>
+
+              <p className="rounded-[18px] border border-[#dbe5f0] bg-[#f8fbff] px-4 py-3 text-xs leading-5 text-[#60758d]">
+                {FINANCE_INTELLIGENCE_DISCLAIMER}
+              </p>
             </>
           )}
         </>
@@ -349,29 +438,333 @@ function KpiStrip({ items = [] }) {
   )
 }
 
+function ApprovalConfidencePanel({ items = [] }) {
+  const rows = Array.isArray(items) ? items : []
+  const total = rows.reduce((sum, item) => sum + normalizeNumber(item.count), 0) || 1
+  return (
+    <div className="space-y-3">
+      {rows.map((item) => {
+        const pct = Math.round((normalizeNumber(item.count) / total) * 100)
+        return (
+          <article key={item.key} className="rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color || '#315f8c' }} />
+                <p className="text-sm font-semibold text-[#142132]">{item.label}</p>
+              </div>
+              <strong className="text-sm text-[#142132]">{pct}%</strong>
+            </div>
+            <div className="mt-3 h-2 rounded-full bg-[#e6eef8]">
+              <span className="block h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: item.color || '#315f8c' }} />
+            </div>
+            <p className="mt-2 text-xs text-[#60758d]">{item.count} applications</p>
+          </article>
+        )
+      })}
+    </div>
+  )
+}
+
+function ReadinessFunnelPanel({ items = [] }) {
+  const rows = Array.isArray(items) ? items : []
+  const max = Math.max(...rows.map((item) => normalizeNumber(item.count)), 1)
+  return (
+    <div className="space-y-2">
+      {rows.map((item) => {
+        const width = Math.max(8, (normalizeNumber(item.count) / max) * 100)
+        return (
+          <div key={item.key} className="grid grid-cols-[140px_minmax(0,1fr)_70px] items-center gap-3 rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2">
+            <p className="text-xs font-semibold text-[#31506a]">{item.label}</p>
+            <div className="h-8 rounded-[10px] bg-[#e8f0f8]">
+              <span className="flex h-full items-center justify-end rounded-[10px] bg-[#315f8c] pr-2 text-xs font-semibold text-white" style={{ width: `${width}%` }}>
+                {item.count}
+              </span>
+            </div>
+            <p className="text-right text-xs font-semibold text-[#60758d]">{item.conversionRate}%</p>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function BankEfficiencyPanel({ rows = [] }) {
+  const safeRows = Array.isArray(rows) ? rows.slice(0, 8) : []
+  if (!safeRows.length) return <BondEmptyState compact title="No bank intelligence yet" description="Bank efficiency appears once submissions move through finance workflow." />
+  return (
+    <div className="space-y-2 overflow-y-auto pr-1">
+      {safeRows.map((row) => (
+        <article key={row.bank} className="rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-[#142132]">{row.bank}</p>
+            <span className="rounded-full border border-[#dbe5f0] bg-white px-2 py-1 text-xs font-semibold text-[#31506a]">{row.responsiveness}</span>
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-[#60758d]">
+            <span>{row.submissionVolume} submissions</span>
+            <span>{row.approvalRate}% movement</span>
+            <span>{row.averageApprovalDays}d avg</span>
+          </div>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function OperationalRiskMatrix({ rows = [] }) {
+  const safeRows = Array.isArray(rows) ? rows : []
+  if (!safeRows.length) return <BondEmptyState compact title="No elevated risk files" description="Operational risk matrix is clear." />
+  return (
+    <div className="space-y-2 overflow-y-auto pr-1">
+      {safeRows.map((row) => (
+        <article key={row.transactionId || `${row.buyerName}-${row.propertyLabel}`} className="rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-[#142132]">{row.buyerName}</p>
+              <p className="mt-1 truncate text-xs text-[#60758d]">{row.propertyLabel}</p>
+            </div>
+            <span className="rounded-full bg-[#fff4ed] px-2 py-1 text-xs font-semibold text-[#9a4d13]">{row.riskScore}% risk</span>
+          </div>
+          <p className="mt-2 text-xs text-[#60758d]">{row.bottleneck} · {row.predictedDelay}</p>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function BuyerQualityPanel({ distribution = {} }) {
+  const items = [
+    ['high', 'High readiness'],
+    ['moderate', 'Moderate readiness'],
+    ['atRisk', 'At risk'],
+    ['incomplete', 'Incomplete'],
+  ]
+  const total = items.reduce((sum, [key]) => sum + normalizeNumber(distribution[key]), 0) || 1
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {items.map(([key, label]) => {
+        const count = normalizeNumber(distribution[key])
+        return (
+          <div key={key} className="rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] p-4">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">{label}</p>
+            <p className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-[#142132]">{count}</p>
+            <p className="mt-1 text-xs text-[#60758d]">{Math.round((count / total) * 100)}% of active book</p>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function ExecutiveKpiCard({ item = {} }) {
   const sparkline = Array.isArray(item.sparkline) ? item.sparkline : []
   const trend = normalizeText(item.trend)
   const comparison = normalizeText(item.comparison)
-  const progress = getSparklineProgress(sparkline)
+  const microContext = normalizeText(item.microContext) || [trend, comparison].filter(Boolean).join(' · ')
   const progressColor = KPI_PROGRESS_COLORS[item.key] || '#315f8c'
+  const toneClass = KPI_TONE_CLASSES[item.tone] || KPI_TONE_CLASSES.neutral
 
   return (
-    <article className="min-h-[136px] rounded-[20px] border border-[#dbe5f0] bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.035)]">
-      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#778da4]">{item.label}</p>
-      <p className="mt-4 text-[1.6rem] font-semibold leading-none tracking-[-0.04em] text-[#142132]">{item.value}</p>
-      <p className="mt-3 min-h-5 text-[0.82rem] font-semibold leading-5 text-[#60758d]">
-        {trend}
-        {trend && comparison ? ' · ' : ''}
-        {comparison}
-      </p>
-      <div className="mt-4 h-2 rounded-full bg-[#e7eef7]">
+    <article className={`min-h-[124px] rounded-[18px] border p-3.5 shadow-[0_10px_24px_rgba(15,23,42,0.032)] ${toneClass}`}>
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.13em] text-[#778da4]">{item.label}</p>
+        <TinySparkline values={sparkline} color={progressColor} />
+      </div>
+      <p className="mt-3 text-[1.85rem] font-semibold leading-none tracking-[-0.045em] text-[#142132]">{item.value}</p>
+      <p className="mt-2 min-h-10 text-[0.8rem] font-semibold leading-5 text-[#60758d]">{microContext}</p>
+      <p className="mt-1 text-[0.72rem] font-semibold text-[#8192a5]">{trend}</p>
+    </article>
+  )
+}
+
+function TinySparkline({ values = [], color = '#315f8c' }) {
+  const rows = Array.isArray(values) && values.length ? values.slice(-6) : [18, 24, 22, 31, 38, 42]
+  const normalized = rows.map((value) => Math.max(16, Math.min(100, normalizeNumber(value, 0))))
+
+  return (
+    <div className="flex h-8 w-16 shrink-0 items-end gap-1" aria-hidden="true">
+      {normalized.map((value, index) => (
         <span
-          className="block h-full rounded-full"
-          style={{ width: `${progress}%`, backgroundColor: progressColor }}
+          key={`${value}-${index}`}
+          className="w-1.5 rounded-full bg-[#dfe8f3]"
+          style={{ height: `${Math.max(7, (value / 100) * 30)}px`, backgroundColor: index === normalized.length - 1 ? color : '#dfe8f3' }}
         />
+      ))}
+    </div>
+  )
+}
+
+function ActiveApplicationsSection({ items = [], activeFilter = 'all', onFilterChange = () => {} }) {
+  return (
+    <BondSectionCard
+      eyebrow="Active Work"
+      title="Active Applications"
+      description="Live operational movement across active bond files."
+      action={
+        <Link to="/applications" className="text-sm font-semibold text-[#204b84] hover:text-[#17324d]">
+          View all applications
+        </Link>
+      }
+      className="rounded-[24px] p-5 sm:p-6"
+      headerClassName="gap-4"
+      contentClassName="mt-5"
+    >
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {ACTIVE_FILTERS.map((filter) => (
+          <button
+            key={filter.key}
+            type="button"
+            onClick={() => onFilterChange(filter.key)}
+            className={`h-9 shrink-0 rounded-full border px-3 text-xs font-semibold transition ${
+              activeFilter === filter.key
+                ? 'border-[#143250] bg-[#143250] text-white'
+                : 'border-[#dbe5f0] bg-[#fbfdff] text-[#536a83] hover:border-[#b8ccdf]'
+            }`}
+          >
+            {filter.label}
+          </button>
+        ))}
+      </div>
+
+      {items.length ? (
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {items.map((application, index) => (
+            <ActiveApplicationCard key={`${application.id}-${index}`} application={application} />
+          ))}
+        </div>
+      ) : (
+        <div className="mt-5">
+          <BondEmptyState
+            compact
+            title="No active bond applications"
+            description="Accepted and assigned bond applications will appear here once they move into processing."
+            action={<Link to="/applications?queue=new_applications" className="text-sm font-semibold text-[#204b84]">View New Applications</Link>}
+          />
+        </div>
+      )}
+    </BondSectionCard>
+  )
+}
+
+function ActiveApplicationCard({ application = {} }) {
+  const toneClass = {
+    success: 'border-[#cde8d4] bg-[#f7fcf8] text-[#2a7352]',
+    warning: 'border-[#efdcb8] bg-[#fff9ef] text-[#8f5e14]',
+    danger: 'border-[#f0d1d8] bg-[#fff8f9] text-[#9b3347]',
+  }[application.statusTone] || 'border-[#dbe5f0] bg-[#f7fbff] text-[#315f8c]'
+
+  function goTo(href) {
+    if (!href || typeof window === 'undefined') return
+    window.location.assign(href)
+  }
+
+  return (
+    <article className="flex min-h-[360px] flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.035)]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-base font-semibold tracking-[-0.02em] text-[#142132]">{application.buyerName || 'Unknown buyer'}</p>
+          <p className="mt-1 truncate text-sm font-semibold text-[#536a83]">{application.propertyLabel || 'Property pending'}</p>
+          <p className="mt-1 truncate text-xs text-[#71879d]">{application.developmentName || 'Location pending'}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => goTo(application.href)}
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#dbe5f0] bg-[#fbfdff] text-[#4b6884] transition hover:border-[#b9ccde]"
+          aria-label="Open application"
+        >
+          <MoreHorizontal size={17} />
+        </button>
+      </div>
+
+      <div className="mt-4 grid gap-2 text-xs text-[#60758d]">
+        <ApplicationMeta icon={UsersRound} label="Agent" value={application.agentName || 'Partner not assigned'} />
+        <ApplicationMeta icon={FileCheck2} label="Consultant" value={application.consultantName || 'Unassigned consultant'} />
+        <ApplicationMeta icon={Building2} label="Bank" value={application.bankName || 'Bank not selected'} />
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-2 rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] p-3">
+        <MiniFileStat label={application.financeType || 'Bond'} value={application.bondValue || 'R 0'} />
+        <MiniFileStat label="Confidence" value={`${application.transactionConfidence || 0}%`} />
+        <MiniFileStat label="Risk" value={`${application.operationalRisk?.riskScore || 0}%`} />
+      </div>
+
+      <div className="mt-3 rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] p-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8294a8]">Estimated approval confidence</p>
+          <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-[#31506a]">{application.approvalConfidence?.probabilityBand || 'Insufficient Data'}</span>
+        </div>
+        <p className="mt-2 text-xs leading-5 text-[#60758d]">
+          {application.financeInsights?.insights?.[0] || application.financeInsights?.operationalWarnings?.[0] || 'Predictive workflow insights will strengthen as buyer and document data improves.'}
+        </p>
+      </div>
+
+      <div className="mt-4">
+        <div className="flex items-center justify-between gap-3">
+          <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}>{application.statusLabel || 'On Track'}</span>
+          <span className="text-xs font-semibold text-[#6b8198]">{application.progressPercent || 0}%</span>
+        </div>
+        <div className="mt-4 grid grid-cols-6 gap-1.5">
+          {(application.stageItems || []).map((stage) => (
+            <div key={stage.key} className="min-w-0">
+              <span
+                className={`mx-auto block h-2.5 w-2.5 rounded-full ${
+                  stage.state === 'complete'
+                    ? 'bg-[#2f8a63]'
+                    : stage.state === 'active'
+                      ? 'bg-[#143250] ring-4 ring-[#e7eef7]'
+                      : 'bg-[#cbd8e6]'
+                }`}
+              />
+              <p className={`mt-2 truncate text-center text-[0.62rem] font-semibold ${stage.state === 'active' ? 'text-[#143250]' : 'text-[#8a9aad]'}`}>
+                {stage.label}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 flex-1 rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] p-3">
+        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8294a8]">Next action</p>
+        <p className="mt-2 text-sm font-semibold leading-5 text-[#24384d]">{application.nextAction || 'No next action'}</p>
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        <button type="button" onClick={() => goTo(application.href)} className="h-9 rounded-[11px] bg-[#143250] px-2 text-xs font-semibold text-white transition hover:bg-[#173a5e]">
+          Open File
+        </button>
+        <button
+          type="button"
+          disabled={!application.requestDocsHref}
+          onClick={() => goTo(application.requestDocsHref)}
+          className="h-9 rounded-[11px] border border-[#d5e1ed] bg-white px-2 text-xs font-semibold text-[#24384d] transition hover:border-[#b8ccdf] disabled:cursor-not-allowed disabled:bg-[#f2f5f8] disabled:text-[#99a8b8]"
+        >
+          Request Docs
+        </button>
+        <button type="button" onClick={() => goTo(application.reviewHref)} className="h-9 rounded-[11px] border border-[#d5e1ed] bg-white px-2 text-xs font-semibold text-[#24384d] transition hover:border-[#b8ccdf]">
+          Review
+        </button>
       </div>
     </article>
+  )
+}
+
+function ApplicationMeta({ icon, label = '', value = '' }) {
+  const IconComponent = icon
+
+  return (
+    <div className="flex items-center gap-2">
+      <IconComponent size={14} className="shrink-0 text-[#86a0ba]" />
+      <span className="shrink-0 text-[#8798aa]">{label}</span>
+      <span className="min-w-0 truncate font-semibold text-[#31475d]">{value}</span>
+    </div>
+  )
+}
+
+function MiniFileStat({ label = '', value = '' }) {
+  return (
+    <div className="min-w-0">
+      <p className="truncate text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-[#8294a8]">{label}</p>
+      <p className="mt-1 truncate text-xs font-semibold text-[#142132]">{value}</p>
+    </div>
   )
 }
 
@@ -555,17 +948,21 @@ function PipelineFlowPanel({ items = [] }) {
   const rows = Array.isArray(items) ? items : []
   const stageIcons = {
     lead: UsersRound,
+    bond_app: FileCheck2,
     docs_collection: FileText,
     pre_approval: HandCoins,
     submitted: ArrowRight,
     bank_feedback: CircleAlert,
     approved: CircleCheck,
-    grant_signed: CircleDashed,
+    registered: CircleDashed,
   }
 
   return (
     <div className="overflow-x-auto pb-1">
-      <div className="grid min-w-[840px] grid-cols-6 items-stretch gap-3">
+      <div
+        className="grid min-w-[1040px] items-stretch gap-3"
+        style={{ gridTemplateColumns: `repeat(${Math.max(rows.length, 1)}, minmax(118px, 1fr))` }}
+      >
         {rows.map((row) => {
           const Icon = stageIcons[row.key] || CircleDashed
           const active = Number(row.count || 0) > 0
@@ -708,63 +1105,62 @@ function DonutAnalyticsPanel({ items = {} }) {
   )
 }
 
-function OperationalHeatmapPanel({ rows = [] }) {
-  const safeRows = Array.isArray(rows) ? rows : []
-  const columns = safeRows[0]?.stages?.map((stage) => stage.label) || []
+function BankDistributionPanel({ items = [] }) {
+  const rows = Array.isArray(items) ? items.filter((item) => Number(item.total || 0) > 0) : []
+  const total = rows.reduce((sum, row) => sum + Number(row.total || 0), 0) || 1
+  const max = Math.max(...rows.map((row) => Number(row.total || 0)), 1)
 
-  if (!safeRows.length) {
+  if (!rows.length) {
     return (
       <BondEmptyState
         compact
-        title="No bottleneck heatmap data"
-        description="Stage concentration will appear once applications move through the pipeline."
+        title="No bank distribution yet"
+        description="Bank allocation appears once applications are assigned to lenders."
       />
     )
   }
 
   return (
-    <div className="overflow-x-auto">
-      <div className="min-w-[860px]">
-        <div
-          className="grid gap-2"
-          style={{ gridTemplateColumns: `180px repeat(${columns.length}, minmax(94px, 1fr))` }}
-        >
-          <div />
-          {columns.map((column) => (
-            <p key={column} className="text-center text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d93aa]">
-              {column}
-            </p>
-          ))}
-          {safeRows.map((row) => (
-            <div key={row.key} className="contents">
-              <div className="flex items-center rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-4 py-3">
+    <div className="space-y-3">
+      {rows.map((row) => {
+        const visual = getBankVisual(row.bank)
+        const width = Math.max(8, (Number(row.total || 0) / max) * 100)
+        const share = Math.round((Number(row.total || 0) / total) * 100)
+        return (
+          <article key={row.bank} className="rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <span
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[0.65rem] font-bold"
+                  style={{ backgroundColor: visual.soft, color: visual.color }}
+                >
+                  {visual.initials}
+                </span>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-[#142132]">{row.label}</p>
-                  <p className="mt-1 text-xs text-[#60758d]">{row.total} active files</p>
+                  <p className="truncate text-sm font-semibold text-[#142132]">{row.bank}</p>
+                  <p className="text-xs text-[#70879d]">{row.submitted} submitted • {row.approved} approved</p>
                 </div>
               </div>
-              {row.stages.map((stage) => {
-                const intensity = Math.min(1, Math.max(0, Number(stage.intensity || 0)))
-                const background = `rgba(49, 95, 140, ${0.08 + intensity * 0.62})`
-                const textColor = intensity > 0.55 ? '#ffffff' : '#142132'
-                return (
-                  <div
-                    key={`${row.key}-${stage.key}`}
-                    className="flex min-h-[58px] flex-col items-center justify-center rounded-[14px] border border-[#edf2f7]"
-                    style={{ background, color: textColor }}
-                  >
-                    <p className="text-lg font-semibold">{stage.count}</p>
-                    <p className="mt-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.08em] opacity-80">
-                      {stage.riskCount} risk
-                    </p>
-                  </div>
-                )
-              })}
+              <p className="text-sm font-semibold text-[#142132]">{share}%</p>
             </div>
-          ))}
-        </div>
-      </div>
+            <div className="mt-3 h-2.5 rounded-full bg-[#e6eef8]">
+              <span className="block h-full rounded-full" style={{ width: `${width}%`, backgroundColor: visual.color }} />
+            </div>
+          </article>
+        )
+      })}
     </div>
+  )
+}
+
+function OperationalHeatmapPanel({ rows = [] }) {
+  return (
+    <OperationalHeatmap
+      rows={rows}
+      rowHeader="Bank"
+      emptyTitle="No bottleneck heatmap data"
+      emptyDescription="Stage concentration will appear once applications move through the pipeline."
+    />
   )
 }
 

@@ -7,6 +7,7 @@ import {
 import { BOND_INTAKE_STATUSES } from '../core/transactions/bondIntakeSelectors'
 import { getBondApplicationStage } from '../core/transactions/bondSelectors'
 import { getTransactionScopeForRow } from '../core/transactions/transactionScope'
+import { FINANCE_READINESS_DISCLAIMER, getFinanceReadinessSummary } from '../core/finance/financeReadinessSelectors'
 import { resolveEffectiveBondAssignment } from '../services/bondAssignmentService'
 import BondEmptyState from './bond/BondEmptyState'
 import BondRiskBadge from './bond/BondRiskBadge'
@@ -154,6 +155,13 @@ function progressLabel(status = '') {
   return 'Not started'
 }
 
+function readinessToneClass(tone = '') {
+  if (tone === 'success') return 'border-[#cfead8] bg-[#f6fcf8] text-[#226a45]'
+  if (tone === 'warning') return 'border-[#f0dfb8] bg-[#fffaf0] text-[#8a5c00]'
+  if (tone === 'danger') return 'border-[#efd6dc] bg-[#fff8fa] text-[#8f3747]'
+  return 'border-[#dbe5f0] bg-[#f8fbff] text-[#516a83]'
+}
+
 function intakeFilterLabel(status = '') {
   if (status === BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION) return 'Awaiting Buyer'
   if (status === BOND_INTAKE_STATUSES.BUYER_IN_PROGRESS) return 'In Progress'
@@ -261,6 +269,39 @@ function NewApplicationCard({ item, currentUser, onRowClick, onAction }) {
               {item.documentUploadedCount} / {item.documentRequiredCount} docs submitted
             </p>
             <p className="mt-1 truncate text-xs text-[#60758d]">{item.documentMissingCount} missing · {missingPreview}</p>
+          </div>
+          <div className="rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-3 sm:col-span-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">Finance Readiness</p>
+              <span className={`rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold ${readinessToneClass(item.financeReadinessTone)}`}>
+                {item.financeReadinessScore}% · {item.financeReadinessLabel}
+              </span>
+            </div>
+            <p className="mt-2 text-sm font-semibold text-[#142132]">
+              {formatCurrency(item.affordabilityEstimate?.estimatedPurchaseRangeMin)} - {formatCurrency(item.affordabilityEstimate?.estimatedPurchaseRangeMax)}
+            </p>
+            <p className="mt-1 truncate text-xs text-[#60758d]">
+              {item.financeRiskFlags?.[0] || item.financeNextRecommendedAction || 'Buyer readiness inputs pending'}
+            </p>
+          </div>
+          <div className="rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-3 sm:col-span-2">
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div>
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">Approval Confidence</p>
+                <p className="mt-2 text-sm font-semibold text-[#142132]">{item.approvalConfidence?.score || 0}% · {item.approvalConfidence?.probabilityBand || 'Insufficient Data'}</p>
+              </div>
+              <div>
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">Risk Score</p>
+                <p className="mt-2 text-sm font-semibold text-[#142132]">{item.operationalRisk?.riskScore || 0}% · {item.operationalRisk?.riskLevel || 'Low'}</p>
+              </div>
+              <div>
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">Velocity</p>
+                <p className="mt-2 text-sm font-semibold text-[#142132]">{item.velocity?.velocityScore || 0}% · {item.velocity?.expectedApprovalDays || 0}d est.</p>
+              </div>
+            </div>
+            <p className="mt-2 truncate text-xs text-[#60758d]">
+              {item.financeInsights?.conversionOpportunities?.[0] || item.financeInsights?.operationalWarnings?.[0] || item.financeInsights?.recommendations?.[0] || 'No predictive warnings yet.'}
+            </p>
           </div>
         </div>
 
@@ -459,13 +500,21 @@ function IntakeActionModal({ action = '', item = null, currentUser = {}, busy = 
 
 function NewApplicationsInbox({ rows = [], onRowClick, currentUser = {}, onActionComplete }) {
   const [statusFilter, setStatusFilter] = useState('all')
+  const [sortMode, setSortMode] = useState('highest_risk')
   const [feedback, setFeedback] = useState(null)
   const [modalState, setModalState] = useState({ action: '', item: null })
   const [busy, setBusy] = useState(false)
   const [dismissedIds, setDismissedIds] = useState([])
   const items = useMemo(() => rows.map(buildBondNewApplicationViewModel), [rows])
   const activeItems = items.filter((item) => !dismissedIds.includes(item.id))
-  const visibleItems = statusFilter === 'all' ? activeItems : activeItems.filter((item) => item.intakeStatus === statusFilter)
+  const visibleItems = (statusFilter === 'all' ? activeItems : activeItems.filter((item) => item.intakeStatus === statusFilter))
+    .slice()
+    .sort((left, right) => {
+      if (sortMode === 'highest_confidence') return (right.approvalConfidence?.score || 0) - (left.approvalConfidence?.score || 0)
+      if (sortMode === 'fastest_ready') return (right.velocity?.velocityScore || 0) - (left.velocity?.velocityScore || 0)
+      if (sortMode === 'aging') return String(left.ageLabel || '').localeCompare(String(right.ageLabel || ''))
+      return (right.operationalRisk?.riskScore || 0) - (left.operationalRisk?.riskScore || 0)
+    })
   const filters = [
     { key: 'all', label: `All (${activeItems.length})` },
     ...[
@@ -553,6 +602,30 @@ function NewApplicationsInbox({ rows = [], onRowClick, currentUser = {}, onActio
           </button>
         ))}
       </div>
+      <div className="mb-5 flex flex-wrap gap-2">
+        {[
+          { key: 'highest_risk', label: 'Highest risk' },
+          { key: 'highest_confidence', label: 'Highest confidence' },
+          { key: 'fastest_ready', label: 'Fastest ready' },
+          { key: 'aging', label: 'Aging applications' },
+        ].map((option) => (
+          <button
+            key={option.key}
+            type="button"
+            onClick={() => setSortMode(option.key)}
+            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+              sortMode === option.key
+                ? 'border-[#315f8c] bg-[#e8f0f8] text-[#17324d]'
+                : 'border-[#dbe5f0] bg-white text-[#516a83] hover:border-[#c5d5e6]'
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      <p className="mb-5 rounded-[14px] border border-[#dbe5f0] bg-[#f8fbff] px-4 py-3 text-xs leading-5 text-[#60758d]">
+        {FINANCE_READINESS_DISCLAIMER}
+      </p>
       <div className="space-y-3">
         {visibleItems.length ? visibleItems.map((item) => (
           <NewApplicationCard
@@ -594,6 +667,7 @@ function ApplicationRow({ row, onRowClick }) {
   const stageKey = getBondApplicationStage(row)
   const updatedAt = getUpdatedAt(row)
   const risk = getRiskMeta(row)
+  const financeReadiness = getFinanceReadinessSummary(row)
   const team = resolveTeamAssignment(row)
   const canOpenRow = Boolean(row?.unit?.id || row?.transaction?.id)
 
@@ -637,6 +711,14 @@ function ApplicationRow({ row, onRowClick }) {
       </td>
       <td className="px-4 py-4 align-top">
         <BondStatusBadge status={stageKey} label={stageLabelFromKey(stageKey)} />
+      </td>
+      <td className="px-4 py-4 align-top">
+        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${readinessToneClass(financeReadiness.readinessScore?.tone)}`}>
+          {financeReadiness.readinessScore?.score || 0}% · {financeReadiness.readinessScore?.label || 'Incomplete'}
+        </span>
+        <p className="mt-1 text-xs text-[#71869d]">
+          {formatCurrency(financeReadiness.affordabilityEstimate?.estimatedPurchaseRangeMin)} - {formatCurrency(financeReadiness.affordabilityEstimate?.estimatedPurchaseRangeMax)}
+        </p>
       </td>
       <td className="px-4 py-4 align-top text-sm text-[#17324d]">{formatDate(updatedAt)}</td>
       <td className="px-4 py-4 align-top">
@@ -690,6 +772,7 @@ function BondApplicationsTable({ rows = [], onRowClick, title = 'Applications Qu
               <HeaderCell>Processor</HeaderCell>
               <HeaderCell>Bank / Value</HeaderCell>
               <HeaderCell>Stage</HeaderCell>
+              <HeaderCell>Finance Readiness</HeaderCell>
               <HeaderCell>Last Activity</HeaderCell>
               <HeaderCell>Risk</HeaderCell>
               <HeaderCell className="text-right">Action</HeaderCell>
@@ -706,7 +789,7 @@ function BondApplicationsTable({ rows = [], onRowClick, title = 'Applications Qu
 
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-6">
+                <td colSpan={10} className="px-4 py-6">
                   <BondEmptyState
                     compact
                     title="No applications found"
@@ -718,6 +801,9 @@ function BondApplicationsTable({ rows = [], onRowClick, title = 'Applications Qu
           </tbody>
         </table>
       </div>
+      <p className="border-t border-[#edf2f7] px-4 py-3 text-xs leading-5 text-[#60758d]">
+        {FINANCE_READINESS_DISCLAIMER}
+      </p>
     </BondSectionCard>
   )
 }

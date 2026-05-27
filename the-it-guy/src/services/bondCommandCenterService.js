@@ -7,6 +7,13 @@ import { fetchTransactionsByParticipantSummary } from '../lib/api'
 import { canViewFinanceWorkflow } from './bondFinanceWorkflowOwnershipService'
 import { resolveBondOperationalQueues } from './bondOperationalQueueService'
 import { getBondDashboardReportingScope } from './bondDashboardService'
+import {
+  calculateApprovalProbability,
+  calculateOperationalRisk,
+  calculateTransactionVelocity,
+  generateFinanceInsights,
+  getCachedFinanceIntelligence,
+} from './financeIntelligenceService'
 import { resolveEffectiveBondAssignment } from './bondAssignmentService'
 
 const PRIORITY_CARD_META = Object.freeze({
@@ -60,14 +67,25 @@ const PIPELINE_STAGE_META = Object.freeze([
 
 const DASHBOARD_PIPELINE_FLOW_META = Object.freeze([
   { key: 'lead', label: 'Lead', href: '/applications?queue=my_applications' },
+  { key: 'bond_app', label: 'Bond App', href: '/applications?queue=my_applications' },
   { key: 'docs_collection', label: 'Docs Collection', href: '/applications?queue=missing_documents' },
   { key: 'pre_approval', label: 'Pre-Approval', href: '/applications?stage=docs_received' },
   { key: 'submitted', label: 'Submission', href: '/applications?stage=application_submitted' },
+  { key: 'bank_feedback', label: 'Bank Feedback', href: '/applications?queue=bank_feedback' },
   { key: 'approved', label: 'Approval', href: '/applications?stage=approval_granted' },
   { key: 'registered', label: 'Registration', href: '/transactions?status=registered' },
 ])
 
 const EXECUTIVE_BANKS = Object.freeze(['FNB', 'ABSA', 'Standard Bank', 'Nedbank', 'Investec', 'Others'])
+
+const ACTIVE_APPLICATION_STAGE_META = Object.freeze([
+  { key: 'lead', label: 'Lead' },
+  { key: 'bond_app', label: 'Bond App' },
+  { key: 'docs', label: 'Docs' },
+  { key: 'submission', label: 'Submission' },
+  { key: 'feedback', label: 'Feedback' },
+  { key: 'approval', label: 'Approval' },
+])
 
 const EXECUTIVE_DEMO_PARTNERS = Object.freeze([
   { key: 'samlin', name: 'Samlin Residential Developments', type: 'Developer', activeFiles: 24, conversionRate: 87, avgRegistrationDays: 41 },
@@ -256,6 +274,16 @@ function getPartnerLabel(row = {}) {
     normalizeText(row?.transaction?.developer_name) ||
     normalizeText(row?.development?.name) ||
     'Partner not assigned'
+  )
+}
+
+function getDevelopmentName(row = {}) {
+  return (
+    normalizeText(row?.development?.name) ||
+    normalizeText(row?.transaction?.development_name) ||
+    normalizeText(row?.transaction?.property_suburb) ||
+    normalizeText(row?.transaction?.suburb) ||
+    'Location pending'
   )
 }
 
@@ -676,6 +704,18 @@ function deriveFinanceLaneStage(row = {}) {
   return { key: 'finance_requested', label: 'Finance Requested' }
 }
 
+function deriveActiveApplicationStageKey(row = {}) {
+  const pipelineStage = resolvePipelineStageKey(row)
+  const transferStage = getAttorneyTransferStage(row)
+
+  if (transferStage === 'registered' || ['instruction_sent', 'grant_signed', 'approved'].includes(pipelineStage)) return 'approval'
+  if (pipelineStage === 'bank_feedback') return 'feedback'
+  if (pipelineStage === 'submitted') return 'submission'
+  if (pipelineStage === 'pre_approval' || pipelineStage === 'docs_collection') return 'docs'
+  if (getBondApplicationStage(row) === 'docs_requested') return 'bond_app'
+  return 'lead'
+}
+
 function deriveTransactionStatus(row = {}) {
   const financeLane = deriveFinanceLaneStage(row)
   const risk = deriveRiskSignals(row)
@@ -842,6 +882,39 @@ function buildAtRiskApplications(rows = []) {
     .slice(0, 6)
 }
 
+function isReadyForReview(row = {}) {
+  const stageKey = resolvePipelineStageKey(row)
+  return stageKey === 'pre_approval' || stageKey === 'submitted' || getDocumentMissingCount(row) === 0
+}
+
+function buildHeaderSummary(rows = []) {
+  const safeRows = rows.filter(Boolean)
+  const awaitingDocuments = safeRows.filter((row) => getDocumentMissingCount(row) > 0).length
+  const readyForReview = safeRows.filter(isReadyForReview).length
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const bankResponsesToday = safeRows.filter((row) => {
+    const updatedAt = getDateOrNull(getUpdatedAt(row))
+    return resolvePipelineStageKey(row) === 'bank_feedback' && updatedAt && updatedAt >= todayStart
+  }).length
+
+  return {
+    activeApplications: safeRows.length,
+    awaitingDocuments,
+    readyForReview,
+    bankResponsesToday,
+    text: `${safeRows.length} active applications • ${awaitingDocuments} awaiting documents • ${readyForReview} ready for review • ${bankResponsesToday} bank responses today`,
+  }
+}
+
+function getKpiTone({ key = '', value = 0, benchmark = 0 } = {}) {
+  if (key === 'approval_rate') return value >= 70 ? 'success' : value >= 55 ? 'warning' : 'danger'
+  if (key === 'average_approval_time') return value > benchmark ? 'warning' : 'success'
+  if (key === 'registration_conversion') return value >= 50 ? 'success' : value >= 30 ? 'warning' : 'danger'
+  if (key === 'active_applications') return value > 0 ? 'neutral' : 'warning'
+  return 'neutral'
+}
+
 function makeTrendLabel(current, previous, label = 'vs last month') {
   const diff = current - previous
   const abs = Math.abs(diff)
@@ -862,6 +935,8 @@ function buildHeroKpiCards(rows = []) {
   const approvalRate = activeApplications ? roundTo((approvedCount / activeApplications) * 100, 0) : 0
   const totalBondValue = bondValueRows.reduce((sum, row) => sum + getBondAmount(row), 0)
   const totalCommission = rowsForTrend.reduce((sum, row) => sum + getCommissionValue(row), 0)
+  const awaitingDocuments = rowsForTrend.filter((row) => getDocumentMissingCount(row) > 0).length
+  const readyForReview = rowsForTrend.filter(isReadyForReview).length
   const approvedTurnaroundRows = approvedRows.filter(
     (row) => getTimestamp(row?.transaction?.created_at) && getTimestamp(getUpdatedAt(row)),
   )
@@ -874,11 +949,13 @@ function buildHeroKpiCards(rows = []) {
         }, 0) / approvedTurnaroundRows.length,
       )
     : 0
-  const bondInProgress = rowsForTrend.filter((row) => deriveTransactionStatus(row) !== 'registered').length
   const approvalVelocity = approvalRate >= 70 ? 'up 18%' : approvalRate >= 55 ? 'up 7%' : 'steady'
   const registerRate = rowsForTrend.length
     ? roundTo((registrationRows.length / rowsForTrend.length) * 100, 0)
     : 0
+  const approvalTargetDays = 8
+  const estimatedCommission = Math.max(totalCommission, totalBondValue * 0.012)
+  const confirmedCommission = approvedRows.reduce((sum, row) => sum + getCommissionValue(row), 0)
 
   return {
     heroSummary: {
@@ -890,8 +967,10 @@ function buildHeroKpiCards(rows = []) {
         key: 'active_applications',
         label: 'Active Applications',
         value: String(activeApplications),
-        trend: `${bondInProgress} active`,
-        comparison: 'book now',
+        trend: `${awaitingDocuments} awaiting docs`,
+        comparison: `${readyForReview} ready`,
+        microContext: `${awaitingDocuments} awaiting docs • ${readyForReview} ready for review`,
+        tone: getKpiTone({ key: 'active_applications', value: activeApplications }),
         sparkline: buildSparkline(
           rowsForTrend.slice(-12).map((row, index) => ({ value: (Number(getDaysSinceUpdate(row) >= 0) ? index + 1 : 0) })),
           6,
@@ -903,14 +982,18 @@ function buildHeroKpiCards(rows = []) {
         value: `${approvalRate}%`,
         trend: makeTrendLabel(approvalRate, approvalRate - 2),
         comparison: 'vs last month',
+        microContext: `${approvedCount} approved • ${activeApplications - approvedCount} pending`,
+        tone: getKpiTone({ key: 'approval_rate', value: approvalRate }),
         sparkline: buildSparkline(approvedRows.map((_, index) => ({ value: index + 1 })), 6),
       },
       {
-        key: 'avg_approval_time',
+        key: 'average_approval_time',
         label: 'Avg Approval Time',
         value: `${avgTurnaround} days`,
-        trend: avgTurnaround > 8 ? 'needs focus' : 'on track',
-        comparison: 'book trend',
+        trend: avgTurnaround > approvalTargetDays ? 'needs focus' : 'on target',
+        comparison: `${approvalTargetDays}d target`,
+        microContext: avgTurnaround > approvalTargetDays ? `${avgTurnaround - approvalTargetDays}d over target` : 'Healthy against target',
+        tone: getKpiTone({ key: 'average_approval_time', value: avgTurnaround, benchmark: approvalTargetDays }),
         sparkline: buildSparkline(
           rowsForTrend.map((row, index) => ({
             value: Math.max(1, 24 - Math.min(20, index + 1)),
@@ -922,8 +1005,10 @@ function buildHeroKpiCards(rows = []) {
         key: 'bond_value',
         label: 'Bond Value In Progress',
         value: formatCurrency(totalBondValue),
-        trend: 'steady',
-        comparison: 'book value',
+        trend: `${bondValueRows.length} files`,
+        comparison: 'included',
+        microContext: `${bondValueRows.length} finance files included`,
+        tone: 'neutral',
         sparkline: buildSparkline(
           rowsForTrend.map((row, index) => ({ value: normalizeNumber(getBondAmount(row), 0) + index * 12000 })),
           6,
@@ -935,14 +1020,18 @@ function buildHeroKpiCards(rows = []) {
         value: `${registerRate}%`,
         trend: registerRate >= 50 ? 'healthy' : 'needs push',
         comparison: 'registration',
+        microContext: registerRate >= 50 ? 'On track to registration' : 'Needs stage push',
+        tone: getKpiTone({ key: 'registration_conversion', value: registerRate }),
         sparkline: buildSparkline(rowsForTrend.map((_, index) => ({ value: 100 - index })), 6),
       },
       {
         key: 'commission_pipeline',
         label: 'Commission Pipeline',
-        value: formatCurrency(totalCommission),
-        trend: makeTrendLabel(totalCommission, totalCommission - 45000),
+        value: formatCurrency(estimatedCommission),
+        trend: `${formatCurrency(confirmedCommission)} confirmed`,
         comparison: 'estimated',
+        microContext: `${formatCurrency(confirmedCommission)} confirmed • ${formatCurrency(Math.max(estimatedCommission - confirmedCommission, 0))} estimated`,
+        tone: 'success',
         sparkline: buildSparkline(
           rowsForTrend.map((row, index) => ({ value: normalizeNumber(getCommissionValue(row), 0) + index * 18000 })),
           6,
@@ -950,6 +1039,110 @@ function buildHeroKpiCards(rows = []) {
       },
     ],
   }
+}
+
+function getApplicationStatus(row = {}) {
+  const risk = deriveRiskSignals(row)
+  const stageKey = deriveActiveApplicationStageKey(row)
+  if (risk.overdueDays > 3 || risk.complianceFlag || risk.declined) return { label: 'At Risk', tone: 'danger' }
+  if (risk.overdueDays > 0 || risk.missingDocuments > 0) return { label: 'Waiting', tone: 'warning' }
+  if (stageKey === 'docs' || stageKey === 'submission') return { label: 'Ready', tone: 'success' }
+  if (stageKey === 'feedback') return { label: 'Bank Feedback', tone: 'warning' }
+  return { label: 'On Track', tone: 'success' }
+}
+
+function getNextAction(row = {}) {
+  const explicit = normalizeText(row?.transaction?.next_action)
+  if (explicit) return explicit
+  const stageKey = deriveActiveApplicationStageKey(row)
+  const bank = normalizeText(row?.transaction?.bank)
+
+  if (stageKey === 'bond_app') return 'Buyer onboarding pending'
+  if (stageKey === 'docs') return getDocumentMissingCount(row) > 0 ? 'Collect latest payslip' : 'Review submitted application'
+  if (stageKey === 'submission') return 'Submit to banks'
+  if (stageKey === 'feedback') return bank ? `Awaiting ${bank} feedback` : 'Awaiting bank feedback'
+  if (stageKey === 'approval') return 'Prepare approval pack'
+  return 'No next action'
+}
+
+function getFinanceTypeLabel(row = {}) {
+  const financeType = normalizeFinanceType(row?.transaction?.finance_type, { allowUnknown: true })
+  if (financeType === 'combination') return 'Hybrid'
+  if (financeType === 'cash') return 'Cash'
+  return 'Bond'
+}
+
+function getApplicationHref(row = {}) {
+  const transactionId = normalizeText(row?.transaction?.id)
+  return transactionId ? `/transactions/${encodeURIComponent(transactionId)}` : '/applications?queue=my_applications'
+}
+
+function buildActiveApplicationViewModel(row = {}) {
+  const stageKey = deriveActiveApplicationStageKey(row)
+  const stageIndex = ACTIVE_APPLICATION_STAGE_META.findIndex((stage) => stage.key === stageKey)
+  const safeStageIndex = stageIndex >= 0 ? stageIndex : 0
+  const risk = deriveRiskSignals(row)
+  const status = getApplicationStatus(row)
+  const assignment = resolveEffectiveBondAssignment(row?.transaction || {})
+  const approvalConfidence = calculateApprovalProbability(row)
+  const operationalRisk = calculateOperationalRisk(row)
+  const velocity = calculateTransactionVelocity(row)
+  const financeInsights = generateFinanceInsights(row)
+
+  return {
+    id: normalizeText(row?.transaction?.id) || normalizeText(row?.transaction?.transaction_reference) || 'application',
+    buyerName: getBuyerName(row) || 'Unknown buyer',
+    propertyLabel: getPropertyLabel(row),
+    developmentName: getDevelopmentName(row),
+    agentName: getPartnerLabel(row),
+    consultantName: getDisplayNameFromAssignment(assignment, row, 'consultant') || 'Unassigned consultant',
+    bankName: normalizeText(row?.transaction?.bank) || 'Bank not selected',
+    financeType: getFinanceTypeLabel(row),
+    bondValue: formatCurrency(getBondAmount(row)),
+    applicationAge: `${getDaysSinceUpdate(row)}d active`,
+    currentStage: ACTIVE_APPLICATION_STAGE_META[safeStageIndex]?.label || 'Lead',
+    progressPercent: Math.round(((safeStageIndex + 1) / ACTIVE_APPLICATION_STAGE_META.length) * 100),
+    stageItems: ACTIVE_APPLICATION_STAGE_META.map((stage, index) => ({
+      ...stage,
+      state: index < safeStageIndex ? 'complete' : index === safeStageIndex ? 'active' : 'pending',
+    })),
+    statusLabel: status.label,
+    statusTone: status.tone,
+    nextAction: getNextAction(row),
+    riskFlags: risk.reasons.slice(0, 2),
+    approvalConfidence,
+    operationalRisk,
+    velocity,
+    financeInsights,
+    transactionConfidence: Math.round((approvalConfidence.score * 0.55) + ((100 - operationalRisk.riskScore) * 0.25) + (velocity.velocityScore * 0.2)),
+    href: getApplicationHref(row),
+    requestDocsHref: getDocumentMissingCount(row) > 0 ? '/documents?role=bond_originator' : '',
+    reviewHref: ['docs', 'submission'].includes(stageKey) ? '/applications?queue=submission_readiness' : getApplicationHref(row),
+    filterKeys: [
+      'all',
+      getDocumentMissingCount(row) > 0 ? 'awaiting_docs' : '',
+      isReadyForReview(row) ? 'ready_for_review' : '',
+      stageKey === 'submission' ? 'submitted' : '',
+      stageKey === 'feedback' ? 'bank_feedback' : '',
+      stageKey === 'approval' ? 'approved' : '',
+    ].filter(Boolean),
+  }
+}
+
+function buildActiveApplications(rows = []) {
+  return rows
+    .filter((row) => row?.transaction && deriveTransactionStatus(row) !== 'registered' && deriveTransactionStatus(row) !== 'cancelled')
+    .map((row) => ({
+      row,
+      score:
+        (deriveRiskSignals(row).atRisk ? 100 : 0) +
+        getDocumentMissingCount(row) * 12 +
+        getDaysSinceUpdate(row) +
+        (resolvePipelineStageKey(row) === 'bank_feedback' ? 35 : 0),
+    }))
+    .sort((left, right) => right.score - left.score || getTimestamp(getUpdatedAt(right.row)) - getTimestamp(getUpdatedAt(left.row)))
+    .slice(0, 9)
+    .map(({ row }) => buildActiveApplicationViewModel(row))
 }
 
 function buildBankBreakdown(rows = []) {
@@ -1016,9 +1209,11 @@ function resolveDashboardPipelineStageKey(row = {}) {
   if (transferStage === 'registered') return 'registered'
   if (stageKey === 'grant_signed' || stageKey === 'instruction_sent') return 'registered'
   if (stageKey === 'approved') return 'approved'
-  if (stageKey === 'submitted' || stageKey === 'bank_feedback') return 'submitted'
+  if (stageKey === 'bank_feedback') return 'bank_feedback'
+  if (stageKey === 'submitted') return 'submitted'
   if (stageKey === 'pre_approval') return 'pre_approval'
   if (stageKey === 'docs_collection') return 'docs_collection'
+  if (getBondApplicationStage(row) === 'docs_requested') return 'bond_app'
   return 'lead'
 }
 
@@ -1046,10 +1241,13 @@ function buildBuyerDemographics(rows = []) {
   const bondVsCash = { bond: 0, cash: 0 }
   const clientType = { individual: 0, company: 0, trust: 0, foreign_buyer: 0 }
   const dealType = { investor: 0, residential: 0 }
+  const bankBuckets = new Map()
 
   for (const row of rows) {
     const financeType = normalizeLower(row?.transaction?.finance_type || '')
-    if (financeType === 'bond' || financeType === 'combination') bondVsCash.bond += 1
+    if (financeType === 'combination') {
+      bondVsCash.hybrid = (bondVsCash.hybrid || 0) + 1
+    } else if (financeType === 'bond') bondVsCash.bond += 1
     else bondVsCash.cash += 1
 
     const buyerType = normalizeLower(row?.transaction?.purchaser_type || row?.transaction?.purchaserType)
@@ -1065,9 +1263,23 @@ function buildBuyerDemographics(rows = []) {
     } else {
       dealType.residential += 1
     }
+
+    const bank = EXECUTIVE_BANKS.includes(normalizeText(row?.transaction?.bank)) ? normalizeText(row?.transaction?.bank) : 'Others'
+    const bankBucket = bankBuckets.get(bank) || { bank, active: 0, submitted: 0, approved: 0, total: 0 }
+    const stageKey = resolvePipelineStageKey(row)
+    bankBucket.total += 1
+    bankBucket.active += deriveTransactionStatus(row) === 'active' || deriveTransactionStatus(row) === 'at_risk' ? 1 : 0
+    bankBucket.submitted += ['submitted', 'bank_feedback'].includes(stageKey) ? 1 : 0
+    bankBucket.approved += deriveFinanceLaneStage(row).key === 'bond_approved' ? 1 : 0
+    bankBuckets.set(bank, bankBucket)
   }
 
-  return { bondVsCash, clientType, dealType }
+  return {
+    bondVsCash,
+    clientType,
+    dealType,
+    bankDistribution: EXECUTIVE_BANKS.map((bank) => bankBuckets.get(bank)).filter(Boolean),
+  }
 }
 
 function buildOperationalHeatmap(rows = []) {
@@ -1151,6 +1363,43 @@ function buildOperationalRisk(rows = []) {
       severity: declinedRows > 0 ? 'critical' : 'healthy',
     },
   ]
+}
+
+function buildApprovalConfidenceDistribution(rows = []) {
+  const buckets = {
+    high: { key: 'high', label: 'High confidence', count: 0, color: '#2f8a63' },
+    moderate: { key: 'moderate', label: 'Moderate', count: 0, color: '#315f8c' },
+    at_risk: { key: 'at_risk', label: 'At risk', count: 0, color: '#c7872e' },
+    incomplete: { key: 'incomplete', label: 'Incomplete', count: 0, color: '#8a94a3' },
+  }
+  for (const row of rows) {
+    const confidence = calculateApprovalProbability(row)
+    if (confidence.probabilityBand === 'High Probability') buckets.high.count += 1
+    else if (confidence.probabilityBand === 'Moderate Probability') buckets.moderate.count += 1
+    else if (confidence.probabilityBand === 'Needs Attention') buckets.at_risk.count += 1
+    else buckets.incomplete.count += 1
+  }
+  return Object.values(buckets)
+}
+
+function buildOperationalRiskMatrix(rows = []) {
+  return rows
+    .map((row) => {
+      const operationalRisk = calculateOperationalRisk(row)
+      const velocity = calculateTransactionVelocity(row)
+      return {
+        transactionId: normalizeText(row?.transaction?.id),
+        buyerName: getBuyerName(row),
+        propertyLabel: getPropertyLabel(row),
+        riskScore: operationalRisk.riskScore,
+        riskLevel: operationalRisk.riskLevel,
+        bottleneck: operationalRisk.bottlenecks[0] || 'No dominant bottleneck',
+        predictedDelay: operationalRisk.predictedDelays[0] || 'No major delay predicted',
+        velocityScore: velocity.velocityScore,
+      }
+    })
+    .sort((left, right) => right.riskScore - left.riskScore)
+    .slice(0, 12)
 }
 
 function buildConnectedPartnerRows() {
@@ -1384,6 +1633,10 @@ function mapTransactionTrackerRow(row = {}) {
   const bondAmount = getBondAmount(row)
   const transactionId = normalizeText(row?.transaction?.id) || null
   const status = deriveTransactionStatus(row)
+  const approvalConfidence = calculateApprovalProbability(row)
+  const operationalRisk = calculateOperationalRisk(row)
+  const velocity = calculateTransactionVelocity(row)
+  const financeInsights = generateFinanceInsights(row)
 
   return {
     key: transactionId || getPropertyLabel(row),
@@ -1405,6 +1658,11 @@ function mapTransactionTrackerRow(row = {}) {
     lastActivityAt: getUpdatedAt(row),
     lastActivityLabel: formatRelativeTime(getUpdatedAt(row)),
     nextAction: normalizeText(row?.transaction?.next_action) || 'No next action set',
+    approvalConfidence,
+    operationalRisk,
+    velocity,
+    financeInsights,
+    transactionConfidence: Math.round((approvalConfidence.score * 0.55) + ((100 - operationalRisk.riskScore) * 0.25) + (velocity.velocityScore * 0.2)),
     riskStatus: risk.atRisk ? (risk.reasons[0] || 'Needs attention') : 'Healthy',
     riskTone: risk.atRisk ? 'risk' : 'healthy',
     registrationStatus:
@@ -1432,12 +1690,16 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
   const priorityActions = buildPriorityActions(filteredRows)
   const focus = getRoleFocus(reportingScope)
   const executiveAnalytics = buildHeroKpiCards(filteredRows)
+  const headerSummary = buildHeaderSummary(filteredRows)
   const bankBreakdown = buildBankBreakdown(filteredRows)
   const bankLeadTimes = buildBankLeadTimes(filteredRows)
   const pipelineFlow = buildPipelineFlow(filteredRows)
   const buyerDemographics = buildBuyerDemographics(filteredRows)
   const operationalRisk = buildOperationalRisk(filteredRows)
   const operationalHeatmap = buildOperationalHeatmap(filteredRows)
+  const financeIntelligence = getCachedFinanceIntelligence(filteredRows, `bond-command-center:${workspaceId}:${options.rangeKey || 'this_month'}`)
+  const approvalConfidenceDistribution = buildApprovalConfidenceDistribution(filteredRows)
+  const operationalRiskMatrix = buildOperationalRiskMatrix(filteredRows)
   const teamPerformance = buildTeamPerformance(filteredRows)
   const connectedPartners = buildConnectedPartnerRows()
   const performanceSnapshot = buildPerformanceSnapshot(filteredRows)
@@ -1446,14 +1708,23 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
     reportingScope,
     roleFocus: focus,
     userDisplayName: getUserDisplayName(user),
+    headerSummary,
     heroSummary: executiveAnalytics.heroSummary,
     heroKpis: executiveAnalytics.heroKpis,
+    activeApplications: buildActiveApplications(filteredRows),
     bankBreakdown,
     bankLeadTimes,
     pipelineFlow,
     buyerDemographics,
+    approvalConfidenceDistribution,
+    readinessFunnel: financeIntelligence.readinessFunnel,
+    bankEfficiency: financeIntelligence.bankEfficiency,
+    buyerQualityDistribution: financeIntelligence.readinessDistribution,
     operationalRisk,
+    operationalRiskMatrix,
     operationalHeatmap,
+    advancedOperationalHeatmaps: financeIntelligence.heatmaps,
+    executiveReports: financeIntelligence.reportModels,
     teamPerformance,
     connectedPartners,
     attentionCount: countAttentionItems(priorityActions),

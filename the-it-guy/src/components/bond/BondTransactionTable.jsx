@@ -4,6 +4,7 @@ import BondRiskBadge from './BondRiskBadge'
 import BondSectionCard from './BondSectionCard'
 import BondStatusBadge from './BondStatusBadge'
 import BondTransactionStatusBadge from './BondTransactionStatusBadge'
+import { FINANCE_INTELLIGENCE_DISCLAIMER } from '../../services/financeIntelligenceService'
 
 function HeaderCell({ children, className = '' }) {
   return (
@@ -33,6 +34,7 @@ export default function BondTransactionTable({ rows = [] }) {
               <HeaderCell>Agent / Developer</HeaderCell>
               <HeaderCell>Attorney</HeaderCell>
               <HeaderCell>Finance Stage</HeaderCell>
+              <HeaderCell>Confidence</HeaderCell>
               <HeaderCell>Transfer Stage</HeaderCell>
               <HeaderCell>Bond Status</HeaderCell>
               <HeaderCell>Last Activity</HeaderCell>
@@ -67,6 +69,11 @@ export default function BondTransactionTable({ rows = [] }) {
                       label={row.linkedApplicationId ? 'Linked application active' : 'Application link pending'}
                     />
                   </div>
+                </td>
+                <td className="px-4 py-4 align-top">
+                  <p className="text-sm font-semibold text-[#142132]">{row.transactionConfidence || 0}% transaction confidence</p>
+                  <p className="mt-1 text-xs text-[#71869d]">{row.approvalConfidence?.probabilityBand || 'Insufficient Data'}</p>
+                  <p className="mt-2 text-xs text-[#7b8ea3]">{row.operationalRisk?.riskLevel || 'Low'} operational risk</p>
                 </td>
                 <td className="px-4 py-4 align-top">
                   <p className="text-sm font-semibold text-[#142132]">{row.transferStageLabel}</p>
@@ -107,7 +114,7 @@ export default function BondTransactionTable({ rows = [] }) {
 
             {!rows.length ? (
               <tr>
-                <td colSpan={10} className="px-4 py-6">
+                <td colSpan={11} className="px-4 py-6">
                   <BondEmptyState
                     compact
                     title="No linked transactions found"
@@ -119,6 +126,9 @@ export default function BondTransactionTable({ rows = [] }) {
           </tbody>
         </table>
       </div>
+      <p className="border-t border-[#edf2f7] px-4 py-3 text-xs leading-5 text-[#60758d]">
+        {FINANCE_INTELLIGENCE_DISCLAIMER}
+      </p>
     </BondSectionCard>
   )
 }

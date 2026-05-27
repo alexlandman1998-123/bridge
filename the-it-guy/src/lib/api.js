@@ -706,9 +706,9 @@ function isMissingFunctionError(error, functionName = '') {
 
 const knownMissingSchemaColumns = new Set()
 const TRANSACTION_SUMMARY_SELECT_CLAUSE =
-  'id, organisation_id, assigned_branch_id, lifecycle_state, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, comment, expected_transfer_date, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, assigned_bond_processor_user_id, assigned_bond_manager_user_id, assigned_bond_compliance_user_id, bond_assignment_status, bond_assignment_source, finance_status, compliance_status, compliance_review_required, application_prepared, submitted_to_banks, documents_complete, finance_documents_complete, documents_missing, required_documents_missing, finance_documents_missing, missing_documents_count, uploaded_documents_count, total_required_documents, bank_feedback_pending, bank_feedback_status, next_action_due_at, finance_due_at, attorney_stage, risk_status, operational_state, processor_name, assigned_bond_processor_name, compliance_name, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, registered_at, completed_at, archived_at, cancelled_at, deleted_at, last_meaningful_activity_at, updated_at, created_at, is_active'
+  'id, organisation_id, assigned_branch_id, lifecycle_state, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, cash_amount, bond_amount, deposit_amount, onboarding_status, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, comment, expected_transfer_date, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, assigned_bond_processor_user_id, assigned_bond_manager_user_id, assigned_bond_compliance_user_id, bond_assignment_status, bond_assignment_source, finance_status, compliance_status, compliance_review_required, application_prepared, submitted_to_banks, documents_complete, finance_documents_complete, documents_missing, required_documents_missing, finance_documents_missing, missing_documents_count, uploaded_documents_count, total_required_documents, bank_feedback_pending, bank_feedback_status, next_action_due_at, finance_due_at, attorney_stage, risk_status, operational_state, processor_name, assigned_bond_processor_name, compliance_name, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, registered_at, completed_at, archived_at, cancelled_at, deleted_at, last_meaningful_activity_at, updated_at, created_at, is_active'
 const TRANSACTION_SUMMARY_FALLBACK_SELECT_CLAUSE =
-  'id, organisation_id, development_id, unit_id, buyer_id, finance_type, purchaser_type, stage, purchase_price, sales_price, attorney, bond_originator, next_action, updated_at, created_at'
+  'id, organisation_id, development_id, unit_id, buyer_id, finance_type, purchaser_type, purchase_price, sales_price, cash_amount, bond_amount, deposit_amount, onboarding_status, stage, attorney, bond_originator, next_action, updated_at, created_at'
 
 function registerKnownMissingColumns(error, columnNames = []) {
   if (!error) {
@@ -19820,6 +19820,10 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = [], { o
       'agent_commission_amount',
       'agency_commission_amount',
       'purchase_price',
+      'cash_amount',
+      'bond_amount',
+      'deposit_amount',
+      'onboarding_status',
       'bank',
       'is_active',
     ])
@@ -19931,7 +19935,8 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = [], { o
     })
     .sort((a, b) => new Date(latestTimestamp(b) || 0) - new Date(latestTimestamp(a) || 0))
 
-  return hydrateRowsWithCommissionSnapshots(client, rows)
+  const commissionRows = await hydrateRowsWithCommissionSnapshots(client, rows)
+  return enrichRowsWithBondIntakeContext(commissionRows)
 }
 
 export async function fetchTransactionsByParticipantSummary({ userId, roleType = null, organisationId = '' } = {}) {
@@ -20170,6 +20175,10 @@ export async function fetchTransactionsListSummary({
       'agent_commission_amount',
       'agency_commission_amount',
       'purchase_price',
+      'cash_amount',
+      'bond_amount',
+      'deposit_amount',
+      'onboarding_status',
       'bank',
       'is_active',
     ])
@@ -20287,6 +20296,7 @@ export async function fetchTransactionsListSummary({
   }
 
   rows = await hydrateRowsWithCommissionSnapshots(client, rows)
+  rows = await enrichRowsWithBondIntakeContext(rows)
   rows.sort((left, right) => new Date(latestTimestamp(right) || 0) - new Date(latestTimestamp(left) || 0))
   timer.end({ rowCount: rows.length })
   return rows
