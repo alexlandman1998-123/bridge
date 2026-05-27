@@ -183,7 +183,7 @@ function NewApplicationsEmptyState() {
           When buyers select Bond or Hybrid and complete their onboarding, they will appear here for review.
         </p>
         <a
-          href="/applications"
+          href="/bond/pipeline"
           className="mt-5 inline-flex h-10 items-center justify-center rounded-[12px] border border-[#dbe5f0] bg-white px-4 text-sm font-semibold text-[#17324d] transition hover:border-[#c5d5e6]"
         >
           View all applications
@@ -389,8 +389,11 @@ function IntakeActionModal({ action = '', item = null, currentUser = {}, busy = 
 
   useEffect(() => {
     let active = true
-    setAssigneeKey('0')
-    setRemoteConsultants([])
+    queueMicrotask(() => {
+      if (!active) return
+      setAssigneeKey('0')
+      setRemoteConsultants([])
+    })
     if (!item || action === 'decline') return () => {
       active = false
     }
@@ -741,7 +744,17 @@ function ApplicationRow({ row, onRowClick }) {
   )
 }
 
-function BondApplicationsTable({ rows = [], onRowClick, title = 'Applications Queue', queue = 'all', currentUser = {}, onIntakeActionComplete }) {
+function BondApplicationsTable({
+  rows = [],
+  onRowClick,
+  title = 'Applications Queue',
+  description = 'Manage the bond finance workflow separately from the post-approval property transaction tracker.',
+  emptyTitle = 'No applications found',
+  emptyDescription = 'When finance applications match this queue, they will appear here.',
+  queue = 'all',
+  currentUser = {},
+  onIntakeActionComplete,
+}) {
   if (queue === BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS) {
     return (
       <NewApplicationsInbox
@@ -757,7 +770,7 @@ function BondApplicationsTable({ rows = [], onRowClick, title = 'Applications Qu
     <BondSectionCard
       eyebrow="Applications"
       title={title}
-      description="Manage the bond finance workflow separately from the post-approval property transaction tracker."
+      description={description}
       action={<span className="rounded-full border border-[#dbe5f0] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#516a83]">{rows.length} applications</span>}
       padded={false}
       contentClassName="mt-0"
@@ -792,8 +805,8 @@ function BondApplicationsTable({ rows = [], onRowClick, title = 'Applications Qu
                 <td colSpan={10} className="px-4 py-6">
                   <BondEmptyState
                     compact
-                    title="No applications found"
-                    description="When finance applications match this queue, they will appear here."
+                    title={emptyTitle}
+                    description={emptyDescription}
                   />
                 </td>
               </tr>

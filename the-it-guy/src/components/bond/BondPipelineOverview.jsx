@@ -16,7 +16,7 @@ export default function BondPipelineOverview({
         <div className="flex flex-wrap items-center gap-3">
           <BondStatusBadge tone="neutral" label={rangeLabel} />
           <Link
-            to="/applications"
+            to="/bond/pipeline"
             className="inline-flex h-11 items-center justify-center rounded-[14px] border border-[#d9e3ef] bg-[#f7fbff] px-4 text-sm font-semibold text-[#17324d] transition hover:border-[#c2d3e6]"
           >
             View Full Pipeline

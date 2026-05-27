@@ -697,7 +697,7 @@ function openBondApplication(navigate, item) {
     return
   }
 
-  navigate('/applications')
+  navigate('/bond/pipeline')
 }
 
 function toSignalText(row) {
@@ -2687,7 +2687,7 @@ function Dashboard() {
   }, [agentDashboardPipelineRows, isAgentRole])
   const sharedActivityViewPath = useMemo(() => {
     if (isAttorneyRole) return '/transactions'
-    if (isBondRole) return '/applications'
+    if (isBondRole) return '/bond/pipeline'
     return '/units'
   }, [isAttorneyRole, isBondRole])
 
@@ -2769,7 +2769,7 @@ function renderActiveTransactionsBlock({
   compact = false,
 } = {}) {
   const cards = Number.isFinite(limit) ? activeTransactionCards.slice(0, limit) : activeTransactionCards
-  const transactionsListPath = isBondRole ? '/applications' : '/units'
+  const transactionsListPath = isBondRole ? '/bond/pipeline' : '/units'
   const transactionsListQuery =
     (isAgentRole || isBondRole) && transactionScope !== 'all'
       ? `?transactionType=${encodeURIComponent(transactionScope)}`

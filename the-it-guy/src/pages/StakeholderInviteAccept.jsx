@@ -8,7 +8,7 @@ import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 function getRoleHomePath(role) {
   if (role === 'attorney' || role === 'developer') return '/transactions'
-  if (role === 'bond_originator') return '/applications'
+  if (role === 'bond_originator') return '/bond/pipeline'
   if (role === 'agent') return '/units'
   return '/dashboard'
 }

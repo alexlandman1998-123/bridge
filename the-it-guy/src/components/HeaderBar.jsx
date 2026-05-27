@@ -48,6 +48,11 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/transactions') return ''
   if (pathname === '/new-transaction') return 'New Transaction'
   if (pathname === '/applications') return 'Applications'
+  if (pathname === '/bond/pipeline') return ''
+  if (pathname === '/bond/transactions') return ''
+  if (pathname === '/bond/developments' || pathname.startsWith('/bond/developments/')) return ''
+  if (pathname === '/bond/clients' || pathname.startsWith('/bond/clients/')) return ''
+  if (pathname === '/bond/partners' || pathname === '/bond/reports') return ''
   if (pathname === '/teams') return 'Teams'
   if (pathname === '/banks') return 'Banks'
   if (pathname === '/performance') return 'Performance'
@@ -262,6 +267,8 @@ function HeaderBar({ onLogout, user }) {
       location.pathname === '/' ||
       location.pathname === '/applications' ||
       location.pathname === '/transactions' ||
+      location.pathname === '/bond/pipeline' ||
+      location.pathname === '/bond/transactions' ||
       location.pathname === '/developments' ||
       location.pathname === '/clients' ||
       location.pathname === '/teams' ||

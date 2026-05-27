@@ -127,6 +127,7 @@ const transactions = [
     bank: 'ABSA',
     buyer_name: 'Participant Buyer',
     property_address_line_1: '99 Bryanston Lane',
+    lifecycle_bucket: 'transaction',
     finance_status: 'application_in_progress',
     next_action: 'Awaiting salary advice',
     updated_at: '2026-05-21T10:00:00.000Z',

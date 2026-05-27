@@ -3,6 +3,8 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import AttorneyTransfersTable from '../components/AttorneyTransfersTable'
 import AgentTransactionsTable from '../components/AgentTransactionsTable'
 import BondApplicationsTable from '../components/BondApplicationsTable'
+import BondPageHeader from '../components/bond/BondPageHeader'
+import BondViewTabs from '../components/bond/BondViewTabs'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import OpenOnboardingButton from '../components/OpenOnboardingButton'
 import PageActionBar from '../components/PageActionBar'
@@ -33,6 +35,12 @@ import {
   BOND_OPERATIONAL_QUEUE_KEYS,
   isNewBondApplicationRow,
 } from '../services/bondOperationalQueueService'
+import {
+  BOND_PIPELINE_VIEW_PARAM,
+  bondViews,
+  getBondPipelineView,
+  getBondPipelineViewFromFilters,
+} from '../config/bondViews'
 import {
   deleteTransactionEverywhere,
   enrichRowsWithBondIntakeContext,
@@ -105,6 +113,7 @@ const QUICK_EDIT_FINANCE_TYPE_OPTIONS = [
 ]
 
 const STALLED_DAYS_THRESHOLD = 10
+const NO_DEVELOPMENT_ID = 'no-development-assigned'
 
 const WORKSPACE_SORT_OPTIONS = [
   { value: 'development', label: 'Development' },
@@ -118,6 +127,17 @@ const WORKSPACE_STAGE_RANK = {
   bond: 1,
   transfer: 2,
   registration: 3,
+}
+
+function getRowDevelopmentId(row = {}) {
+  return String(row?.development?.id || row?.transaction?.development_id || row?.transaction?.developmentId || row?.unit?.development_id || '').trim()
+}
+
+function withUnassignedDevelopmentOption(options = []) {
+  return [
+    { id: NO_DEVELOPMENT_ID, name: 'No Development Assigned', location: '' },
+    ...options.filter((option) => option.id !== NO_DEVELOPMENT_ID),
+  ]
 }
 
 const MAIN_STAGE_PROGRESS = {
@@ -514,6 +534,10 @@ function isBondQueueMatch(row, queue, profile = null) {
     return stage === 'bank_reviewing' || /bank feedback|query|valuation|underwriting/.test(signal)
   }
 
+  if (normalizedQueue === 'submitted') {
+    return stage === 'application_submitted' || stage === 'bank_reviewing' || /submitted|sent to bank|bank feedback|query|valuation|underwriting/.test(signal)
+  }
+
   if (normalizedQueue === 'overdue_applications') {
     return daysSinceUpdate >= 8
   }
@@ -521,6 +545,25 @@ function isBondQueueMatch(row, queue, profile = null) {
   if (normalizedQueue === 'compliance_review') {
     return /compliance|fica expired|risk review|blocked/.test(signal)
   }
+
+  return true
+}
+
+function isBondPipelineLifecycleRow(row) {
+  const explicitBucket = String(row?.transaction?.lifecycle_bucket || row?.transaction?.lifecycleBucket || '')
+    .trim()
+    .toLowerCase()
+  if (explicitBucket === 'pipeline') return true
+  if (explicitBucket === 'transaction') return false
+
+  const applicationStage = getBondApplicationStage(row)
+  const mainStage = resolveMainStage(row)
+  const signal = getBondSignalText(row)
+
+  if (applicationStage === 'declined') return true
+  if (applicationStage === 'approval_granted') return false
+  if (['ATTY', 'XFER', 'REG'].includes(mainStage)) return false
+  if (/(grant signed|instruction sent|attorney instructed|proceed to attorneys|registered)/i.test(signal)) return false
 
   return true
 }
@@ -676,6 +719,29 @@ function Units() {
   const pendingDeleteUnitNumber = pendingDeleteRow?.unit?.unit_number || 'this unit'
   const isPendingDeleteSaving = Boolean(pendingDeleteTransactionId && deletingTransactionId === pendingDeleteTransactionId)
   const deferredSearch = useDeferredValue(filters.search)
+  const selectedBondPipelineView = useMemo(() => {
+    if (!isBondRole) return 'all'
+    const params = new URLSearchParams(location.search)
+    const viewKey = params.get(BOND_PIPELINE_VIEW_PARAM)
+    return viewKey ? getBondPipelineView(viewKey).key : getBondPipelineViewFromFilters(filters).key
+  }, [filters, isBondRole, location.search])
+
+  const handleBondPipelineViewChange = useCallback(
+    (viewKey) => {
+      const tabConfig = getBondPipelineView(viewKey)
+      setFilters((previous) => ({
+        ...previous,
+        queue: tabConfig.filters.queue,
+        stage: tabConfig.filters.stage,
+      }))
+      const params = new URLSearchParams(location.search)
+      params.set(BOND_PIPELINE_VIEW_PARAM, tabConfig.key)
+      params.delete('queue')
+      params.delete('stage')
+      navigate(`${bondViews.pipeline.basePath}?${params.toString()}`)
+    },
+    [location.search, navigate],
+  )
 
   useEffect(() => {
     let active = true
@@ -718,7 +784,7 @@ function Units() {
     const allowedRiskValues = new Set(['all', 'stale', 'blocked', 'healthy'])
     const allowedBlockedValues = new Set(['all', 'blocked', 'clear'])
     const allowedAssignedValues = new Set(['all', 'mine'])
-    const allowedQueueValues = new Set([BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS, 'all', 'my_applications', 'missing_documents', 'submission_readiness', 'bank_feedback', 'overdue_applications', 'compliance_review'])
+    const allowedQueueValues = new Set([BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS, 'all', 'my_applications', 'missing_documents', 'submission_readiness', 'submitted', 'bank_feedback', 'overdue_applications', 'compliance_review'])
     const allowedTransactionStatusValues = new Set(['all', 'active', 'registered', 'completed', 'archived', 'cancelled'])
     const allowedDateRangeValues = new Set(['all', '7d', '30d', '90d'])
     const allowedSourceValues = new Set(ATTORNEY_SOURCE_OPTIONS.map((item) => item.value))
@@ -826,6 +892,13 @@ function Units() {
       setAttorneyListTab(tab)
     }
 
+    const bondView = params.get(BOND_PIPELINE_VIEW_PARAM)
+    if (isBondRole && bondView) {
+      const tabConfig = getBondPipelineView(bondView)
+      nextValues.queue = tabConfig.filters.queue
+      nextValues.stage = tabConfig.filters.stage
+    }
+
     if (!Object.keys(nextValues).length) {
       return
     }
@@ -841,7 +914,7 @@ function Units() {
       }
       return changed ? updated : previous
     })
-  }, [location.search, stageOptions])
+  }, [isBondRole, location.search, stageOptions])
 
   useEffect(() => {
     if (isAgentRole) {
@@ -946,6 +1019,7 @@ function Units() {
 
       if (isBondRole) {
         unitsData = await enrichRowsWithBondIntakeContext(unitsData || [])
+        options = withUnassignedDevelopmentOption(options, unitsData)
       }
       timer.mark('fetch_end', { fetchedRows: unitsData.length })
 
@@ -953,7 +1027,7 @@ function Units() {
         .trim()
         .toLowerCase()
       const filteredRows = (unitsData || []).filter((row) => {
-        const developmentId = row?.development?.id || row?.unit?.development_id || null
+        const developmentId = getRowDevelopmentId(row)
         const stageMatch = isBondRole
           ? filters.stage === 'all'
             ? true
@@ -1048,8 +1122,13 @@ function Units() {
               ? true
               : transactionScope === filters.transactionType
             : true
+        const bondLifecycleMatch = isBondRole ? isBondPipelineLifecycleRow(row) : true
         const bondQueueMatch = isBondRole ? isBondQueueMatch(row, filters.queue, profile) : true
-        const developmentMatch = filters.developmentId === 'all' ? true : developmentId === filters.developmentId
+        const developmentMatch = filters.developmentId === 'all'
+          ? true
+          : filters.developmentId === NO_DEVELOPMENT_ID
+            ? !developmentId
+            : developmentId === filters.developmentId
 
         if (!normalizedSearch) {
           return (
@@ -1068,6 +1147,7 @@ function Units() {
             principalStatusMatch &&
             principalDateMatch &&
             transactionTypeMatch &&
+            bondLifecycleMatch &&
             bondQueueMatch &&
             developmentMatch
           )
@@ -1078,6 +1158,8 @@ function Units() {
           row?.buyer?.name,
           row?.development?.name,
           row?.transaction?.transaction_reference,
+          row?.transaction?.application_reference,
+          row?.transaction?.bond_application_reference,
           row?.transaction?.property_address_line_1,
           row?.transaction?.property_address_line_2,
           row?.transaction?.suburb,
@@ -1085,6 +1167,13 @@ function Units() {
           row?.transaction?.province,
           row?.transaction?.property_description,
           row?.stage,
+          row?.transaction?.bank,
+          row?.transaction?.assigned_agent,
+          row?.transaction?.assigned_agent_email,
+          row?.transaction?.attorney,
+          row?.transaction?.assigned_attorney_email,
+          row?.transaction?.bond_originator,
+          row?.transaction?.assigned_bond_originator_email,
           isBondRole ? getBondApplicationStage(row) : '',
           isAttorneyRole ? getAttorneyTransferStage(row) : '',
           isAttorneyRole ? getAttorneyQueueFilterKey(row) : '',
@@ -1117,6 +1206,7 @@ function Units() {
           principalStatusMatch &&
           principalDateMatch &&
           transactionTypeMatch &&
+          bondLifecycleMatch &&
           bondQueueMatch &&
           developmentMatch &&
           haystack.includes(normalizedSearch)
@@ -1383,10 +1473,10 @@ function Units() {
 
     startRouteTransitionTrace({
       from: location.pathname,
-      to: '/applications',
+      to: '/bond/pipeline',
       label: 'transactions-list-to-applications',
     })
-    navigate('/applications')
+    navigate('/bond/pipeline')
   }
 
   function handleOpenAgentTransaction(row) {
@@ -1441,6 +1531,23 @@ function Units() {
         <p className="rounded-[16px] border border-danger bg-dangerSoft px-5 py-4 text-sm text-danger">
           Supabase is not configured for this workspace.
         </p>
+      ) : null}
+
+      {isBondRole ? (
+        <>
+          <BondPageHeader
+            title={bondViews.pipeline.title}
+            description={bondViews.pipeline.description}
+            primaryLabel={bondViews.pipeline.primaryActionLabel}
+            secondaryLabel={bondViews.pipeline.secondaryActionLabel}
+            onPrimary={() => handleBondPipelineViewChange('new')}
+          />
+          <BondViewTabs
+            tabs={bondViews.pipeline.tabs}
+            value={selectedBondPipelineView}
+            onChange={handleBondPipelineViewChange}
+          />
+        </>
       ) : null}
 
       <section className="rounded-[24px] border border-borderDefault bg-surface p-4 shadow-panel no-print">
@@ -1522,19 +1629,21 @@ function Units() {
               </label>
             ) : null}
 
-            <label className="flex min-w-0 flex-col gap-2">
-              <span className="text-label font-semibold uppercase text-textMuted">Stage</span>
-              <Field as="select" className="h-12" value={filters.stage} onChange={(event) => setFilters((previous) => ({ ...previous, stage: event.target.value }))}>
-                <option value="all">All Stages</option>
-                {stageOptions.map((stage) => (
-                  <option key={stage.value} value={stage.value}>
-                    {stage.label}
-                  </option>
-                ))}
-              </Field>
-            </label>
+            {!isBondRole ? (
+              <label className="flex min-w-0 flex-col gap-2">
+                <span className="text-label font-semibold uppercase text-textMuted">Stage</span>
+                <Field as="select" className="h-12" value={filters.stage} onChange={(event) => setFilters((previous) => ({ ...previous, stage: event.target.value }))}>
+                  <option value="all">All Stages</option>
+                  {stageOptions.map((stage) => (
+                    <option key={stage.value} value={stage.value}>
+                      {stage.label}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+            ) : null}
 
-            {(isAgentRole && !isPrincipalAgentView) || isBondRole ? (
+            {isAgentRole && !isPrincipalAgentView ? (
               <label className="flex min-w-0 flex-col gap-2">
                 <span className="text-label font-semibold uppercase text-textMuted">Transaction Type</span>
                 <Field
@@ -1734,7 +1843,10 @@ function Units() {
         isBondRole ? (
           <BondApplicationsTable
             rows={rows}
-            title={filters.queue === BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS ? 'New Applications' : 'Applications Queue'}
+            title={selectedBondPipelineView === 'all' ? 'Pipeline Files' : `${getBondPipelineView(selectedBondPipelineView).label} Pipeline`}
+            description="Incoming bond requests, incomplete files, document follow-ups, and applications preparing for bank submission."
+            emptyTitle={bondViews.pipeline.emptyTitle}
+            emptyDescription={bondViews.pipeline.emptyDescription}
             queue={filters.queue}
             currentUser={{
               role,

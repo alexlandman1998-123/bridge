@@ -47,7 +47,7 @@ export default function BondTransactionTable({ rows = [] }) {
               <tr
                 key={row.key}
                 className="cursor-pointer border-t border-[#edf2f7] transition hover:bg-[#fbfdff]"
-                onClick={() => row.transactionId && navigate(`/transactions/${row.transactionId}`)}
+                onClick={() => row.transactionId && navigate(`/bond/files/${row.transactionId}`)}
               >
                 <td className="px-4 py-4 align-top">
                   <p className="text-sm font-semibold text-[#142132]">{row.client}</p>
@@ -101,7 +101,7 @@ export default function BondTransactionTable({ rows = [] }) {
                     onClick={(event) => {
                       event.stopPropagation()
                       if (row.transactionId) {
-                        navigate(`/transactions/${row.transactionId}`)
+                        navigate(`/bond/files/${row.transactionId}`)
                       }
                     }}
                     className="inline-flex h-9 items-center justify-center rounded-[12px] border border-[#dbe5f0] bg-[#f8fbff] px-3 text-sm font-semibold text-[#17324d] transition hover:border-[#c5d5e6]"

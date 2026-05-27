@@ -1,6 +1,6 @@
 import { Archive, ExternalLink, Grid3X3, List, Mail, MessageCircle, MoreVertical, Phone, Plus, User2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
@@ -49,6 +49,53 @@ const AGENT_STATUS_FILTERS = [
 ]
 
 const ARCHIVED_CLIENTS_STORAGE_KEY = 'itg:agent-clients-archived:v1'
+const NO_DEVELOPMENT_ID = 'no-development-assigned'
+const CLIENT_FILTER_ALIASES = {
+  buyer: 'buyers',
+  company: 'companies',
+  company_trust: 'companies',
+  'company-trust': 'companies',
+  'companies-trusts': 'companies',
+  trust: 'trusts',
+}
+
+function normalizeClientFilterParam(value = '', allowedKeys = []) {
+  const key = String(value || '').trim().toLowerCase().replace(/\s+/g, '-')
+  if (!key) return ''
+  const normalized = CLIENT_FILTER_ALIASES[key] || key
+  return allowedKeys.includes(normalized) ? normalized : ''
+}
+
+function getRowDevelopmentId(row = {}) {
+  return String(row?.development?.id || row?.transaction?.development_id || row?.transaction?.developmentId || row?.unit?.development_id || '').trim()
+}
+
+function getDevelopmentOptionsFromRows(rows = []) {
+  const options = new Map()
+  for (const row of rows) {
+    const id = getRowDevelopmentId(row)
+    if (!id) {
+      continue
+    }
+    if (!options.has(id)) {
+      options.set(id, {
+        id,
+        name: row?.development?.name || row?.transaction?.development_name || 'Unnamed Development',
+      })
+    }
+  }
+  return [
+    { id: 'all', name: 'All Developments' },
+    { id: NO_DEVELOPMENT_ID, name: 'No Development Assigned' },
+    ...[...options.values()].sort((left, right) => left.name.localeCompare(right.name)),
+  ]
+}
+
+function filterRowsByDevelopment(rows = [], developmentId = 'all') {
+  if (!developmentId || developmentId === 'all') return rows
+  if (developmentId === NO_DEVELOPMENT_ID) return rows.filter((row) => !getRowDevelopmentId(row))
+  return rows.filter((row) => getRowDevelopmentId(row) === developmentId)
+}
 
 function formatRelativeTime(value) {
   const date = new Date(value || 0)
@@ -242,6 +289,8 @@ function AddClientModal({ open, onClose, onSaved }) {
 
 function Clients() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { profile, role, workspace } = useWorkspace()
   const [rows, setRows] = useState([])
   const [agentFilters, setAgentFilters] = useState({ sources: [], assignedAgents: [] })
@@ -258,6 +307,22 @@ function Clients() {
   const [openActionMenuId, setOpenActionMenuId] = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
   const isAgentClientDirectory = role === 'agent'
+  const isBondClientsRoute = role === 'bond_originator' || location.pathname.startsWith('/bond/clients')
+  const selectedDevelopmentId = searchParams.get('developmentId') || 'all'
+  const typeFilters = useMemo(
+    () => (isAgentClientDirectory ? AGENT_TYPE_FILTERS : CLIENT_FILTERS),
+    [isAgentClientDirectory],
+  )
+
+  useEffect(() => {
+    const nextFilter = normalizeClientFilterParam(
+      searchParams.get('view') || searchParams.get('type'),
+      typeFilters.map((filter) => filter.key),
+    )
+    if (nextFilter && nextFilter !== activeFilter) {
+      setActiveFilter(nextFilter)
+    }
+  }, [activeFilter, searchParams, typeFilters])
 
   const loadData = useCallback(async () => {
     if (isAgentClientDirectory) {
@@ -313,7 +378,12 @@ function Clients() {
     void loadData()
   }, [loadData])
 
-  const clients = useMemo(() => (isAgentClientDirectory ? rows : deriveAttorneyClients(rows)), [isAgentClientDirectory, rows])
+  const developmentOptions = useMemo(() => getDevelopmentOptionsFromRows(rows), [rows])
+  const sourceRows = useMemo(
+    () => (isAgentClientDirectory ? rows : filterRowsByDevelopment(rows, selectedDevelopmentId)),
+    [isAgentClientDirectory, rows, selectedDevelopmentId],
+  )
+  const clients = useMemo(() => (isAgentClientDirectory ? sourceRows : deriveAttorneyClients(sourceRows)), [isAgentClientDirectory, sourceRows])
   const filteredClients = useMemo(
     () =>
       isAgentClientDirectory
@@ -340,12 +410,34 @@ function Clients() {
     setViewMode(nextMode)
   }
 
+  function handleTypeFilterChange(event) {
+    const nextFilter = event.target.value
+    setActiveFilter(nextFilter)
+    const nextParams = new URLSearchParams(searchParams)
+    if (nextFilter === 'all') {
+      nextParams.delete('view')
+      nextParams.delete('type')
+    } else {
+      nextParams.set('view', nextFilter)
+      nextParams.delete('type')
+    }
+    setSearchParams(nextParams, { replace: true })
+  }
+
+  function handleDevelopmentFilterChange(event) {
+    const nextDevelopmentId = event.target.value
+    const nextParams = new URLSearchParams(searchParams)
+    if (nextDevelopmentId === 'all') nextParams.delete('developmentId')
+    else nextParams.set('developmentId', nextDevelopmentId)
+    setSearchParams(nextParams, { replace: true })
+  }
+
   function handleOpenClient(client) {
     if (isAgentClientDirectory) {
       navigate(getAgentClientOpenPath(client, role))
       return
     }
-    navigate(`/clients/${client.id}`)
+    navigate(`${isBondClientsRoute ? '/bond/clients' : '/clients'}/${client.id}`)
   }
 
   function handleArchiveClient(client) {
@@ -383,14 +475,25 @@ function Clients() {
             />
           </div>
           <div className="w-full sm:w-[220px] lg:w-[240px]">
-            <Field as="select" value={activeFilter} onChange={(event) => setActiveFilter(event.target.value)}>
-              {(isAgentClientDirectory ? AGENT_TYPE_FILTERS : CLIENT_FILTERS).map((filter) => (
+            <Field as="select" value={activeFilter} onChange={handleTypeFilterChange}>
+              {typeFilters.map((filter) => (
                 <option key={filter.key} value={filter.key}>
                   {filter.label}
                 </option>
               ))}
             </Field>
           </div>
+          {!isAgentClientDirectory ? (
+            <div className="w-full sm:w-[220px] lg:w-[240px]">
+              <Field as="select" value={selectedDevelopmentId} onChange={handleDevelopmentFilterChange}>
+                {developmentOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}
+                  </option>
+                ))}
+              </Field>
+            </div>
+          ) : null}
           {isAgentClientDirectory ? (
             <>
               <div className="w-full sm:w-[200px]">

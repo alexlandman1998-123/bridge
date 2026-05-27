@@ -64,6 +64,7 @@ export default function BondDashboard({
 }) {
   const safeWorkspaceId = normalizeText(workspaceId)
   const [rangeKey] = useState('this_month')
+  const [developmentId, setDevelopmentId] = useState('all')
   const [state, setState] = useState(
     initialState || {
       loading: true,
@@ -88,7 +89,7 @@ export default function BondDashboard({
     setState((previous) => ({ ...previous, loading: true, error: '' }))
 
     try {
-      const snapshot = await service.getBondCommandCenterSnapshot(user, safeWorkspaceId, { rangeKey })
+      const snapshot = await service.getBondCommandCenterSnapshot(user, safeWorkspaceId, { rangeKey, developmentId })
       setState({
         loading: false,
         error: '',
@@ -103,7 +104,7 @@ export default function BondDashboard({
         reportingScope: null,
       })
     }
-  }, [rangeKey, safeWorkspaceId, service, user])
+  }, [developmentId, rangeKey, safeWorkspaceId, service, user])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -149,6 +150,7 @@ export default function BondDashboard({
   const teamPerformance = snapshot.teamPerformance || []
   const connectedPartners = snapshot.connectedPartners || []
   const heatmapRows = snapshot.operationalHeatmap || []
+  const developmentOptions = snapshot.developmentOptions || [{ id: 'all', value: 'all', label: 'All Developments' }]
 
   if (!safeWorkspaceId) {
     return (
@@ -194,6 +196,23 @@ export default function BondDashboard({
             />
           ) : (
             <>
+              <section className="flex flex-col gap-3 rounded-[18px] border border-[#dbe5f0] bg-white px-4 py-3 shadow-[0_10px_28px_rgba(15,23,42,0.035)] sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-[#17324d]">Development Filter</p>
+                  <p className="mt-1 text-xs text-[#71879d]">Scope dashboard, pipeline, clients, and reports by project or private deals.</p>
+                </div>
+                <select
+                  value={developmentId}
+                  onChange={(event) => setDevelopmentId(event.target.value)}
+                  className="h-11 min-w-[240px] rounded-[14px] border border-[#dbe5f0] bg-white px-4 text-sm font-semibold text-[#17324d] outline-none transition focus:border-[#bbcbdd]"
+                >
+                  {developmentOptions.map((option) => (
+                    <option key={option.id || option.value} value={option.value || option.id}>
+                      {option.label || option.name}
+                    </option>
+                  ))}
+                </select>
+              </section>
               <KpiStrip items={heroKpis} />
 
               <ActiveApplicationsSection
@@ -402,7 +421,7 @@ export default function BondDashboard({
                 description="Immediate risks to cycle-time and quality."
                 action={
                   <Link
-                    to="/applications?queue=overdue_applications"
+                    to="/bond/pipeline?view=stalled"
                     className="text-sm font-semibold text-[#204b84] hover:text-[#17324d]"
                   >
                     View all
@@ -600,7 +619,7 @@ function ActiveApplicationsSection({ items = [], activeFilter = 'all', onFilterC
       title="Active Applications"
       description="Live operational movement across active bond files."
       action={
-        <Link to="/applications" className="text-sm font-semibold text-[#204b84] hover:text-[#17324d]">
+        <Link to="/bond/pipeline" className="text-sm font-semibold text-[#204b84] hover:text-[#17324d]">
           View all applications
         </Link>
       }
@@ -637,7 +656,7 @@ function ActiveApplicationsSection({ items = [], activeFilter = 'all', onFilterC
             compact
             title="No active bond applications"
             description="Accepted and assigned bond applications will appear here once they move into processing."
-            action={<Link to="/applications?queue=new_applications" className="text-sm font-semibold text-[#204b84]">View New Applications</Link>}
+            action={<Link to="/bond/pipeline?view=new" className="text-sm font-semibold text-[#204b84]">View New Applications</Link>}
           />
         </div>
       )}

@@ -9064,7 +9064,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   <Button type="button" variant="secondary" size="sm" onClick={() => void handleSendBuyerOnboardingFromLead()}>
                                     Send Finance Form
                                   </Button>
-                                  <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/applications?queue=new_applications')}>
+                                  <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/bond/pipeline?view=new')}>
                                     Open Bond Workflow
                                   </Button>
                                   <Button type="button" variant="secondary" size="sm" onClick={() => setMessage('Request income proof, bank statements, ID, and deposit confirmation from this buyer.')}>

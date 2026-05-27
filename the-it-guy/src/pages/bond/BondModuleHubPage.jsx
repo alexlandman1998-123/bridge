@@ -11,8 +11,8 @@ const SECTION_META = Object.freeze({
     icon: ShieldUser,
     cards: [
       { title: 'Consultants', description: 'Monitor active consultant books and follow-up workload.', href: '/dashboard' },
-      { title: 'Processors', description: 'Keep submission and bank-response queues balanced.', href: '/applications?queue=submission_readiness' },
-      { title: 'Compliance', description: 'Surface FICA, review, and escalation items.', href: '/applications?queue=compliance_review' },
+      { title: 'Processors', description: 'Keep submission and bank-response queues balanced.', href: '/bond/pipeline?view=ready-for-submission' },
+      { title: 'Compliance', description: 'Surface FICA, review, and escalation items.', href: '/bond/pipeline?view=stalled' },
     ],
   },
   banks: {
@@ -22,8 +22,8 @@ const SECTION_META = Object.freeze({
     icon: Building2,
     cards: [
       { title: 'Bank Performance', description: 'Compare approvals, bottlenecks, and lender activity on the dashboard.', href: '/dashboard' },
-      { title: 'Submission Stats', description: 'Track what is ready, submitted, and still waiting on support docs.', href: '/applications' },
-      { title: 'Turnaround View', description: 'Watch lender-linked transactions through bond instruction and transfer.', href: '/transactions' },
+      { title: 'Submission Stats', description: 'Track what is ready, submitted, and still waiting on support docs.', href: '/bond/pipeline' },
+      { title: 'Turnaround View', description: 'Watch lender-linked transactions through bond instruction and transfer.', href: '/bond/transactions' },
     ],
   },
   performance: {
@@ -32,9 +32,9 @@ const SECTION_META = Object.freeze({
     description: 'Compare approvals, turnaround speed, pipeline quality, and lender conversion through a calmer performance lens.',
     icon: FileBarChart2,
     cards: [
-      { title: 'Pipeline Performance', description: 'Review volume, movement, and bottlenecks across the finance pipeline.', href: '/reports?view=pipeline' },
-      { title: 'Team Performance', description: 'See which consultants and processors are moving files best.', href: '/reports?view=team' },
-      { title: 'Bank Analytics', description: 'Compare approval ratios, delays, and lender responsiveness.', href: '/reports?view=banks' },
+      { title: 'Pipeline Performance', description: 'Review volume, movement, and bottlenecks across the finance pipeline.', href: '/bond/pipeline' },
+      { title: 'Development Performance', description: 'Compare project-level origination outcomes and risk.', href: '/bond/developments' },
+      { title: 'Bank Analytics', description: 'Compare approval ratios, delays, and lender responsiveness.', href: '/dashboard' },
     ],
   },
 })

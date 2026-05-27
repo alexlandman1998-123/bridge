@@ -715,7 +715,7 @@ function BridgeCommandCenterDashboard({
                 {rolePreviewActive ? <em className="text-[0.72rem] not-italic text-[#1769e8]">Preview</em> : null}
               </label>
             ) : null}
-            <button type="button" onClick={() => goTo('/applications')} className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] bg-[#102448] px-4 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(16,36,72,0.24)] transition hover:-translate-y-0.5 hover:bg-[#17315c]">
+            <button type="button" onClick={() => goTo('/bond/pipeline?view=new')} className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] bg-[#102448] px-4 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(16,36,72,0.24)] transition hover:-translate-y-0.5 hover:bg-[#17315c]">
               <Plus size={16} />
               Create Application
             </button>

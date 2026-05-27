@@ -36,6 +36,7 @@ const ICON_BY_KEY = {
   dashboard: LayoutDashboard,
   deals: SwitchCamera,
   developments: Building2,
+  bond_developments: Building2,
   listings: Building2,
   listings_private: Building2,
   listings_developments: Building2,
@@ -43,14 +44,7 @@ const ICON_BY_KEY = {
   transactions: SwitchCamera,
   transfers: SwitchCamera,
   applications: ClipboardList,
-  applications_new: PlusCircle,
-  applications_all: SwitchCamera,
-  applications_mine: SwitchCamera,
-  applications_ready: FileCheck2,
-  applications_docs: Files,
-  applications_bank_feedback: Building2,
-  applications_approved: FileCheck2,
-  applications_declined: AlertTriangle,
+  bond_pipeline: KanbanSquare,
   clients: Users,
   clients_buyers: Users,
   clients_companies: BriefcaseBusiness,
@@ -97,13 +91,6 @@ const ICON_BY_KEY = {
   reports_commission: Wallet,
   reports_export: FileText,
   performance: Trophy,
-  bond_transactions_active: SwitchCamera,
-  bond_transactions_awaiting_instruction: AlertTriangle,
-  bond_transactions_approved: FileCheck2,
-  bond_transactions_grant_signed: FileCheck2,
-  bond_transactions_instruction_sent: SwitchCamera,
-  bond_transactions_registered: KeyRound,
-  bond_transactions_risk: AlertTriangle,
   agents_directory: BriefcaseBusiness,
   agents_reporting: FileText,
   intelligence_beta: BrainCircuit,
@@ -122,6 +109,7 @@ const ICON_BY_KEY = {
   buyer_information: FileCheck2,
   handover: KeyRound,
   reports: FileText,
+  bond_reports: FileBarChart2,
   audit_logs: FileText,
   snags: AlertTriangle,
   team: ShieldUser,
@@ -154,10 +142,7 @@ const BRIDGE_BRAND_SUBTITLE = 'Property Transaction OS'
 const BRIDGE_POWERED_LABEL = 'Powered by Bridge'
 const ATTORNEY_SECONDARY_KEYS = new Set(['financials', 'team_departments', 'reports'])
 const BOND_NAV_SECTIONS = [
-  { key: 'main', label: 'Main', itemKeys: ['dashboard', 'pipeline', 'transactions', 'clients'] },
-  { key: 'operations', label: 'Operations', itemKeys: ['documents', 'banks', 'partners', 'teams'] },
-  { key: 'insights', label: 'Insights', itemKeys: ['reports', 'performance'] },
-  { key: 'admin', label: 'Admin', itemKeys: ['settings'] },
+  { key: 'main', label: 'Workspace', itemKeys: ['dashboard', 'bond_pipeline', 'transactions', 'bond_developments', 'clients', 'partners', 'bond_reports'] },
 ]
 
 function routeMatches(pathname, target = '') {
@@ -259,7 +244,7 @@ function Sidebar() {
 
   const renderNavItem = (item, { child = false } = {}) => {
     const Icon = ICON_BY_KEY[item.key] || LayoutDashboard
-    const hasChildren = Array.isArray(item.children) && item.children.length > 0
+    const hasChildren = item.key !== 'clients' && Array.isArray(item.children) && item.children.length > 0
     const isParentActive = hasChildren ? isParentNavActive(item, location.pathname) : false
     const menuExpanded = Boolean(expandedMenus[item.key] ?? isParentActive)
 

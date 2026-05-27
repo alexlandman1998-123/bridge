@@ -221,7 +221,7 @@ function getIntakeHref(row = {}) {
   if (transactionId) return `/transactions/${transactionId}`
   const unitId = normalizeText(row?.unit?.id)
   if (unitId) return `/units/${unitId}`
-  return '/applications'
+  return '/bond/pipeline'
 }
 
 function normalizeToneForUi(tone = '') {

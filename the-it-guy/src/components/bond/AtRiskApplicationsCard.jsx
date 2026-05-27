@@ -10,7 +10,7 @@ export default function AtRiskApplicationsCard({ rows = [] }) {
       title="At-Risk Applications"
       description="Files with ageing feedback, missing documents, stalled grant handoff, or unresolved compliance pressure."
       action={
-        <Link to="/applications?queue=overdue_applications" className="text-sm font-semibold text-[#204b84] hover:text-[#17324d]">
+        <Link to="/bond/pipeline?view=stalled" className="text-sm font-semibold text-[#204b84] hover:text-[#17324d]">
           View all
         </Link>
       }
@@ -20,7 +20,7 @@ export default function AtRiskApplicationsCard({ rows = [] }) {
           rows.map((row) => (
             <Link
               key={`${row.transactionId}-${row.client}`}
-              to={row.transactionId ? `/transactions/${row.transactionId}` : '/applications'}
+              to={row.transactionId ? `/transactions/${row.transactionId}` : '/bond/pipeline'}
               className="block rounded-[18px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-3 transition hover:border-[#d6e2ee]"
             >
               <div className="flex items-start justify-between gap-3">

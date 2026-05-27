@@ -95,6 +95,7 @@ const Clients = lazy(() => import('./pages/Clients'))
 const ConveyancerDevelopments = lazy(() => import('./pages/ConveyancerDevelopments'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const BondDashboardPage = lazy(() => import('./pages/bond/BondDashboardPage'))
+const BondDevelopmentsPage = lazy(() => import('./pages/bond/BondDevelopmentsPage'))
 const BondTransactionsPage = lazy(() => import('./pages/bond/BondTransactionsPage'))
 const BondModuleHubPage = lazy(() => import('./pages/bond/BondModuleHubPage'))
 const CommercialLayout = lazy(() => import('./modules/commercial/components/CommercialLayout'))
@@ -1491,6 +1492,22 @@ function AppRoutes() {
               />
               <Route path="/transactions" element={<ClientAwareTransactions />} />
               <Route
+                path="/bond/dashboard"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <BondDashboardPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/transactions"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <BondTransactionsPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/transactions/:transactionId/legal/:packetType"
                 element={
                   <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
@@ -1521,6 +1538,16 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/bond/files/:transactionId"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <AppErrorBoundary scope="bond-file-workspace" title="Bond file workspace failed to load">
+                      <AttorneyTransactionDetail />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/invite/stakeholder/:token"
                 element={<LegacyInviteRedirect />}
               />
@@ -1537,6 +1564,64 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['bond_originator']}>
                     <Units />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/pipeline"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <Units />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/developments"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <BondDevelopmentsPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/developments/:developmentId"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <BondDevelopmentsPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/clients"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <Clients />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/clients/:clientId"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <ClientProfile />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/partners"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <AppErrorBoundary scope="partners-module" title="Partners module failed to load">
+                      <PartnersPage />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/reports"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <BondModuleHubPage section="performance" />
                   </RoleRoute>
                 }
               />
@@ -2131,7 +2216,7 @@ function PipelineEntryRoute() {
     return <Navigate to="/pipeline/leads" replace />
   }
   if (role === 'bond_originator') {
-    return <Navigate to="/applications" replace />
+    return <Navigate to="/bond/pipeline" replace />
   }
   return <Pipeline />
 }

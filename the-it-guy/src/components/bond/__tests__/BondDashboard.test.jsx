@@ -78,7 +78,7 @@ function makeSnapshot(overrides = {}) {
         riskFlags: ['2 documents outstanding'],
         href: '/transactions/11111111-1111-4111-8111-111111111111',
         requestDocsHref: '/documents?role=bond_originator',
-        reviewHref: '/applications?queue=submission_readiness',
+        reviewHref: '/bond/pipeline?view=ready-for-submission',
         filterKeys: ['all', 'awaiting_docs'],
       },
     ],

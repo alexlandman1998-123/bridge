@@ -2,11 +2,19 @@ import { Search } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import BondEmptyState from '../../components/bond/BondEmptyState'
+import BondPageHeader from '../../components/bond/BondPageHeader'
 import BondPageShell from '../../components/bond/BondPageShell'
 import BondReportingScopeBanner from '../../components/bond/BondReportingScopeBanner'
 import BondSectionCard from '../../components/bond/BondSectionCard'
 import BondTransactionStatusBadge from '../../components/bond/BondTransactionStatusBadge'
 import BondTransactionTable from '../../components/bond/BondTransactionTable'
+import BondViewTabs from '../../components/bond/BondViewTabs'
+import {
+  BOND_TRANSACTION_VIEW_PARAM,
+  bondViews,
+  getBondTransactionView,
+  getBondTransactionViewFromStatus,
+} from '../../config/bondViews'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import * as bondCommandCenterService from '../../services/bondCommandCenterService'
 
@@ -30,6 +38,8 @@ function matchesSearch(row = {}, query = '') {
   if (!normalizedQuery) return true
   const haystack = [
     row.client,
+    row.applicationReference,
+    row.transactionReference,
     row.property,
     row.partner,
     row.attorney,
@@ -63,9 +73,17 @@ export default function BondTransactionsPage({
     },
   )
 
-  const selectedStatus = useMemo(() => {
+  const selectedView = useMemo(() => {
     const params = new URLSearchParams(location.search)
-    return normalizeText(params.get('status') || 'all') || 'all'
+    const view = normalizeText(params.get(BOND_TRANSACTION_VIEW_PARAM))
+    if (view) return getBondTransactionView(view)
+    const legacyStatus = normalizeText(params.get('status') || 'all') || 'all'
+    return getBondTransactionViewFromStatus(legacyStatus)
+  }, [location.search])
+  const selectedStatus = selectedView.status || 'all'
+  const selectedDevelopmentId = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    return normalizeText(params.get('developmentId')) || 'all'
   }, [location.search])
 
   const loadTransactions = useCallback(async () => {
@@ -83,6 +101,7 @@ export default function BondTransactionsPage({
     try {
       const snapshot = await service.getBondTransactionTrackerSnapshot(workspaceContext, workspaceId, {
         status: selectedStatus,
+        developmentId: selectedDevelopmentId,
       })
       setState({
         loading: false,
@@ -96,7 +115,7 @@ export default function BondTransactionsPage({
         snapshot: null,
       })
     }
-  }, [selectedStatus, service, workspaceContext, workspaceId])
+  }, [selectedDevelopmentId, selectedStatus, service, workspaceContext, workspaceId])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -106,6 +125,35 @@ export default function BondTransactionsPage({
   const filteredRows = useMemo(
     () => (state.snapshot?.rows || []).filter((row) => matchesSearch(row, search)),
     [search, state.snapshot?.rows],
+  )
+  const tabCounts = useMemo(() => {
+    const cardsByStatus = new Map((state.snapshot?.statusCards || []).map((card) => [card.key, card.count]))
+    return bondViews.transactions.tabs.reduce((accumulator, tab) => {
+      accumulator[tab.key] = Number(cardsByStatus.get(tab.status) || 0)
+      return accumulator
+    }, {})
+  }, [state.snapshot?.statusCards])
+
+  const handleViewChange = useCallback(
+    (viewKey) => {
+      const tab = getBondTransactionView(viewKey)
+      const params = new URLSearchParams(location.search)
+      params.set(BOND_TRANSACTION_VIEW_PARAM, tab.key)
+      params.delete('status')
+      navigate(`${bondViews.transactions.basePath}?${params.toString()}`)
+    },
+    [location.search, navigate],
+  )
+
+  const handleDevelopmentChange = useCallback(
+    (event) => {
+      const nextDevelopmentId = event.target.value
+      const params = new URLSearchParams(location.search)
+      if (nextDevelopmentId === 'all') params.delete('developmentId')
+      else params.set('developmentId', nextDevelopmentId)
+      navigate(`${bondViews.transactions.basePath}?${params.toString()}`)
+    },
+    [location.search, navigate],
   )
 
   if (!workspaceId) {
@@ -130,46 +178,52 @@ export default function BondTransactionsPage({
 
   return (
     <BondPageShell>
+      <BondPageHeader
+        title={bondViews.transactions.title}
+        description={bondViews.transactions.description}
+        primaryLabel={bondViews.transactions.primaryActionLabel}
+        secondaryLabel={bondViews.transactions.secondaryActionLabel}
+        onPrimary={() => navigate('/bond/pipeline?view=new')}
+      />
+      <BondViewTabs
+        tabs={bondViews.transactions.tabs}
+        value={selectedView.key}
+        counts={tabCounts}
+        onChange={handleViewChange}
+      />
+
       <BondSectionCard
         className="bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)]"
-        eyebrow="Bond Transactions"
-        title="Linked property deals through registration"
-        description="Track the property transaction after finance involvement starts. Bond applications stay linked here through approval, grant signing, attorney instruction, transfer progress, and final registration."
+        eyebrow="Search"
+        title="Search active bond files"
+        description="Search across buyer, property, bank, agent, attorney, consultant, stage, next action, and transaction references."
         action={(
-          <label className="relative w-full xl:max-w-[360px]">
-            <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#89a0b5]" />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search buyer, property, bank, stage…"
-              className="h-12 w-full rounded-[16px] border border-[#dbe5f0] bg-white pl-11 pr-4 text-sm text-[#17324d] outline-none transition focus:border-[#bbcbdd]"
-            />
-          </label>
+          <div className="flex w-full flex-col gap-3 sm:flex-row xl:max-w-[620px]">
+            <select
+              value={selectedDevelopmentId}
+              onChange={handleDevelopmentChange}
+              className="h-12 rounded-[16px] border border-[#dbe5f0] bg-white px-4 text-sm font-medium text-[#17324d] outline-none transition focus:border-[#bbcbdd]"
+            >
+              {(state.snapshot?.developmentOptions || [{ id: 'all', label: 'All Developments' }]).map((option) => (
+                <option key={option.id || option.value} value={option.value || option.id}>
+                  {option.label || option.name}
+                </option>
+              ))}
+            </select>
+            <label className="relative min-w-0 flex-1">
+              <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#89a0b5]" />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search buyer, property, bank, stage…"
+                className="h-12 w-full rounded-[16px] border border-[#dbe5f0] bg-white pl-11 pr-4 text-sm text-[#17324d] outline-none transition focus:border-[#bbcbdd]"
+              />
+            </label>
+          </div>
         )}
       />
 
       <BondReportingScopeBanner reportingScope={snapshot?.reportingScope || null} />
-
-      {snapshot ? (
-        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-          {snapshot.statusCards.map((card) => (
-            <button
-              key={card.key}
-              type="button"
-              onClick={() => {
-                const params = new URLSearchParams(location.search)
-                params.set('status', card.key)
-                navigate(`/transactions?${params.toString()}`)
-              }}
-              className={`rounded-[20px] border p-4 text-left shadow-[0_12px_28px_rgba(15,23,42,0.03)] transition hover:border-[#ccd9e8] ${selectedStatus === card.key ? 'border-[#b8cce0] bg-[#f7fbff]' : 'border-[#e3ebf5] bg-white'}`.trim()}
-            >
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7d90a5]">{card.label}</p>
-              <p className="mt-3 text-[1.75rem] font-semibold tracking-[-0.03em] text-[#142132]">{card.count}</p>
-              {selectedStatus === card.key ? <p className="mt-2 text-xs font-semibold text-[#31506a]">Current filter</p> : null}
-            </button>
-          ))}
-        </section>
-      ) : null}
 
       {snapshot ? (
         <div className="flex flex-wrap items-center gap-3">
