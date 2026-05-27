@@ -171,9 +171,27 @@ export default function BondDashboard({
   }
 
   return (
-    <BondPageShell>
+    <BondPageShell className="space-y-4">
       <BondDashboardHeader
         summaryText={state.loading ? 'Loading active applications, document queues, review-ready files, and bank responses.' : headerSummary.text}
+        developmentControl={
+          !state.loading && snapshot ? (
+            <label className="block">
+              <span className="sr-only">Development filter</span>
+              <select
+                value={developmentId}
+                onChange={(event) => setDevelopmentId(event.target.value)}
+                className="h-10 w-full rounded-[12px] border border-[#dbe5f0] bg-[#fbfdff] px-3 text-sm font-semibold text-[#17324d] outline-none transition focus:border-[#bbcbdd]"
+              >
+                {developmentOptions.map((option) => (
+                  <option key={option.id || option.value} value={option.value || option.id}>
+                    {option.label || option.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null
+        }
         onCreate={onCreateApplication}
         onInvitePartner={onInvitePartner}
         onExportReport={onExportReport}
@@ -196,23 +214,6 @@ export default function BondDashboard({
             />
           ) : (
             <>
-              <section className="flex flex-col gap-3 rounded-[18px] border border-[#dbe5f0] bg-white px-4 py-3 shadow-[0_10px_28px_rgba(15,23,42,0.035)] sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-[#17324d]">Development Filter</p>
-                  <p className="mt-1 text-xs text-[#71879d]">Scope dashboard, pipeline, clients, and reports by project or private deals.</p>
-                </div>
-                <select
-                  value={developmentId}
-                  onChange={(event) => setDevelopmentId(event.target.value)}
-                  className="h-11 min-w-[240px] rounded-[14px] border border-[#dbe5f0] bg-white px-4 text-sm font-semibold text-[#17324d] outline-none transition focus:border-[#bbcbdd]"
-                >
-                  {developmentOptions.map((option) => (
-                    <option key={option.id || option.value} value={option.value || option.id}>
-                      {option.label || option.name}
-                    </option>
-                  ))}
-                </select>
-              </section>
               <KpiStrip items={heroKpis} />
 
               <ActiveApplicationsSection
@@ -623,7 +624,7 @@ function ActiveApplicationsSection({ items = [], activeFilter = 'all', onFilterC
           View all applications
         </Link>
       }
-      className="rounded-[24px] p-5 sm:p-6"
+      className="rounded-[22px] p-4 sm:p-5"
       headerClassName="gap-4"
       contentClassName="mt-5"
     >
@@ -645,7 +646,7 @@ function ActiveApplicationsSection({ items = [], activeFilter = 'all', onFilterC
       </div>
 
       {items.length ? (
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {items.map((application, index) => (
             <ActiveApplicationCard key={`${application.id}-${index}`} application={application} />
           ))}
@@ -677,7 +678,7 @@ function ActiveApplicationCard({ application = {} }) {
   }
 
   return (
-    <article className="flex min-h-[360px] flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.035)]">
+    <article className="flex min-h-[300px] flex-col rounded-[18px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.035)]">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-base font-semibold tracking-[-0.02em] text-[#142132]">{application.buyerName || 'Unknown buyer'}</p>
@@ -706,7 +707,7 @@ function ActiveApplicationCard({ application = {} }) {
         <MiniFileStat label="Risk" value={`${application.operationalRisk?.riskScore || 0}%`} />
       </div>
 
-      <div className="mt-3 rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] p-3">
+      <div className="mt-3 hidden rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] p-3 2xl:block">
         <div className="flex items-center justify-between gap-3">
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8294a8]">Estimated approval confidence</p>
           <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-[#31506a]">{application.approvalConfidence?.probabilityBand || 'Insufficient Data'}</span>

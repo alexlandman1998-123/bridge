@@ -3,6 +3,7 @@ import { cn } from '../../lib/utils'
 
 export default function BondDashboardHeader({
   summaryText = '',
+  developmentControl = null,
   onCreate = () => {},
   onInvitePartner = () => {},
   onExportReport = () => {},
@@ -21,7 +22,7 @@ export default function BondDashboardHeader({
         className,
       )}
     >
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:justify-between">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center xl:justify-between">
         <div className="min-w-0">
           <h1 className="text-[1.35rem] font-semibold tracking-[-0.03em] text-[#132130] sm:text-[1.55rem]">
             Bond Originator Command Center
@@ -31,7 +32,8 @@ export default function BondDashboardHeader({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+          {developmentControl ? <div className="min-w-[220px]">{developmentControl}</div> : null}
           <button
             type="button"
             onClick={onCreate}
