@@ -1157,6 +1157,9 @@ function MatterOverviewHeader({
   updatedLabel = '',
   onAction,
   isAgentView = false,
+  onboardingActionLabel = '',
+  onboardingActionBusy = false,
+  onOnboardingAction = null,
 }) {
   const currentStage = MATTER_STAGE_MILESTONES[Math.min(progressIndex, MATTER_STAGE_MILESTONES.length - 1)] || MATTER_STAGE_MILESTONES[0]
 
@@ -1193,11 +1196,12 @@ function MatterOverviewHeader({
               </div>
             </div>
             <div className="flex shrink-0 flex-wrap gap-2 xl:justify-end">
-              <div className="min-w-[210px] rounded-[18px] border border-borderSoft bg-surfaceAlt px-4 py-3">
-                <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Health Summary</span>
-                <strong className="mt-1 block text-sm text-textStrong">{matterHealthLabel}</strong>
-                <span className="mt-1 block text-xs text-textMuted">{daysActiveLabel}{updatedLabel ? ` • Updated ${updatedLabel}` : ''}</span>
-              </div>
+              {onboardingActionLabel ? (
+                <Button type="button" onClick={onOnboardingAction || undefined} disabled={onboardingActionBusy}>
+                  <Send size={14} />
+                  {onboardingActionBusy ? 'Preparing...' : onboardingActionLabel}
+                </Button>
+              ) : null}
               <Button type="button" variant="secondary" onClick={onAction}>
                 <MoreHorizontal size={14} />
                 Actions
@@ -2972,7 +2976,7 @@ function AttorneyTransactionDetail() {
       return {
         ...row,
         stateLabel: onboardingCompleted ? 'Onboarding completed' : stakeholderState,
-        canSend: Boolean(row.email) && !onboardingCompleted,
+        canSend: Boolean(row.email),
       }
     })
   }, [activeStakeholders, buyer?.email, buyer?.name, isPrivateMatter, onboardingCompleted, transaction?.seller_email, transaction?.seller_name])
@@ -3201,6 +3205,38 @@ function AttorneyTransactionDetail() {
       setOnboardingActionMessage(`Mail draft opened for ${recipient.roleLabel.toLowerCase()}.`)
     } catch (sendError) {
       setError(sendError?.message || 'Unable to prepare onboarding send action right now.')
+    } finally {
+      setOnboardingActionBusy(false)
+    }
+  }
+
+  async function handleAgentHeaderOnboardingAction() {
+    const recipient = {
+      roleLabel: onboardingCompleted ? 'Client portal' : 'Buyer',
+      name: buyer?.name || 'Buyer',
+      email: buyer?.email || '',
+    }
+
+    if (!recipient.email) {
+      setOnboardingActionMessage('Add a buyer email before sending the onboarding or client portal link.')
+      setOnboardingModalOpen(true)
+      return
+    }
+
+    try {
+      setOnboardingActionBusy(true)
+      setError('')
+      const linkUrl = await getOnboardingLinkUrl()
+      const subject = encodeURIComponent(onboardingCompleted ? 'Bridge Client Portal Link' : 'Bridge Buyer Onboarding')
+      const body = encodeURIComponent(
+        onboardingCompleted
+          ? `Hello ${recipient.name || ''},\n\nYou can access your Bridge client portal here:\n${linkUrl}\n\nBridge`
+          : `Hello ${recipient.name || ''},\n\nPlease complete your buyer onboarding here:\n${linkUrl}\n\nBridge`,
+      )
+      window.open(`mailto:${recipient.email}?subject=${subject}&body=${body}`, '_blank', 'noopener,noreferrer')
+      setOnboardingActionMessage(onboardingCompleted ? 'Client portal mail draft opened.' : 'Buyer onboarding mail draft opened.')
+    } catch (sendError) {
+      setError(sendError?.message || 'Unable to prepare the client link right now.')
     } finally {
       setOnboardingActionBusy(false)
     }
@@ -3828,6 +3864,9 @@ function AttorneyTransactionDetail() {
               updatedLabel={formatShortDayMonth(transaction?.updated_at || transaction?.created_at)}
               onAction={() => void handleOpenRegistrationFlow()}
               isAgentView={isAgentTransactionView}
+              onboardingActionLabel={isAgentTransactionView ? (onboardingCompleted ? 'Resend Client Portal Link' : 'Send Buyer Onboarding') : ''}
+              onboardingActionBusy={onboardingActionBusy}
+              onOnboardingAction={() => void handleAgentHeaderOnboardingAction()}
             />
           <MatterWorkspaceTabs tabs={workspaceMenuTabs} activeTab={activeWorkspaceMenu} onChange={setWorkspaceMenu} premium={isAgentTransactionView} />
         </div>

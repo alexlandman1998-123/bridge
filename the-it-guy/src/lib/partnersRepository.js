@@ -2,9 +2,10 @@ import { isSupabaseConfigured, supabase } from './supabaseClient'
 import { MOCK_DATA_ENABLED } from './mockData'
 
 const PARTNER_DEMO_STORAGE_KEY = 'itg:partners-demo:v1'
+const importMetaEnv = import.meta.env || {}
 const PARTNERS_DEMO_MODE = Boolean(
   MOCK_DATA_ENABLED ||
-    (import.meta.env.DEV && String(import.meta.env.VITE_ENABLE_MOCK_DATA || '').trim().toLowerCase() === 'true'),
+    (importMetaEnv.DEV && String(importMetaEnv.VITE_ENABLE_MOCK_DATA || '').trim().toLowerCase() === 'true'),
 )
 
 export const PARTNER_TYPES = [
@@ -40,6 +41,20 @@ export const PARTNER_PROVINCES = [
   'Northern Cape',
   'Western Cape',
 ]
+
+export const PARTNER_SCOPE_TYPES = ['organisation', 'region', 'branch', 'team', 'user']
+
+export const PARTNER_SCOPE_PRIORITY = ['user', 'team', 'branch', 'region', 'organisation']
+
+export const PARTNER_SCOPE_LABELS = {
+  organisation: 'Organisation-wide',
+  region: 'Region',
+  branch: 'Branch',
+  team: 'Team',
+  user: 'Personal',
+}
+
+export const PARTNER_RELATIONSHIP_STATUSES = ['pending', 'accepted', 'declined', 'cancelled', 'expired', 'removed']
 
 const DEMO_ORGANISATIONS = [
   {
@@ -182,6 +197,217 @@ function normalizeLower(value) {
   return normalizeText(value).toLowerCase()
 }
 
+export function normalizePartnerScopeType(value) {
+  const normalized = normalizeLower(value).replace(/\s+/g, '_')
+  if (normalized === 'org' || normalized === 'organisation_wide' || normalized === 'organization') return 'organisation'
+  if (normalized === 'personal' || normalized === 'consultant' || normalized === 'consultant_user') return 'user'
+  return PARTNER_SCOPE_TYPES.includes(normalized) ? normalized : 'organisation'
+}
+
+export function normalizePartnerRelationshipStatus(value) {
+  const normalized = normalizeLower(value)
+  if (normalized === 'approved' || normalized === 'connected') return 'accepted'
+  if (normalized === 'rejected' || normalized === 'revoked') return 'declined'
+  if (normalized === 'inactive' || normalized === 'archived' || normalized === 'deleted') return 'removed'
+  return PARTNER_RELATIONSHIP_STATUSES.includes(normalized) ? normalized : 'pending'
+}
+
+function isPreferredRelationship(row = {}) {
+  return Boolean(
+    row.preferred === true ||
+      row.is_preferred === true ||
+      normalizeLower(row.relationship_type || row.relationshipType) === 'preferred' ||
+      normalizeLower(row.visibility_level || row.visibilityLevel) === 'preferred_partners_only',
+  )
+}
+
+function hasAnyRole(value = '', roles = []) {
+  const normalized = normalizeLower(value)
+  return roles.some((role) => normalized === role || normalized.includes(role))
+}
+
+function collectIds(...values) {
+  return new Set(values.flat().map(normalizeText).filter(Boolean))
+}
+
+function normalizeAccessContext(context = {}) {
+  const membership = context.currentMembership || context.membership || {}
+  const profile = context.profile || {}
+  const role = normalizeLower(
+    context.role ||
+      context.workspaceRole ||
+      membership.workspaceRole ||
+      membership.workspace_role ||
+      membership.organisationRole ||
+      membership.organisation_role ||
+      membership.role ||
+      profile.membershipRole ||
+      profile.role,
+  )
+  const scopeLevel = normalizeLower(context.scopeLevel || membership.scopeLevel || membership.scope_level || membership.branchScope || membership.branch_scope)
+  const userId = normalizeText(context.userId || profile.id || membership.userId || membership.user_id)
+  const organisationId = normalizeText(context.organisationId || membership.workspaceId || membership.organisationId || membership.organisation_id)
+  const regionIds = collectIds(context.regionIds, context.regionId, membership.regionId, membership.region_id)
+  const branchIds = collectIds(
+    context.branchIds,
+    context.branchId,
+    membership.branchId,
+    membership.branch_id,
+    membership.primaryBranchId,
+    membership.primary_branch_id,
+  )
+  const teamIds = collectIds(context.teamIds, context.teamId, membership.teamId, membership.team_id, membership.workspaceUnitId, membership.workspace_unit_id)
+  const userIds = collectIds(context.userIds, context.userId, userId)
+  const isHq =
+    context.isHq === true ||
+    scopeLevel === 'organisation' ||
+    scopeLevel === 'workspace_hq' ||
+    scopeLevel === 'hq' ||
+    hasAnyRole(role, ['owner', 'principal', 'admin', 'director', 'hq', 'organisation_manager', 'operations_manager'])
+
+  return {
+    ...context,
+    role,
+    scopeLevel,
+    userId,
+    organisationId,
+    regionIds,
+    branchIds,
+    teamIds,
+    userIds,
+    isHq,
+  }
+}
+
+export function getPartnerScopeLabel(scopeType, scopeId = '', relationship = {}) {
+  const normalizedScope = normalizePartnerScopeType(scopeType)
+  const explicitName =
+    relationship.scopeName ||
+    relationship.scope_name ||
+    relationship.scopeDisplayName ||
+    relationship.scope_display_name ||
+    relationship.scopeTargetName ||
+    relationship.scope_target_name
+  const name = normalizeText(explicitName)
+  if (normalizedScope === 'organisation') return 'Organisation-wide'
+  if (normalizedScope === 'user') return name || 'Personal'
+  if (name) return `${PARTNER_SCOPE_LABELS[normalizedScope]}: ${name}`
+  const id = normalizeText(scopeId)
+  return id ? `${PARTNER_SCOPE_LABELS[normalizedScope]} scope` : PARTNER_SCOPE_LABELS[normalizedScope]
+}
+
+export function getPartnerScopeBadge(relationship = {}) {
+  const scopeType = normalizePartnerScopeType(relationship.scopeType || relationship.scope_type)
+  return {
+    scopeType,
+    scopeId: normalizeText(relationship.scopeId || relationship.scope_id),
+    label: getPartnerScopeLabel(scopeType, relationship.scopeId || relationship.scope_id, relationship),
+    preferred: Boolean(relationship.preferred),
+  }
+}
+
+function relationshipMatchesAccess(relationship = {}, accessContext = {}) {
+  const context = normalizeAccessContext(accessContext)
+  const scopeType = normalizePartnerScopeType(relationship.scopeType || relationship.scope_type)
+  const scopeId = normalizeText(relationship.scopeId || relationship.scope_id)
+
+  if (scopeType === 'organisation') return true
+  if (context.isHq) return true
+  if (scopeType === 'region') return !scopeId || context.regionIds.has(scopeId)
+  if (scopeType === 'branch') return !scopeId || context.branchIds.has(scopeId)
+  if (scopeType === 'team') return !scopeId || context.teamIds.has(scopeId)
+  if (scopeType === 'user') return !scopeId || context.userIds.has(scopeId)
+  return false
+}
+
+function scopeRank(relationship = {}) {
+  const scopeType = normalizePartnerScopeType(relationship.scopeType || relationship.scope_type)
+  const index = PARTNER_SCOPE_PRIORITY.indexOf(scopeType)
+  return index === -1 ? PARTNER_SCOPE_PRIORITY.length : index
+}
+
+export function filterPartnerRelationshipsByScope(relationships = [], accessContext = {}) {
+  return relationships.filter((relationship) => relationshipMatchesAccess(relationship, accessContext))
+}
+
+export function dedupeScopedPartnerRelationships(relationships = [], accessContext = {}) {
+  const relevant = filterPartnerRelationshipsByScope(relationships, accessContext)
+    .filter((relationship) => relationship.relationshipStatus !== 'removed')
+    .sort((left, right) => {
+      const preferredDiff = Number(Boolean(right.preferred)) - Number(Boolean(left.preferred))
+      if (preferredDiff !== 0) return preferredDiff
+      const rankDiff = scopeRank(left) - scopeRank(right)
+      if (rankDiff !== 0) return rankDiff
+      return String(left.partner?.name || '').localeCompare(String(right.partner?.name || ''))
+    })
+
+  const byPartner = new Map()
+  relevant.forEach((relationship) => {
+    const partnerId = normalizeText(relationship.counterpartOrganisationId || relationship.partner?.id || relationship.partnerOrganisationId)
+    if (!partnerId || byPartner.has(partnerId)) return
+    byPartner.set(partnerId, relationship)
+  })
+
+  return [...byPartner.values()]
+}
+
+export function getAllowedPartnerScopes({
+  organisationId = '',
+  organisationName = '',
+  role = '',
+  profile = null,
+  currentMembership = null,
+} = {}) {
+  const context = normalizeAccessContext({ organisationId, role, profile, currentMembership })
+  const membership = currentMembership || {}
+  const scopes = []
+  const addScope = (scopeType, scopeId, label, { requiresTarget = false } = {}) => {
+    const normalizedScope = normalizePartnerScopeType(scopeType)
+    const id = normalizeText(scopeId)
+    if (normalizedScope !== 'organisation' && !id && !requiresTarget) return
+    const resolvedId = id || (normalizedScope === 'organisation' ? context.organisationId : '')
+    const value = `${normalizedScope}:${resolvedId}`
+    if (scopes.some((item) => item.value === value)) return
+    scopes.push({
+      value,
+      scopeType: normalizedScope,
+      scopeId: resolvedId,
+      requiresTarget,
+      label: label || getPartnerScopeLabel(normalizedScope, id),
+    })
+  }
+
+  const consultantOnly =
+    !context.isHq &&
+    (hasAnyRole(context.role, ['consultant', 'agent']) || context.scopeLevel === 'user' || context.scopeLevel === 'personal') &&
+    !context.branchIds.size &&
+    !context.teamIds.size &&
+    !context.regionIds.size
+
+  if (consultantOnly) {
+    addScope('user', context.userId, 'Personal preference')
+    return scopes
+  }
+
+  if (context.isHq) {
+    addScope('organisation', context.organisationId || organisationId, organisationName ? `${organisationName} organisation-wide` : 'Organisation-wide')
+    addScope('region', '', 'Region', { requiresTarget: true })
+    addScope('branch', '', 'Branch', { requiresTarget: true })
+    addScope('team', '', 'Team', { requiresTarget: true })
+  }
+
+  ;[...context.regionIds].forEach((id) => addScope('region', id, membership.regionName || membership.region_name || 'Assigned region'))
+  ;[...context.branchIds].forEach((id) => addScope('branch', id, membership.branchName || membership.branch_name || 'Assigned branch'))
+  ;[...context.teamIds].forEach((id) => addScope('team', id, membership.teamName || membership.team_name || 'Assigned team'))
+  addScope('user', context.userId, 'Personal preference')
+
+  if (!scopes.length) {
+    addScope('organisation', context.organisationId || organisationId, organisationName || 'Organisation-wide')
+  }
+
+  return scopes
+}
+
 function normalizeOrganisationType(value) {
   const normalized = normalizeLower(value).replace(/\s+/g, '_')
   if (normalized === 'agent') return 'agency'
@@ -260,6 +486,10 @@ function mapDemoRecord({ id, workspaceType = 'agency' }) {
           partnerOrganisationId: 'demo-samlin',
           relationshipStatus: 'accepted',
           relationshipType: 'approved',
+          preferred: false,
+          scopeType: 'region',
+          scopeId: 'demo-region-gauteng',
+          scopeName: 'Gauteng',
           visibilityLevel: 'connected_partners_only',
           notes: 'Connected partner',
           createdAt: new Date(Date.now() - 8 * 86400000).toISOString(),
@@ -271,6 +501,10 @@ function mapDemoRecord({ id, workspaceType = 'agency' }) {
           partnerOrganisationId: orgId,
           relationshipStatus: 'accepted',
           relationshipType: 'approved',
+          preferred: false,
+          scopeType: 'branch',
+          scopeId: 'demo-branch-sandton',
+          scopeName: 'Sandton Branch',
           visibilityLevel: 'connected_partners_only',
           notes: 'Connected partner',
           createdAt: new Date(Date.now() - 10 * 86400000).toISOString(),
@@ -288,6 +522,10 @@ function mapDemoRecord({ id, workspaceType = 'agency' }) {
           toWorkspaceType: 'bond_originator',
           status: 'pending',
           relationshipType: 'approved',
+          preferred: false,
+          scopeType: 'region',
+          scopeId: 'demo-region-gauteng',
+          scopeName: 'Gauteng',
           message: 'I want to connect with your organisation.',
           invitedByUserId: 'demo-bond-user',
           respondedByUserId: '',
@@ -304,6 +542,10 @@ function mapDemoRecord({ id, workspaceType = 'agency' }) {
           toWorkspaceType: 'bond_originator',
           status: 'pending',
           relationshipType: 'approved',
+          preferred: false,
+          scopeType: 'region',
+          scopeId: 'demo-region-gauteng',
+          scopeName: 'Gauteng',
           message: 'Wants a strategic partner relationship.',
           invitedByUserId: 'demo-bond-user',
           respondedByUserId: '',
@@ -320,6 +562,10 @@ function mapDemoRecord({ id, workspaceType = 'agency' }) {
           toWorkspaceType: 'attorney_firm',
           status: 'pending',
           relationshipType: 'approved',
+          preferred: false,
+          scopeType: 'organisation',
+          scopeId: orgId,
+          scopeName: 'Organisation-wide',
           message: 'Would you like to collaborate with us?',
           invitedByUserId: 'demo-bond-user',
           createdAt: new Date(Date.now() - 3 * 86400000).toISOString(),
@@ -335,6 +581,10 @@ function mapDemoRecord({ id, workspaceType = 'agency' }) {
           toWorkspaceType: 'bond_originator',
           status: 'pending',
           relationshipType: 'approved',
+          preferred: false,
+          scopeType: 'organisation',
+          scopeId: orgId,
+          scopeName: 'Organisation-wide',
           message: 'Cross-originator partner invite.',
           invitedByUserId: 'demo-bond-user',
           createdAt: new Date(Date.now() - 4 * 86400000).toISOString(),
@@ -350,6 +600,10 @@ function mapDemoRecord({ id, workspaceType = 'agency' }) {
           toWorkspaceType: 'agency',
           status: 'declined',
           relationshipType: 'approved',
+          preferred: false,
+          scopeType: 'organisation',
+          scopeId: orgId,
+          scopeName: 'Organisation-wide',
           message: 'Past invite not accepted.',
           invitedByUserId: 'demo-bond-user',
           respondedByUserId: 'demo-bond-recipient',
@@ -390,6 +644,10 @@ function mapDemoRecord({ id, workspaceType = 'agency' }) {
       partnerOrganisationId: partner.id,
       relationshipStatus: 'accepted',
       relationshipType: index === 0 ? 'preferred' : 'approved',
+      preferred: index === 0,
+      scopeType: index === 0 ? 'branch' : 'organisation',
+      scopeId: index === 0 ? 'demo-branch-sandton' : orgId,
+      scopeName: index === 0 ? 'Sandton Branch' : 'Organisation-wide',
       visibilityLevel: index === 0 ? 'preferred_partners_only' : 'connected_partners_only',
       notes: index === 0 ? 'Primary recommended partner for new matters.' : '',
       createdAt: new Date(Date.now() - (index + 7) * 86400000).toISOString(),
@@ -406,6 +664,10 @@ function mapDemoRecord({ id, workspaceType = 'agency' }) {
         toWorkspaceType: 'bond_originator',
         status: 'pending',
         relationshipType: 'approved',
+        preferred: false,
+        scopeType: 'organisation',
+        scopeId: orgId,
+        scopeName: 'Organisation-wide',
         invitedEmail: 'partnerships@urbanbond.co.za',
         createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
         expiresAt: new Date(Date.now() + 28 * 86400000).toISOString(),
@@ -434,18 +696,37 @@ function mapDemoRecord({ id, workspaceType = 'agency' }) {
   }
 }
 
-function upsertDemoRelationship(state, senderOrganisationId, recipientOrganisationId, relationshipType = 'approved') {
+function upsertDemoRelationship(
+  state,
+  senderOrganisationId,
+  recipientOrganisationId,
+  {
+    relationshipType = 'approved',
+    scopeType = 'organisation',
+    scopeId = '',
+    scopeName = '',
+    preferred = false,
+    partnerType = '',
+  } = {},
+) {
   if (!state?.relationships || !senderOrganisationId || !recipientOrganisationId) return
 
   const now = new Date().toISOString()
   const fromId = normalizeText(senderOrganisationId)
   const toId = normalizeText(recipientOrganisationId)
+  const normalizedScopeType = normalizePartnerScopeType(scopeType)
+  const normalizedScopeId = normalizeText(scopeId) || (normalizedScopeType === 'organisation' ? fromId : '')
   const existing = state.relationships.find((relationship) => {
     const relationshipFrom = normalizeText(relationship.organisationId || relationship.organisation_id)
     const relationshipTo = normalizeText(relationship.partnerOrganisationId || relationship.partner_organisation_id)
+    const relationshipScopeType = normalizePartnerScopeType(relationship.scopeType || relationship.scope_type)
+    const relationshipScopeId =
+      normalizeText(relationship.scopeId || relationship.scope_id) || (relationshipScopeType === 'organisation' ? relationshipFrom : '')
     return (
-      (relationshipFrom === fromId && relationshipTo === toId) ||
-      (relationshipFrom === toId && relationshipTo === fromId)
+      ((relationshipFrom === fromId && relationshipTo === toId) ||
+        (relationshipFrom === toId && relationshipTo === fromId)) &&
+      relationshipScopeType === normalizedScopeType &&
+      relationshipScopeId === normalizedScopeId
     )
   })
 
@@ -457,6 +738,11 @@ function upsertDemoRelationship(state, senderOrganisationId, recipientOrganisati
         partnerOrganisationId: toId,
         relationshipStatus: 'accepted',
         relationshipType,
+        preferred: Boolean(preferred || relationshipType === 'preferred'),
+        partnerType,
+        scopeType: normalizedScopeType,
+        scopeId: normalizedScopeId,
+        scopeName,
         visibilityLevel: 'connected_partners_only',
         createdAt: now,
         acceptedAt: now,
@@ -470,14 +756,24 @@ function upsertDemoRelationship(state, senderOrganisationId, recipientOrganisati
   state.relationships = state.relationships.map((relationship) => {
     const relationshipFrom = normalizeText(relationship.organisationId || relationship.organisation_id)
     const relationshipTo = normalizeText(relationship.partnerOrganisationId || relationship.partner_organisation_id)
+    const relationshipScopeType = normalizePartnerScopeType(relationship.scopeType || relationship.scope_type)
+    const relationshipScopeId =
+      normalizeText(relationship.scopeId || relationship.scope_id) || (relationshipScopeType === 'organisation' ? relationshipFrom : '')
     if (
-      (relationshipFrom === fromId && relationshipTo === toId) ||
-      (relationshipFrom === toId && relationshipTo === fromId)
+      ((relationshipFrom === fromId && relationshipTo === toId) ||
+        (relationshipFrom === toId && relationshipTo === fromId)) &&
+      relationshipScopeType === normalizedScopeType &&
+      relationshipScopeId === normalizedScopeId
     ) {
       return {
         ...relationship,
         relationshipStatus: 'accepted',
         relationshipType: relationshipType || relationship.relationshipType || relationship.relationship_type || 'approved',
+        preferred: Boolean(preferred || relationship.preferred || relationshipType === 'preferred'),
+        partnerType: partnerType || relationship.partnerType || relationship.partner_type || '',
+        scopeType: normalizedScopeType,
+        scopeId: normalizedScopeId,
+        scopeName: scopeName || relationship.scopeName || relationship.scope_name || '',
         acceptedAt: now,
       }
     }
@@ -493,7 +789,7 @@ function getDemoState(organisationId, workspaceType) {
       : {
           organisationId: normalizeText(organisationId) || 'demo-current-org',
           workspaceType: normalizeOrganisationType(workspaceType),
-          ...mapDemoRecord(organisationId, workspaceType),
+          ...mapDemoRecord({ id: organisationId, workspaceType }),
         }
   writeDemoState(next)
   return next
@@ -527,25 +823,41 @@ function mapOrganisation(row = {}) {
   }
 }
 
-function mapRelationship(row = {}, currentOrganisationId = '') {
+export function mapPartnerRelationship(row = {}, currentOrganisationId = '') {
   const organisationId = normalizeText(row.organisation_id || row.organisationId)
   const partnerOrganisationId = normalizeText(row.partner_organisation_id || row.partnerOrganisationId)
   const currentId = normalizeText(currentOrganisationId)
   const counterpartId = currentId && organisationId === currentId ? partnerOrganisationId : organisationId
+  const scopeType = normalizePartnerScopeType(row.scope_type || row.scopeType)
+  const scopeId = normalizeText(row.scope_id || row.scopeId) || (scopeType === 'organisation' ? organisationId : '')
+  const preferred = isPreferredRelationship(row)
+  const relationshipType = normalizeText(row.relationship_type || row.relationshipType) || (preferred ? 'preferred' : 'approved')
+  const relationshipStatus = normalizePartnerRelationshipStatus(row.status || row.relationship_status || row.relationshipStatus)
 
   return {
     id: normalizeText(row.id),
     organisationId,
+    ownerOrganisationId: organisationId,
     partnerOrganisationId,
     counterpartOrganisationId: counterpartId,
-    relationshipStatus: normalizeText(row.relationship_status || row.relationshipStatus) || 'pending',
-    relationshipType: normalizeText(row.relationship_type || row.relationshipType) || 'approved',
+    relationshipStatus,
+    status: relationshipStatus,
+    relationshipType,
+    partnerType: normalizeText(row.partner_type || row.partnerType),
+    preferred,
+    scopeType,
+    scopeId,
+    scopeName: normalizeText(row.scope_name || row.scopeName || row.scope_display_name || row.scopeDisplayName),
+    createdBy: normalizeText(row.created_by || row.createdBy),
     visibilityLevel: normalizeText(row.visibility_level || row.visibilityLevel) || 'connected_partners_only',
     notes: normalizeText(row.notes),
     createdAt: normalizeText(row.created_at || row.createdAt),
     acceptedAt: normalizeText(row.accepted_at || row.acceptedAt),
+    updatedAt: normalizeText(row.updated_at || row.updatedAt),
   }
 }
+
+const mapRelationship = mapPartnerRelationship
 
 function mapInvitation(row = {}, organisationsById = new Map()) {
   const senderOrganisationId = normalizeText(row.sender_organisation_id || row.senderOrganisationId)
@@ -575,6 +887,10 @@ function mapInvitation(row = {}, organisationsById = new Map()) {
     fromWorkspaceType,
     toWorkspaceType,
     relationshipType: normalizeText(row.relationship_type || row.relationshipType) || 'approved',
+    preferred: isPreferredRelationship(row),
+    scopeType: normalizePartnerScopeType(row.scope_type || row.scopeType),
+    scopeId: normalizeText(row.scope_id || row.scopeId) || (normalizePartnerScopeType(row.scope_type || row.scopeType) === 'organisation' ? senderOrganisationId : ''),
+    scopeName: normalizeText(row.scope_name || row.scopeName || row.scope_display_name || row.scopeDisplayName),
     status: normalizeText(row.status) || 'pending',
     message: normalizeText(row.message || row.inviteMessage || row.note || row.invite_note),
     createdAt: normalizeText(row.created_at || row.createdAt),
@@ -599,7 +915,7 @@ function mapReferral(row = {}) {
 
 function buildMetrics({ relationships = [], referrals = [] } = {}) {
   const accepted = relationships.filter((item) => item.relationshipStatus === 'accepted')
-  const preferred = accepted.filter((item) => item.relationshipType === 'preferred')
+  const preferred = accepted.filter((item) => item.preferred || item.relationshipType === 'preferred')
   const converted = referrals.filter((item) => item.referralStatus === 'converted')
   const activeSharedDeals = accepted.reduce((sum, item) => sum + Number(item.partner?.transactionStats?.activeTransactions || 0), 0)
 
@@ -684,7 +1000,7 @@ function getFallbackInvitationName({ organisationId = '', organisationsById, inv
   return 'Unknown organisation'
 }
 
-function buildDemoSnapshot(organisationId, workspaceType) {
+function buildDemoSnapshot(organisationId, workspaceType, accessContext = {}) {
   const state = getDemoState(organisationId, workspaceType)
   const currentType = normalizeOrganisationType(workspaceType)
   const organisations = DEMO_ORGANISATIONS
@@ -700,6 +1016,7 @@ function buildDemoSnapshot(organisationId, workspaceType) {
 
   return {
     source: 'demo',
+    accessContext: { ...accessContext, organisationId },
     organisations,
     relationships,
     invitations,
@@ -721,7 +1038,7 @@ async function fetchInvitationRows(scopedOrganisationId) {
     const baseResult = await supabase
       .from('partner_invitations')
       .select(
-        'id, sender_organisation_id, recipient_email, recipient_organisation_id, invited_email, from_organisation_name, to_organisation_name, from_workspace_type, to_workspace_type, relationship_type, status, message, created_at, expires_at, invited_by_user_id, responded_by_user_id, responded_at',
+        'id, sender_organisation_id, recipient_email, recipient_organisation_id, invited_email, from_organisation_name, to_organisation_name, from_workspace_type, to_workspace_type, partner_type, relationship_type, scope_type, scope_id, scope_name, preferred, status, message, created_at, expires_at, invited_by_user_id, responded_by_user_id, responded_at',
       )
       .or(`sender_organisation_id.eq.${scopedOrganisationId},recipient_organisation_id.eq.${scopedOrganisationId}`)
       .order('created_at', { ascending: false })
@@ -745,6 +1062,32 @@ async function fetchInvitationRows(scopedOrganisationId) {
   }))
 }
 
+async function fetchRelationshipRows(scopedOrganisationId) {
+  try {
+    const result = await supabase
+      .from('organisation_partners')
+      .select(
+        'id, organisation_id, partner_organisation_id, partner_type, status, relationship_status, relationship_type, visibility_level, scope_type, scope_id, scope_name, preferred, notes, created_by, created_at, accepted_at, updated_at',
+      )
+      .or(`organisation_id.eq.${scopedOrganisationId},partner_organisation_id.eq.${scopedOrganisationId}`)
+      .order('created_at', { ascending: false })
+
+    if (result.error) throw result.error
+    return result.data || []
+  } catch (error) {
+    if (!isRecoverablePartnerSchemaError(error)) throw error
+  }
+
+  const legacyResult = await supabase
+    .from('organisation_partners')
+    .select('id, organisation_id, partner_organisation_id, relationship_status, relationship_type, visibility_level, notes, created_at, accepted_at')
+    .or(`organisation_id.eq.${scopedOrganisationId},partner_organisation_id.eq.${scopedOrganisationId}`)
+    .order('created_at', { ascending: false })
+
+  if (legacyResult.error) throw legacyResult.error
+  return legacyResult.data || []
+}
+
 function buildInvitePayloadBase({
   scopedOrganisationId,
   recipientEmail,
@@ -756,9 +1099,14 @@ function buildInvitePayloadBase({
   recipientWorkspaceType,
   senderOrganisationName = '',
   message,
+  scopeType = 'organisation',
+  scopeId = '',
+  scopeName = '',
+  preferred = false,
 }) {
   const toWorkspaceType = normalizeOrganisationType(recipientWorkspaceType || workspaceType)
   const fromOrganisationName = normalizeText(senderOrganisationName) || 'Bridge Organisation'
+  const normalizedScopeType = normalizePartnerScopeType(scopeType)
   return filterInvitationPayload({
     sender_organisation_id: scopedOrganisationId,
     recipient_email: recipientEmail,
@@ -768,25 +1116,26 @@ function buildInvitePayloadBase({
     from_workspace_type: normalizeOrganisationType(workspaceType),
     to_workspace_type: toWorkspaceType || null,
     relationship_type: normalizeText(relationshipType) || 'approved',
+    partner_type: toWorkspaceType || null,
+    scope_type: normalizedScopeType,
+    scope_id: normalizeText(scopeId) || (normalizedScopeType === 'organisation' ? scopedOrganisationId : null),
+    scope_name: normalizeText(scopeName) || null,
+    preferred: Boolean(preferred),
     message: message ? normalizeText(message) : null,
     created_by: normalizeText(userId) || null,
     invited_by_user_id: normalizeText(userId) || null,
   })
 }
 
-export async function fetchPartnersSnapshot({ organisationId = '', workspaceType = 'agency' } = {}) {
+export async function fetchPartnersSnapshot({ organisationId = '', workspaceType = 'agency', accessContext = {} } = {}) {
   const scopedOrganisationId = normalizeText(organisationId)
   if (PARTNERS_DEMO_MODE || !isSupabaseConfigured || !supabase || !scopedOrganisationId) {
-    return buildDemoSnapshot(scopedOrganisationId, workspaceType)
+    return buildDemoSnapshot(scopedOrganisationId, workspaceType, accessContext)
   }
 
   try {
     const [relationshipResult, invitationResult, referralResult, organisationsResult] = await Promise.all([
-      supabase
-        .from('organisation_partners')
-        .select('id, organisation_id, partner_organisation_id, relationship_status, relationship_type, visibility_level, notes, created_at, accepted_at')
-        .or(`organisation_id.eq.${scopedOrganisationId},partner_organisation_id.eq.${scopedOrganisationId}`)
-        .order('created_at', { ascending: false }),
+      fetchRelationshipRows(scopedOrganisationId),
       fetchInvitationRows(scopedOrganisationId),
       supabase
         .from('partner_referrals')
@@ -803,10 +1152,10 @@ export async function fetchPartnersSnapshot({ organisationId = '', workspaceType
         .order('display_name', { ascending: true }),
     ])
 
-    const firstError = [relationshipResult, referralResult, organisationsResult].find((result) => result.error)?.error
+    const firstError = [referralResult, organisationsResult].find((result) => result.error)?.error
     if (firstError) {
       if (isRecoverablePartnerSchemaError(firstError)) {
-        return buildDemoSnapshot(scopedOrganisationId, workspaceType)
+        return buildDemoSnapshot(scopedOrganisationId, workspaceType, accessContext)
       }
       throw firstError
     }
@@ -817,7 +1166,10 @@ export async function fetchPartnersSnapshot({ organisationId = '', workspaceType
 
     const organisations = (organisationsResult.data || []).map(mapOrganisation)
     const relationships = enrichRelationships(
-      (relationshipResult.data || []).map((item) => mapRelationship(item, scopedOrganisationId)),
+      filterPartnerRelationshipsByScope(
+        (relationshipResult || []).map((item) => mapRelationship(item, scopedOrganisationId)),
+        { ...accessContext, organisationId: scopedOrganisationId },
+      ),
       organisations,
     )
     const invitations = enrichInvitations(invitationResult || [], organisations)
@@ -825,6 +1177,7 @@ export async function fetchPartnersSnapshot({ organisationId = '', workspaceType
 
     return {
       source: 'supabase',
+      accessContext: { ...accessContext, organisationId: scopedOrganisationId },
       organisations,
       relationships,
       invitations,
@@ -833,7 +1186,7 @@ export async function fetchPartnersSnapshot({ organisationId = '', workspaceType
     }
   } catch (error) {
     if (isRecoverablePartnerSchemaError(error)) {
-      return buildDemoSnapshot(scopedOrganisationId, workspaceType)
+      return buildDemoSnapshot(scopedOrganisationId, workspaceType, accessContext)
     }
     throw error
   }
@@ -864,7 +1217,7 @@ export function filterDiscoverablePartners(organisations = [], filters = {}) {
   })
 }
 
-export function getPartnerAssignmentOptions(snapshot = {}, roleType = 'transfer_attorney') {
+export function getPartnerAssignmentOptions(snapshot = {}, roleType = 'transfer_attorney', accessContext = {}) {
   const targetTypes =
     roleType === 'bond_originator'
       ? new Set(['bond_originator'])
@@ -872,11 +1225,13 @@ export function getPartnerAssignmentOptions(snapshot = {}, roleType = 'transfer_
         ? new Set(['developer_company'])
         : new Set(['attorney_firm'])
 
-  return (snapshot.relationships || [])
+  return dedupeScopedPartnerRelationships(snapshot.relationships || [], accessContext || snapshot.accessContext || {})
     .filter((relationship) => relationship.relationshipStatus === 'accepted' && targetTypes.has(relationship.partner?.type))
     .sort((left, right) => {
-      const preferredDiff = Number(right.relationshipType === 'preferred') - Number(left.relationshipType === 'preferred')
+      const preferredDiff = Number(Boolean(right.preferred)) - Number(Boolean(left.preferred))
       if (preferredDiff !== 0) return preferredDiff
+      const rankDiff = scopeRank(left) - scopeRank(right)
+      if (rankDiff !== 0) return rankDiff
       return String(left.partner?.name || '').localeCompare(String(right.partner?.name || ''))
     })
     .map((relationship) => ({
@@ -885,10 +1240,26 @@ export function getPartnerAssignmentOptions(snapshot = {}, roleType = 'transfer_
       companyName: relationship.partner?.name || 'Connected partner',
       email: '',
       relationshipType: relationship.relationshipType,
+      preferred: Boolean(relationship.preferred),
+      scopeType: relationship.scopeType,
+      scopeId: relationship.scopeId,
+      scopeLabel: getPartnerScopeBadge(relationship).label,
       relationshipId: relationship.id,
       roleType,
     }))
 }
+
+export function getScopedPartnerPickerOptions(snapshot = {}, roleType = 'transfer_attorney', accessContext = {}) {
+  return getPartnerAssignmentOptions(snapshot, roleType, accessContext)
+}
+
+export const ScopedPartnerRelationshipService = Object.freeze({
+  filterByScope: filterPartnerRelationshipsByScope,
+  dedupe: dedupeScopedPartnerRelationships,
+  getAllowedScopes: getAllowedPartnerScopes,
+  getPickerOptions: getScopedPartnerPickerOptions,
+  getScopeBadge: getPartnerScopeBadge,
+})
 
 export async function createPartnerInvitation({
   organisationId = '',
@@ -901,6 +1272,10 @@ export async function createPartnerInvitation({
   userId = '',
   organisationName = '',
   workspaceType = 'agency',
+  scopeType = 'organisation',
+  scopeId = '',
+  scopeName = '',
+  preferred = false,
   forceDemo = false,
 } = {}) {
   const scopedOrganisationId = normalizeText(organisationId)
@@ -910,6 +1285,8 @@ export async function createPartnerInvitation({
 
   const resolvedRecipientId = normalizeText(recipientOrganisationId)
   const fallbackType = resolveWorkspaceTypeFromId({ recipientOrganisationId: resolvedRecipientId, toWorkspaceType })
+  const normalizedScopeType = normalizePartnerScopeType(scopeType)
+  const normalizedScopeId = normalizeText(scopeId) || (normalizedScopeType === 'organisation' ? scopedOrganisationId : '')
 
   if (forceDemo || PARTNERS_DEMO_MODE || !isSupabaseConfigured || !supabase) {
     const state = getDemoState(scopedOrganisationId, workspaceType)
@@ -921,6 +1298,10 @@ export async function createPartnerInvitation({
       toOrganisationName: recipientOrganisationName || email,
       status: 'pending',
       relationshipType,
+      preferred: Boolean(preferred),
+      scopeType: normalizedScopeType,
+      scopeId: normalizedScopeId,
+      scopeName: normalizeText(scopeName),
       fromWorkspaceType: normalizeOrganisationType(workspaceType),
       toWorkspaceType: fallbackType,
       invitedEmail: email,
@@ -947,12 +1328,16 @@ export async function createPartnerInvitation({
     recipientWorkspaceType: fallbackType,
     senderOrganisationName: organisationName,
     message,
+    scopeType: normalizedScopeType,
+    scopeId: normalizedScopeId,
+    scopeName,
+    preferred,
   })
 
   const result = await supabase
     .from('partner_invitations')
     .insert(payload)
-    .select('id, sender_organisation_id, recipient_email, recipient_organisation_id, invited_email, from_organisation_name, to_organisation_name, from_workspace_type, to_workspace_type, relationship_type, status, message, created_at, expires_at, invited_by_user_id, responded_by_user_id, responded_at')
+    .select('id, sender_organisation_id, recipient_email, recipient_organisation_id, invited_email, from_organisation_name, to_organisation_name, from_workspace_type, to_workspace_type, partner_type, relationship_type, scope_type, scope_id, scope_name, preferred, status, message, created_at, expires_at, invited_by_user_id, responded_by_user_id, responded_at')
     .single()
 
   if (result.error) {
@@ -984,37 +1369,95 @@ export async function createPartnerInvitation({
   return mapInvitation(result.data)
 }
 
-async function ensureOrganisationRelationship({ relationshipId = '', senderOrganisationId = '', recipientOrganisationId = '', relationshipType = 'approved' } = {}) {
+async function ensureOrganisationRelationship({
+  senderOrganisationId = '',
+  recipientOrganisationId = '',
+  relationshipType = 'approved',
+  scopeType = 'organisation',
+  scopeId = '',
+  scopeName = '',
+  preferred = false,
+  partnerType = '',
+} = {}) {
   if (!senderOrganisationId || !recipientOrganisationId || !isSupabaseConfigured || !supabase) return
 
   const now = new Date().toISOString()
+  const normalizedScopeType = normalizePartnerScopeType(scopeType)
+  const normalizedScopeId = normalizeText(scopeId) || (normalizedScopeType === 'organisation' ? senderOrganisationId : '')
   const found = await supabase
     .from('organisation_partners')
     .select('id')
-    .or(
-      `and(organisation_id.eq.${senderOrganisationId},partner_organisation_id.eq.${recipientOrganisationId}),and(organisation_id.eq.${recipientOrganisationId},partner_organisation_id.eq.${senderOrganisationId})`,
-    )
+    .or(`and(organisation_id.eq.${senderOrganisationId},partner_organisation_id.eq.${recipientOrganisationId}),and(organisation_id.eq.${recipientOrganisationId},partner_organisation_id.eq.${senderOrganisationId})`)
+    .eq('scope_type', normalizedScopeType)
+    .eq('scope_id', normalizedScopeId)
 
   if (found.error) {
-    if (isRecoverablePartnerSchemaError(found.error)) return
-    throw found.error
+    if (isRecoverablePartnerSchemaError(found.error)) {
+      const legacyFound = await supabase
+        .from('organisation_partners')
+        .select('id')
+        .or(
+          `and(organisation_id.eq.${senderOrganisationId},partner_organisation_id.eq.${recipientOrganisationId}),and(organisation_id.eq.${recipientOrganisationId},partner_organisation_id.eq.${senderOrganisationId})`,
+        )
+      if (legacyFound.error) {
+        if (isRecoverablePartnerSchemaError(legacyFound.error)) return
+        throw legacyFound.error
+      }
+      if ((legacyFound.data || []).length) {
+        const ids = (legacyFound.data || []).map((row) => row.id)
+        await supabase.from('organisation_partners').update({ relationship_status: 'accepted', relationship_type: relationshipType, accepted_at: now }).in('id', ids)
+        return
+      }
+    } else {
+      throw found.error
+    }
   }
 
   if ((found.data || []).length) {
     const ids = (found.data || []).map((row) => row.id)
-    await supabase.from('organisation_partners').update({ relationship_status: 'accepted', relationship_type: relationshipType, accepted_at: now }).in('id', ids)
+    await supabase
+      .from('organisation_partners')
+      .update({
+        relationship_status: 'accepted',
+        status: 'accepted',
+        relationship_type: relationshipType,
+        partner_type: normalizeText(partnerType) || null,
+        preferred: Boolean(preferred || relationshipType === 'preferred'),
+        accepted_at: now,
+        updated_at: now,
+      })
+      .in('id', ids)
     return
   }
 
-  await supabase.from('organisation_partners').insert({
+  const insertResult = await supabase.from('organisation_partners').insert({
     organisation_id: senderOrganisationId,
     partner_organisation_id: recipientOrganisationId,
+    partner_type: normalizeText(partnerType) || null,
     relationship_status: 'accepted',
+    status: 'accepted',
     relationship_type: relationshipType,
+    preferred: Boolean(preferred || relationshipType === 'preferred'),
+    scope_type: normalizedScopeType,
+    scope_id: normalizedScopeId,
+    scope_name: normalizeText(scopeName) || null,
     visibility_level: 'connected_partners_only',
     accepted_at: now,
     created_by: null,
   })
+  if (insertResult.error && isRecoverablePartnerSchemaError(insertResult.error)) {
+    await supabase.from('organisation_partners').insert({
+      organisation_id: senderOrganisationId,
+      partner_organisation_id: recipientOrganisationId,
+      relationship_status: 'accepted',
+      relationship_type: relationshipType,
+      visibility_level: 'connected_partners_only',
+      accepted_at: now,
+      created_by: null,
+    })
+  } else if (insertResult.error) {
+    throw insertResult.error
+  }
 }
 
 function resolveWorkspaceTypeFromId({ recipientOrganisationId = '', toWorkspaceType = '' }) {
@@ -1051,6 +1494,23 @@ async function updateInvitationResponse({ invitationId = '', status = 'accepted'
   }
 }
 
+async function fetchInvitationForResponse(id) {
+  const fullQuery = await supabase
+    .from('partner_invitations')
+    .select('id, sender_organisation_id, recipient_organisation_id, to_workspace_type, partner_type, relationship_type, scope_type, scope_id, scope_name, preferred')
+    .eq('id', id)
+    .single()
+
+  if (!fullQuery.error) return fullQuery
+  if (!isRecoverablePartnerSchemaError(fullQuery.error)) return fullQuery
+
+  return supabase
+    .from('partner_invitations')
+    .select('id, sender_organisation_id, recipient_organisation_id, relationship_type')
+    .eq('id', id)
+    .single()
+}
+
 export async function acceptPartnerInvitation({
   invitationId = '',
   organisationId = '',
@@ -1082,17 +1542,20 @@ export async function acceptPartnerInvitation({
     const fromId = normalizeText(invite.fromOrganisationId || invite.senderOrganisationId)
     const toId = normalizeText(invite.toOrganisationId || invite.recipientOrganisationId)
     if (fromId && toId) {
-      upsertDemoRelationship(state, fromId, toId, invite.relationshipType)
+      upsertDemoRelationship(state, fromId, toId, {
+        relationshipType: invite.relationshipType,
+        scopeType: invite.scopeType,
+        scopeId: invite.scopeId,
+        scopeName: invite.scopeName,
+        preferred: invite.preferred,
+        partnerType: invite.toWorkspaceType,
+      })
     }
     writeDemoState(state)
     return true
   }
 
-  const invitationQuery = await supabase
-    .from('partner_invitations')
-    .select('id, sender_organisation_id, recipient_organisation_id, relationship_type')
-    .eq('id', id)
-    .single()
+  const invitationQuery = await fetchInvitationForResponse(id)
 
   if (invitationQuery.error) throw invitationQuery.error
   if (!invitationQuery.data) throw new Error('Invitation not found.')
@@ -1108,6 +1571,11 @@ export async function acceptPartnerInvitation({
     senderOrganisationId: normalizeText(invitation.sender_organisation_id),
     recipientOrganisationId: normalizeText(invitation.recipient_organisation_id),
     relationshipType: normalizeText(invitation.relationship_type) || 'approved',
+    scopeType: invitation.scope_type,
+    scopeId: invitation.scope_id,
+    scopeName: invitation.scope_name,
+    preferred: invitation.preferred,
+    partnerType: invitation.partner_type || invitation.to_workspace_type,
   })
 
   return true
@@ -1166,6 +1634,7 @@ export async function updatePartnerRelationshipStatus({
   relationshipId = '',
   status = 'accepted',
   relationshipType,
+  preferred,
   workspaceType = 'agency',
   organisationId = '',
   forceDemo = false,
@@ -1180,7 +1649,8 @@ export async function updatePartnerRelationshipStatus({
         ? {
             ...relationship,
             relationshipStatus: status,
-            relationshipType: relationshipType || relationship.relationshipType,
+            relationshipType: relationshipType || (preferred === true ? 'preferred' : preferred === false ? 'approved' : relationship.relationshipType),
+            preferred: typeof preferred === 'boolean' ? preferred : relationship.preferred,
             acceptedAt: status === 'accepted' ? new Date().toISOString() : relationship.acceptedAt,
           }
         : relationship,
@@ -1193,12 +1663,28 @@ export async function updatePartnerRelationshipStatus({
     relationship_status: status,
   }
   if (relationshipType) payload.relationship_type = relationshipType
+  if (typeof preferred === 'boolean') {
+    payload.preferred = preferred
+    payload.relationship_type = preferred ? 'preferred' : relationshipType || 'approved'
+  }
   if (status === 'accepted') payload.accepted_at = new Date().toISOString()
+  payload.status = status
+  payload.updated_at = new Date().toISOString()
 
   const result = await supabase.from('organisation_partners').update(payload).eq('id', id)
   if (result.error) {
     if (isRecoverablePartnerSchemaError(result.error)) {
-      return updatePartnerRelationshipStatus({ relationshipId, status, relationshipType, workspaceType, organisationId, forceDemo: true })
+      const legacyPayload = {
+        relationship_status: status,
+      }
+      if (relationshipType || typeof preferred === 'boolean') legacyPayload.relationship_type = preferred ? 'preferred' : relationshipType || 'approved'
+      if (status === 'accepted') legacyPayload.accepted_at = new Date().toISOString()
+      const fallback = await supabase.from('organisation_partners').update(legacyPayload).eq('id', id)
+      if (fallback.error && isRecoverablePartnerSchemaError(fallback.error)) {
+        return updatePartnerRelationshipStatus({ relationshipId, status, relationshipType, preferred, workspaceType, organisationId, forceDemo: true })
+      }
+      if (fallback.error) throw fallback.error
+      return true
     }
     throw result.error
   }

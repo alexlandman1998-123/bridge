@@ -20,11 +20,17 @@ import {
   canConnectPartnerTypes,
   createPartnerInvitation,
   declinePartnerInvitation,
+  filterPartnerRelationshipsByScope,
   filterDiscoverablePartners,
+  getAllowedPartnerScopes,
   getPartnerAssignmentOptions,
+  getPartnerScopeBadge,
   getPartnerTypeLabel,
+  PARTNER_RELATIONSHIP_STATUSES,
   PARTNER_PROVINCES,
+  PARTNER_SCOPE_LABELS,
   PARTNER_SPECIALTIES,
+  PARTNER_SCOPE_TYPES,
   PARTNER_TYPES,
   fetchPartnersSnapshot,
   updatePartnerRelationshipStatus,
@@ -102,12 +108,34 @@ function relationshipBadgeClass(type) {
   return 'border-[#d8efe4] bg-[#f1fbf6] text-[#17613d]'
 }
 
+function scopeBadgeClass(scopeType = '') {
+  if (scopeType === 'user') return 'border-[#eadffc] bg-[#f8f4ff] text-[#5b3c8f]'
+  if (scopeType === 'team') return 'border-[#dbeafe] bg-[#f3f7ff] text-[#1e4d82]'
+  if (scopeType === 'branch') return 'border-[#d8efe4] bg-[#f1fbf6] text-[#17613d]'
+  if (scopeType === 'region') return 'border-[#f0dfb8] bg-[#fff9ec] text-[#8a5a12]'
+  return 'border-[#e4ebf4] bg-[#f8fafc] text-[#52677f]'
+}
+
 function StatusBadge({ children, className = '' }) {
   return (
     <span className={`inline-flex h-7 items-center rounded-full border px-2.5 text-xs font-semibold ${className}`}>
       {children}
     </span>
   )
+}
+
+function PartnerScopeBadge({ relationship }) {
+  if (!relationship) return null
+  const badge = getPartnerScopeBadge(relationship)
+  return <StatusBadge className={scopeBadgeClass(badge.scopeType)}>Scope: {badge.label}</StatusBadge>
+}
+
+function parseScopeValue(value = '') {
+  const [scopeType = 'organisation', ...rest] = String(value || '').split(':')
+  return {
+    scopeType,
+    scopeId: rest.join(':'),
+  }
 }
 
 function MetricCard({ label, value, subtext }) {
@@ -157,13 +185,20 @@ function PartnerCard({ partner, relationship, action, actionLabel, muted = false
           </div>
         </div>
         {relationship ? (
-          <StatusBadge className={relationshipBadgeClass(relationship.relationshipType)}>
-            {relationship.relationshipType === 'preferred' ? 'Preferred' : relationship.relationshipType === 'internal' ? 'Internal' : 'Approved'}
-          </StatusBadge>
+          <div className="flex shrink-0 flex-wrap justify-end gap-2">
+            <StatusBadge className={statusBadgeClass(relationship.relationshipStatus)}>
+              {relationship.relationshipStatus === 'accepted' ? 'Connected' : relationship.relationshipStatus}
+            </StatusBadge>
+            {relationship.preferred || relationship.relationshipType === 'preferred' ? (
+              <StatusBadge className={relationshipBadgeClass('preferred')}>Preferred</StatusBadge>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
+        <StatusBadge className="border-[#e4ebf4] bg-[#f8fafc] text-[#52677f]">{getPartnerTypeLabel(partner?.type)}</StatusBadge>
+        <PartnerScopeBadge relationship={relationship} />
         {(partner?.specialties || []).slice(0, 4).map((specialty) => (
           <span key={specialty} className="rounded-full border border-[#e4ebf4] bg-[#f8fafc] px-2.5 py-1 text-xs font-semibold text-[#52677f]">
             {specialty}
@@ -173,16 +208,16 @@ function PartnerCard({ partner, relationship, action, actionLabel, muted = false
 
       <div className="mt-4 grid grid-cols-3 gap-2 border-t border-[#edf2f7] pt-4">
         <div>
-          <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#8ba0b8]">Active</span>
+          <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#8ba0b8]">Shared Files</span>
           <strong className="mt-1 block text-sm text-[#10243a]">{formatNumber(partner?.transactionStats?.activeTransactions)}</strong>
         </div>
         <div>
-          <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#8ba0b8]">Speed</span>
-          <strong className="mt-1 block text-sm text-[#10243a]">{formatNumber(partner?.transactionStats?.avgDealSpeedDays)}d</strong>
+          <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#8ba0b8]">Avg Response</span>
+          <strong className="mt-1 block text-sm text-[#10243a]">{formatNumber(partner?.transactionStats?.responseTimeHours)}h</strong>
         </div>
         <div>
-          <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#8ba0b8]">Response</span>
-          <strong className="mt-1 block text-sm text-[#10243a]">{formatNumber(partner?.transactionStats?.responseTimeHours)}h</strong>
+          <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#8ba0b8]">Completion</span>
+          <strong className="mt-1 block text-sm text-[#10243a]">{formatNumber(partner?.transactionStats?.avgDealSpeedDays)}d</strong>
         </div>
       </div>
 
@@ -252,6 +287,7 @@ function ProfilePanel({ partner, relationship }) {
             <span className="inline-flex items-center gap-2"><LockKeyhole size={14} /> Listing visibility remains permission-gated.</span>
             <span className="inline-flex items-center gap-2"><ShieldCheck size={14} /> Access is role-based and organisation-scoped.</span>
             <span className="inline-flex items-center gap-2"><Handshake size={14} /> Status: {relationship?.relationshipStatus || 'Not connected'}</span>
+            {relationship ? <span className="inline-flex items-center gap-2"><Network size={14} /> {getPartnerScopeBadge(relationship).label}</span> : null}
           </div>
         </div>
       </div>
@@ -277,7 +313,7 @@ function invitationPartnerType(invitation, currentOrganisationId) {
 
 export default function PartnersPage() {
   const { partnerId = '' } = useParams()
-  const { workspace, workspaceType, role, profile } = useWorkspace()
+  const { workspace, workspaceType, role, profile, currentMembership } = useWorkspace()
   const { organisation } = useOrganisation()
   const organisationId = organisation?.id || workspace?.id || ''
   const resolvedWorkspaceType = organisation?.type || workspaceType || role
@@ -293,8 +329,49 @@ export default function PartnersPage() {
   const [selectedInviteOrganisationId, setSelectedInviteOrganisationId] = useState('')
   const [inviteType, setInviteType] = useState('agency')
   const [inviteNote, setInviteNote] = useState('')
+  const [inviteScopeValue, setInviteScopeValue] = useState('')
+  const [inviteScopeTargetId, setInviteScopeTargetId] = useState('')
+  const [inviteScopeTargetName, setInviteScopeTargetName] = useState('')
+  const [invitePreferred, setInvitePreferred] = useState(false)
 
   const [filters, setFilters] = useState({ query: '', type: '', province: '', specialty: '' })
+  const [directoryFilters, setDirectoryFilters] = useState({
+    scope: 'all',
+    type: '',
+    status: 'accepted',
+    preferredOnly: false,
+  })
+  const [analyticsScope, setAnalyticsScope] = useState('all')
+
+  const accessContext = useMemo(
+    () => ({
+      organisationId,
+      role,
+      profile,
+      currentMembership,
+    }),
+    [currentMembership, organisationId, profile, role],
+  )
+
+  const allowedScopes = useMemo(
+    () =>
+      getAllowedPartnerScopes({
+        organisationId,
+        organisationName: organisation?.name || workspace?.name || '',
+        role,
+        profile,
+        currentMembership,
+      }),
+    [currentMembership, organisation?.name, organisationId, profile, role, workspace?.name],
+  )
+
+  const selectedInviteScope = useMemo(() => {
+    const fallback = allowedScopes[0] || { value: `organisation:${organisationId}`, scopeType: 'organisation', scopeId: organisationId, label: 'Organisation-wide' }
+    const selected = allowedScopes.find((scope) => scope.value === inviteScopeValue) || fallback
+    return selected
+  }, [allowedScopes, inviteScopeValue, organisationId])
+
+  const inviteScopeNeedsTarget = Boolean(selectedInviteScope?.requiresTarget)
 
   const loadSnapshot = useCallback(async () => {
     try {
@@ -303,6 +380,7 @@ export default function PartnersPage() {
       const nextSnapshot = await fetchPartnersSnapshot({
         organisationId,
         workspaceType: resolvedWorkspaceType,
+        accessContext,
       })
       setSnapshot(nextSnapshot)
     } catch (loadError) {
@@ -310,16 +388,32 @@ export default function PartnersPage() {
     } finally {
       setLoading(false)
     }
-  }, [organisationId, resolvedWorkspaceType])
+  }, [accessContext, organisationId, resolvedWorkspaceType])
 
   useEffect(() => {
     void loadSnapshot()
   }, [loadSnapshot])
 
+  useEffect(() => {
+    if (inviteScopeValue && allowedScopes.some((scope) => scope.value === inviteScopeValue)) return
+    setInviteScopeValue(allowedScopes[0]?.value || '')
+  }, [allowedScopes, inviteScopeValue])
+
   const relationships = useMemo(() => snapshot?.relationships || [], [snapshot?.relationships])
   const connectedRelationships = useMemo(
-    () => relationships.filter((item) => item.relationshipStatus === 'accepted'),
-    [relationships],
+    () => filterPartnerRelationshipsByScope(relationships, accessContext).filter((item) => item.relationshipStatus === 'accepted'),
+    [accessContext, relationships],
+  )
+  const visibleConnectedRelationships = useMemo(
+    () =>
+      connectedRelationships.filter((relationship) => {
+        if (directoryFilters.status && relationship.relationshipStatus !== directoryFilters.status) return false
+        if (directoryFilters.scope !== 'all' && relationship.scopeType !== directoryFilters.scope) return false
+        if (directoryFilters.type && relationship.partner?.type !== directoryFilters.type) return false
+        if (directoryFilters.preferredOnly && !relationship.preferred && relationship.relationshipType !== 'preferred') return false
+        return true
+      }),
+    [connectedRelationships, directoryFilters],
   )
   const invitations = useMemo(() => snapshot?.invitations || [], [snapshot?.invitations])
 
@@ -387,10 +481,10 @@ export default function PartnersPage() {
 
   const transactionPartnerOptions = useMemo(
     () => ({
-      attorneys: getPartnerAssignmentOptions(snapshot || {}, 'transfer_attorney'),
-      bondOriginators: getPartnerAssignmentOptions(snapshot || {}, 'bond_originator'),
+      attorneys: getPartnerAssignmentOptions(snapshot || {}, 'transfer_attorney', accessContext),
+      bondOriginators: getPartnerAssignmentOptions(snapshot || {}, 'bond_originator', accessContext),
     }),
-    [snapshot],
+    [accessContext, snapshot],
   )
 
   async function handleInvite(event) {
@@ -407,6 +501,12 @@ export default function PartnersPage() {
     try {
       setError('')
       setMessage('')
+      const scope = selectedInviteScope || parseScopeValue(inviteScopeValue)
+      const resolvedScopeId = inviteScopeNeedsTarget ? normalizeText(inviteScopeTargetId) : scope.scopeId
+      if (inviteScopeNeedsTarget && !resolvedScopeId) {
+        setError('Enter the region, branch, or team target id before sending this scoped invite.')
+        return
+      }
       await createPartnerInvitation({
         organisationId,
         organisationName: organisation?.name,
@@ -417,6 +517,10 @@ export default function PartnersPage() {
         message: inviteNote,
         userId: profile?.id || '',
         workspaceType: resolvedWorkspaceType,
+        scopeType: scope.scopeType,
+        scopeId: resolvedScopeId,
+        scopeName: inviteScopeNeedsTarget ? normalizeText(inviteScopeTargetName) || scope.label : scope.label,
+        preferred: invitePreferred,
       })
       await recordWorkspaceAuditEvent('partner_invite_sent', {
         userId: profile?.id || '',
@@ -428,6 +532,9 @@ export default function PartnersPage() {
       setSelectedInviteOrganisationId('')
       setInviteType('agency')
       setInviteNote('')
+      setInviteScopeTargetId('')
+      setInviteScopeTargetName('')
+      setInvitePreferred(false)
       setMessage('Partner invitation sent.')
       await loadSnapshot()
     } catch (inviteError) {
@@ -439,6 +546,11 @@ export default function PartnersPage() {
     try {
       setError('')
       setMessage('')
+      const resolvedScopeId = selectedInviteScope.requiresTarget ? normalizeText(inviteScopeTargetId) : selectedInviteScope.scopeId
+      if (selectedInviteScope.requiresTarget && !resolvedScopeId) {
+        setError('Enter the region, branch, or team target id before requesting this scoped connection.')
+        return
+      }
       await createPartnerInvitation({
         organisationId,
         organisationName: organisation?.name,
@@ -448,6 +560,10 @@ export default function PartnersPage() {
         recipientOrganisationName: partner.name,
         userId: profile?.id || '',
         workspaceType: resolvedWorkspaceType,
+        scopeType: selectedInviteScope.scopeType,
+        scopeId: resolvedScopeId,
+        scopeName: selectedInviteScope.requiresTarget ? normalizeText(inviteScopeTargetName) || selectedInviteScope.label : selectedInviteScope.label,
+        preferred: invitePreferred,
       })
       await recordWorkspaceAuditEvent('partner_connection_requested', {
         userId: profile?.id || '',
@@ -470,6 +586,7 @@ export default function PartnersPage() {
         relationshipId: relationship.id,
         status: 'accepted',
         relationshipType: relationship.relationshipType === 'preferred' ? 'approved' : 'preferred',
+        preferred: !(relationship.preferred || relationship.relationshipType === 'preferred'),
         workspaceType: resolvedWorkspaceType,
         organisationId,
       })
@@ -608,7 +725,46 @@ export default function PartnersPage() {
                     ))}
                   </select>
                 )}
+                <select
+                  value={inviteScopeValue}
+                  onChange={(event) => setInviteScopeValue(event.target.value)}
+                  className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
+                  aria-label="Partner relationship scope"
+                >
+                  {allowedScopes.map((scope) => (
+                    <option key={scope.value} value={scope.value}>
+                      {scope.label}
+                    </option>
+                  ))}
+                </select>
+                <label className="inline-flex h-10 items-center gap-2 rounded-[8px] border border-[#d3deea] bg-white px-3 text-sm font-semibold text-[#35546c]">
+                  <input
+                    type="checkbox"
+                    checked={invitePreferred}
+                    onChange={(event) => setInvitePreferred(event.target.checked)}
+                    className="h-4 w-4 rounded border-[#c8d6e5] text-[#10243a]"
+                  />
+                  Preferred
+                </label>
               </div>
+              {inviteScopeNeedsTarget ? (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <input
+                    type="text"
+                    value={inviteScopeTargetId}
+                    onChange={(event) => setInviteScopeTargetId(event.target.value)}
+                    placeholder={`${selectedInviteScope.label} target id`}
+                    className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                  />
+                  <input
+                    type="text"
+                    value={inviteScopeTargetName}
+                    onChange={(event) => setInviteScopeTargetName(event.target.value)}
+                    placeholder="Target display name"
+                    className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                  />
+                </div>
+              ) : null}
               {selectedInviteOrganisation ? (
                 <p className="text-sm text-[#10243a]">
                   Resolved to: <span className="font-semibold">{selectedInviteOrganisation.name}</span> · {getPartnerTypeLabel(selectedInviteOrganisation.type)}
@@ -677,19 +833,76 @@ export default function PartnersPage() {
         <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           <main className="min-w-0">
             {activeTab === 'connected' ? (
-              <section className="grid gap-4 md:grid-cols-2">
-                {connectedRelationships.map((relationship) => (
-                  <PartnerCard
-                    key={relationship.id}
-                    partner={relationship.partner}
-                    relationship={relationship}
-                    action={() => handleMarkPreferred(relationship)}
-                    actionLabel={relationship.relationshipType === 'preferred' ? 'Remove Preferred' : 'Make Preferred'}
-                  />
-                ))}
+              <section>
+                <div className="mb-4 rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-[#10243a]"><SlidersHorizontal size={16} /> Partner directory filters</div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-4">
+                    <select
+                      className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
+                      value={directoryFilters.scope}
+                      onChange={(event) => setDirectoryFilters((previous) => ({ ...previous, scope: event.target.value }))}
+                    >
+                      <option value="all">All Scopes</option>
+                      {PARTNER_SCOPE_TYPES.map((scopeType) => (
+                        <option key={scopeType} value={scopeType}>
+                          {PARTNER_SCOPE_LABELS[scopeType]}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
+                      value={directoryFilters.type}
+                      onChange={(event) => setDirectoryFilters((previous) => ({ ...previous, type: event.target.value }))}
+                    >
+                      <option value="">All partner types</option>
+                      {PARTNER_TYPES.map((type) => (
+                        <option key={type.value} value={type.value}>
+                          {type.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
+                      value={directoryFilters.status}
+                      onChange={(event) => setDirectoryFilters((previous) => ({ ...previous, status: event.target.value }))}
+                    >
+                      <option value="">All statuses</option>
+                      {PARTNER_RELATIONSHIP_STATUSES.map((status) => (
+                        <option key={status} value={status}>
+                          {status.charAt(0).toUpperCase() + status.slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                    <label className="inline-flex h-10 items-center gap-2 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm font-semibold text-[#35546c]">
+                      <input
+                        type="checkbox"
+                        checked={directoryFilters.preferredOnly}
+                        onChange={(event) => setDirectoryFilters((previous) => ({ ...previous, preferredOnly: event.target.checked }))}
+                        className="h-4 w-4 rounded border-[#c8d6e5] text-[#10243a]"
+                      />
+                      Preferred only
+                    </label>
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  {visibleConnectedRelationships.map((relationship) => (
+                    <PartnerCard
+                      key={relationship.id}
+                      partner={relationship.partner}
+                      relationship={relationship}
+                      action={() => handleMarkPreferred(relationship)}
+                      actionLabel={relationship.preferred || relationship.relationshipType === 'preferred' ? 'Remove Preferred' : 'Make Preferred'}
+                    />
+                  ))}
+                </div>
                 {!connectedRelationships.length ? (
                   <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">
                     No connected partners yet. Invite trusted organisations to collaborate on transactions.
+                  </div>
+                ) : null}
+                {connectedRelationships.length && !visibleConnectedRelationships.length ? (
+                  <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">
+                    No partners match the selected filters.
                   </div>
                 ) : null}
               </section>
@@ -711,6 +924,10 @@ export default function PartnersPage() {
                           <p className="font-semibold text-[#10243a]">{organisationName}</p>
                           <p className="text-sm text-[#60758d]">{organisationType}</p>
                           <p className="mt-1 text-sm text-[#60758d]">Status: {invitation.status || 'pending'} · Sent {formatDate(invitation.createdAt)}</p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <PartnerScopeBadge relationship={invitation} />
+                            {invitation.preferred ? <StatusBadge className={relationshipBadgeClass('preferred')}>Preferred</StatusBadge> : null}
+                          </div>
                           {invitation.message ? <p className="mt-2 text-sm text-[#40556c]">{invitation.message}</p> : null}
                           {invitation.invitedByUserId ? <p className="mt-1 text-xs text-[#8a9ab2]">Invited by user {invitation.invitedByUserId}</p> : null}
                         </div>
@@ -744,6 +961,10 @@ export default function PartnersPage() {
                           <div>
                             <p className="font-semibold text-[#10243a]">{fromName}</p>
                             <p className="text-sm text-[#60758d]">{fromType}</p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <PartnerScopeBadge relationship={invitation} />
+                              {invitation.preferred ? <StatusBadge className={relationshipBadgeClass('preferred')}>Preferred</StatusBadge> : null}
+                            </div>
                             <p className="mt-2 text-sm text-[#40556c]">{requestMessage}</p>
                             <p className="mt-1 text-xs text-[#6f7f95]">Sent {formatDate(invitation.createdAt)}</p>
                           </div>
@@ -832,6 +1053,24 @@ export default function PartnersPage() {
 
             {activeTab === 'analytics' ? (
               <section className="space-y-4">
+                <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-[#10243a]"><BarChart3 size={16} /> Scope-aware analytics</div>
+                    <select
+                      className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
+                      value={analyticsScope}
+                      onChange={(event) => setAnalyticsScope(event.target.value)}
+                    >
+                      <option value="all">All scopes</option>
+                      <option value="partner">Partner organisation</option>
+                      {PARTNER_SCOPE_TYPES.map((scopeType) => (
+                        <option key={scopeType} value={scopeType}>
+                          {PARTNER_SCOPE_LABELS[scopeType]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
                 <div className="grid gap-3 md:grid-cols-3">
                   <MetricCard label="Avg Response" value={`${formatNumber(metrics.avgResponseTimeHours)}h`} subtext="Connected partner average" />
                   <MetricCard label="Document Turnaround" value={`${formatNumber(metrics.documentTurnaroundDays)}d`} subtext="Operational signal" />

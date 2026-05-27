@@ -173,7 +173,7 @@ function BooleanField({ label, value, onChange, error }) {
 
 function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSaved }) {
   const navigate = useNavigate()
-  const { role, workspace, workspaceType } = useWorkspace()
+  const { role, workspace, workspaceType, profile, currentMembership } = useWorkspace()
   const { organisation } = useOrganisation()
   const [form, setForm] = useState(createInitialForm(initialDevelopmentId))
   const [developments, setDevelopments] = useState([])
@@ -228,6 +228,12 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         const snapshot = await fetchPartnersSnapshot({
           organisationId: organisation?.id || workspace?.id || '',
           workspaceType: organisation?.type || workspaceType || role,
+          accessContext: {
+            organisationId: organisation?.id || workspace?.id || '',
+            role,
+            profile,
+            currentMembership,
+          },
         })
         if (!active) return
         setPartnerSnapshot(snapshot)
@@ -245,7 +251,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     return () => {
       active = false
     }
-  }, [open, organisation?.id, organisation?.type, role, workspace?.id, workspaceType])
+  }, [currentMembership, open, organisation?.id, organisation?.type, profile, role, workspace?.id, workspaceType])
 
   useEffect(() => {
     if (!open || !form.setup.developmentId || !isSupabaseConfigured) {
@@ -329,12 +335,24 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     selectedReservationAmount !== null &&
     Number(selectedReservationAmount) === Number(developmentDefaultReservationAmount)
   const attorneyPartnerOptions = useMemo(
-    () => getPartnerAssignmentOptions(partnerSnapshot || {}, 'transfer_attorney'),
-    [partnerSnapshot],
+    () =>
+      getPartnerAssignmentOptions(partnerSnapshot || {}, 'transfer_attorney', {
+        organisationId: organisation?.id || workspace?.id || '',
+        role,
+        profile,
+        currentMembership,
+      }),
+    [currentMembership, organisation?.id, partnerSnapshot, profile, role, workspace?.id],
   )
   const bondOriginatorPartnerOptions = useMemo(
-    () => getPartnerAssignmentOptions(partnerSnapshot || {}, 'bond_originator'),
-    [partnerSnapshot],
+    () =>
+      getPartnerAssignmentOptions(partnerSnapshot || {}, 'bond_originator', {
+        organisationId: organisation?.id || workspace?.id || '',
+        role,
+        profile,
+        currentMembership,
+      }),
+    [currentMembership, organisation?.id, partnerSnapshot, profile, role, workspace?.id],
   )
   const selectedAttorneyPartner = useMemo(
     () => attorneyPartnerOptions.find((partner) => partner.id === form.finance.attorneyPartnerRelationshipId) || null,
