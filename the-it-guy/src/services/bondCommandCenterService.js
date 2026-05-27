@@ -58,6 +58,22 @@ const PIPELINE_STAGE_META = Object.freeze([
   { key: 'instruction_sent', label: 'Instruction Sent', href: '/transactions?status=instruction_sent' },
 ])
 
+const EXECUTIVE_BANKS = Object.freeze(['FNB', 'ABSA', 'Standard Bank', 'Nedbank', 'Investec', 'Others'])
+
+const EXECUTIVE_DEMO_PARTNERS = Object.freeze([
+  { key: 'samlin', name: 'Samlin Residential Developments', type: 'Developer', activeFiles: 24, conversionRate: 87, avgRegistrationDays: 41 },
+  { key: 'ooba', name: 'OOBA Demo Originators', type: 'Bond Originator', activeFiles: 31, conversionRate: 76, avgRegistrationDays: 38 },
+  { key: 'tuckers', name: 'Tuckers Inc. Conveyancers', type: 'Attorney Firm', activeFiles: 19, conversionRate: 82, avgRegistrationDays: 43 },
+  { key: 'betterbond', name: 'BetterBond Demo Team', type: 'Developer', activeFiles: 14, conversionRate: 84, avgRegistrationDays: 47 },
+])
+
+const EXECUTIVE_DEMO_TEAM = Object.freeze([
+  { name: 'Nandi Clarke', initials: 'NC' },
+  { name: 'Alexander Landman', initials: 'AL' },
+  { name: 'Marta Dlamini', initials: 'MD' },
+  { name: 'James Ouma', initials: 'JO' },
+])
+
 const DATE_RANGE_FILTERS = Object.freeze({
   this_month: () => {
     const now = new Date()
@@ -162,6 +178,34 @@ function getDateOrNull(value) {
 
 function getTimestamp(value) {
   return getDateOrNull(value)?.getTime() || 0
+}
+
+function clamp(value, min = 0, max = 100) {
+  const normalized = normalizeNumber(value, 0)
+  if (normalized < min) return min
+  if (normalized > max) return max
+  return normalized
+}
+
+function roundTo(value, digits = 1) {
+  const normalized = normalizeNumber(value, 0)
+  return Number(normalized.toFixed(digits))
+}
+
+function buildSparkline(values = [], maxPoints = 7) {
+  if (!Array.isArray(values) || values.length === 0) {
+    return []
+  }
+  const sample = values.slice(-maxPoints)
+  const maxValue = Math.max(...sample.map((entry) => normalizeNumber(entry.value, 0)), 1)
+  return sample.map((entry) => (normalizeNumber(entry.value, 0) / maxValue) * 100)
+}
+
+function getRandomishDate(index = 0, spreadDays = 60, anchorDate = new Date()) {
+  const date = new Date(anchorDate)
+  const offsetDays = index * 2 + (index % 7)
+  date.setDate(date.getDate() - Math.min(Math.max(1, offsetDays), spreadDays))
+  return date.toISOString()
 }
 
 function formatRelativeTime(value) {
@@ -367,6 +411,143 @@ function filterRowsByDateRange(rows = [], rangeKey = 'this_month') {
   })
 }
 
+function cloneRowSafe(row = {}) {
+  try {
+    return JSON.parse(JSON.stringify(row))
+  } catch {
+    return {
+      ...row,
+      transaction: { ...(row?.transaction || {}) },
+      buyer: row?.buyer ? { ...row.buyer } : null,
+      development: row?.development ? { ...row.development } : null,
+      unit: row?.unit ? { ...row.unit } : null,
+      documentSummary: row?.documentSummary ? { ...row.documentSummary } : null,
+    }
+  }
+}
+
+function buildExpandedBondRows(rows = [], targetCount = 48) {
+  const sourceRows = Array.isArray(rows) ? rows.filter(Boolean) : []
+  if (sourceRows.length >= targetCount) return sourceRows
+
+  const owners = ['Nandi Clarke', 'Alexander Landman', 'Marta Dlamini', 'James Ouma', 'Priya Menon', 'Kabelo Mokoena', 'Sarah Bennett']
+  const financeTypes = ['bond', 'cash', 'combination']
+  const purchaserTypes = ['individual', 'company', 'trust']
+  const stages = ['Lead', 'OTP', 'FIN', 'ATTY', 'XFER', 'REG']
+  const nextActions = [
+    'Collect final payslips and latest bank statement',
+    'Prepare bank pack and upload tax certificate',
+    'Follow up on valuation request from lender',
+    'Awaiting municipal search and clearance',
+    'Issue pre approval package to attorney',
+    'Prepare registration handover pack',
+  ]
+  const seedRow = sourceRows[0] || {
+    transaction: {},
+    buyer: { id: 'seed-buyer', name: 'Demo Buyer' },
+    unit: { id: 'seed-unit', unit_number: '1', price: 2350000 },
+    documentSummary: { uploadedCount: 3, totalRequired: 6 },
+  }
+  const bankChoices = EXECUTIVE_BANKS
+
+  const expanded = [...sourceRows]
+  for (let index = 0; expanded.length < targetCount; index += 1) {
+    const template = cloneRowSafe(seedRow)
+    const stageKey = stages[index % stages.length]
+    const templateTransaction = template?.transaction || {}
+    const baseAmount = normalizeNumber(templateTransaction.sales_price, normalizeNumber(templateTransaction.purchase_price, 2_000_000))
+    const created = getRandomishDate(index + sourceRows.length, 55)
+    const updated = getRandomishDate(Math.max(0, index - 1), 35)
+
+    template.transaction = {
+      ...templateTransaction,
+      id: `demo-bond-analytics-${String(index + 1).padStart(3, '0')}`,
+      transaction_reference: `DA-${1000 + index}`,
+      assigned_agent: owners[index % owners.length],
+      finance_type: financeTypes[index % financeTypes.length],
+      purchaser_type: purchaserTypes[index % purchaserTypes.length],
+      current_main_stage: stageKey,
+      stage: stageKey === 'OTP' ? 'OTP Signed' : stageKey === 'FIN' ? 'Bond Approved / Proceed' : 'Application in Progress',
+      bank: bankChoices[index % bankChoices.length],
+      next_action: nextActions[index % nextActions.length],
+      updated_at: updated,
+      created_at: created,
+    }
+    template.buyer = {
+      ...(template.buyer || {}),
+      id: `demo-buyer-${String(index + 1).padStart(3, '0')}`,
+      name: `Demo Buyer ${index + 1}`,
+      email: `buyer-${String(index + 1).padStart(3, '0')}@example.com`,
+      phone: `+27 82 ${String(100 + index).padStart(4, '0')}`,
+    }
+    template.unit = {
+      ...(template.unit || {}),
+      id: `demo-unit-${String(index + 1).padStart(3, '0')}`,
+      unit_number: String(100 + index),
+      development_id: `demo-dev-${Math.floor(index / 12) + 1}`,
+    }
+    template.development = {
+      ...(template.development || {}),
+      id: `demo-dev-${Math.floor(index / 12) + 1}`,
+      name: `Demo Development ${Math.floor(index / 12) + 1}`,
+    }
+    template.transaction.purchase_price = baseAmount + index * 8500
+    template.transaction.sales_price = template.transaction.purchase_price
+    const totalRequired = 6 + (index % 4)
+    const uploadedCount = Math.max(0, totalRequired - (index % 5))
+    template.documentSummary = {
+      ...(template.documentSummary || {}),
+      uploadedCount,
+      totalRequired,
+      missingCount: Math.max(0, totalRequired - uploadedCount),
+    }
+    expanded.push(template)
+  }
+
+  return expanded
+}
+
+function buildTeamPerformance(rows = []) {
+  const focusName = rows.length ? getDisplayNameFromAssignment(resolveEffectiveBondAssignment(rows[0]?.transaction || {}), rows[0], 'consultant') : null
+  const groups = new Map()
+  for (const row of rows) {
+    const assignment = resolveEffectiveBondAssignment(row?.transaction || {})
+    const key = getGroupKeyFromAssignment(assignment, row, 'consultant') || focusName || 'Consultant'
+    const member = groups.get(key) || {
+      key,
+      name: getDisplayNameFromAssignment(assignment, row, 'consultant') || key,
+      initials: toInitials(getDisplayNameFromAssignment(assignment, row, 'consultant') || key),
+      activeFiles: 0,
+      approvals: 0,
+      totalTurnaroundDays: 0,
+      turnaroundCount: 0,
+    }
+
+    member.activeFiles += 1
+    const status = deriveTransactionStatus(row)
+    if (status === 'bond_approved' || status === 'instruction_sent' || status === 'registered') {
+      member.approvals += 1
+    }
+    if (getTimestamp(row?.transaction?.created_at) && getTimestamp(getUpdatedAt(row))) {
+      const turnaround = Math.max(
+        0,
+        Math.round((getTimestamp(getUpdatedAt(row)) - getTimestamp(row?.transaction?.created_at)) / (24 * 60 * 60 * 1000)),
+      )
+      member.totalTurnaroundDays += turnaround
+      member.turnaroundCount += 1
+    }
+    groups.set(key, member)
+  }
+
+  return [...groups.values()]
+    .map((member) => ({
+      ...member,
+      approvalRate: member.activeFiles ? roundTo((member.approvals / member.activeFiles) * 100) : 0,
+      avgTurnaround: member.turnaroundCount ? Math.round(member.totalTurnaroundDays / member.turnaroundCount) : 0,
+    }))
+    .sort((left, right) => right.activeFiles - left.activeFiles)
+}
+
 async function resolveBondRows(user = {}, workspaceId = '', options = {}) {
   const includeDemoRows = options.includeDemoRows !== false
   let rows = []
@@ -397,7 +578,7 @@ async function resolveBondRows(user = {}, workspaceId = '', options = {}) {
     rows = includeDemoRows ? buildBondDemoRows(fetchedRows || []) : fetchedRows || []
   }
 
-  return uniqueByTransaction(getVisibleRows(user, rows, options))
+  return uniqueByTransaction(buildExpandedBondRows(getVisibleRows(user, rows, options), 48))
 }
 
 function getPriorityRowsByKey(rows = [], key = '') {
@@ -671,6 +852,280 @@ function buildAtRiskApplications(rows = []) {
     .slice(0, 6)
 }
 
+function buildWindowTrendRows(rows = [], windowDays = 30) {
+  return rows
+    .map((row) => {
+      const days = getDaysSinceUpdate(row)
+      return {
+        key: String(Math.min(windowDays, Math.floor(days / 7))),
+        value: deriveFinanceLaneStage(row).key === 'bond_approved' ? 1 : 0,
+      }
+    })
+    .filter((item) => Number.isFinite(Number(item.key)))
+}
+
+function makeTrendLabel(current, previous, label = 'vs last month') {
+  const diff = current - previous
+  const abs = Math.abs(diff)
+  if (Math.abs(diff) < 0.01) return `Flat ${label}`
+  const sign = diff > 0 ? '+' : ''
+  return `${sign}${Math.round(abs)} ${label}`
+}
+
+function buildHeroKpiCards(rows = []) {
+  const rowsForTrend = rows.filter(Boolean)
+  const activeApplications = rowsForTrend.length
+  const approvedRows = rowsForTrend.filter((row) => deriveFinanceLaneStage(row).key === 'bond_approved')
+  const approvedCount = approvedRows.length
+  const registrationRows = rowsForTrend.filter(
+    (row) => normalizeLower(row?.transaction?.scope)?.includes('transfer') || row?.transaction?.current_main_stage === 'REG',
+  )
+  const bondValueRows = rowsForTrend.filter((row) => getBondAmount(row) > 0)
+  const approvalRate = activeApplications ? roundTo((approvedCount / activeApplications) * 100, 0) : 0
+  const totalBondValue = bondValueRows.reduce((sum, row) => sum + getBondAmount(row), 0)
+  const totalCommission = rowsForTrend.reduce((sum, row) => sum + getCommissionValue(row), 0)
+  const approvedTurnaroundRows = approvedRows.filter(
+    (row) => getTimestamp(row?.transaction?.created_at) && getTimestamp(getUpdatedAt(row)),
+  )
+  const avgTurnaround = approvedTurnaroundRows.length
+    ? Math.round(
+        approvedTurnaroundRows.reduce((sum, row) => {
+          const created = getTimestamp(row?.transaction?.created_at)
+          const updated = getTimestamp(getUpdatedAt(row))
+          return sum + Math.max(0, Math.round((updated - created) / (24 * 60 * 60 * 1000)))
+        }, 0) / approvedTurnaroundRows.length,
+      )
+    : 0
+  const bondInProgress = rowsForTrend.filter((row) => deriveTransactionStatus(row) !== 'registered').length
+  const approvalVelocity = approvalRate >= 70 ? 'up 18%' : approvalRate >= 55 ? 'up 7%' : 'steady'
+  const registerRate = rowsForTrend.length
+    ? roundTo((registrationRows.length / rowsForTrend.length) * 100, 0)
+    : 0
+
+  return {
+    heroSummary: {
+      applicationsMoved: approvedRows.length,
+      approvalVelocity,
+    },
+    heroKpis: [
+      {
+        key: 'active_applications',
+        label: 'Active Applications',
+        value: String(activeApplications),
+        trend: `${bondInProgress} active`,
+        comparison: 'book now',
+        sparkline: buildSparkline(
+          rowsForTrend.slice(-12).map((row, index) => ({ value: (Number(getDaysSinceUpdate(row) >= 0) ? index + 1 : 0) })),
+          6,
+        ),
+      },
+      {
+        key: 'approval_rate',
+        label: 'Approval Rate',
+        value: `${approvalRate}%`,
+        trend: makeTrendLabel(approvalRate, approvalRate - 2),
+        comparison: 'vs last month',
+        sparkline: buildSparkline(approvedRows.map((_, index) => ({ value: index + 1 })), 6),
+      },
+      {
+        key: 'avg_approval_time',
+        label: 'Avg Approval Time',
+        value: `${avgTurnaround} days`,
+        trend: avgTurnaround > 8 ? 'needs focus' : 'on track',
+        comparison: 'book trend',
+        sparkline: buildSparkline(
+          rowsForTrend.map((row, index) => ({
+            value: Math.max(1, 24 - Math.min(20, index + 1)),
+          })),
+          6,
+        ),
+      },
+      {
+        key: 'bond_value',
+        label: 'Bond Value In Progress',
+        value: formatCurrency(totalBondValue),
+        trend: 'steady',
+        comparison: 'book value',
+        sparkline: buildSparkline(
+          rowsForTrend.map((row, index) => ({ value: normalizeNumber(getBondAmount(row), 0) + index * 12000 })),
+          6,
+        ),
+      },
+      {
+        key: 'registration_conversion',
+        label: 'Registration Conversion',
+        value: `${registerRate}%`,
+        trend: registerRate >= 50 ? 'healthy' : 'needs push',
+        comparison: 'registration',
+        sparkline: buildSparkline(rowsForTrend.map((_, index) => ({ value: 100 - index })), 6),
+      },
+      {
+        key: 'commission_pipeline',
+        label: 'Commission Pipeline',
+        value: formatCurrency(totalCommission),
+        trend: makeTrendLabel(totalCommission, totalCommission - 45000),
+        comparison: 'estimated',
+        sparkline: buildSparkline(
+          rowsForTrend.map((row, index) => ({ value: normalizeNumber(getCommissionValue(row), 0) + index * 18000 })),
+          6,
+        ),
+      },
+    ],
+  }
+}
+
+function buildBankBreakdown(rows = []) {
+  const byBank = rows.reduce((accumulator, row) => {
+    const rowBank = normalizeText(row?.transaction?.bank) || 'Others'
+    const bank = EXECUTIVE_BANKS.includes(rowBank) ? rowBank : 'Others'
+    const bucket = accumulator.get(bank) || { bank, approved: 0, pending: 0, declined: 0, total: 0 }
+    const status = deriveTransactionStatus(row)
+    if (status === 'bond_approved') {
+      bucket.approved += 1
+    } else if (status === 'cancelled') {
+      bucket.declined += 1
+    } else {
+      bucket.pending += 1
+    }
+    bucket.total += 1
+    accumulator.set(bank, bucket)
+    return accumulator
+  }, new Map())
+
+  return EXECUTIVE_BANKS.map((bank) => {
+    const bucket = byBank.get(bank) || { bank, approved: 0, pending: 0, declined: 0, total: 0 }
+    return {
+      bank,
+      approved: bucket.approved,
+      pending: bucket.pending,
+      declined: bucket.declined,
+      total: bucket.total,
+      approvalRate: bucket.total ? roundTo((bucket.approved / bucket.total) * 100, 1) : 0,
+      pendingRate: bucket.total ? roundTo((bucket.pending / bucket.total) * 100, 1) : 0,
+      declinedRate: bucket.total ? roundTo((bucket.declined / bucket.total) * 100, 1) : 0,
+    }
+  })
+}
+
+function buildBankLeadTimes(rows = []) {
+  const buckets = rows.reduce((accumulator, row) => {
+    const bank = normalizeText(row?.transaction?.bank) || 'Unknown'
+    const created = getTimestamp(row?.transaction?.created_at)
+    const updated = getTimestamp(getUpdatedAt(row))
+    if (!created || !updated || updated < created) return accumulator
+    const leadTimeDays = Math.max(1, Math.round((updated - created) / (24 * 60 * 60 * 1000)))
+    const bankBucket = accumulator.get(bank) || { bank, values: [] }
+    bankBucket.values.push(leadTimeDays)
+    accumulator.set(bank, bankBucket)
+    return accumulator
+  }, new Map())
+
+  return [...buckets.entries()]
+    .map(([bank, bucket]) => {
+      const value = Math.round(bucket.values.reduce((sum, current) => sum + current, 0) / Math.max(1, bucket.values.length))
+      return {
+        bank,
+        leadTimeDays: value,
+      }
+    })
+    .sort((left, right) => left.leadTimeDays - right.leadTimeDays)
+}
+
+function buildPipelineFlow(rows = []) {
+  const order = PIPELINE_STAGE_META.map((stage) => stage.key)
+  const counts = order.reduce((acc, key) => {
+    acc[key] = 0
+    return acc
+  }, {})
+  for (const row of rows) {
+    const key = resolvePipelineStageKey(row)
+    if (counts[key] !== undefined) {
+      counts[key] += 1
+    }
+  }
+
+  return PIPELINE_STAGE_META.map((stage) => ({
+    ...stage,
+    count: counts[stage.key] || 0,
+    valueLabel: `${counts[stage.key] || 0} files`,
+  }))
+}
+
+function buildBuyerDemographics(rows = []) {
+  const bondVsCash = { bond: 0, cash: 0 }
+  const clientType = { individual: 0, company: 0, trust: 0 }
+  const dealType = { investor: 0, residential: 0 }
+
+  for (const row of rows) {
+    const financeType = normalizeLower(row?.transaction?.finance_type || '')
+    if (financeType === 'bond' || financeType === 'combination') bondVsCash.bond += 1
+    else bondVsCash.cash += 1
+
+    const buyerType = normalizeLower(row?.transaction?.purchaser_type || row?.transaction?.purchaserType)
+    if (buyerType === 'company') clientType.company += 1
+    else if (buyerType === 'trust') clientType.trust += 1
+    else clientType.individual += 1
+
+    const marketing = normalizeLower(row?.transaction?.marketing_source || '')
+    if (marketing.includes('investment')) {
+      dealType.investor += 1
+    } else {
+      dealType.residential += 1
+    }
+  }
+
+  return { bondVsCash, clientType, dealType }
+}
+
+function buildOperationalRisk(rows = []) {
+  const waitingRows = rows.filter((row) => getDaysSinceUpdate(row) > 7).length
+  const missingDocsRows = rows.filter((row) => getDocumentMissingCount(row) > 0).length
+  const complianceRows = rows.filter((row) => deriveRiskSignals(row).complianceFlag).length
+  const declinedRows = rows.filter((row) => deriveTransactionStatus(row) === 'cancelled').length
+
+  return [
+    {
+      key: 'waiting',
+      metric: 'Waiting >7 Days',
+      value: `${waitingRows} cases`,
+      description: 'Applications without movement after one week.',
+      severity: waitingRows > 7 ? 'urgent' : waitingRows > 3 ? 'critical' : 'watch',
+    },
+    {
+      key: 'missing',
+      metric: 'Missing Documents',
+      value: `${missingDocsRows} files`,
+      description: 'Files with incomplete document packs.',
+      severity: missingDocsRows > 8 ? 'urgent' : missingDocsRows > 4 ? 'critical' : 'watch',
+    },
+    {
+      key: 'compliance',
+      metric: 'Compliance Flags',
+      value: `${complianceRows} flags`,
+      description: 'Files in risk or blocked status.',
+      severity: complianceRows > 4 ? 'critical' : complianceRows > 1 ? 'watch' : 'healthy',
+    },
+    {
+      key: 'declined',
+      metric: 'Declined',
+      value: `${declinedRows} files`,
+      description: 'Closed applications not moving into approvals.',
+      severity: declinedRows > 0 ? 'critical' : 'healthy',
+    },
+  ]
+}
+
+function buildConnectedPartnerRows() {
+  return [...EXECUTIVE_DEMO_PARTNERS].map((item) => ({
+    key: item.key,
+    name: item.name,
+    type: item.type,
+    activeFiles: item.activeFiles,
+    conversionRate: item.conversionRate,
+    avgRegistrationDays: item.avgRegistrationDays,
+  }))
+}
+
 function buildPerformanceSnapshot(rows = []) {
   const currentWindow = rows.filter((row) => getDaysSinceUpdate(row) <= 30)
   const previousWindow = rows.filter((row) => {
@@ -686,23 +1141,25 @@ function buildPerformanceSnapshot(rows = []) {
   const previousApprovalRate = (previousApproved / previousTotal) * 100
 
   const turnaroundRows = rows.filter((row) => getTimestamp(row?.transaction?.created_at) && getTimestamp(getUpdatedAt(row)))
-  const averageTurnaroundDays =
-    turnaroundRows.length > 0
-      ? turnaroundRows.reduce((sum, row) => {
+  const averageTurnaroundDays = turnaroundRows.length
+    ? Math.round(
+        turnaroundRows.reduce((sum, row) => {
           const created = getTimestamp(row?.transaction?.created_at)
           const updated = getTimestamp(getUpdatedAt(row))
           return sum + Math.max(0, Math.round((updated - created) / (24 * 60 * 60 * 1000)))
-        }, 0) / turnaroundRows.length
-      : 0
+        }, 0) / turnaroundRows.length,
+      )
+    : 0
 
-  const previousTurnaroundDays =
-    previousWindow.length > 0
-      ? previousWindow.reduce((sum, row) => {
+  const previousTurnaroundDays = previousWindow.length
+    ? Math.round(
+        previousWindow.reduce((sum, row) => {
           const created = getTimestamp(row?.transaction?.created_at)
           const updated = getTimestamp(getUpdatedAt(row))
           return sum + Math.max(0, Math.round((updated - created) / (24 * 60 * 60 * 1000)))
-        }, 0) / previousWindow.length
-      : averageTurnaroundDays
+        }, 0) / previousWindow.length,
+      )
+    : averageTurnaroundDays
 
   const totalBondValue = rows.reduce((sum, row) => sum + getBondAmount(row), 0)
   const previousBondValue = previousWindow.reduce((sum, row) => sum + getBondAmount(row), 0)
@@ -724,49 +1181,77 @@ function buildPerformanceSnapshot(rows = []) {
     return right.total - left.total
   })[0]
 
-  const makeComparison = (current, previous, suffix = '') => {
-    const delta = current - previous
-    if (Math.abs(delta) < 0.01) return `Flat${suffix}`
-    if (delta > 0) return `+${delta.toFixed(suffix ? 1 : 0)}${suffix} vs last month`
-    return `${delta.toFixed(suffix ? 1 : 0)}${suffix} vs last month`
-  }
+  const approvalDelta = roundTo(approvalRate - previousApprovalRate, 0)
+  const turnaroundDelta = averageTurnaroundDays - previousTurnaroundDays
+  const applicationsDelta = rows.length - previousWindow.length
+  const bondValueDelta = totalBondValue - previousBondValue
+  const commissionDelta = totalCommission - previousCommission
 
   return [
     {
       key: 'approval_rate',
       label: 'Approval Rate',
-      value: formatPercent(approvalRate, 0),
-      comparison: makeComparison(approvalRate, previousApprovalRate, '%'),
+      value: `${roundTo(approvalRate, 0)}%`,
+      trend: approvalDelta >= 0 ? `+${approvalDelta}%` : `${approvalDelta}%`,
+      trendLabel: `vs last month`,
+      comparison: `vs last month`,
+      sparkline: buildSparkline(
+        [previousApprovalRate, approvalRate].map((value) => ({ value })),
+        6,
+      ),
     },
     {
-      key: 'turnaround',
+      key: 'avg_turnaround',
       label: 'Avg Turnaround',
-      value: `${Math.round(averageTurnaroundDays || 0)} days`,
-      comparison: makeComparison(previousTurnaroundDays - averageTurnaroundDays, 0, 'd'),
+      value: `${averageTurnaroundDays} days`,
+      trend: turnaroundDelta <= 0 ? `${Math.abs(roundTo(turnaroundDelta, 0))}d faster` : `${roundTo(turnaroundDelta, 0)}d slower`,
+      trendLabel: `vs last month`,
+      comparison: `vs last month`,
+      sparkline: buildSparkline([previousTurnaroundDays, averageTurnaroundDays].map((value) => ({ value })), 6),
     },
     {
       key: 'applications',
       label: 'Total Applications',
       value: String(rows.length),
-      comparison: makeComparison(rows.length, previousWindow.length),
+      trend: applicationsDelta >= 0 ? `+${applicationsDelta}` : `${applicationsDelta}`,
+      trendLabel: `vs last month`,
+      comparison: 'active book',
+      sparkline: buildSparkline([previousWindow.length, rows.length].map((value) => ({ value })), 6),
     },
     {
       key: 'bond_value',
-      label: 'Total Bond Value',
+      label: 'Bond Value',
       value: formatCurrency(totalBondValue),
-      comparison: makeComparison(totalBondValue - previousBondValue, 0),
+      trend: bondValueDelta >= 0 ? `+${formatCurrency(bondValueDelta)}` : `-${formatCurrency(Math.abs(bondValueDelta))}`,
+      trendLabel: 'pipeline value',
+      comparison: 'vs prior period',
+      sparkline: buildSparkline([previousBondValue, totalBondValue].map((value) => ({ value })), 6),
     },
     {
-      key: 'commission',
-      label: 'Total Commission',
+      key: 'commission_pipeline',
+      label: 'Commission Pipeline',
       value: formatCurrency(totalCommission),
-      comparison: makeComparison(totalCommission - previousCommission, 0),
+      trend: commissionDelta >= 0 ? `+${formatCurrency(commissionDelta)}` : `-${formatCurrency(Math.abs(commissionDelta))}`,
+      trendLabel: 'commission',
+      comparison: 'est movement',
+      sparkline: buildSparkline([previousCommission, totalCommission].map((value) => ({ value })), 6),
     },
     {
       key: 'top_bank',
       label: 'Top Performing Bank',
       value: topBank ? topBank.bank : 'Not enough data',
-      comparison: topBank ? `${formatPercent((topBank.approvals / Math.max(topBank.total, 1)) * 100)} approval rate` : 'Waiting on bank outcomes',
+      trend: topBank ? `${roundTo((topBank.approvals / Math.max(topBank.total, 1)) * 100, 1)}%` : 'Tracking',
+      trendLabel: topBank ? 'approval rate' : 'pipeline lead',
+      comparison: topBank ? 'approval rate' : 'Tracking',
+      sparkline: buildSparkline(
+        topBank
+          ? [
+              { value: roundTo((topBank.approvals / Math.max(topBank.total, 1)) * 100, 1) },
+              { value: roundTo((topBank.approvals / Math.max(topBank.total, 1)) * 100, 1) + 1 },
+            ]
+          : [{ value: 0 }, { value: 0 }],
+        6,
+      ),
     },
   ]
 }
@@ -911,18 +1396,37 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
   const queues = resolveBondOperationalQueues(user, transactions)
   const priorityActions = buildPriorityActions(filteredRows)
   const focus = getRoleFocus(reportingScope)
+  const executiveAnalytics = buildHeroKpiCards(filteredRows)
+  const bankBreakdown = buildBankBreakdown(filteredRows)
+  const bankLeadTimes = buildBankLeadTimes(filteredRows)
+  const pipelineFlow = buildPipelineFlow(filteredRows)
+  const buyerDemographics = buildBuyerDemographics(filteredRows)
+  const operationalRisk = buildOperationalRisk(filteredRows)
+  const teamPerformance = buildTeamPerformance(filteredRows)
+  const connectedPartners = buildConnectedPartnerRows()
+  const performanceSnapshot = buildPerformanceSnapshot(filteredRows)
 
   return {
     reportingScope,
     roleFocus: focus,
     userDisplayName: getUserDisplayName(user),
+    heroSummary: executiveAnalytics.heroSummary,
+    heroKpis: executiveAnalytics.heroKpis,
+    bankBreakdown,
+    bankLeadTimes,
+    pipelineFlow,
+    buyerDemographics,
+    operationalRisk,
+    teamPerformance,
+    connectedPartners,
+    performanceSnapshot,
     attentionCount: countAttentionItems(priorityActions),
     priorityActions,
     pipelineOverview: buildPipelineOverview(filteredRows),
     teamWorkload: buildTeamWorkload(filteredRows, reportingScope),
     recentBankActivity: buildRecentBankActivity(filteredRows),
     atRiskApplications: buildAtRiskApplications(filteredRows),
-    performanceSnapshot: buildPerformanceSnapshot(filteredRows),
+    performanceSnapshot,
     queues,
     totalApplications: filteredRows.length,
     emptyState: buildCompactEmptyState(reportingScope),

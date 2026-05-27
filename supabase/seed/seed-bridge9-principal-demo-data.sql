@@ -131,7 +131,9 @@ begin
   delete from public.lead_activities where is_demo_data = true and organisation_id = v_org_id;
   delete from public.leads where is_demo_data = true and organisation_id = v_org_id;
   delete from public.contacts where is_demo_data = true and organisation_id = v_org_id;
-  delete from public.organisation_preferred_partners where is_demo_data = true and organisation_id = v_org_id;
+  if to_regclass('public.organisation_preferred_partners') is not null then
+    delete from public.organisation_preferred_partners where is_demo_data = true and organisation_id = v_org_id;
+  end if;
   delete from public.organisation_users where is_demo_data = true and organisation_id = v_org_id;
   delete from public.organisation_branches where is_demo_data = true and organisation_id = v_org_id;
   delete from public.organisation_settings where is_demo_data = true and organisation_id = v_org_id;

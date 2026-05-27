@@ -103,7 +103,9 @@ begin
   delete from public.lead_activities where organisation_id = v_org_id and is_demo_data = true;
   delete from public.leads where lead_id = any(v_lead_ids) and is_demo_data = true;
   delete from public.contacts where contact_id = any(v_contact_ids) and is_demo_data = true;
-  delete from public.organisation_preferred_partners where organisation_id = v_org_id and is_demo_data = true;
+  if to_regclass('public.organisation_preferred_partners') is not null then
+    delete from public.organisation_preferred_partners where organisation_id = v_org_id and is_demo_data = true;
+  end if;
   delete from public.organisation_users where organisation_id = v_org_id and is_demo_data = true;
   delete from public.organisation_branches where organisation_id = v_org_id and is_demo_data = true;
   delete from public.organisation_settings where organisation_id = v_org_id and is_demo_data = true;

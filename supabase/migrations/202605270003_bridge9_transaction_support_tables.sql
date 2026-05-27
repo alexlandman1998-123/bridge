@@ -2,6 +2,44 @@ begin;
 
 create extension if not exists "pgcrypto";
 
+create table if not exists public.organisation_preferred_partners (
+  id uuid primary key default gen_random_uuid(),
+  organisation_id uuid not null references public.organisations(id) on delete cascade,
+  partner_type text not null,
+  company_name text not null,
+  contact_person text,
+  email_address text,
+  phone_number text,
+  website text,
+  physical_address text,
+  province text,
+  notes text,
+  is_active boolean not null default true,
+  is_preferred_default boolean not null default false,
+  is_demo_data boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table if exists public.organisation_preferred_partners
+  add column if not exists is_demo_data boolean not null default false;
+
+alter table if exists public.organisation_preferred_partners drop constraint if exists organisation_preferred_partners_partner_type_check;
+alter table if exists public.organisation_preferred_partners
+  add constraint organisation_preferred_partners_partner_type_check
+  check (partner_type in ('bond_originator', 'bond_attorney', 'transfer_attorney'));
+
+create index if not exists organisation_preferred_partners_org_type_idx
+  on public.organisation_preferred_partners (organisation_id, partner_type);
+
+create unique index if not exists organisation_preferred_partners_default_unique_idx
+  on public.organisation_preferred_partners (organisation_id, partner_type)
+  where is_preferred_default;
+
+create index if not exists organisation_preferred_partners_demo_idx
+  on public.organisation_preferred_partners (organisation_id, partner_type)
+  where is_demo_data = true;
+
 create table if not exists public.transaction_finance_details (
   id uuid primary key default gen_random_uuid(),
   transaction_id uuid not null unique references public.transactions(id) on delete cascade,
