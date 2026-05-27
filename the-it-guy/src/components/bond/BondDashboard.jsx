@@ -205,24 +205,14 @@ export default function BondDashboard({
                 <PipelineFlowPanel items={pipelineFlow} />
               </BondSectionCard>
 
-              <section className="grid gap-6 xl:grid-cols-3">
-                <BondSectionCard
-                  eyebrow="Buyer Demographics"
-                  title="Finance Mix"
-                  description="Finance mix across the active book."
-                  className="flex min-h-[340px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
-                  headerClassName="gap-3"
-                  contentClassName="mt-6 min-h-0 flex-1"
-                >
-                  <SegmentedAnalyticsPanel items={buyerDemographics.bondVsCash} />
-                </BondSectionCard>
+              <section className="grid gap-6 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
                 <BondSectionCard
                   eyebrow="Buyer Demographics"
                   title="Buyer Type Mix"
-                  description="Individual, company and trust buyer distribution."
-                  className="flex min-h-[340px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                  description="Individual, company and trust buyer distribution across the active book."
+                  className="flex min-h-[300px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
                   headerClassName="gap-3"
-                  contentClassName="mt-6 min-h-0 flex-1"
+                  contentClassName="mt-5 min-h-0 flex-1"
                 >
                   <DonutAnalyticsPanel items={buyerDemographics.clientType} />
                 </BondSectionCard>
@@ -230,9 +220,9 @@ export default function BondDashboard({
                   eyebrow="Buyer Demographics"
                   title="Bank Distribution"
                   description="Application volume and submitted movement by bank."
-                  className="flex min-h-[340px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                  className="flex min-h-[300px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
                   headerClassName="gap-3"
-                  contentClassName="mt-6 min-h-0 flex-1"
+                  contentClassName="mt-5 min-h-0 flex-1"
                 >
                   <BankDistributionPanel items={buyerDemographics.bankDistribution} />
                 </BondSectionCard>
@@ -973,62 +963,10 @@ function PipelineFlowPanel({ items = [] }) {
   )
 }
 
-function SegmentedAnalyticsPanel({ items = {} }) {
-  const entries = Object.entries(items || {}).filter(([, value]) => Number(value || 0) > 0)
-  const total = entries.reduce((acc, [, value]) => acc + Number(value || 0), 0) || 1
-  const colors = ['#315f8c', '#8aa5bf', '#2f8a63', '#8b4f7e']
-
-  return (
-    <div className="flex h-full flex-col justify-between gap-6">
-      <div className="rounded-[18px] border border-[#edf2f7] bg-[#fbfdff] p-5">
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">Finance profile</p>
-            <p className="mt-3 text-4xl font-semibold leading-none tracking-[-0.05em] text-[#142132]">{total}</p>
-          </div>
-          <p className="max-w-[150px] text-right text-sm leading-5 text-[#60758d]">active applications in this mix</p>
-        </div>
-        <div className="mt-5 flex h-4 overflow-hidden rounded-full bg-[#e6eef8]">
-          {entries.map(([key, value], index) => {
-            const pct = (Number(value || 0) / total) * 100
-            return (
-              <span
-                key={key}
-                className="h-full"
-                style={{ width: `${pct}%`, backgroundColor: colors[index % colors.length] }}
-              />
-            )
-          })}
-        </div>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {entries.map(([key, value], index) => {
-          const pct = (Number(value || 0) / total) * 100
-          return (
-            <div key={key} className="rounded-[14px] border border-[#edf2f7] bg-white p-4">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-semibold capitalize text-[#142132]">{key.replaceAll('_', ' ')}</span>
-                <span className="text-sm font-semibold text-[#142132]">{Math.round(pct)}%</span>
-              </div>
-              <p className="mt-1 text-xs text-[#60758d]">{value} active applications</p>
-              <div className="mt-3 h-2 rounded-full bg-[#e6eef8]">
-                <span
-                  className="block h-full rounded-full"
-                  style={{ width: `${pct}%`, backgroundColor: colors[index % colors.length] }}
-                />
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
 function DonutAnalyticsPanel({ items = {} }) {
   const entries = Object.entries(items || {}).filter(([, value]) => Number(value || 0) > 0)
   const total = entries.reduce((acc, [, value]) => acc + Number(value || 0), 0) || 1
-  const colors = ['#315f8c', '#2f6b4a', '#9b6b22', '#8b4f7e']
+  const colors = ['#245d8f', '#2f7a55', '#a87520', '#7f4f86']
   const conicSegments = entries.reduce((segments, [, value], index) => {
     const previousEnd = segments[index - 1]?.end || 0
     const share = Math.max(0, Number(value || 0)) / total
@@ -1042,39 +980,41 @@ function DonutAnalyticsPanel({ items = {} }) {
   const donutBackground = conicSegments.length ? `conic-gradient(${conicSegments.join(', ')}, #e5edf7 0deg)` : '#e5edf7'
 
   return (
-    <div className="grid h-full items-center gap-6 sm:grid-cols-[210px_1fr]">
-      <div className="rounded-[18px] border border-[#edf2f7] bg-[#fbfdff] p-5">
-        <div className="relative mx-auto h-44 w-44 rounded-full">
+    <div className="grid h-full items-center gap-5 lg:grid-cols-[180px_minmax(0,1fr)]">
+      <div className="rounded-[18px] border border-[#e4edf6] bg-[linear-gradient(180deg,#fbfdff_0%,#f6f9fc_100%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
+        <div className="relative mx-auto h-40 w-40 rounded-full">
           <div
-            className="h-full w-full rounded-full"
+            className="h-full w-full rounded-full shadow-[0_14px_30px_rgba(22,48,74,0.12)]"
             style={{ background: donutBackground }}
           />
-          <div className="absolute inset-7 rounded-full bg-white shadow-inner" />
+          <div className="absolute inset-6 rounded-full bg-white shadow-[inset_0_0_18px_rgba(15,23,42,0.08)]" />
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-            <p className="text-4xl font-semibold leading-none tracking-[-0.05em] text-[#142132]">{total}</p>
-            <p className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#7d93aa]">Buyers</p>
+            <p className="text-3xl font-semibold leading-none tracking-[-0.04em] text-[#142132]">{total}</p>
+            <p className="mt-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">Buyers</p>
           </div>
         </div>
       </div>
-      <div className="space-y-3">
+      <div className="grid gap-2.5">
         {entries.map(([key, value], index) => {
           const pct = (Number(value || 0) / total) * 100
           return (
-            <div key={key} className="rounded-[14px] border border-[#edf2f7] bg-white px-4 py-3">
-              <div className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />
-                <span className="text-sm font-semibold capitalize text-[#142132]">{key.replaceAll('_', ' ')}</span>
-              </div>
-              <div className="mt-3 flex items-center justify-between gap-3">
-                <div className="h-2 flex-1 rounded-full bg-[#e6eef8]">
-                  <span
-                    className="block h-full rounded-full"
-                    style={{ width: `${pct}%`, backgroundColor: colors[index % colors.length] }}
-                  />
+            <div key={key} className="rounded-[14px] border border-[#e4edf6] bg-white px-3.5 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />
+                    <span className="truncate text-sm font-semibold capitalize text-[#142132]">{key.replaceAll('_', ' ')}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-[#60758d]">{value} buyers</p>
                 </div>
-                <span className="text-sm font-semibold text-[#142132]">{Math.round(pct)}%</span>
+                <span className="shrink-0 text-sm font-semibold tabular-nums text-[#142132]">{Math.round(pct)}%</span>
               </div>
-              <p className="mt-1 text-xs text-[#60758d]">{value} buyers</p>
+              <div className="mt-2.5 h-1.5 rounded-full bg-[#e8eef6]">
+                <span
+                  className="block h-full rounded-full"
+                  style={{ width: `${pct}%`, backgroundColor: colors[index % colors.length] }}
+                />
+              </div>
             </div>
           )
         })}
@@ -1099,29 +1039,29 @@ function BankDistributionPanel({ items = [] }) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="grid gap-3 sm:grid-cols-2">
       {rows.map((row) => {
         const visual = getBankVisual(row.bank)
         const width = Math.max(8, (Number(row.total || 0) / max) * 100)
         const share = Math.round((Number(row.total || 0) / total) * 100)
         return (
-          <article key={row.bank} className="rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] p-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-2">
+          <article key={row.bank} className="rounded-[16px] border border-[#e4edf6] bg-[linear-gradient(180deg,#ffffff_0%,#f8fbfe_100%)] p-3.5 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2.5">
                 <span
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[0.65rem] font-bold"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[0.68rem] font-bold ring-1 ring-white"
                   style={{ backgroundColor: visual.soft, color: visual.color }}
                 >
                   {visual.initials}
                 </span>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-[#142132]">{row.bank}</p>
-                  <p className="text-xs text-[#70879d]">{row.submitted} submitted • {row.approved} approved</p>
+                  <p className="mt-0.5 text-xs text-[#70879d]">{row.submitted} submitted - {row.approved} approved</p>
                 </div>
               </div>
-              <p className="text-sm font-semibold text-[#142132]">{share}%</p>
+              <p className="shrink-0 text-sm font-semibold tabular-nums text-[#142132]">{share}%</p>
             </div>
-            <div className="mt-3 h-2.5 rounded-full bg-[#e6eef8]">
+            <div className="mt-3 h-1.5 rounded-full bg-[#e7eef7]">
               <span className="block h-full rounded-full" style={{ width: `${width}%`, backgroundColor: visual.color }} />
             </div>
           </article>

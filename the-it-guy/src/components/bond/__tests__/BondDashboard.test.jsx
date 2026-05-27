@@ -238,9 +238,10 @@ function makeSnapshot(overrides = {}) {
     assert.match(commandCenterMarkup, /xl:grid-cols-2/)
     assert.match(commandCenterMarkup, /Pipeline Overview/)
     assert.match(commandCenterMarkup, /Operational flow through core finance and approval stages/)
-    assert.match(commandCenterMarkup, /Finance Mix/)
+    assert.doesNotMatch(commandCenterMarkup, /Finance Mix/)
     assert.match(commandCenterMarkup, /Buyer Type Mix/)
     assert.match(commandCenterMarkup, /Bank Distribution/)
+    assert.match(commandCenterMarkup, /xl:grid-cols-\[minmax\(0,0\.92fr\)_minmax\(0,1\.08fr\)\]/)
     assert.match(commandCenterMarkup, /Operational Bottleneck Heatmap/)
     assert.match(commandCenterMarkup, /Recent Bank Activity/)
     assert.match(commandCenterMarkup, /Team Performance/)
@@ -250,7 +251,8 @@ function makeSnapshot(overrides = {}) {
 
     assert.ok(commandCenterMarkup.indexOf('Active Applications') < commandCenterMarkup.indexOf('Bank Approval Breakdown'))
     assert.ok(commandCenterMarkup.indexOf('Bank Lead Times') < commandCenterMarkup.indexOf('Pipeline Overview'))
-    assert.ok(commandCenterMarkup.indexOf('Pipeline Overview') < commandCenterMarkup.indexOf('Finance Mix'))
+    assert.ok(commandCenterMarkup.indexOf('Pipeline Overview') < commandCenterMarkup.indexOf('Buyer Type Mix'))
+    assert.ok(commandCenterMarkup.indexOf('Buyer Type Mix') < commandCenterMarkup.indexOf('Bank Distribution'))
     assert.ok(commandCenterMarkup.indexOf('Operational Bottleneck Heatmap') < commandCenterMarkup.indexOf('Recent Bank Activity'))
     assert.ok(commandCenterMarkup.indexOf('Connected Partners') < commandCenterMarkup.indexOf('Operational Risk'))
 
