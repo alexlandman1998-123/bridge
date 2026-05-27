@@ -844,10 +844,18 @@ function Units() {
   }, [location.search, stageOptions])
 
   useEffect(() => {
+    if (isAgentRole) {
+      setFilters((previous) => (
+        previous.developmentId === 'all'
+          ? previous
+          : { ...previous, developmentId: 'all' }
+      ))
+      return
+    }
     if (workspace.id !== 'all') {
       setFilters((previous) => ({ ...previous, developmentId: workspace.id }))
     }
-  }, [workspace.id])
+  }, [isAgentRole, workspace.id])
 
   useEffect(() => {
     setSelectedUnitIds((previous) => previous.filter((unitId) => rows.some((row) => row?.unit?.id === unitId)))

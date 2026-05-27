@@ -24,7 +24,7 @@ function getPageTitle(pathname, stateTitle, role) {
     if (role === 'attorney') return 'Transactions'
     return 'Transactions'
   }
-  if (pathname.startsWith('/transactions/')) return 'Transactions'
+  if (pathname.startsWith('/transactions/')) return isAgentWorkspaceRole ? '' : 'Transactions'
   if (pathname.startsWith('/developments/')) return 'Developments'
   if (role === 'bond_originator' && pathname === '/documents') return ''
 
