@@ -63,6 +63,93 @@ alter table if exists public.transactions
   add column if not exists agent_commission_amount numeric,
   add column if not exists agency_commission_amount numeric;
 
+create table if not exists public.demo_canvassing_records (
+  id uuid primary key default gen_random_uuid(),
+  organisation_id uuid not null references public.organisations(id) on delete cascade,
+  linked_lead_id uuid references public.leads(lead_id) on delete set null,
+  assigned_agent_id uuid references public.profiles(id) on delete set null,
+  prospect_name text not null,
+  prospect_email text,
+  prospect_phone text,
+  prospect_type text not null default 'Seller',
+  suburb text,
+  address_line_1 text,
+  estimated_value numeric(14, 2),
+  status text not null,
+  seller_personality text,
+  intended_timeline text,
+  canvassing_method text,
+  last_contact_at timestamptz,
+  next_follow_up_at timestamptz,
+  notes text,
+  is_demo_data boolean not null default true,
+  demo_metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.demo_canvassing_activities (
+  id uuid primary key default gen_random_uuid(),
+  canvassing_record_id uuid not null references public.demo_canvassing_records(id) on delete cascade,
+  organisation_id uuid not null references public.organisations(id) on delete cascade,
+  agent_id uuid references public.profiles(id) on delete set null,
+  activity_type text not null,
+  activity_note text,
+  outcome text,
+  activity_date timestamptz not null default now(),
+  is_demo_data boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.canvassing_prospects (
+  id uuid primary key default gen_random_uuid(),
+  organisation_id uuid not null references public.organisations(id) on delete cascade,
+  assigned_agent_id uuid references public.profiles(id) on delete set null,
+  assigned_user_id uuid references public.profiles(id) on delete set null,
+  branch_id uuid references public.organisation_branches(id) on delete set null,
+  assigned_agent_name text,
+  assigned_agent_email text,
+  first_name text not null,
+  last_name text,
+  phone text,
+  email text,
+  prospect_type text not null default 'Seller Prospect',
+  area text,
+  property_type text,
+  canvassing_method text not null default 'Cold Call',
+  status text not null default 'New',
+  next_follow_up_date date,
+  follow_up_priority text not null default 'Medium',
+  follow_up_note text,
+  estimated_value numeric(14, 2),
+  notes text,
+  converted_lead_id uuid references public.leads(lead_id) on delete set null,
+  converted_at timestamptz,
+  lost_reason text,
+  archived_at timestamptz,
+  created_by uuid references public.profiles(id) on delete set null,
+  is_demo_data boolean not null default false,
+  demo_metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.canvassing_activities (
+  id uuid primary key default gen_random_uuid(),
+  organisation_id uuid not null references public.organisations(id) on delete cascade,
+  prospect_id uuid not null references public.canvassing_prospects(id) on delete cascade,
+  agent_id uuid references public.profiles(id) on delete set null,
+  agent_name text,
+  activity_type text not null default 'Note',
+  activity_note text,
+  outcome text,
+  activity_date timestamptz not null default now(),
+  created_by uuid references public.profiles(id) on delete set null,
+  is_demo_data boolean not null default false,
+  demo_metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
 create or replace function pg_temp.bridge9_demo_uuid(p_key text)
 returns uuid
 language sql
@@ -171,18 +258,36 @@ begin
   v_org_id := coalesce(v_org_id, pg_temp.bridge9_demo_uuid('org:bridge9-realty'));
 
   -- Repeatability guard: clear only existing Bridge9 demo data before reseeding.
-  delete from public.transaction_notifications where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
+  if to_regclass('public.transaction_notifications') is not null then
+    delete from public.transaction_notifications where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
+  end if;
   if to_regclass('public.transaction_readiness_states') is not null then
     delete from public.transaction_readiness_states where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
   end if;
-  delete from public.transaction_status_links where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
-  delete from public.transaction_events where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
-  delete from public.transaction_comments where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
-  delete from public.document_requests where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
-  delete from public.documents where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
-  delete from public.transaction_participants where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
-  delete from public.transaction_subprocess_steps where is_demo_data = true and subprocess_id in (select id from public.transaction_subprocesses where transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true));
-  delete from public.transaction_subprocesses where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
+  if to_regclass('public.transaction_status_links') is not null then
+    delete from public.transaction_status_links where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
+  end if;
+  if to_regclass('public.transaction_events') is not null then
+    delete from public.transaction_events where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
+  end if;
+  if to_regclass('public.transaction_comments') is not null then
+    delete from public.transaction_comments where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
+  end if;
+  if to_regclass('public.document_requests') is not null then
+    delete from public.document_requests where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
+  end if;
+  if to_regclass('public.documents') is not null then
+    delete from public.documents where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
+  end if;
+  if to_regclass('public.transaction_participants') is not null then
+    delete from public.transaction_participants where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
+  end if;
+  if to_regclass('public.transaction_subprocess_steps') is not null and to_regclass('public.transaction_subprocesses') is not null then
+    delete from public.transaction_subprocess_steps where is_demo_data = true and subprocess_id in (select id from public.transaction_subprocesses where transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true));
+  end if;
+  if to_regclass('public.transaction_subprocesses') is not null then
+    delete from public.transaction_subprocesses where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
+  end if;
   if to_regclass('public.transaction_finance_details') is not null then
     delete from public.transaction_finance_details where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
   end if;
@@ -197,16 +302,34 @@ begin
   end if;
   delete from public.buyers where is_demo_data = true and organisation_id = v_org_id;
   delete from public.transactions where is_demo_data = true and organisation_id = v_org_id;
-  delete from public.private_listing_activity where is_demo_data = true and private_listing_id in (select id from public.private_listings where organisation_id = v_org_id and is_demo_data = true);
-  delete from public.private_listing_seller_onboarding where is_demo_data = true and private_listing_id in (select id from public.private_listings where organisation_id = v_org_id and is_demo_data = true);
+  if to_regclass('public.private_listing_activity') is not null then
+    delete from public.private_listing_activity where is_demo_data = true and private_listing_id in (select id from public.private_listings where organisation_id = v_org_id and is_demo_data = true);
+  end if;
+  if to_regclass('public.private_listing_seller_onboarding') is not null then
+    delete from public.private_listing_seller_onboarding where is_demo_data = true and private_listing_id in (select id from public.private_listings where organisation_id = v_org_id and is_demo_data = true);
+  end if;
   delete from public.private_listings where is_demo_data = true and organisation_id = v_org_id;
-  delete from public.demo_canvassing_activities where is_demo_data = true and organisation_id = v_org_id;
-  delete from public.demo_canvassing_records where is_demo_data = true and organisation_id = v_org_id;
-  delete from public.canvassing_activities where is_demo_data = true and organisation_id = v_org_id;
-  delete from public.canvassing_prospects where is_demo_data = true and organisation_id = v_org_id;
-  delete from public.appointments where is_demo_data = true and organisation_id = v_org_id;
-  delete from public.tasks where is_demo_data = true and organisation_id = v_org_id;
-  delete from public.lead_activities where is_demo_data = true and organisation_id = v_org_id;
+  if to_regclass('public.demo_canvassing_activities') is not null then
+    delete from public.demo_canvassing_activities where is_demo_data = true and organisation_id = v_org_id;
+  end if;
+  if to_regclass('public.demo_canvassing_records') is not null then
+    delete from public.demo_canvassing_records where is_demo_data = true and organisation_id = v_org_id;
+  end if;
+  if to_regclass('public.canvassing_activities') is not null then
+    delete from public.canvassing_activities where is_demo_data = true and organisation_id = v_org_id;
+  end if;
+  if to_regclass('public.canvassing_prospects') is not null then
+    delete from public.canvassing_prospects where is_demo_data = true and organisation_id = v_org_id;
+  end if;
+  if to_regclass('public.appointments') is not null then
+    delete from public.appointments where is_demo_data = true and organisation_id = v_org_id;
+  end if;
+  if to_regclass('public.tasks') is not null then
+    delete from public.tasks where is_demo_data = true and organisation_id = v_org_id;
+  end if;
+  if to_regclass('public.lead_activities') is not null then
+    delete from public.lead_activities where is_demo_data = true and organisation_id = v_org_id;
+  end if;
   delete from public.leads where is_demo_data = true and organisation_id = v_org_id;
   delete from public.contacts where is_demo_data = true and organisation_id = v_org_id;
   if to_regclass('public.organisation_preferred_partners') is not null then
