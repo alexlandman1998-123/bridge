@@ -1029,15 +1029,21 @@ function resolveWorkspaceTypeFromId({ recipientOrganisationId = '', toWorkspaceT
 }
 
 async function updateInvitationResponse({ invitationId = '', status = 'accepted', userId = '' }) {
+  const now = new Date().toISOString()
   const payload = {
     status,
-    responded_at: new Date().toISOString(),
+    responded_at: now,
   }
+  if (status === 'accepted') payload.accepted_at = now
   const withActor = normalizeText(userId) ? { ...payload, responded_by_user_id: normalizeText(userId) } : payload
   const result = await supabase.from('partner_invitations').update(withActor).eq('id', invitationId)
   if (result.error) {
-    if (isRecoverablePartnerSchemaError(result.error) && normalizeText(userId)) {
-      const fallback = await supabase.from('partner_invitations').update(payload).eq('id', invitationId)
+    if (isRecoverablePartnerSchemaError(result.error)) {
+      const legacyPayload = {
+        status: status === 'declined' ? 'revoked' : status,
+      }
+      if (status === 'accepted') legacyPayload.accepted_at = now
+      const fallback = await supabase.from('partner_invitations').update(legacyPayload).eq('id', invitationId)
       if (fallback.error) throw fallback.error
       return
     }

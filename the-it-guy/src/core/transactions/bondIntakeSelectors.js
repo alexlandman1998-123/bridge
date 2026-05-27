@@ -40,9 +40,10 @@ const COMPLETED_DOCUMENT_STATUSES = new Set(['uploaded', 'under_review', 'approv
 const APPROVED_DOCUMENT_STATUSES = new Set(['approved', 'accepted', 'completed'])
 const REJECTED_DOCUMENT_STATUSES = new Set(['rejected', 'declined', 'failed', 'reupload_required', 'needs_reupload'])
 const NOT_REQUIRED_DOCUMENT_STATUSES = new Set(['waived', 'not_required', 'not_applicable'])
-const ACTIVE_ROLE_PLAYER_STATUSES = new Set(['', 'active', 'pending', 'assigned', 'in_progress', 'started', 'current'])
+const ACTIVE_ROLE_PLAYER_STATUSES = new Set(['', 'active', 'assigned', 'in_progress', 'started', 'current'])
 const ACCEPTED_ASSIGNMENT_STATUSES = new Set(['workspace_assigned', 'consultant_assigned', 'processor_assigned', 'fully_assigned'])
 const DECLINED_MARKER_VALUES = new Set(['declined', 'rejected', 'not_accepted', 'intake_declined'])
+const ACCEPTED_MARKER_VALUES = new Set(['accepted', 'intake_accepted', 'ready_accepted', 'assigned'])
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -377,7 +378,24 @@ export function getDocumentReadinessSummary({ documentRequests = [], documents =
   }
 }
 
-function hasDeclinedMarker(transaction = {}) {
+function getRolePlayerSnapshot(rolePlayer = {}) {
+  const snapshot = rolePlayer.snapshot_json || rolePlayer.snapshotJson || rolePlayer.snapshot || {}
+  return isPlainObject(snapshot) ? snapshot : {}
+}
+
+function getEvents(input = {}) {
+  const transaction = input.transaction || {}
+  if (Array.isArray(input.events)) return input.events
+  if (Array.isArray(input.transactionEvents)) return input.transactionEvents
+  if (Array.isArray(input.transaction_events)) return input.transaction_events
+  if (Array.isArray(transaction.events)) return transaction.events
+  if (Array.isArray(transaction.transactionEvents)) return transaction.transactionEvents
+  if (Array.isArray(transaction.transaction_events)) return transaction.transaction_events
+  return []
+}
+
+function hasDeclinedMarker(input = {}) {
+  const transaction = input.transaction || input || {}
   const statusValues = [
     transaction.bond_intake_status,
     transaction.bondIntakeStatus,
@@ -385,10 +403,32 @@ function hasDeclinedMarker(transaction = {}) {
     transaction.bondOriginatorIntakeStatus,
     transaction.bond_assignment_decision,
     transaction.bondAssignmentDecision,
+    transaction.bond_assignment_status,
+    transaction.bondAssignmentStatus,
   ].map(normalizeLower)
 
-  // TODO Phase 2: replace this with the final accepted/declined intake persistence field once storage is designed.
-  return statusValues.some((value) => DECLINED_MARKER_VALUES.has(value))
+  if (statusValues.some((value) => DECLINED_MARKER_VALUES.has(value))) return true
+
+  const rolePlayerDeclined = getRolePlayers(input).some((rolePlayer) => {
+    const snapshot = getRolePlayerSnapshot(rolePlayer)
+    const values = [
+      snapshot.intake_status,
+      snapshot.intakeStatus,
+      snapshot.decision,
+      snapshot.status,
+      rolePlayer.selection_source,
+      rolePlayer.selectionSource,
+    ].map(normalizeLower)
+    return values.some((value) => DECLINED_MARKER_VALUES.has(value) || value === 'declined_from_intake')
+  })
+  if (rolePlayerDeclined) return true
+
+  return getEvents(input).some((event) => {
+    const eventType = normalizeLower(event.event_type || event.eventType || event.type)
+    const eventData = isPlainObject(event.event_data) ? event.event_data : isPlainObject(event.eventData) ? event.eventData : {}
+    const dataStatus = normalizeLower(eventData.intake_status || eventData.intakeStatus || eventData.status)
+    return eventType === 'bond_intake_declined' || DECLINED_MARKER_VALUES.has(dataStatus)
+  })
 }
 
 function getRolePlayers(input = {}) {
@@ -445,11 +485,26 @@ function hasAcceptedAssignment(input = {}) {
   ])
   const financeManagedBy = normalizeLower(transaction.finance_managed_by || transaction.financeManagedBy)
 
-  // TODO Phase 2: if intake acceptance gets a dedicated storage field, check it here before legacy assignment fallbacks.
+  const rolePlayerAccepted = getRolePlayers(input).some((rolePlayer) => {
+    if (!rolePlayerIsBondOriginator(rolePlayer, input.currentOrganisationId)) return false
+    const snapshot = getRolePlayerSnapshot(rolePlayer)
+    const markerValues = [
+      snapshot.intake_status,
+      snapshot.intakeStatus,
+      snapshot.decision,
+      snapshot.status,
+      snapshot.source,
+      rolePlayer.selection_source,
+      rolePlayer.selectionSource,
+    ].map(normalizeLower)
+    return markerValues.some((value) => ACCEPTED_MARKER_VALUES.has(value) || value === 'accepted_from_intake' || value === 'assigned_from_intake')
+  })
+
+  if (rolePlayerAccepted) return true
   if (ACCEPTED_ASSIGNMENT_STATUSES.has(assignmentStatus)) return true
   if (assignedEmail || assignedUserId) return true
   if (financeManagedBy === 'bond_originator' && (assignedEmail || assignedUserId)) return true
-  return getRolePlayers(input).some((rolePlayer) => rolePlayerIsBondOriginator(rolePlayer, input.currentOrganisationId))
+  return rolePlayerAccepted
 }
 
 export function getBondIntakeStatus(input = {}) {
@@ -458,7 +513,7 @@ export function getBondIntakeStatus(input = {}) {
     return BOND_INTAKE_STATUSES.NOT_BOND_RELEVANT
   }
 
-  if (hasDeclinedMarker(transaction)) {
+  if (hasDeclinedMarker(input)) {
     return BOND_INTAKE_STATUSES.DECLINED
   }
 

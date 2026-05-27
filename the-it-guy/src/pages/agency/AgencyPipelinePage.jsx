@@ -4602,27 +4602,90 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         notes: normalizeText(leadDetailForm.notes),
       }
 
-      if (selectedLeadContact?.contactId) {
-        await updateAgencyCrmContactRecord(organisationId, selectedLeadContact.contactId, contactPatch)
+      const contactHasDetails = [
+        contactPatch.firstName,
+        contactPatch.lastName,
+        contactPatch.phone,
+        contactPatch.email,
+      ].some((value) => normalizeText(value))
+      let resolvedLeadId = normalizeText(selectedLead.leadId)
+      let resolvedContactId = normalizeText(selectedLeadContact?.contactId || selectedLead?.contactId)
+      let resolvedContactSnapshot = selectedLeadContact || null
+
+      if (contactHasDetails) {
+        const persisted = await ensureAgencyCrmLeadRecordPersisted(
+          organisationId,
+          {
+            ...selectedLead,
+            ...leadPatch,
+            contactId: resolvedContactId,
+          },
+          {
+            ...(selectedLeadContact || {}),
+            ...contactPatch,
+            contactId: resolvedContactId,
+            contactType: resolveLeadCategoryView(selectedLead) === 'seller' ? 'Seller' : 'Buyer',
+          },
+          { actor: currentAgent },
+        )
+        resolvedLeadId = normalizeText(persisted?.leadId || resolvedLeadId)
+        resolvedContactId = normalizeText(persisted?.contactId || resolvedContactId)
+        resolvedContactSnapshot = {
+          ...(selectedLeadContact || {}),
+          ...contactPatch,
+          contactId: resolvedContactId,
+          organisationId,
+          updatedAt: new Date().toISOString(),
+        }
       }
-      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+
+      if (resolvedContactId && contactHasDetails) {
+        await updateAgencyCrmContactRecord(organisationId, resolvedContactId, contactPatch)
+      }
+      await updateAgencyCrmLeadRecord(organisationId, resolvedLeadId, {
+        ...leadPatch,
+        contactId: resolvedContactId || selectedLead.contactId,
+      })
 
       setRecords((previous) => ({
         ...previous,
-        contacts: (Array.isArray(previous.contacts) ? previous.contacts : []).map((contact) =>
-          normalizeText(contact?.contactId) === normalizeText(selectedLeadContact?.contactId)
-            ? {
-                ...contact,
-                ...contactPatch,
-                updatedAt: new Date().toISOString(),
-              }
-            : contact,
-        ),
+        contacts: (() => {
+          const rows = Array.isArray(previous.contacts) ? previous.contacts : []
+          const targetContactId = normalizeText(resolvedContactId || selectedLeadContact?.contactId)
+          if (!targetContactId) return rows
+          let matched = false
+          const nextRows = rows.map((contact) => {
+            const matchesResolved = normalizeText(contact?.contactId) === targetContactId
+            const matchesPrevious = normalizeText(contact?.contactId) === normalizeText(selectedLeadContact?.contactId)
+            if (!matchesResolved && !matchesPrevious) return contact
+            matched = true
+            return {
+              ...contact,
+              ...contactPatch,
+              contactId: targetContactId,
+              updatedAt: new Date().toISOString(),
+            }
+          })
+          if (matched) return nextRows
+          return [
+            ...nextRows,
+            {
+              ...(resolvedContactSnapshot || {}),
+              ...contactPatch,
+              contactId: targetContactId,
+              organisationId,
+              updatedAt: new Date().toISOString(),
+            },
+          ]
+        })(),
         leads: (Array.isArray(previous.leads) ? previous.leads : []).map((lead) =>
-          normalizeLeadIdentityKey(lead?.leadId) === normalizeLeadIdentityKey(selectedLead.leadId)
+          normalizeLeadIdentityKey(lead?.leadId) === normalizeLeadIdentityKey(selectedLead.leadId) ||
+          normalizeLeadIdentityKey(lead?.leadId) === normalizeLeadIdentityKey(resolvedLeadId)
             ? {
                 ...lead,
                 ...leadPatch,
+                leadId: resolvedLeadId || lead.leadId,
+                contactId: resolvedContactId || lead.contactId,
                 updatedAt: new Date().toISOString(),
               }
             : lead,
