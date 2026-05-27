@@ -24,7 +24,7 @@ async function main() {
     const bondNav = rolesModule.getRoleNavItems('bond_originator')
     assert.deepEqual(
       bondNav.map((item) => item.label),
-      ['Dashboard', 'Pipeline', 'Transactions', 'Developments', 'Clients', 'Partners', 'Reports'],
+      ['Dashboard', 'Pipeline', 'Transactions', 'Developments', 'Clients', 'Partners', 'Reports', 'Settings'],
     )
     assert.equal(bondNav.find((item) => item.key === 'bond_pipeline')?.to, '/bond/pipeline')
     assert.equal(bondNav.find((item) => item.key === 'transactions')?.to, '/bond/transactions')

@@ -1952,7 +1952,7 @@ function AppRoutes() {
                 <Route
                   path="organisation"
                   element={
-                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                    <RoleRoute allowedRoles={['developer', 'agent', 'bond_originator']}>
                       <SettingsOrganisationPage />
                     </RoleRoute>
                   }

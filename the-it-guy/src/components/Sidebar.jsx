@@ -142,7 +142,7 @@ const BRIDGE_BRAND_SUBTITLE = 'Property Transaction OS'
 const BRIDGE_POWERED_LABEL = 'Powered by Bridge'
 const ATTORNEY_SECONDARY_KEYS = new Set(['financials', 'team_departments', 'reports'])
 const BOND_NAV_SECTIONS = [
-  { key: 'main', label: 'Workspace', itemKeys: ['dashboard', 'bond_pipeline', 'transactions', 'bond_developments', 'clients', 'partners', 'bond_reports'] },
+  { key: 'main', label: 'Workspace', itemKeys: ['dashboard', 'bond_pipeline', 'transactions', 'bond_developments', 'clients', 'partners', 'bond_reports', 'settings'] },
 ]
 
 function routeMatches(pathname, target = '') {

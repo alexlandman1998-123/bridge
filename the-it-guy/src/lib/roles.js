@@ -175,6 +175,7 @@ export const APP_NAV_BY_ROLE = {
     { key: 'clients', label: 'Clients', to: '/bond/clients', navSection: 'main', activeMatch: ['/bond/clients', '/clients'] },
     { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners'] },
     { key: 'bond_reports', label: 'Reports', to: '/bond/reports', navSection: 'main', activeMatch: ['/bond/reports', '/reports'] },
+    { key: 'settings', label: 'Settings', to: '/settings', navSection: 'secondary' },
   ],
   client: [
     { key: 'dashboard', label: 'Overview', to: '/dashboard' },

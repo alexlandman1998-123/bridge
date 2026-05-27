@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, Building2, CircleCheck, CircleDashed, CircleAlert, FileCheck2, FileText, HandCoins, MoreHorizontal, UsersRound } from 'lucide-react'
+import { ArrowRight, CircleCheck, CircleDashed, CircleAlert, FileCheck2, FileText, HandCoins, UsersRound } from 'lucide-react'
 import BondDashboardHeader from './BondDashboardHeader'
 import BondEmptyState from './BondEmptyState'
 import BondPageShell from './BondPageShell'
@@ -646,10 +646,12 @@ function ActiveApplicationsSection({ items = [], activeFilter = 'all', onFilterC
       </div>
 
       {items.length ? (
-        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {items.map((application, index) => (
-            <ActiveApplicationCard key={`${application.id}-${index}`} application={application} />
-          ))}
+        <div className="-mx-1 mt-4 overflow-x-auto overflow-y-hidden px-1 pb-2 [scrollbar-width:thin]">
+          <div className="flex min-w-full snap-x snap-mandatory gap-4">
+            {items.map((application, index) => (
+              <ActiveApplicationCard key={`${application.id}-${index}`} application={application} />
+            ))}
+          </div>
         </div>
       ) : (
         <div className="mt-5">
@@ -671,6 +673,8 @@ function ActiveApplicationCard({ application = {} }) {
     warning: 'border-[#efdcb8] bg-[#fff9ef] text-[#8f5e14]',
     danger: 'border-[#f0d1d8] bg-[#fff8f9] text-[#9b3347]',
   }[application.statusTone] || 'border-[#dbe5f0] bg-[#f7fbff] text-[#315f8c]'
+  const progressPercent = Math.max(0, Math.min(100, normalizeNumber(application.progressPercent, 0)))
+  const stages = Array.isArray(application.stageItems) ? application.stageItems : []
 
   function goTo(href) {
     if (!href || typeof window === 'undefined') return
@@ -678,90 +682,100 @@ function ActiveApplicationCard({ application = {} }) {
   }
 
   return (
-    <article className="flex min-h-[300px] flex-col rounded-[18px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.035)]">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-base font-semibold tracking-[-0.02em] text-[#142132]">{application.buyerName || 'Unknown buyer'}</p>
-          <p className="mt-1 truncate text-sm font-semibold text-[#536a83]">{application.propertyLabel || 'Property pending'}</p>
-          <p className="mt-1 truncate text-xs text-[#71879d]">{application.developmentName || 'Location pending'}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => goTo(application.href)}
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#dbe5f0] bg-[#fbfdff] text-[#4b6884] transition hover:border-[#b9ccde]"
-          aria-label="Open application"
-        >
-          <MoreHorizontal size={17} />
-        </button>
-      </div>
-
-      <div className="mt-4 grid gap-2 text-xs text-[#60758d]">
-        <ApplicationMeta icon={UsersRound} label="Agent" value={application.agentName || 'Partner not assigned'} />
-        <ApplicationMeta icon={FileCheck2} label="Consultant" value={application.consultantName || 'Unassigned consultant'} />
-        <ApplicationMeta icon={Building2} label="Bank" value={application.bankName || 'Bank not selected'} />
-      </div>
-
-      <div className="mt-4 grid grid-cols-3 gap-2 rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] p-3">
-        <MiniFileStat label={application.financeType || 'Bond'} value={application.bondValue || 'R 0'} />
-        <MiniFileStat label="Confidence" value={`${application.transactionConfidence || 0}%`} />
-        <MiniFileStat label="Risk" value={`${application.operationalRisk?.riskScore || 0}%`} />
-      </div>
-
-      <div className="mt-3 hidden rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] p-3 2xl:block">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8294a8]">Estimated approval confidence</p>
-          <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-[#31506a]">{application.approvalConfidence?.probabilityBand || 'Insufficient Data'}</span>
-        </div>
-        <p className="mt-2 text-xs leading-5 text-[#60758d]">
-          {application.financeInsights?.insights?.[0] || application.financeInsights?.operationalWarnings?.[0] || 'Predictive workflow insights will strengthen as buyer and document data improves.'}
-        </p>
-      </div>
-
-      <div className="mt-4">
-        <div className="flex items-center justify-between gap-3">
-          <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}>{application.statusLabel || 'On Track'}</span>
-          <span className="text-xs font-semibold text-[#6b8198]">{application.progressPercent || 0}%</span>
-        </div>
-        <div className="mt-4 grid grid-cols-6 gap-1.5">
-          {(application.stageItems || []).map((stage) => (
-            <div key={stage.key} className="min-w-0">
-              <span
-                className={`mx-auto block h-2.5 w-2.5 rounded-full ${
-                  stage.state === 'complete'
-                    ? 'bg-[#2f8a63]'
-                    : stage.state === 'active'
-                      ? 'bg-[#143250] ring-4 ring-[#e7eef7]'
-                      : 'bg-[#cbd8e6]'
-                }`}
-              />
-              <p className={`mt-2 truncate text-center text-[0.62rem] font-semibold ${stage.state === 'active' ? 'text-[#143250]' : 'text-[#8a9aad]'}`}>
-                {stage.label}
-              </p>
-            </div>
-          ))}
+    <article className="group flex w-[88vw] shrink-0 snap-start flex-col overflow-hidden rounded-[20px] border border-[#dce7f2] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.045)] transition duration-200 ease-out hover:-translate-y-px hover:border-[#c5d6e8] hover:shadow-[0_18px_42px_rgba(15,23,42,0.08)] sm:w-[390px]">
+      <div className="border-b border-[#dbe6f2] bg-[linear-gradient(135deg,#f3f7fb_0%,#eef4fa_100%)] px-4 py-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-[0.78rem] font-semibold text-[#58718b]">{application.developmentName || 'Location pending'}</p>
+            <p className="mt-1 truncate text-base font-semibold tracking-[-0.02em] text-[#142132]">{application.buyerName || 'Unknown buyer'}</p>
+          </div>
+          <span className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}>
+            {application.statusLabel || 'On Track'}
+          </span>
         </div>
       </div>
 
-      <div className="mt-4 flex-1 rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] p-3">
-        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8294a8]">Next action</p>
-        <p className="mt-2 text-sm font-semibold leading-5 text-[#24384d]">{application.nextAction || 'No next action'}</p>
-      </div>
+      <div className="flex flex-1 flex-col p-4">
+        <section className="flex min-h-[56px] items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]">{application.propertyLabel || 'Property pending'}</p>
+            <p className="mt-1 truncate text-xs text-[#71879d]">
+              {[application.financeType || 'Bond', application.bankName || 'Bank not selected'].filter(Boolean).join(' • ')}
+            </p>
+          </div>
+          <span className="inline-flex shrink-0 items-center rounded-full border border-[#d6e1ee] bg-white px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.06em] text-[#5b7189]">
+            {application.financeType || 'Bond'}
+          </span>
+        </section>
 
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        <button type="button" onClick={() => goTo(application.href)} className="h-9 rounded-[11px] bg-[#143250] px-2 text-xs font-semibold text-white transition hover:bg-[#173a5e]">
-          Open File
-        </button>
-        <button
-          type="button"
-          disabled={!application.requestDocsHref}
-          onClick={() => goTo(application.requestDocsHref)}
-          className="h-9 rounded-[11px] border border-[#d5e1ed] bg-white px-2 text-xs font-semibold text-[#24384d] transition hover:border-[#b8ccdf] disabled:cursor-not-allowed disabled:bg-[#f2f5f8] disabled:text-[#99a8b8]"
-        >
-          Request Docs
-        </button>
-        <button type="button" onClick={() => goTo(application.reviewHref)} className="h-9 rounded-[11px] border border-[#d5e1ed] bg-white px-2 text-xs font-semibold text-[#24384d] transition hover:border-[#b8ccdf]">
-          Review
-        </button>
+        <section className="mt-4 grid gap-2 sm:grid-cols-2">
+          <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2.5">
+            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Bond Value</p>
+            <p className="mt-1 truncate text-[0.86rem] font-semibold text-[#22374d]">{application.bondValue || 'R 0'}</p>
+          </div>
+          <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2.5">
+            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Risk</p>
+            <p className="mt-1 truncate text-[0.86rem] font-semibold text-[#22374d]">{application.operationalRisk?.riskScore || 0}%</p>
+          </div>
+        </section>
+
+        <section className="mt-3 grid gap-2 text-xs text-[#60758d]">
+          <ApplicationMeta icon={UsersRound} label="Agent" value={application.agentName || 'Partner not assigned'} />
+          <ApplicationMeta icon={FileCheck2} label="Consultant" value={application.consultantName || 'Unassigned consultant'} />
+        </section>
+
+        <section className="mt-4 rounded-[13px] border border-[#e1e9f3] bg-[#fafcfe] px-3 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#7b8fa6]">{application.currentStage || 'Bond App'}</span>
+            <strong className="text-[0.95rem] font-semibold text-[#162334]">{progressPercent}%</strong>
+          </div>
+          <div className="mt-2 h-1.5 rounded-full bg-[#dfe7f1]" aria-hidden>
+            <span
+              className="block h-full rounded-full bg-[linear-gradient(90deg,#143250_0%,#315f8c_100%)] transition-all duration-300 ease-out"
+              style={{ width: `${Math.max(progressPercent > 0 ? 6 : 0, progressPercent)}%` }}
+            />
+          </div>
+          <div className="mt-3 grid grid-cols-6 gap-1.5">
+            {stages.map((stage) => (
+              <div key={stage.key} className="min-w-0">
+                <span
+                  className={`mx-auto block h-2.5 w-2.5 rounded-full ${
+                    stage.state === 'complete'
+                      ? 'bg-[#2f8a63]'
+                      : stage.state === 'active'
+                        ? 'bg-[#143250] ring-4 ring-[#e7eef7]'
+                        : 'bg-[#cbd8e6]'
+                  }`}
+                />
+                <p className={`mt-2 truncate text-center text-[0.62rem] font-semibold ${stage.state === 'active' ? 'text-[#143250]' : 'text-[#8a9aad]'}`}>
+                  {stage.label}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-3 flex-1 rounded-[13px] border border-[#e2eaf4] bg-white px-3 py-2.5">
+          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Next Required Action</p>
+          <p className="mt-1 line-clamp-2 text-[0.84rem] font-medium leading-5 text-[#35546c]">{application.nextAction || 'No next action'}</p>
+        </section>
+
+        <footer className="mt-4 grid grid-cols-3 gap-2">
+          <button type="button" onClick={() => goTo(application.href)} className="h-9 rounded-[11px] bg-[#143250] px-2 text-xs font-semibold text-white transition hover:bg-[#173a5e]">
+            Open File
+          </button>
+          <button
+            type="button"
+            disabled={!application.requestDocsHref}
+            onClick={() => goTo(application.requestDocsHref)}
+            className="h-9 rounded-[11px] border border-[#d5e1ed] bg-white px-2 text-xs font-semibold text-[#24384d] transition hover:border-[#b8ccdf] disabled:cursor-not-allowed disabled:bg-[#f2f5f8] disabled:text-[#99a8b8]"
+          >
+            Request Docs
+          </button>
+          <button type="button" onClick={() => goTo(application.reviewHref)} className="h-9 rounded-[11px] border border-[#d5e1ed] bg-white px-2 text-xs font-semibold text-[#24384d] transition hover:border-[#b8ccdf]">
+            Review
+          </button>
+        </footer>
       </div>
     </article>
   )
@@ -775,15 +789,6 @@ function ApplicationMeta({ icon, label = '', value = '' }) {
       <IconComponent size={14} className="shrink-0 text-[#86a0ba]" />
       <span className="shrink-0 text-[#8798aa]">{label}</span>
       <span className="min-w-0 truncate font-semibold text-[#31475d]">{value}</span>
-    </div>
-  )
-}
-
-function MiniFileStat({ label = '', value = '' }) {
-  return (
-    <div className="min-w-0">
-      <p className="truncate text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-[#8294a8]">{label}</p>
-      <p className="mt-1 truncate text-xs font-semibold text-[#142132]">{value}</p>
     </div>
   )
 }
