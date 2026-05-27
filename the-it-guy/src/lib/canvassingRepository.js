@@ -164,6 +164,70 @@ function activityPayloadToRow(organisationId, payload = {}) {
   }
 }
 
+async function migrateFallbackStoreToSupabase(client, organisationId, fallbackStore = {}) {
+  const localProspects = Array.isArray(fallbackStore?.prospects) ? fallbackStore.prospects : []
+  if (!localProspects.length) return null
+
+  const prospectRows = localProspects.map((prospect) => ({
+    ...prospectPayloadToRow(organisationId, prospect),
+    demo_metadata: {
+      migratedFromLocalStorage: true,
+      localId: normalizeText(prospect?.id),
+    },
+    created_at: normalizeText(prospect?.createdAt) || new Date().toISOString(),
+    updated_at: normalizeText(prospect?.updatedAt) || new Date().toISOString(),
+  }))
+
+  const prospectInsert = await client
+    .from('canvassing_prospects')
+    .insert(prospectRows)
+    .select('*')
+  if (prospectInsert.error) throw prospectInsert.error
+
+  const insertedProspects = prospectInsert.data || []
+  const idMap = new Map()
+  localProspects.forEach((prospect, index) => {
+    const inserted = insertedProspects[index]
+    if (prospect?.id && inserted?.id) idMap.set(normalizeText(prospect.id), inserted.id)
+  })
+
+  const localActivities = Array.isArray(fallbackStore?.activities) ? fallbackStore.activities : []
+  const activityRows = localActivities
+    .map((activity) => {
+      const nextProspectId = idMap.get(normalizeText(activity?.prospectId))
+      if (!nextProspectId) return null
+      return {
+        ...activityPayloadToRow(organisationId, { ...activity, prospectId: nextProspectId }),
+        demo_metadata: {
+          migratedFromLocalStorage: true,
+          localId: normalizeText(activity?.id),
+          localProspectId: normalizeText(activity?.prospectId),
+        },
+        created_at: normalizeText(activity?.createdAt) || new Date().toISOString(),
+      }
+    })
+    .filter(Boolean)
+
+  let insertedActivities = []
+  if (activityRows.length) {
+    const activityInsert = await client
+      .from('canvassing_activities')
+      .insert(activityRows)
+      .select('*')
+    if (activityInsert.error) throw activityInsert.error
+    insertedActivities = activityInsert.data || []
+  }
+
+  const migratedStore = {
+    prospects: insertedProspects.map(mapProspectRow),
+    activities: insertedActivities.map(mapActivityRow),
+    persistence: 'supabase',
+    migratedFromLocalStorage: true,
+  }
+  writeCanvassingFallbackStore(organisationId, migratedStore)
+  return migratedStore
+}
+
 async function withFallback(organisationId, task) {
   if (!isSupabaseConfigured || !supabase) {
     return { ...readCanvassingFallbackStore(organisationId), persistence: 'local' }
@@ -182,6 +246,7 @@ export async function listCanvassingWorkspace(organisationId) {
   const orgId = normalizeText(organisationId)
   if (!orgId) return { prospects: [], activities: [], persistence: 'none' }
   return withFallback(orgId, async (client) => {
+    const fallbackStore = readCanvassingFallbackStore(orgId)
     const [prospectsResult, activitiesResult] = await Promise.all([
       client
         .from('canvassing_prospects')
@@ -196,6 +261,10 @@ export async function listCanvassingWorkspace(organisationId) {
     ])
     if (prospectsResult.error) throw prospectsResult.error
     if (activitiesResult.error) throw activitiesResult.error
+    if (!(prospectsResult.data || []).length && Array.isArray(fallbackStore.prospects) && fallbackStore.prospects.length) {
+      const migrated = await migrateFallbackStoreToSupabase(client, orgId, fallbackStore)
+      if (migrated) return migrated
+    }
     const store = {
       prospects: (prospectsResult.data || []).map(mapProspectRow),
       activities: (activitiesResult.data || []).map(mapActivityRow),

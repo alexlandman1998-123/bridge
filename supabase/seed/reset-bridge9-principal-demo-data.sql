@@ -42,7 +42,9 @@ begin
     and is_demo_data = true;
 
   delete from public.transaction_notifications where transaction_id = any(v_tx_ids) and is_demo_data = true;
-  delete from public.transaction_readiness_states where transaction_id = any(v_tx_ids) and is_demo_data = true;
+  if to_regclass('public.transaction_readiness_states') is not null then
+    delete from public.transaction_readiness_states where transaction_id = any(v_tx_ids) and is_demo_data = true;
+  end if;
   delete from public.transaction_status_links where transaction_id = any(v_tx_ids) and is_demo_data = true;
   delete from public.transaction_events where transaction_id = any(v_tx_ids) and is_demo_data = true;
   delete from public.transaction_comments where transaction_id = any(v_tx_ids) and is_demo_data = true;
@@ -51,10 +53,18 @@ begin
   delete from public.transaction_participants where transaction_id = any(v_tx_ids) and is_demo_data = true;
   delete from public.transaction_subprocess_steps where subprocess_id = any(v_subprocess_ids) and is_demo_data = true;
   delete from public.transaction_subprocesses where id = any(v_subprocess_ids) and is_demo_data = true;
-  delete from public.transaction_finance_details where transaction_id = any(v_tx_ids) and is_demo_data = true;
-  delete from public.transaction_role_players where transaction_id = any(v_tx_ids) and is_demo_data = true;
-  delete from public.transaction_onboarding where transaction_id = any(v_tx_ids) and is_demo_data = true;
-  delete from public.onboarding_form_data where transaction_id = any(v_tx_ids) and is_demo_data = true;
+  if to_regclass('public.transaction_finance_details') is not null then
+    delete from public.transaction_finance_details where transaction_id = any(v_tx_ids) and is_demo_data = true;
+  end if;
+  if to_regclass('public.transaction_role_players') is not null then
+    delete from public.transaction_role_players where transaction_id = any(v_tx_ids) and is_demo_data = true;
+  end if;
+  if to_regclass('public.transaction_onboarding') is not null then
+    delete from public.transaction_onboarding where transaction_id = any(v_tx_ids) and is_demo_data = true;
+  end if;
+  if to_regclass('public.onboarding_form_data') is not null then
+    delete from public.onboarding_form_data where transaction_id = any(v_tx_ids) and is_demo_data = true;
+  end if;
   delete from public.transactions where id = any(v_tx_ids) and is_demo_data = true;
   delete from public.buyers where id = any(v_buyer_ids) and is_demo_data = true;
 
@@ -86,6 +96,8 @@ begin
 
   delete from public.demo_canvassing_activities where organisation_id = v_org_id and is_demo_data = true;
   delete from public.demo_canvassing_records where organisation_id = v_org_id and is_demo_data = true;
+  delete from public.canvassing_activities where organisation_id = v_org_id and is_demo_data = true;
+  delete from public.canvassing_prospects where organisation_id = v_org_id and is_demo_data = true;
   delete from public.appointments where organisation_id = v_org_id and is_demo_data = true;
   delete from public.tasks where organisation_id = v_org_id and is_demo_data = true;
   delete from public.lead_activities where organisation_id = v_org_id and is_demo_data = true;

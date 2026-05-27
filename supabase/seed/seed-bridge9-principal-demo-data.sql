@@ -94,7 +94,9 @@ begin
 
   -- Repeatability guard: clear only existing Bridge9 demo data before reseeding.
   delete from public.transaction_notifications where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
-  delete from public.transaction_readiness_states where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
+  if to_regclass('public.transaction_readiness_states') is not null then
+    delete from public.transaction_readiness_states where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
+  end if;
   delete from public.transaction_status_links where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
   delete from public.transaction_events where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
   delete from public.transaction_comments where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
@@ -103,10 +105,18 @@ begin
   delete from public.transaction_participants where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
   delete from public.transaction_subprocess_steps where is_demo_data = true and subprocess_id in (select id from public.transaction_subprocesses where transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true));
   delete from public.transaction_subprocesses where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
-  delete from public.transaction_finance_details where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
-  delete from public.transaction_role_players where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
-  delete from public.transaction_onboarding where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
-  delete from public.onboarding_form_data where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
+  if to_regclass('public.transaction_finance_details') is not null then
+    delete from public.transaction_finance_details where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
+  end if;
+  if to_regclass('public.transaction_role_players') is not null then
+    delete from public.transaction_role_players where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
+  end if;
+  if to_regclass('public.transaction_onboarding') is not null then
+    delete from public.transaction_onboarding where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
+  end if;
+  if to_regclass('public.onboarding_form_data') is not null then
+    delete from public.onboarding_form_data where is_demo_data = true and transaction_id in (select id from public.transactions where organisation_id = v_org_id and is_demo_data = true);
+  end if;
   delete from public.buyers where is_demo_data = true and organisation_id = v_org_id;
   delete from public.transactions where is_demo_data = true and organisation_id = v_org_id;
   delete from public.private_listing_activity where is_demo_data = true and private_listing_id in (select id from public.private_listings where organisation_id = v_org_id and is_demo_data = true);
@@ -114,6 +124,8 @@ begin
   delete from public.private_listings where is_demo_data = true and organisation_id = v_org_id;
   delete from public.demo_canvassing_activities where is_demo_data = true and organisation_id = v_org_id;
   delete from public.demo_canvassing_records where is_demo_data = true and organisation_id = v_org_id;
+  delete from public.canvassing_activities where is_demo_data = true and organisation_id = v_org_id;
+  delete from public.canvassing_prospects where is_demo_data = true and organisation_id = v_org_id;
   delete from public.appointments where is_demo_data = true and organisation_id = v_org_id;
   delete from public.tasks where is_demo_data = true and organisation_id = v_org_id;
   delete from public.lead_activities where is_demo_data = true and organisation_id = v_org_id;
@@ -392,10 +404,58 @@ begin
       v_now - ((v_i % 21) || ' days')::interval
     );
 
+    insert into public.canvassing_prospects (
+      id, organisation_id, assigned_agent_id, assigned_user_id, assigned_agent_name, assigned_agent_email,
+      first_name, last_name, phone, email, prospect_type, area, property_type, canvassing_method, status,
+      next_follow_up_date, follow_up_priority, follow_up_note, estimated_value, notes, converted_lead_id, converted_at,
+      created_by, is_demo_data, demo_metadata, created_at, updated_at
+    )
+    values (
+      v_canvassing_id,
+      v_org_id,
+      v_agent.id,
+      v_agent.id,
+      v_agent.full_name,
+      v_agent.email,
+      split_part(v_seller_names[((v_i - 1) % array_length(v_seller_names, 1)) + 1], ' ', 1),
+      nullif(regexp_replace(v_seller_names[((v_i - 1) % array_length(v_seller_names, 1)) + 1], '^[^ ]+ ?', ''), ''),
+      '+27 82 ' || lpad((5000000 + v_i)::text, 7, '0'),
+      'seller' || lpad(v_i::text, 3, '0') || '@bridge9-demo.co.za',
+      'Seller Prospect',
+      v_suburb,
+      case when v_i % 3 = 0 then 'House' when v_i % 3 = 1 then 'Apartment' else 'Townhouse' end,
+      (array['Cold Call', 'Door Knock', 'Referral Follow-Up', 'Area Farming', 'WhatsApp Outreach'])[((v_i - 1) % 5) + 1],
+      case v_canvass_statuses[((v_i - 1) % array_length(v_canvass_statuses, 1)) + 1]
+        when 'Attempted' then 'Contacted'
+        when 'Follow Up' then 'Follow-Up Later'
+        when 'Mandate Pending' then 'Interested'
+        when 'Valuation Booked' then 'Interested'
+        when 'Converted to Listing' then 'Converted to Lead'
+        else v_canvass_statuses[((v_i - 1) % array_length(v_canvass_statuses, 1)) + 1]
+      end,
+      case when v_i % 4 = 0 then (v_now + ((v_i % 10) || ' days')::interval)::date else null end,
+      case when v_i % 8 in (4, 5, 6, 7) then 'High' else 'Medium' end,
+      case when v_i % 4 = 0 then 'Book valuation follow-up and prepare CMA.' else null end,
+      v_price,
+      'Seller personality: ' || (array['Analytical and detail-heavy', 'Time-poor executive', 'Warm referral-led seller', 'Price-sensitive investor', 'Elderly owner, family involved'])[((v_i - 1) % 5) + 1] || '. Timeline: ' || (array['ready this month', '60 to 90 days', 'after school term', 'waiting for bank settlement', 'open to valuation first'])[((v_i - 1) % 5) + 1] || '.',
+      case when v_canvass_statuses[((v_i - 1) % array_length(v_canvass_statuses, 1)) + 1] = 'Converted to Listing' then v_lead_id else null end,
+      case when v_canvass_statuses[((v_i - 1) % array_length(v_canvass_statuses, 1)) + 1] = 'Converted to Listing' then v_now - ((v_i % 21) || ' days')::interval else null end,
+      v_agent.id,
+      true,
+      jsonb_build_object('seed', 'bridge9_principal_demo', 'legacyStatus', v_canvass_statuses[((v_i - 1) % array_length(v_canvass_statuses, 1)) + 1], 'estimatedCommission', round(v_price * 0.035, 2)),
+      v_now - ((150 - (v_i % 145)) || ' days')::interval,
+      v_now - ((v_i % 21) || ' days')::interval
+    );
+
     insert into public.demo_canvassing_activities (id, canvassing_record_id, organisation_id, agent_id, activity_type, activity_note, outcome, activity_date, is_demo_data)
     values
       (pg_temp.bridge9_demo_uuid('canvassing-activity-a:' || v_i), v_canvassing_id, v_org_id, v_agent.id, (array['Call', 'Door Knock', 'WhatsApp', 'Email'])[((v_i - 1) % 4) + 1], 'Initial canvassing touchpoint logged from area campaign.', 'Contact captured', v_now - ((v_i % 35) || ' days')::interval, true),
       (pg_temp.bridge9_demo_uuid('canvassing-activity-b:' || v_i), v_canvassing_id, v_org_id, v_agent.id, 'Follow-up', 'Follow-up note: valuation appetite and timing confirmed.', v_canvass_statuses[((v_i - 1) % array_length(v_canvass_statuses, 1)) + 1], v_now - ((v_i % 18) || ' days')::interval, true);
+
+    insert into public.canvassing_activities (id, prospect_id, organisation_id, agent_id, agent_name, activity_type, activity_note, outcome, activity_date, created_by, is_demo_data, demo_metadata, created_at)
+    values
+      (pg_temp.bridge9_demo_uuid('canvassing-activity-a:' || v_i), v_canvassing_id, v_org_id, v_agent.id, v_agent.full_name, (array['Call', 'Door Knock', 'WhatsApp', 'Email'])[((v_i - 1) % 4) + 1], 'Initial canvassing touchpoint logged from area campaign.', 'Contact captured', v_now - ((v_i % 35) || ' days')::interval, v_agent.id, true, jsonb_build_object('seed', 'bridge9_principal_demo'), v_now - ((v_i % 35) || ' days')::interval),
+      (pg_temp.bridge9_demo_uuid('canvassing-activity-b:' || v_i), v_canvassing_id, v_org_id, v_agent.id, v_agent.full_name, 'Follow-Up', 'Follow-up note: valuation appetite and timing confirmed.', v_canvass_statuses[((v_i - 1) % array_length(v_canvass_statuses, 1)) + 1], v_now - ((v_i % 18) || ' days')::interval, v_agent.id, true, jsonb_build_object('seed', 'bridge9_principal_demo'), v_now - ((v_i % 18) || ' days')::interval);
   end loop;
 
   for v_i in 1..160 loop

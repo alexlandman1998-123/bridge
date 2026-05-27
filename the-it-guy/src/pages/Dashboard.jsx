@@ -48,7 +48,7 @@ import { useOrganisation } from '../context/OrganisationContext'
 import { fetchDashboardOverview, fetchTransactionsByParticipantSummary, fetchTransactionsListSummary } from '../lib/api'
 import { getAgentModuleSharedData } from '../lib/agentDataService'
 import { getAgencyPipelineSnapshot, getAppointmentsDashboardSummaryAsync } from '../lib/agencyPipelineService'
-import { isUnsafeFallbackAllowed } from '../lib/envValidation'
+import { CANVASSING_UPDATED_EVENT, listCanvassingWorkspace } from '../lib/canvassingRepository'
 import {
   getDashboardPipelineValue,
   getDashboardTransactionPrice,
@@ -117,7 +117,6 @@ const DASHBOARD_FIELD_CLASS =
   'flex h-[44px] items-center gap-3 rounded-[16px] border border-[#dde4ee] bg-white px-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]'
 const DASHBOARD_METRIC_CARD_CLASS =
   'min-w-0 overflow-hidden rounded-[18px] border border-[#dde4ee] bg-white px-4 py-4 shadow-[0_4px_14px_rgba(15,23,42,0.05)]'
-const CANVASSING_STORAGE_PREFIX = 'itg:agency-canvassing:v1'
 const PRINCIPAL_TIME_FILTER_OPTIONS = [
   { key: 'this_week', label: 'This Week' },
   { key: 'last_7_days', label: 'Last 7 Days' },
@@ -507,24 +506,6 @@ function isInRange(value, range) {
   const start = range?.start?.getTime?.() || 0
   const end = range?.end?.getTime?.() || Date.now()
   return time >= start && time <= end
-}
-
-function getCanvassingStorageSnapshot(organisationId) {
-  if (typeof window === 'undefined') return { prospects: [], activities: [] }
-  if (!isUnsafeFallbackAllowed()) return { prospects: [], activities: [] }
-  const orgId = String(organisationId || '').trim()
-  if (!orgId) return { prospects: [], activities: [] }
-  try {
-    const raw = window.localStorage.getItem(`${CANVASSING_STORAGE_PREFIX}:${orgId}`)
-    if (!raw) return { prospects: [], activities: [] }
-    const parsed = JSON.parse(raw)
-    return {
-      prospects: Array.isArray(parsed?.prospects) ? parsed.prospects : [],
-      activities: Array.isArray(parsed?.activities) ? parsed.activities : [],
-    }
-  } catch {
-    return { prospects: [], activities: [] }
-  }
 }
 
 function getActivityAgentName(row = {}) {
@@ -1058,21 +1039,32 @@ function Dashboard() {
 
   useEffect(() => {
     if (role !== 'agent' || isPrincipalAgentView || !organisationIdForAppointments) return undefined
-    const refreshSnapshots = () => {
-      const crm = getAgencyPipelineSnapshot(organisationIdForAppointments)
-      const canvassing = getCanvassingStorageSnapshot(organisationIdForAppointments)
-      setPrincipalCrmSnapshot({
-        leads: Array.isArray(crm?.leads) ? crm.leads : [],
-        leadActivities: Array.isArray(crm?.leadActivities) ? crm.leadActivities : [],
-      })
-      setPrincipalCanvassingSnapshot({
-        prospects: Array.isArray(canvassing?.prospects) ? canvassing.prospects : [],
-        activities: Array.isArray(canvassing?.activities) ? canvassing.activities : [],
-      })
+    let active = true
+    const refreshSnapshots = async () => {
+      try {
+        const crm = getAgencyPipelineSnapshot(organisationIdForAppointments)
+        const canvassing = await listCanvassingWorkspace(organisationIdForAppointments)
+        if (!active) return
+        setPrincipalCrmSnapshot({
+          leads: Array.isArray(crm?.leads) ? crm.leads : [],
+          leadActivities: Array.isArray(crm?.leadActivities) ? crm.leadActivities : [],
+        })
+        setPrincipalCanvassingSnapshot({
+          prospects: Array.isArray(canvassing?.prospects) ? canvassing.prospects : [],
+          activities: Array.isArray(canvassing?.activities) ? canvassing.activities : [],
+        })
+      } catch (snapshotError) {
+        console.warn('[dashboard][canvassing] Unable to refresh canvassing snapshot.', snapshotError)
+      }
     }
-    refreshSnapshots()
+    void refreshSnapshots()
     window.addEventListener('itg:agency-crm-updated', refreshSnapshots)
-    return () => window.removeEventListener('itg:agency-crm-updated', refreshSnapshots)
+    window.addEventListener(CANVASSING_UPDATED_EVENT, refreshSnapshots)
+    return () => {
+      active = false
+      window.removeEventListener('itg:agency-crm-updated', refreshSnapshots)
+      window.removeEventListener(CANVASSING_UPDATED_EVENT, refreshSnapshots)
+    }
   }, [isPrincipalAgentView, organisationIdForAppointments, role])
 
   const rows = useMemo(() => overview.rows || [], [overview.rows])

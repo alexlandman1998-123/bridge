@@ -310,7 +310,7 @@ function PipelineCanvassingPage() {
     async (orgIdParam = '') => {
       const targetOrgId = normalizeText(orgIdParam || organisationId)
       if (!targetOrgId) return
-      const store = readStore(targetOrgId)
+      const store = await listCanvassingWorkspace(targetOrgId)
       setProspects(Array.isArray(store.prospects) ? store.prospects : [])
       setActivities(Array.isArray(store.activities) ? store.activities : [])
     },
@@ -347,7 +347,7 @@ function PipelineCanvassingPage() {
               'Organisation',
           ),
         )
-        const store = readStore(orgId)
+        const store = await listCanvassingWorkspace(orgId)
         setProspects(Array.isArray(store.prospects) ? store.prospects : [])
         setActivities(Array.isArray(store.activities) ? store.activities : [])
       } catch (contextError) {
@@ -497,7 +497,7 @@ function PipelineCanvassingPage() {
     setError('')
   }
 
-  function handleCreateProspect(event) {
+  async function handleCreateProspect(event) {
     event.preventDefault()
     if (!organisationId) return
     if (!normalizeText(prospectForm.firstName) || (!normalizeText(prospectForm.phone) && !normalizeText(prospectForm.email))) {
@@ -505,8 +505,7 @@ function PipelineCanvassingPage() {
       return
     }
 
-    const created = {
-      id: createId('prospect'),
+    const createdPayload = {
       organisationId,
       assignedAgentId: currentAgent.id || null,
       assignedUserId: currentAgent.userId || currentAgent.id || null,
@@ -533,46 +532,48 @@ function PipelineCanvassingPage() {
       updatedAt: new Date().toISOString(),
     }
 
-    const store = readStore(organisationId)
-    store.prospects = [created, ...(Array.isArray(store.prospects) ? store.prospects : [])]
-    writeStore(organisationId, store)
-
-    setProspects(store.prospects)
-    setMessage('Prospect added.')
-    setError('')
-    setShowCreateModal(false)
-    resetProspectForm()
+    try {
+      const created = await createCanvassingProspect(organisationId, createdPayload)
+      setProspects((previous) => [created, ...previous.filter((row) => normalizeText(row?.id) !== normalizeText(created?.id))])
+      setMessage('Prospect added.')
+      setError('')
+      setShowCreateModal(false)
+      resetProspectForm()
+    } catch (createError) {
+      setError(createError?.message || 'Unable to add prospect.')
+    }
   }
 
-  function handleSaveProspectDetail(event) {
+  async function handleSaveProspectDetail(event) {
     event.preventDefault()
     if (!organisationId || !selectedProspect) return
 
-    const store = readStore(organisationId)
-    store.prospects = (store.prospects || []).map((row) => {
-      if (normalizeText(row?.id) !== normalizeText(selectedProspect.id)) return row
-      return {
-        ...row,
-        firstName: normalizeText(selectedProspect.firstName),
-        lastName: normalizeText(selectedProspect.lastName),
-        phone: normalizeText(selectedProspect.phone),
-        email: normalizeText(selectedProspect.email).toLowerCase(),
-        prospectType: normalizeText(selectedProspect.prospectType) || 'Other',
-        area: normalizeText(selectedProspect.area),
-        propertyType: normalizeText(selectedProspect.propertyType),
-        canvassingMethod: normalizeText(selectedProspect.canvassingMethod) || 'Other',
-        status: normalizeText(selectedProspect.status) || 'New',
-        nextFollowUpDate: normalizeText(selectedProspect.nextFollowUpDate),
-        followUpPriority: normalizeText(selectedProspect.followUpPriority) || 'Medium',
-        followUpNote: normalizeText(selectedProspect.followUpNote),
-        estimatedValue: Number(selectedProspect.estimatedValue || 0) || 0,
-        notes: normalizeText(selectedProspect.notes),
-        updatedAt: new Date().toISOString(),
-      }
-    })
-    writeStore(organisationId, store)
-    setProspects(store.prospects)
-    setMessage('Prospect updated.')
+    const payload = {
+      ...selectedProspect,
+      firstName: normalizeText(selectedProspect.firstName),
+      lastName: normalizeText(selectedProspect.lastName),
+      phone: normalizeText(selectedProspect.phone),
+      email: normalizeText(selectedProspect.email).toLowerCase(),
+      prospectType: normalizeText(selectedProspect.prospectType) || 'Other',
+      area: normalizeText(selectedProspect.area),
+      propertyType: normalizeText(selectedProspect.propertyType),
+      canvassingMethod: normalizeText(selectedProspect.canvassingMethod) || 'Other',
+      status: normalizeText(selectedProspect.status) || 'New',
+      nextFollowUpDate: normalizeText(selectedProspect.nextFollowUpDate),
+      followUpPriority: normalizeText(selectedProspect.followUpPriority) || 'Medium',
+      followUpNote: normalizeText(selectedProspect.followUpNote),
+      estimatedValue: Number(selectedProspect.estimatedValue || 0) || 0,
+      notes: normalizeText(selectedProspect.notes),
+    }
+
+    try {
+      const updated = await updateCanvassingProspect(organisationId, selectedProspect.id, payload)
+      setProspects((previous) => previous.map((row) => normalizeText(row?.id) === normalizeText(selectedProspect.id) ? (updated || payload) : row))
+      setMessage('Prospect updated.')
+      setError('')
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to update prospect.')
+    }
   }
 
   function handleUpdateSelectedProspect(field, value) {
@@ -587,7 +588,7 @@ function PipelineCanvassingPage() {
     )
   }
 
-  function handleLogActivity(event) {
+  async function handleLogActivity(event) {
     event.preventDefault()
     if (!organisationId || !selectedProspect) return
     if (!normalizeText(activityForm.activityNote)) {
@@ -595,8 +596,7 @@ function PipelineCanvassingPage() {
       return
     }
 
-    const nextActivity = {
-      id: createId('canvassing_activity'),
+    const nextActivityPayload = {
       organisationId,
       prospectId: selectedProspect.id,
       agentId: currentAgent.id || null,
@@ -609,20 +609,20 @@ function PipelineCanvassingPage() {
       createdBy: currentAgent.id || currentAgent.email,
     }
 
-    const store = readStore(organisationId)
-    store.activities = [nextActivity, ...(Array.isArray(store.activities) ? store.activities : [])]
-    writeStore(organisationId, store)
-
-    setActivities(store.activities)
-    setActivityForm({ activityType: 'Call', activityNote: '', outcome: '' })
-    setError('')
-    setMessage('Activity logged.')
+    try {
+      const nextActivity = await createCanvassingActivity(organisationId, nextActivityPayload)
+      setActivities((previous) => [nextActivity, ...previous])
+      setActivityForm({ activityType: 'Call', activityNote: '', outcome: '' })
+      setError('')
+      setMessage('Activity logged.')
+    } catch (activityError) {
+      setError(activityError?.message || 'Unable to log activity.')
+    }
   }
 
-  function handleQuickLogActivity(prospect, type) {
+  async function handleQuickLogActivity(prospect, type) {
     if (!organisationId || !prospect) return
-    const nextActivity = {
-      id: createId('canvassing_activity'),
+    const nextActivityPayload = {
       organisationId,
       prospectId: prospect.id,
       agentId: currentAgent.id || null,
@@ -635,11 +635,14 @@ function PipelineCanvassingPage() {
       createdBy: currentAgent.id || currentAgent.email,
     }
 
-    const store = readStore(organisationId)
-    store.activities = [nextActivity, ...(Array.isArray(store.activities) ? store.activities : [])]
-    writeStore(organisationId, store)
-    setActivities(store.activities)
-    setMessage(`${type} logged.`)
+    try {
+      const nextActivity = await createCanvassingActivity(organisationId, nextActivityPayload)
+      setActivities((previous) => [nextActivity, ...previous])
+      setMessage(`${type} logged.`)
+      setError('')
+    } catch (activityError) {
+      setError(activityError?.message || `Unable to log ${type.toLowerCase()}.`)
+    }
   }
 
   function openArchiveProspectModal(prospectId) {
@@ -659,7 +662,7 @@ function PipelineCanvassingPage() {
     })
   }
 
-  function handleArchiveProspect() {
+  async function handleArchiveProspect() {
     if (!organisationId) return
     const prospectId = normalizeText(archiveModal.prospectId)
     if (!prospectId) return
@@ -667,19 +670,14 @@ function PipelineCanvassingPage() {
     const notes = normalizeText(archiveModal.notes)
     const existing = prospectById.get(prospectId) || null
 
-    const store = readStore(organisationId)
-    store.prospects = (store.prospects || []).map((row) => {
-      if (normalizeText(row?.id) !== prospectId) return row
-      return {
-        ...row,
-        status: 'Lost',
-        notes: [normalizeText(row?.notes), `Archive reason: ${reason}`, notes].filter(Boolean).join(' | '),
-        updatedAt: new Date().toISOString(),
-      }
-    })
-    store.activities = [
-      {
-        id: createId('canvassing_activity'),
+    const updatedProspect = {
+      ...existing,
+      status: 'Lost',
+      lostReason: reason,
+      archivedAt: new Date().toISOString(),
+      notes: [normalizeText(existing?.notes), `Archive reason: ${reason}`, notes].filter(Boolean).join(' | '),
+    }
+    const archiveActivity = {
         organisationId,
         prospectId,
         agentId: currentAgent.id || null,
@@ -690,19 +688,22 @@ function PipelineCanvassingPage() {
         activityDate: new Date().toISOString(),
         createdAt: new Date().toISOString(),
         createdBy: currentAgent.id || currentAgent.email,
-      },
-      ...(Array.isArray(store.activities) ? store.activities : []),
-    ]
-    writeStore(organisationId, store)
-    setProspects(store.prospects)
-    setActivities(store.activities)
-    setArchiveModal((previous) => ({ ...previous, open: false }))
-    setDetailOpen(false)
-    setError('')
-    setMessage(`${[existing?.firstName, existing?.lastName].filter(Boolean).join(' ') || 'Prospect'} archived with history preserved.`)
+      }
+    try {
+      const saved = await updateCanvassingProspect(organisationId, prospectId, updatedProspect)
+      const activity = await createCanvassingActivity(organisationId, archiveActivity)
+      setProspects((previous) => previous.map((row) => normalizeText(row?.id) === prospectId ? (saved || updatedProspect) : row))
+      setActivities((previous) => [activity, ...previous])
+      setArchiveModal((previous) => ({ ...previous, open: false }))
+      setDetailOpen(false)
+      setError('')
+      setMessage(`${[existing?.firstName, existing?.lastName].filter(Boolean).join(' ') || 'Prospect'} archived with history preserved.`)
+    } catch (archiveError) {
+      setError(archiveError?.message || 'Unable to archive prospect.')
+    }
   }
 
-  function handleDeleteProspect() {
+  async function handleDeleteProspect() {
     if (!organisationId) return
     const prospectId = normalizeText(deleteModal.prospectId)
     if (!prospectId) return
@@ -711,19 +712,20 @@ function PipelineCanvassingPage() {
       return
     }
 
-    const store = readStore(organisationId)
-    store.prospects = (store.prospects || []).filter((row) => normalizeText(row?.id) !== prospectId)
-    store.activities = (store.activities || []).filter((row) => normalizeText(row?.prospectId) !== prospectId)
-    writeStore(organisationId, store)
-    setProspects(store.prospects)
-    setActivities(store.activities)
-    if (normalizeText(selectedProspectId) === prospectId) {
-      setSelectedProspectId('')
-      setDetailOpen(false)
+    try {
+      await deleteCanvassingProspect(organisationId, prospectId)
+      setProspects((previous) => previous.filter((row) => normalizeText(row?.id) !== prospectId))
+      setActivities((previous) => previous.filter((row) => normalizeText(row?.prospectId) !== prospectId))
+      if (normalizeText(selectedProspectId) === prospectId) {
+        setSelectedProspectId('')
+        setDetailOpen(false)
+      }
+      setDeleteModal({ open: false, prospectId: '', confirmText: '' })
+      setError('')
+      setMessage('Canvassing prospect deleted permanently.')
+    } catch (deleteError) {
+      setError(deleteError?.message || 'Unable to delete prospect.')
     }
-    setDeleteModal({ open: false, prospectId: '', confirmText: '' })
-    setError('')
-    setMessage('Canvassing prospect deleted permanently.')
   }
 
   async function handleConvertProspectToLead() {
@@ -754,37 +756,29 @@ function PipelineCanvassingPage() {
           activityDate: new Date().toISOString(),
       }, { actor: currentAgent })
 
-      const store = readStore(organisationId)
-      store.prospects = (store.prospects || []).map((row) => {
-        if (normalizeText(row?.id) !== normalizeText(selectedProspect.id)) return row
-        return {
-          ...row,
-          status: 'Converted to Lead',
-          convertedLeadId: targetLeadId,
-          updatedAt: new Date().toISOString(),
-        }
+      const convertedProspect = {
+        ...selectedProspect,
+        status: 'Converted to Lead',
+        convertedLeadId: targetLeadId,
+        convertedAt: new Date().toISOString(),
+      }
+      const savedProspect = await updateCanvassingProspect(organisationId, selectedProspect.id, convertedProspect)
+      const conversionActivity = await createCanvassingActivity(organisationId, {
+        organisationId,
+        prospectId: selectedProspect.id,
+        agentId: currentAgent.id || null,
+        agentName: currentAgent.fullName || null,
+        activityType: 'Note',
+        activityNote: existingConvertedLeadId
+          ? `${leadCategory} lead link repaired from converted prospect`
+          : `Prospect converted to ${leadCategory} lead`,
+        outcome: targetLeadId,
+        activityDate: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        createdBy: currentAgent.id || currentAgent.email,
       })
-      store.activities = [
-        {
-          id: createId('canvassing_activity'),
-          organisationId,
-          prospectId: selectedProspect.id,
-          agentId: currentAgent.id || null,
-          agentName: currentAgent.fullName || null,
-          activityType: 'Note',
-          activityNote: existingConvertedLeadId
-            ? `${leadCategory} lead link repaired from converted prospect`
-            : `Prospect converted to ${leadCategory} lead`,
-          outcome: targetLeadId,
-          activityDate: new Date().toISOString(),
-          createdAt: new Date().toISOString(),
-          createdBy: currentAgent.id || currentAgent.email,
-        },
-        ...(Array.isArray(store.activities) ? store.activities : []),
-      ]
-      writeStore(organisationId, store)
-      setProspects(store.prospects)
-      setActivities(store.activities)
+      setProspects((previous) => previous.map((row) => normalizeText(row?.id) === normalizeText(selectedProspect.id) ? (savedProspect || convertedProspect) : row))
+      setActivities((previous) => [conversionActivity, ...previous])
       setMessage(existingConvertedLeadId ? 'Converted prospect lead restored.' : 'Prospect converted to lead.')
       setError('')
       await loadData(organisationId)

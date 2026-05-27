@@ -1,5 +1,6 @@
 import { listAgencyCrmLeadContacts } from '../../lib/agencyCrmRepository'
 import { fetchTransactionsByParticipant } from '../../lib/api'
+import { listCanvassingWorkspace } from '../../lib/canvassingRepository'
 import { isUnsafeFallbackAllowed } from '../../lib/envValidation'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../../lib/settingsApi'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
@@ -746,7 +747,12 @@ export async function loadAgentClientDirectory({ profile = {}, role = 'agent', w
     fetchTransactionSellerRows(transactionIds),
     fetchManualBuyerRows(),
   ])
-  const canvassingStore = readCanvassingStore(organisationId)
+  let canvassingStore = { prospects: [], activities: [] }
+  try {
+    canvassingStore = await listCanvassingWorkspace(organisationId)
+  } catch {
+    canvassingStore = readCanvassingStore(organisationId)
+  }
   const quickCreateStore = readQuickCreateStore()
   const sourceRows = [
     ...buildLeadSources(crmSnapshot),

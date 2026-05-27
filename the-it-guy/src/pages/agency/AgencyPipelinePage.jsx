@@ -8,6 +8,7 @@ import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { isUnsafeFallbackAllowed } from '../../lib/envValidation'
+import { CANVASSING_UPDATED_EVENT, listCanvassingWorkspace } from '../../lib/canvassingRepository'
 import {
   ACTIVITY_TYPES,
   APPOINTMENT_PARTICIPANT_ROLES,
@@ -111,7 +112,6 @@ const LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS = 2500
 const LEAD_WORKSPACE_HYDRATION_RETRY_MS = 900
 const LEAD_WORKSPACE_HYDRATION_MAX_RETRIES = 4
 const CANVASSING_STORAGE_PREFIX = 'itg:agency-canvassing:v1'
-const CANVASSING_UPDATED_EVENT = 'itg:agency-canvassing-updated'
 const BUYER_LIFECYCLE_REFRESH_STORAGE_KEY = 'bridge:buyer-lifecycle-refresh:v1'
 const BUYER_LIFECYCLE_REFRESH_EVENT = 'bridge:buyer-lifecycle-refresh'
 const LEAD_TABLE_PAGE_SIZE = 12
@@ -2289,16 +2289,25 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     [reloadRecords],
   )
 
-  const reloadCanvassingStore = useCallback((orgId = organisationId) => {
+  const reloadCanvassingStore = useCallback(async (orgId = organisationId) => {
     if (!orgId) {
       setCanvassingStore({ prospects: [], activities: [] })
       return
     }
-    setCanvassingStore(readCanvassingStore(orgId))
+    try {
+      const store = await listCanvassingWorkspace(orgId)
+      setCanvassingStore({
+        prospects: Array.isArray(store?.prospects) ? store.prospects : [],
+        activities: Array.isArray(store?.activities) ? store.activities : [],
+      })
+    } catch (canvassingError) {
+      console.warn('[agency-pipeline][canvassing] Falling back to local canvassing store.', canvassingError)
+      setCanvassingStore(readCanvassingStore(orgId))
+    }
   }, [organisationId])
 
   useEffect(() => {
-    reloadCanvassingStore(organisationId)
+    void reloadCanvassingStore(organisationId)
   }, [organisationId, reloadCanvassingStore])
 
   useEffect(() => {
@@ -2306,11 +2315,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const handleCanvassingRefresh = (event) => {
       const eventOrgId = normalizeText(event?.detail?.organisationId)
       if (eventOrgId && organisationId && eventOrgId !== organisationId) return
-      reloadCanvassingStore(organisationId)
+      void reloadCanvassingStore(organisationId)
     }
     const handleStorage = (event) => {
       if (event?.key && event.key !== getCanvassingStorageKey(organisationId)) return
-      reloadCanvassingStore(organisationId)
+      void reloadCanvassingStore(organisationId)
     }
     window.addEventListener(CANVASSING_UPDATED_EVENT, handleCanvassingRefresh)
     window.addEventListener('storage', handleStorage)

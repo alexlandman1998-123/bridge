@@ -1,32 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { ArrowRight, CircleCheck, CircleDashed, CircleAlert, FileText, HandCoins, UsersRound } from 'lucide-react'
 import BondDashboardHeader from './BondDashboardHeader'
 import BondEmptyState from './BondEmptyState'
 import BondPageShell from './BondPageShell'
-import BondPerformanceSnapshot from './BondPerformanceSnapshot'
-import BondPipelineOverview from './BondPipelineOverview'
-import BondPriorityActionStrip from './BondPriorityActionStrip'
 import BondReportingScopeBanner from './BondReportingScopeBanner'
-import BondTeamWorkloadCard from './BondTeamWorkloadCard'
-import RecentBankActivityCard from './RecentBankActivityCard'
-import AtRiskApplicationsCard from './AtRiskApplicationsCard'
+import BondSectionCard from './BondSectionCard'
 import * as bondCommandCenterService from '../../services/bondCommandCenterService'
+import { Link } from 'react-router-dom'
 
 function normalizeText(value) {
   return String(value || '').trim()
 }
 
-function matchesSearch(item = {}, query = '') {
-  const normalizedQuery = normalizeText(query).toLowerCase()
-  if (!normalizedQuery) return true
-  const haystack = Object.values(item)
-    .map((value) => normalizeText(value).toLowerCase())
-    .join(' ')
-  return haystack.includes(normalizedQuery)
-}
-
-function openCreateApplication() {
-  if (typeof window === 'undefined') return
-  window.dispatchEvent(new Event('itg:open-new-transaction'))
+function normalizeNumber(value, fallback = 0) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
 }
 
 export default function BondDashboard({
@@ -36,8 +24,7 @@ export default function BondDashboard({
   initialState = null,
 }) {
   const safeWorkspaceId = normalizeText(workspaceId)
-  const [rangeKey, setRangeKey] = useState('this_month')
-  const [search, setSearch] = useState('')
+  const [rangeKey] = useState('this_month')
   const [state, setState] = useState(
     initialState || {
       loading: true,
@@ -83,22 +70,32 @@ export default function BondDashboard({
     void loadDashboard()
   }, [loadDashboard])
 
-  const filteredTeamWorkload = useMemo(
-    () => (state.snapshot?.teamWorkload || []).filter((item) => matchesSearch(item, search)),
-    [search, state.snapshot?.teamWorkload],
-  )
-  const filteredBankActivity = useMemo(
-    () => (state.snapshot?.recentBankActivity || []).filter((item) => matchesSearch(item, search)),
-    [search, state.snapshot?.recentBankActivity],
-  )
-  const filteredAtRisk = useMemo(
-    () => (state.snapshot?.atRiskApplications || []).filter((item) => matchesSearch(item, search)),
-    [search, state.snapshot?.atRiskApplications],
-  )
-  const selectedRangeLabel = useMemo(
-    () => state.snapshot?.availableRanges?.find((item) => item.key === rangeKey)?.label || 'This Month',
-    [rangeKey, state.snapshot?.availableRanges],
-  )
+  function onCreateApplication() {
+    if (typeof window === 'undefined') return
+    window.dispatchEvent(new Event('itg:open-new-transaction'))
+  }
+
+  function onInvitePartner() {
+    if (typeof window === 'undefined') return
+    window.dispatchEvent(new Event('itg:open-invite-partner'))
+  }
+
+  function onExportReport() {
+    if (typeof window === 'undefined') return
+    window.dispatchEvent(new Event('itg:export-bond-dashboard-report'))
+  }
+
+  const snapshot = state.snapshot || {}
+  const heroKpis = snapshot.heroKpis || []
+  const bankBreakdown = snapshot.bankBreakdown || []
+  const bankLeadTimes = snapshot.bankLeadTimes || []
+  const pipelineFlow = snapshot.pipelineFlow || []
+  const buyerDemographics = snapshot.buyerDemographics || {}
+  const operationalRisk = snapshot.operationalRisk || []
+  const recentBankActivity = snapshot.recentBankActivity || []
+  const teamPerformance = snapshot.teamPerformance || []
+  const connectedPartners = snapshot.connectedPartners || []
+  const heroSummary = snapshot.heroSummary || {}
 
   if (!safeWorkspaceId) {
     return (
@@ -118,56 +115,533 @@ export default function BondDashboard({
     )
   }
 
-  const snapshot = state.snapshot
-
   return (
     <BondPageShell>
       <BondDashboardHeader
         userDisplayName={snapshot?.userDisplayName || 'there'}
-        attentionText={
-          state.loading
-            ? 'Loading today’s bond workload…'
-            : `${snapshot?.attentionCount || 0} applications require attention today. ${snapshot?.roleFocus?.attentionText || ''}`.trim()
+        applicationsMovedText={
+          state.loading ? 'Loading this week’s movement' : `${heroSummary.applicationsMoved || 0} applications moved`
         }
+        velocityText={state.loading ? 'calculating' : `is ${heroSummary.approvalVelocity || 'up 0%'}`}
         focusChips={snapshot?.roleFocus?.focusChips || []}
-        search={search}
-        onSearchChange={setSearch}
-        onCreate={openCreateApplication}
-        rangeKey={rangeKey}
-        ranges={snapshot?.availableRanges || [{ key: 'this_month', label: 'This Month' }]}
-        onRangeChange={setRangeKey}
+        onCreate={onCreateApplication}
+        onInvitePartner={onInvitePartner}
+        onExportReport={onExportReport}
+        heroKpis={heroKpis}
       />
 
       <BondReportingScopeBanner reportingScope={state.reportingScope} />
 
-      {!state.loading && snapshot ? (
-        <>
-          <BondPriorityActionStrip items={snapshot.priorityActions} />
-          <BondPipelineOverview
-            items={snapshot.pipelineOverview}
-            rangeLabel={selectedRangeLabel}
-          />
-        </>
-      ) : null}
-
-      {!state.loading && snapshot?.totalApplications === 0 ? (
-        <BondEmptyState title={snapshot.emptyState.title} description={snapshot.emptyState.description} />
-      ) : null}
-
-      {!state.loading && snapshot ? (
-        <>
-          <div className="grid gap-4 xl:grid-cols-3">
-            <BondTeamWorkloadCard title={snapshot.roleFocus.workloadHeading} rows={filteredTeamWorkload} />
-            <RecentBankActivityCard rows={filteredBankActivity} />
-            <AtRiskApplicationsCard rows={filteredAtRisk} />
-          </div>
-          <BondPerformanceSnapshot items={snapshot.performanceSnapshot} />
-        </>
-      ) : null}
-
       {state.loading ? (
-        <BondEmptyState title="Loading bond command center…" description="We are pulling your operational snapshot now." />
+        <BondEmptyState
+          title="Loading bond command center…"
+          description="We are pulling your operational intelligence now."
+        />
+      ) : null}
+
+      {!state.loading && snapshot ? (
+        <>
+          {snapshot.totalApplications === 0 ? (
+            <BondEmptyState
+              title="All operational queues are clear."
+              description="Your bond desk is running smoothly."
+              compact
+            />
+          ) : (
+            <>
+              <section className="grid gap-4 xl:grid-cols-3">
+                <BondSectionCard
+                  eyebrow="Primary Analytics"
+                  title="Bank Approval Breakdown"
+                  description="Bank movement and outcome split in one operational view."
+                  className="max-h-[380px]"
+                  contentClassName="mt-5"
+                >
+                  <BankApprovalPanel items={bankBreakdown} />
+                </BondSectionCard>
+                <BondSectionCard
+                  eyebrow="Primary Analytics"
+                  title="Bank Lead Times"
+                  description="Average lead time by lender from submission to movement."
+                  className="max-h-[380px]"
+                  contentClassName="mt-5"
+                >
+                  <BankLeadTimePanel items={bankLeadTimes} />
+                </BondSectionCard>
+                <BondSectionCard
+                  eyebrow="Primary Analytics"
+                  title="Pipeline Overview"
+                  description="Operational flow through core finance and registration stages."
+                  className="max-h-[380px]"
+                  contentClassName="mt-5"
+                >
+                  <PipelineFlowPanel items={pipelineFlow} />
+                </BondSectionCard>
+              </section>
+
+              <section className="grid gap-4 xl:grid-cols-4">
+                <BondSectionCard
+                  eyebrow="Secondary Insights"
+                  title="Buyer Demographics"
+                  description="Live profile mix across active demand."
+                  action={
+                    <Link
+                      to="/applications"
+                      className="text-sm font-semibold text-[#204b84] hover:text-[#17324d]"
+                    >
+                      View all
+                    </Link>
+                  }
+                  className="max-h-[330px]"
+                >
+                  <BuyerDemographicsPanel stats={buyerDemographics} />
+                </BondSectionCard>
+
+                <BondSectionCard
+                  eyebrow="Secondary Insights"
+                  title="Operational Risk"
+                  description="Immediate risks to cycle-time and quality."
+                  action={
+                    <Link
+                      to="/applications?queue=overdue_applications"
+                      className="text-sm font-semibold text-[#204b84] hover:text-[#17324d]"
+                    >
+                      View all
+                    </Link>
+                  }
+                  className="max-h-[330px]"
+                >
+                  <OperationalRiskPanel items={operationalRisk} />
+                </BondSectionCard>
+
+                <BondSectionCard
+                  eyebrow="Secondary Insights"
+                  title="Recent Bank Activity"
+                  description="Latest bank responses and document actions."
+                  action={
+                    <Link to="/banks?view=submissions" className="text-sm font-semibold text-[#204b84] hover:text-[#17324d]">
+                      Open bank feed
+                    </Link>
+                  }
+                  className="max-h-[330px]"
+                >
+                  <BankActivityFeedPanel rows={recentBankActivity} />
+                </BondSectionCard>
+
+                <BondSectionCard
+                  eyebrow="Secondary Insights"
+                  title="Team Performance"
+                  description="Active files and operational quality by teammate."
+                  action={
+                    <Link to="/teams" className="text-sm font-semibold text-[#204b84] hover:text-[#17324d]">
+                      Team view
+                    </Link>
+                  }
+                  className="max-h-[330px]"
+                >
+                  <TeamPerformancePanel rows={teamPerformance} />
+                </BondSectionCard>
+              </section>
+
+              <BondSectionCard
+                eyebrow="Performance Snapshot"
+                title="Executive signal strip"
+                description="Velocity, conversion and book strength in one quick view."
+                className="max-h-[300px]"
+              >
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                  {snapshot.performanceSnapshot?.length ? (
+                    snapshot.performanceSnapshot.map((item) => (
+                      <MiniMetricCard key={item.key} item={item} />
+                    ))
+                  ) : (
+                    <BondEmptyState
+                      compact
+                      title="No performance data yet"
+                      description="Performance cards will populate as deals move through stages."
+                    />
+                  )}
+                </div>
+              </BondSectionCard>
+
+              <section className="rounded-[22px] border border-[#dbe5f0] bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.03)]">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#748aa0]">Connected Partners</p>
+                    <h2 className="mt-2 text-[1.1rem] font-semibold tracking-[-0.03em] text-[#142132]">
+                      Connected Partners
+                    </h2>
+                  </div>
+                  <Link to="/partners" className="text-sm font-semibold text-[#204b84] hover:text-[#17324d]">
+                    Open network
+                  </Link>
+                </div>
+                <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
+                  {connectedPartners.length ? (
+                    connectedPartners.map((partner) => <ConnectedPartnerCard key={partner.key} partner={partner} />)
+                  ) : (
+                    <BondEmptyState
+                      compact
+                      title="No connected partners yet."
+                      description="Invite trusted organisations to build shared liquidity."
+                    />
+                  )}
+                </div>
+              </section>
+            </>
+          )}
+        </>
       ) : null}
     </BondPageShell>
+  )
+}
+
+function BankApprovalPanel({ items = [] }) {
+  const rows = Array.isArray(items) ? items : []
+  const chartRows = rows.filter((item) => Number(item.total || 0) > 0)
+  const total = chartRows.reduce((acc, item) => acc + Number(item.total || 0), 0) || 1
+
+  const bankColors = [
+    '#4f7da6',
+    '#2f6b4a',
+    '#835a1a',
+    '#8b4f7e',
+    '#4d6ca8',
+    '#8f9298',
+  ]
+
+  let cumulative = 0
+  const conicSegments = chartRows.map((item, index) => {
+    const share = Math.max(0, Number(item.total || 0)) / total
+    const start = cumulative * 360
+    cumulative += share
+    const end = cumulative * 360
+    return `${bankColors[index % bankColors.length]} ${start}deg ${end}deg`
+  })
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[auto_1fr] xl:items-center">
+      <div className="relative mx-auto h-28 w-28 shrink-0 rounded-full">
+        <div
+          className="h-full w-full rounded-full"
+          style={{
+            background: `conic-gradient(${conicSegments.join(', ')}, #e5edf7 0deg)`,
+          }}
+        />
+        <div className="absolute inset-3 rounded-full bg-white" />
+      </div>
+      <div className="grid gap-2 overflow-auto pr-1">
+        {rows.map((row) => {
+          const totalCount = Number(row.total || 0)
+          return (
+            <article
+              key={row.bank}
+              className="grid grid-cols-[minmax(0,1fr)_repeat(4,80px)] items-center gap-2 rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-[#142132]">{row.bank}</p>
+                <p className="mt-1 text-xs text-[#72889e]">
+                  {((row.approvalRate || 0)).toFixed(0)}% approval
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.1em] text-[#7f94aa]">Approved</p>
+                <p className="text-sm font-semibold text-[#142132]">{row.approved}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.1em] text-[#7f94aa]">Pending</p>
+                <p className="text-sm font-semibold text-[#142132]">{row.pending}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.1em] text-[#7f94aa]">Declined</p>
+                <p className="text-sm font-semibold text-[#142132]">{row.declined}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.1em] text-[#7f94aa]">% of book</p>
+                <p className="text-sm font-semibold text-[#142132]">{((totalCount / total) * 100).toFixed(0)}%</p>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function BankLeadTimePanel({ items = [] }) {
+  const rows = Array.isArray(items) ? items : []
+  const safeRows = rows.filter((row) => Number(row.leadTimeDays || 0) > 0)
+  const maxDays = Math.max(...safeRows.map((row) => Number(row.leadTimeDays || 0)), 1)
+
+  return (
+    <div className="space-y-3">
+      {safeRows.length ? (
+        safeRows.map((row) => {
+          const percent = Math.min(100, ((Number(row.leadTimeDays || 0) / maxDays) * 100) || 0)
+          const tone = Number(row.leadTimeDays || 0) <= 5 ? 'bg-[#2f8a63]' : Number(row.leadTimeDays || 0) <= 8 ? 'bg-[#9e5f17]' : 'bg-[#a93c4c]'
+          return (
+            <article key={row.bank} className="rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-[#142132]">{row.bank}</p>
+                <p className="text-sm font-semibold text-[#142132]">{row.leadTimeDays} days</p>
+              </div>
+              <div className="mt-2 h-2 rounded-full bg-[#e6eef8]">
+                <span className={`block h-full rounded-full ${tone}`} style={{ width: `${percent}%` }} />
+              </div>
+            </article>
+          )
+        })
+      ) : (
+        <BondEmptyState
+          compact
+          title="No bank lead-time data"
+          description="Lead-time movement will appear once bank submission activity is captured."
+        />
+      )}
+    </div>
+  )
+}
+
+function PipelineFlowPanel({ items = [] }) {
+  const rows = Array.isArray(items) ? items : []
+  const stageIcons = {
+    lead: UsersRound,
+    docs_collection: FileText,
+    pre_approval: HandCoins,
+    submitted: ArrowRight,
+    bank_feedback: CircleAlert,
+    approved: CircleCheck,
+    grant_signed: CircleDashed,
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <div className="grid min-w-[560px] grid-cols-[repeat(7,minmax(120px,1fr))] items-start gap-2">
+        {rows.map((row) => {
+          const Icon = stageIcons[row.key] || CircleDashed
+          const active = Number(row.count || 0) > 0
+          return (
+            <div key={row.key} className="relative">
+              <div
+                className={`rounded-[16px] border p-3 ${active ? 'border-[#c7dbef] bg-[#f7fbff]' : 'border-[#e7edf6] bg-white'}`}
+              >
+                <div className="flex items-center justify-between">
+                  <Icon size={15} className={active ? 'text-[#1f527e]' : 'text-[#7e95ac]'} />
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full ${active ? 'bg-[#2f8a63]' : 'bg-[#98a8bb]'}`}
+                  />
+                </div>
+                <p className="mt-2 text-xs font-semibold uppercase tracking-[0.11em] text-[#7d93aa]">{row.label}</p>
+                <p className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#142132]">{row.count}</p>
+                <p className="mt-1 text-xs text-[#60758d]">{row.valueLabel}</p>
+              </div>
+              {rows.length > 1 ? (
+                <ArrowRight
+                  size={14}
+                  className="absolute -right-1 top-1/2 -translate-y-1/2 text-[#a9bed3]"
+                />
+              ) : null}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function BuyerDemographicsPanel({ stats = {} }) {
+  const {
+    bondVsCash = { bond: 0, cash: 0 },
+    clientType = { individual: 0, company: 0, trust: 0 },
+    dealType = { investment: 0, residential: 0 },
+  } = stats
+
+  return (
+    <div className="space-y-3">
+      <MiniDonutRow label="Bond vs Cash" items={bondVsCash} />
+      <MiniDonutRow label="Individual vs Company vs Trust" items={clientType} />
+      <MiniDonutRow label="Investor vs Residential" items={dealType} />
+    </div>
+  )
+}
+
+function MiniDonutRow({ label = '', items = {} }) {
+  const entries = Object.entries(items || {}).filter(([, value]) => Number(value || 0) > 0)
+  const total = entries.reduce((acc, [, value]) => acc + Number(value || 0), 0) || 1
+
+  return (
+    <article className="rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] p-3">
+      <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#71889f]">{label}</p>
+      <div className="mt-2 space-y-2">
+        {entries.map(([key, value]) => {
+          const pct = (Number(value || 0) / total) * 100
+          return (
+            <div key={key} className="space-y-1">
+              <div className="flex items-center justify-between text-xs text-[#60758b]">
+                <span className="font-semibold uppercase tracking-[0.08em]">{key}</span>
+                <span>{Math.round(pct)}%</span>
+              </div>
+              <div className="h-2 rounded-full bg-[#e6eef8]">
+                <span className="block h-full rounded-full bg-[#3b6a97]" style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </article>
+  )
+}
+
+function OperationalRiskPanel({ items = [] }) {
+  const rows = Array.isArray(items) ? items : []
+  const toneClassByKey = {
+    urgent: 'bg-[#fff5f5] border-[#f0d8db] text-[#8f3747]',
+    critical: 'bg-[#fff5f7] border-[#f0cfda] text-[#a24053]',
+    watch: 'bg-[#fff9ef] border-[#efd7b5] text-[#8f5e14]',
+    healthy: 'bg-[#f7fcf8] border-[#d4e8d8] text-[#2a7352]',
+  }
+
+  return (
+    <div className="space-y-2">
+      {rows.length ? (
+        rows.map((item, index) => (
+          <article
+            key={`${item.key || index}`}
+            className={`rounded-[14px] border px-3 py-2.5 ${toneClassByKey[item.severity] || toneClassByKey.urgent}`}
+          >
+            <p className="text-sm font-semibold text-[#142132]">{item.metric}</p>
+            <p className="text-xs text-[#60758d]">{item.description}</p>
+            <p className="mt-1 text-sm font-semibold">{item.value}</p>
+          </article>
+        ))
+      ) : (
+        <BondEmptyState compact title="No immediate operational risk" description="No risk thresholds are currently being breached." />
+      )}
+    </div>
+  )
+}
+
+function BankActivityFeedPanel({ rows = [] }) {
+  const feed = Array.isArray(rows) ? rows : []
+  return (
+    <div className="max-h-[220px] space-y-2 overflow-y-auto pr-1">
+      {feed.length ? (
+        feed.map((row, index) => (
+          <article
+            key={`${row.transactionId || row.key || index}`}
+            className="rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#dce7f4] bg-white text-[#4f759f]">
+                  {row.bank?.charAt(0) || 'B'}
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-[#142132]">{row.bank}</p>
+                  <p className="text-sm text-[#60758d]">{row.action}</p>
+                </div>
+              </div>
+              <span className="mt-0.5 text-xs text-[#60758d]">{row.timeLabel}</span>
+            </div>
+            <p className="mt-2 text-xs text-[#7f93a8]">{row.statusLabel}</p>
+          </article>
+        ))
+      ) : (
+        <BondEmptyState compact title="No bank responses yet" description="Bank updates will appear here as files move." />
+      )}
+    </div>
+  )
+}
+
+function TeamPerformancePanel({ rows = [] }) {
+  const members = Array.isArray(rows) ? rows : []
+  return (
+    <div className="space-y-2">
+      {members.length ? (
+        members.map((member) => (
+          <article
+            key={member.key}
+            className="grid grid-cols-[auto,1fr,repeat(2,minmax(64px,1fr)),96px] items-center gap-2 rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2"
+          >
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#e7edf6] text-xs font-semibold text-[#17324d]">
+              {member.initials}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[#142132]">{member.name}</p>
+              <p className="text-xs text-[#71889e]">{member.activeFiles} active files</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.12em] text-[#7990a7]">Approval</p>
+              <p className="mt-1 text-sm font-semibold text-[#142132]">{member.approvalRate}%</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.12em] text-[#7990a7]">Avg Turnaround</p>
+              <p className="mt-1 text-sm font-semibold text-[#142132]">{member.avgTurnaround}d</p>
+            </div>
+          </article>
+        ))
+      ) : (
+        <BondEmptyState compact title="No team load to show" description="Assign files to team leads to populate this leaderboard." />
+      )}
+    </div>
+  )
+}
+
+function MiniMetricCard({ item = {} }) {
+  const sparkline = Array.isArray(item.sparkline) ? item.sparkline : []
+  return (
+    <article className="rounded-[16px] border border-[#e6edf4] bg-[#fbfdff] p-3">
+      <p className="text-[0.78rem] font-semibold uppercase tracking-[0.14em] text-[#7b90a5]">{item.label}</p>
+      <p className="mt-2 text-xl font-semibold tracking-[-0.04em] text-[#142132]">{item.value}</p>
+      <p className="mt-2 text-xs text-[#60758d]">{item.trendLabel || item.comparison}</p>
+      <div className="mt-2 flex h-6 items-end gap-1">
+        {sparkline.length ? (
+          sparkline.slice(0, 12).map((point, index) => (
+            <span
+              key={`${item.key}-${index}`}
+              className="w-1 rounded-full bg-gradient-to-t from-[#2f5f95] to-[#8ab5d9]"
+              style={{ height: `${Math.max(6, Math.min(100, Number(point) || 0))}%` }}
+            />
+          ))
+        ) : (
+          <>
+            <span className="h-2 w-1 rounded-full bg-[#8aa8c4]" />
+            <span className="h-3 w-1 rounded-full bg-[#8aa8c4]" />
+            <span className="h-4 w-1 rounded-full bg-[#8aa8c4]" />
+          </>
+        )}
+      </div>
+    </article>
+  )
+}
+
+function ConnectedPartnerCard({ partner = {} }) {
+  const name = normalizeText(partner.name || 'Partner')
+  return (
+    <article className="min-w-[260px] rounded-[18px] border border-[#e0eaf5] bg-[#fbfdff] p-3">
+      <div className="flex items-start gap-2">
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#eaf1fa] text-xs font-semibold text-[#17324d]">
+          {(normalizeText(partner.name || '').slice(0, 2) || 'P').toUpperCase()}
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[#142132]">{name}</p>
+          <p className="text-xs text-[#70879d]">{normalizeText(partner.type || 'Partner')}</p>
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+        <div>
+          <p className="uppercase tracking-[0.12em] text-[#7c93aa]">Active</p>
+          <p className="mt-1 font-semibold text-[#142132]">{normalizeNumber(partner.activeFiles)} files</p>
+        </div>
+        <div>
+          <p className="uppercase tracking-[0.12em] text-[#7c93aa]">Conversion</p>
+          <p className="mt-1 font-semibold text-[#142132]">{normalizeNumber(partner.conversionRate)}%</p>
+        </div>
+        <div>
+          <p className="uppercase tracking-[0.12em] text-[#7c93aa]">Reg Time</p>
+          <p className="mt-1 font-semibold text-[#142132]">{normalizeNumber(partner.avgRegistrationDays)}d</p>
+        </div>
+      </div>
+    </article>
   )
 }
