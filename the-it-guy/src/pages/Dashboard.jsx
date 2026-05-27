@@ -7,7 +7,6 @@ import {
   FileCheck2,
   LandPlot,
   PieChart,
-  Search,
   TrendingUp,
   Users,
 } from 'lucide-react'
@@ -17,14 +16,13 @@ import LoadingSkeleton from '../components/LoadingSkeleton'
 import QuickCreateDropdown from '../components/QuickCreateDropdown'
 import SummaryCards from '../components/SummaryCards'
 import ConveyancerDashboardPage from '../components/ConveyancerDashboardPage'
+import BridgeCommandCenterDashboard from '../components/dashboard/BridgeCommandCenterDashboard'
 import PrincipalDashboard from './PrincipalDashboard'
 import { PillToggle } from '../components/ui/FilterBar'
 import {
   STAGE_AGING_BUCKETS,
   selectActiveTransactions,
-  selectFinanceMix,
   selectStageAging,
-  selectStageDistribution,
 } from '../core/transactions/developerSelectors'
 import {
   selectAgentSummary,
@@ -80,13 +78,6 @@ const compactCurrency = new Intl.NumberFormat('en-ZA', {
   maximumFractionDigits: 1,
 })
 
-const FINANCE_MIX_COLORS = {
-  cash: '#37576f',
-  bond: '#22c55e',
-  combination: '#2563eb',
-  unknown: '#cbd5e1',
-}
-
 const SHARED_FINANCE_WORKFLOW_STEPS = [
   'Application Received',
   'Buyer Documents Collected',
@@ -107,16 +98,10 @@ const SHARED_TRANSFER_WORKFLOW_STEPS = [
 
 const DASHBOARD_PANEL_CLASS =
   'min-w-0 overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)] sm:p-5 xl:p-6'
-const DASHBOARD_SUBPANEL_CLASS =
-  'min-w-0 overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)] sm:p-5 xl:p-6'
 const DASHBOARD_CHIP_CLASS =
   'inline-flex min-w-0 items-center gap-2 rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-2.5 py-1 text-[0.74rem] font-semibold text-[#66758b]'
 const DASHBOARD_ACTION_SECONDARY_CLASS =
   'inline-flex min-h-[44px] items-center justify-center rounded-[16px] border border-[#dde4ee] bg-white px-4 py-2.5 text-sm font-semibold text-[#162334] shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition duration-150 ease-out hover:border-[#ccd6e3] hover:bg-[#f8fafc]'
-const DASHBOARD_FIELD_CLASS =
-  'flex h-[44px] items-center gap-3 rounded-[16px] border border-[#dde4ee] bg-white px-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]'
-const DASHBOARD_METRIC_CARD_CLASS =
-  'min-w-0 overflow-hidden rounded-[18px] border border-[#dde4ee] bg-white px-4 py-4 shadow-[0_4px_14px_rgba(15,23,42,0.05)]'
 const PRINCIPAL_TIME_FILTER_OPTIONS = [
   { key: 'this_week', label: 'This Week' },
   { key: 'last_7_days', label: 'Last 7 Days' },
@@ -1124,63 +1109,6 @@ function Dashboard() {
     ]
   }, [dashboardHeaderMetrics])
 
-  const funnelData = useMemo(() => selectStageDistribution(rows), [rows])
-
-  const financeMix = useMemo(() => {
-    const segments = selectFinanceMix(rows)
-    const totalCount = segments.reduce((sum, item) => sum + item.count, 0)
-
-    let cursor = 0
-    const gradientParts = segments
-      .filter((item) => item.count > 0)
-      .map((item) => {
-        const percent = totalCount ? (item.count / totalCount) * 100 : 0
-        const start = cursor
-        const end = cursor + percent
-        cursor = end
-        return `${FINANCE_MIX_COLORS[item.key]} ${start}% ${end}%`
-      })
-
-    return {
-      segments,
-      totalCount,
-      gradient: gradientParts.length ? `conic-gradient(${gradientParts.join(', ')})` : 'conic-gradient(#e2e8f0 0% 100%)',
-    }
-  }, [rows])
-
-  const financeLegendSegments = useMemo(() => {
-    const visible = (financeMix.segments || []).filter((item) => item.count > 0 || item.value > 0)
-    return visible.length ? visible : financeMix.segments
-  }, [financeMix.segments])
-
-  const financeMixSnapshot = useMemo(() => {
-    const byKey = Object.fromEntries((financeMix.segments || []).map((item) => [item.key, item]))
-    const totalCount = financeMix.totalCount || 0
-    const totalValue = (financeMix.segments || []).reduce((sum, item) => sum + Number(item.value || 0), 0)
-    const cashCount = Number(byKey.cash?.count || 0)
-    const bondCount = Number(byKey.bond?.count || 0)
-    const comboCount = Number(byKey.combination?.count || 0)
-
-    return [
-      {
-        label: 'Cash Share',
-        value: formatPercent(totalCount ? (cashCount / totalCount) * 100 : 0),
-      },
-      {
-        label: 'Bond Share',
-        value: formatPercent(totalCount ? (bondCount / totalCount) * 100 : 0),
-      },
-      {
-        label: 'Hybrid Deals',
-        value: comboCount,
-      },
-      {
-        label: 'Avg Deal Value',
-        value: currency.format(totalCount ? totalValue / totalCount : 0),
-      },
-    ]
-  }, [financeMix.segments, financeMix.totalCount])
-
   const CAN_ACCESS_REPORTS = ['developer', 'attorney', 'bond_originator'].includes(role)
   const isAgentRole = role === 'agent'
   const isBondRole = role === 'bond_originator'
@@ -1222,7 +1150,6 @@ function Dashboard() {
     () => selectActiveTransactions(isAgentRole ? agentDashboardPipelineRows : isBondRole ? roleScopedRows : rows),
     [agentDashboardPipelineRows, isAgentRole, isBondRole, roleScopedRows, rows],
   )
-  const stageAging = useMemo(() => selectStageAging(rows), [rows])
   const AGENT_SUMMARY = useMemo(() => selectAgentSummary(roleScopedRows), [roleScopedRows])
   const bondSummary = useMemo(() => selectBondSummary(roleScopedRows), [roleScopedRows])
   const bondApplicationCards = useMemo(
@@ -3296,39 +3223,18 @@ function renderActiveTransactionsBlock({
       {!loading && isSupabaseConfigured ? (
         <>
           {!isRoleScopedDashboard ? (
-            <section className="rounded-[22px] border border-[#dde4ee] bg-white px-4 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-              <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
-                <div className="flex min-w-0 flex-col gap-2 xl:flex-1 xl:flex-row xl:items-center xl:justify-end">
-                  <div className={`${DASHBOARD_FIELD_CLASS} min-w-[220px] max-w-[280px]`}>
-                    <span className="text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#6b7d93]">View</span>
-                    <select
-                      className="min-w-0 flex-1 appearance-none border-0 bg-transparent p-0 text-sm font-semibold text-[#162334] outline-none"
-                      value={role}
-                      onChange={(event) => {
-                        setActivePersona(event.target.value)
-                        navigate('/dashboard')
-                      }}
-                    >
-                      {personaOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    {rolePreviewActive ? <em className="text-[0.74rem] font-semibold not-italic text-[#2563eb]">Preview</em> : null}
-                  </div>
-
-                  <div className={`${DASHBOARD_FIELD_CLASS} min-w-0 flex-1 xl:max-w-[500px]`}>
-                    <Search size={16} className="shrink-0 text-slate-400" />
-                    <input
-                      className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-[#162334] outline-none"
-                      type="search"
-                      placeholder="Search unit, buyer, stage..."
-                    />
-                  </div>
-                </div>
-              </div>
-            </section>
+            <BridgeCommandCenterDashboard
+              rows={rows}
+              profile={profile}
+              role={role}
+              personaOptions={personaOptions}
+              rolePreviewActive={rolePreviewActive}
+              onPersonaChange={(nextRole) => {
+                setActivePersona(nextRole)
+                navigate('/dashboard')
+              }}
+              onNavigate={(target) => navigate(target)}
+            />
           ) : null}
 
           {!isAgentRole && !isAttorneyRole && !isBondRole && isRoleScopedDashboard ? (
@@ -4667,192 +4573,6 @@ function renderActiveTransactionsBlock({
           ) : (
             <></>
           )}
-
-          {!isRoleScopedDashboard ? (
-            <section className="mt-3 rounded-[22px] border border-[#dde4ee] bg-white px-4 py-3.5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-              <div className="grid gap-2.5 lg:grid-cols-5">
-                {summaryItems.map((item) => {
-                  const Icon = item.icon
-                  return (
-                    <article
-                      key={item.label}
-                      className="rounded-[18px] border border-[#dde4ee] bg-white px-4 py-4 shadow-[0_4px_14px_rgba(15,23,42,0.05)]"
-                    >
-                      <div className="mb-2.5 flex items-start justify-between gap-3">
-                        <span className="text-[0.95rem] font-medium tracking-[-0.01em] text-[#3b4f65]">{item.label}</span>
-                        {Icon ? <Icon size={18} className="text-[#334155]" aria-hidden="true" /> : null}
-                      </div>
-                      <strong className="block text-[1.75rem] font-semibold leading-none tracking-[-0.035em] text-[#142132]">
-                        {item.value}
-                      </strong>
-                    </article>
-                  )
-                })}
-              </div>
-            </section>
-          ) : null}
-
-          {!isRoleScopedDashboard ? (
-          <section className="mt-3 rounded-[22px] border border-[#dde4ee] bg-white px-4 py-3.5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-            {renderActiveTransactionsBlock({
-              title: 'Active Transactions',
-              description: 'Live deal execution across the portfolio, with the current stage and next action in one place.',
-              limit: 6,
-              compact: true,
-              withDivider: false,
-              variant: 'showcase',
-            })}
-          </section>
-          ) : null}
-
-          {!isRoleScopedDashboard ? (
-            <section className="mt-4 grid gap-5">
-              <section className="grid items-stretch gap-4 lg:grid-cols-2">
-                <article className="flex h-full flex-col rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-                  <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0">
-                      <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">Transaction Funnel</h3>
-                      <p className="mt-2 text-[0.96rem] leading-7 text-[#6b7d93]">High-level stage distribution and movement conversion.</p>
-                    </div>
-                    <span className="inline-flex items-center gap-2 rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
-                      <TrendingUp size={12} />
-                      {rows.length} tracked units
-                    </span>
-                  </div>
-
-                  <div className="flex flex-1 flex-col divide-y divide-[#edf2f7]">
-                    {funnelData.map((item) => (
-                      <div key={item.key} className="grid gap-3 py-4 md:grid-cols-[150px_220px_96px] md:items-center md:justify-between">
-                        <div className="text-[0.98rem] font-medium tracking-[-0.02em] text-[#23384d]">{item.label}</div>
-                        <div className="h-3 w-[220px] rounded-full bg-[#e7eef6]" aria-hidden>
-                          <span
-                            className="block h-full rounded-full bg-[#5c82a3]"
-                            style={{ width: `${item.width}%` }}
-                          />
-                        </div>
-                        <div className="flex flex-col items-end justify-center text-right">
-                          <div className="flex items-baseline gap-2 leading-none">
-                            <strong className="text-[0.98rem] font-semibold text-[#142132]">{item.count}</strong>
-                            <em className="text-[0.78rem] not-italic font-medium text-[#6b7d93]">{formatPercent(item.share)}</em>
-                          </div>
-                          {item.conversion !== null ? (
-                            <small className="mt-1 text-[0.74rem] leading-none text-[#8da0b5]">{formatPercent(item.conversion)} prev</small>
-                          ) : (
-                            <small className="mt-1 text-[0.74rem] leading-none text-[#8da0b5]">-</small>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </article>
-
-                <article className="flex h-full flex-col rounded-[22px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-                  <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0">
-                      <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">Cash vs Bond Buyers</h3>
-                      <p className="mt-1.5 text-[0.88rem] leading-5 text-[#6b7d93]">Buyer financing split by transaction count and value.</p>
-                    </div>
-                    <span className="inline-flex items-center gap-2 rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-2.5 py-1 text-[0.72rem] font-semibold text-[#66758b]">
-                      <PieChart size={12} />
-                      {financeMix.totalCount} active
-                    </span>
-                  </div>
-
-                  <div className="grid gap-4 lg:grid-cols-[152px_minmax(0,1fr)] lg:items-center">
-                    <div className="mx-auto h-[152px] w-[152px] rounded-full" style={{ background: financeMix.gradient }} aria-hidden="true">
-                      <div className="mx-auto mt-[30px] h-[92px] w-[92px] rounded-full bg-white" />
-                    </div>
-
-                    <ul className="grid gap-2">
-                      {financeLegendSegments.map((item) => (
-                        <li key={item.key} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-3.5 py-2">
-                          <span className="h-3 w-3 rounded-full" style={{ background: FINANCE_MIX_COLORS[item.key] }} />
-                          <div className="min-w-0">
-                            <strong className="block text-[0.9rem] font-semibold text-[#142132]">{item.label}</strong>
-                            <small className="block text-[0.78rem] text-[#7c8ea4]">{currency.format(item.value || 0)}</small>
-                          </div>
-                          <em className="text-[0.94rem] not-italic font-semibold text-[#35546c]">{item.count}</em>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <section className="mt-4 rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-3.5">
-                    <div className="mb-2.5">
-                      <strong className="block text-[0.92rem] font-semibold text-[#142132]">Finance Snapshot</strong>
-                      <span className="text-[0.78rem] text-[#7c8ea4]">Current funding mix at a glance</span>
-                    </div>
-                    <div className="grid gap-2.5 sm:grid-cols-2">
-                      {financeMixSnapshot.map((item) => (
-                        <article key={item.label} className="rounded-[16px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                          <span className="block text-[0.76rem] uppercase tracking-[0.08em] text-[#7b8ca2]">{item.label}</span>
-                          <strong className="mt-1.5 block text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">{item.value}</strong>
-                        </article>
-                      ))}
-                    </div>
-                  </section>
-                </article>
-              </section>
-
-              <section className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-                <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0">
-                    <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">Stage Aging Heatmap</h3>
-                    <p className="mt-2 text-[0.98rem] leading-7 text-[#6b7d93]">How long transactions have been sitting at each master stage.</p>
-                  </div>
-                  <span className="inline-flex items-center gap-2 rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
-                    <TrendingUp size={12} />
-                    {stageAging.totalTracked} tracked deals
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-[minmax(120px,160px)_repeat(4,minmax(0,1fr))] gap-3" role="table" aria-label="Stage aging heatmap by day buckets">
-                  <div className="px-3 py-2 text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]" role="columnheader">
-                    Stage
-                  </div>
-                  {STAGE_AGING_BUCKETS.map((bucket) => (
-                    <div key={bucket.key} className="px-3 py-2 text-center text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]" role="columnheader">
-                      {bucket.label}
-                    </div>
-                  ))}
-
-                  {stageAging.stages.map((stage) => (
-                    <Fragment key={stage.key}>
-                      <div className="flex items-center px-3 py-3 text-[0.95rem] font-medium text-[#23384d]" role="rowheader">
-                        {stage.label}
-                      </div>
-                      {stage.cells.map((cell) => {
-                        const level = getHeatLevel(cell.count, stageAging.maxCellCount)
-                        const toneClass =
-                          level >= 4
-                            ? 'bg-[#35546c] text-white'
-                            : level === 3
-                              ? 'bg-[#5f84a7] text-white'
-                              : level === 2
-                                ? 'bg-[#dfe9f4] text-[#35546c]'
-                                : level === 1
-                                  ? 'bg-[#eef4f9] text-[#6b7d93]'
-                                  : 'bg-[#f8fafc] text-[#97a6b8]'
-
-                        return (
-                          <div
-                            key={`${stage.key}-${cell.key}`}
-                            className={`flex min-h-[54px] items-center justify-center rounded-[14px] border border-[#e4ebf4] text-[0.95rem] font-semibold ${toneClass}`}
-                            title={`${stage.label}: ${cell.count} deal${cell.count === 1 ? '' : 's'} in ${cell.label}`}
-                            role="cell"
-                          >
-                            {cell.count}
-                          </div>
-                        )
-                      })}
-                    </Fragment>
-                  ))}
-                </div>
-              </section>
-
-              {/* TODO(bridge): Reintroduce marketing/demographic analytics once buyer profile fields are intentionally modeled and consistently populated. */}
-            </section>
-          ) : null}
 
         </>
       ) : null}

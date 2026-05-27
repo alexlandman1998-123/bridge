@@ -42,7 +42,7 @@ const ICON_BY_KEY = {
   agents: BriefcaseBusiness,
   transactions: SwitchCamera,
   transfers: SwitchCamera,
-  applications: SwitchCamera,
+  applications: ClipboardList,
   applications_new: PlusCircle,
   applications_all: SwitchCamera,
   applications_mine: SwitchCamera,
