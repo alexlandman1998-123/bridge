@@ -965,9 +965,29 @@ function withSystemPlaceholders(placeholders = {}, context = {}, branding = null
   const organisationName =
     normalizeText(branding?.organisationName) ||
     normalizeText(context?.organisationName) ||
+    normalizeText(context?.organisation?.displayName) ||
+    normalizeText(context?.organisation?.name) ||
+    normalizeText(context?.agency?.organisationName) ||
+    normalizeText(context?.agency?.name) ||
     'Bridge Workspace'
-  const logoLightUrl = normalizeNullableText(branding?.logoLightUrl) || normalizeNullableText(context?.organisationLogoUrl)
-  const logoDarkUrl = normalizeNullableText(branding?.logoDarkUrl) || normalizeNullableText(context?.organisationLogoDarkUrl)
+  const logoLightUrl =
+    normalizeNullableText(branding?.logoLightUrl) ||
+    normalizeNullableText(branding?.organisationLogoUrl) ||
+    normalizeNullableText(branding?.logoUrl) ||
+    normalizeNullableText(context?.organisationLogoUrl) ||
+    normalizeNullableText(context?.organisation?.logoLightUrl) ||
+    normalizeNullableText(context?.organisation?.logoUrl) ||
+    normalizeNullableText(context?.organisation?.logo_url) ||
+    normalizeNullableText(context?.agency?.logoLightUrl) ||
+    normalizeNullableText(context?.agency?.logoUrl)
+  const logoDarkUrl =
+    normalizeNullableText(branding?.logoDarkUrl) ||
+    normalizeNullableText(branding?.organisationLogoDarkUrl) ||
+    normalizeNullableText(branding?.logoHighContrastUrl) ||
+    normalizeNullableText(context?.organisationLogoDarkUrl) ||
+    normalizeNullableText(context?.organisation?.logoDarkUrl) ||
+    normalizeNullableText(context?.agency?.logoDarkUrl) ||
+    logoLightUrl
   const bridgeLabel = normalizeText(branding?.bridgeLegalName || branding?.bridgeLogoLabel) || 'Bridge Legal'
   const bridgeLogoLightUrl = resolvePublicAssetUrl(branding?.bridgeLogoLightUrl || '/brand/bridge_9_white_background.png')
   const bridgeLogoDarkUrl = resolvePublicAssetUrl(branding?.bridgeLogoDarkUrl || '/brand/bridge_9_dark_background.png')
@@ -975,13 +995,16 @@ function withSystemPlaceholders(placeholders = {}, context = {}, branding = null
   merged.organisation_name = merged.organisation_name || organisationName
   merged.organisation_logo_url = merged.organisation_logo_url || resolvePublicAssetUrl(logoLightUrl) || ''
   merged.organisation_logo_dark_url = merged.organisation_logo_dark_url || resolvePublicAssetUrl(logoDarkUrl) || ''
+  merged.agency_logo_url = merged.agency_logo_url || merged.organisation_logo_url
   merged.bridge_legal_name = merged.bridge_legal_name || bridgeLabel
   merged.bridge_legal_logo_light_url = merged.bridge_legal_logo_light_url || bridgeLogoLightUrl
   merged.bridge_legal_logo_dark_url = merged.bridge_legal_logo_dark_url || bridgeLogoDarkUrl
 
   merged['organisation.name'] = merged['organisation.name'] || merged.organisation_name
+  merged['organisation.logo_url'] = merged['organisation.logo_url'] || merged.organisation_logo_url || bridgeLogoLightUrl
   merged['organisation.logo_light_url'] = merged['organisation.logo_light_url'] || merged.organisation_logo_url || bridgeLogoLightUrl
   merged['organisation.logo_dark_url'] = merged['organisation.logo_dark_url'] || merged.organisation_logo_dark_url || bridgeLogoDarkUrl
+  merged['agency.logo_url'] = merged['agency.logo_url'] || merged.agency_logo_url || merged.organisation_logo_url
   merged['bridge.name'] = merged['bridge.name'] || merged.bridge_legal_name
   merged['bridge.logo_light_url'] = merged['bridge.logo_light_url'] || merged.bridge_legal_logo_light_url
   merged['bridge.logo_dark_url'] = merged['bridge.logo_dark_url'] || merged.bridge_legal_logo_dark_url

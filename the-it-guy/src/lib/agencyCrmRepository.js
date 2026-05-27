@@ -879,8 +879,16 @@ export async function updateAgencyCrmContactRecord(organisationId, contactId, pa
       }
   const dbContactId = normalizeNullableUuid(normalizedContactId)
 
-  if (!isSupabaseConfigured || !supabase || !isUuidLike(normalizedOrganisationId) || !dbContactId) {
-    throw new Error('Supabase and a persisted contact id are required before updating agency CRM data.')
+  if (!isSupabaseConfigured || !supabase || !isUuidLike(normalizedOrganisationId)) {
+    throw new Error('Supabase is required before updating persisted agency CRM contact data.')
+  }
+
+  if (!dbContactId) {
+    console.warn('[agencyCrmRepository] skipped remote contact update for non-persisted contact id', {
+      organisationId: normalizedOrganisationId,
+      contactId: normalizedContactId,
+    })
+    return updatedContact
   }
 
   const payload = {

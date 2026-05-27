@@ -19991,7 +19991,16 @@ export async function enrichRowsWithBondIntakeContext(rows = []) {
     }, {})
   })()
 
-  const documentRequestsPromise = loadTransactionDocumentRequestsByIds(client, transactionIds)
+  const documentRequestsPromise = (async () => {
+    try {
+      return await loadTransactionDocumentRequestsByIds(client, transactionIds)
+    } catch (error) {
+      if (isMissingTableError(error, 'document_requests') || isMissingSchemaError(error) || isPermissionDeniedError(error)) {
+        return {}
+      }
+      throw error
+    }
+  })()
 
   const rolePlayersPromise = (async () => {
     let query = await client

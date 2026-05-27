@@ -1,4 +1,10 @@
-import { ArrowRight } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ArrowRight, Bell, FilePlus2 } from 'lucide-react'
+import {
+  BOND_OPERATIONAL_QUEUE_KEYS,
+  buildBondNewApplicationViewModel,
+} from '../services/bondOperationalQueueService'
+import { BOND_INTAKE_STATUSES } from '../core/transactions/bondIntakeSelectors'
 import { getBondApplicationStage } from '../core/transactions/bondSelectors'
 import { getTransactionScopeForRow } from '../core/transactions/transactionScope'
 import { resolveEffectiveBondAssignment } from '../services/bondAssignmentService'
@@ -132,6 +138,174 @@ function resolveTeamAssignment(row) {
   }
 }
 
+function progressLabel(status = '') {
+  if (status === 'SUBMITTED') return 'Submitted'
+  if (status === 'IN_PROGRESS') return 'In progress'
+  return 'Not started'
+}
+
+function intakeFilterLabel(status = '') {
+  if (status === BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION) return 'Awaiting Buyer'
+  if (status === BOND_INTAKE_STATUSES.BUYER_IN_PROGRESS) return 'In Progress'
+  if (status === BOND_INTAKE_STATUSES.AWAITING_DOCUMENTS) return 'Awaiting Docs'
+  if (status === BOND_INTAKE_STATUSES.READY_FOR_REVIEW) return 'Ready For Review'
+  return 'All'
+}
+
+function NewApplicationsEmptyState() {
+  return (
+    <BondSectionCard
+      eyebrow="Intake"
+      title="New Applications"
+      description="Review incoming Bond and Hybrid buyer applications before they are accepted into the active finance book."
+    >
+      <div className="rounded-[20px] border border-dashed border-[#d8e2ec] bg-[#fbfdff] px-5 py-7 text-center">
+        <p className="text-lg font-semibold text-[#142132]">No new bond applications</p>
+        <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[#60758d]">
+          When buyers select Bond or Hybrid and complete their onboarding, they will appear here for review.
+        </p>
+        <a
+          href="/applications"
+          className="mt-5 inline-flex h-10 items-center justify-center rounded-[12px] border border-[#dbe5f0] bg-white px-4 text-sm font-semibold text-[#17324d] transition hover:border-[#c5d5e6]"
+        >
+          View all applications
+        </a>
+      </div>
+    </BondSectionCard>
+  )
+}
+
+function NewApplicationCard({ item, onRowClick }) {
+  const sourceRow = item.sourceRow || {}
+  const openRow = () => onRowClick(sourceRow)
+  const missingPreview = item.missingDocumentLabels?.length
+    ? item.missingDocumentLabels.slice(0, 2).join(', ')
+    : 'No missing documents'
+
+  return (
+    <article className="rounded-[20px] border border-[#dbe5f0] bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.035)]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.85fr)_minmax(230px,0.65fr)] xl:items-center">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-[#315f8c]" />
+            <p className="truncate text-base font-semibold text-[#142132]">{item.buyerName}</p>
+            <BondStatusBadge label={item.financeType} status="submitted" tone="blue" />
+          </div>
+          <p className="mt-2 text-sm font-semibold text-[#31445a]">{item.propertyLabel}</p>
+          <p className="mt-1 text-sm text-[#60758d]">{item.developmentName} · {item.agentName}</p>
+          <p className="mt-2 text-xs text-[#7a8fa5]">Preferred originator: {item.preferredOriginatorName}</p>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-3">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">Application</p>
+            <p className="mt-2 text-sm font-semibold text-[#142132]">{progressLabel(item.bondApplicationStatus)}</p>
+            <p className="mt-1 text-xs text-[#60758d]">{item.bondApplicationSubmittedAt ? formatDate(item.bondApplicationSubmittedAt) : item.ageLabel}</p>
+          </div>
+          <div className="rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-3">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">Documents</p>
+            <p className="mt-2 text-sm font-semibold text-[#142132]">
+              {item.documentUploadedCount} / {item.documentRequiredCount} docs submitted
+            </p>
+            <p className="mt-1 truncate text-xs text-[#60758d]">{item.documentMissingCount} missing · {missingPreview}</p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 xl:items-end">
+          <BondStatusBadge label={item.intakeLabel} status={item.intakeStatus} tone={item.intakeUiTone} className="justify-center" />
+          <div className="flex flex-wrap justify-start gap-2 xl:justify-end">
+            <button
+              type="button"
+              onClick={openRow}
+              className="inline-flex h-9 items-center justify-center gap-1 rounded-[12px] border border-[#dbe5f0] bg-[#f8fbff] px-3 text-sm font-semibold text-[#17324d] transition hover:border-[#c5d5e6]"
+            >
+              View
+              <ArrowRight size={14} />
+            </button>
+            <button
+              type="button"
+              disabled
+              className="inline-flex h-9 items-center justify-center gap-1 rounded-[12px] border border-[#dbe5f0] bg-white px-3 text-sm font-semibold text-[#8aa0b6] opacity-70"
+            >
+              <Bell size={14} />
+              Remind Buyer
+            </button>
+            <button
+              type="button"
+              disabled
+              className="inline-flex h-9 items-center justify-center gap-1 rounded-[12px] border border-[#dbe5f0] bg-white px-3 text-sm font-semibold text-[#8aa0b6] opacity-70"
+            >
+              <FilePlus2 size={14} />
+              Request Documents
+            </button>
+            <button
+              type="button"
+              disabled={!item.canAccept}
+              title={item.canAccept ? 'Accept action will be enabled in Phase 3.' : 'Application must be ready for review before it can be accepted.'}
+              className="inline-flex h-9 items-center justify-center rounded-[12px] bg-[#143250] px-3 text-sm font-semibold text-white transition enabled:hover:bg-[#173a5e] disabled:cursor-not-allowed disabled:bg-[#c7d3df]"
+            >
+              Accept
+            </button>
+          </div>
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function NewApplicationsInbox({ rows = [], onRowClick }) {
+  const [statusFilter, setStatusFilter] = useState('all')
+  const items = useMemo(() => rows.map(buildBondNewApplicationViewModel), [rows])
+  const visibleItems = statusFilter === 'all' ? items : items.filter((item) => item.intakeStatus === statusFilter)
+  const filters = [
+    { key: 'all', label: `All (${items.length})` },
+    ...[
+      BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION,
+      BOND_INTAKE_STATUSES.BUYER_IN_PROGRESS,
+      BOND_INTAKE_STATUSES.AWAITING_DOCUMENTS,
+      BOND_INTAKE_STATUSES.READY_FOR_REVIEW,
+    ].map((status) => ({
+      key: status,
+      label: `${intakeFilterLabel(status)} (${items.filter((item) => item.intakeStatus === status).length})`,
+    })),
+  ]
+
+  if (!items.length) {
+    return <NewApplicationsEmptyState />
+  }
+
+  return (
+    <BondSectionCard
+      eyebrow="Intake"
+      title="New Applications"
+      description="Incoming Bond and Hybrid transactions waiting for buyer completion, document readiness, or review."
+      action={<span className="rounded-full border border-[#dbe5f0] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#516a83]">{visibleItems.length} new</span>}
+    >
+      <div className="mb-5 flex flex-wrap gap-2">
+        {filters.map((filter) => (
+          <button
+            key={filter.key}
+            type="button"
+            onClick={() => setStatusFilter(filter.key)}
+            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+              statusFilter === filter.key
+                ? 'border-[#143250] bg-[#143250] text-white'
+                : 'border-[#dbe5f0] bg-[#f8fbff] text-[#516a83] hover:border-[#c5d5e6]'
+            }`}
+          >
+            {filter.label}
+          </button>
+        ))}
+      </div>
+      <div className="space-y-3">
+        {visibleItems.map((item) => (
+          <NewApplicationCard key={item.id} item={item} onRowClick={onRowClick} />
+        ))}
+      </div>
+    </BondSectionCard>
+  )
+}
+
 function HeaderCell({ children, className = '' }) {
   return (
     <th className={`bg-[#f8fbff] px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.16em] text-[#7d90a5] ${className}`.trim()}>
@@ -209,7 +383,11 @@ function ApplicationRow({ row, onRowClick }) {
   )
 }
 
-function BondApplicationsTable({ rows = [], onRowClick, title = 'Applications Queue' }) {
+function BondApplicationsTable({ rows = [], onRowClick, title = 'Applications Queue', queue = 'all' }) {
+  if (queue === BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS) {
+    return <NewApplicationsInbox rows={rows} onRowClick={onRowClick} />
+  }
+
   return (
     <BondSectionCard
       eyebrow="Applications"

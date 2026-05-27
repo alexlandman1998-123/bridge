@@ -43,6 +43,7 @@ const ICON_BY_KEY = {
   transactions: SwitchCamera,
   transfers: SwitchCamera,
   applications: SwitchCamera,
+  applications_new: PlusCircle,
   applications_all: SwitchCamera,
   applications_mine: SwitchCamera,
   applications_ready: FileCheck2,
