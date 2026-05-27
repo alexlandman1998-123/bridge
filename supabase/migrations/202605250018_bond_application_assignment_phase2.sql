@@ -22,11 +22,17 @@ alter table if exists public.transactions
   add column if not exists bond_assignment_updated_by uuid references auth.users(id) on delete set null;
 
 alter table if exists public.transactions
-  add constraint if not exists transactions_bond_assignment_status_check
+  drop constraint if exists transactions_bond_assignment_status_check;
+
+alter table if exists public.transactions
+  add constraint transactions_bond_assignment_status_check
     check (bond_assignment_status is null or bond_assignment_status in ('unassigned','workspace_assigned','consultant_assigned','processor_assigned','fully_assigned','inactive'));
 
 alter table if exists public.transactions
-  add constraint if not exists transactions_bond_assignment_source_check
+  drop constraint if exists transactions_bond_assignment_source_check;
+
+alter table if exists public.transactions
+  add constraint transactions_bond_assignment_source_check
     check (bond_assignment_source is null or bond_assignment_source in ('manual','legacy_backfill','participant_sync','invite_acceptance','workflow_assignment','system_repair'));
 
 create index if not exists transactions_bond_workspace_id_idx

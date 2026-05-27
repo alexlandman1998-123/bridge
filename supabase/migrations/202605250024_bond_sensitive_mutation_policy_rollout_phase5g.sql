@@ -145,23 +145,48 @@ with check (
   public.bridge_can_mutate_bond_sensitive_transaction_phase5g(id)
 );
 
-create policy transaction_role_players_insert_phase5g_bond_sensitive_mutation on public.transaction_role_players
-for insert to authenticated
-with check (
-  public.transaction_role_players.transaction_id is not null
-  and public.bridge_can_mutate_bond_assignment_phase5g(public.transaction_role_players.transaction_id)
-);
+do $$
+begin
+  if to_regclass('public.transaction_role_players') is not null then
+    if not exists (
+      select 1
+      from pg_policies
+      where schemaname = 'public'
+        and tablename = 'transaction_role_players'
+        and policyname = 'transaction_role_players_insert_phase5g_bond_sensitive_mutation'
+    ) then
+      execute $policy$
+        create policy transaction_role_players_insert_phase5g_bond_sensitive_mutation on public.transaction_role_players
+        for insert to authenticated
+        with check (
+          public.transaction_role_players.transaction_id is not null
+          and public.bridge_can_mutate_bond_assignment_phase5g(public.transaction_role_players.transaction_id)
+        )
+      $policy$;
+    end if;
 
-create policy transaction_role_players_update_phase5g_bond_sensitive_mutation on public.transaction_role_players
-for update to authenticated
-using (
-  public.transaction_role_players.transaction_id is not null
-  and public.bridge_can_mutate_bond_assignment_phase5g(public.transaction_role_players.transaction_id)
-)
-with check (
-  public.transaction_role_players.transaction_id is not null
-  and public.bridge_can_mutate_bond_assignment_phase5g(public.transaction_role_players.transaction_id)
-);
+    if not exists (
+      select 1
+      from pg_policies
+      where schemaname = 'public'
+        and tablename = 'transaction_role_players'
+        and policyname = 'transaction_role_players_update_phase5g_bond_sensitive_mutation'
+    ) then
+      execute $policy$
+        create policy transaction_role_players_update_phase5g_bond_sensitive_mutation on public.transaction_role_players
+        for update to authenticated
+        using (
+          public.transaction_role_players.transaction_id is not null
+          and public.bridge_can_mutate_bond_assignment_phase5g(public.transaction_role_players.transaction_id)
+        )
+        with check (
+          public.transaction_role_players.transaction_id is not null
+          and public.bridge_can_mutate_bond_assignment_phase5g(public.transaction_role_players.transaction_id)
+        )
+      $policy$;
+    end if;
+  end if;
+end $$;
 
 grant execute on function public.bridge_can_submit_bond_to_banks_phase5g(uuid) to authenticated;
 grant execute on function public.bridge_can_revoke_bond_bank_submission_phase5g(uuid) to authenticated;
