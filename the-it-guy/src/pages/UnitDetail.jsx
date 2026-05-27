@@ -4910,7 +4910,16 @@ function UnitDetail() {
   ]
   const agentQuickActions = [
     {
-      label: 'Upload Document',
+      label: 'Request Documents',
+      icon: FilePlus2,
+      onClick: () => {
+        setActiveWorkspaceDocumentsTab('additional')
+        openDocumentsWorkspace()
+      },
+      disabled: !canRequestAdditionalDocuments,
+    },
+    {
+      label: 'Upload Documents',
       icon: UploadCloud,
       onClick: () => {
         setActiveWorkspaceDocumentsTab('sales')
@@ -4918,13 +4927,37 @@ function UnitDetail() {
       },
     },
     {
-      label: 'Request Document',
+      label: 'Schedule Signing',
+      icon: CalendarClock,
+      onClick: () => {
+        setWorkspaceMenu('transfer')
+        setDiscussionType('operational')
+        setDiscussionBody((previous) => previous || '[signing] Signing appointment to be scheduled: ')
+      },
+    },
+    {
+      label: 'Schedule Client Call',
+      icon: PhoneCall,
+      onClick: () => {
+        setWorkspaceMenu('activity')
+        setDiscussionType('client')
+        setDiscussionBody((previous) => previous || '[client] Client call to be scheduled: ')
+      },
+    },
+    {
+      label: 'Generate Document',
       icon: FilePlus2,
       onClick: () => {
-        setActiveWorkspaceDocumentsTab('additional')
+        setActiveWorkspaceDocumentsTab('bond')
         openDocumentsWorkspace()
       },
-      disabled: !canRequestAdditionalDocuments,
+    },
+    {
+      label: 'Assign Roleplayer',
+      icon: UserRound,
+      onClick: () => {
+        setWorkspaceMenu('onboarding')
+      },
     },
     {
       label: 'Add Note',
@@ -4936,12 +4969,12 @@ function UnitDetail() {
       disabled: !canCommentInWorkspace,
     },
     {
-      label: 'Log Call',
-      icon: PhoneCall,
+      label: 'Send Reminder',
+      icon: MessageSquare,
       onClick: () => {
         setWorkspaceMenu('activity')
         setDiscussionType('client')
-        setDiscussionBody((previous) => previous || '[client] Call logged: ')
+        setDiscussionBody((previous) => previous || '[reminder] Reminder sent: ')
       },
       disabled: !canCommentInWorkspace,
     },
@@ -4970,7 +5003,7 @@ function UnitDetail() {
         { id: 'documents', label: 'Documents', meta: `${documents?.length || 0}` },
         { id: 'financials', label: 'Finance', meta: financeLabel === 'n/a' ? 'Not set' : financeLabel },
         { id: 'transfer', label: 'Transfer', meta: mainStageLabel },
-        { id: 'tasks', label: 'Tasks', meta: `${agentUpcomingActions.length}` },
+        { id: 'tasks', label: 'Next Actions', meta: `${agentUpcomingActions.length}` },
         { id: 'activity', label: 'Activity', meta: `${(transactionDiscussion || []).length}` },
         ...(developmentSettings?.alteration_requests_enabled
           ? [{ id: 'alterations', label: 'Alterations', meta: `${alterationRequests?.length || 0}` }]
@@ -6343,8 +6376,8 @@ function UnitDetail() {
 
         {activeWorkspaceMenu === 'tasks' ? (
           <WorkspacePanel
-            title="Tasks"
-            copy="Outstanding actions, due dates, responsible parties, priority, and linked operational areas."
+            title="Next Actions"
+            copy="Outstanding items, follow-ups, due dates, responsible parties, priority, and linked operational areas."
             className="no-print"
           >
             <div className="divide-y divide-[#e6edf5] overflow-hidden rounded-[18px] border border-[#dfe8f2] bg-white">

@@ -24,14 +24,28 @@ async function main() {
     const bondNav = rolesModule.getRoleNavItems('bond_originator')
     assert.deepEqual(
       bondNav.map((item) => item.label),
-      ['Dashboard', 'Pipeline', 'Applications', 'Developments', 'Clients', 'Partners', 'Reports', 'Organisation', 'Documents', 'Tasks', 'Calendar', 'Settings'],
+      ['Dashboard', 'Pipeline', 'Applications', 'Developments', 'Clients', 'Partners', 'Reports', 'Organisation', 'Settings'],
+    )
+    assert.deepEqual(
+      bondNav.filter((item) => item.navSection !== 'secondary').map((item) => item.label),
+      ['Dashboard', 'Pipeline', 'Applications', 'Developments', 'Clients', 'Partners', 'Reports', 'Organisation'],
+    )
+    assert.deepEqual(
+      bondNav.filter((item) => item.navSection === 'secondary').map((item) => item.label),
+      ['Settings'],
     )
     assert.equal(bondNav.find((item) => item.key === 'bond_pipeline')?.to, '/bond/pipeline')
     assert.equal(bondNav.find((item) => item.key === 'applications')?.to, '/bond/applications')
     assert.equal(bondNav.find((item) => item.key === 'bond_organisation')?.to, '/bond/organisation')
+    assert.equal(bondNav.some((item) => item.key === 'documents' || item.key === 'tasks' || item.key === 'bond_calendar'), false)
     assert.equal(Boolean(bondNav.find((item) => item.key === 'clients')?.children?.length), false)
     assert.ok(bondNav.every((item) => !Array.isArray(item.children) || item.children.length === 0))
     assert.equal(bondNav.some((item) => item.key === 'banks' || item.key === 'teams' || item.key === 'performance'), false)
+
+    const appSource = require('node:fs').readFileSync(path.join(PROJECT_ROOT, 'src/App.jsx'), 'utf8')
+    assert.match(appSource, /path="\/bond\/tasks"/)
+    assert.match(appSource, /path="\/bond\/calendar"/)
+    assert.match(appSource, /path="\/documents"/)
 
     assert.deepEqual(
       viewsModule.bondViews.pipeline.tabs.map((tab) => tab.key),

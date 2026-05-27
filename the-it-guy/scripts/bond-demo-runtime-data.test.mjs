@@ -39,15 +39,62 @@ function createMockApplyAdapter({ resolvedEmails = [] } = {}) {
   }
 }
 
-test('dry-run demo plan targets Bridge Finance Demo and bond.demo owner by default', () => {
+test('dry-run demo plan targets Bridge Finance Demo and bond.demo regional manager by default', () => {
   const plan = buildBondDemoRuntimePlan({})
   assert.equal(plan.executionMode, 'dry_run')
   assert.equal(plan.dryRun, true)
   assert.equal(plan.workspace.name, 'Bridge Finance Demo')
   assert.equal(plan.metrics.totalApplications, 118)
-  const owner = plan.users.find((user) => user.key === 'alex_van_der_merwe')
-  assert.ok(owner)
-  assert.equal(owner.email, 'bond.demo@bridgenine.co.za')
+  const targetUser = plan.users.find((user) => user.key === 'alex_van_der_merwe')
+  assert.ok(targetUser)
+  assert.equal(targetUser.email, 'bond.demo@bridgenine.co.za')
+  assert.equal(targetUser.workspaceRole, 'regional_manager')
+  assert.equal(targetUser.scopeLevel, 'region')
+  assert.equal(targetUser.regionKey, 'gauteng')
+  assert.equal(targetUser.regionId, plan.hierarchy.regionIdByKey.gauteng)
+  assert.equal(targetUser.workspaceUnitId, null)
+  assert.equal(targetUser.branchId, null)
+
+  assert.deepEqual(plan.hierarchy.regions.map((region) => region.name), [
+    'Gauteng',
+    'Western Cape',
+    'KwaZulu-Natal',
+  ])
+
+  const gautengBranches = plan.hierarchy.branches
+    .filter((branch) => branch.regionKey === 'gauteng')
+    .map((branch) => branch.name)
+    .sort()
+  assert.deepEqual(gautengBranches, ['Centurion', 'Fourways', 'Pretoria East', 'Sandton'])
+
+  const gautengTeamNames = plan.hierarchy.teams
+    .filter((team) => plan.hierarchy.branches.find((branch) => branch.key === team.branchKey)?.regionKey === 'gauteng')
+    .map((team) => team.name)
+  assert.ok(gautengTeamNames.includes('Developer Desk'))
+  assert.ok(gautengTeamNames.includes('Private Buyer Team'))
+  assert.ok(gautengTeamNames.includes('Processing Team'))
+
+  const gautengConsultants = plan.users.filter((user) => user.regionKey === 'gauteng' && user.roleFamily === 'consultant')
+  assert.ok(gautengConsultants.length >= 8)
+  assert.ok(gautengConsultants.length <= 12)
+
+  const gautengApplications = plan._raw.applications.filter((application) => application.branch.regionKey === 'gauteng')
+  assert.ok(gautengApplications.length >= 40)
+  assert.ok(gautengApplications.length <= 80)
+  const gautengBuckets = new Set(gautengApplications.map((application) => application.bucketKey))
+  for (const bucket of [
+    'new_finance_requested',
+    'documents_required',
+    'ready_for_submission',
+    'submitted_to_banks',
+    'approved',
+    'grant_signed',
+    'bond_instruction_sent',
+    'registered',
+  ]) {
+    assert.ok(gautengBuckets.has(bucket), `Expected Gauteng applications to include ${bucket}`)
+  }
+  assert.ok(gautengApplications.some((application) => application.atRisk))
 })
 
 test('demo plan is deterministic and preserves requested operational shape', () => {
@@ -95,18 +142,20 @@ test('consultant workload is deliberately uneven for realistic dashboards', () =
     return accumulator
   }, {})
 
-  assert.equal(consultantCounts['Emma Roberts'], 24)
-  assert.equal(consultantCounts['Chris Williams'], 7)
-  assert.ok(consultantCounts['Nicole Daniels'] > consultantCounts['Chris Williams'])
-  assert.ok(consultantCounts['Daniel Nkosi'] > consultantCounts['Rachel Adams'])
+  assert.equal(consultantCounts['Emma Roberts'], 15)
+  assert.equal(consultantCounts['Rachel Adams'], 15)
+  assert.equal(consultantCounts['Naledi Maseko'], 11)
+  assert.equal(consultantCounts['Thabo Mokoena'], 7)
+  assert.ok(consultantCounts['Emma Roberts'] > consultantCounts['Thabo Mokoena'])
+  assert.ok(consultantCounts['Rachel Adams'] > consultantCounts['Zanele Khumalo'])
 })
 
-test('apply path succeeds with only the demo owner resolved and writes rich supporting rows', async () => {
+test('apply path succeeds with only the demo regional manager resolved and writes rich supporting rows', async () => {
   const plan = buildBondDemoRuntimePlan({})
-  const owner = plan.users.find((user) => user.key === 'alex_van_der_merwe')
-  assert.ok(owner?.email)
+  const targetUser = plan.users.find((user) => user.key === 'alex_van_der_merwe')
+  assert.ok(targetUser?.email)
   const adapter = createMockApplyAdapter({
-    resolvedEmails: [owner.email],
+    resolvedEmails: [targetUser.email],
   })
 
   const { report } = await runSeeder(
@@ -128,7 +177,8 @@ test('apply path succeeds with only the demo owner resolved and writes rich supp
   )
 
   assert.equal(report.applied, true)
-  assert.equal(report.createdOrUpdated.organisationUsers.rowCount, 1)
+  assert.equal(report.createdOrUpdated.organisationUsers.rowCount, plan.users.length)
+  assert.equal(report.createdOrUpdated.organisationSettings.rowCount, 1)
   assert.ok(report.createdOrUpdated.transactions.rowCount >= 118)
   assert.ok(report.createdOrUpdated.transactionNotifications.rowCount >= 150)
   assert.ok(report.createdOrUpdated.transactionNotifications.rowCount <= 250)
@@ -138,8 +188,23 @@ test('apply path succeeds with only the demo owner resolved and writes rich supp
 
   const membershipWrite = adapter.writes.find((entry) => entry.table === 'organisation_users')
   assert.ok(membershipWrite)
-  assert.equal(membershipWrite.rows.length, 1)
-  assert.equal(membershipWrite.rows[0].email, 'bond.demo@bridgenine.co.za')
+  assert.equal(membershipWrite.rows.length, plan.users.length)
+  const targetMembership = membershipWrite.rows.find((row) => row.email === 'bond.demo@bridgenine.co.za')
+  assert.ok(targetMembership)
+  assert.equal(targetMembership.user_id, 'auth-user-1')
+  assert.equal(targetMembership.workspace_role, 'regional_manager')
+  assert.equal(targetMembership.organisation_role, 'regional_manager')
+  assert.equal(targetMembership.scope_level, 'region')
+  assert.equal(targetMembership.region_id, plan.hierarchy.regionIdByKey.gauteng)
+  assert.equal(targetMembership.branch_id, null)
+  assert.equal(targetMembership.primary_branch_id, null)
+  assert.equal(targetMembership.workspace_unit_id, null)
+
+  const settingsWrite = adapter.writes.find((entry) => entry.table === 'organisation_settings')
+  assert.ok(settingsWrite)
+  assert.equal(settingsWrite.rows.length, 1)
+  assert.equal(settingsWrite.rows[0].settings_json.organisation_structure_type, 'regional')
+  assert.equal(settingsWrite.rows[0].settings_json.organisationHierarchy.organisation_structure_type, 'regional')
 })
 
 test('transaction summary select keeps bond command center signal fields', () => {

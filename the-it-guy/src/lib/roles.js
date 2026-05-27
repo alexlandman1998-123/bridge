@@ -176,9 +176,6 @@ export const APP_NAV_BY_ROLE = {
     { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners'] },
     { key: 'bond_reports', label: 'Reports', to: '/bond/reports', navSection: 'main', activeMatch: ['/bond/reports', '/reports'] },
     { key: 'bond_organisation', label: 'Organisation', to: '/bond/organisation', navSection: 'main', activeMatch: ['/bond/organisation'] },
-    { key: 'documents', label: 'Documents', to: '/documents', navSection: 'secondary' },
-    { key: 'tasks', label: 'Tasks', to: '/bond/tasks', navSection: 'secondary' },
-    { key: 'bond_calendar', label: 'Calendar', to: '/bond/calendar', navSection: 'secondary' },
     { key: 'settings', label: 'Settings', to: '/settings', navSection: 'secondary' },
   ],
   client: [

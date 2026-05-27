@@ -181,6 +181,7 @@ export function getAttorneyClientProfile(rows = [], clientId) {
       typeLabel: getMatterType(row) === 'private' ? 'Private' : 'Development',
       status: String(row?.stage || row?.transaction?.stage || '').toLowerCase() === 'registered' ? 'Completed' : 'Active',
       lastActivityAt: getLastActivityAt(row),
+      documentSummary: row?.documentSummary || row?.document_summary || null,
     }))
     .sort((left, right) => new Date(right.lastActivityAt || 0) - new Date(left.lastActivityAt || 0))
 

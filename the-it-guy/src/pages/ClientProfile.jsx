@@ -86,6 +86,45 @@ function getProfileCopy(role) {
   }
 }
 
+function getDocumentSummaryValue(summary = {}, keys = []) {
+  for (const key of keys) {
+    const value = Number(summary?.[key])
+    if (Number.isFinite(value)) return value
+  }
+  return 0
+}
+
+function buildClientDocumentSections(transactions = []) {
+  const totals = transactions.reduce(
+    (accumulator, transaction) => {
+      const summary = transaction.documentSummary || {}
+      accumulator.required += getDocumentSummaryValue(summary, ['requiredCount', 'totalRequired', 'total_required_documents', 'total'])
+      accumulator.uploaded += getDocumentSummaryValue(summary, ['uploadedCount', 'uploaded_documents_count', 'uploaded'])
+      accumulator.missing += getDocumentSummaryValue(summary, ['missingCount', 'missing_documents_count', 'missing'])
+      return accumulator
+    },
+    { required: 0, uploaded: 0, missing: 0 },
+  )
+
+  return [
+    {
+      title: 'Uploaded FICA',
+      value: totals.uploaded ? `${totals.uploaded} uploaded` : 'Linked to applications',
+      description: 'Identity, proof of address, company, trust, and related FICA files stay attached to the client record through each application.',
+    },
+    {
+      title: 'Application Documents',
+      value: totals.required ? `${Math.max(totals.required - totals.missing, 0)} of ${totals.required} complete` : `${transactions.length} linked ${transactions.length === 1 ? 'application' : 'applications'}`,
+      description: 'Payslips, bank statements, OTPs, affordability packs, and finance documents are managed inside the linked application detail.',
+    },
+    {
+      title: 'Supporting Docs',
+      value: totals.missing ? `${totals.missing} outstanding` : 'No outstanding count',
+      description: 'Additional requests and supporting documents are surfaced here as a client-level view without becoming a standalone file manager.',
+    },
+  ]
+}
+
 function ClientProfile() {
   const navigate = useNavigate()
   const { clientId } = useParams()
@@ -124,7 +163,7 @@ function ClientProfile() {
       if (role === 'developer') {
         const overview = await fetchDashboardOverview({ developmentId: null })
         transactionRows = overview?.rows || []
-      } else if ((role === 'agent' || role === 'attorney') && profile?.id) {
+      } else if ((role === 'agent' || role === 'attorney' || role === 'bond_originator') && profile?.id) {
         transactionRows = await fetchTransactionsByParticipant({ userId: profile.id, roleType: role })
       }
       setRows(transactionRows || [])
@@ -175,6 +214,8 @@ function ClientProfile() {
   }
 
   const { client, transactions } = profileData
+  const showDocumentTab = role === 'bond_originator'
+  const clientDocumentSections = showDocumentTab ? buildClientDocumentSections(transactions) : []
 
   return (
     <section className="space-y-5">
@@ -245,7 +286,7 @@ function ClientProfile() {
 
         <div className="space-y-5">
           <div className="rounded-[24px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-            <div className="grid gap-2 sm:grid-cols-2" role="tablist" aria-label="Client tabs">
+            <div className={`grid gap-2 ${showDocumentTab ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`} role="tablist" aria-label="Client tabs">
               <button
                 type="button"
                 className={[
@@ -270,6 +311,20 @@ function ClientProfile() {
               >
                 {copy.tabLabel || 'Transactions'}
               </button>
+              {showDocumentTab ? (
+                <button
+                  type="button"
+                  className={[
+                    'inline-flex min-h-[52px] items-center justify-center rounded-[16px] border px-4 py-3 text-sm font-semibold transition duration-150 ease-out',
+                    activeTab === 'documents'
+                      ? 'border-[#cfe1f7] bg-[#35546c] text-white shadow-[0_10px_24px_rgba(15,23,42,0.1)]'
+                      : 'border-transparent bg-[#f8fafc] text-[#4f647a] hover:border-[#dde4ee] hover:bg-white',
+                  ].join(' ')}
+                  onClick={() => setActiveTab('documents')}
+                >
+                  Documents
+                </button>
+              ) : null}
             </div>
           </div>
 
@@ -399,6 +454,62 @@ function ClientProfile() {
                     <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
                       {copy.emptyDescription || 'This contact can still be a buyer lead, seller lead, prospect, or manually created client before a transaction is opened.'}
                     </p>
+                  </div>
+                )}
+              </div>
+            </section>
+          ) : null}
+
+          {activeTab === 'documents' && showDocumentTab ? (
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Client Documents</h3>
+                  <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
+                    FICA, application documents, and supporting docs grouped around this client and their linked applications.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-4 lg:grid-cols-3">
+                {clientDocumentSections.map((section) => (
+                  <article key={section.title} className="rounded-[22px] border border-[#dde4ee] bg-[#fbfcfe] p-5">
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{section.title}</span>
+                    <strong className="mt-2 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">{section.value}</strong>
+                    <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{section.description}</p>
+                  </article>
+                ))}
+              </div>
+
+              <div className="mt-5 divide-y divide-[#e6edf5] overflow-hidden rounded-[18px] border border-[#dfe8f2] bg-white">
+                {transactions.length ? transactions.map((transaction) => (
+                  <article key={`docs-${transaction.reference}`} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <h4 className="truncate text-sm font-semibold text-[#142132]">{transaction.propertyLabel}</h4>
+                      <p className="mt-1 text-xs text-[#7c8ea4]">{transaction.reference} - {transaction.stageLabel}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() =>
+                        navigate(
+                          `${getMatterPath({
+                            role,
+                            transactionId: transaction.id,
+                            unitId: transaction.unitId,
+                            fallbackSearch: client.name,
+                          })}?tab=documents`,
+                        )
+                      }
+                    >
+                      Open Documents
+                    </Button>
+                  </article>
+                )) : (
+                  <div className="px-4 py-5">
+                    <h4 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">No application documents yet</h4>
+                    <p className="mt-2 text-sm leading-6 text-[#6b7d93]">Documents will appear here once this client is linked to a bond application.</p>
                   </div>
                 )}
               </div>

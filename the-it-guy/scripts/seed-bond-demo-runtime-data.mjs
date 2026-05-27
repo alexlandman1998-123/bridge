@@ -12,6 +12,8 @@ const DEFAULT_TARGET = 'staging'
 const DEFAULT_WORKSPACE_TYPE = 'bond_originator'
 const DEFAULT_WORKSPACE_NAME = 'Bridge Finance Demo'
 const DEFAULT_DEMO_OWNER_EMAIL = 'bond.demo@bridgenine.co.za'
+const TARGET_DEMO_USER_KEY = 'alex_van_der_merwe'
+const TARGET_DEMO_REGION_KEY = 'gauteng'
 const REFERENCE_NOW = new Date('2026-05-26T09:00:00.000Z')
 
 const ACTIVE_PIPELINE_BUCKETS = Object.freeze([
@@ -42,18 +44,46 @@ const REGION_CATALOG = Object.freeze([
 
 const BRANCH_CATALOG = Object.freeze([
   {
-    key: 'johannesburg_central',
-    name: 'Johannesburg Central',
-    code: 'BOND-DEMO-JHB',
+    key: 'sandton',
+    name: 'Sandton',
+    code: 'BOND-DEMO-SDN',
     regionKey: 'gauteng',
     city: 'Johannesburg',
     suburb: 'Sandton',
     province: 'Gauteng',
-    consultantKeys: ['emma_roberts', 'daniel_nkosi', 'ethan_govender'],
+    consultantKeys: ['emma_roberts', 'thabo_mokoena', 'lerato_khumalo'],
     processorKeys: ['tarryn_meyer', 'carla_smith'],
     complianceKeys: ['olivia_brown'],
     branchManagerKey: 'jason_smith',
-    regionalManagerKey: 'sarah_jacobs',
+    regionalManagerKey: TARGET_DEMO_USER_KEY,
+  },
+  {
+    key: 'centurion',
+    name: 'Centurion',
+    code: 'BOND-DEMO-CEN',
+    regionKey: 'gauteng',
+    city: 'Centurion',
+    suburb: 'Centurion',
+    province: 'Gauteng',
+    consultantKeys: ['naledi_maseko', 'priya_patel'],
+    processorKeys: ['tarryn_meyer', 'jess_naidoo'],
+    complianceKeys: ['olivia_brown', 'megan_jacobs'],
+    branchManagerKey: 'jason_smith',
+    regionalManagerKey: TARGET_DEMO_USER_KEY,
+  },
+  {
+    key: 'fourways',
+    name: 'Fourways',
+    code: 'BOND-DEMO-FWY',
+    regionKey: 'gauteng',
+    city: 'Johannesburg',
+    suburb: 'Fourways',
+    province: 'Gauteng',
+    consultantKeys: ['kabelo_dlamini', 'zanele_khumalo'],
+    processorKeys: ['jess_naidoo', 'tarryn_meyer'],
+    complianceKeys: ['olivia_brown'],
+    branchManagerKey: 'mia_ferreira',
+    regionalManagerKey: TARGET_DEMO_USER_KEY,
   },
   {
     key: 'pretoria_east',
@@ -67,7 +97,7 @@ const BRANCH_CATALOG = Object.freeze([
     processorKeys: ['jess_naidoo', 'tarryn_meyer'],
     complianceKeys: ['olivia_brown', 'megan_jacobs'],
     branchManagerKey: 'mia_ferreira',
-    regionalManagerKey: 'sarah_jacobs',
+    regionalManagerKey: TARGET_DEMO_USER_KEY,
   },
   {
     key: 'cape_town_atlantic',
@@ -81,7 +111,7 @@ const BRANCH_CATALOG = Object.freeze([
     processorKeys: ['carla_smith', 'michael_van_zyl'],
     complianceKeys: ['megan_jacobs'],
     branchManagerKey: 'kyle_petersen',
-    regionalManagerKey: 'alex_van_der_merwe',
+    regionalManagerKey: 'sarah_jacobs',
   },
   {
     key: 'durban_north',
@@ -99,12 +129,28 @@ const BRANCH_CATALOG = Object.freeze([
   },
 ])
 
+const BRANCH_ALLOCATION_BY_BUCKET = Object.freeze({
+  new_finance_requested: { sandton: 4, centurion: 3, fourways: 2, pretoria_east: 1 },
+  awaiting_contact: { pretoria_east: 3, sandton: 3, centurion: 2, durban_north: 2 },
+  documents_required: { pretoria_east: 4, sandton: 4, centurion: 3, fourways: 2, durban_north: 1 },
+  pre_qualification: { sandton: 2, centurion: 2, fourways: 1, durban_north: 1, pretoria_east: 1 },
+  ready_for_submission: { sandton: 3, centurion: 2, fourways: 2, pretoria_east: 1, cape_town_atlantic: 2 },
+  submitted_to_banks: { sandton: 2, centurion: 2, fourways: 1, pretoria_east: 1, cape_town_atlantic: 1 },
+  bank_feedback: { pretoria_east: 1, sandton: 1, durban_north: 1 },
+  approved: { sandton: 1, centurion: 1, cape_town_atlantic: 1 },
+  grant_signed: { sandton: 1, fourways: 1 },
+  bond_instruction_sent: { centurion: 1, pretoria_east: 1 },
+  transfer_in_progress: { cape_town_atlantic: 8, durban_north: 7, sandton: 2, centurion: 2, fourways: 2, pretoria_east: 1 },
+  registered: { cape_town_atlantic: 6, durban_north: 5, sandton: 2, centurion: 2, fourways: 2, pretoria_east: 1 },
+  declined_or_cancelled: { pretoria_east: 2, fourways: 2, durban_north: 2, sandton: 2, centurion: 1, cape_town_atlantic: 1 },
+})
+
 const DEVELOPMENT_CATALOG = Object.freeze([
   {
     key: 'westbrook_estate',
     name: 'Westbrook Estate',
     developer: 'Westbrook Estates',
-    branchKey: 'johannesburg_central',
+    branchKey: 'sandton',
     city: 'Johannesburg',
     suburb: 'Midrand',
     basePrice: 1850000,
@@ -114,11 +160,31 @@ const DEVELOPMENT_CATALOG = Object.freeze([
     key: 'greenstone_living_lofts',
     name: 'Greenstone Living Lofts',
     developer: 'Greenstone Living',
-    branchKey: 'johannesburg_central',
+    branchKey: 'sandton',
     city: 'Johannesburg',
     suburb: 'Morningside',
     basePrice: 1325000,
     unitLabelStyle: 'apartment',
+  },
+  {
+    key: 'centurion_gate',
+    name: 'Centurion Gate',
+    developer: 'Westbrook Estates',
+    branchKey: 'centurion',
+    city: 'Centurion',
+    suburb: 'Centurion',
+    basePrice: 1540000,
+    unitLabelStyle: 'unit',
+  },
+  {
+    key: 'fourways_gardens',
+    name: 'Fourways Gardens',
+    developer: 'Greenstone Living',
+    branchKey: 'fourways',
+    city: 'Johannesburg',
+    suburb: 'Fourways',
+    basePrice: 1975000,
+    unitLabelStyle: 'unit',
   },
   {
     key: 'oakmont_residences',
@@ -198,17 +264,26 @@ const ATTORNEY_CATALOG = Object.freeze([
 
 const BANK_CATALOG = Object.freeze(['FNB', 'Standard Bank', 'Nedbank', 'ABSA', 'Investec'])
 
+const TEAM_CATALOG = Object.freeze([
+  { key: 'developer_desk', name: 'Developer Desk', code: 'BOND-DEMO-DEV-DESK', branchKey: 'sandton' },
+  { key: 'processing_team', name: 'Processing Team', code: 'BOND-DEMO-PROCESS', branchKey: 'centurion' },
+  { key: 'private_buyer_team', name: 'Private Buyer Team', code: 'BOND-DEMO-PBT', branchKey: 'fourways' },
+  { key: 'pretoria_processing_team', name: 'Pretoria East Processing Team', code: 'BOND-DEMO-PTA-PROC', branchKey: 'pretoria_east' },
+  { key: 'cape_town_operations', name: 'Cape Town Operations', code: 'BOND-DEMO-CPT-OPS', branchKey: 'cape_town_atlantic' },
+  { key: 'durban_operations', name: 'Durban Operations', code: 'BOND-DEMO-DBN-OPS', branchKey: 'durban_north' },
+])
+
 const USER_CATALOG = Object.freeze([
   {
-    key: 'alex_van_der_merwe',
+    key: TARGET_DEMO_USER_KEY,
     name: 'Alex van der Merwe',
     email: DEFAULT_DEMO_OWNER_EMAIL,
-    workspaceRole: 'owner',
-    scopeLevel: 'workspace_hq',
-    roleFamily: 'principal',
+    workspaceRole: 'regional_manager',
+    scopeLevel: 'region',
+    roleFamily: 'manager',
     requiredAuth: true,
     branchKey: null,
-    regionKey: null,
+    regionKey: TARGET_DEMO_REGION_KEY,
   },
   {
     key: 'sarah_jacobs',
@@ -219,7 +294,7 @@ const USER_CATALOG = Object.freeze([
     roleFamily: 'manager',
     requiredAuth: false,
     branchKey: null,
-    regionKey: 'gauteng',
+    regionKey: 'western_cape',
   },
   {
     key: 'liam_naidoo',
@@ -240,7 +315,7 @@ const USER_CATALOG = Object.freeze([
     scopeLevel: 'branch',
     roleFamily: 'manager',
     requiredAuth: false,
-    branchKey: 'johannesburg_central',
+    branchKey: 'sandton',
     regionKey: 'gauteng',
   },
   {
@@ -273,7 +348,73 @@ const USER_CATALOG = Object.freeze([
     scopeLevel: 'assigned',
     roleFamily: 'consultant',
     requiredAuth: false,
-    branchKey: 'johannesburg_central',
+    branchKey: 'sandton',
+    regionKey: 'gauteng',
+  },
+  {
+    key: 'thabo_mokoena',
+    name: 'Thabo Mokoena',
+    email: 'thabo.mokoena+bond-demo@bridgenine.co.za',
+    workspaceRole: 'consultant',
+    scopeLevel: 'assigned',
+    roleFamily: 'consultant',
+    requiredAuth: false,
+    branchKey: 'sandton',
+    regionKey: 'gauteng',
+  },
+  {
+    key: 'lerato_khumalo',
+    name: 'Lerato Khumalo',
+    email: 'lerato.khumalo+bond-demo@bridgenine.co.za',
+    workspaceRole: 'consultant',
+    scopeLevel: 'assigned',
+    roleFamily: 'consultant',
+    requiredAuth: false,
+    branchKey: 'sandton',
+    regionKey: 'gauteng',
+  },
+  {
+    key: 'naledi_maseko',
+    name: 'Naledi Maseko',
+    email: 'naledi.maseko+bond-demo@bridgenine.co.za',
+    workspaceRole: 'consultant',
+    scopeLevel: 'assigned',
+    roleFamily: 'consultant',
+    requiredAuth: false,
+    branchKey: 'centurion',
+    regionKey: 'gauteng',
+  },
+  {
+    key: 'priya_patel',
+    name: 'Priya Patel',
+    email: 'priya.patel+bond-demo@bridgenine.co.za',
+    workspaceRole: 'consultant',
+    scopeLevel: 'assigned',
+    roleFamily: 'consultant',
+    requiredAuth: false,
+    branchKey: 'centurion',
+    regionKey: 'gauteng',
+  },
+  {
+    key: 'kabelo_dlamini',
+    name: 'Kabelo Dlamini',
+    email: 'kabelo.dlamini+bond-demo@bridgenine.co.za',
+    workspaceRole: 'consultant',
+    scopeLevel: 'assigned',
+    roleFamily: 'consultant',
+    requiredAuth: false,
+    branchKey: 'fourways',
+    regionKey: 'gauteng',
+  },
+  {
+    key: 'zanele_khumalo',
+    name: 'Zanele Khumalo',
+    email: 'zanele.khumalo+bond-demo@bridgenine.co.za',
+    workspaceRole: 'consultant',
+    scopeLevel: 'assigned',
+    roleFamily: 'consultant',
+    requiredAuth: false,
+    branchKey: 'fourways',
     regionKey: 'gauteng',
   },
   {
@@ -339,7 +480,7 @@ const USER_CATALOG = Object.freeze([
     scopeLevel: 'team',
     roleFamily: 'processor',
     requiredAuth: false,
-    branchKey: 'johannesburg_central',
+    branchKey: 'sandton',
     regionKey: 'gauteng',
   },
   {
@@ -400,19 +541,25 @@ const USER_CATALOG = Object.freeze([
 ])
 
 const CONSULTANT_QUOTAS = Object.freeze({
-  emma_roberts: 24,
-  daniel_nkosi: 22,
-  rachel_adams: 18,
-  chris_williams: 7,
-  nicole_daniels: 23,
-  ethan_govender: 24,
+  emma_roberts: 15,
+  thabo_mokoena: 7,
+  lerato_khumalo: 7,
+  naledi_maseko: 11,
+  priya_patel: 10,
+  kabelo_dlamini: 8,
+  zanele_khumalo: 7,
+  rachel_adams: 15,
+  daniel_nkosi: 10,
+  ethan_govender: 9,
+  chris_williams: 10,
+  nicole_daniels: 9,
 })
 
 const PROCESSOR_QUOTAS = Object.freeze({
-  tarryn_meyer: 34,
-  jess_naidoo: 32,
-  carla_smith: 20,
-  michael_van_zyl: 32,
+  tarryn_meyer: 45,
+  jess_naidoo: 35,
+  carla_smith: 19,
+  michael_van_zyl: 19,
 })
 
 const FIRST_NAMES = Object.freeze([
@@ -430,7 +577,9 @@ const LAST_NAMES = Object.freeze([
 ])
 
 const SUBURB_PHONE_PREFIX = Object.freeze({
-  johannesburg_central: '082',
+  sandton: '082',
+  centurion: '083',
+  fourways: '084',
   pretoria_east: '083',
   cape_town_atlantic: '084',
   durban_north: '081',
@@ -454,6 +603,7 @@ const COMPLIANCE_FLAG_APPLICATION_INDEXES = new Set([17, 33, 52, 79, 97])
 
 const REQUIRED_COLUMNS_BY_TABLE = Object.freeze({
   organisations: ['id', 'name'],
+  organisation_settings: ['organisation_id', 'settings_json'],
   workspace_regions: ['id', 'workspace_id', 'name', 'code'],
   workspace_units: ['id', 'workspace_id', 'unit_type', 'name', 'code'],
   organisation_users: ['organisation_id', 'email', 'role', 'status'],
@@ -847,16 +997,20 @@ function createHierarchy() {
     unitType: 'branch',
   }))
   const branchIdByKey = Object.fromEntries(branches.map((branch) => [branch.key, branch.id]))
-  const teams = branches.map((branch) => ({
-    key: `${branch.key}_operations`,
-    id: deterministicUuid(`unit:team:${branch.key}`),
-    workspaceId,
-    regionId: branch.regionId,
-    parentUnitId: branch.id,
+  const branchByKey = Object.fromEntries(branches.map((branch) => [branch.key, branch]))
+  const teams = TEAM_CATALOG.map((team) => {
+    const branch = branchByKey[team.branchKey] || branches[0]
+    return {
+      ...team,
+      id: deterministicUuid(`unit:team:${team.key}`),
+      workspaceId,
+      regionId: branch.regionId,
+      parentUnitId: branch.id,
+      branchKey: branch.key,
+    }
+  }).map((team) => ({
+    ...team,
     unitType: 'team',
-    name: `${branch.name} Operations`,
-    code: `${branch.code}-OPS`,
-    branchKey: branch.key,
   }))
 
   return {
@@ -888,7 +1042,7 @@ function createHierarchy() {
 function buildUsers(env = {}, hierarchy = createHierarchy()) {
   const demoOwnerEmail = normalizeEmail(env.BOND_DEMO_OWNER_EMAIL || DEFAULT_DEMO_OWNER_EMAIL)
   return USER_CATALOG.map((user) => {
-    const email = user.key === 'alex_van_der_merwe' ? demoOwnerEmail : normalizeEmail(user.email)
+    const email = user.key === TARGET_DEMO_USER_KEY ? demoOwnerEmail : normalizeEmail(user.email)
     const branchId = user.branchKey ? hierarchy.branchIdByKey[user.branchKey] || null : null
     const teamId = user.workspaceRole === 'processor' && user.branchKey ? hierarchy.teamIdByBranchKey[user.branchKey] || null : null
     return {
@@ -928,29 +1082,43 @@ function pickWithQuota(candidates = [], quotaState = {}, seed = '', fallbackCand
 }
 
 function buildBranchQuotaState() {
-  return {
-    johannesburg_central: 31,
-    pretoria_east: 30,
-    cape_town_atlantic: 29,
-    durban_north: 28,
-  }
+  return Object.fromEntries(BRANCH_CATALOG.map((branch) => [branch.key, 0]))
 }
 
-function chooseBranchForBucket(bucketKey = '', branchQuotaState = {}) {
+function branchSequenceForBucket(bucketKey = '') {
+  const allocation = BRANCH_ALLOCATION_BY_BUCKET[bucketKey] || {}
+  const sequence = []
+  for (const branch of BRANCH_CATALOG) {
+    const count = Number(allocation[branch.key]) || 0
+    for (let index = 0; index < count; index += 1) {
+      sequence.push(branch.key)
+    }
+  }
+  return sequence
+}
+
+function chooseBranchForBucket(bucketKey = '', bucketIndex = 0, branchQuotaState = {}) {
+  const allocated = branchSequenceForBucket(bucketKey)
+  if (allocated.length) {
+    const branchKey = allocated[bucketIndex % allocated.length]
+    branchQuotaState[branchKey] = (branchQuotaState[branchKey] || 0) + 1
+    return branchKey
+  }
+
   const preferences = {
-    new_finance_requested: ['johannesburg_central', 'pretoria_east', 'durban_north'],
-    awaiting_contact: ['pretoria_east', 'johannesburg_central', 'durban_north'],
-    documents_required: ['pretoria_east', 'johannesburg_central', 'durban_north'],
-    pre_qualification: ['johannesburg_central', 'durban_north', 'pretoria_east'],
-    ready_for_submission: ['cape_town_atlantic', 'johannesburg_central', 'pretoria_east'],
-    submitted_to_banks: ['cape_town_atlantic', 'johannesburg_central', 'durban_north'],
-    bank_feedback: ['pretoria_east', 'durban_north', 'johannesburg_central'],
-    approved: ['cape_town_atlantic', 'johannesburg_central', 'durban_north'],
-    grant_signed: ['cape_town_atlantic', 'durban_north'],
-    bond_instruction_sent: ['cape_town_atlantic', 'durban_north'],
-    transfer_in_progress: ['cape_town_atlantic', 'durban_north', 'johannesburg_central'],
-    registered: ['cape_town_atlantic', 'durban_north', 'johannesburg_central'],
-    declined_or_cancelled: ['pretoria_east', 'durban_north', 'johannesburg_central'],
+    new_finance_requested: ['sandton', 'centurion', 'fourways', 'pretoria_east', 'durban_north'],
+    awaiting_contact: ['pretoria_east', 'sandton', 'centurion', 'fourways', 'durban_north'],
+    documents_required: ['pretoria_east', 'sandton', 'centurion', 'fourways', 'durban_north'],
+    pre_qualification: ['sandton', 'centurion', 'fourways', 'durban_north', 'pretoria_east'],
+    ready_for_submission: ['sandton', 'centurion', 'fourways', 'pretoria_east', 'cape_town_atlantic'],
+    submitted_to_banks: ['sandton', 'centurion', 'fourways', 'pretoria_east', 'cape_town_atlantic', 'durban_north'],
+    bank_feedback: ['pretoria_east', 'sandton', 'fourways', 'durban_north', 'centurion'],
+    approved: ['sandton', 'centurion', 'fourways', 'cape_town_atlantic', 'durban_north'],
+    grant_signed: ['sandton', 'fourways', 'cape_town_atlantic', 'durban_north'],
+    bond_instruction_sent: ['centurion', 'pretoria_east', 'cape_town_atlantic', 'durban_north'],
+    transfer_in_progress: ['cape_town_atlantic', 'durban_north', 'sandton', 'centurion', 'fourways', 'pretoria_east'],
+    registered: ['cape_town_atlantic', 'durban_north', 'sandton', 'centurion', 'fourways', 'pretoria_east'],
+    declined_or_cancelled: ['pretoria_east', 'fourways', 'durban_north', 'sandton', 'centurion'],
   }
   return pickWithQuota(preferences[bucketKey] || BRANCH_CATALOG.map((branch) => branch.key), branchQuotaState, `branch:${bucketKey}`, BRANCH_CATALOG.map((branch) => branch.key))
 }
@@ -1446,7 +1614,7 @@ function buildApplicationRecords(users = [], hierarchy = createHierarchy()) {
   let applicationIndex = 0
   for (const bucket of allBuckets) {
     for (let bucketIndex = 0; bucketIndex < bucket.count; bucketIndex += 1) {
-      const branchKey = chooseBranchForBucket(bucket.key, branchQuotaState)
+      const branchKey = chooseBranchForBucket(bucket.key, bucketIndex, branchQuotaState)
       const branch = BRANCH_CATALOG.find((item) => item.key === branchKey) || BRANCH_CATALOG[0]
       const regionId = hierarchy.regionIdByKey[branch.regionKey] || null
       const branchId = hierarchy.branchIdByKey[branch.key] || null
@@ -2175,12 +2343,12 @@ function buildClientPortalLinks(applications = []) {
 
 function buildMembershipRows(plan) {
   return plan.users
-    .filter((user) => user.membershipEnabled && user.workspaceId && user.userId)
+    .filter((user) => user.membershipEnabled && user.workspaceId)
     .map((user) => {
       const [firstName, ...rest] = user.name.split(' ')
       return {
         organisation_id: user.workspaceId,
-        user_id: user.userId,
+        user_id: user.userId || null,
         first_name: firstName || user.name,
         last_name: rest.join(' ') || null,
         email: user.email,
@@ -2192,13 +2360,15 @@ function buildMembershipRows(plan) {
         status: 'active',
         scope_level: user.scopeLevel,
         region_id: user.regionId,
+        branch_id: user.branchId || null,
+        primary_branch_id: user.branchId || null,
         workspace_unit_id: user.workspaceUnitId,
         scope_metadata: buildManagedMetadata({
           user_key: user.key,
           branch_key: user.branchKey,
           region_key: user.regionKey,
         }),
-        is_primary_owner: user.key === 'alex_van_der_merwe',
+        is_primary_owner: false,
         active_workspace_selected_at: REFERENCE_NOW.toISOString(),
         invited_at: REFERENCE_NOW.toISOString(),
         accepted_at: REFERENCE_NOW.toISOString(),
@@ -2336,6 +2506,7 @@ function buildPlan(inputEnv = {}) {
     },
     createdOrUpdated: {
       organisations: makeCount(),
+      organisationSettings: makeCount(),
       workspaceRegions: makeCount(),
       workspaceUnits: makeCount(),
       organisationUsers: makeCount(),
@@ -2570,8 +2741,31 @@ function buildOrganisationRows(plan) {
       active: true,
       metadata: buildManagedMetadata({
         seed_purpose: 'bond_demo_runtime',
-        target_demo_owner: normalizeEmail(getUserByKey(plan.users, 'alex_van_der_merwe')?.email || DEFAULT_DEMO_OWNER_EMAIL),
+        target_demo_user: normalizeEmail(getUserByKey(plan.users, TARGET_DEMO_USER_KEY)?.email || DEFAULT_DEMO_OWNER_EMAIL),
+        organisation_structure_type: 'regional',
       }),
+    },
+  ]
+}
+
+function buildOrganisationSettingsRows(plan) {
+  const settingsJson = {
+    organisation_structure_type: 'regional',
+    organisationStructureType: 'regional',
+    organisationHierarchy: {
+      branchesEnabled: true,
+      reportingMode: 'regional_hierarchy',
+      visibilityMode: 'role_based',
+      organisation_structure_type: 'regional',
+      organisationStructureType: 'regional',
+      structureType: 'regional',
+    },
+  }
+
+  return [
+    {
+      organisation_id: plan.workspace.id,
+      settings_json: settingsJson,
     },
   ]
 }
@@ -2583,7 +2777,7 @@ function buildWorkspaceRegionRows(plan) {
     name: region.name,
     code: region.code,
     description: `Bond demo region for ${region.name}.`,
-    manager_user_id: getUserByKey(plan.users, region.key === 'gauteng' ? 'sarah_jacobs' : region.key === 'kwazulu_natal' ? 'liam_naidoo' : 'alex_van_der_merwe')?.userId || null,
+    manager_user_id: getUserByKey(plan.users, region.key === 'gauteng' ? TARGET_DEMO_USER_KEY : region.key === 'kwazulu_natal' ? 'liam_naidoo' : 'sarah_jacobs')?.userId || null,
     active: true,
     metadata: buildManagedMetadata({ region_key: region.key }),
   }))
@@ -2600,7 +2794,7 @@ function buildWorkspaceUnitRows(plan) {
       name: plan.hierarchy.hq.name,
       code: plan.hierarchy.hq.code,
       description: 'Principal and compliance HQ oversight.',
-      manager_user_id: getUserByKey(plan.users, 'alex_van_der_merwe')?.userId || null,
+      manager_user_id: getUserByKey(plan.users, TARGET_DEMO_USER_KEY)?.userId || null,
       active: true,
       metadata: buildManagedMetadata({ unit_key: 'hq' }),
     },
@@ -2644,9 +2838,9 @@ function buildWorkspaceUnitRows(plan) {
 async function performRealApply(plan, adapter) {
   const authUserMap = await adapter.lookupUsersByEmails(plan.users.map((user) => user.email))
   const hydratedUsers = hydrateUsersWithAuth(plan.users, authUserMap)
-  const owner = getUserByKey(hydratedUsers, 'alex_van_der_merwe')
-  if (!owner?.userId) {
-    throw new Error(`Missing required Bond demo owner auth user: ${owner?.email || DEFAULT_DEMO_OWNER_EMAIL}`)
+  const targetDemoUser = getUserByKey(hydratedUsers, TARGET_DEMO_USER_KEY)
+  if (!targetDemoUser?.userId) {
+    throw new Error(`Missing required Bond demo auth user: ${targetDemoUser?.email || DEFAULT_DEMO_OWNER_EMAIL}`)
   }
 
   const hydrated = {
@@ -2659,16 +2853,17 @@ async function performRealApply(plan, adapter) {
     })),
   }
 
-  const ownerUserId = owner.userId
-  const { requests, documents } = buildDocumentRows(hydrated._raw.applications, ownerUserId)
+  const targetDemoUserId = targetDemoUser.userId
+  const { requests, documents } = buildDocumentRows(hydrated._raw.applications, targetDemoUserId)
   const comments = buildCommentRows(hydrated._raw.applications)
-  const events = buildEventRows(hydrated._raw.applications, ownerUserId)
-  const notifications = buildNotificationRows(hydrated._raw.applications, ownerUserId)
+  const events = buildEventRows(hydrated._raw.applications, targetDemoUserId)
+  const notifications = buildNotificationRows(hydrated._raw.applications, targetDemoUserId)
   const participants = buildParticipantRows(hydrated._raw.applications)
   const rolePlayers = buildRolePlayerRows(hydrated._raw.applications)
   const portalLinks = buildClientPortalLinks(hydrated._raw.applications)
 
   await applyCount(hydrated, 'organisations', 'organisations', buildOrganisationRows(hydrated), adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'organisationSettings', 'organisation_settings', buildOrganisationSettingsRows(hydrated), adapter, { onConflict: 'organisation_id' })
   await applyCount(hydrated, 'workspaceRegions', 'workspace_regions', buildWorkspaceRegionRows(hydrated), adapter, { onConflict: 'id' })
   await applyCount(hydrated, 'workspaceUnits', 'workspace_units', buildWorkspaceUnitRows(hydrated), adapter, { onConflict: 'id' })
   await applyCount(hydrated, 'organisationUsers', 'organisation_users', buildMembershipRows(hydrated), adapter, { onConflict: 'organisation_id,email' })
