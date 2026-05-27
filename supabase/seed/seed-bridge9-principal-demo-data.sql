@@ -143,13 +143,30 @@ declare
   v_city text;
   v_reference text;
 begin
-  select o.id
+  -- Prefer the workspace the real demo login is already scoped to. If the
+  -- principal account exists before seeding, this keeps seeded data visible in
+  -- the active app workspace instead of creating a second hidden demo org.
+  select ou.organisation_id
     into v_org_id
-  from public.organisations o
-  where lower(coalesce(o.company_email, '')) = lower('principal.demo@bridgenine.co.za')
-     or lower(o.name) = lower('Bridge9 Realty')
-  order by o.created_at desc nulls last
+  from public.organisation_users ou
+  left join public.profiles p on p.id = ou.user_id
+  where lower(coalesce(ou.email, p.email, '')) = lower('principal.demo@bridgenine.co.za')
+    and lower(coalesce(ou.status, 'active')) = 'active'
+  order by
+    case when lower(coalesce(ou.role, ou.workspace_role, ou.organisation_role, '')) = 'principal' then 0 else 1 end,
+    ou.updated_at desc nulls last,
+    ou.created_at desc nulls last
   limit 1;
+
+  if v_org_id is null then
+    select o.id
+      into v_org_id
+    from public.organisations o
+    where lower(coalesce(o.company_email, '')) = lower('principal.demo@bridgenine.co.za')
+       or lower(o.name) = lower('Bridge9 Realty')
+    order by o.created_at desc nulls last
+    limit 1;
+  end if;
 
   v_org_id := coalesce(v_org_id, pg_temp.bridge9_demo_uuid('org:bridge9-realty'));
 
