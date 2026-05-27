@@ -3,7 +3,6 @@ import { ArrowRight, CircleCheck, CircleDashed, CircleAlert, FileText, HandCoins
 import BondDashboardHeader from './BondDashboardHeader'
 import BondEmptyState from './BondEmptyState'
 import BondPageShell from './BondPageShell'
-import BondReportingScopeBanner from './BondReportingScopeBanner'
 import BondSectionCard from './BondSectionCard'
 import * as bondCommandCenterService from '../../services/bondCommandCenterService'
 import { Link } from 'react-router-dom'
@@ -96,6 +95,7 @@ export default function BondDashboard({
   const teamPerformance = snapshot.teamPerformance || []
   const connectedPartners = snapshot.connectedPartners || []
   const heroSummary = snapshot.heroSummary || {}
+  const heatmapRows = snapshot.operationalHeatmap || []
   const displayName = normalizeText(snapshot?.userDisplayName)
   const safeUserDisplayName = displayName && displayName.toLowerCase() !== 'undefined' ? displayName : 'there'
 
@@ -129,10 +129,7 @@ export default function BondDashboard({
         onCreate={onCreateApplication}
         onInvitePartner={onInvitePartner}
         onExportReport={onExportReport}
-        heroKpis={heroKpis}
       />
-
-      <BondReportingScopeBanner reportingScope={state.reportingScope} />
 
       {state.loading ? (
         <BondEmptyState
@@ -151,14 +148,16 @@ export default function BondDashboard({
             />
           ) : (
             <>
-              <section className="grid gap-4 xl:grid-cols-[1.35fr_0.78fr_0.95fr]">
+              <KpiStrip items={heroKpis} />
+
+              <section className="grid gap-6 xl:grid-cols-2">
                 <BondSectionCard
                   eyebrow="Primary Analytics"
                   title="Bank Approval Breakdown"
                   description="Bank movement and outcome split in one operational view."
-                  className="flex h-[360px] flex-col overflow-hidden rounded-[22px] p-4 sm:p-4"
-                  headerClassName="gap-2"
-                  contentClassName="mt-4 min-h-0 flex-1 overflow-hidden"
+                  className="flex min-h-[470px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                  headerClassName="gap-3"
+                  contentClassName="mt-6 min-h-0 flex-1"
                 >
                   <BankApprovalPanel items={bankBreakdown} />
                 </BondSectionCard>
@@ -166,46 +165,72 @@ export default function BondDashboard({
                   eyebrow="Primary Analytics"
                   title="Bank Lead Times"
                   description="Average lead time by lender from submission to movement."
-                  className="flex h-[360px] flex-col overflow-hidden rounded-[22px] p-4 sm:p-4"
-                  headerClassName="gap-2"
-                  contentClassName="mt-4 min-h-0 flex-1 overflow-hidden"
+                  className="flex min-h-[470px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                  headerClassName="gap-3"
+                  contentClassName="mt-6 min-h-0 flex-1"
                 >
                   <BankLeadTimePanel items={bankLeadTimes} />
                 </BondSectionCard>
+              </section>
+
+              <BondSectionCard
+                eyebrow="Operational Flow"
+                title="Pipeline Overview"
+                description="A full-width view of how applications are moving from lead capture to registration."
+                className="flex min-h-[310px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                headerClassName="gap-3"
+                contentClassName="mt-6 min-h-0 flex-1"
+              >
+                <PipelineFlowPanel items={pipelineFlow} />
+              </BondSectionCard>
+
+              <section className="grid gap-6 xl:grid-cols-3">
                 <BondSectionCard
-                  eyebrow="Primary Analytics"
-                  title="Pipeline Overview"
-                  description="Operational flow through core finance and registration stages."
-                  className="flex h-[360px] flex-col overflow-hidden rounded-[22px] p-4 sm:p-4"
-                  headerClassName="gap-2"
-                  contentClassName="mt-4 min-h-0 flex-1 overflow-hidden"
+                  eyebrow="Buyer Demographics"
+                  title="Bond vs Cash"
+                  description="Finance mix across the active book."
+                  className="flex min-h-[320px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                  headerClassName="gap-3"
+                  contentClassName="mt-6 min-h-0 flex-1"
                 >
-                  <PipelineFlowPanel items={pipelineFlow} />
+                  <SegmentedAnalyticsPanel items={buyerDemographics.bondVsCash} />
+                </BondSectionCard>
+                <BondSectionCard
+                  eyebrow="Buyer Demographics"
+                  title="Buyer Type Mix"
+                  description="Individual, company and trust buyer distribution."
+                  className="flex min-h-[320px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                  headerClassName="gap-3"
+                  contentClassName="mt-6 min-h-0 flex-1"
+                >
+                  <DonutAnalyticsPanel items={buyerDemographics.clientType} />
+                </BondSectionCard>
+                <BondSectionCard
+                  eyebrow="Buyer Demographics"
+                  title="Bank Distribution"
+                  description="Application concentration by lender."
+                  className="flex min-h-[320px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                  headerClassName="gap-3"
+                  contentClassName="mt-6 min-h-0 flex-1"
+                >
+                  <BankDistributionPanel items={bankBreakdown} />
                 </BondSectionCard>
               </section>
 
-              <section className="grid gap-4 xl:grid-cols-4">
-                <BondSectionCard
-                  eyebrow="Secondary Insights"
-                  title="Buyer Demographics"
-                  description="Live profile mix across active demand."
-                  action={
-                    <Link
-                      to="/applications"
-                      className="text-sm font-semibold text-[#204b84] hover:text-[#17324d]"
-                    >
-                      View all
-                    </Link>
-                  }
-                  className="flex h-[300px] flex-col overflow-hidden rounded-[22px] p-4 sm:p-4"
-                  headerClassName="gap-2"
-                  contentClassName="mt-4 min-h-0 flex-1 overflow-hidden"
-                >
-                  <BuyerDemographicsPanel stats={buyerDemographics} />
-                </BondSectionCard>
+              <BondSectionCard
+                eyebrow="Application Heatmap"
+                title="Operational Bottleneck Heatmap"
+                description="Stage congestion and risk concentration by bank."
+                className="flex min-h-[360px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                headerClassName="gap-3"
+                contentClassName="mt-6 min-h-0 flex-1"
+              >
+                <OperationalHeatmapPanel rows={heatmapRows} />
+              </BondSectionCard>
 
+              <section className="grid gap-6 xl:grid-cols-3">
                 <BondSectionCard
-                  eyebrow="Secondary Insights"
+                  eyebrow="Secondary Operations"
                   title="Operational Risk"
                   description="Immediate risks to cycle-time and quality."
                   action={
@@ -216,15 +241,15 @@ export default function BondDashboard({
                       View all
                     </Link>
                   }
-                  className="flex h-[300px] flex-col overflow-hidden rounded-[22px] p-4 sm:p-4"
-                  headerClassName="gap-2"
-                  contentClassName="mt-4 min-h-0 flex-1 overflow-hidden"
+                  className="flex min-h-[340px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                  headerClassName="gap-3"
+                  contentClassName="mt-6 min-h-0 flex-1"
                 >
                   <OperationalRiskPanel items={operationalRisk} />
                 </BondSectionCard>
 
                 <BondSectionCard
-                  eyebrow="Secondary Insights"
+                  eyebrow="Secondary Operations"
                   title="Recent Bank Activity"
                   description="Latest bank responses and document actions."
                   action={
@@ -232,15 +257,15 @@ export default function BondDashboard({
                       Open bank feed
                     </Link>
                   }
-                  className="flex h-[300px] flex-col overflow-hidden rounded-[22px] p-4 sm:p-4"
-                  headerClassName="gap-2"
-                  contentClassName="mt-4 min-h-0 flex-1 overflow-hidden"
+                  className="flex min-h-[340px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                  headerClassName="gap-3"
+                  contentClassName="mt-6 min-h-0 flex-1"
                 >
                   <BankActivityFeedPanel rows={recentBankActivity} />
                 </BondSectionCard>
 
                 <BondSectionCard
-                  eyebrow="Secondary Insights"
+                  eyebrow="Secondary Operations"
                   title="Team Performance"
                   description="Active files and operational quality by teammate."
                   action={
@@ -248,38 +273,15 @@ export default function BondDashboard({
                       Team view
                     </Link>
                   }
-                  className="flex h-[300px] flex-col overflow-hidden rounded-[22px] p-4 sm:p-4"
-                  headerClassName="gap-2"
-                  contentClassName="mt-4 min-h-0 flex-1 overflow-hidden"
+                  className="flex min-h-[340px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                  headerClassName="gap-3"
+                  contentClassName="mt-6 min-h-0 flex-1"
                 >
                   <TeamPerformancePanel rows={teamPerformance} />
                 </BondSectionCard>
               </section>
 
-              <BondSectionCard
-                eyebrow="Performance Snapshot"
-                title="Executive signal strip"
-                description="Velocity, conversion and book strength in one quick view."
-                className="flex h-[220px] flex-col overflow-hidden rounded-[22px] p-4 sm:p-4"
-                headerClassName="gap-2"
-                contentClassName="mt-4 min-h-0 flex-1 overflow-hidden"
-              >
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-                  {snapshot.performanceSnapshot?.length ? (
-                    snapshot.performanceSnapshot.map((item) => (
-                      <MiniMetricCard key={item.key} item={item} />
-                    ))
-                  ) : (
-                    <BondEmptyState
-                      compact
-                      title="No performance data yet"
-                      description="Performance cards will populate as deals move through stages."
-                    />
-                  )}
-                </div>
-              </BondSectionCard>
-
-              <section className="rounded-[22px] border border-[#dbe5f0] bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.03)]">
+              <section className="rounded-[24px] border border-[#dbe5f0] bg-white p-6 shadow-[0_12px_30px_rgba(15,23,42,0.03)]">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#748aa0]">Connected Partners</p>
@@ -308,6 +310,49 @@ export default function BondDashboard({
         </>
       ) : null}
     </BondPageShell>
+  )
+}
+
+function KpiStrip({ items = [] }) {
+  const rows = Array.isArray(items) ? items.slice(0, 6) : []
+
+  return (
+    <section className="grid gap-4 md:grid-cols-3 2xl:grid-cols-6">
+      {rows.map((item) => (
+        <ExecutiveKpiCard key={item.key} item={item} />
+      ))}
+    </section>
+  )
+}
+
+function ExecutiveKpiCard({ item = {} }) {
+  const sparkline = Array.isArray(item.sparkline) ? item.sparkline : []
+  const trend = normalizeText(item.trend)
+  const comparison = normalizeText(item.comparison)
+
+  return (
+    <article className="min-h-[148px] rounded-[20px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.035)]">
+      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#778da4]">{item.label}</p>
+      <p className="mt-4 text-2xl font-semibold text-[#142132]">{item.value}</p>
+      <p className="mt-3 min-h-5 text-sm font-semibold text-[#60758d]">
+        {trend}
+        {trend && comparison ? ' · ' : ''}
+        {comparison}
+      </p>
+      <div className="mt-4 flex h-6 items-end gap-1">
+        {sparkline.length ? (
+          sparkline.slice(0, 10).map((point, index) => (
+            <span
+              key={`${item.key}-${index}`}
+              className="w-1.5 rounded-full bg-gradient-to-t from-[#2f5f95] to-[#8ab5d9]"
+              style={{ height: `${Math.max(8, Math.min(100, Number(point) || 0))}%` }}
+            />
+          ))
+        ) : (
+          <span className="h-px w-16 bg-[#dbe5f0]" />
+        )}
+      </div>
+    </article>
   )
 }
 
@@ -340,45 +385,40 @@ function BankApprovalPanel({ items = [] }) {
   }, []).map((segment) => segment.value)
 
   return (
-    <div className="grid h-full min-h-0 gap-3 xl:grid-cols-[124px_1fr] xl:items-center">
-      <div className="relative mx-auto h-24 w-24 shrink-0 rounded-full">
+    <div className="grid h-full gap-8 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-center">
+      <div className="relative mx-auto h-44 w-44 shrink-0 rounded-full">
         <div
           className="h-full w-full rounded-full"
           style={{
             background: `conic-gradient(${conicSegments.join(', ')}, #e5edf7 0deg)`,
           }}
         />
-        <div className="absolute inset-3 rounded-full bg-white" />
+        <div className="absolute inset-7 rounded-full bg-white" />
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+          <p className="text-3xl font-semibold text-[#142132]">{total}</p>
+          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">Applications</p>
+        </div>
       </div>
-      <div className="grid min-h-0 gap-1.5 overflow-y-auto pr-1">
+      <div className="grid gap-3">
         {rows.map((row) => {
           const totalCount = Number(row.total || 0)
+          const bookShare = (totalCount / total) * 100
           return (
             <article
               key={row.bank}
-              className="grid grid-cols-[minmax(0,1fr)_repeat(4,48px)] items-center gap-2 rounded-[12px] border border-[#edf2f7] bg-[#fbfdff] px-2 py-1.5"
+              className="rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-4 py-3"
             >
-              <div className="min-w-0">
-                <p className="truncate text-xs font-semibold text-[#142132]">{row.bank}</p>
-                <p className="text-[0.68rem] text-[#72889e]">
-                  {((row.approvalRate || 0)).toFixed(0)}% approval
-                </p>
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-[#142132]">{row.bank}</p>
+                  <p className="mt-1 text-xs text-[#72889e]">
+                    {row.approved} approved · {row.pending} pending · {row.declined} declined
+                  </p>
+                </div>
+                <p className="text-lg font-semibold text-[#142132]">{((row.approvalRate || 0)).toFixed(0)}%</p>
               </div>
-              <div>
-                <p className="text-[0.58rem] uppercase tracking-[0.08em] text-[#7f94aa]">Appr.</p>
-                <p className="text-xs font-semibold text-[#142132]">{row.approved}</p>
-              </div>
-              <div>
-                <p className="text-[0.58rem] uppercase tracking-[0.08em] text-[#7f94aa]">Pend.</p>
-                <p className="text-xs font-semibold text-[#142132]">{row.pending}</p>
-              </div>
-              <div>
-                <p className="text-[0.58rem] uppercase tracking-[0.08em] text-[#7f94aa]">Decl.</p>
-                <p className="text-xs font-semibold text-[#142132]">{row.declined}</p>
-              </div>
-              <div>
-                <p className="text-[0.58rem] uppercase tracking-[0.08em] text-[#7f94aa]">Book</p>
-                <p className="text-xs font-semibold text-[#142132]">{((totalCount / total) * 100).toFixed(0)}%</p>
+              <div className="mt-3 h-2 rounded-full bg-[#e6eef8]">
+                <span className="block h-full rounded-full bg-[#3b6a97]" style={{ width: `${Math.max(4, bookShare)}%` }} />
               </div>
             </article>
           )
@@ -392,20 +432,30 @@ function BankLeadTimePanel({ items = [] }) {
   const rows = Array.isArray(items) ? items : []
   const safeRows = rows.filter((row) => Number(row.leadTimeDays || 0) > 0)
   const maxDays = Math.max(...safeRows.map((row) => Number(row.leadTimeDays || 0)), 1)
+  const averageDays = safeRows.length
+    ? Math.round(safeRows.reduce((sum, row) => sum + Number(row.leadTimeDays || 0), 0) / safeRows.length)
+    : 0
+  const fastest = safeRows[0]
+  const slowest = safeRows[safeRows.length - 1]
 
   return (
-    <div className="h-full min-h-0 space-y-2 overflow-y-auto pr-1">
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <LeadTimeStat label="Average" value={`${averageDays} days`} />
+        <LeadTimeStat label="Fastest" value={fastest ? `${fastest.bank} · ${fastest.leadTimeDays}d` : 'Tracking'} />
+        <LeadTimeStat label="Slowest" value={slowest ? `${slowest.bank} · ${slowest.leadTimeDays}d` : 'Tracking'} />
+      </div>
       {safeRows.length ? (
         safeRows.map((row) => {
           const percent = Math.min(100, ((Number(row.leadTimeDays || 0) / maxDays) * 100) || 0)
           const tone = Number(row.leadTimeDays || 0) <= 5 ? 'bg-[#2f8a63]' : Number(row.leadTimeDays || 0) <= 8 ? 'bg-[#9e5f17]' : 'bg-[#a93c4c]'
           return (
-            <article key={row.bank} className="rounded-[12px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2.5">
+            <article key={row.bank} className="rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-4 py-3.5">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-semibold text-[#142132]">{row.bank}</p>
-                <p className="text-sm font-semibold text-[#142132]">{row.leadTimeDays} days</p>
+                <p className="text-lg font-semibold text-[#142132]">{row.leadTimeDays} days</p>
               </div>
-              <div className="mt-2 h-2 rounded-full bg-[#e6eef8]">
+              <div className="mt-3 h-3 rounded-full bg-[#e6eef8]">
                 <span className={`block h-full rounded-full ${tone}`} style={{ width: `${percent}%` }} />
               </div>
             </article>
@@ -418,6 +468,15 @@ function BankLeadTimePanel({ items = [] }) {
           description="Lead-time movement will appear once bank submission activity is captured."
         />
       )}
+    </div>
+  )
+}
+
+function LeadTimeStat({ label = '', value = '' }) {
+  return (
+    <div className="rounded-[14px] border border-[#edf2f7] bg-white px-4 py-3">
+      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">{label}</p>
+      <p className="mt-2 text-sm font-semibold text-[#142132]">{value}</p>
     </div>
   )
 }
@@ -435,28 +494,30 @@ function PipelineFlowPanel({ items = [] }) {
   }
 
   return (
-    <div className="h-full min-h-0 overflow-x-auto overflow-y-hidden">
-      <div className="grid h-full auto-cols-[102px] grid-flow-col items-start gap-2">
+    <div className="overflow-x-auto pb-1">
+      <div className="grid min-w-[900px] grid-cols-6 items-stretch gap-4">
         {rows.map((row) => {
           const Icon = stageIcons[row.key] || CircleDashed
           const active = Number(row.count || 0) > 0
           return (
             <div key={row.key} className="relative">
-              <div className={`h-[128px] rounded-[14px] border p-2.5 ${active ? 'border-[#c7dbef] bg-[#f7fbff]' : 'border-[#e7edf6] bg-white'}`}>
+              <div className={`min-h-[150px] rounded-[18px] border p-4 ${active ? 'border-[#c7dbef] bg-[#f7fbff]' : 'border-[#e7edf6] bg-white'}`}>
                 <div className="flex items-center justify-between">
-                  <Icon size={15} className={active ? 'text-[#1f527e]' : 'text-[#7e95ac]'} />
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#1f527e] shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+                    <Icon size={18} className={active ? 'text-[#1f527e]' : 'text-[#7e95ac]'} />
+                  </span>
                   <span
-                    className={`h-2.5 w-2.5 rounded-full ${active ? 'bg-[#2f8a63]' : 'bg-[#98a8bb]'}`}
+                    className={`h-3 w-3 rounded-full ${active ? 'bg-[#2f8a63]' : 'bg-[#98a8bb]'}`}
                   />
                 </div>
-                <p className="mt-2 text-[0.67rem] font-semibold uppercase tracking-[0.09em] text-[#7d93aa]">{row.label}</p>
-                <p className="mt-2 text-lg font-semibold text-[#142132]">{row.count}</p>
-                <p className="mt-1 text-[0.68rem] text-[#60758d]">{row.valueLabel}</p>
+                <p className="mt-5 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7d93aa]">{row.label}</p>
+                <p className="mt-2 text-3xl font-semibold text-[#142132]">{row.count}</p>
+                <p className="mt-1 text-sm text-[#60758d]">{row.valueLabel}</p>
               </div>
-              {rows.length > 1 ? (
+              {rows.length > 1 && row.key !== rows[rows.length - 1]?.key ? (
                 <ArrowRight
-                  size={14}
-                  className="absolute -right-1 top-1/2 -translate-y-1/2 text-[#a9bed3]"
+                  size={18}
+                  className="absolute -right-3 top-1/2 z-10 -translate-y-1/2 text-[#8fa8c2]"
                 />
               ) : null}
             </div>
@@ -467,46 +528,166 @@ function PipelineFlowPanel({ items = [] }) {
   )
 }
 
-function BuyerDemographicsPanel({ stats = {} }) {
-  const {
-    bondVsCash = { bond: 0, cash: 0 },
-    clientType = { individual: 0, company: 0, trust: 0 },
-    dealType = { investment: 0, residential: 0 },
-  } = stats
-
-  return (
-    <div className="h-full min-h-0 space-y-2 overflow-y-auto pr-1">
-      <MiniDonutRow label="Bond vs Cash" items={bondVsCash} />
-      <MiniDonutRow label="Individual vs Company vs Trust" items={clientType} />
-      <MiniDonutRow label="Investor vs Residential" items={dealType} />
-    </div>
-  )
-}
-
-function MiniDonutRow({ label = '', items = {} }) {
+function SegmentedAnalyticsPanel({ items = {} }) {
   const entries = Object.entries(items || {}).filter(([, value]) => Number(value || 0) > 0)
   const total = entries.reduce((acc, [, value]) => acc + Number(value || 0), 0) || 1
 
   return (
-    <article className="rounded-[12px] border border-[#edf2f7] bg-[#fbfdff] p-2.5">
-      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#71889f]">{label}</p>
-      <div className="mt-2 space-y-1.5">
-        {entries.map(([key, value]) => {
+    <div className="flex h-full flex-col justify-end">
+      <div className="mb-6 flex items-end justify-between gap-4">
+        <p className="text-5xl font-semibold text-[#142132]">{total}</p>
+        <p className="max-w-[140px] text-right text-sm leading-5 text-[#60758d]">active files in this segment</p>
+      </div>
+      <div className="space-y-4">
+        {entries.map(([key, value], index) => {
           const pct = (Number(value || 0) / total) * 100
           return (
-            <div key={key} className="space-y-1">
-              <div className="flex items-center justify-between text-xs text-[#60758b]">
-                <span className="font-semibold capitalize">{key.replaceAll('_', ' ')}</span>
-                <span>{Math.round(pct)}%</span>
+            <div key={key}>
+              <div className="mb-2 flex items-center justify-between text-sm">
+                <span className="font-semibold capitalize text-[#142132]">{key.replaceAll('_', ' ')}</span>
+                <span className="text-[#60758d]">{value} · {Math.round(pct)}%</span>
               </div>
-              <div className="h-2 rounded-full bg-[#e6eef8]">
-                <span className="block h-full rounded-full bg-[#3b6a97]" style={{ width: `${pct}%` }} />
+              <div className="h-3 rounded-full bg-[#e6eef8]">
+                <span
+                  className={index === 0 ? 'block h-full rounded-full bg-[#315f8c]' : 'block h-full rounded-full bg-[#88a8c6]'}
+                  style={{ width: `${pct}%` }}
+                />
               </div>
             </div>
           )
         })}
       </div>
-    </article>
+    </div>
+  )
+}
+
+function DonutAnalyticsPanel({ items = {} }) {
+  const entries = Object.entries(items || {}).filter(([, value]) => Number(value || 0) > 0)
+  const total = entries.reduce((acc, [, value]) => acc + Number(value || 0), 0) || 1
+  const colors = ['#315f8c', '#2f6b4a', '#9b6b22', '#8b4f7e']
+  const conicSegments = entries.reduce((segments, [, value], index) => {
+    const previousEnd = segments[index - 1]?.end || 0
+    const share = Math.max(0, Number(value || 0)) / total
+    const start = previousEnd
+    const end = previousEnd + share * 360
+    return [
+      ...segments,
+      { end, value: `${colors[index % colors.length]} ${start}deg ${end}deg` },
+    ]
+  }, []).map((segment) => segment.value)
+
+  return (
+    <div className="grid h-full items-center gap-6 sm:grid-cols-[170px_1fr]">
+      <div className="relative mx-auto h-40 w-40 rounded-full">
+        <div
+          className="h-full w-full rounded-full"
+          style={{ background: `conic-gradient(${conicSegments.join(', ')}, #e5edf7 0deg)` }}
+        />
+        <div className="absolute inset-7 rounded-full bg-white" />
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+          <p className="text-3xl font-semibold text-[#142132]">{total}</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7d93aa]">Buyers</p>
+        </div>
+      </div>
+      <div className="space-y-3">
+        {entries.map(([key, value], index) => {
+          const pct = (Number(value || 0) / total) * 100
+          return (
+            <div key={key} className="flex items-center justify-between gap-3 rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />
+                <span className="text-sm font-semibold capitalize text-[#142132]">{key.replaceAll('_', ' ')}</span>
+              </div>
+              <span className="text-sm text-[#60758d]">{value} · {Math.round(pct)}%</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function BankDistributionPanel({ items = [] }) {
+  const rows = Array.isArray(items) ? items.filter((item) => Number(item.total || 0) > 0) : []
+  const maxTotal = Math.max(...rows.map((row) => Number(row.total || 0)), 1)
+
+  return (
+    <div className="space-y-4">
+      {rows.map((row) => {
+        const percent = (Number(row.total || 0) / maxTotal) * 100
+        return (
+          <div key={row.bank}>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-[#142132]">{row.bank}</p>
+              <p className="text-sm text-[#60758d]">{row.total} applications</p>
+            </div>
+            <div className="h-3 rounded-full bg-[#e6eef8]">
+              <span className="block h-full rounded-full bg-[#315f8c]" style={{ width: `${Math.max(4, percent)}%` }} />
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function OperationalHeatmapPanel({ rows = [] }) {
+  const safeRows = Array.isArray(rows) ? rows : []
+  const columns = safeRows[0]?.stages?.map((stage) => stage.label) || []
+
+  if (!safeRows.length) {
+    return (
+      <BondEmptyState
+        compact
+        title="No bottleneck heatmap data"
+        description="Stage concentration will appear once applications move through the pipeline."
+      />
+    )
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <div className="min-w-[860px]">
+        <div
+          className="grid gap-2"
+          style={{ gridTemplateColumns: `180px repeat(${columns.length}, minmax(94px, 1fr))` }}
+        >
+          <div />
+          {columns.map((column) => (
+            <p key={column} className="text-center text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d93aa]">
+              {column}
+            </p>
+          ))}
+          {safeRows.map((row) => (
+            <div key={row.key} className="contents">
+              <div className="flex items-center rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-4 py-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-[#142132]">{row.label}</p>
+                  <p className="mt-1 text-xs text-[#60758d]">{row.total} active files</p>
+                </div>
+              </div>
+              {row.stages.map((stage) => {
+                const intensity = Math.min(1, Math.max(0, Number(stage.intensity || 0)))
+                const background = `rgba(49, 95, 140, ${0.08 + intensity * 0.62})`
+                const textColor = intensity > 0.55 ? '#ffffff' : '#142132'
+                return (
+                  <div
+                    key={`${row.key}-${stage.key}`}
+                    className="flex min-h-[58px] flex-col items-center justify-center rounded-[14px] border border-[#edf2f7]"
+                    style={{ background, color: textColor }}
+                  >
+                    <p className="text-lg font-semibold">{stage.count}</p>
+                    <p className="mt-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.08em] opacity-80">
+                      {stage.riskCount} risk
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -598,34 +779,6 @@ function TeamPerformancePanel({ rows = [] }) {
         <BondEmptyState compact title="No team load to show" description="Assign files to team leads to populate this leaderboard." />
       )}
     </div>
-  )
-}
-
-function MiniMetricCard({ item = {} }) {
-  const sparkline = Array.isArray(item.sparkline) ? item.sparkline : []
-  return (
-    <article className="min-w-0 rounded-[14px] border border-[#e6edf4] bg-[#fbfdff] p-3">
-      <p className="truncate text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b90a5]">{item.label}</p>
-      <p className="mt-2 truncate text-lg font-semibold text-[#142132]">{item.value}</p>
-      <p className="mt-2 text-xs text-[#60758d]">{item.trendLabel || item.comparison}</p>
-      <div className="mt-2 flex h-6 items-end gap-1">
-        {sparkline.length ? (
-          sparkline.slice(0, 12).map((point, index) => (
-            <span
-              key={`${item.key}-${index}`}
-              className="w-1 rounded-full bg-gradient-to-t from-[#2f5f95] to-[#8ab5d9]"
-              style={{ height: `${Math.max(6, Math.min(100, Number(point) || 0))}%` }}
-            />
-          ))
-        ) : (
-          <>
-            <span className="h-2 w-1 rounded-full bg-[#8aa8c4]" />
-            <span className="h-3 w-1 rounded-full bg-[#8aa8c4]" />
-            <span className="h-4 w-1 rounded-full bg-[#8aa8c4]" />
-          </>
-        )}
-      </div>
-    </article>
   )
 }
 

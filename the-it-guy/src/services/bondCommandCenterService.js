@@ -58,6 +58,15 @@ const PIPELINE_STAGE_META = Object.freeze([
   { key: 'instruction_sent', label: 'Instruction Sent', href: '/transactions?status=instruction_sent' },
 ])
 
+const DASHBOARD_PIPELINE_FLOW_META = Object.freeze([
+  { key: 'lead', label: 'Lead', href: '/applications?queue=my_applications' },
+  { key: 'docs_collection', label: 'Docs Collection', href: '/applications?queue=missing_documents' },
+  { key: 'pre_approval', label: 'Pre-Approval', href: '/applications?stage=docs_received' },
+  { key: 'submitted', label: 'Submission', href: '/applications?stage=application_submitted' },
+  { key: 'approved', label: 'Approval', href: '/applications?stage=approval_granted' },
+  { key: 'registered', label: 'Registration', href: '/transactions?status=registered' },
+])
+
 const EXECUTIVE_BANKS = Object.freeze(['FNB', 'ABSA', 'Standard Bank', 'Nedbank', 'Investec', 'Others'])
 
 const EXECUTIVE_DEMO_PARTNERS = Object.freeze([
@@ -1000,20 +1009,33 @@ function buildBankLeadTimes(rows = []) {
     .sort((left, right) => left.leadTimeDays - right.leadTimeDays)
 }
 
+function resolveDashboardPipelineStageKey(row = {}) {
+  const stageKey = resolvePipelineStageKey(row)
+  const transferStage = getAttorneyTransferStage(row)
+
+  if (transferStage === 'registered') return 'registered'
+  if (stageKey === 'grant_signed' || stageKey === 'instruction_sent') return 'registered'
+  if (stageKey === 'approved') return 'approved'
+  if (stageKey === 'submitted' || stageKey === 'bank_feedback') return 'submitted'
+  if (stageKey === 'pre_approval') return 'pre_approval'
+  if (stageKey === 'docs_collection') return 'docs_collection'
+  return 'lead'
+}
+
 function buildPipelineFlow(rows = []) {
-  const order = PIPELINE_STAGE_META.map((stage) => stage.key)
+  const order = DASHBOARD_PIPELINE_FLOW_META.map((stage) => stage.key)
   const counts = order.reduce((acc, key) => {
     acc[key] = 0
     return acc
   }, {})
   for (const row of rows) {
-    const key = resolvePipelineStageKey(row)
+    const key = resolveDashboardPipelineStageKey(row)
     if (counts[key] !== undefined) {
       counts[key] += 1
     }
   }
 
-  return PIPELINE_STAGE_META.map((stage) => ({
+  return DASHBOARD_PIPELINE_FLOW_META.map((stage) => ({
     ...stage,
     count: counts[stage.key] || 0,
     valueLabel: `${counts[stage.key] || 0} files`,
@@ -1022,7 +1044,7 @@ function buildPipelineFlow(rows = []) {
 
 function buildBuyerDemographics(rows = []) {
   const bondVsCash = { bond: 0, cash: 0 }
-  const clientType = { individual: 0, company: 0, trust: 0 }
+  const clientType = { individual: 0, company: 0, trust: 0, foreign_buyer: 0 }
   const dealType = { investor: 0, residential: 0 }
 
   for (const row of rows) {
@@ -1031,7 +1053,9 @@ function buildBuyerDemographics(rows = []) {
     else bondVsCash.cash += 1
 
     const buyerType = normalizeLower(row?.transaction?.purchaser_type || row?.transaction?.purchaserType)
-    if (buyerType === 'company') clientType.company += 1
+    const buyerCountry = normalizeLower(row?.transaction?.buyer_country || row?.transaction?.purchaser_country)
+    if (buyerCountry && !['south africa', 'za', 'zaf'].includes(buyerCountry)) clientType.foreign_buyer += 1
+    else if (buyerType === 'company') clientType.company += 1
     else if (buyerType === 'trust') clientType.trust += 1
     else clientType.individual += 1
 
@@ -1044,6 +1068,51 @@ function buildBuyerDemographics(rows = []) {
   }
 
   return { bondVsCash, clientType, dealType }
+}
+
+function buildOperationalHeatmap(rows = []) {
+  const stageMeta = DASHBOARD_PIPELINE_FLOW_META
+  const buckets = new Map()
+
+  for (const row of rows) {
+    const bank = EXECUTIVE_BANKS.includes(normalizeText(row?.transaction?.bank))
+      ? normalizeText(row?.transaction?.bank)
+      : 'Others'
+    const bucket = buckets.get(bank) || {
+      key: bank.toLowerCase().replace(/\s+/g, '_'),
+      label: bank,
+      total: 0,
+      stages: stageMeta.map((stage) => ({
+        key: stage.key,
+        label: stage.label,
+        count: 0,
+        riskCount: 0,
+        intensity: 0,
+      })),
+    }
+    const stageKey = resolveDashboardPipelineStageKey(row)
+    const stage = bucket.stages.find((item) => item.key === stageKey)
+    if (stage) {
+      stage.count += 1
+      if (deriveRiskSignals(row).atRisk) stage.riskCount += 1
+    }
+    bucket.total += 1
+    buckets.set(bank, bucket)
+  }
+
+  const heatmapRows = EXECUTIVE_BANKS.map((bank) => buckets.get(bank)).filter(Boolean)
+  const maxScore = Math.max(
+    ...heatmapRows.flatMap((row) => row.stages.map((stage) => stage.count + stage.riskCount * 1.5)),
+    1,
+  )
+
+  return heatmapRows.map((row) => ({
+    ...row,
+    stages: row.stages.map((stage) => ({
+      ...stage,
+      intensity: (stage.count + stage.riskCount * 1.5) / maxScore,
+    })),
+  }))
 }
 
 function buildOperationalRisk(rows = []) {
@@ -1368,6 +1437,7 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
   const pipelineFlow = buildPipelineFlow(filteredRows)
   const buyerDemographics = buildBuyerDemographics(filteredRows)
   const operationalRisk = buildOperationalRisk(filteredRows)
+  const operationalHeatmap = buildOperationalHeatmap(filteredRows)
   const teamPerformance = buildTeamPerformance(filteredRows)
   const connectedPartners = buildConnectedPartnerRows()
   const performanceSnapshot = buildPerformanceSnapshot(filteredRows)
@@ -1383,6 +1453,7 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
     pipelineFlow,
     buyerDemographics,
     operationalRisk,
+    operationalHeatmap,
     teamPerformance,
     connectedPartners,
     attentionCount: countAttentionItems(priorityActions),
