@@ -1,0 +1,80 @@
+import { Building2, FileBarChart2, ShieldUser } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import BondPageShell from '../../components/bond/BondPageShell'
+import BondSectionCard from '../../components/bond/BondSectionCard'
+
+const SECTION_META = Object.freeze({
+  teams: {
+    title: 'Teams',
+    eyebrow: 'Bond Operations',
+    description: 'Review consultant, processor, compliance, branch, and regional structures that support the bond workflow.',
+    icon: ShieldUser,
+    cards: [
+      { title: 'Consultants', description: 'Monitor active consultant books and follow-up workload.', href: '/dashboard' },
+      { title: 'Processors', description: 'Keep submission and bank-response queues balanced.', href: '/applications?queue=submission_readiness' },
+      { title: 'Compliance', description: 'Surface FICA, review, and escalation items.', href: '/applications?queue=compliance_review' },
+    ],
+  },
+  banks: {
+    title: 'Banks',
+    eyebrow: 'Lender Coverage',
+    description: 'Use the command center and transaction tracker to monitor bank response patterns, approvals, and turnaround context.',
+    icon: Building2,
+    cards: [
+      { title: 'Bank Performance', description: 'Compare approvals, bottlenecks, and lender activity on the dashboard.', href: '/dashboard' },
+      { title: 'Submission Stats', description: 'Track what is ready, submitted, and still waiting on support docs.', href: '/applications' },
+      { title: 'Turnaround View', description: 'Watch lender-linked transactions through bond instruction and transfer.', href: '/transactions' },
+    ],
+  },
+  performance: {
+    title: 'Performance',
+    eyebrow: 'Bond Insights',
+    description: 'Compare approvals, turnaround speed, pipeline quality, and lender conversion through a calmer performance lens.',
+    icon: FileBarChart2,
+    cards: [
+      { title: 'Pipeline Performance', description: 'Review volume, movement, and bottlenecks across the finance pipeline.', href: '/reports?view=pipeline' },
+      { title: 'Team Performance', description: 'See which consultants and processors are moving files best.', href: '/reports?view=team' },
+      { title: 'Bank Analytics', description: 'Compare approval ratios, delays, and lender responsiveness.', href: '/reports?view=banks' },
+    ],
+  },
+})
+
+export default function BondModuleHubPage({ section = 'teams' }) {
+  const meta = SECTION_META[section] || {
+    title: 'Bond Workspace',
+    eyebrow: 'Bridge',
+    description: 'This section is ready for expanded bond operations workflows.',
+    icon: FileBarChart2,
+    cards: [],
+  }
+  const Icon = meta.icon || FileBarChart2
+
+  return (
+    <BondPageShell>
+      <BondSectionCard
+        className="bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)]"
+        eyebrow={meta.eyebrow}
+        title={meta.title}
+        description={meta.description}
+        action={(
+          <div className="rounded-[20px] border border-[#dce6f2] bg-[#f7fbff] p-3 text-[#17324d]">
+            <Icon size={20} />
+          </div>
+        )}
+      />
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        {meta.cards.map((card) => (
+          <Link
+            key={card.title}
+            to={card.href}
+            className="rounded-[24px] border border-[#dbe5f0] bg-white p-5 shadow-[0_16px_36px_rgba(15,23,42,0.035)] transition hover:-translate-y-[1px] hover:border-[#ccd9e8]"
+          >
+            <p className="text-base font-semibold text-[#142132]">{card.title}</p>
+            <p className="mt-2 text-sm leading-6 text-[#60758d]">{card.description}</p>
+          </Link>
+        ))}
+      </div>
+    </BondPageShell>
+  )
+}

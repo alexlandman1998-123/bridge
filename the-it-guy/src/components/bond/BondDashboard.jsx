@@ -1,62 +1,59 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import BondDashboardSummary from './BondDashboardSummary'
-import BondQueuePanel from './BondQueuePanel'
-import BondDashboardFilters from './BondDashboardFilters'
+import BondDashboardHeader from './BondDashboardHeader'
+import BondEmptyState from './BondEmptyState'
+import BondPageShell from './BondPageShell'
+import BondPerformanceSnapshot from './BondPerformanceSnapshot'
+import BondPipelineOverview from './BondPipelineOverview'
+import BondPriorityActionStrip from './BondPriorityActionStrip'
 import BondReportingScopeBanner from './BondReportingScopeBanner'
-import * as bondDashboardService from '../../services/bondDashboardService'
-
-const QUEUE_ORDER = Object.freeze([
-  'my_applications',
-  'processing_queue',
-  'missing_documents',
-  'bank_feedback',
-  'submission_readiness',
-  'overdue_applications',
-  'compliance_review',
-  'manager_escalations',
-])
+import BondTeamWorkloadCard from './BondTeamWorkloadCard'
+import RecentBankActivityCard from './RecentBankActivityCard'
+import AtRiskApplicationsCard from './AtRiskApplicationsCard'
+import * as bondCommandCenterService from '../../services/bondCommandCenterService'
 
 function normalizeText(value) {
   return String(value || '').trim()
 }
 
-function queueTitle(queueKey = '') {
-  return String(queueKey || '')
-    .split('_')
-    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+function matchesSearch(item = {}, query = '') {
+  const normalizedQuery = normalizeText(query).toLowerCase()
+  if (!normalizedQuery) return true
+  const haystack = Object.values(item)
+    .map((value) => normalizeText(value).toLowerCase())
     .join(' ')
+  return haystack.includes(normalizedQuery)
+}
+
+function openCreateApplication() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new Event('itg:open-new-transaction'))
 }
 
 export default function BondDashboard({
   user = {},
   workspaceId = '',
-  service = bondDashboardService,
+  service = bondCommandCenterService,
   initialState = null,
 }) {
   const safeWorkspaceId = normalizeText(workspaceId)
+  const [rangeKey, setRangeKey] = useState('this_month')
+  const [search, setSearch] = useState('')
   const [state, setState] = useState(
     initialState || {
       loading: true,
       error: '',
-      context: null,
-      summary: null,
-      queues: {},
+      snapshot: null,
       reportingScope: null,
-      filters: null,
     },
   )
-  const [filterValues, setFilterValues] = useState({})
 
   const loadDashboard = useCallback(async () => {
     if (!safeWorkspaceId) {
       setState({
         loading: false,
         error: 'missing_workspace_context',
-        context: null,
-        summary: null,
-        queues: {},
+        snapshot: null,
         reportingScope: null,
-        filters: null,
       })
       return
     }
@@ -64,50 +61,44 @@ export default function BondDashboard({
     setState((previous) => ({ ...previous, loading: true, error: '' }))
 
     try {
-      const [context, summary, queues, reportingScope, filters] = await Promise.all([
-        service.getBondDashboardContext(user, safeWorkspaceId),
-        service.getBondDashboardSummary(user, safeWorkspaceId),
-        service.getBondDashboardQueues(user, safeWorkspaceId),
-        service.getBondDashboardReportingScope(user, safeWorkspaceId),
-        service.getBondDashboardFilters(user, safeWorkspaceId),
-      ])
-
+      const snapshot = await service.getBondCommandCenterSnapshot(user, safeWorkspaceId, { rangeKey })
       setState({
         loading: false,
         error: '',
-        context,
-        summary,
-        queues: queues || {},
-        reportingScope,
-        filters,
+        snapshot,
+        reportingScope: snapshot.reportingScope || null,
       })
-      setFilterValues(filters?.defaults || {})
     } catch (error) {
       setState({
         loading: false,
         error: String(error?.message || 'dashboard_load_failed'),
-        context: null,
-        summary: null,
-        queues: {},
+        snapshot: null,
         reportingScope: null,
-        filters: null,
       })
     }
-  }, [safeWorkspaceId, service, user])
+  }, [rangeKey, safeWorkspaceId, service, user])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadDashboard()
   }, [loadDashboard])
 
-  const queuePanels = useMemo(() => {
-    const queues = state.queues || {}
-    return QUEUE_ORDER.map((key) => ({
-      key,
-      title: queueTitle(key),
-      items: Array.isArray(queues[key]) ? queues[key] : [],
-    }))
-  }, [state.queues])
+  const filteredTeamWorkload = useMemo(
+    () => (state.snapshot?.teamWorkload || []).filter((item) => matchesSearch(item, search)),
+    [search, state.snapshot?.teamWorkload],
+  )
+  const filteredBankActivity = useMemo(
+    () => (state.snapshot?.recentBankActivity || []).filter((item) => matchesSearch(item, search)),
+    [search, state.snapshot?.recentBankActivity],
+  )
+  const filteredAtRisk = useMemo(
+    () => (state.snapshot?.atRiskApplications || []).filter((item) => matchesSearch(item, search)),
+    [search, state.snapshot?.atRiskApplications],
+  )
+  const selectedRangeLabel = useMemo(
+    () => state.snapshot?.availableRanges?.find((item) => item.key === rangeKey)?.label || 'This Month',
+    [rangeKey, state.snapshot?.availableRanges],
+  )
 
   if (!safeWorkspaceId) {
     return (
@@ -127,55 +118,56 @@ export default function BondDashboard({
     )
   }
 
-  const isIndependentWorkspace = state.context?.isIndependentOriginator
-  const totalApplications = Number(state.summary?.totalApplications || 0)
+  const snapshot = state.snapshot
 
   return (
-    <section className="space-y-4">
-      <header className="rounded-[18px] border border-[#dde6f1] bg-white px-5 py-4">
-        <h1 className="text-xl font-semibold tracking-[-0.02em] text-[#132130]">Bond Applications Dashboard</h1>
-        <p className="mt-1 text-sm text-[#5f7287]">
-          Role-aware Bond operations across consultant, processor, manager, and compliance queues.
-        </p>
-      </header>
-
-      <BondReportingScopeBanner reportingScope={state.reportingScope || state.context?.reportingScope} />
-
-      <BondDashboardFilters
-        filters={state.filters}
-        values={filterValues}
-        onChange={(id, value) =>
-          setFilterValues((previous) => ({
-            ...previous,
-            [id]: value,
-          }))}
+    <BondPageShell>
+      <BondDashboardHeader
+        userDisplayName={snapshot?.userDisplayName || 'there'}
+        attentionText={
+          state.loading
+            ? 'Loading today’s bond workload…'
+            : `${snapshot?.attentionCount || 0} applications require attention today. ${snapshot?.roleFocus?.attentionText || ''}`.trim()
+        }
+        focusChips={snapshot?.roleFocus?.focusChips || []}
+        search={search}
+        onSearchChange={setSearch}
+        onCreate={openCreateApplication}
+        rangeKey={rangeKey}
+        ranges={snapshot?.availableRanges || [{ key: 'this_month', label: 'This Month' }]}
+        onRangeChange={setRangeKey}
       />
 
-      <BondDashboardSummary summary={state.summary} loading={state.loading} />
+      <BondReportingScopeBanner reportingScope={state.reportingScope} />
 
-      {!state.loading && totalApplications === 0 ? (
-        <section className="rounded-[18px] border border-[#dde6f1] bg-white px-4 py-4">
-          <p className="text-sm text-[#5f7287]">
-            {isIndependentWorkspace
-              ? 'No bond applications yet. Applications assigned to you will appear here.'
-              : 'No applications in this queue yet.'}
-          </p>
-        </section>
+      {!state.loading && snapshot ? (
+        <>
+          <BondPriorityActionStrip items={snapshot.priorityActions} />
+          <BondPipelineOverview
+            items={snapshot.pipelineOverview}
+            rangeLabel={selectedRangeLabel}
+          />
+        </>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        {queuePanels.map((panel) => (
-          <BondQueuePanel
-            key={panel.key}
-            queueKey={panel.key}
-            title={panel.title}
-            items={panel.items}
-            loading={state.loading}
-            error={state.error}
-            emptyMessage="No applications in this queue yet."
-          />
-        ))}
-      </div>
-    </section>
+      {!state.loading && snapshot?.totalApplications === 0 ? (
+        <BondEmptyState title={snapshot.emptyState.title} description={snapshot.emptyState.description} />
+      ) : null}
+
+      {!state.loading && snapshot ? (
+        <>
+          <div className="grid gap-4 xl:grid-cols-3">
+            <BondTeamWorkloadCard title={snapshot.roleFocus.workloadHeading} rows={filteredTeamWorkload} />
+            <RecentBankActivityCard rows={filteredBankActivity} />
+            <AtRiskApplicationsCard rows={filteredAtRisk} />
+          </div>
+          <BondPerformanceSnapshot items={snapshot.performanceSnapshot} />
+        </>
+      ) : null}
+
+      {state.loading ? (
+        <BondEmptyState title="Loading bond command center…" description="We are pulling your operational snapshot now." />
+      ) : null}
+    </BondPageShell>
   )
 }

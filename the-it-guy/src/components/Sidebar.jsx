@@ -6,6 +6,7 @@ import {
   CalendarDays,
   ClipboardList,
   FileCheck2,
+  FileBarChart2,
   FileText,
   Files,
   KanbanSquare,
@@ -18,6 +19,7 @@ import {
   Settings,
   ShieldUser,
   SwitchCamera,
+  Trophy,
   Users,
   Wallet,
 } from 'lucide-react'
@@ -41,7 +43,17 @@ const ICON_BY_KEY = {
   transactions: SwitchCamera,
   transfers: SwitchCamera,
   applications: SwitchCamera,
+  applications_all: SwitchCamera,
+  applications_mine: SwitchCamera,
+  applications_ready: FileCheck2,
+  applications_docs: Files,
+  applications_bank_feedback: Building2,
+  applications_approved: FileCheck2,
+  applications_declined: AlertTriangle,
   clients: Users,
+  clients_buyers: Users,
+  clients_companies: BriefcaseBusiness,
+  clients_contact_history: ClipboardList,
   financials: Wallet,
   marketing: Megaphone,
   new_transaction: PlusCircle,
@@ -56,6 +68,41 @@ const ICON_BY_KEY = {
   agency_branches: Building2,
   agency_agents: Users,
   agency_analytics: FileText,
+  teams: ShieldUser,
+  teams_consultants: Users,
+  teams_processors: ShieldUser,
+  teams_compliance: ShieldUser,
+  teams_branches: Building2,
+  teams_regions: Building2,
+  banks: Building2,
+  banks_performance: Building2,
+  banks_submissions: ClipboardList,
+  banks_approvals: FileCheck2,
+  banks_turnaround: CalendarDays,
+  banks_contacts: Users,
+  documents_missing: Files,
+  documents_requested: FileText,
+  documents_review: FileCheck2,
+  documents_completed: FileCheck2,
+  documents_templates: FileText,
+  partners_developers: Building2,
+  partners_agents: Users,
+  partners_attorneys: BriefcaseBusiness,
+  partners_connected: Network,
+  reports_pipeline_performance: KanbanSquare,
+  reports_conversion: FileBarChart2,
+  reports_team_performance: ShieldUser,
+  reports_bank_analytics: Building2,
+  reports_commission: Wallet,
+  reports_export: FileText,
+  performance: Trophy,
+  bond_transactions_active: SwitchCamera,
+  bond_transactions_awaiting_instruction: AlertTriangle,
+  bond_transactions_approved: FileCheck2,
+  bond_transactions_grant_signed: FileCheck2,
+  bond_transactions_instruction_sent: SwitchCamera,
+  bond_transactions_registered: KeyRound,
+  bond_transactions_risk: AlertTriangle,
   agents_directory: BriefcaseBusiness,
   agents_reporting: FileText,
   intelligence_beta: BrainCircuit,
@@ -104,9 +151,35 @@ const ICON_BY_KEY = {
 const BRIDGE_BRAND_MARK = 'bridge.'
 const BRIDGE_BRAND_SUBTITLE = 'Property Transaction OS'
 const BRIDGE_POWERED_LABEL = 'Powered by Bridge'
+const ATTORNEY_SECONDARY_KEYS = new Set(['financials', 'team_departments', 'reports'])
+const BOND_NAV_SECTIONS = [
+  { key: 'main', label: 'Main', itemKeys: ['dashboard', 'pipeline', 'transactions', 'clients'] },
+  { key: 'operations', label: 'Operations', itemKeys: ['documents', 'banks', 'partners', 'teams'] },
+  { key: 'insights', label: 'Insights', itemKeys: ['reports', 'performance'] },
+  { key: 'admin', label: 'Admin', itemKeys: ['settings'] },
+]
 
 function routeMatches(pathname, target = '') {
   return pathname === target || pathname.startsWith(`${target}/`)
+}
+
+function normalizeQuery(search = '') {
+  const params = new URLSearchParams(String(search || '').replace(/^\?/, ''))
+  return [...params.entries()]
+    .sort(([leftKey, leftValue], [rightKey, rightValue]) => {
+      const keyCompare = leftKey.localeCompare(rightKey)
+      if (keyCompare !== 0) return keyCompare
+      return leftValue.localeCompare(rightValue)
+    })
+    .map(([key, value]) => `${key}=${value}`)
+    .join('&')
+}
+
+function targetMatchesLocation(location, target = '') {
+  const [targetPathname, targetSearch = ''] = String(target || '').split('?')
+  if (!routeMatches(location.pathname, targetPathname)) return false
+  if (!targetSearch) return true
+  return normalizeQuery(location.search) === normalizeQuery(targetSearch)
 }
 
 function isParentNavActive(item, pathname) {
@@ -146,25 +219,42 @@ function Sidebar() {
     intelligence_beta: isIntelligencePath,
   }))
   const [logoLoadFailure, setLogoLoadFailure] = useState({ url: '', failed: false })
-  const secondaryItems = filterNavigationItems(
-    role === 'developer'
-      ? [{ key: 'team', label: 'Team', to: '/team' }, { key: 'settings', label: 'Settings', to: '/settings' }]
-      : role === 'attorney'
-        ? [{ key: 'settings', label: 'Settings', to: '/settings' }, { key: 'audit_logs', label: 'Audit Logs', to: '/attorney/audit-logs' }]
-        : role === 'agent'
-          ? [{ key: 'settings', label: 'Settings', to: '/settings' }]
-        : role === 'client'
-          ? [{ key: 'settings', label: 'Settings', to: '/settings' }]
-          : [{ key: 'settings', label: 'Settings', to: '/settings' }],
-    workspaceContext,
+  const secondaryItems = useMemo(
+    () =>
+      filterNavigationItems(
+        role === 'developer'
+          ? [{ key: 'team', label: 'Team', to: '/team' }, { key: 'settings', label: 'Settings', to: '/settings' }]
+          : role === 'attorney'
+            ? [{ key: 'settings', label: 'Settings', to: '/settings' }, { key: 'audit_logs', label: 'Audit Logs', to: '/attorney/audit-logs' }]
+            : role === 'agent'
+              ? [{ key: 'settings', label: 'Settings', to: '/settings' }]
+              : role === 'client'
+                ? [{ key: 'settings', label: 'Settings', to: '/settings' }]
+                : [{ key: 'settings', label: 'Settings', to: '/settings' }],
+        workspaceContext,
+      ),
+    [role, workspaceContext],
   )
-  const attorneySecondaryKeys = new Set(['financials', 'team_departments', 'reports'])
-  const primaryNavItems = role === 'attorney'
-    ? roleNavItems.filter((item) => !attorneySecondaryKeys.has(item.key))
-    : roleNavItems
-  const firmNavItems = role === 'attorney'
-    ? [...roleNavItems.filter((item) => attorneySecondaryKeys.has(item.key)), ...secondaryItems]
-    : secondaryItems
+  const primaryNavItems = useMemo(
+    () => (role === 'attorney' ? roleNavItems.filter((item) => !ATTORNEY_SECONDARY_KEYS.has(item.key)) : roleNavItems),
+    [role, roleNavItems],
+  )
+  const firmNavItems = useMemo(
+    () => (role === 'attorney' ? [...roleNavItems.filter((item) => ATTORNEY_SECONDARY_KEYS.has(item.key)), ...secondaryItems] : secondaryItems),
+    [role, roleNavItems, secondaryItems],
+  )
+  const bondGroupedNavSections = useMemo(() => {
+    if (role !== 'bond_originator') return []
+    const allItems = [...primaryNavItems, ...firmNavItems]
+    return BOND_NAV_SECTIONS
+      .map((section) => ({
+        ...section,
+        items: section.itemKeys
+          .map((key) => allItems.find((item) => item.key === key))
+          .filter(Boolean),
+      }))
+      .filter((section) => section.items.length)
+  }, [firmNavItems, primaryNavItems, role])
 
   const renderNavItem = (item, { child = false } = {}) => {
     const Icon = ICON_BY_KEY[item.key] || LayoutDashboard
@@ -178,13 +268,14 @@ function Sidebar() {
             (path) => location.pathname === path || location.pathname.startsWith(`${path}/`),
           )
         : false
+      const matchesTarget = targetMatchesLocation(location, item.to)
       return (
         <NavLink
           key={item.label}
           to={item.to}
           end={item.to === '/dashboard'}
           className={({ isActive }) =>
-            `ui-sidebar-link ${child ? 'ui-sidebar-link-child' : ''} ${isActive || matchesCustomActive ? 'ui-sidebar-link-active' : ''}`.trim()
+            `ui-sidebar-link ${child ? 'ui-sidebar-link-child' : ''} ${isActive || matchesCustomActive || matchesTarget ? 'ui-sidebar-link-active' : ''}`.trim()
           }
         >
           <Icon size={child ? 13 : 15} />
@@ -268,7 +359,7 @@ function Sidebar() {
   }, [location.pathname, roleNavItems])
 
   return (
-    <aside className="ui-sidebar no-print">
+    <aside className={`ui-sidebar no-print ${role === 'bond_originator' ? 'ui-sidebar-bond' : ''}`.trim()}>
       <div className="ui-sidebar-top">
         <div className="ui-sidebar-brand">
           {showOrganisationBranding ? (
@@ -310,18 +401,31 @@ function Sidebar() {
       </div>
 
       <div className="ui-sidebar-nav-scroll" aria-label="Primary Navigation">
-        <nav className={`ui-nav-stack ${role === 'client' ? 'mt-3' : 'mt-2.5'}`}>
-          {role === 'attorney' ? <p className="ui-sidebar-section-label px-3 pt-2">Primary</p> : null}
-          {primaryNavItems.map((item) => renderNavItem(item))}
-        </nav>
+        {role === 'bond_originator' ? (
+          <div className="space-y-4">
+            {bondGroupedNavSections.map((section) => (
+              <nav key={section.key} className="ui-nav-stack ui-sidebar-bond-section">
+                <p className="ui-sidebar-section-label px-3">{section.label}</p>
+                {section.items.map((item) => renderNavItem(item))}
+              </nav>
+            ))}
+          </div>
+        ) : (
+          <nav className={`ui-nav-stack ${role === 'client' ? 'mt-3' : 'mt-2.5'}`}>
+            {role === 'attorney' ? <p className="ui-sidebar-section-label px-3 pt-2">Primary</p> : null}
+            {primaryNavItems.map((item) => renderNavItem(item))}
+          </nav>
+        )}
       </div>
 
-      {firmNavItems.length ? <div className="ui-sidebar-divider" /> : null}
+      {role !== 'bond_originator' && firmNavItems.length ? <div className="ui-sidebar-divider" /> : null}
 
-      <nav className="ui-nav-stack ui-sidebar-secondary" aria-label="Secondary Navigation">
-        {role === 'attorney' ? <p className="ui-sidebar-section-label px-3">Firm</p> : null}
-        {firmNavItems.map((item) => renderNavItem(item))}
-      </nav>
+      {role !== 'bond_originator' ? (
+        <nav className="ui-nav-stack ui-sidebar-secondary" aria-label="Secondary Navigation">
+          {role === 'attorney' ? <p className="ui-sidebar-section-label px-3">Firm</p> : null}
+          {firmNavItems.map((item) => renderNavItem(item))}
+        </nav>
+      ) : null}
     </aside>
   )
 }

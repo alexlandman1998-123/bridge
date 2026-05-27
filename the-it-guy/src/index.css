@@ -901,6 +901,23 @@
     margin-bottom: 0;
   }
 
+  .ui-sidebar-bond .ui-sidebar-nav-scroll {
+    padding-bottom: 0.5rem;
+  }
+
+  .ui-sidebar-bond-section + .ui-sidebar-bond-section {
+    border-top: 1px solid #eef2f6;
+    padding-top: 0.85rem;
+  }
+
+  .ui-sidebar-bond .ui-sidebar-link {
+    min-height: 44px;
+  }
+
+  .ui-sidebar-bond .ui-sidebar-link-child {
+    min-height: 34px;
+  }
+
   body.sidebar-compact .ui-app-shell {
     display: block;
   }

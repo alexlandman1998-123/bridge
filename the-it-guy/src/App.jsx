@@ -95,6 +95,8 @@ const Clients = lazy(() => import('./pages/Clients'))
 const ConveyancerDevelopments = lazy(() => import('./pages/ConveyancerDevelopments'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const BondDashboardPage = lazy(() => import('./pages/bond/BondDashboardPage'))
+const BondTransactionsPage = lazy(() => import('./pages/bond/BondTransactionsPage'))
+const BondModuleHubPage = lazy(() => import('./pages/bond/BondModuleHubPage'))
 const CommercialLayout = lazy(() => import('./modules/commercial/components/CommercialLayout'))
 const CommercialActivityPage = lazy(() => import('./modules/commercial/pages/CommercialActivityPage'))
 const CommercialBrokerPerformancePage = lazy(() => import('./modules/commercial/pages/CommercialBrokerPerformancePage'))
@@ -1539,6 +1541,30 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/teams"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <BondModuleHubPage section="teams" />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/banks"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <BondModuleHubPage section="banks" />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/performance"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <BondModuleHubPage section="performance" />
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/transfers"
                 element={
                   <RoleRoute allowedRoles={['attorney']}>
@@ -1583,7 +1609,7 @@ function AppRoutes() {
               <Route
                 path="/pipeline"
                 element={
-                  <RoleRoute allowedRoles={['developer', 'agent']}>
+                  <RoleRoute allowedRoles={['developer', 'agent', 'bond_originator']}>
                     <PipelineEntryRoute />
                   </RoleRoute>
                 }
@@ -2088,6 +2114,9 @@ function ClientAwareTransactions() {
   if (role === 'client') {
     return <ClientModulePage />
   }
+  if (role === 'bond_originator') {
+    return <BondTransactionsPage />
+  }
 
   return (
     <RoleRoute allowedRoles={['developer', 'agent', 'attorney']}>
@@ -2100,6 +2129,9 @@ function PipelineEntryRoute() {
   const { role } = useWorkspace()
   if (role === 'agent') {
     return <Navigate to="/pipeline/leads" replace />
+  }
+  if (role === 'bond_originator') {
+    return <Navigate to="/applications" replace />
   }
   return <Pipeline />
 }

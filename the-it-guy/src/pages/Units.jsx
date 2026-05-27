@@ -28,6 +28,7 @@ import { financeTypeMatchesFilter, normalizeFinanceType } from '../core/transact
 import { SUBPROCESS_TYPES } from '../core/transactions/roleConfig'
 import { TRANSACTION_SCOPE_OPTIONS, getTransactionScopeForRow } from '../core/transactions/transactionScope'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { resolveEffectiveBondAssignment } from '../services/bondAssignmentService'
 import {
   deleteTransactionEverywhere,
   fetchDevelopmentOptions,
@@ -452,6 +453,69 @@ function getAttorneyTransactionType(row) {
   return row?.development?.id || row?.unit?.development_id ? 'development' : 'private'
 }
 
+function getBondSignalText(row) {
+  return `${row?.transaction?.next_action || ''} ${row?.transaction?.comment || ''} ${row?.transaction?.finance_status || ''}`
+    .toLowerCase()
+    .trim()
+}
+
+function getBondMissingDocumentCount(row) {
+  const explicit = Number(row?.documentSummary?.missingCount)
+  if (Number.isFinite(explicit)) return explicit
+  const totalRequired = Number(row?.documentSummary?.totalRequired || 0)
+  const uploadedCount = Number(row?.documentSummary?.uploadedCount || 0)
+  return Math.max(totalRequired - uploadedCount, 0)
+}
+
+function isBondQueueMatch(row, queue, profile = null) {
+  const normalizedQueue = String(queue || 'all').trim().toLowerCase()
+  if (!normalizedQueue || normalizedQueue === 'all') return true
+
+  const stage = getBondApplicationStage(row)
+  const signal = getBondSignalText(row)
+  const missingDocuments = getBondMissingDocumentCount(row)
+  const daysSinceUpdate = getDaysSince(row?.transaction?.updated_at || row?.transaction?.created_at || 0)
+  const assignment = resolveEffectiveBondAssignment(row?.transaction || {})
+  const profileId = String(profile?.id || '').trim()
+  const profileEmail = String(profile?.email || '').trim().toLowerCase()
+  const assignedEmail = String(
+    assignment.primaryConsultantEmail ||
+      row?.transaction?.assigned_bond_originator_email ||
+      '',
+  )
+    .trim()
+    .toLowerCase()
+
+  if (normalizedQueue === 'my_applications') {
+    return (
+      (profileId && assignment.primaryConsultantUserId === profileId) ||
+      (profileEmail && assignedEmail && assignedEmail === profileEmail)
+    )
+  }
+
+  if (normalizedQueue === 'missing_documents') {
+    return missingDocuments > 0 || stage === 'docs_requested'
+  }
+
+  if (normalizedQueue === 'submission_readiness') {
+    return stage === 'docs_received' || /prepared|ready for submission|ready to submit/.test(signal)
+  }
+
+  if (normalizedQueue === 'bank_feedback') {
+    return stage === 'bank_reviewing' || /bank feedback|query|valuation|underwriting/.test(signal)
+  }
+
+  if (normalizedQueue === 'overdue_applications') {
+    return daysSinceUpdate >= 8
+  }
+
+  if (normalizedQueue === 'compliance_review') {
+    return /compliance|fica expired|risk review|blocked/.test(signal)
+  }
+
+  return true
+}
+
 function Units() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -475,6 +539,7 @@ function Units() {
     risk: 'all',
     blocked: 'all',
     assignedToMe: 'all',
+    queue: 'all',
     search: '',
     sortBy: 'development',
     sortDirection: 'asc',
@@ -644,6 +709,7 @@ function Units() {
     const allowedRiskValues = new Set(['all', 'stale', 'blocked', 'healthy'])
     const allowedBlockedValues = new Set(['all', 'blocked', 'clear'])
     const allowedAssignedValues = new Set(['all', 'mine'])
+    const allowedQueueValues = new Set(['all', 'my_applications', 'missing_documents', 'submission_readiness', 'bank_feedback', 'overdue_applications', 'compliance_review'])
     const allowedTransactionStatusValues = new Set(['all', 'active', 'registered', 'completed', 'archived', 'cancelled'])
     const allowedDateRangeValues = new Set(['all', '7d', '30d', '90d'])
     const allowedSourceValues = new Set(ATTORNEY_SOURCE_OPTIONS.map((item) => item.value))
@@ -684,6 +750,11 @@ function Units() {
     const assignedToMe = params.get('assignedToMe')
     if (assignedToMe && allowedAssignedValues.has(assignedToMe)) {
       nextValues.assignedToMe = assignedToMe
+    }
+
+    const queue = params.get('queue')
+    if (queue && allowedQueueValues.has(queue)) {
+      nextValues.queue = queue
     }
 
     const source = params.get('source')
@@ -956,6 +1027,7 @@ function Units() {
               ? true
               : transactionScope === filters.transactionType
             : true
+        const bondQueueMatch = isBondRole ? isBondQueueMatch(row, filters.queue, profile) : true
         const developmentMatch = filters.developmentId === 'all' ? true : developmentId === filters.developmentId
 
         if (!normalizedSearch) {
@@ -975,6 +1047,7 @@ function Units() {
             principalStatusMatch &&
             principalDateMatch &&
             transactionTypeMatch &&
+            bondQueueMatch &&
             developmentMatch
           )
         }
@@ -1023,6 +1096,7 @@ function Units() {
           principalStatusMatch &&
           principalDateMatch &&
           transactionTypeMatch &&
+          bondQueueMatch &&
           developmentMatch &&
           haystack.includes(normalizedSearch)
         )

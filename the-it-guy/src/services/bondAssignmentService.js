@@ -72,7 +72,7 @@ function normalizeLegacyBondAssignment(transaction = null) {
 }
 
 function normalizeTransactionNameRows(transaction = null) {
-  const participants = transaction?.participants || transaction?.transactionParticipants || []
+  const participants = transaction?.participants || transaction?.transactionParticipants || transaction?.transaction_participants || []
   return Array.isArray(participants) ? participants : []
 }
 
