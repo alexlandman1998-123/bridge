@@ -44,6 +44,8 @@ const ICON_BY_KEY = {
   transactions: SwitchCamera,
   transfers: SwitchCamera,
   applications: ClipboardList,
+  tasks: ClipboardList,
+  bond_calendar: CalendarDays,
   bond_pipeline: KanbanSquare,
   clients: Users,
   clients_buyers: Users,
@@ -110,6 +112,7 @@ const ICON_BY_KEY = {
   handover: KeyRound,
   reports: FileText,
   bond_reports: FileBarChart2,
+  bond_organisation: Network,
   audit_logs: FileText,
   snags: AlertTriangle,
   team: ShieldUser,
@@ -142,7 +145,7 @@ const BRIDGE_BRAND_SUBTITLE = 'Property Transaction OS'
 const BRIDGE_POWERED_LABEL = 'Powered by Bridge'
 const ATTORNEY_SECONDARY_KEYS = new Set(['financials', 'team_departments', 'reports'])
 const BOND_NAV_SECTIONS = [
-  { key: 'main', label: 'Workspace', itemKeys: ['dashboard', 'bond_pipeline', 'transactions', 'bond_developments', 'clients', 'partners', 'bond_reports'] },
+  { key: 'main', label: 'Workspace', itemKeys: ['dashboard', 'bond_pipeline', 'applications', 'bond_developments', 'clients', 'partners', 'bond_reports', 'bond_organisation'] },
 ]
 
 function routeMatches(pathname, target = '') {

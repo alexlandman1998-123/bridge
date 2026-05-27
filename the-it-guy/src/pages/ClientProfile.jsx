@@ -31,6 +31,10 @@ function getInitials(name) {
 }
 
 function getMatterPath({ role, transactionId, unitId, fallbackSearch = '' }) {
+  if (role === 'bond_originator' && transactionId) {
+    return `/bond/files/${transactionId}`
+  }
+
   if (role === 'attorney' && transactionId) {
     return `/transactions/${transactionId}`
   }
@@ -59,10 +63,26 @@ function getProfileCopy(role) {
     }
   }
 
+  if (role === 'bond_originator') {
+    return {
+      transactionLabel: 'Linked Applications',
+      transactionSubtitle: 'All bond applications where this client appears in your finance workspace.',
+      snapshotLabel: 'application',
+      tabLabel: 'Applications',
+      latestLabel: 'Latest Application',
+      emptyTitle: 'No linked applications yet',
+      emptyDescription: 'This contact can still be a buyer lead, seller lead, prospect, or manually created client before an application is opened.',
+    }
+  }
+
   return {
     transactionLabel: 'Linked Transactions',
     transactionSubtitle: 'All matters where this client appears in your conveyancing workspace.',
     snapshotLabel: 'matter',
+    tabLabel: 'Transactions',
+    latestLabel: 'Latest Matter',
+    emptyTitle: 'No linked transactions yet',
+    emptyDescription: 'This contact can still be a buyer lead, seller lead, prospect, or manually created client before a transaction is opened.',
   }
 }
 
@@ -248,7 +268,7 @@ function ClientProfile() {
                 ].join(' ')}
                 onClick={() => setActiveTab('transactions')}
               >
-                Transactions
+                {copy.tabLabel || 'Transactions'}
               </button>
             </div>
           </div>
@@ -275,7 +295,7 @@ function ClientProfile() {
                     <strong className="mt-2 block text-base font-semibold text-[#142132]">{client.latestStage || 'No stage yet'}</strong>
                   </div>
                   <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                    <span className="block text-[0.73rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Latest Matter</span>
+                    <span className="block text-[0.73rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{copy.latestLabel || 'Latest Matter'}</span>
                     <strong className="mt-2 block text-base font-semibold text-[#142132]">{transactions[0]?.reference || 'Pending'}</strong>
                   </div>
                 </div>
@@ -375,9 +395,9 @@ function ClientProfile() {
                   </article>
                 )) : (
                   <div className="rounded-[22px] border border-[#dde4ee] bg-[#fbfcfe] p-5">
-                    <h4 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">No linked transactions yet</h4>
+                    <h4 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{copy.emptyTitle || 'No linked transactions yet'}</h4>
                     <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
-                      This contact can still be a buyer lead, seller lead, prospect, or manually created client before a transaction is opened.
+                      {copy.emptyDescription || 'This contact can still be a buyer lead, seller lead, prospect, or manually created client before a transaction is opened.'}
                     </p>
                   </div>
                 )}

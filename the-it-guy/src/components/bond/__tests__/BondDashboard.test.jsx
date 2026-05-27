@@ -207,8 +207,7 @@ function makeSnapshot(overrides = {}) {
       'Active Applications',
       'Approval Rate',
       'Avg Approval Time',
-      'Bond Value In Progress',
-      'Registration Conversion',
+      'Pipeline Value',
       'Commission Pipeline',
     ]
     let previousKpiIndex = -1
@@ -217,10 +216,11 @@ function makeSnapshot(overrides = {}) {
       assert.ok(index > previousKpiIndex, `${label} should render after the previous KPI`)
       previousKpiIndex = index
     }
-    assert.match(commandCenterMarkup, /4 awaiting docs • 2 ready for review/)
+    assert.doesNotMatch(commandCenterMarkup, /Registration Conversion/)
+    assert.match(commandCenterMarkup, /4 awaiting docs • 2 ready/)
     assert.match(commandCenterMarkup, /Healthy against target/)
 
-    assert.match(commandCenterMarkup, /Live operational movement across active bond files/)
+    assert.match(commandCenterMarkup, /Live operational movement across active bond applications/)
     assert.match(commandCenterMarkup, /All/)
     assert.match(commandCenterMarkup, /Awaiting Docs/)
     assert.match(commandCenterMarkup, /Ready For Review/)
@@ -229,7 +229,7 @@ function makeSnapshot(overrides = {}) {
     assert.match(commandCenterMarkup, /Bond App/)
     assert.match(commandCenterMarkup, /Submission/)
     assert.match(commandCenterMarkup, /Collect latest payslip/)
-    assert.match(commandCenterMarkup, /Open File/)
+    assert.match(commandCenterMarkup, /Open Application/)
     assert.match(commandCenterMarkup, /Request Docs/)
     assert.match(commandCenterMarkup, /Review/)
 

@@ -82,6 +82,8 @@ const DEFAULT_ORGANISATION_SETTINGS = {
     branchesEnabled: true,
     reportingMode: 'branch_hierarchy',
     visibilityMode: 'role_based',
+    organisation_structure_type: 'independent',
+    structureType: 'independent',
   },
   preferredPartners: [],
   commissionStructures: [],
@@ -1116,29 +1118,6 @@ async function upsertOrganisationMembershipWithRoleFallback(client, payload = {}
   }
 
   return { result: { error: lastError }, resolvedRole: normalizeOrganisationUserRole(payload.role, 'viewer') }
-}
-
-function mapAgencyOnboardingToOrganisationPayload(onboarding = {}, fallbackOrganisation = {}) {
-  const info = onboarding?.agencyInformation || {}
-  const principal = onboarding?.principalInformation || {}
-  return {
-    name: normalizeText(info.agencyName) || fallbackOrganisation?.name || 'Bridge Agency',
-    display_name: normalizeNullableText(info.tradingName) || normalizeText(info.agencyName) || fallbackOrganisation?.displayName || 'Bridge Agency',
-    type: 'agency',
-    legal_name: normalizeNullableText(info.agencyName),
-    registration_number: normalizeNullableText(info.companyRegistrationNumber),
-    company_email: normalizeNullableText(info.mainEmailAddress),
-    company_phone: normalizeNullableText(info.mainOfficeNumber),
-    website: normalizeNullableText(info.website),
-    address_line_1: normalizeNullableText(info.physicalAddress),
-    city: normalizeNullableText(fallbackOrganisation?.city),
-    province: normalizeNullableText(info.province),
-    country: normalizeNullableText(info.country) || 'South Africa',
-    support_email: normalizeNullableText(info.mainEmailAddress),
-    support_phone: normalizeNullableText(info.mainOfficeNumber),
-    primary_contact_person: normalizeNullableText(principal.principalFullName),
-    logo_url: normalizeNullableText(onboarding?.branding?.logoLight),
-  }
 }
 
 function buildAgencyOnboardingStorageRecord({
@@ -2469,6 +2448,76 @@ export async function updateWorkflowSettings(input = {}) {
     membershipRole: context.membershipRole,
     persisted: true,
     ...safeJson(data?.settings_json, DEFAULT_ORGANISATION_SETTINGS),
+  }
+}
+
+export async function updateBondOrganisationStructureSettings(input = {}) {
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  assertOrganisationAdminAccess(context, 'update bond organisation structure settings')
+
+  const structureType = normalizeText(input.organisation_structure_type || input.organisationStructureType || input.structureType)
+  const existingSettings = safeJson(context.organisationSettings, DEFAULT_ORGANISATION_SETTINGS)
+  const existingHierarchy = existingSettings.organisationHierarchy && typeof existingSettings.organisationHierarchy === 'object'
+    ? existingSettings.organisationHierarchy
+    : {}
+  const mergedHierarchy = {
+    ...DEFAULT_ORGANISATION_SETTINGS.organisationHierarchy,
+    ...existingHierarchy,
+    ...(structureType ? {
+      organisation_structure_type: structureType,
+      organisationStructureType: structureType,
+      structureType,
+    } : {}),
+  }
+
+  if (!context.organisation.id) {
+    return {
+      membershipRole: context.membershipRole,
+      persisted: false,
+      organisationHierarchy: mergedHierarchy,
+    }
+  }
+
+  const merged = {
+    ...DEFAULT_ORGANISATION_SETTINGS,
+    ...existingSettings,
+    organisationHierarchy: mergedHierarchy,
+    ...(structureType ? {
+      organisation_structure_type: structureType,
+      organisationStructureType: structureType,
+    } : {}),
+  }
+
+  const { data, error } = await client
+    .from('organisation_settings')
+    .upsert(
+      {
+        organisation_id: context.organisation.id,
+        settings_json: merged,
+      },
+      { onConflict: 'organisation_id' },
+    )
+    .select('settings_json')
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  void recordSecurityAuditEvent({
+    userId: context.profile?.id,
+    workspaceId: context.organisation.id,
+    action: 'bond_organisation_structure_updated',
+    targetType: 'organisation_settings',
+    targetId: context.organisation.id,
+    metadata: { organisation_structure_type: structureType || null },
+  })
+  clearOrganisationRuntimeCache()
+  return {
+    membershipRole: context.membershipRole,
+    persisted: true,
+    organisationHierarchy: safeJson(data?.settings_json, DEFAULT_ORGANISATION_SETTINGS).organisationHierarchy,
   }
 }
 

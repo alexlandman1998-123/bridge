@@ -111,7 +111,7 @@ export default function BondTransactionsPage({
     } catch (error) {
       setState({
         loading: false,
-        error: String(error?.message || 'transaction_tracker_load_failed'),
+        error: String(error?.message || 'application_tracker_load_failed'),
         snapshot: null,
       })
     }
@@ -168,7 +168,7 @@ export default function BondTransactionsPage({
   if (!state.loading && state.error) {
     return (
       <section className="rounded-[18px] border border-[#f1d0d0] bg-[#fff5f5] px-4 py-4">
-        <p className="text-sm font-semibold text-[#8f2f2f]">We could not load the transaction tracker.</p>
+        <p className="text-sm font-semibold text-[#8f2f2f]">We could not load the applications tracker.</p>
         <p className="mt-1 text-sm text-[#9d4d4d]">Please refresh or try another workspace.</p>
       </section>
     )
@@ -195,8 +195,8 @@ export default function BondTransactionsPage({
       <BondSectionCard
         className="bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)]"
         eyebrow="Search"
-        title="Search active bond files"
-        description="Search across buyer, property, bank, agent, attorney, consultant, stage, next action, and transaction references."
+        title="Search active applications"
+        description="Search across buyer, property, bank, agent, attorney, consultant, stage, next action, and application references."
         action={(
           <div className="flex w-full flex-col gap-3 sm:flex-row xl:max-w-[620px]">
             <select
@@ -215,7 +215,7 @@ export default function BondTransactionsPage({
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search buyer, property, bank, stage…"
+                placeholder="Search applications..."
                 className="h-12 w-full rounded-[16px] border border-[#dbe5f0] bg-white pl-11 pr-4 text-sm text-[#17324d] outline-none transition focus:border-[#bbcbdd]"
               />
             </label>
@@ -228,7 +228,7 @@ export default function BondTransactionsPage({
       {snapshot ? (
         <div className="flex flex-wrap items-center gap-3">
           <BondTransactionStatusBadge status={snapshot.selectedStatus === 'all' ? 'active' : snapshot.selectedStatus} label={snapshot.statusLabel} />
-          <p className="text-sm text-[#60758d]">{filteredRows.length} transactions in view</p>
+          <p className="text-sm text-[#60758d]">{filteredRows.length} applications in view</p>
         </div>
       ) : null}
 
@@ -239,7 +239,7 @@ export default function BondTransactionsPage({
       {snapshot ? <BondTransactionTable rows={filteredRows} /> : null}
 
       {state.loading ? (
-        <BondEmptyState title="Loading linked bond transactions…" description="We are assembling the finance and transfer view now." />
+        <BondEmptyState title="Loading linked bond applications..." description="We are assembling the finance and transfer view now." />
       ) : null}
     </BondPageShell>
   )

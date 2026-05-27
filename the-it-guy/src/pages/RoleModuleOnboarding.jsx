@@ -4,7 +4,12 @@ import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { recordAuditEvent } from '../lib/activityAudit'
 import { APP_ROLE_LABELS, normalizeAppRole } from '../lib/roles'
+import { updateBondOrganisationStructureSettings } from '../lib/settingsApi'
 import { resolveSignupIntentRoute } from '../lib/signupIntent'
+import {
+  BOND_ORGANISATION_STRUCTURE_OPTIONS,
+  BOND_ORGANISATION_STRUCTURE_TYPES,
+} from '../services/bondOrganisationService'
 import { completeOnboarding } from '../services/onboarding/onboardingEngine'
 
 const ROLE_COPY = {
@@ -28,6 +33,7 @@ function RoleModuleOnboarding({ expectedRole }) {
   const { profile, signupIntent, currentMembership, currentWorkspace, workspaceType, activeMemberships } = useWorkspace()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [organisationStructureType, setOrganisationStructureType] = useState(BOND_ORGANISATION_STRUCTURE_TYPES.independent)
   const normalizedRole = normalizeAppRole(expectedRole || profile?.role || '')
   const activeRole = normalizeAppRole(profile?.role || '')
   const copy = useMemo(() => ROLE_COPY[normalizedRole] || {
@@ -45,6 +51,11 @@ function RoleModuleOnboarding({ expectedRole }) {
       })
       if (normalizedRole !== 'client' && !currentMembership?.id && !activeMemberships.length) {
         throw new Error('Workspace setup is required before onboarding can be completed.')
+      }
+      if (normalizedRole === 'bond_originator') {
+        await updateBondOrganisationStructureSettings({
+          organisation_structure_type: organisationStructureType,
+        })
       }
       await completeOnboarding({
         userId: authState.user?.id,
@@ -102,6 +113,37 @@ function RoleModuleOnboarding({ expectedRole }) {
             <h2>Continue to Your Workspace</h2>
             <p>We’ve captured your profile and module selection.</p>
           </div>
+          {normalizedRole === 'bond_originator' ? (
+            <fieldset className="mt-5 border-0 p-0">
+              <legend className="text-sm font-semibold text-[#17324d]">What best describes your organisation?</legend>
+              <div className="mt-3 grid gap-2">
+                {BOND_ORGANISATION_STRUCTURE_OPTIONS.map((option) => {
+                  const selected = organisationStructureType === option.value
+                  return (
+                    <label
+                      key={option.value}
+                      className={`flex cursor-pointer items-center justify-between gap-3 rounded-[16px] border px-4 py-3 text-sm transition ${
+                        selected
+                          ? 'border-[#102448] bg-[#f5f8fc] text-[#102448]'
+                          : 'border-[#dbe5f0] bg-white text-[#536982] hover:border-[#c7d6e7]'
+                      }`.trim()}
+                    >
+                      <span className="font-semibold">{option.label}</span>
+                      <input
+                        type="radio"
+                        name="organisation_structure_type"
+                        value={option.value}
+                        checked={selected}
+                        onChange={(event) => setOrganisationStructureType(event.target.value)}
+                        disabled={saving}
+                        className="h-4 w-4 accent-[#102448]"
+                      />
+                    </label>
+                  )
+                })}
+              </div>
+            </fieldset>
+          ) : null}
           {error ? <p className="auth-form-error">{error}</p> : null}
           <div className="auth-actions">
             <button type="button" className="auth-primary-cta" onClick={handleComplete} disabled={saving}>

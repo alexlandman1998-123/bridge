@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CircleCheck, CircleDashed, CircleAlert, FileCheck2, FileText, HandCoins, UsersRound } from 'lucide-react'
+import { ArrowRight, Banknote, CircleCheck, CircleDashed, CircleAlert, Clock3, FileCheck2, FileText, HandCoins, UsersRound } from 'lucide-react'
 import BondDashboardHeader from './BondDashboardHeader'
 import BondEmptyState from './BondEmptyState'
 import BondPageShell from './BondPageShell'
@@ -27,20 +27,12 @@ const BANK_VISUALS = {
   Others: { initials: 'OT', color: '#8a94a3', soft: '#f1f4f7' },
 }
 
-const KPI_PROGRESS_COLORS = {
-  active_applications: '#315f8c',
-  approval_rate: '#2f8a63',
-  average_approval_time: '#8a6a2a',
-  bond_value: '#315f8c',
-  registration_conversion: '#2f6b4a',
-  commission_pipeline: '#8b4f7e',
-}
-
-const KPI_TONE_CLASSES = {
-  neutral: 'border-[#dbe5f0] bg-white',
-  success: 'border-[#cde8d4] bg-[#fbfffc]',
-  warning: 'border-[#efdcb8] bg-[#fffdf7]',
-  danger: 'border-[#f0d1d8] bg-[#fff8f9]',
+const KPI_VISUALS = {
+  active_applications: { icon: UsersRound, tone: 'bg-[#eef4ff] text-[#315adf]' },
+  approval_rate: { icon: CircleCheck, tone: 'bg-[#ecfdf3] text-[#16894f]' },
+  average_approval_time: { icon: Clock3, tone: 'bg-[#fff7e8] text-[#b7791f]' },
+  bond_value: { icon: Banknote, tone: 'bg-[#edf5ff] text-[#1769d1]' },
+  commission_pipeline: { icon: HandCoins, tone: 'bg-[#f3efff] text-[#7657d8]' },
 }
 
 const ACTIVE_FILTERS = [
@@ -173,7 +165,7 @@ export default function BondDashboard({
   return (
     <BondPageShell className="space-y-4">
       <BondDashboardHeader
-        summaryText={state.loading ? 'Loading active applications, document queues, review-ready files, and bank responses.' : headerSummary.text}
+        summaryText={state.loading ? 'Loading active applications, document queues, review-ready applications, and bank responses.' : headerSummary.text}
         developmentControl={
           !state.loading && snapshot ? (
             <label className="block">
@@ -292,7 +284,7 @@ export default function BondDashboard({
               <BondSectionCard
                 eyebrow="Application Heatmap"
                 title="Operational Bottleneck Heatmap"
-                description="Where files are slowing down across the finance workflow."
+                description="Where applications are slowing down across the finance workflow."
                 className="flex min-h-[360px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
                 headerClassName="gap-3"
                 contentClassName="mt-6 min-h-0 flex-1"
@@ -336,8 +328,8 @@ export default function BondDashboard({
                 </BondSectionCard>
                 <BondSectionCard
                   eyebrow="Attention Matrix"
-                  title="Files Needing Attention"
-                  description="Highest-risk workflow files ranked by bottlenecks, predicted delays, and velocity."
+                  title="Applications Needing Attention"
+                  description="Highest-risk applications ranked by bottlenecks, predicted delays, and velocity."
                   className="flex min-h-[360px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
                   headerClassName="gap-3"
                   contentClassName="mt-6 min-h-0 flex-1"
@@ -377,7 +369,7 @@ export default function BondDashboard({
                 <BondSectionCard
                   eyebrow="Secondary Operations"
                   title="Team Performance"
-                  description="Active files and operational quality by teammate."
+                  description="Active applications and operational quality by teammate."
                   action={
                     <Link to="/teams" className="text-sm font-semibold text-[#204b84] hover:text-[#17324d]">
                       Team view
@@ -447,10 +439,12 @@ export default function BondDashboard({
 }
 
 function KpiStrip({ items = [] }) {
-  const rows = Array.isArray(items) ? items.slice(0, 6) : []
+  const rows = Array.isArray(items)
+    ? items.filter((item) => item?.key !== 'registration_conversion').slice(0, 5)
+    : []
 
   return (
-    <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+    <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
       {rows.map((item) => (
         <ExecutiveKpiCard key={item.key} item={item} />
       ))}
@@ -532,7 +526,7 @@ function BankEfficiencyPanel({ rows = [] }) {
 
 function OperationalRiskMatrix({ rows = [] }) {
   const safeRows = Array.isArray(rows) ? rows : []
-  if (!safeRows.length) return <BondEmptyState compact title="No elevated risk files" description="Operational risk matrix is clear." />
+  if (!safeRows.length) return <BondEmptyState compact title="No elevated risk applications" description="Operational risk matrix is clear." />
   return (
     <div className="space-y-2 overflow-y-auto pr-1">
       {safeRows.map((row) => (
@@ -576,41 +570,43 @@ function BuyerQualityPanel({ distribution = {} }) {
 }
 
 function ExecutiveKpiCard({ item = {} }) {
-  const sparkline = Array.isArray(item.sparkline) ? item.sparkline : []
   const trend = normalizeText(item.trend)
   const comparison = normalizeText(item.comparison)
-  const microContext = normalizeText(item.microContext) || [trend, comparison].filter(Boolean).join(' · ')
-  const progressColor = KPI_PROGRESS_COLORS[item.key] || '#315f8c'
-  const toneClass = KPI_TONE_CLASSES[item.tone] || KPI_TONE_CLASSES.neutral
+  const label = getKpiDisplayLabel(item)
+  const helper = getKpiHelperText(item, trend, comparison)
+  const visual = KPI_VISUALS[item.key] || KPI_VISUALS.active_applications
+  const Icon = visual.icon
 
   return (
-    <article className={`min-h-[124px] rounded-[18px] border p-3.5 shadow-[0_10px_24px_rgba(15,23,42,0.032)] ${toneClass}`}>
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.13em] text-[#778da4]">{item.label}</p>
-        <TinySparkline values={sparkline} color={progressColor} />
+    <article className="flex h-full min-h-[142px] flex-col justify-between rounded-2xl border border-[#dbe5f0] bg-white p-[18px] shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
+      <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${visual.tone}`}>
+        <Icon size={18} aria-hidden="true" />
       </div>
-      <p className="mt-3 text-[1.85rem] font-semibold leading-none tracking-[-0.045em] text-[#142132]">{item.value}</p>
-      <p className="mt-2 min-h-10 text-[0.8rem] font-semibold leading-5 text-[#60758d]">{microContext}</p>
-      <p className="mt-1 text-[0.72rem] font-semibold text-[#8192a5]">{trend}</p>
+      <div>
+        <p className="truncate text-[13px] font-medium leading-5 text-[#52657a]">{label}</p>
+        <p className="mt-1.5 text-[1.55rem] font-semibold leading-none tracking-[-0.035em] text-[#101828] tabular-nums">{item.value}</p>
+      </div>
+      <p className="min-h-4 text-[0.72rem] font-medium leading-4 text-[#8a9aac]">{helper}</p>
     </article>
   )
 }
 
-function TinySparkline({ values = [], color = '#315f8c' }) {
-  const rows = Array.isArray(values) && values.length ? values.slice(-6) : [18, 24, 22, 31, 38, 42]
-  const normalized = rows.map((value) => Math.max(16, Math.min(100, normalizeNumber(value, 0))))
+function getKpiDisplayLabel(item = {}) {
+  if (item.key === 'bond_value') return 'Pipeline Value'
+  return normalizeText(item.label)
+}
 
-  return (
-    <div className="flex h-8 w-16 shrink-0 items-end gap-1" aria-hidden="true">
-      {normalized.map((value, index) => (
-        <span
-          key={`${value}-${index}`}
-          className="w-1.5 rounded-full bg-[#dfe8f3]"
-          style={{ height: `${Math.max(7, (value / 100) * 30)}px`, backgroundColor: index === normalized.length - 1 ? color : '#dfe8f3' }}
-        />
-      ))}
-    </div>
-  )
+function getKpiHelperText(item = {}, trend = '', comparison = '') {
+  if (item.key === 'active_applications') {
+    return normalizeText(item.microContext).replace('ready for review', 'ready')
+  }
+  if (item.key === 'bond_value') {
+    return [trend, comparison].filter(Boolean).join(' ')
+  }
+  if (item.key === 'commission_pipeline') {
+    return trend || normalizeText(item.microContext)
+  }
+  return normalizeText(item.microContext) || [trend, comparison].filter(Boolean).join(' · ')
 }
 
 function ActiveApplicationsSection({ items = [], activeFilter = 'all', onFilterChange = () => {} }) {
@@ -618,7 +614,7 @@ function ActiveApplicationsSection({ items = [], activeFilter = 'all', onFilterC
     <BondSectionCard
       eyebrow="Active Work"
       title="Active Applications"
-      description="Live operational movement across active bond files."
+      description="Live operational movement across active bond applications."
       action={
         <Link to="/bond/pipeline" className="text-sm font-semibold text-[#204b84] hover:text-[#17324d]">
           View all applications
@@ -762,7 +758,7 @@ function ActiveApplicationCard({ application = {} }) {
 
         <footer className="mt-4 grid grid-cols-3 gap-2">
           <button type="button" onClick={() => goTo(application.href)} className="h-9 rounded-[11px] bg-[#143250] px-2 text-xs font-semibold text-white transition hover:bg-[#173a5e]">
-            Open File
+            Open Application
           </button>
           <button
             type="button"
@@ -1033,7 +1029,7 @@ function SegmentedAnalyticsPanel({ items = {} }) {
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">Finance profile</p>
             <p className="mt-3 text-4xl font-semibold leading-none tracking-[-0.05em] text-[#142132]">{total}</p>
           </div>
-          <p className="max-w-[150px] text-right text-sm leading-5 text-[#60758d]">active files in this mix</p>
+          <p className="max-w-[150px] text-right text-sm leading-5 text-[#60758d]">active applications in this mix</p>
         </div>
         <div className="mt-5 flex h-4 overflow-hidden rounded-full bg-[#e6eef8]">
           {entries.map(([key, value], index) => {
@@ -1057,7 +1053,7 @@ function SegmentedAnalyticsPanel({ items = {} }) {
                 <span className="text-sm font-semibold capitalize text-[#142132]">{key.replaceAll('_', ' ')}</span>
                 <span className="text-sm font-semibold text-[#142132]">{Math.round(pct)}%</span>
               </div>
-              <p className="mt-1 text-xs text-[#60758d]">{value} active files</p>
+              <p className="mt-1 text-xs text-[#60758d]">{value} active applications</p>
               <div className="mt-3 h-2 rounded-full bg-[#e6eef8]">
                 <span
                   className="block h-full rounded-full"
@@ -1244,7 +1240,7 @@ function BankActivityFeedPanel({ rows = [] }) {
           </article>
         ))
       ) : (
-        <BondEmptyState compact title="No bank responses yet" description="Bank updates will appear here as files move." />
+        <BondEmptyState compact title="No bank responses yet" description="Bank updates will appear here as applications move." />
       )}
     </div>
   )
@@ -1265,7 +1261,7 @@ function TeamPerformancePanel({ rows = [] }) {
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-[#142132]">{member.name}</p>
-              <p className="text-xs text-[#71889e]">{member.activeFiles} active files</p>
+              <p className="text-xs text-[#71889e]">{member.activeFiles} active applications</p>
             </div>
             <div className="text-right">
               <p className="text-sm font-semibold text-[#142132]">{member.approvalRate}%</p>
@@ -1274,7 +1270,7 @@ function TeamPerformancePanel({ rows = [] }) {
           </article>
         ))
       ) : (
-        <BondEmptyState compact title="No team load to show" description="Assign files to team leads to populate this leaderboard." />
+        <BondEmptyState compact title="No team load to show" description="Assign applications to team leads to populate this leaderboard." />
       )}
     </div>
   )
@@ -1296,7 +1292,7 @@ function ConnectedPartnerCard({ partner = {} }) {
       <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
         <div>
           <p className="uppercase tracking-[0.08em] text-[#7c93aa]">Active</p>
-          <p className="mt-1 font-semibold text-[#142132]">{normalizeNumber(partner.activeFiles)} files</p>
+          <p className="mt-1 font-semibold text-[#142132]">{normalizeNumber(partner.activeFiles)} applications</p>
         </div>
         <div>
           <p className="uppercase tracking-[0.08em] text-[#7c93aa]">Conv.</p>

@@ -12,7 +12,7 @@ import * as bondCommandCenterService from '../../services/bondCommandCenterServi
 const DETAIL_TABS = [
   { key: 'overview', label: 'Overview' },
   { key: 'pipeline', label: 'Pipeline' },
-  { key: 'transactions', label: 'Transactions' },
+  { key: 'transactions', label: 'Applications' },
   { key: 'clients', label: 'Clients' },
   { key: 'partners', label: 'Partners' },
   { key: 'marketing', label: 'Marketing' },
@@ -75,8 +75,8 @@ function DevelopmentCard({ development }) {
       </div>
 
       <div className="mt-5 grid grid-cols-2 gap-3">
-        <Metric label="Pipeline Value" value={development.pipelineValueLabel} tone="blue" />
-        <Metric label="Active Files" value={formatNumber(development.activeFiles)} />
+        <Metric label="Application Pipeline Value" value={development.pipelineValueLabel} tone="blue" />
+        <Metric label="Active Applications" value={formatNumber(development.activeFiles)} />
         <Metric label="Approval Rate" value={`${development.approvalRate}%`} tone={development.approvalRate >= 70 ? 'green' : 'amber'} />
         <Metric label="Awaiting Docs" value={formatNumber(development.pendingDocuments)} tone={development.pendingDocuments ? 'amber' : 'green'} />
         <Metric label="Registered Month" value={formatNumber(development.registeredThisMonth)} tone="green" />
@@ -88,7 +88,7 @@ function DevelopmentCard({ development }) {
           View Development <ArrowRight size={15} />
         </Link>
         <Link to={development.transactionsHref} className="inline-flex h-10 items-center rounded-[14px] border border-[#dbe5f0] px-4 text-sm font-semibold text-[#24415d]">
-          View Transactions
+          View Applications
         </Link>
         <Link to={development.reportsHref} className="inline-flex h-10 items-center rounded-[14px] border border-[#dbe5f0] px-4 text-sm font-semibold text-[#24415d]">
           View Reports
@@ -123,10 +123,10 @@ function DetailOverview({ detail }) {
     <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
       <BondSectionCard title="Performance Summary" description="Development-level origination movement and file health.">
         <div className="grid gap-3 sm:grid-cols-2">
-          <Metric label="Pipeline Value" value={detail.metrics.pipelineValueLabel} tone="blue" />
+          <Metric label="Application Pipeline Value" value={detail.metrics.pipelineValueLabel} tone="blue" />
           <Metric label="Approval Rate" value={`${detail.metrics.approvalRate}%`} tone="green" />
           <Metric label="Avg Approval Days" value={detail.metrics.avgApprovalDays || '—'} />
-          <Metric label="At Risk Files" value={detail.metrics.atRiskFiles} tone={detail.metrics.atRiskFiles ? 'red' : 'green'} />
+          <Metric label="At Risk Applications" value={detail.metrics.atRiskFiles} tone={detail.metrics.atRiskFiles ? 'red' : 'green'} />
         </div>
       </BondSectionCard>
       <BondSectionCard title="Bank Breakdown" description="Applications grouped by current or preferred bank.">
@@ -201,9 +201,9 @@ function DetailTabContent({ detail, tab }) {
   }
   if (tab === 'transactions') {
     return (
-      <BondSectionCard title="Development Transactions" description="Open active operational files for this development.">
+      <BondSectionCard title="Development Applications" description="Open active operational applications for this development.">
         <Link to={detail.transactionsHref} className="inline-flex h-11 items-center gap-2 rounded-[14px] bg-[#17324d] px-4 text-sm font-semibold text-white">
-          Open Filtered Transactions <ArrowRight size={15} />
+          Open Filtered Applications <ArrowRight size={15} />
         </Link>
       </BondSectionCard>
     )
@@ -231,7 +231,7 @@ function DetailTabContent({ detail, tab }) {
         <SimpleRows rows={detail.partners} columns={[
           { key: 'name', label: 'Organisation / Person' },
           { key: 'role', label: 'Role' },
-          { key: 'linkedFiles', label: 'Linked Files' },
+          { key: 'linkedFiles', label: 'Linked Applications' },
         ]} />
       </BondSectionCard>
     )
@@ -254,7 +254,7 @@ function DetailTabContent({ detail, tab }) {
   if (tab === 'analytics') {
     return (
       <div className="grid gap-5 lg:grid-cols-2">
-        <BondSectionCard title="Approval Rate By Bank" description="Readable bank performance from linked files.">
+        <BondSectionCard title="Approval Rate By Bank" description="Readable bank performance from linked applications.">
           <BarList items={detail.overview.bankDistribution.map((item) => ({ label: item.bank, count: item.approved }))} />
         </BondSectionCard>
         <BondSectionCard title="Submission Volume" description="Current workflow distribution across bond stages.">
@@ -322,7 +322,7 @@ export default function BondDevelopmentsPage({ service = bondCommandCenterServic
       <BondPageHeader
         title={pageTitle}
         description={pageDescription}
-        primaryLabel={detail ? 'View Transactions' : 'Export Developments'}
+        primaryLabel={detail ? 'View Applications' : 'Export Developments'}
         secondaryLabel={detail ? 'Back to Developments' : 'View Reports'}
         onPrimary={() => navigate(detail?.transactionsHref || '/bond/reports?view=developments')}
         onSecondary={() => navigate(detail ? '/bond/developments' : '/bond/reports')}
@@ -353,8 +353,8 @@ export default function BondDevelopmentsPage({ service = bondCommandCenterServic
       {!state.loading && detail ? (
         <>
           <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-            <Metric label="Pipeline Value" value={detail.metrics.pipelineValueLabel} tone="blue" />
-            <Metric label="Active Files" value={formatNumber(detail.metrics.activeFiles)} />
+            <Metric label="Application Pipeline Value" value={detail.metrics.pipelineValueLabel} tone="blue" />
+            <Metric label="Active Applications" value={formatNumber(detail.metrics.activeFiles)} />
             <Metric label="Approval Rate" value={`${detail.metrics.approvalRate}%`} tone="green" />
             <Metric label="Avg Approval Days" value={detail.metrics.avgApprovalDays || '—'} />
             <Metric label="Registered Month" value={formatNumber(detail.metrics.registeredThisMonth)} tone="green" />

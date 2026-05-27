@@ -574,7 +574,7 @@ function NewApplicationsInbox({ rows = [], onRowClick, currentUser = {}, onActio
     <BondSectionCard
       eyebrow="Intake"
       title="New Applications"
-      description="Incoming Bond and Hybrid transactions waiting for buyer completion, document readiness, or review."
+      description="Incoming Bond and Hybrid applications waiting for buyer completion, document readiness, or review."
       action={<span className="rounded-full border border-[#dbe5f0] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#516a83]">{visibleItems.length} new</span>}
     >
       {feedback ? (
@@ -748,7 +748,7 @@ function BondApplicationsTable({
   rows = [],
   onRowClick,
   title = 'Applications Queue',
-  description = 'Manage the bond finance workflow separately from the post-approval property transaction tracker.',
+  description = 'Manage incoming or incomplete applications before they move into the active applications workspace.',
   emptyTitle = 'No applications found',
   emptyDescription = 'When finance applications match this queue, they will appear here.',
   queue = 'all',

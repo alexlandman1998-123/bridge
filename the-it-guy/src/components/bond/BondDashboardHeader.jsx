@@ -28,7 +28,7 @@ export default function BondDashboardHeader({
             Bond Originator Command Center
           </h1>
           <p className="mt-1 text-sm leading-6 text-[#5f7287]">
-            {summaryText || 'Operational status is loading across active bond files.'}
+            {summaryText || 'Operational status is loading across active bond applications.'}
           </p>
         </div>
 

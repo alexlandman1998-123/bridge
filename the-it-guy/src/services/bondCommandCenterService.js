@@ -22,7 +22,7 @@ const PRIORITY_CARD_META = Object.freeze({
     icon: 'file-warning',
     tone: 'amber',
     href: '/bond/pipeline?view=awaiting-docs',
-    helper: 'Files blocked by outstanding client paperwork.',
+    helper: 'Applications blocked by outstanding client paperwork.',
   },
   submission_readiness: {
     title: 'Ready for Submission',
@@ -50,7 +50,7 @@ const PRIORITY_CARD_META = Object.freeze({
     icon: 'shield-alert',
     tone: 'emerald',
     href: '/bond/pipeline?view=stalled',
-    helper: 'Files needing compliance review or risk clearance.',
+    helper: 'Applications needing compliance review or risk clearance.',
   },
 })
 
@@ -60,9 +60,9 @@ const PIPELINE_STAGE_META = Object.freeze([
   { key: 'pre_approval', label: 'Pre-Approval', href: '/bond/pipeline?view=ready-for-submission' },
   { key: 'submitted', label: 'Submitted', href: '/bond/pipeline?view=submitted' },
   { key: 'bank_feedback', label: 'Bank Feedback', href: '/bond/pipeline?view=submitted' },
-  { key: 'approved', label: 'Approved', href: '/bond/transactions?view=bond-approved' },
-  { key: 'grant_signed', label: 'Grant Signed', href: '/bond/transactions?view=grant-signed' },
-  { key: 'instruction_sent', label: 'Instruction Sent', href: '/bond/transactions?view=instruction-sent' },
+  { key: 'approved', label: 'Approved', href: '/bond/applications?view=bond-approved' },
+  { key: 'grant_signed', label: 'Grant Signed', href: '/bond/applications?view=grant-signed' },
+  { key: 'instruction_sent', label: 'Instruction Sent', href: '/bond/applications?view=instruction-sent' },
 ])
 
 const DASHBOARD_PIPELINE_FLOW_META = Object.freeze([
@@ -72,8 +72,8 @@ const DASHBOARD_PIPELINE_FLOW_META = Object.freeze([
   { key: 'pre_approval', label: 'Pre-Approval', href: '/bond/pipeline?view=ready-for-submission' },
   { key: 'submitted', label: 'Submission', href: '/bond/pipeline?view=submitted' },
   { key: 'bank_feedback', label: 'Bank Feedback', href: '/bond/pipeline?view=submitted' },
-  { key: 'approved', label: 'Approval', href: '/bond/transactions?view=bond-approved' },
-  { key: 'registered', label: 'Registration', href: '/bond/transactions?view=registered' },
+  { key: 'approved', label: 'Approval', href: '/bond/applications?view=bond-approved' },
+  { key: 'registered', label: 'Registration', href: '/bond/applications?view=registered' },
 ])
 
 const EXECUTIVE_BANKS = Object.freeze(['FNB', 'ABSA', 'Standard Bank', 'Nedbank', 'Investec', 'Others'])
@@ -111,13 +111,13 @@ const DATE_RANGE_FILTERS = Object.freeze({
 
 const DASHBOARD_ROLE_FOCUS = Object.freeze({
   consultant: {
-    attentionText: 'Personal finance files to move today.',
+    attentionText: 'Personal finance applications to move today.',
     workloadHeading: 'My Consultant Load',
     workloadMode: 'consultant',
     focusChips: ['My Applications', 'Follow-ups', 'Ready to Submit'],
   },
   processor: {
-    attentionText: 'Processing files needing handoff or lender action.',
+    attentionText: 'Processing applications needing handoff or lender action.',
     workloadHeading: 'Processor Queue',
     workloadMode: 'processor',
     focusChips: ['Ready for Submission', 'Bank Feedback', 'Turnaround Time'],
@@ -132,7 +132,7 @@ const DASHBOARD_ROLE_FOCUS = Object.freeze({
     attentionText: 'Branch-level operations across consultant and processor queues.',
     workloadHeading: 'Branch Workload',
     workloadMode: 'consultant',
-    focusChips: ['Team Load', 'Overdue Files', 'Approval Rate'],
+    focusChips: ['Team Load', 'Overdue Applications', 'Approval Rate'],
   },
   regional_manager: {
     attentionText: 'Regional performance and escalation watchlist.',
@@ -167,7 +167,7 @@ const DASHBOARD_ROLE_FOCUS = Object.freeze({
 })
 
 const TRANSACTION_STATUS_META = Object.freeze({
-  all: { label: 'All Transactions' },
+  all: { label: 'All Applications' },
   active: { label: 'Active' },
   awaiting_instruction: { label: 'Awaiting Attorney Instruction' },
   bond_approved: { label: 'Bond Approved' },
@@ -177,7 +177,7 @@ const TRANSACTION_STATUS_META = Object.freeze({
   in_transfer: { label: 'In Transfer' },
   registered: { label: 'Registered' },
   at_risk: { label: 'At Risk' },
-  cancelled: { label: 'Cancelled / Declined' },
+  cancelled: { label: 'Declined' },
 })
 
 function normalizeText(value) {
@@ -1010,7 +1010,6 @@ function buildHeaderSummary(rows = []) {
 function getKpiTone({ key = '', value = 0, benchmark = 0 } = {}) {
   if (key === 'approval_rate') return value >= 70 ? 'success' : value >= 55 ? 'warning' : 'danger'
   if (key === 'average_approval_time') return value > benchmark ? 'warning' : 'success'
-  if (key === 'registration_conversion') return value >= 50 ? 'success' : value >= 30 ? 'warning' : 'danger'
   if (key === 'active_applications') return value > 0 ? 'neutral' : 'warning'
   return 'neutral'
 }
@@ -1028,9 +1027,6 @@ function buildHeroKpiCards(rows = []) {
   const activeApplications = rowsForTrend.length
   const approvedRows = rowsForTrend.filter((row) => deriveFinanceLaneStage(row).key === 'bond_approved')
   const approvedCount = approvedRows.length
-  const registrationRows = rowsForTrend.filter(
-    (row) => normalizeLower(row?.transaction?.scope)?.includes('transfer') || row?.transaction?.current_main_stage === 'REG',
-  )
   const bondValueRows = rowsForTrend.filter((row) => getBondAmount(row) > 0)
   const approvalRate = activeApplications ? roundTo((approvedCount / activeApplications) * 100, 0) : 0
   const totalBondValue = bondValueRows.reduce((sum, row) => sum + getBondAmount(row), 0)
@@ -1050,9 +1046,6 @@ function buildHeroKpiCards(rows = []) {
       )
     : 0
   const approvalVelocity = approvalRate >= 70 ? 'up 18%' : approvalRate >= 55 ? 'up 7%' : 'steady'
-  const registerRate = rowsForTrend.length
-    ? roundTo((registrationRows.length / rowsForTrend.length) * 100, 0)
-    : 0
   const approvalTargetDays = 8
   const estimatedCommission = Math.max(totalCommission, totalBondValue * 0.012)
   const confirmedCommission = approvedRows.reduce((sum, row) => sum + getCommissionValue(row), 0)
@@ -1103,26 +1096,16 @@ function buildHeroKpiCards(rows = []) {
       },
       {
         key: 'bond_value',
-        label: 'Bond Value In Progress',
+        label: 'Application Pipeline Value',
         value: formatCurrency(totalBondValue),
-        trend: `${bondValueRows.length} files`,
+        trend: `${bondValueRows.length} applications`,
         comparison: 'included',
-        microContext: `${bondValueRows.length} finance files included`,
+        microContext: `${bondValueRows.length} finance applications included`,
         tone: 'neutral',
         sparkline: buildSparkline(
           rowsForTrend.map((row, index) => ({ value: normalizeNumber(getBondAmount(row), 0) + index * 12000 })),
           6,
         ),
-      },
-      {
-        key: 'registration_conversion',
-        label: 'Registration Conversion',
-        value: `${registerRate}%`,
-        trend: registerRate >= 50 ? 'healthy' : 'needs push',
-        comparison: 'registration',
-        microContext: registerRate >= 50 ? 'On track to registration' : 'Needs stage push',
-        tone: getKpiTone({ key: 'registration_conversion', value: registerRate }),
-        sparkline: buildSparkline(rowsForTrend.map((_, index) => ({ value: 100 - index })), 6),
       },
       {
         key: 'commission_pipeline',
@@ -1333,7 +1316,7 @@ function buildPipelineFlow(rows = []) {
   return DASHBOARD_PIPELINE_FLOW_META.map((stage) => ({
     ...stage,
     count: counts[stage.key] || 0,
-    valueLabel: `${counts[stage.key] || 0} files`,
+    valueLabel: `${counts[stage.key] || 0} applications`,
   }))
 }
 
@@ -1444,21 +1427,21 @@ function buildOperationalRisk(rows = []) {
     {
       key: 'missing',
       metric: 'Missing Documents',
-      value: `${missingDocsRows} files`,
-      description: 'Files with incomplete document packs.',
+      value: `${missingDocsRows} applications`,
+      description: 'Applications with incomplete document packs.',
       severity: missingDocsRows > 8 ? 'urgent' : missingDocsRows > 4 ? 'critical' : 'watch',
     },
     {
       key: 'compliance',
       metric: 'Compliance Flags',
       value: `${complianceRows} flags`,
-      description: 'Files in risk or blocked status.',
+      description: 'Applications in risk or blocked status.',
       severity: complianceRows > 4 ? 'critical' : complianceRows > 1 ? 'watch' : 'healthy',
     },
     {
       key: 'declined',
       metric: 'Declined',
-      value: `${declinedRows} files`,
+      value: `${declinedRows} applications`,
       description: 'Closed applications not moving into approvals.',
       severity: declinedRows > 0 ? 'critical' : 'healthy',
     },
@@ -1724,6 +1707,7 @@ function buildStatusCards(rows = []) {
     { key: 'attorney_stage', label: 'Attorney Stage', count: (buckets.awaiting_instruction || 0) + (buckets.in_transfer || 0) },
     { key: 'registered', label: 'Registered', count: buckets.registered || 0 },
     { key: 'at_risk', label: 'At Risk', count: buckets.at_risk || 0 },
+    { key: 'cancelled', label: 'Declined', count: buckets.cancelled || 0 },
   ]
 }
 
@@ -1752,6 +1736,16 @@ function mapTransactionTrackerRow(row = {}) {
     attorney: normalizeText(row?.transaction?.attorney) || 'Awaiting attorney',
     consultant: getDisplayNameFromAssignment(assignment, row, 'consultant'),
     processor: getDisplayNameFromAssignment(assignment, row, 'processor'),
+    regionId: normalizeText(assignment.bondRegionId || row?.transaction?.bond_region_id || row?.transaction?.region_id),
+    workspaceUnitId: normalizeText(
+      assignment.bondWorkspaceUnitId ||
+        row?.transaction?.bond_workspace_unit_id ||
+        row?.transaction?.workspace_unit_id ||
+        row?.transaction?.branch_id ||
+        row?.transaction?.team_id,
+    ),
+    branchId: normalizeText(row?.transaction?.branch_id || row?.transaction?.assigned_branch_id),
+    teamId: normalizeText(row?.transaction?.team_id),
     bank: normalizeText(row?.transaction?.bank) || 'Bank pending',
     bondAmount,
     bondAmountLabel: formatCurrency(bondAmount),
@@ -1892,7 +1886,7 @@ function buildDevelopmentCard(rows = [], identity = {}) {
     ...identity,
     ...summary,
     href: `/bond/developments/${encodeURIComponent(identity.id)}`,
-    transactionsHref: `/bond/transactions?developmentId=${encodeURIComponent(identity.id)}`,
+    transactionsHref: `/bond/applications?developmentId=${encodeURIComponent(identity.id)}`,
     reportsHref: `/bond/reports?developmentId=${encodeURIComponent(identity.id)}`,
   }
 }
@@ -1915,7 +1909,7 @@ function buildDevelopmentDetail(identity = {}, rows = []) {
     ...identity,
     metrics: summary,
     pipelineHref: `/bond/pipeline?developmentId=${encodeURIComponent(identity.id)}`,
-    transactionsHref: `/bond/transactions?developmentId=${encodeURIComponent(identity.id)}`,
+    transactionsHref: `/bond/applications?developmentId=${encodeURIComponent(identity.id)}`,
     clientsHref: `/bond/clients?developmentId=${encodeURIComponent(identity.id)}`,
     overview: {
       bankDistribution,
@@ -1948,7 +1942,7 @@ function buildDevelopmentDetail(identity = {}, rows = []) {
       { type: 'Developer mandates', status: identity.isUnassigned ? 'Not applicable' : 'Required' },
       { type: 'Commission agreements', status: 'Workspace controlled' },
       { type: 'Marketing packs', status: 'Not linked yet' },
-      { type: 'FICA / compliance documents', status: summary.pendingDocuments ? `${summary.pendingDocuments} files need docs` : 'No document issues' },
+      { type: 'FICA / compliance documents', status: summary.pendingDocuments ? `${summary.pendingDocuments} applications need docs` : 'No document issues' },
     ],
     marketing: {
       hasData: rows.some((row) => row?.transaction?.lead_source || row?.transaction?.campaign_source),
@@ -2080,8 +2074,8 @@ export async function getBondTransactionTrackerSnapshot(user = {}, workspaceId =
     rows: filteredRows,
     totalRows: transactionRows.length,
     emptyState: {
-      title: selectedStatus === 'all' ? 'No linked bond transactions yet' : `No ${TRANSACTION_STATUS_META[selectedStatus]?.label?.toLowerCase() || 'matching'} transactions`,
-      description: 'Linked transactions will stay visible here from finance work through attorney transfer and final registration.',
+      title: selectedStatus === 'all' ? 'No applications found.' : `No ${TRANSACTION_STATUS_META[selectedStatus]?.label?.toLowerCase() || 'matching'} applications found.`,
+      description: 'Applications will stay visible here from finance work through attorney transfer and final registration.',
     },
   }
 }

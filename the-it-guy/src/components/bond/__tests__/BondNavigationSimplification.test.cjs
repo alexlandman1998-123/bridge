@@ -24,10 +24,11 @@ async function main() {
     const bondNav = rolesModule.getRoleNavItems('bond_originator')
     assert.deepEqual(
       bondNav.map((item) => item.label),
-      ['Dashboard', 'Pipeline', 'Transactions', 'Developments', 'Clients', 'Partners', 'Reports', 'Settings'],
+      ['Dashboard', 'Pipeline', 'Applications', 'Developments', 'Clients', 'Partners', 'Reports', 'Organisation', 'Documents', 'Tasks', 'Calendar', 'Settings'],
     )
     assert.equal(bondNav.find((item) => item.key === 'bond_pipeline')?.to, '/bond/pipeline')
-    assert.equal(bondNav.find((item) => item.key === 'transactions')?.to, '/bond/transactions')
+    assert.equal(bondNav.find((item) => item.key === 'applications')?.to, '/bond/applications')
+    assert.equal(bondNav.find((item) => item.key === 'bond_organisation')?.to, '/bond/organisation')
     assert.equal(Boolean(bondNav.find((item) => item.key === 'clients')?.children?.length), false)
     assert.ok(bondNav.every((item) => !Array.isArray(item.children) || item.children.length === 0))
     assert.equal(bondNav.some((item) => item.key === 'banks' || item.key === 'teams' || item.key === 'performance'), false)
@@ -38,7 +39,7 @@ async function main() {
     )
     assert.deepEqual(
       viewsModule.bondViews.transactions.tabs.map((tab) => tab.key),
-      ['all', 'active', 'bond-approved', 'grant-signed', 'instruction-sent', 'attorney-stage', 'registered', 'at-risk'],
+      ['all', 'active', 'bond-approved', 'grant-signed', 'instruction-sent', 'attorney-stage', 'registered', 'at-risk', 'declined'],
     )
     assert.equal(viewsModule.getBondPipelineView('awaiting-documents').filters.queue, 'missing_documents')
     assert.equal(viewsModule.getBondPipelineView('awaiting-docs').filters.queue, 'missing_documents')

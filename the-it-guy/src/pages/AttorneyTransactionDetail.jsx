@@ -434,6 +434,33 @@ function toTitle(value) {
     .replace(/\b\w/g, (match) => match.toUpperCase())
 }
 
+function formatRoleFriendlyReference(transaction = {}, role = '') {
+  const normalizedRole = String(role || '').trim().toLowerCase()
+  const rawReference = String(
+    transaction?.application_reference ||
+      transaction?.bond_application_reference ||
+      transaction?.matter_number ||
+      transaction?.transaction_reference ||
+      transaction?.reference ||
+      transaction?.id ||
+      '',
+  ).trim()
+  const fallbackId = String(transaction?.id || '').trim()
+  const numericPart = rawReference.match(/\d+$/)?.[0] || fallbackId.match(/\d+$/)?.[0] || fallbackId.slice(0, 8).toUpperCase()
+
+  if (normalizedRole === 'bond_originator') {
+    return `APP-${numericPart || 'PENDING'}`
+  }
+
+  if (normalizedRole === 'attorney') {
+    if (/^MAT-/i.test(rawReference)) return rawReference
+    return `MAT-${numericPart || 'PENDING'}`
+  }
+
+  if (rawReference) return rawReference
+  return `TRX-${numericPart || 'PENDING'}`
+}
+
 function isServiceProviderRole(roleType) {
   return ['developer', 'agent', 'attorney', 'bond_originator'].includes(String(roleType || '').trim().toLowerCase())
 }
@@ -1938,10 +1965,9 @@ function AttorneyTransactionDetail() {
   const matterHeadline = !isPrivateMatter
     ? `${development?.name || 'Development'}${unit?.unit_number ? ` • Unit ${unit.unit_number}` : ''}`
     : transaction?.property_description || transaction?.property_address_line_1 || 'Private Property Transaction'
-  const matterReference =
-    transaction?.matter_number ||
-    transaction?.transaction_reference ||
-    `MAT-${String(transaction?.id || '').slice(0, 8).toUpperCase()}`
+  const workspaceReference = formatRoleFriendlyReference(transaction, workspaceRole)
+  const workspaceBackPath = workspaceRole === 'bond_originator' ? '/bond/applications' : '/transactions'
+  const workspaceBackLabel = workspaceRole === 'bond_originator' ? 'Back to Applications' : 'Back to Transactions'
   const transferStageKey = getAttorneyTransferStage({ transaction, stage: transaction?.stage, unit, development })
   const transferStageLabel = stageLabelFromAttorneyKey(transferStageKey)
   const lifecycleState = normalizeLifecycleState(
@@ -2812,15 +2838,17 @@ function AttorneyTransactionDetail() {
   const detailPanelSections = useMemo(
     () => ({
       matter: {
-        title: 'Matter Details',
-        subtitle: 'Reference and transaction metadata relevant to legal execution.',
-        summary: `${transferStageLabel} • ${matterReference}`,
+        title: workspaceRole === 'bond_originator' ? 'Application Details' : 'Matter Details',
+        subtitle: workspaceRole === 'bond_originator'
+          ? 'Reference and application metadata relevant to bond execution.'
+          : 'Reference and transaction metadata relevant to legal execution.',
+        summary: `${transferStageLabel} • ${workspaceReference}`,
         items: [
-          { label: 'Matter Number', value: matterReference },
+          { label: workspaceRole === 'bond_originator' ? 'Application ID' : 'Matter Number', value: workspaceReference },
           { label: 'Development', value: development?.name || 'Standalone matter' },
           { label: 'Unit', value: unit?.unit_number ? `Unit ${unit.unit_number}` : 'Not linked' },
           { label: 'Property Address', value: propertyAddress || transaction?.property_description || 'Not set' },
-          { label: 'Transaction Type', value: matterTypeLabel },
+          { label: workspaceRole === 'bond_originator' ? 'Application Type' : 'Transaction Type', value: matterTypeLabel },
           { label: 'Finance Type', value: financeTypeLabel },
           { label: 'Current Stage', value: transferStageLabel },
           { label: 'Main Process Stage', value: mainStageLabel },
@@ -2859,7 +2887,6 @@ function AttorneyTransactionDetail() {
       buyer?.phone,
       financeTypeLabel,
       mainStageLabel,
-      matterReference,
       matterTypeLabel,
       onboardingCompleted,
       propertyAddress,
@@ -2874,6 +2901,8 @@ function AttorneyTransactionDetail() {
       transferStageLabel,
       development?.name,
       unit?.unit_number,
+      workspaceReference,
+      workspaceRole,
     ],
   )
 
@@ -3631,14 +3660,14 @@ function AttorneyTransactionDetail() {
       headline={(
         <div className="space-y-4">
           <Link
-            to="/transactions"
+            to={workspaceBackPath}
             className="no-print inline-flex w-fit items-center gap-2 rounded-[12px] border border-borderDefault bg-white px-3.5 py-2 text-sm font-semibold text-textBody shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:border-borderStrong hover:bg-surfaceAlt hover:text-textStrong"
           >
             <ChevronRight size={15} className="rotate-180" />
-            Back to Transactions
+            {workspaceBackLabel}
           </Link>
             <MatterOverviewHeader
-              title={matterReference}
+              title={workspaceReference}
               statusLabel={hydratingDetail ? 'Refreshing' : lifecycleLabel}
               statusClassName={getLifecycleStateClasses(lifecycleState)}
               propertyLabel={matterHeadline}
@@ -3663,7 +3692,7 @@ function AttorneyTransactionDetail() {
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <strong className="truncate text-sm text-textStrong">{matterReference}</strong>
+                <strong className="truncate text-sm text-textStrong">{workspaceReference}</strong>
                 <span className={`rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold ${getLifecycleStateClasses(lifecycleState)}`}>
                   {lifecycleLabel}
                 </span>

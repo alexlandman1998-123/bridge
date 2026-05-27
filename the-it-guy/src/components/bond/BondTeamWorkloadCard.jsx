@@ -49,7 +49,7 @@ export default function BondTeamWorkloadCard({ title = 'Team Workload', rows = [
           <BondEmptyState
             compact
             title="No team workload available"
-            description="Team workload will appear here once bond files are assigned."
+            description="Team workload will appear here once bond applications are assigned."
           />
         )}
       </div>

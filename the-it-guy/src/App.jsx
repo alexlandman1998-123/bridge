@@ -98,6 +98,7 @@ const BondDashboardPage = lazy(() => import('./pages/bond/BondDashboardPage'))
 const BondDevelopmentsPage = lazy(() => import('./pages/bond/BondDevelopmentsPage'))
 const BondTransactionsPage = lazy(() => import('./pages/bond/BondTransactionsPage'))
 const BondModuleHubPage = lazy(() => import('./pages/bond/BondModuleHubPage'))
+const BondOrganisationPage = lazy(() => import('./pages/bond/BondOrganisationPage'))
 const CommercialLayout = lazy(() => import('./modules/commercial/components/CommercialLayout'))
 const CommercialActivityPage = lazy(() => import('./modules/commercial/pages/CommercialActivityPage'))
 const CommercialBrokerPerformancePage = lazy(() => import('./modules/commercial/pages/CommercialBrokerPerformancePage'))
@@ -1500,10 +1501,18 @@ function AppRoutes() {
                 }
               />
               <Route
-                path="/bond/transactions"
+                path="/bond/applications"
                 element={
                   <RoleRoute allowedRoles={['bond_originator']}>
                     <BondTransactionsPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/transactions"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <BondApplicationsRedirect />
                   </RoleRoute>
                 }
               />
@@ -1618,10 +1627,42 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/bond/organisation"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <BondOrganisationPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/organisation/applications"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <BondOrganisationPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/bond/reports"
                 element={
                   <RoleRoute allowedRoles={['bond_originator']}>
                     <BondModuleHubPage section="performance" />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/tasks"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <BondModuleHubPage section="tasks" />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/calendar"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <BondModuleHubPage section="calendar" />
                   </RoleRoute>
                 }
               />
@@ -2196,11 +2237,12 @@ function SellerLegacyRedirect() {
 
 function ClientAwareTransactions() {
   const { role } = useWorkspace()
+  const location = useLocation()
   if (role === 'client') {
     return <ClientModulePage />
   }
   if (role === 'bond_originator') {
-    return <BondTransactionsPage />
+    return <Navigate to={`/bond/applications${location.search || ''}`} replace />
   }
 
   return (
@@ -2208,6 +2250,11 @@ function ClientAwareTransactions() {
       <Units />
     </RoleRoute>
   )
+}
+
+function BondApplicationsRedirect() {
+  const location = useLocation()
+  return <Navigate to={`/bond/applications${location.search || ''}`} replace />
 }
 
 function PipelineEntryRoute() {

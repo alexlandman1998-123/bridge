@@ -1,4 +1,4 @@
-import { Building2, FileBarChart2, ShieldUser } from 'lucide-react'
+import { Building2, CalendarDays, ClipboardList, FileBarChart2, ShieldUser } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import BondPageShell from '../../components/bond/BondPageShell'
 import BondSectionCard from '../../components/bond/BondSectionCard'
@@ -18,12 +18,12 @@ const SECTION_META = Object.freeze({
   banks: {
     title: 'Banks',
     eyebrow: 'Lender Coverage',
-    description: 'Use the command center and transaction tracker to monitor bank response patterns, approvals, and turnaround context.',
+    description: 'Use the command center and applications tracker to monitor bank response patterns, approvals, and turnaround context.',
     icon: Building2,
     cards: [
       { title: 'Bank Performance', description: 'Compare approvals, bottlenecks, and lender activity on the dashboard.', href: '/dashboard' },
       { title: 'Submission Stats', description: 'Track what is ready, submitted, and still waiting on support docs.', href: '/bond/pipeline' },
-      { title: 'Turnaround View', description: 'Watch lender-linked transactions through bond instruction and transfer.', href: '/bond/transactions' },
+      { title: 'Turnaround View', description: 'Watch lender-linked applications through bond instruction and transfer.', href: '/bond/applications' },
     ],
   },
   performance: {
@@ -35,6 +35,28 @@ const SECTION_META = Object.freeze({
       { title: 'Pipeline Performance', description: 'Review volume, movement, and bottlenecks across the finance pipeline.', href: '/bond/pipeline' },
       { title: 'Development Performance', description: 'Compare project-level origination outcomes and risk.', href: '/bond/developments' },
       { title: 'Bank Analytics', description: 'Compare approval ratios, delays, and lender responsiveness.', href: '/dashboard' },
+    ],
+  },
+  tasks: {
+    title: 'Tasks',
+    eyebrow: 'Operational Work',
+    description: 'Prioritise document follow-ups, stalled applications, and next actions across the bond workflow.',
+    icon: ClipboardList,
+    cards: [
+      { title: 'Awaiting Documents', description: 'Follow up on incomplete applications before submission.', href: '/bond/pipeline?view=awaiting-docs' },
+      { title: 'At-Risk Applications', description: 'Review active applications with delay or risk signals.', href: '/bond/applications?view=at-risk' },
+      { title: 'Ready for Submission', description: 'Move reviewed applications into the bank submission queue.', href: '/bond/pipeline?view=ready-for-submission' },
+    ],
+  },
+  calendar: {
+    title: 'Calendar',
+    eyebrow: 'Application Timing',
+    description: 'Review applications that need signing, attorney handoff, or registration timing attention.',
+    icon: CalendarDays,
+    cards: [
+      { title: 'Attorney Stage', description: 'Track applications moving into attorney instruction and transfer work.', href: '/bond/applications?view=attorney-stage' },
+      { title: 'Instruction Sent', description: 'Review applications with instructions already sent to attorneys.', href: '/bond/applications?view=instruction-sent' },
+      { title: 'Registered', description: 'Check recently registered bond applications.', href: '/bond/applications?view=registered' },
     ],
   },
 })

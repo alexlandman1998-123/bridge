@@ -20,7 +20,7 @@ export default function AtRiskApplicationsCard({ rows = [] }) {
           rows.map((row) => (
             <Link
               key={`${row.transactionId}-${row.client}`}
-              to={row.transactionId ? `/transactions/${row.transactionId}` : '/bond/pipeline'}
+              to={row.transactionId ? `/bond/files/${row.transactionId}` : '/bond/pipeline'}
               className="block rounded-[18px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-3 transition hover:border-[#d6e2ee]"
             >
               <div className="flex items-start justify-between gap-3">

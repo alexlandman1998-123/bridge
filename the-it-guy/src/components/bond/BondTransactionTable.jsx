@@ -19,8 +19,8 @@ export default function BondTransactionTable({ rows = [] }) {
 
   return (
     <BondSectionCard
-      eyebrow="Linked Transactions"
-      title="Property deals still in motion after finance approval"
+      eyebrow="Linked Applications"
+      title="Applications still in motion after finance approval"
       description="Bond applications stay attached here through grant signing, instruction to attorneys, transfer progress, and final registration."
       padded={false}
       contentClassName="mt-0"
@@ -33,10 +33,10 @@ export default function BondTransactionTable({ rows = [] }) {
               <HeaderCell>Property</HeaderCell>
               <HeaderCell>Agent / Developer</HeaderCell>
               <HeaderCell>Attorney</HeaderCell>
-              <HeaderCell>Finance Stage</HeaderCell>
+              <HeaderCell>Application Stage</HeaderCell>
               <HeaderCell>Confidence</HeaderCell>
               <HeaderCell>Transfer Stage</HeaderCell>
-              <HeaderCell>Bond Status</HeaderCell>
+              <HeaderCell>Application Status</HeaderCell>
               <HeaderCell>Last Activity</HeaderCell>
               <HeaderCell>Next Action</HeaderCell>
               <HeaderCell className="text-right">Action</HeaderCell>
@@ -71,7 +71,7 @@ export default function BondTransactionTable({ rows = [] }) {
                   </div>
                 </td>
                 <td className="px-4 py-4 align-top">
-                  <p className="text-sm font-semibold text-[#142132]">{row.transactionConfidence || 0}% transaction confidence</p>
+                  <p className="text-sm font-semibold text-[#142132]">{row.transactionConfidence || 0}% application confidence</p>
                   <p className="mt-1 text-xs text-[#71869d]">{row.approvalConfidence?.probabilityBand || 'Insufficient Data'}</p>
                   <p className="mt-2 text-xs text-[#7b8ea3]">{row.operationalRisk?.riskLevel || 'Low'} operational risk</p>
                 </td>
@@ -117,8 +117,8 @@ export default function BondTransactionTable({ rows = [] }) {
                 <td colSpan={11} className="px-4 py-6">
                   <BondEmptyState
                     compact
-                    title="No linked transactions found"
-                    description="When bond-linked property transactions match this view, they will appear here."
+                    title="No applications found."
+                    description="When bond-linked applications match this view, they will appear here."
                   />
                 </td>
               </tr>

@@ -22,12 +22,12 @@ export const bondViews = {
     emptyDescription: 'New bond requests will appear here once a buyer selects bond finance or submits onboarding.',
   },
   transactions: {
-    title: 'Transactions',
-    description: 'Active bond files moving through approval, instruction, and registration.',
-    primaryActionLabel: '+ Create Transaction',
-    secondaryActionLabel: 'Export Transactions',
-    basePath: '/bond/transactions',
-    legacyPath: '/transactions',
+    title: 'Applications',
+    description: 'Active bond applications being managed through approval, instruction, and registration.',
+    primaryActionLabel: '+ Create Application',
+    secondaryActionLabel: 'Export Applications',
+    basePath: '/bond/applications',
+    legacyPath: '/bond/transactions',
     tabs: [
       { key: 'all', label: 'All', status: 'all' },
       { key: 'active', label: 'Active', status: 'active' },
@@ -37,6 +37,7 @@ export const bondViews = {
       { key: 'attorney-stage', label: 'Attorney Stage', status: 'attorney_stage' },
       { key: 'registered', label: 'Registered', status: 'registered' },
       { key: 'at-risk', label: 'At Risk', status: 'at_risk' },
+      { key: 'declined', label: 'Declined', status: 'cancelled' },
     ],
   },
 }

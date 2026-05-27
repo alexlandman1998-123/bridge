@@ -1843,7 +1843,7 @@ function Units() {
         isBondRole ? (
           <BondApplicationsTable
             rows={rows}
-            title={selectedBondPipelineView === 'all' ? 'Pipeline Files' : `${getBondPipelineView(selectedBondPipelineView).label} Pipeline`}
+            title={selectedBondPipelineView === 'all' ? 'Pipeline Applications' : `${getBondPipelineView(selectedBondPipelineView).label} Pipeline`}
             description="Incoming bond requests, incomplete files, document follow-ups, and applications preparing for bank submission."
             emptyTitle={bondViews.pipeline.emptyTitle}
             emptyDescription={bondViews.pipeline.emptyDescription}

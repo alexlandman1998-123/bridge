@@ -157,8 +157,8 @@ function getClientsPageCopy(role) {
   if (role === 'bond_originator') {
     return {
       subtitle: 'People and entities across your finance applications',
-      emptyCopy: 'Clients will appear here once finance-linked transactions are assigned to you.',
-      emptyDetail: 'This becomes the client identity layer across your application book as buyers and purchaser entities are linked into bond matters.',
+      emptyCopy: 'Clients will appear here once finance-linked applications are assigned to you.',
+      emptyDetail: 'This becomes the client identity layer across your application book as buyers and purchaser entities are linked into bond applications.',
     }
   }
 

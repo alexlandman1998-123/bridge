@@ -170,11 +170,15 @@ export const APP_NAV_BY_ROLE = {
   bond_originator: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
     { key: 'bond_pipeline', label: 'Pipeline', to: '/bond/pipeline', navSection: 'main', activeMatch: ['/bond/pipeline', '/applications'] },
-    { key: 'transactions', label: 'Transactions', to: '/bond/transactions', navSection: 'main', activeMatch: ['/bond/transactions', '/transactions'] },
+    { key: 'applications', label: 'Applications', to: '/bond/applications', navSection: 'main', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
     { key: 'bond_developments', label: 'Developments', to: '/bond/developments', navSection: 'main', activeMatch: ['/bond/developments', '/developments'] },
     { key: 'clients', label: 'Clients', to: '/bond/clients', navSection: 'main', activeMatch: ['/bond/clients', '/clients'] },
     { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners'] },
     { key: 'bond_reports', label: 'Reports', to: '/bond/reports', navSection: 'main', activeMatch: ['/bond/reports', '/reports'] },
+    { key: 'bond_organisation', label: 'Organisation', to: '/bond/organisation', navSection: 'main', activeMatch: ['/bond/organisation'] },
+    { key: 'documents', label: 'Documents', to: '/documents', navSection: 'secondary' },
+    { key: 'tasks', label: 'Tasks', to: '/bond/tasks', navSection: 'secondary' },
+    { key: 'bond_calendar', label: 'Calendar', to: '/bond/calendar', navSection: 'secondary' },
     { key: 'settings', label: 'Settings', to: '/settings', navSection: 'secondary' },
   ],
   client: [

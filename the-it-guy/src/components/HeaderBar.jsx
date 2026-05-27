@@ -49,9 +49,10 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/new-transaction') return 'New Transaction'
   if (pathname === '/applications') return 'Applications'
   if (pathname === '/bond/pipeline') return ''
-  if (pathname === '/bond/transactions') return ''
+  if (pathname === '/bond/applications' || pathname === '/bond/transactions') return ''
   if (pathname === '/bond/developments' || pathname.startsWith('/bond/developments/')) return ''
   if (pathname === '/bond/clients' || pathname.startsWith('/bond/clients/')) return ''
+  if (pathname === '/bond/organisation' || pathname.startsWith('/bond/organisation/')) return ''
   if (pathname === '/bond/partners' || pathname === '/bond/reports') return ''
   if (pathname === '/teams') return 'Teams'
   if (pathname === '/banks') return 'Banks'
@@ -268,7 +269,12 @@ function HeaderBar({ onLogout, user }) {
       location.pathname === '/applications' ||
       location.pathname === '/transactions' ||
       location.pathname === '/bond/pipeline' ||
+      location.pathname === '/bond/applications' ||
       location.pathname === '/bond/transactions' ||
+      location.pathname === '/bond/organisation' ||
+      location.pathname.startsWith('/bond/organisation/') ||
+      location.pathname === '/bond/tasks' ||
+      location.pathname === '/bond/calendar' ||
       location.pathname === '/developments' ||
       location.pathname === '/clients' ||
       location.pathname === '/teams' ||
@@ -550,7 +556,7 @@ function HeaderBar({ onLogout, user }) {
             <input
               className="min-w-0 flex-1 border-0 bg-transparent p-0 text-secondary text-textStrong outline-none"
               type="search"
-              placeholder="Search transactions, clients, listings..."
+              placeholder={role === 'bond_originator' ? 'Search applications, clients, partners...' : 'Search transactions, clients, listings...'}
             />
             <kbd>⌘K</kbd>
           </div>
