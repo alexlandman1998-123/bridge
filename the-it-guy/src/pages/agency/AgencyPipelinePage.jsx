@@ -7236,6 +7236,61 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  async function handleSendBuyerOnboardingFromLeadRow(lead, linkedTransaction = null) {
+    const leadId = normalizeLeadIdentityKey(lead?.leadId)
+    if (!organisationId || !leadId || resolveLeadCategoryView(lead) === 'seller') return
+    const transactionId = normalizeText(
+      linkedTransaction?.transactionId ||
+        linkedTransaction?.transaction_id ||
+        linkedTransaction?.id ||
+        lead?.convertedTransactionId ||
+        lead?.converted_transaction_id ||
+        lead?.transactionId ||
+        lead?.transaction_id,
+    )
+
+    if (!transactionId) {
+      setSelectedLeadId(leadId)
+      setLeadWorkspaceTab('offers')
+      setMessage('Open this buyer lead, accept or create an offer, then Bridge can create the transaction and send buyer onboarding.')
+      navigate(`/pipeline/leads/${leadId}`)
+      return
+    }
+
+    const leadActionId = `lead:${leadId}:buyer-onboarding`
+    try {
+      setCanonicalOfferActionId(leadActionId)
+      const onboardingEmail = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'client_onboarding',
+          transactionId,
+          source: 'buyer_lead_table',
+        },
+      })
+      const onboardingEmailError = onboardingEmail?.error || onboardingEmail?.data?.error
+      if (onboardingEmailError) {
+        throw typeof onboardingEmailError === 'string'
+          ? new Error(onboardingEmailError)
+          : onboardingEmailError
+      }
+      await recordBuyerLeadActivity({
+        organisationId,
+        leadId,
+        activityType: 'Buyer Onboarding Sent',
+        activityNote: `Buyer onboarding sent for transaction ${transactionId}.`,
+        outcome: 'Sent',
+        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+      }).catch(() => null)
+      setMessage('Buyer onboarding was sent.')
+      setError('')
+      await reloadRecords(organisationId)
+    } catch (sendError) {
+      setError(sendError?.message || 'Unable to send buyer onboarding right now.')
+    } finally {
+      setCanonicalOfferActionId('')
+    }
+  }
+
   async function handleCancelAppointment() {
     if (!organisationId || !selectedAppointmentId) return
     try {
@@ -8310,6 +8365,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   >
                                     <CheckSquare size={14} />
                                   </button>
+                                  {!isSeller ? (
+                                    <button
+                                      type="button"
+                                      className="inline-flex min-h-7 items-center justify-center rounded-[9px] border border-[#cfe0ef] bg-white px-2 text-[0.68rem] font-semibold text-[#1f4f78] transition hover:border-[#9fc0dd] hover:bg-[#f2f8fd] disabled:cursor-not-allowed disabled:opacity-55"
+                                      disabled={canonicalOfferActionId === `lead:${leadId}:buyer-onboarding`}
+                                      aria-label={`Send buyer onboarding for ${leadName}`}
+                                      title="Send Buyer Onboarding"
+                                      onClick={() => void handleSendBuyerOnboardingFromLeadRow(lead, linkedTransaction)}
+                                    >
+                                      Buyer Onboarding
+                                    </button>
+                                  ) : null}
                                   <button
                                     type="button"
                                     className={quickActionButtonClass}
