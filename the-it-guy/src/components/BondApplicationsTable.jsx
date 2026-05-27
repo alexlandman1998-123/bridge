@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { ArrowRight, Bell, FilePlus2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowRight, Bell, CheckCircle2, FilePlus2, UserPlus, XCircle } from 'lucide-react'
 import {
   BOND_OPERATIONAL_QUEUE_KEYS,
   buildBondNewApplicationViewModel,
@@ -12,6 +12,16 @@ import BondEmptyState from './bond/BondEmptyState'
 import BondRiskBadge from './bond/BondRiskBadge'
 import BondSectionCard from './bond/BondSectionCard'
 import BondStatusBadge from './bond/BondStatusBadge'
+import {
+  BOND_INTAKE_DECLINE_REASONS,
+  acceptBondIntakeApplication,
+  assignBondIntakeApplication,
+  canAcceptBondIntake,
+  canAssignBondIntake,
+  canDeclineBondIntake,
+  declineBondIntakeApplication,
+  fetchBondConsultantOptions,
+} from '../services/bondIntakeWorkflowService'
 
 const CURRENCY = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -175,12 +185,55 @@ function NewApplicationsEmptyState() {
   )
 }
 
-function NewApplicationCard({ item, onRowClick }) {
+function normalizeText(value) {
+  return String(value || '').trim()
+}
+
+function getCurrentUserOption(currentUser = {}) {
+  const profile = currentUser.profile || currentUser
+  const email = normalizeText(currentUser.email || profile.email)
+  const name =
+    normalizeText(currentUser.name || currentUser.fullName || profile.fullName || profile.full_name) ||
+    normalizeText([profile.first_name, profile.last_name].filter(Boolean).join(' ')) ||
+    email ||
+    'Current user'
+  return {
+    id: normalizeText(currentUser.userId || currentUser.id || profile.id),
+    name,
+    email,
+    label: `${name}${email ? ` · ${email}` : ''}`,
+  }
+}
+
+function getConsultantOptions(currentUser = {}, item = {}) {
+  const current = getCurrentUserOption(currentUser)
+  const existing = {
+    id: normalizeText(item?.sourceRow?.transaction?.primary_bond_consultant_user_id),
+    name: normalizeText(item?.sourceRow?.transaction?.bond_originator),
+    email: normalizeText(item?.sourceRow?.transaction?.assigned_bond_originator_email),
+  }
+  const options = [current]
+  if ((existing.id || existing.email) && existing.id !== current.id && existing.email !== current.email) {
+    options.push({
+      ...existing,
+      label: `${existing.name || existing.email || 'Existing consultant'}${existing.email ? ` · ${existing.email}` : ''}`,
+    })
+  }
+  return options.filter((option) => option.id || option.email)
+}
+
+function NewApplicationCard({ item, currentUser, onRowClick, onAction }) {
   const sourceRow = item.sourceRow || {}
   const openRow = () => onRowClick(sourceRow)
   const missingPreview = item.missingDocumentLabels?.length
     ? item.missingDocumentLabels.slice(0, 2).join(', ')
     : 'No missing documents'
+  const userCanAccept = canAcceptBondIntake(currentUser, sourceRow)
+  const userCanAssign = canAssignBondIntake(currentUser)
+  const userCanDecline = canDeclineBondIntake(currentUser)
+  const acceptDisabledTitle = item.canAccept
+    ? 'Accept this application.'
+    : 'Buyer application and documents must be complete before acceptance.'
 
   return (
     <article className="rounded-[20px] border border-[#dbe5f0] bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.035)]">
@@ -240,12 +293,36 @@ function NewApplicationCard({ item, onRowClick }) {
             </button>
             <button
               type="button"
-              disabled={!item.canAccept}
-              title={item.canAccept ? 'Accept action will be enabled in Phase 3.' : 'Application must be ready for review before it can be accepted.'}
+              disabled={!userCanAccept}
+              title={userCanAccept ? 'Accept this application.' : acceptDisabledTitle}
+              onClick={() => onAction('accept', item)}
               className="inline-flex h-9 items-center justify-center rounded-[12px] bg-[#143250] px-3 text-sm font-semibold text-white transition enabled:hover:bg-[#173a5e] disabled:cursor-not-allowed disabled:bg-[#c7d3df]"
             >
+              <CheckCircle2 size={14} className="mr-1" />
               Accept
             </button>
+            {userCanAssign ? (
+              <button
+                type="button"
+                disabled={item.intakeStatus !== BOND_INTAKE_STATUSES.READY_FOR_REVIEW}
+                title={item.intakeStatus === BOND_INTAKE_STATUSES.READY_FOR_REVIEW ? 'Assign this application.' : 'Application must be ready for review before assignment.'}
+                onClick={() => onAction('assign', item)}
+                className="inline-flex h-9 items-center justify-center gap-1 rounded-[12px] border border-[#dbe5f0] bg-white px-3 text-sm font-semibold text-[#17324d] transition enabled:hover:border-[#c5d5e6] disabled:cursor-not-allowed disabled:text-[#8aa0b6] disabled:opacity-70"
+              >
+                <UserPlus size={14} />
+                Assign
+              </button>
+            ) : null}
+            {userCanDecline ? (
+              <button
+                type="button"
+                onClick={() => onAction('decline', item)}
+                className="inline-flex h-9 items-center justify-center gap-1 rounded-[12px] border border-[#efd6dc] bg-[#fff8fa] px-3 text-sm font-semibold text-[#8f3747] transition hover:border-[#e7bdc7]"
+              >
+                <XCircle size={14} />
+                Decline
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -253,12 +330,144 @@ function NewApplicationCard({ item, onRowClick }) {
   )
 }
 
-function NewApplicationsInbox({ rows = [], onRowClick }) {
+function IntakeActionModal({ action = '', item = null, currentUser = {}, busy = false, onClose, onSubmit }) {
+  const [assigneeKey, setAssigneeKey] = useState('0')
+  const [note, setNote] = useState('')
+  const [reason, setReason] = useState(BOND_INTAKE_DECLINE_REASONS[0])
+  const [remoteConsultants, setRemoteConsultants] = useState([])
+  const fallbackConsultants = useMemo(() => getConsultantOptions(currentUser, item), [currentUser, item])
+  const consultantOptions = remoteConsultants.length ? remoteConsultants : fallbackConsultants
+  const selectedAssignee = consultantOptions[Number(assigneeKey)] || consultantOptions[0] || getCurrentUserOption(currentUser)
+  const isDecline = action === 'decline'
+  const title = action === 'assign' ? 'Assign application' : isDecline ? 'Decline application' : 'Accept application'
+  const description = action === 'assign'
+    ? 'Choose the consultant who should own this bond intake file.'
+    : isDecline
+      ? 'Decline this intake without deleting the transaction.'
+      : 'Accept this ready intake file and move it into the active bond queue.'
+
+  useEffect(() => {
+    let active = true
+    setAssigneeKey('0')
+    setRemoteConsultants([])
+    if (!item || action === 'decline') return () => {
+      active = false
+    }
+
+    fetchBondConsultantOptions({ user: currentUser }).then((options) => {
+      if (!active) return
+      setRemoteConsultants(options)
+    })
+
+    return () => {
+      active = false
+    }
+  }, [action, currentUser, item])
+
+  if (!item) return null
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#102033]/35 px-4 py-6">
+      <div className="w-full max-w-xl rounded-[24px] border border-[#dbe5f0] bg-white p-5 shadow-[0_28px_80px_rgba(15,23,42,0.2)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7d93aa]">Bond Intake</p>
+            <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#142132]">{title}</h3>
+            <p className="mt-2 text-sm leading-6 text-[#60758d]">{description}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="rounded-full border border-[#dbe5f0] px-3 py-1 text-sm font-semibold text-[#60758d] disabled:opacity-60"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="mt-5 rounded-[18px] border border-[#edf2f7] bg-[#fbfdff] p-4">
+          <p className="text-sm font-semibold text-[#142132]">{item.buyerName}</p>
+          <p className="mt-1 text-sm text-[#60758d]">{item.propertyLabel} · {item.developmentName}</p>
+          <p className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#7d93aa]">{item.intakeLabel}</p>
+        </div>
+
+        {!isDecline ? (
+          <label className="mt-5 block">
+            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">Consultant</span>
+            <select
+              value={assigneeKey}
+              onChange={(event) => setAssigneeKey(event.target.value)}
+              className="mt-2 h-11 w-full rounded-[14px] border border-[#dbe5f0] bg-white px-3 text-sm font-semibold text-[#142132] outline-none focus:border-[#9bb6d1]"
+            >
+              {consultantOptions.map((option, index) => (
+                <option key={`${option.id || option.email || index}`} value={String(index)}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <label className="mt-5 block">
+            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">Reason</span>
+            <select
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              className="mt-2 h-11 w-full rounded-[14px] border border-[#dbe5f0] bg-white px-3 text-sm font-semibold text-[#142132] outline-none focus:border-[#9bb6d1]"
+            >
+              {BOND_INTAKE_DECLINE_REASONS.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        <label className="mt-4 block">
+          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">Optional note</span>
+          <textarea
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            rows={3}
+            className="mt-2 w-full rounded-[14px] border border-[#dbe5f0] bg-white px-3 py-2 text-sm text-[#142132] outline-none focus:border-[#9bb6d1]"
+            placeholder={isDecline ? 'Add context for the decline reason.' : 'Add an internal assignment note.'}
+          />
+        </label>
+
+        <div className="mt-6 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="inline-flex h-10 items-center justify-center rounded-[12px] border border-[#dbe5f0] bg-white px-4 text-sm font-semibold text-[#17324d] disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={busy || (isDecline && !reason)}
+            onClick={() => onSubmit({ assignee: selectedAssignee, reason, note })}
+            className={`inline-flex h-10 items-center justify-center rounded-[12px] px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-65 ${
+              isDecline ? 'bg-[#8f3747] hover:bg-[#79303d]' : 'bg-[#143250] hover:bg-[#173a5e]'
+            }`}
+          >
+            {busy ? 'Saving…' : isDecline ? 'Decline application' : action === 'assign' ? 'Assign application' : 'Accept application'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function NewApplicationsInbox({ rows = [], onRowClick, currentUser = {}, onActionComplete }) {
   const [statusFilter, setStatusFilter] = useState('all')
+  const [feedback, setFeedback] = useState(null)
+  const [modalState, setModalState] = useState({ action: '', item: null })
+  const [busy, setBusy] = useState(false)
+  const [dismissedIds, setDismissedIds] = useState([])
   const items = useMemo(() => rows.map(buildBondNewApplicationViewModel), [rows])
-  const visibleItems = statusFilter === 'all' ? items : items.filter((item) => item.intakeStatus === statusFilter)
+  const activeItems = items.filter((item) => !dismissedIds.includes(item.id))
+  const visibleItems = statusFilter === 'all' ? activeItems : activeItems.filter((item) => item.intakeStatus === statusFilter)
   const filters = [
-    { key: 'all', label: `All (${items.length})` },
+    { key: 'all', label: `All (${activeItems.length})` },
     ...[
       BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION,
       BOND_INTAKE_STATUSES.BUYER_IN_PROGRESS,
@@ -266,9 +475,44 @@ function NewApplicationsInbox({ rows = [], onRowClick }) {
       BOND_INTAKE_STATUSES.READY_FOR_REVIEW,
     ].map((status) => ({
       key: status,
-      label: `${intakeFilterLabel(status)} (${items.filter((item) => item.intakeStatus === status).length})`,
+      label: `${intakeFilterLabel(status)} (${activeItems.filter((item) => item.intakeStatus === status).length})`,
     })),
   ]
+
+  async function submitAction(payload = {}) {
+    if (!modalState.item || busy) return
+    setBusy(true)
+    setFeedback(null)
+    try {
+      const input = {
+        row: modalState.item.sourceRow,
+        transactionId: modalState.item.transactionId,
+        user: currentUser,
+        ...payload,
+      }
+      const result =
+        modalState.action === 'assign'
+          ? await assignBondIntakeApplication(input)
+          : modalState.action === 'decline'
+            ? await declineBondIntakeApplication(input)
+            : await acceptBondIntakeApplication(input)
+
+      setDismissedIds((previous) => [...new Set([...previous, modalState.item.id])])
+      setModalState({ action: '', item: null })
+      setFeedback({ tone: 'success', message: result?.message || 'Application updated successfully.' })
+      if (typeof onActionComplete === 'function') {
+        await onActionComplete()
+      }
+    } catch (error) {
+      const rawMessage = error?.message || 'Unable to update this application.'
+      const safeMessage = /row-level security|permission denied/i.test(rawMessage)
+        ? 'You do not have permission to update this application.'
+        : rawMessage
+      setFeedback({ tone: 'danger', message: safeMessage })
+    } finally {
+      setBusy(false)
+    }
+  }
 
   if (!items.length) {
     return <NewApplicationsEmptyState />
@@ -281,6 +525,18 @@ function NewApplicationsInbox({ rows = [], onRowClick }) {
       description="Incoming Bond and Hybrid transactions waiting for buyer completion, document readiness, or review."
       action={<span className="rounded-full border border-[#dbe5f0] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#516a83]">{visibleItems.length} new</span>}
     >
+      {feedback ? (
+        <div
+          className={`mb-4 rounded-[14px] border px-4 py-3 text-sm font-semibold ${
+            feedback.tone === 'danger'
+              ? 'border-[#efd6dc] bg-[#fff8fa] text-[#8f3747]'
+              : 'border-[#d5e9dc] bg-[#f7fcf8] text-[#2f7653]'
+          }`}
+          role="status"
+        >
+          {feedback.message}
+        </div>
+      ) : null}
       <div className="mb-5 flex flex-wrap gap-2">
         {filters.map((filter) => (
           <button
@@ -298,10 +554,30 @@ function NewApplicationsInbox({ rows = [], onRowClick }) {
         ))}
       </div>
       <div className="space-y-3">
-        {visibleItems.map((item) => (
-          <NewApplicationCard key={item.id} item={item} onRowClick={onRowClick} />
-        ))}
+        {visibleItems.length ? visibleItems.map((item) => (
+          <NewApplicationCard
+            key={item.id}
+            item={item}
+            currentUser={currentUser}
+            onRowClick={onRowClick}
+            onAction={(action, actionItem) => setModalState({ action, item: actionItem })}
+          />
+        )) : (
+          <BondEmptyState
+            compact
+            title="No applications in this filter"
+            description="Try a different intake status filter."
+          />
+        )}
       </div>
+      <IntakeActionModal
+        action={modalState.action}
+        item={modalState.item}
+        currentUser={currentUser}
+        busy={busy}
+        onClose={() => (busy ? null : setModalState({ action: '', item: null }))}
+        onSubmit={submitAction}
+      />
     </BondSectionCard>
   )
 }
@@ -383,9 +659,16 @@ function ApplicationRow({ row, onRowClick }) {
   )
 }
 
-function BondApplicationsTable({ rows = [], onRowClick, title = 'Applications Queue', queue = 'all' }) {
+function BondApplicationsTable({ rows = [], onRowClick, title = 'Applications Queue', queue = 'all', currentUser = {}, onIntakeActionComplete }) {
   if (queue === BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS) {
-    return <NewApplicationsInbox rows={rows} onRowClick={onRowClick} />
+    return (
+      <NewApplicationsInbox
+        rows={rows}
+        onRowClick={onRowClick}
+        currentUser={currentUser}
+        onActionComplete={onIntakeActionComplete}
+      />
+    )
   }
 
   return (

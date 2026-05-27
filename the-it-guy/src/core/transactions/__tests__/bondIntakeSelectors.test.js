@@ -149,6 +149,42 @@ try {
     'declined marker returns DECLINED',
   )
 
+  assert.equal(
+    getBondIntakeStatus({
+      transaction: { finance_type: 'bond' },
+      rolePlayers: [
+        {
+          role_type: 'bond_originator',
+          selection_source: 'manual',
+          snapshot_json: {
+            intake_status: 'DECLINED',
+            source: 'new_applications_queue',
+          },
+        },
+      ],
+    }),
+    BOND_INTAKE_STATUSES.DECLINED,
+    'declined role player snapshot returns DECLINED',
+  )
+
+  assert.equal(
+    getBondIntakeStatus({
+      transaction: { finance_type: 'bond' },
+      rolePlayers: [
+        {
+          role_type: 'bond_originator',
+          selection_source: 'manual',
+          snapshot_json: {
+            intake_status: 'ACCEPTED',
+            source: 'accepted_from_intake',
+          },
+        },
+      ],
+    }),
+    BOND_INTAKE_STATUSES.ACCEPTED,
+    'accepted role player snapshot returns ACCEPTED',
+  )
+
   console.log('bondIntakeSelectors tests passed')
 } finally {
   await server.close()

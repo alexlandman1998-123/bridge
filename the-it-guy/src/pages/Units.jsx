@@ -1728,7 +1728,14 @@ function Units() {
             rows={rows}
             title={filters.queue === BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS ? 'New Applications' : 'Applications Queue'}
             queue={filters.queue}
+            currentUser={{
+              role,
+              profile,
+              currentWorkspace: workspace,
+              workspaceId: workspace.id,
+            }}
             onRowClick={(row) => handleOpenBondApplication(row)}
+            onIntakeActionComplete={() => loadData()}
           />
         ) : isAttorneyRole ? (
           <>
