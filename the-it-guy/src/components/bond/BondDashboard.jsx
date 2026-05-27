@@ -96,6 +96,8 @@ export default function BondDashboard({
   const teamPerformance = snapshot.teamPerformance || []
   const connectedPartners = snapshot.connectedPartners || []
   const heroSummary = snapshot.heroSummary || {}
+  const displayName = normalizeText(snapshot?.userDisplayName)
+  const safeUserDisplayName = displayName && displayName.toLowerCase() !== 'undefined' ? displayName : 'there'
 
   if (!safeWorkspaceId) {
     return (
@@ -118,11 +120,11 @@ export default function BondDashboard({
   return (
     <BondPageShell>
       <BondDashboardHeader
-        userDisplayName={snapshot?.userDisplayName || 'there'}
+        userDisplayName={safeUserDisplayName}
         applicationsMovedText={
           state.loading ? 'Loading this week’s movement' : `${heroSummary.applicationsMoved || 0} applications moved`
         }
-        velocityText={state.loading ? 'calculating' : `is ${heroSummary.approvalVelocity || 'up 0%'}`}
+        velocityText={state.loading ? 'calculating' : heroSummary.approvalVelocity || 'up 0%'}
         focusChips={snapshot?.roleFocus?.focusChips || []}
         onCreate={onCreateApplication}
         onInvitePartner={onInvitePartner}
@@ -149,13 +151,14 @@ export default function BondDashboard({
             />
           ) : (
             <>
-              <section className="grid gap-4 xl:grid-cols-3">
+              <section className="grid gap-4 xl:grid-cols-[1.35fr_0.78fr_0.95fr]">
                 <BondSectionCard
                   eyebrow="Primary Analytics"
                   title="Bank Approval Breakdown"
                   description="Bank movement and outcome split in one operational view."
-                  className="max-h-[380px]"
-                  contentClassName="mt-5"
+                  className="flex h-[360px] flex-col overflow-hidden rounded-[22px] p-4 sm:p-4"
+                  headerClassName="gap-2"
+                  contentClassName="mt-4 min-h-0 flex-1 overflow-hidden"
                 >
                   <BankApprovalPanel items={bankBreakdown} />
                 </BondSectionCard>
@@ -163,8 +166,9 @@ export default function BondDashboard({
                   eyebrow="Primary Analytics"
                   title="Bank Lead Times"
                   description="Average lead time by lender from submission to movement."
-                  className="max-h-[380px]"
-                  contentClassName="mt-5"
+                  className="flex h-[360px] flex-col overflow-hidden rounded-[22px] p-4 sm:p-4"
+                  headerClassName="gap-2"
+                  contentClassName="mt-4 min-h-0 flex-1 overflow-hidden"
                 >
                   <BankLeadTimePanel items={bankLeadTimes} />
                 </BondSectionCard>
@@ -172,8 +176,9 @@ export default function BondDashboard({
                   eyebrow="Primary Analytics"
                   title="Pipeline Overview"
                   description="Operational flow through core finance and registration stages."
-                  className="max-h-[380px]"
-                  contentClassName="mt-5"
+                  className="flex h-[360px] flex-col overflow-hidden rounded-[22px] p-4 sm:p-4"
+                  headerClassName="gap-2"
+                  contentClassName="mt-4 min-h-0 flex-1 overflow-hidden"
                 >
                   <PipelineFlowPanel items={pipelineFlow} />
                 </BondSectionCard>
@@ -192,7 +197,9 @@ export default function BondDashboard({
                       View all
                     </Link>
                   }
-                  className="max-h-[330px]"
+                  className="flex h-[300px] flex-col overflow-hidden rounded-[22px] p-4 sm:p-4"
+                  headerClassName="gap-2"
+                  contentClassName="mt-4 min-h-0 flex-1 overflow-hidden"
                 >
                   <BuyerDemographicsPanel stats={buyerDemographics} />
                 </BondSectionCard>
@@ -209,7 +216,9 @@ export default function BondDashboard({
                       View all
                     </Link>
                   }
-                  className="max-h-[330px]"
+                  className="flex h-[300px] flex-col overflow-hidden rounded-[22px] p-4 sm:p-4"
+                  headerClassName="gap-2"
+                  contentClassName="mt-4 min-h-0 flex-1 overflow-hidden"
                 >
                   <OperationalRiskPanel items={operationalRisk} />
                 </BondSectionCard>
@@ -223,7 +232,9 @@ export default function BondDashboard({
                       Open bank feed
                     </Link>
                   }
-                  className="max-h-[330px]"
+                  className="flex h-[300px] flex-col overflow-hidden rounded-[22px] p-4 sm:p-4"
+                  headerClassName="gap-2"
+                  contentClassName="mt-4 min-h-0 flex-1 overflow-hidden"
                 >
                   <BankActivityFeedPanel rows={recentBankActivity} />
                 </BondSectionCard>
@@ -237,7 +248,9 @@ export default function BondDashboard({
                       Team view
                     </Link>
                   }
-                  className="max-h-[330px]"
+                  className="flex h-[300px] flex-col overflow-hidden rounded-[22px] p-4 sm:p-4"
+                  headerClassName="gap-2"
+                  contentClassName="mt-4 min-h-0 flex-1 overflow-hidden"
                 >
                   <TeamPerformancePanel rows={teamPerformance} />
                 </BondSectionCard>
@@ -247,7 +260,9 @@ export default function BondDashboard({
                 eyebrow="Performance Snapshot"
                 title="Executive signal strip"
                 description="Velocity, conversion and book strength in one quick view."
-                className="max-h-[300px]"
+                className="flex h-[220px] flex-col overflow-hidden rounded-[22px] p-4 sm:p-4"
+                headerClassName="gap-2"
+                contentClassName="mt-4 min-h-0 flex-1 overflow-hidden"
               >
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
                   {snapshot.performanceSnapshot?.length ? (
@@ -320,8 +335,8 @@ function BankApprovalPanel({ items = [] }) {
   })
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[auto_1fr] xl:items-center">
-      <div className="relative mx-auto h-28 w-28 shrink-0 rounded-full">
+    <div className="grid h-full min-h-0 gap-3 xl:grid-cols-[124px_1fr] xl:items-center">
+      <div className="relative mx-auto h-24 w-24 shrink-0 rounded-full">
         <div
           className="h-full w-full rounded-full"
           style={{
@@ -330,35 +345,35 @@ function BankApprovalPanel({ items = [] }) {
         />
         <div className="absolute inset-3 rounded-full bg-white" />
       </div>
-      <div className="grid gap-2 overflow-auto pr-1">
+      <div className="grid min-h-0 gap-1.5 overflow-y-auto pr-1">
         {rows.map((row) => {
           const totalCount = Number(row.total || 0)
           return (
             <article
               key={row.bank}
-              className="grid grid-cols-[minmax(0,1fr)_repeat(4,80px)] items-center gap-2 rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2"
+              className="grid grid-cols-[minmax(0,1fr)_repeat(4,48px)] items-center gap-2 rounded-[12px] border border-[#edf2f7] bg-[#fbfdff] px-2 py-1.5"
             >
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-[#142132]">{row.bank}</p>
-                <p className="mt-1 text-xs text-[#72889e]">
+                <p className="truncate text-xs font-semibold text-[#142132]">{row.bank}</p>
+                <p className="text-[0.68rem] text-[#72889e]">
                   {((row.approvalRate || 0)).toFixed(0)}% approval
                 </p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.1em] text-[#7f94aa]">Approved</p>
-                <p className="text-sm font-semibold text-[#142132]">{row.approved}</p>
+                <p className="text-[0.58rem] uppercase tracking-[0.08em] text-[#7f94aa]">Appr.</p>
+                <p className="text-xs font-semibold text-[#142132]">{row.approved}</p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.1em] text-[#7f94aa]">Pending</p>
-                <p className="text-sm font-semibold text-[#142132]">{row.pending}</p>
+                <p className="text-[0.58rem] uppercase tracking-[0.08em] text-[#7f94aa]">Pend.</p>
+                <p className="text-xs font-semibold text-[#142132]">{row.pending}</p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.1em] text-[#7f94aa]">Declined</p>
-                <p className="text-sm font-semibold text-[#142132]">{row.declined}</p>
+                <p className="text-[0.58rem] uppercase tracking-[0.08em] text-[#7f94aa]">Decl.</p>
+                <p className="text-xs font-semibold text-[#142132]">{row.declined}</p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.1em] text-[#7f94aa]">% of book</p>
-                <p className="text-sm font-semibold text-[#142132]">{((totalCount / total) * 100).toFixed(0)}%</p>
+                <p className="text-[0.58rem] uppercase tracking-[0.08em] text-[#7f94aa]">Book</p>
+                <p className="text-xs font-semibold text-[#142132]">{((totalCount / total) * 100).toFixed(0)}%</p>
               </div>
             </article>
           )
@@ -374,13 +389,13 @@ function BankLeadTimePanel({ items = [] }) {
   const maxDays = Math.max(...safeRows.map((row) => Number(row.leadTimeDays || 0)), 1)
 
   return (
-    <div className="space-y-3">
+    <div className="h-full min-h-0 space-y-2 overflow-y-auto pr-1">
       {safeRows.length ? (
         safeRows.map((row) => {
           const percent = Math.min(100, ((Number(row.leadTimeDays || 0) / maxDays) * 100) || 0)
           const tone = Number(row.leadTimeDays || 0) <= 5 ? 'bg-[#2f8a63]' : Number(row.leadTimeDays || 0) <= 8 ? 'bg-[#9e5f17]' : 'bg-[#a93c4c]'
           return (
-            <article key={row.bank} className="rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] p-3">
+            <article key={row.bank} className="rounded-[12px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2.5">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-semibold text-[#142132]">{row.bank}</p>
                 <p className="text-sm font-semibold text-[#142132]">{row.leadTimeDays} days</p>
@@ -415,25 +430,23 @@ function PipelineFlowPanel({ items = [] }) {
   }
 
   return (
-    <div className="overflow-x-auto">
-      <div className="grid min-w-[560px] grid-cols-[repeat(7,minmax(120px,1fr))] items-start gap-2">
+    <div className="h-full min-h-0 overflow-x-auto overflow-y-hidden">
+      <div className="grid h-full auto-cols-[102px] grid-flow-col items-start gap-2">
         {rows.map((row) => {
           const Icon = stageIcons[row.key] || CircleDashed
           const active = Number(row.count || 0) > 0
           return (
             <div key={row.key} className="relative">
-              <div
-                className={`rounded-[16px] border p-3 ${active ? 'border-[#c7dbef] bg-[#f7fbff]' : 'border-[#e7edf6] bg-white'}`}
-              >
+              <div className={`h-[128px] rounded-[14px] border p-2.5 ${active ? 'border-[#c7dbef] bg-[#f7fbff]' : 'border-[#e7edf6] bg-white'}`}>
                 <div className="flex items-center justify-between">
                   <Icon size={15} className={active ? 'text-[#1f527e]' : 'text-[#7e95ac]'} />
                   <span
                     className={`h-2.5 w-2.5 rounded-full ${active ? 'bg-[#2f8a63]' : 'bg-[#98a8bb]'}`}
                   />
                 </div>
-                <p className="mt-2 text-xs font-semibold uppercase tracking-[0.11em] text-[#7d93aa]">{row.label}</p>
-                <p className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#142132]">{row.count}</p>
-                <p className="mt-1 text-xs text-[#60758d]">{row.valueLabel}</p>
+                <p className="mt-2 text-[0.67rem] font-semibold uppercase tracking-[0.09em] text-[#7d93aa]">{row.label}</p>
+                <p className="mt-2 text-lg font-semibold text-[#142132]">{row.count}</p>
+                <p className="mt-1 text-[0.68rem] text-[#60758d]">{row.valueLabel}</p>
               </div>
               {rows.length > 1 ? (
                 <ArrowRight
