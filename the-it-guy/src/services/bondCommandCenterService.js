@@ -67,13 +67,6 @@ const EXECUTIVE_DEMO_PARTNERS = Object.freeze([
   { key: 'betterbond', name: 'BetterBond Demo Team', type: 'Developer', activeFiles: 14, conversionRate: 84, avgRegistrationDays: 47 },
 ])
 
-const EXECUTIVE_DEMO_TEAM = Object.freeze([
-  { name: 'Nandi Clarke', initials: 'NC' },
-  { name: 'Alexander Landman', initials: 'AL' },
-  { name: 'Marta Dlamini', initials: 'MD' },
-  { name: 'James Ouma', initials: 'JO' },
-])
-
 const DATE_RANGE_FILTERS = Object.freeze({
   this_month: () => {
     const now = new Date()
@@ -180,13 +173,6 @@ function getTimestamp(value) {
   return getDateOrNull(value)?.getTime() || 0
 }
 
-function clamp(value, min = 0, max = 100) {
-  const normalized = normalizeNumber(value, 0)
-  if (normalized < min) return min
-  if (normalized > max) return max
-  return normalized
-}
-
 function roundTo(value, digits = 1) {
   const normalized = normalizeNumber(value, 0)
   return Number(normalized.toFixed(digits))
@@ -226,11 +212,6 @@ function formatCurrency(value) {
     currency: 'ZAR',
     maximumFractionDigits: 0,
   }).format(amount)
-}
-
-function formatPercent(value, digits = 0) {
-  const amount = normalizeNumber(value, 0)
-  return `${amount.toFixed(digits)}%`
 }
 
 function getBuyerName(row = {}) {
@@ -852,18 +833,6 @@ function buildAtRiskApplications(rows = []) {
     .slice(0, 6)
 }
 
-function buildWindowTrendRows(rows = [], windowDays = 30) {
-  return rows
-    .map((row) => {
-      const days = getDaysSinceUpdate(row)
-      return {
-        key: String(Math.min(windowDays, Math.floor(days / 7))),
-        value: deriveFinanceLaneStage(row).key === 'bond_approved' ? 1 : 0,
-      }
-    })
-    .filter((item) => Number.isFinite(Number(item.key)))
-}
-
 function makeTrendLabel(current, previous, label = 'vs last month') {
   const diff = current - previous
   const abs = Math.abs(diff)
@@ -1300,13 +1269,10 @@ function countAttentionItems(priorityActions = []) {
 }
 
 function getUserDisplayName(user = {}) {
-  const fullName = normalizeText(
-    user?.profile?.fullName ||
-      user?.profile?.full_name ||
-      user?.profile?.first_name && user?.profile?.last_name
-        ? `${user.profile.first_name} ${user.profile.last_name}`
-        : '',
-  )
+  const firstName = normalizeText(user?.profile?.first_name || user?.profile?.firstName)
+  const lastName = normalizeText(user?.profile?.last_name || user?.profile?.lastName)
+  const profileName = normalizeText(user?.profile?.fullName || user?.profile?.full_name)
+  const fullName = profileName || [firstName, lastName].filter(Boolean).join(' ')
   if (fullName) return fullName.split(/\s+/)[0]
   const email = normalizeText(user?.profile?.email || user?.email || '')
   if (email) return email.split('@')[0]
@@ -1419,7 +1385,6 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
     operationalRisk,
     teamPerformance,
     connectedPartners,
-    performanceSnapshot,
     attentionCount: countAttentionItems(priorityActions),
     priorityActions,
     pipelineOverview: buildPipelineOverview(filteredRows),

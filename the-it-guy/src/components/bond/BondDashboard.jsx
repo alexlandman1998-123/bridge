@@ -325,14 +325,19 @@ function BankApprovalPanel({ items = [] }) {
     '#8f9298',
   ]
 
-  let cumulative = 0
-  const conicSegments = chartRows.map((item, index) => {
+  const conicSegments = chartRows.reduce((segments, item, index) => {
+    const previousEnd = segments[index - 1]?.end || 0
     const share = Math.max(0, Number(item.total || 0)) / total
-    const start = cumulative * 360
-    cumulative += share
-    const end = cumulative * 360
-    return `${bankColors[index % bankColors.length]} ${start}deg ${end}deg`
-  })
+    const start = previousEnd
+    const end = previousEnd + share * 360
+    return [
+      ...segments,
+      {
+        end,
+        value: `${bankColors[index % bankColors.length]} ${start}deg ${end}deg`,
+      },
+    ]
+  }, []).map((segment) => segment.value)
 
   return (
     <div className="grid h-full min-h-0 gap-3 xl:grid-cols-[124px_1fr] xl:items-center">
@@ -470,7 +475,7 @@ function BuyerDemographicsPanel({ stats = {} }) {
   } = stats
 
   return (
-    <div className="space-y-3">
+    <div className="h-full min-h-0 space-y-2 overflow-y-auto pr-1">
       <MiniDonutRow label="Bond vs Cash" items={bondVsCash} />
       <MiniDonutRow label="Individual vs Company vs Trust" items={clientType} />
       <MiniDonutRow label="Investor vs Residential" items={dealType} />
@@ -483,15 +488,15 @@ function MiniDonutRow({ label = '', items = {} }) {
   const total = entries.reduce((acc, [, value]) => acc + Number(value || 0), 0) || 1
 
   return (
-    <article className="rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] p-3">
-      <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#71889f]">{label}</p>
-      <div className="mt-2 space-y-2">
+    <article className="rounded-[12px] border border-[#edf2f7] bg-[#fbfdff] p-2.5">
+      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#71889f]">{label}</p>
+      <div className="mt-2 space-y-1.5">
         {entries.map(([key, value]) => {
           const pct = (Number(value || 0) / total) * 100
           return (
             <div key={key} className="space-y-1">
               <div className="flex items-center justify-between text-xs text-[#60758b]">
-                <span className="font-semibold uppercase tracking-[0.08em]">{key}</span>
+                <span className="font-semibold capitalize">{key.replaceAll('_', ' ')}</span>
                 <span>{Math.round(pct)}%</span>
               </div>
               <div className="h-2 rounded-full bg-[#e6eef8]">
@@ -515,12 +520,12 @@ function OperationalRiskPanel({ items = [] }) {
   }
 
   return (
-    <div className="space-y-2">
+    <div className="h-full min-h-0 space-y-2 overflow-y-auto pr-1">
       {rows.length ? (
         rows.map((item, index) => (
           <article
             key={`${item.key || index}`}
-            className={`rounded-[14px] border px-3 py-2.5 ${toneClassByKey[item.severity] || toneClassByKey.urgent}`}
+            className={`rounded-[12px] border px-3 py-2 ${toneClassByKey[item.severity] || toneClassByKey.urgent}`}
           >
             <p className="text-sm font-semibold text-[#142132]">{item.metric}</p>
             <p className="text-xs text-[#60758d]">{item.description}</p>
@@ -537,7 +542,7 @@ function OperationalRiskPanel({ items = [] }) {
 function BankActivityFeedPanel({ rows = [] }) {
   const feed = Array.isArray(rows) ? rows : []
   return (
-    <div className="max-h-[220px] space-y-2 overflow-y-auto pr-1">
+    <div className="h-full min-h-0 space-y-2 overflow-y-auto pr-1">
       {feed.length ? (
         feed.map((row, index) => (
           <article
@@ -569,27 +574,23 @@ function BankActivityFeedPanel({ rows = [] }) {
 function TeamPerformancePanel({ rows = [] }) {
   const members = Array.isArray(rows) ? rows : []
   return (
-    <div className="space-y-2">
+    <div className="h-full min-h-0 space-y-2 overflow-y-auto pr-1">
       {members.length ? (
         members.map((member) => (
           <article
             key={member.key}
-            className="grid grid-cols-[auto,1fr,repeat(2,minmax(64px,1fr)),96px] items-center gap-2 rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2"
+            className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-[12px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2"
           >
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#e7edf6] text-xs font-semibold text-[#17324d]">
               {member.initials}
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-[#142132]">{member.name}</p>
+              <p className="truncate text-sm font-semibold text-[#142132]">{member.name}</p>
               <p className="text-xs text-[#71889e]">{member.activeFiles} active files</p>
             </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.12em] text-[#7990a7]">Approval</p>
-              <p className="mt-1 text-sm font-semibold text-[#142132]">{member.approvalRate}%</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.12em] text-[#7990a7]">Avg Turnaround</p>
-              <p className="mt-1 text-sm font-semibold text-[#142132]">{member.avgTurnaround}d</p>
+            <div className="text-right">
+              <p className="text-sm font-semibold text-[#142132]">{member.approvalRate}%</p>
+              <p className="text-xs text-[#71889e]">{member.avgTurnaround}d avg</p>
             </div>
           </article>
         ))
@@ -603,9 +604,9 @@ function TeamPerformancePanel({ rows = [] }) {
 function MiniMetricCard({ item = {} }) {
   const sparkline = Array.isArray(item.sparkline) ? item.sparkline : []
   return (
-    <article className="rounded-[16px] border border-[#e6edf4] bg-[#fbfdff] p-3">
-      <p className="text-[0.78rem] font-semibold uppercase tracking-[0.14em] text-[#7b90a5]">{item.label}</p>
-      <p className="mt-2 text-xl font-semibold tracking-[-0.04em] text-[#142132]">{item.value}</p>
+    <article className="min-w-0 rounded-[14px] border border-[#e6edf4] bg-[#fbfdff] p-3">
+      <p className="truncate text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b90a5]">{item.label}</p>
+      <p className="mt-2 truncate text-lg font-semibold text-[#142132]">{item.value}</p>
       <p className="mt-2 text-xs text-[#60758d]">{item.trendLabel || item.comparison}</p>
       <div className="mt-2 flex h-6 items-end gap-1">
         {sparkline.length ? (
@@ -631,7 +632,7 @@ function MiniMetricCard({ item = {} }) {
 function ConnectedPartnerCard({ partner = {} }) {
   const name = normalizeText(partner.name || 'Partner')
   return (
-    <article className="min-w-[260px] rounded-[18px] border border-[#e0eaf5] bg-[#fbfdff] p-3">
+    <article className="min-w-[280px] rounded-[18px] border border-[#e0eaf5] bg-[#fbfdff] p-3">
       <div className="flex items-start gap-2">
         <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#eaf1fa] text-xs font-semibold text-[#17324d]">
           {(normalizeText(partner.name || '').slice(0, 2) || 'P').toUpperCase()}
@@ -641,17 +642,17 @@ function ConnectedPartnerCard({ partner = {} }) {
           <p className="text-xs text-[#70879d]">{normalizeText(partner.type || 'Partner')}</p>
         </div>
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+      <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
         <div>
-          <p className="uppercase tracking-[0.12em] text-[#7c93aa]">Active</p>
+          <p className="uppercase tracking-[0.08em] text-[#7c93aa]">Active</p>
           <p className="mt-1 font-semibold text-[#142132]">{normalizeNumber(partner.activeFiles)} files</p>
         </div>
         <div>
-          <p className="uppercase tracking-[0.12em] text-[#7c93aa]">Conversion</p>
+          <p className="uppercase tracking-[0.08em] text-[#7c93aa]">Conv.</p>
           <p className="mt-1 font-semibold text-[#142132]">{normalizeNumber(partner.conversionRate)}%</p>
         </div>
         <div>
-          <p className="uppercase tracking-[0.12em] text-[#7c93aa]">Reg Time</p>
+          <p className="uppercase tracking-[0.08em] text-[#7c93aa]">Reg.</p>
           <p className="mt-1 font-semibold text-[#142132]">{normalizeNumber(partner.avgRegistrationDays)}d</p>
         </div>
       </div>
