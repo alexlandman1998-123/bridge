@@ -2256,9 +2256,20 @@ function AttorneyTransactionDetail() {
   const isPrivateMatter = transactionKind === 'private'
   const mainStageLabel = MAIN_STAGE_LABELS[mainStage] || toTitle(transaction?.stage || 'Available')
   const matterTypeLabel = isPrivateMatter ? 'Private Matter' : 'Development Matter'
-  const financeTypeLabel = toTitle(normalizeFinanceType(transaction?.finance_type || 'cash'))
-  const financeRequiresBondSupport = ['bond', 'combination', 'hybrid'].includes(normalizeFinanceType(transaction?.finance_type || 'cash'))
-  const purchasePriceValue = Number(transaction?.purchase_price || transaction?.sales_price || unit?.price || 0)
+  const onboardingLifecycleStatus = String(transaction?.onboarding_status || '').trim().toLowerCase()
+  const onboardingRecordStatus = String(data?.onboarding?.status || '').trim().toLowerCase()
+  const onboardingCompleted =
+    onboardingLifecycleStatus === 'client_onboarding_complete' ||
+    Boolean(transaction?.onboarding_completed_at) ||
+    ['submitted', 'reviewed', 'approved'].includes(onboardingRecordStatus)
+  const normalizedFinanceType = normalizeFinanceType(transaction?.finance_type, { allowUnknown: true })
+  const hasCapturedFinancials = onboardingCompleted
+  const hasCapturedFinanceType = hasCapturedFinancials && normalizedFinanceType !== 'unknown'
+  const financeTypeLabel = hasCapturedFinanceType ? toTitle(normalizedFinanceType) : 'Not captured'
+  const financeRequiresBondSupport = hasCapturedFinanceType && ['bond', 'combination', 'hybrid'].includes(normalizedFinanceType)
+  const isCapturedCashFinance = hasCapturedFinanceType && normalizedFinanceType === 'cash'
+  const displayPurchasePriceValue = hasCapturedFinancials ? Number(transaction?.purchase_price || transaction?.sales_price || 0) : 0
+  const bondAmountFallback = hasCapturedFinanceType ? (financeRequiresBondSupport ? 'Pending' : 'N/A') : 'Not captured'
   const propertyAddress = buildPropertyAddress(transaction)
   const matterHeadline = !isPrivateMatter
     ? `${development?.name || 'Development'}${unit?.unit_number ? ` • Unit ${unit.unit_number}` : ''}`
@@ -2272,12 +2283,6 @@ function AttorneyTransactionDetail() {
     transaction?.lifecycle_state || (transferStageKey === 'registered' ? 'registered' : 'active'),
   )
   const lifecycleLabel = getLifecycleStateLabel(lifecycleState)
-  const onboardingLifecycleStatus = String(transaction?.onboarding_status || '').trim().toLowerCase()
-  const onboardingRecordStatus = String(data?.onboarding?.status || '').trim().toLowerCase()
-  const onboardingCompleted =
-    onboardingLifecycleStatus === 'client_onboarding_complete' ||
-    Boolean(transaction?.onboarding_completed_at) ||
-    ['submitted', 'reviewed', 'approved'].includes(onboardingRecordStatus)
   const registrationDocumentOptions = useMemo(
     () =>
       documents.filter((document) => {
@@ -2970,15 +2975,17 @@ function AttorneyTransactionDetail() {
 
   const matterHeaderMetrics = useMemo(
     () => [
-      { label: 'Purchase Price', value: formatCurrencyValue(purchasePriceValue, 'Not captured'), icon: CircleDollarSign, tone: 'bg-emerald-50 text-emerald-700' },
+      { label: 'Purchase Price', value: formatCurrencyValue(displayPurchasePriceValue, 'Not captured'), icon: CircleDollarSign, tone: 'bg-emerald-50 text-emerald-700' },
       { label: 'Finance Type', value: financeTypeLabel, icon: FileText, tone: 'bg-blue-50 text-blue-700' },
-      { label: 'Bond Amount', value: formatCurrencyValue(transaction?.bond_amount, financeTypeLabel.toLowerCase().includes('bond') ? 'Pending' : 'N/A'), icon: Building2, tone: 'bg-violet-50 text-violet-700' },
-      { label: 'Deposit', value: formatCurrencyValue(transaction?.deposit_amount, 'Not captured'), icon: CircleDollarSign, tone: 'bg-amber-50 text-amber-700' },
+      { label: 'Bond Amount', value: formatCurrencyValue(hasCapturedFinancials ? transaction?.bond_amount : 0, bondAmountFallback), icon: Building2, tone: 'bg-violet-50 text-violet-700' },
+      { label: 'Deposit', value: formatCurrencyValue(hasCapturedFinancials ? transaction?.deposit_amount : 0, 'Not captured'), icon: CircleDollarSign, tone: 'bg-amber-50 text-amber-700' },
       { label: 'Target Registration', value: formatDate(transaction?.target_registration_date || transaction?.expected_transfer_date), icon: CalendarDays, tone: 'bg-sky-50 text-sky-700' },
     ],
     [
+      bondAmountFallback,
+      displayPurchasePriceValue,
       financeTypeLabel,
-      purchasePriceValue,
+      hasCapturedFinancials,
       transaction?.bond_amount,
       transaction?.deposit_amount,
       transaction?.expected_transfer_date,
@@ -3105,7 +3112,7 @@ function AttorneyTransactionDetail() {
           ['Erf / Unit', unit?.unit_number ? `Unit ${unit.unit_number}` : transaction?.erf_number || 'Not captured'],
           ['Development', development?.name || 'Standalone matter'],
           ['Address', propertyAddress || transaction?.property_description || 'Not captured'],
-          ['Purchase Price', formatCurrencyValue(purchasePriceValue, 'Not captured')],
+          ['Purchase Price', formatCurrencyValue(displayPurchasePriceValue, 'Not captured')],
           ['Registration Date', formatDate(transaction?.registration_date || transaction?.registered_at)],
           ['Target Registration', formatDate(transaction?.target_registration_date || transaction?.expected_transfer_date)],
         ],
@@ -3137,19 +3144,19 @@ function AttorneyTransactionDetail() {
       development?.name,
       documentReadinessText,
       financeTypeLabel,
+      displayPurchasePriceValue,
       onboardingCompleted,
       propertyAddress,
-      purchasePriceValue,
       transaction,
       transferAttorney,
       unit?.unit_number,
     ],
   )
   const financialRows = [
-    ['Purchase Price', formatCurrencyValue(purchasePriceValue, 'Not captured')],
-    ['Deposit', formatCurrencyValue(transaction?.deposit_amount, 'Not captured')],
-    ['Bond Amount', formatCurrencyValue(transaction?.bond_amount, financeTypeLabel.toLowerCase().includes('bond') ? 'Pending' : 'N/A')],
-    ['Cash Portion', formatCurrencyValue(transaction?.cash_portion, 'Not captured')],
+    ['Purchase Price', formatCurrencyValue(displayPurchasePriceValue, 'Not captured')],
+    ['Deposit', formatCurrencyValue(hasCapturedFinancials ? transaction?.deposit_amount : 0, 'Not captured')],
+    ['Bond Amount', formatCurrencyValue(hasCapturedFinancials ? transaction?.bond_amount : 0, bondAmountFallback)],
+    ['Cash Portion', formatCurrencyValue(hasCapturedFinancials ? transaction?.cash_portion : 0, 'Not captured')],
     ['Transfer Fees', formatCurrencyValue(transaction?.transfer_fees, 'Pending')],
     ['Bond Registration Fees', formatCurrencyValue(transaction?.bond_registration_costs, 'Pending')],
     ['Cancellation Costs', formatCurrencyValue(transaction?.cancellation_costs, transaction?.seller_has_existing_bond ? 'Pending' : 'N/A')],
@@ -5049,43 +5056,44 @@ function AttorneyTransactionDetail() {
                     <p className="mt-1 text-secondary text-textMuted">Bond approval, guarantees, proof of funds, and bank-related workflow movement.</p>
                   </div>
                   <span className={`inline-flex items-center rounded-full border px-3 py-1 text-helper font-semibold ${
-                    financeTypeLabel.toLowerCase().includes('cash')
+                    isCapturedCashFinance
                       ? 'border-success/30 bg-successSoft text-success'
                       : 'border-primary/20 bg-primarySoft text-primary'
                   }`}>
-                    {financeTypeLabel.toLowerCase().includes('cash') ? 'Cash transaction' : 'Bond workflow'}
+                    {hasCapturedFinanceType ? (isCapturedCashFinance ? 'Cash transaction' : 'Bond workflow') : 'Awaiting onboarding'}
                   </span>
                 </div>
-                <div className="mt-4 space-y-3">
-                  {workflowLoading ? (
-                    <LoadingSkeleton lines={4} className="rounded-[16px] border border-borderDefault bg-white p-4" />
-                  ) : workflowError ? (
-                    <p className="rounded-[16px] border border-warning/30 bg-warningSoft px-4 py-3 text-sm font-medium text-warning">
-                      {workflowError}
-                    </p>
-                  ) : displayedWorkflowLanes.length ? (
-                    displayedWorkflowLanes.map((lane) => (
-                      <WorkflowLaneCard
-                        key={lane.id || lane.laneKey}
-                        lane={lane}
-                        onOpenDetails={() => openWorkflowDrawer(lane)}
-                        onPrimaryAction={handleWorkflowPrimaryAction}
-                      />
-                    ))
-                  ) : (
-                    <div className="rounded-[16px] border border-dashed border-borderDefault bg-white px-4 py-5">
-                      <h4 className="text-sm font-semibold text-textStrong">
-                        {financeTypeLabel.toLowerCase().includes('cash') ? 'No bond workflow required' : 'No funding workflow configured yet'}
-                      </h4>
-                      <p className="mt-1 text-sm leading-6 text-textMuted">
-                        {financeTypeLabel.toLowerCase().includes('cash')
-                          ? 'This transaction is marked as cash, so funding checks can stay focused on proof of funds, deposit, and guarantees.'
-                          : 'Bond or guarantee workflow steps will appear here once they are configured for the matter.'}
-                      </p>
-                    </div>
-                  )}
-                </div>
               </section>
+
+              {workflowLoading ? (
+                <LoadingSkeleton lines={4} className="rounded-[16px] border border-borderDefault bg-white p-4" />
+              ) : workflowError ? (
+                <p className="rounded-[16px] border border-warning/30 bg-warningSoft px-4 py-3 text-sm font-medium text-warning">
+                  {workflowError}
+                </p>
+              ) : displayedWorkflowLanes.length ? (
+                displayedWorkflowLanes.map((lane) => (
+                  <WorkflowLaneCard
+                    key={lane.id || lane.laneKey}
+                    lane={lane}
+                    onOpenDetails={() => openWorkflowDrawer(lane)}
+                    onPrimaryAction={handleWorkflowPrimaryAction}
+                  />
+                ))
+              ) : (
+                <section className="rounded-[18px] border border-dashed border-borderDefault bg-surface px-5 py-5 shadow-surface">
+                  <h4 className="text-sm font-semibold text-textStrong">
+                    {hasCapturedFinanceType
+                      ? (isCapturedCashFinance ? 'No bond workflow required' : 'No funding workflow configured yet')
+                      : 'Finance details not captured yet'}
+                  </h4>
+                  <p className="mt-1 text-sm leading-6 text-textMuted">
+                    {hasCapturedFinanceType && isCapturedCashFinance
+                      ? 'This transaction is marked as cash, so funding checks can stay focused on proof of funds, deposit, and guarantees.'
+                      : 'Bond or guarantee workflow steps will appear here once the buyer onboarding captures the finance route.'}
+                  </p>
+                </section>
+              )}
             </section>
           </section>
         ) : null}
@@ -5454,7 +5462,7 @@ function AttorneyTransactionDetail() {
                         ? 'border-success/30 bg-successSoft text-success'
                         : 'border-warning/30 bg-warningSoft text-warning'
                   }`}>
-                    {financeRequiresBondSupport ? 'Bond originator' : 'Cash finance'} {financeRequiresBondSupport ? (roleplayerForm.bondOriginatorName || roleplayerForm.bondOriginatorEmail || assignedBondOriginator ? 'set' : 'missing') : ''}
+                    {financeRequiresBondSupport ? 'Bond originator' : hasCapturedFinanceType ? 'Cash finance' : 'Finance pending'} {financeRequiresBondSupport ? (roleplayerForm.bondOriginatorName || roleplayerForm.bondOriginatorEmail || assignedBondOriginator ? 'set' : 'missing') : ''}
                   </span>
                 </div>
               </div>
@@ -5468,7 +5476,11 @@ function AttorneyTransactionDetail() {
                   },
                   {
                     title: 'Bond Originator',
-                    body: financeRequiresBondSupport ? 'Capture the originator if the buyer opted into finance support.' : 'Not required for a cash transaction unless finance support is added later.',
+                    body: financeRequiresBondSupport
+                      ? 'Capture the originator if the buyer opted into finance support.'
+                      : hasCapturedFinanceType
+                        ? 'Not required for a cash transaction unless finance support is added later.'
+                        : 'Captured after buyer onboarding confirms the finance route.',
                     state: financeRequiresBondSupport
                       ? roleplayerForm.bondOriginatorName || roleplayerForm.bondOriginatorEmail || assignedBondOriginator
                         ? 'Ready'
