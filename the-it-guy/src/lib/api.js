@@ -26805,14 +26805,18 @@ async function resolveTransactionAndContext(client, transactionId) {
   }
 
   const transaction = transactionQuery.data
+  const normalizedUnitId = normalizeNullableUuid(transaction.unit_id)
+  const normalizedBuyerId = normalizeNullableUuid(transaction.buyer_id)
   const [unitQuery, buyerQuery] = await Promise.all([
-    client
-      .from('units')
-      .select('id, development_id, unit_number, phase, status, development:developments(id, name)')
-      .eq('id', transaction.unit_id)
-      .maybeSingle(),
-    transaction.buyer_id
-      ? client.from('buyers').select('id, name, phone, email').eq('id', transaction.buyer_id).maybeSingle()
+    normalizedUnitId
+      ? client
+          .from('units')
+          .select('id, development_id, unit_number, phase, status, development:developments(id, name)')
+          .eq('id', normalizedUnitId)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    normalizedBuyerId
+      ? client.from('buyers').select('id, name, phone, email').eq('id', normalizedBuyerId).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
   ])
 
