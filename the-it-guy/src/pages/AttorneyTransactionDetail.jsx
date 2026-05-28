@@ -3488,7 +3488,14 @@ function AttorneyTransactionDetail() {
         : roleType === 'bond_attorney'
           ? bondAttorneyOptions
           : transferAttorneyOptions
-    return options.find((option) => option.id === id) || null
+    const normalizedId = normalizeRoleplayerOptionValue(id)
+    if (!normalizedId) return null
+    return options.find((option) => normalizeRoleplayerOptionValue(option.id) === normalizedId) || null
+  }
+
+  function updateRoleplayerConfirmDraft(field, value) {
+    setRoleplayerConfirmError('')
+    setRoleplayerConfirmDraft((previous) => ({ ...previous, [field]: value }))
   }
 
   function buildRoleplayerSelection(roleType, option) {
@@ -3572,7 +3579,9 @@ function AttorneyTransactionDetail() {
       name: buyer?.name || 'Buyer',
       email: buyer?.email || roleplayerForm.buyerEmail || '',
     }
-    const transferOption = findRoleplayerOption('transfer_attorney', roleplayerConfirmDraft.transferAttorney)
+    const transferOption =
+      findRoleplayerOption('transfer_attorney', roleplayerConfirmDraft.transferAttorney) ||
+      (transferAttorneyOptions.length === 1 ? transferAttorneyOptions[0] : null)
     const bondOriginatorOption = findRoleplayerOption('bond_originator', roleplayerConfirmDraft.bondOriginator)
     const bondAttorneyOption = findRoleplayerOption('bond_attorney', roleplayerConfirmDraft.bondAttorney)
 
@@ -6214,14 +6223,14 @@ function AttorneyTransactionDetail() {
               label="Transfer Attorney"
               required
               value={roleplayerConfirmDraft.transferAttorney}
-              onChange={(value) => setRoleplayerConfirmDraft((previous) => ({ ...previous, transferAttorney: value }))}
+              onChange={(value) => updateRoleplayerConfirmDraft('transferAttorney', value)}
               options={transferAttorneyOptions}
               helper="Required. Defaults follow branch, region, organisation, then existing transaction context."
             />
             <RoleplayerSelect
               label="Bond Originator"
               value={roleplayerConfirmDraft.bondOriginator}
-              onChange={(value) => setRoleplayerConfirmDraft((previous) => ({ ...previous, bondOriginator: value }))}
+              onChange={(value) => updateRoleplayerConfirmDraft('bondOriginator', value)}
               options={bondOriginatorOptions}
               helper="Optional. Activation waits until the buyer chooses Bond or Hybrid finance."
             />
@@ -6233,7 +6242,7 @@ function AttorneyTransactionDetail() {
             <RoleplayerSelect
               label="Bond Attorney"
               value={roleplayerConfirmDraft.bondAttorney}
-              onChange={(value) => setRoleplayerConfirmDraft((previous) => ({ ...previous, bondAttorney: value }))}
+              onChange={(value) => updateRoleplayerConfirmDraft('bondAttorney', value)}
               options={bondAttorneyOptions}
               helper="Optional. Usually activated after bond approval or bank instruction."
             />
