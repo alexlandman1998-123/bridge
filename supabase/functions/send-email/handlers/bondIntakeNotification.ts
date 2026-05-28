@@ -1,4 +1,5 @@
 import {
+  renderBridgeCta,
   renderBridgeEmailLayout,
   renderBridgeIntroParagraphs,
   renderBridgeSummaryCard,
@@ -17,7 +18,7 @@ function envEnabled(value: string | undefined, fallback = false) {
 export async function handleBondIntakeNotificationEmail(
   payload: SendBondIntakeNotificationPayload,
 ) {
-  const emailsEnabled = envEnabled(Deno.env.get("BOND_INTAKE_EMAILS_ENABLED"), false);
+  const emailsEnabled = envEnabled(Deno.env.get("BOND_INTAKE_EMAILS_ENABLED"), true);
   const transactionId = normalizeText(payload.transactionId);
   const recipientEmail = normalizeText(payload.to).toLowerCase();
 
@@ -57,7 +58,15 @@ export async function handleBondIntakeNotificationEmail(
     { label: "Transaction", value: transactionId },
     { label: "Buyer", value: normalizeText(metadata.buyerName as string) },
     { label: "Property", value: normalizeText(metadata.propertyLabel as string) },
+    { label: "Development", value: normalizeText(metadata.developmentName as string) },
+    { label: "Agent", value: normalizeText(metadata.agentName as string) },
+    { label: "Agency", value: normalizeText(metadata.agencyName as string) },
+    { label: "Finance Type", value: normalizeText(metadata.financeType as string) },
+    { label: "Document Status", value: normalizeText(metadata.documentStatus as string) },
+    { label: "Assigned Consultant", value: normalizeText(metadata.assignedConsultantName as string) },
+    { label: "Timestamp", value: normalizeText(metadata.timestamp as string) },
   ].filter((field) => field.value);
+  const applicationLink = normalizeText(metadata.applicationLink as string);
 
   const html = renderBridgeEmailLayout({
     preheader: message,
@@ -66,6 +75,7 @@ export async function handleBondIntakeNotificationEmail(
     contentHtml: [
       renderBridgeIntroParagraphs([message]),
       renderBridgeSummaryCard(fields, "Application Summary"),
+      renderBridgeCta("View Application", applicationLink),
     ].join(""),
     securityBody:
       "Bond application information is available only to authorised parties on the transaction.",
@@ -79,6 +89,7 @@ export async function handleBondIntakeNotificationEmail(
     "",
     message,
     transactionId ? `Transaction: ${transactionId}` : "",
+    applicationLink ? `View Application: ${applicationLink}` : "",
     "",
     "Please open Bridge to review the application and continue with the next action.",
   ].filter(Boolean).join("\n");

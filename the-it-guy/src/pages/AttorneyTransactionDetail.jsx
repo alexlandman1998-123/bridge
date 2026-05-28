@@ -54,7 +54,9 @@ import {
   markTransactionCompleted,
   markTransactionRegistered,
   removeStakeholder,
+  recordBuyerOnboardingSent,
   reviewCanonicalDocumentRequirement,
+  saveTransactionRoleplayerSelections,
   undoTransactionRegistration,
   unarchiveTransactionLifecycle,
   updateTransactionAccessControl,
@@ -63,6 +65,7 @@ import {
 } from '../lib/api'
 import { canAccessAttorneyMatter } from '../lib/attorneyPermissions'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
+import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partnersRepository'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 
@@ -394,6 +397,121 @@ function formatDateTime(value) {
 
 function normalizeComparableContact(value) {
   return String(value || '').trim().toLowerCase()
+}
+
+function normalizeRoleplayerOptionValue(value) {
+  return String(value || '').trim()
+}
+
+function makeRoleplayerOptionKey(option = {}) {
+  return normalizeRoleplayerOptionValue(option.id || option.relationshipId || option.organisationId || option.email || option.companyName)
+}
+
+function getRoleplayerStatusLabel(value = '') {
+  const normalized = String(value || 'selected').trim().toLowerCase()
+  if (normalized === 'active') return 'Active'
+  if (normalized === 'notified') return 'Notified'
+  if (normalized === 'selected') return 'Selected'
+  if (normalized === 'removed') return 'Removed'
+  return toTitle(normalized || 'selected')
+}
+
+function getRoleplayerTriggerLabel(value = '', roleType = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'buyer_selects_bond_or_hybrid') return 'activates if buyer selects Bond/Hybrid'
+  if (normalized === 'buyer_selects_bond') return 'activates if buyer selects Bond'
+  if (normalized === 'buyer_selects_hybrid') return 'activates if buyer selects Hybrid'
+  if (normalized === 'bond_approved') return 'activates after bond approval'
+  if (normalized === 'attorney_instruction_stage') return 'activates at attorney instruction stage'
+  if (normalized === 'immediate') return 'active immediately'
+  if (roleType === 'bond_originator') return 'activates if buyer selects Bond/Hybrid'
+  return 'pending trigger'
+}
+
+function buildPartnerRoleplayerOption(option = {}, roleType = 'transfer_attorney') {
+  const companyName = normalizeRoleplayerOptionValue(option.companyName)
+  const scopeLabel = normalizeRoleplayerOptionValue(option.scopeLabel)
+  const preferred = Boolean(option.preferred || option.relationshipType === 'preferred')
+  return {
+    id: makeRoleplayerOptionKey(option),
+    roleType,
+    group: preferred ? 'Preferred Partners' : 'Connected Partners',
+    companyName,
+    contactPerson: companyName,
+    email: normalizeRoleplayerOptionValue(option.email),
+    organisationId: normalizeRoleplayerOptionValue(option.organisationId),
+    relationshipId: normalizeRoleplayerOptionValue(option.relationshipId || option.id),
+    scopeType: normalizeRoleplayerOptionValue(option.scopeType),
+    scopeId: normalizeRoleplayerOptionValue(option.scopeId),
+    scopeLabel,
+    preferred,
+    label: `${companyName || 'Connected partner'}${scopeLabel ? ` · ${preferred ? 'Preferred for ' : ''}${scopeLabel.replace(/^Scope:\s*/i, '')}` : ''}`,
+  }
+}
+
+function buildExistingRoleplayerOption(item = {}, roleType = 'transfer_attorney') {
+  const companyName = normalizeRoleplayerOptionValue(item.partnerName || item.partner_name || item.organisationName || item.companyName)
+  const contactPerson = normalizeRoleplayerOptionValue(item.contactPerson || item.contact_person || item.participantName || item.name)
+  const email = normalizeRoleplayerOptionValue(item.emailAddress || item.email_address || item.participantEmail || item.email)
+  const label = companyName || contactPerson || email
+  if (!label) return null
+  return {
+    id: makeRoleplayerOptionKey({ id: item.id, organisationId: item.organisationId || item.organisation_id, email, companyName: label }),
+    roleType,
+    group: 'Recently Used',
+    companyName: companyName || contactPerson || email,
+    contactPerson: contactPerson || companyName || email,
+    email,
+    organisationId: normalizeRoleplayerOptionValue(item.organisationId || item.organisation_id),
+    relationshipId: normalizeRoleplayerOptionValue(item.partnerRelationshipId || item.partner_relationship_id || item.relationshipId),
+    scopeLabel: normalizeRoleplayerOptionValue(item.scopeLabel || item.scope_label || item.snapshot?.scopeLabel),
+    preferred: false,
+    label,
+  }
+}
+
+function dedupeRoleplayerOptions(options = []) {
+  const map = new Map()
+  options.filter(Boolean).forEach((option) => {
+    const key = normalizeComparableContact(option.organisationId || option.email || option.companyName || option.id)
+    if (!key || map.has(key)) return
+    map.set(key, option)
+  })
+  return [...map.values()]
+}
+
+function RoleplayerSelect({ label, value, onChange, options = [], required = false, helper = '' }) {
+  const groups = ['Preferred Partners', 'Connected Partners', 'Recently Used']
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className="text-label font-semibold uppercase text-textMuted">
+        {label}
+        {required ? <span className="text-danger"> *</span> : null}
+      </span>
+      <Field as="select" value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">{required ? 'Select roleplayer' : 'No selection'}</option>
+        {groups.map((group) => {
+          const groupOptions = options.filter((option) => option.group === group)
+          if (!groupOptions.length) return null
+          return (
+            <optgroup key={group} label={group}>
+              {groupOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </optgroup>
+          )
+        })}
+        <optgroup label="Invite New Partner">
+          <option value="__invite_new" disabled>
+            Invite from Partners page
+          </option>
+        </optgroup>
+      </Field>
+      {helper ? <span className="text-helper leading-5 text-textMuted">{helper}</span> : null}
+    </label>
+  )
 }
 
 function formatShortDayMonth(value) {
@@ -1747,7 +1865,7 @@ function WorkflowDetailsDrawer({
 function AttorneyTransactionDetail() {
   const { transactionId } = useParams()
   const location = useLocation()
-  const { profile, role: workspaceRole } = useWorkspace()
+  const { profile, role: workspaceRole, workspace, workspaceType, currentMembership } = useWorkspace()
   const attorneyPermissionState = useAttorneyPermissions()
   const navigationPreviewData = useMemo(
     () => buildMatterPreviewShell(location.state?.matterPreview, transactionId),
@@ -1846,6 +1964,15 @@ function AttorneyTransactionDetail() {
   const [onboardingModalOpen, setOnboardingModalOpen] = useState(false)
   const [onboardingActionMessage, setOnboardingActionMessage] = useState('')
   const [onboardingActionBusy, setOnboardingActionBusy] = useState(false)
+  const [roleplayerConfirmOpen, setRoleplayerConfirmOpen] = useState(false)
+  const [roleplayerConfirmError, setRoleplayerConfirmError] = useState('')
+  const [roleplayerConfirmDraft, setRoleplayerConfirmDraft] = useState({
+    transferAttorney: '',
+    bondOriginator: '',
+    bondAttorney: '',
+  })
+  const [partnerSnapshot, setPartnerSnapshot] = useState(null)
+  const [partnerOptionsLoading, setPartnerOptionsLoading] = useState(false)
   const [detailPanelOpen, setDetailPanelOpen] = useState(false)
   const [detailPanelKey, setDetailPanelKey] = useState('matter')
   const [hydratingDetail, setHydratingDetail] = useState(false)
@@ -2053,7 +2180,25 @@ function AttorneyTransactionDetail() {
   )
   const transactionEvents = data?.transactionEvents ?? EMPTY_ARRAY
   const transactionParticipants = data?.transactionParticipants ?? EMPTY_ARRAY
+  const transactionRolePlayers = data?.transactionRolePlayers || data?.rolePlayers || data?.transaction_role_players || EMPTY_ARRAY
   const isAgentTransactionView = workspaceRole === 'agent'
+  const workspaceOrganisationId =
+    workspace?.id ||
+    currentMembership?.workspaceId ||
+    currentMembership?.organisationId ||
+    currentMembership?.organisation_id ||
+    transaction?.organisation_id ||
+    ''
+  const partnerAccessContext = useMemo(
+    () => ({
+      organisationId: workspaceOrganisationId,
+      role: workspaceRole,
+      profile,
+      currentMembership,
+    }),
+    [currentMembership, profile, workspaceOrganisationId, workspaceRole],
+  )
+  const canManageTransactionRoleplayers = ['agent', 'agency_admin', 'principal', 'admin', 'internal_admin', 'developer'].includes(String(workspaceRole || '').toLowerCase())
   const requestedWorkspaceMenu = useMemo(() => {
     if (workspaceMenu === 'financials' || workspaceMenu === 'bond') return 'finance'
     if (workspaceMenu === 'cancellation') return 'transfer'
@@ -2095,6 +2240,35 @@ function AttorneyTransactionDetail() {
       active = false
     }
   }, [transaction?.id])
+
+  useEffect(() => {
+    if (!isAgentTransactionView || !workspaceOrganisationId) {
+      setPartnerSnapshot(null)
+      return
+    }
+
+    let active = true
+    async function loadPartnerDefaults() {
+      try {
+        setPartnerOptionsLoading(true)
+        const snapshot = await fetchPartnersSnapshot({
+          organisationId: workspaceOrganisationId,
+          workspaceType: workspaceType || workspaceRole,
+          accessContext: partnerAccessContext,
+        })
+        if (active) setPartnerSnapshot(snapshot)
+      } catch (partnerLoadError) {
+        console.warn('[AttorneyTransactionDetail] scoped partner defaults unavailable', partnerLoadError)
+      } finally {
+        if (active) setPartnerOptionsLoading(false)
+      }
+    }
+
+    void loadPartnerDefaults()
+    return () => {
+      active = false
+    }
+  }, [isAgentTransactionView, partnerAccessContext, workspaceOrganisationId, workspaceRole, workspaceType])
 
   const mainStage = useMemo(
     () => data?.mainStage || getMainStageFromDetailedStage(transaction?.stage || 'Available'),
@@ -2258,6 +2432,75 @@ function AttorneyTransactionDetail() {
   const assignedBondOriginator = useMemo(
     () => activeStakeholders.find((item) => item?.roleType === 'bond_originator') || null,
     [activeStakeholders],
+  )
+  const savedTransferRoleplayer = useMemo(
+    () => transactionRolePlayers.find((item) => item?.roleType === 'transfer_attorney' || item?.role_type === 'transfer_attorney') || null,
+    [transactionRolePlayers],
+  )
+  const savedBondOriginatorRoleplayer = useMemo(
+    () => transactionRolePlayers.find((item) => item?.roleType === 'bond_originator' || item?.role_type === 'bond_originator') || null,
+    [transactionRolePlayers],
+  )
+  const savedBondAttorneyRoleplayer = useMemo(
+    () => transactionRolePlayers.find((item) => item?.roleType === 'bond_attorney' || item?.role_type === 'bond_attorney') || null,
+    [transactionRolePlayers],
+  )
+  const attorneyPartnerOptions = useMemo(
+    () =>
+      getPartnerAssignmentOptions(partnerSnapshot || {}, 'transfer_attorney', partnerAccessContext)
+        .map((option) => buildPartnerRoleplayerOption(option, 'transfer_attorney')),
+    [partnerAccessContext, partnerSnapshot],
+  )
+  const bondOriginatorPartnerOptions = useMemo(
+    () =>
+      getPartnerAssignmentOptions(partnerSnapshot || {}, 'bond_originator', partnerAccessContext)
+        .map((option) => buildPartnerRoleplayerOption(option, 'bond_originator')),
+    [partnerAccessContext, partnerSnapshot],
+  )
+  const transferAttorneyOptions = useMemo(
+    () =>
+      dedupeRoleplayerOptions([
+        buildExistingRoleplayerOption(savedTransferRoleplayer, 'transfer_attorney'),
+        buildExistingRoleplayerOption(transferAttorney, 'transfer_attorney'),
+        transaction?.attorney || transaction?.assigned_attorney_email
+          ? buildExistingRoleplayerOption(
+              {
+                partnerName: transaction?.attorney,
+                emailAddress: transaction?.assigned_attorney_email,
+              },
+              'transfer_attorney',
+            )
+          : null,
+        ...attorneyPartnerOptions,
+      ]),
+    [attorneyPartnerOptions, savedTransferRoleplayer, transaction?.assigned_attorney_email, transaction?.attorney, transferAttorney],
+  )
+  const bondOriginatorOptions = useMemo(
+    () =>
+      dedupeRoleplayerOptions([
+        buildExistingRoleplayerOption(savedBondOriginatorRoleplayer, 'bond_originator'),
+        buildExistingRoleplayerOption(assignedBondOriginator, 'bond_originator'),
+        transaction?.bond_originator || transaction?.assigned_bond_originator_email
+          ? buildExistingRoleplayerOption(
+              {
+                partnerName: transaction?.bond_originator,
+                emailAddress: transaction?.assigned_bond_originator_email,
+              },
+              'bond_originator',
+            )
+          : null,
+        ...bondOriginatorPartnerOptions,
+      ]),
+    [assignedBondOriginator, bondOriginatorPartnerOptions, savedBondOriginatorRoleplayer, transaction?.assigned_bond_originator_email, transaction?.bond_originator],
+  )
+  const bondAttorneyOptions = useMemo(
+    () =>
+      dedupeRoleplayerOptions([
+        buildExistingRoleplayerOption(savedBondAttorneyRoleplayer, 'bond_attorney'),
+        buildExistingRoleplayerOption(bondAttorney, 'bond_attorney'),
+        ...attorneyPartnerOptions.map((option) => ({ ...option, roleType: 'bond_attorney' })),
+      ]),
+    [attorneyPartnerOptions, bondAttorney, savedBondAttorneyRoleplayer],
   )
   const legalRoleAssignmentNote = useMemo(() => {
     if (transferAttorney && bondAttorney) {
@@ -3118,6 +3361,15 @@ function AttorneyTransactionDetail() {
     transferAttorney?.participantName,
   ])
 
+  useEffect(() => {
+    if (!isAgentTransactionView || roleplayerConfirmOpen) return
+    setRoleplayerConfirmDraft({
+      transferAttorney: transferAttorneyOptions[0]?.id || '',
+      bondOriginator: bondOriginatorOptions[0]?.id || '',
+      bondAttorney: bondAttorneyOptions[0]?.id || '',
+    })
+  }, [bondAttorneyOptions, bondOriginatorOptions, isAgentTransactionView, roleplayerConfirmOpen, transferAttorneyOptions])
+
   function openPrintDocument(content, popupErrorMessage) {
     const blob = new Blob([content], { type: 'text/html;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -3210,6 +3462,54 @@ function AttorneyTransactionDetail() {
     }
   }
 
+  function findRoleplayerOption(roleType, id) {
+    const options =
+      roleType === 'bond_originator'
+        ? bondOriginatorOptions
+        : roleType === 'bond_attorney'
+          ? bondAttorneyOptions
+          : transferAttorneyOptions
+    return options.find((option) => option.id === id) || null
+  }
+
+  function buildRoleplayerSelection(roleType, option) {
+    if (!option) return null
+    return {
+      roleType,
+      organisationId: option.organisationId,
+      relationshipId: option.relationshipId,
+      companyName: option.companyName,
+      contactPerson: option.contactPerson || option.companyName,
+      email: option.email,
+      scopeType: option.scopeType,
+      scopeId: option.scopeId,
+      scopeLabel: option.scopeLabel,
+      preferred: option.preferred,
+      selectionSource: option.preferred ? 'preferred_partner' : option.group === 'Recently Used' ? 'recently_used' : 'connected_partner',
+      assignmentStatus: 'selected',
+      activationTrigger:
+        roleType === 'bond_originator'
+          ? 'buyer_selects_bond_or_hybrid'
+          : roleType === 'bond_attorney'
+            ? 'bond_approved'
+            : 'attorney_instruction_stage',
+    }
+  }
+
+  function openRoleplayerConfirmation() {
+    if (!canManageTransactionRoleplayers) {
+      setError('You do not have permission to manage transaction roleplayers.')
+      return
+    }
+    setRoleplayerConfirmError('')
+    setRoleplayerConfirmDraft({
+      transferAttorney: roleplayerConfirmDraft.transferAttorney || transferAttorneyOptions[0]?.id || '',
+      bondOriginator: roleplayerConfirmDraft.bondOriginator || bondOriginatorOptions[0]?.id || '',
+      bondAttorney: roleplayerConfirmDraft.bondAttorney || bondAttorneyOptions[0]?.id || '',
+    })
+    setRoleplayerConfirmOpen(true)
+  }
+
   async function handleAgentHeaderOnboardingAction() {
     const recipient = {
       roleLabel: onboardingCompleted ? 'Client portal' : 'Buyer',
@@ -3220,6 +3520,11 @@ function AttorneyTransactionDetail() {
     if (!recipient.email) {
       setOnboardingActionMessage('Add a buyer email before sending the onboarding or client portal link.')
       setOnboardingModalOpen(true)
+      return
+    }
+
+    if (!onboardingCompleted) {
+      openRoleplayerConfirmation()
       return
     }
 
@@ -3237,6 +3542,64 @@ function AttorneyTransactionDetail() {
       setOnboardingActionMessage(onboardingCompleted ? 'Client portal mail draft opened.' : 'Buyer onboarding mail draft opened.')
     } catch (sendError) {
       setError(sendError?.message || 'Unable to prepare the client link right now.')
+    } finally {
+      setOnboardingActionBusy(false)
+    }
+  }
+
+  async function handleConfirmRoleplayersAndSendOnboarding({ allowMissingBondOriginator = false } = {}) {
+    const recipient = {
+      roleLabel: 'Buyer',
+      name: buyer?.name || 'Buyer',
+      email: buyer?.email || roleplayerForm.buyerEmail || '',
+    }
+    const transferOption = findRoleplayerOption('transfer_attorney', roleplayerConfirmDraft.transferAttorney)
+    const bondOriginatorOption = findRoleplayerOption('bond_originator', roleplayerConfirmDraft.bondOriginator)
+    const bondAttorneyOption = findRoleplayerOption('bond_attorney', roleplayerConfirmDraft.bondAttorney)
+
+    if (!transferOption) {
+      setRoleplayerConfirmError('Transfer Attorney is required before buyer onboarding can be sent.')
+      return
+    }
+    if (!bondOriginatorOption && !allowMissingBondOriginator) {
+      setRoleplayerConfirmError('No bond originator selected. If the buyer chooses bond finance, no originator will be notified automatically.')
+      return
+    }
+
+    const selections = [
+      buildRoleplayerSelection('transfer_attorney', transferOption),
+      buildRoleplayerSelection('bond_originator', bondOriginatorOption),
+      buildRoleplayerSelection('bond_attorney', bondAttorneyOption),
+    ].filter(Boolean)
+
+    try {
+      setOnboardingActionBusy(true)
+      setRoleplayerConfirmError('')
+      setError('')
+      const refreshed = await saveTransactionRoleplayerSelections({
+        transactionId: transaction.id,
+        roleplayers: selections,
+        actorRole: workspaceRole,
+      })
+      if (refreshed) {
+        setData(refreshed)
+      }
+      const linkUrl = await getOnboardingLinkUrl()
+      await recordBuyerOnboardingSent({
+        transactionId: transaction.id,
+        actorRole: workspaceRole,
+        recipientEmail: recipient.email,
+        roleplayers: selections,
+      })
+      const subject = encodeURIComponent('Bridge Buyer Onboarding')
+      const body = encodeURIComponent(`Hello ${recipient.name || ''},\n\nPlease complete your buyer onboarding here:\n${linkUrl}\n\nBridge`)
+      window.open(`mailto:${recipient.email}?subject=${subject}&body=${body}`, '_blank', 'noopener,noreferrer')
+      setRoleplayerConfirmOpen(false)
+      setOnboardingActionMessage('Buyer onboarding mail draft opened after confirming roleplayers.')
+      await loadData({ background: true })
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+    } catch (sendError) {
+      setRoleplayerConfirmError(sendError?.message || 'Unable to confirm roleplayers and prepare the buyer onboarding link.')
     } finally {
       setOnboardingActionBusy(false)
     }
@@ -5099,6 +5462,57 @@ function AttorneyTransactionDetail() {
               </div>
             </section>
 
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h3 className="text-section-title font-semibold text-textStrong">Selected Roleplayers</h3>
+                  <p className="mt-1 text-secondary text-textMuted">
+                    These selections control which partners are activated as the buyer finance and transfer workflow progresses.
+                  </p>
+                </div>
+                {isAgentTransactionView ? (
+                  <Button type="button" variant="secondary" onClick={openRoleplayerConfirmation} disabled={!canManageTransactionRoleplayers}>
+                    Confirm Roleplayers
+                  </Button>
+                ) : null}
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                {[
+                  { roleType: 'transfer_attorney', label: 'Transfer Attorney', fallback: transferAttorney },
+                  { roleType: 'bond_originator', label: 'Bond Originator', fallback: assignedBondOriginator },
+                  { roleType: 'bond_attorney', label: 'Bond Attorney', fallback: bondAttorney },
+                ].map((entry) => {
+                  const saved = transactionRolePlayers.find((item) => item.roleType === entry.roleType || item.role_type === entry.roleType)
+                  const name =
+                    saved?.partnerName ||
+                    saved?.partner_name ||
+                    saved?.contactPerson ||
+                    saved?.contact_person ||
+                    entry.fallback?.participantName ||
+                    entry.fallback?.participantEmail ||
+                    'Not selected'
+                  const email = saved?.emailAddress || saved?.email_address || entry.fallback?.participantEmail || ''
+                  const status = getRoleplayerStatusLabel(saved?.assignmentStatus || saved?.assignment_status || saved?.status || (entry.fallback ? 'active' : 'selected'))
+                  const trigger = getRoleplayerTriggerLabel(saved?.activationTrigger || saved?.activation_trigger, entry.roleType)
+                  return (
+                    <article key={entry.roleType} className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                      <span className="text-label font-semibold uppercase text-textMuted">{entry.label}</span>
+                      <strong className="mt-2 block text-body font-semibold text-textStrong">{name}</strong>
+                      {email ? <span className="mt-1 block text-helper text-textMuted">{email}</span> : null}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <span className="rounded-full border border-primary/20 bg-primarySoft px-2.5 py-1 text-[0.68rem] font-semibold text-primary">
+                          {status}
+                        </span>
+                        <span className="rounded-full border border-borderDefault bg-surface px-2.5 py-1 text-[0.68rem] font-semibold text-textMuted">
+                          {trigger}
+                        </span>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            </section>
+
             <form onSubmit={handleSaveRoleplayerContacts} className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
               <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -5733,6 +6147,86 @@ function AttorneyTransactionDetail() {
               </article>
             ))}
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={roleplayerConfirmOpen}
+        onClose={onboardingActionBusy ? undefined : () => setRoleplayerConfirmOpen(false)}
+        title="Confirm Roleplayers"
+        subtitle="Select the trusted roleplayers for this transaction before sending buyer onboarding."
+        footer={(
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              {!roleplayerConfirmDraft.bondOriginator ? (
+                <button
+                  type="button"
+                  className="text-sm font-semibold text-textMuted underline-offset-4 hover:text-textStrong hover:underline"
+                  onClick={() => void handleConfirmRoleplayersAndSendOnboarding({ allowMissingBondOriginator: true })}
+                  disabled={onboardingActionBusy}
+                >
+                  Send without bond originator
+                </button>
+              ) : null}
+            </div>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+              <Button type="button" variant="secondary" onClick={() => setRoleplayerConfirmOpen(false)} disabled={onboardingActionBusy}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => void handleConfirmRoleplayersAndSendOnboarding()} disabled={onboardingActionBusy || partnerOptionsLoading}>
+                <Send size={14} />
+                {onboardingActionBusy ? 'Preparing...' : 'Confirm & Send Onboarding'}
+              </Button>
+            </div>
+          </div>
+        )}
+      >
+        <div className="space-y-4">
+          <p className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-secondary text-textMuted">
+            The bond originator will only be notified if the buyer selects Bond or Hybrid finance.
+          </p>
+          {partnerOptionsLoading ? (
+            <p className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-sm font-semibold text-textMuted">
+              Loading scoped partner defaults...
+            </p>
+          ) : null}
+          <div className="grid gap-4">
+            <RoleplayerSelect
+              label="Transfer Attorney"
+              required
+              value={roleplayerConfirmDraft.transferAttorney}
+              onChange={(value) => setRoleplayerConfirmDraft((previous) => ({ ...previous, transferAttorney: value }))}
+              options={transferAttorneyOptions}
+              helper="Required. Defaults follow branch, region, organisation, then existing transaction context."
+            />
+            <RoleplayerSelect
+              label="Bond Originator"
+              value={roleplayerConfirmDraft.bondOriginator}
+              onChange={(value) => setRoleplayerConfirmDraft((previous) => ({ ...previous, bondOriginator: value }))}
+              options={bondOriginatorOptions}
+              helper="Optional. Activation waits until the buyer chooses Bond or Hybrid finance."
+            />
+            {!roleplayerConfirmDraft.bondOriginator ? (
+              <p className="rounded-[14px] border border-warning/30 bg-warningSoft px-4 py-3 text-sm font-semibold text-warning">
+                No bond originator selected. If the buyer chooses bond finance, no originator will be notified automatically.
+              </p>
+            ) : null}
+            <RoleplayerSelect
+              label="Bond Attorney"
+              value={roleplayerConfirmDraft.bondAttorney}
+              onChange={(value) => setRoleplayerConfirmDraft((previous) => ({ ...previous, bondAttorney: value }))}
+              options={bondAttorneyOptions}
+              helper="Optional. Usually activated after bond approval or bank instruction."
+            />
+          </div>
+          <div className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-helper leading-5 text-textMuted">
+            Need someone else? Add or invite a partner from <Link to="/partners" className="font-semibold text-primary hover:underline">Partners</Link>, then reopen this confirmation.
+          </div>
+          {roleplayerConfirmError ? (
+            <p className="rounded-[14px] border border-danger/30 bg-dangerSoft px-4 py-3 text-sm font-semibold text-danger">
+              {roleplayerConfirmError}
+            </p>
+          ) : null}
         </div>
       </Modal>
 

@@ -12,6 +12,7 @@ import { handleWorkspaceInviteEmail } from "./handlers/workspaceInvite.ts";
 import { handleBuyerOfferLinkEmail } from "./handlers/buyerOfferLink.ts";
 import { handleBuyerOfferSubmittedAgentEmail } from "./handlers/buyerOfferSubmittedAgent.ts";
 import { handleBondIntakeNotificationEmail } from "./handlers/bondIntakeNotification.ts";
+import { handleBondOriginatorBuyerIntroEmail } from "./handlers/bondOriginatorBuyerIntro.ts";
 import { handleOfferDecisionNotificationEmail } from "./handlers/offerDecisionNotification.ts";
 import { handleSellerOfferReviewEmail } from "./handlers/sellerOfferReview.ts";
 import {
@@ -21,6 +22,7 @@ import {
 import type {
   SendAppointmentEmailPayload,
   SendBondIntakeNotificationPayload,
+  SendBondOriginatorBuyerIntroPayload,
   SendBuyerOfferLinkPayload,
   SendBuyerOfferSubmittedAgentPayload,
   SendClientOnboardingPayload,
@@ -289,6 +291,19 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (["bond_originator_buyer_intro"].includes(type)) {
+      console.log("[send-email] routing template", {
+        route: "bond_originator_buyer_intro",
+        recipient: recipient || null,
+        transactionId: transactionId || null,
+      });
+      return await handleBondOriginatorBuyerIntroEmail({
+        ...(payload as SendBondOriginatorBuyerIntroPayload),
+        type: "bond_originator_buyer_intro",
+        transactionId,
+      });
+    }
+
     if (
       [
         "transaction_roleplayer_intro",
@@ -397,6 +412,7 @@ Deno.serve(async (req: Request) => {
           "seller_offer_review",
           "offer_decision_notification",
           "bond_intake_notification",
+          "bond_originator_buyer_intro",
           "transaction_roleplayer_intro",
           "transaction_roleplayer_handoff",
           "workspace_invite",
@@ -433,6 +449,7 @@ Deno.serve(async (req: Request) => {
         "seller_offer_review",
         "offer_decision_notification",
         "bond_intake_notification",
+        "bond_originator_buyer_intro",
         "transaction_roleplayer_intro",
         "transaction_roleplayer_handoff",
         "workspace_invite",

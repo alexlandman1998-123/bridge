@@ -6,6 +6,7 @@ export async function sendViaResendApi({
   html,
   text,
   attachments,
+  replyTo,
 }: {
   apiKey: string;
   from: string;
@@ -13,6 +14,7 @@ export async function sendViaResendApi({
   subject: string;
   html: string;
   text?: string;
+  replyTo?: string;
   attachments?: Array<{
     filename: string;
     content: string;
@@ -32,6 +34,7 @@ export async function sendViaResendApi({
       html,
       text,
       attachments,
+      reply_to: replyTo || undefined,
     }),
   });
 

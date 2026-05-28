@@ -16869,6 +16869,559 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
   return rolePlayers
 }
 
+function normalizeTransactionRoleplayerSelection(item = {}) {
+  const roleType = normalizeRoleType(item.roleType || item.role_type || '')
+  const allowedRoleTypes = new Set(['transfer_attorney', 'bond_originator', 'bond_attorney', 'developer_contact', 'agent'])
+  if (!allowedRoleTypes.has(roleType)) return null
+
+  const partner = item.partner && typeof item.partner === 'object' ? item.partner : item
+  const organisationId = normalizeNullableText(item.organisationId || item.organisation_id || partner.organisationId || partner.organisation_id)
+  const relationshipId = normalizeNullableText(item.relationshipId || item.relationship_id || partner.relationshipId || partner.relationship_id)
+  const companyName = normalizeNullableText(partner.companyName || partner.organisationName || partner.partnerName || partner.name)
+  const contactPerson = normalizeNullableText(partner.contactPerson || partner.contactName || partner.name || companyName)
+  const email = normalizeNullableText(partner.email || partner.emailAddress || partner.email_address)?.toLowerCase() || null
+  const assignmentStatus = normalizeTextValue(item.assignmentStatus || item.assignment_status || item.status || 'selected').toLowerCase() || 'selected'
+  const activationTrigger =
+    normalizeTextValue(item.activationTrigger || item.activation_trigger) ||
+    (roleType === 'bond_originator'
+      ? 'buyer_selects_bond_or_hybrid'
+      : roleType === 'bond_attorney'
+        ? 'bond_approved'
+        : roleType === 'transfer_attorney'
+          ? 'attorney_instruction_stage'
+          : 'manual')
+
+  if (roleType === 'transfer_attorney' && !organisationId && !companyName && !email) return null
+  if (roleType !== 'transfer_attorney' && !organisationId && !companyName && !email) return null
+
+  return {
+    roleType,
+    organisationId,
+    relationshipId,
+    companyName,
+    contactPerson,
+    email,
+    phone: normalizeNullableText(partner.phone || partner.phoneNumber || partner.phone_number),
+    selectionSource: normalizeTextValue(item.selectionSource || item.selection_source || partner.selectionSource || 'connected_partner') || 'connected_partner',
+    assignmentStatus,
+    activationTrigger,
+    snapshot: {
+      roleType,
+      organisationId,
+      relationshipId,
+      scopeType: normalizeNullableText(item.scopeType || item.scope_type || partner.scopeType),
+      scopeId: normalizeNullableText(item.scopeId || item.scope_id || partner.scopeId),
+      scopeLabel: normalizeNullableText(item.scopeLabel || item.scope_label || partner.scopeLabel),
+      preferred: Boolean(item.preferred || partner.preferred),
+      companyName,
+      contactPerson,
+      email,
+      activationTrigger,
+    },
+  }
+}
+
+function normalizeTransactionRolePlayerRow(row = {}) {
+  const snapshot = row.snapshot_json && typeof row.snapshot_json === 'object' ? row.snapshot_json : {}
+  return {
+    id: normalizeTextValue(row.id),
+    transactionId: normalizeTextValue(row.transaction_id || row.transactionId),
+    roleType: normalizeRoleType(row.role_type || row.roleType),
+    selectionSource: normalizeTextValue(row.selection_source || row.selectionSource || snapshot.selectionSource),
+    preferredPartnerId: normalizeTextValue(row.preferred_partner_id || row.preferredPartnerId),
+    partnerRelationshipId: normalizeTextValue(row.partner_relationship_id || row.partnerRelationshipId || snapshot.relationshipId),
+    organisationId: normalizeTextValue(row.organisation_id || row.organisationId || snapshot.organisationId),
+    partnerName: normalizeTextValue(row.partner_name || row.partnerName || snapshot.companyName),
+    contactPerson: normalizeTextValue(row.contact_person || row.contactPerson || snapshot.contactPerson),
+    emailAddress: normalizeTextValue(row.email_address || row.emailAddress || snapshot.email),
+    phoneNumber: normalizeTextValue(row.phone_number || row.phoneNumber),
+    status: normalizeTextValue(row.assignment_status || row.status || row.assignmentStatus) || 'selected',
+    assignmentStatus: normalizeTextValue(row.assignment_status || row.assignmentStatus || row.status) || 'selected',
+    activationTrigger: normalizeTextValue(row.activation_trigger || row.activationTrigger || snapshot.activationTrigger),
+    activatedAt: normalizeTextValue(row.activated_at || row.activatedAt),
+    notifiedAt: normalizeTextValue(row.notified_at || row.notifiedAt),
+    assignedBy: normalizeTextValue(row.assigned_by || row.assignedBy),
+    snapshot,
+    createdAt: normalizeTextValue(row.created_at || row.createdAt),
+    updatedAt: normalizeTextValue(row.updated_at || row.updatedAt),
+  }
+}
+
+async function fetchTransactionRolePlayersIfPossible(client, transactionId) {
+  if (!transactionId) return []
+  let query = await client
+    .from('transaction_role_players')
+    .select(
+      'id, transaction_id, role_type, selection_source, preferred_partner_id, partner_relationship_id, organisation_id, partner_name, contact_person, email_address, phone_number, status, assignment_status, activation_trigger, activated_at, notified_at, assigned_by, snapshot_json, created_at, updated_at',
+    )
+    .eq('transaction_id', transactionId)
+
+  if (
+    query.error &&
+    (isMissingColumnError(query.error, 'partner_relationship_id') ||
+      isMissingColumnError(query.error, 'organisation_id') ||
+      isMissingColumnError(query.error, 'status') ||
+      isMissingColumnError(query.error, 'assignment_status') ||
+      isMissingColumnError(query.error, 'activation_trigger') ||
+      isMissingColumnError(query.error, 'activated_at') ||
+      isMissingColumnError(query.error, 'notified_at') ||
+      isMissingColumnError(query.error, 'assigned_by'))
+  ) {
+    query = await client
+      .from('transaction_role_players')
+      .select('id, transaction_id, role_type, selection_source, preferred_partner_id, partner_name, contact_person, email_address, phone_number, snapshot_json, created_at, updated_at')
+      .eq('transaction_id', transactionId)
+  }
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'transaction_role_players') || isMissingSchemaError(query.error) || isPermissionDeniedError(query.error)) return []
+    throw query.error
+  }
+
+  return (query.data || []).map(normalizeTransactionRolePlayerRow)
+}
+
+async function updateRecordByIdWithMissingColumnFallback(client, table, id, payload = {}, select = 'id') {
+  let currentPayload = { ...payload }
+  let result = await client.from(table).update(currentPayload).eq('id', id).select(select).limit(1)
+  let attempts = 0
+
+  while (result.error && attempts < 10) {
+    const missingKey = Object.keys(currentPayload).find((key) => isMissingColumnError(result.error, key))
+    if (!missingKey) break
+    delete currentPayload[missingKey]
+    if (!Object.keys(currentPayload).length) return null
+    result = await client.from(table).update(currentPayload).eq('id', id).select(select).limit(1)
+    attempts += 1
+  }
+
+  if (result.error) {
+    if (isMissingTableError(result.error, table) || isPermissionDeniedError(result.error)) return null
+    throw result.error
+  }
+  return result.data || null
+}
+
+async function upsertTransactionRoleplayerSelection(client, { transactionId, selection, actorProfile }) {
+  const now = new Date().toISOString()
+  const payload = {
+    transaction_id: transactionId,
+    role_type: selection.roleType,
+    selection_source: selection.selectionSource || 'connected_partner',
+    partner_relationship_id: selection.relationshipId || null,
+    organisation_id: selection.organisationId || null,
+    partner_name: selection.companyName || selection.contactPerson || null,
+    contact_person: selection.contactPerson || selection.companyName || null,
+    email_address: selection.email || null,
+    phone_number: selection.phone || null,
+    status: selection.assignmentStatus || 'selected',
+    assignment_status: selection.assignmentStatus || 'selected',
+    activation_trigger: selection.activationTrigger || null,
+    assigned_by: actorProfile?.userId || null,
+    snapshot_json: selection.snapshot || {},
+    updated_at: now,
+  }
+
+  const existing = await client
+    .from('transaction_role_players')
+    .select('id')
+    .eq('transaction_id', transactionId)
+    .eq('role_type', selection.roleType)
+    .is('removed_at', null)
+    .limit(1)
+
+  let existingRows = existing
+  if (existingRows.error && isMissingColumnError(existingRows.error, 'removed_at')) {
+    existingRows = await client
+      .from('transaction_role_players')
+      .select('id')
+      .eq('transaction_id', transactionId)
+      .eq('role_type', selection.roleType)
+      .limit(1)
+  }
+
+  let result = null
+  if (!existingRows.error && existingRows.data?.[0]?.id) {
+    result = await updateRecordByIdWithMissingColumnFallback(
+      client,
+      'transaction_role_players',
+      existingRows.data[0].id,
+      payload,
+      'id, transaction_id, role_type, selection_source, partner_name, contact_person, email_address, phone_number, snapshot_json, created_at, updated_at',
+    )
+    return result
+  }
+
+  const insertPayload = {
+    ...payload,
+    created_at: now,
+  }
+  result = await client.from('transaction_role_players').insert(insertPayload).select('id').limit(1)
+  if (
+    result.error &&
+    (isMissingColumnError(result.error, 'partner_relationship_id') ||
+      isMissingColumnError(result.error, 'organisation_id') ||
+      isMissingColumnError(result.error, 'status') ||
+      isMissingColumnError(result.error, 'assignment_status') ||
+      isMissingColumnError(result.error, 'activation_trigger') ||
+      isMissingColumnError(result.error, 'assigned_by') ||
+      isMissingColumnError(result.error, 'removed_at'))
+  ) {
+    const fallbackPayload = {
+      transaction_id: transactionId,
+      role_type: selection.roleType,
+      selection_source: selection.selectionSource || 'manual',
+      partner_name: selection.companyName || selection.contactPerson || null,
+      contact_person: selection.contactPerson || selection.companyName || null,
+      email_address: selection.email || null,
+      phone_number: selection.phone || null,
+      snapshot_json: selection.snapshot || {},
+      created_at: now,
+      updated_at: now,
+    }
+    result = await client.from('transaction_role_players').insert(fallbackPayload).select('id').limit(1)
+  }
+
+  if (result.error) {
+    if (isMissingTableError(result.error, 'transaction_role_players') || isPermissionDeniedError(result.error)) return null
+    throw result.error
+  }
+  return result.data || null
+}
+
+export async function saveTransactionRoleplayerSelections({
+  transactionId,
+  roleplayers = [],
+  actorRole = null,
+} = {}) {
+  if (!transactionId) throw new Error('Transaction is required.')
+  const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+  const normalizedActorRole = normalizeRoleType(actorRole || actorProfile.role || 'agent')
+  if (!['agent', 'agency_admin', 'developer', 'internal_admin', 'admin', 'attorney'].includes(normalizedActorRole)) {
+    throw new Error('Your role does not have permission to manage transaction roleplayers.')
+  }
+
+  const selections = roleplayers.map(normalizeTransactionRoleplayerSelection).filter(Boolean)
+  const transferAttorney = selections.find((item) => item.roleType === 'transfer_attorney')
+  if (!transferAttorney) {
+    throw new Error('Transfer Attorney is required before buyer onboarding can be sent.')
+  }
+
+  for (const selection of selections) {
+    await upsertTransactionRoleplayerSelection(client, {
+      transactionId,
+      selection,
+      actorProfile,
+    })
+  }
+
+  const bondOriginator = selections.find((item) => item.roleType === 'bond_originator')
+  await updateRecordByIdWithMissingColumnFallback(
+    client,
+    'transactions',
+    transactionId,
+    {
+      attorney: transferAttorney.companyName || transferAttorney.contactPerson || null,
+      assigned_attorney_email: transferAttorney.email || null,
+      bond_originator: bondOriginator?.companyName || bondOriginator?.contactPerson || null,
+      assigned_bond_originator_email: bondOriginator?.email || null,
+      updated_at: new Date().toISOString(),
+    },
+    'id, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, updated_at',
+  )
+
+  await logTransactionEventIfPossible(client, {
+    transactionId,
+    eventType: 'roleplayers_selected',
+    createdBy: actorProfile.userId || null,
+    createdByRole: normalizedActorRole,
+    eventData: {
+      source: 'buyer_onboarding_roleplayer_confirmation',
+      roleplayers: selections.map((item) => ({
+        roleType: item.roleType,
+        organisationId: item.organisationId,
+        relationshipId: item.relationshipId,
+        partnerName: item.companyName,
+        email: item.email,
+        activationTrigger: item.activationTrigger,
+        assignmentStatus: item.assignmentStatus,
+      })),
+    },
+  })
+
+  for (const selection of selections) {
+    const eventType =
+      selection.roleType === 'transfer_attorney'
+        ? 'transfer_attorney_selected'
+        : selection.roleType === 'bond_originator'
+          ? 'bond_originator_selected'
+          : selection.roleType === 'bond_attorney'
+            ? 'bond_attorney_selected'
+            : null
+    if (!eventType) continue
+    await logTransactionEventIfPossible(client, {
+      transactionId,
+      eventType,
+      createdBy: actorProfile.userId || null,
+      createdByRole: normalizedActorRole,
+      eventData: {
+        source: 'buyer_onboarding_roleplayer_confirmation',
+        partnerName: selection.companyName,
+        email: selection.email,
+        organisationId: selection.organisationId,
+        relationshipId: selection.relationshipId,
+        activationTrigger: selection.activationTrigger,
+      },
+    })
+  }
+
+  return fetchTransactionById(transactionId)
+}
+
+export async function recordBuyerOnboardingSent({ transactionId, actorRole = null, recipientEmail = '', roleplayers = [] } = {}) {
+  if (!transactionId) return null
+  const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+  const normalizedActorRole = normalizeRoleType(actorRole || actorProfile.role || 'agent')
+  await logTransactionEventIfPossible(client, {
+    transactionId,
+    eventType: 'buyer_onboarding_sent',
+    createdBy: actorProfile.userId || null,
+    createdByRole: normalizedActorRole,
+    eventData: {
+      source: 'agent_send_buyer_onboarding',
+      recipientEmail: normalizeNullableText(recipientEmail)?.toLowerCase() || null,
+      roleplayers,
+    },
+  })
+  return true
+}
+
+function isAffirmativeOnboardingValue(value) {
+  const normalized = normalizeTextValue(value).toLowerCase()
+  return ['1', 'true', 'yes', 'y', 'on', 'enabled'].includes(normalized)
+}
+
+function isBondActivationRequestedForOnboarding({ financeType = '', formData = {} } = {}) {
+  if (isBondFinanceType(financeType)) return true
+  return [
+    formData?.bond_help_requested,
+    formData?.bondHelpRequested,
+    formData?.needs_bond_assistance,
+    formData?.needsBondAssistance,
+    formData?.ooba_assist_requested,
+    formData?.oobaAssistRequested,
+    formData?.finance?.bond_help_requested,
+    formData?.finance?.bondHelpRequested,
+    formData?.finance?.needs_bond_assistance,
+    formData?.finance?.needsBondAssistance,
+  ].some(isAffirmativeOnboardingValue)
+}
+
+async function fetchPartnerRelationshipForRoleplayer(client, roleplayer = {}) {
+  const relationshipId = normalizeTextValue(roleplayer?.partnerRelationshipId || roleplayer?.partner_relationship_id || roleplayer?.snapshot?.partnerRelationshipId)
+  if (!relationshipId) return null
+  const query = await client
+    .from('organisation_partners')
+    .select('id, organisation_id, partner_organisation_id, partner_type, scope_type, scope_id, scope_name, preferred, status, relationship_status')
+    .eq('id', relationshipId)
+    .maybeSingle()
+  if (query.error) {
+    if (isMissingTableError(query.error, 'organisation_partners') || isPermissionDeniedError(query.error) || isMissingColumnError(query.error)) return null
+    throw query.error
+  }
+  return query.data || null
+}
+
+function resolveBondActivationScope({ transaction = {}, roleplayer = {}, relationship = null } = {}) {
+  const snapshot = roleplayer?.snapshot || {}
+  const scopeType = normalizeTextValue(snapshot.scopeType || snapshot.scope_type || relationship?.scope_type || '').toLowerCase()
+  const scopeId = normalizeTextValue(snapshot.scopeId || snapshot.scope_id || relationship?.scope_id || '')
+  const bondWorkspaceId = normalizeTextValue(
+    transaction?.bond_workspace_id ||
+      roleplayer?.organisationId ||
+      roleplayer?.organisation_id ||
+      snapshot.organisationId ||
+      snapshot.organisation_id ||
+      relationship?.partner_organisation_id ||
+      '',
+  )
+  return {
+    bondWorkspaceId,
+    bondRegionId: scopeType === 'region' ? scopeId : normalizeTextValue(transaction?.bond_region_id || ''),
+    bondWorkspaceUnitId: ['branch', 'team'].includes(scopeType) ? scopeId : normalizeTextValue(transaction?.bond_workspace_unit_id || ''),
+    scopeType,
+    scopeId,
+    scopeName: normalizeTextValue(snapshot.scopeLabel || snapshot.scope_label || relationship?.scope_name || ''),
+  }
+}
+
+async function createAgentBondOriginatorMissingNotification(client, { transaction, financeType, buyer = null, formData = {} } = {}) {
+  const transactionId = normalizeTextValue(transaction?.id || transaction?.transaction_id)
+  if (!transactionId) return null
+  await logTransactionEventIfPossible(client, {
+    transactionId,
+    eventType: 'buyer_selected_bond_finance',
+    createdByRole: 'client',
+    eventData: {
+      source: 'buyer_onboarding_completed',
+      financeType,
+      buyerName: buyer?.name || formData.full_name || null,
+    },
+  })
+  await logTransactionEventIfPossible(client, {
+    transactionId,
+    eventType: 'bond_originator_missing',
+    createdByRole: 'client',
+    eventData: {
+      source: 'buyer_onboarding_completed',
+      financeType,
+      message: 'No bond originator selected for this transaction. Please assign one to continue.',
+    },
+  })
+
+  const agentEmail = normalizeTextValue(transaction?.assigned_agent_email || '').toLowerCase()
+  if (!agentEmail) return null
+  const profileQuery = await client.from('profiles').select('id, email').eq('email', agentEmail).maybeSingle()
+  if (profileQuery.error) {
+    if (isMissingTableError(profileQuery.error, 'profiles') || isPermissionDeniedError(profileQuery.error)) return null
+    throw profileQuery.error
+  }
+  const userId = profileQuery.data?.id
+  if (!userId) return null
+
+  const dedupeKey = `bond_originator_missing:${transactionId}:${userId}`
+  const existing = await client
+    .from('transaction_notifications')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('dedupe_key', dedupeKey)
+    .limit(1)
+    .maybeSingle()
+  if (existing.error && (isMissingTableError(existing.error, 'transaction_notifications') || isMissingColumnError(existing.error, 'dedupe_key') || isPermissionDeniedError(existing.error))) {
+    return null
+  }
+  if (existing.error) throw existing.error
+  if (existing.data) return existing.data
+
+  const payload = {
+    transaction_id: transactionId,
+    user_id: userId,
+    role_type: 'agent',
+    notification_type: 'bond_originator_required',
+    title: 'Bond originator required',
+    message: 'No bond originator selected for this transaction. Please assign one to continue.',
+    is_read: false,
+    dedupe_key: dedupeKey,
+    event_type: 'bond_originator_missing',
+    event_data: {
+      source: 'buyer_onboarding_completed',
+      financeType,
+    },
+  }
+  let insertResult = await client
+    .from('transaction_notifications')
+    .insert(payload)
+    .select('id, transaction_id, user_id, notification_type, title, message, created_at')
+    .single()
+  if (insertResult.error && (isMissingColumnError(insertResult.error, 'dedupe_key') || isMissingColumnError(insertResult.error, 'event_type') || isMissingColumnError(insertResult.error, 'event_data'))) {
+    const fallbackPayload = { ...payload }
+    delete fallbackPayload.dedupe_key
+    delete fallbackPayload.event_type
+    delete fallbackPayload.event_data
+    insertResult = await client.from('transaction_notifications').insert(fallbackPayload).select('id, transaction_id, user_id, notification_type, title, message, created_at').single()
+  }
+  if (insertResult.error) {
+    if (isMissingTableError(insertResult.error, 'transaction_notifications') || isPermissionDeniedError(insertResult.error)) return null
+    throw insertResult.error
+  }
+  return insertResult.data || null
+}
+
+async function activateSelectedBondOriginatorForOnboarding(client, { transaction, financeType, buyer = null, formData = {} } = {}) {
+  const transactionId = normalizeTextValue(transaction?.id || transaction?.transaction_id)
+  if (!transactionId || !isBondActivationRequestedForOnboarding({ financeType, formData })) return { activated: false, reason: 'not_bond_finance' }
+
+  const rolePlayers = await fetchTransactionRolePlayersIfPossible(client, transactionId)
+  const selectedBondOriginator = rolePlayers.find(
+    (item) =>
+      item.roleType === 'bond_originator' &&
+      !['removed', 'declined'].includes(normalizeTextValue(item.assignmentStatus || item.status).toLowerCase()),
+  )
+  if (!selectedBondOriginator?.id) {
+    await createAgentBondOriginatorMissingNotification(client, { transaction, financeType, buyer, formData })
+    return { activated: false, reason: 'no_selected_bond_originator' }
+  }
+
+  const now = new Date().toISOString()
+  const relationship = await fetchPartnerRelationshipForRoleplayer(client, selectedBondOriginator)
+  const scope = resolveBondActivationScope({ transaction, roleplayer: selectedBondOriginator, relationship })
+  await updateRecordByIdWithMissingColumnFallback(
+    client,
+    'transaction_role_players',
+    selectedBondOriginator.id,
+    {
+      status: 'active',
+      assignment_status: 'active',
+      activated_at: selectedBondOriginator.activatedAt || now,
+      updated_at: now,
+    },
+    'id, status, assignment_status, activated_at, updated_at',
+  )
+
+  await updateRecordByIdWithMissingColumnFallback(
+    client,
+    'transactions',
+    transactionId,
+    {
+      bond_originator: selectedBondOriginator.partnerName || selectedBondOriginator.contactPerson || transaction?.bond_originator || null,
+      bond_workspace_id: scope.bondWorkspaceId || transaction?.bond_workspace_id || null,
+      bond_region_id: scope.bondRegionId || null,
+      bond_workspace_unit_id: scope.bondWorkspaceUnitId || null,
+      bond_assignment_source: 'workflow_assignment',
+      finance_managed_by: 'bond_originator',
+      finance_status: 'Bond originator activated · Pipeline created',
+      last_meaningful_activity_at: now,
+      updated_at: now,
+    },
+    'id, bond_originator, bond_workspace_id, bond_region_id, bond_workspace_unit_id, bond_assignment_source, finance_managed_by, finance_status, updated_at',
+  )
+
+  await logTransactionEventIfPossible(client, {
+    transactionId,
+    eventType: 'buyer_selected_bond_finance',
+    createdByRole: 'client',
+    eventData: {
+      source: 'buyer_onboarding_completed',
+      financeType,
+      buyerName: buyer?.name || formData.full_name || null,
+    },
+  })
+
+  await logTransactionEventIfPossible(client, {
+    transactionId,
+    eventType: 'bond_originator_activated',
+    createdByRole: 'client',
+    eventData: {
+      source: 'buyer_onboarding_completed',
+      financeType,
+      buyerName: buyer?.name || formData.full_name || null,
+      bondOriginatorName: selectedBondOriginator.partnerName || selectedBondOriginator.contactPerson || null,
+      bondOriginatorEmail: selectedBondOriginator.emailAddress || null,
+      roleplayerId: selectedBondOriginator.id,
+      scopeType: scope.scopeType || null,
+      scopeId: scope.scopeId || null,
+    },
+  })
+
+  return {
+    activated: true,
+    roleplayer: selectedBondOriginator,
+    scope,
+  }
+}
+
 async function persistTransactionCommissionSnapshotIfPossible(
   client,
   {
@@ -20367,15 +20920,19 @@ export async function fetchTransactionById(transactionId) {
     if (unitDetail?.transaction?.id === transactionId) {
       const transactionEvents = await fetchTransactionEvents(transactionId)
       const appointmentsByTransactionId = await fetchTransactionAppointments(client, [transactionId], { viewer: 'internal' })
+      const rolePlayers = await fetchTransactionRolePlayersIfPossible(client, transactionId)
       return {
         ...unitDetail,
+        rolePlayers,
+        transactionRolePlayers: rolePlayers,
+        transaction_role_players: rolePlayers,
         transactionEvents,
         appointments: appointmentsByTransactionId[transactionId] || [],
       }
     }
   }
 
-  const [unitQuery, buyerQuery, initialParticipantsQuery, discussionRows, transactionEvents, onboardingFormData, appointmentsByTransactionId] = await Promise.all([
+  const [unitQuery, buyerQuery, initialParticipantsQuery, rolePlayers, discussionRows, transactionEvents, onboardingFormData, appointmentsByTransactionId] = await Promise.all([
     transaction.unit_id
       ? client
           .from('units')
@@ -20392,6 +20949,7 @@ export async function fetchTransactionById(transactionId) {
         'id, transaction_id, user_id, role_type, legal_role, status, firm_id, invited_by_user_id, invitation_token, invitation_expires_at, invited_at, accepted_at, removed_at, visibility_scope, is_internal, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
       )
       .eq('transaction_id', transactionId),
+    fetchTransactionRolePlayersIfPossible(client, transactionId),
     fetchTransactionDiscussion(transactionId, {
       unitId: transaction.unit_id || null,
       viewer: 'internal',
@@ -20497,6 +21055,9 @@ export async function fetchTransactionById(transactionId) {
     purchaserType: normalizePurchaserType(transaction?.purchaser_type),
     purchaserTypeLabel: getPurchaserTypeLabel(transaction?.purchaser_type),
     transactionRequiredDocuments,
+    rolePlayers,
+    transactionRolePlayers: rolePlayers,
+    transaction_role_players: rolePlayers,
     transactionParticipants: (participantsQuery.data || []).map((row) => normalizeTransactionParticipantRow(row)),
     activeViewerRole: 'developer',
     activeViewerPermissions: getRolePermissions({
@@ -25548,13 +26109,23 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
 
     await logTransactionEventIfPossible(client, {
       transactionId: transaction.id,
-      eventType: 'TransactionUpdated',
+      eventType: 'buyer_onboarding_completed',
       createdByRole: 'client',
       eventData: {
         onboardingStatus: 'client_onboarding_complete',
         purchaserType,
         financeType: financeSnapshot.financeType,
         reservationRequired: financeSnapshot.reservationRequired,
+      },
+    })
+
+    await logTransactionEventIfPossible(client, {
+      transactionId: transaction.id,
+      eventType: 'finance_type_selected',
+      createdByRole: 'client',
+      eventData: {
+        source: 'buyer_onboarding_completed',
+        financeType: financeSnapshot.financeType,
       },
     })
 
@@ -25605,22 +26176,53 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
     }
 
     try {
-      await notifyBondIntakeStartedForOnboarding({
-        transaction: {
-          ...transaction,
-          finance_type: financeSnapshot.financeType || transaction.finance_type,
-          buyer_name: buyer?.name || null,
-          buyer_email: buyer?.email || null,
-          unit_number: unit?.unit_number || null,
-          development_name:
-            unit?.development && Array.isArray(unit.development)
-              ? unit.development[0]?.name || null
-              : unit?.development?.name || null,
-        },
+      const activation = await activateSelectedBondOriginatorForOnboarding(client, {
+        transaction,
+        financeType: financeSnapshot.financeType || transaction.finance_type,
+        buyer,
         formData: normalizedFormData,
-        actor: { roleType: 'client' },
-        client,
       })
+      if (activation?.reason === 'no_selected_bond_originator') {
+        console.warn('Bond finance selected during onboarding but no bond originator was selected for the transaction.')
+      }
+      if (activation?.activated) {
+        await notifyBondIntakeStartedForOnboarding({
+          transaction: {
+            ...transaction,
+            finance_type: financeSnapshot.financeType || transaction.finance_type,
+            onboarding_completed_at: now,
+            external_onboarding_submitted_at: now,
+            buyer_name: buyer?.name || null,
+            buyer_email: buyer?.email || null,
+            bond_workspace_id: activation.scope?.bondWorkspaceId || transaction.bond_workspace_id || null,
+            bond_region_id: activation.scope?.bondRegionId || transaction.bond_region_id || null,
+            bond_workspace_unit_id: activation.scope?.bondWorkspaceUnitId || transaction.bond_workspace_unit_id || null,
+            transaction_role_players: [{ ...activation.roleplayer, status: 'active', assignment_status: 'active' }],
+            unit_number: unit?.unit_number || null,
+            development_name:
+              unit?.development && Array.isArray(unit.development)
+                ? unit.development[0]?.name || null
+                : unit?.development?.name || null,
+          },
+          formData: normalizedFormData,
+          actor: { roleType: 'client' },
+          client,
+          emailEnabled: true,
+        })
+        const notifiedAt = new Date().toISOString()
+        await updateRecordByIdWithMissingColumnFallback(
+          client,
+          'transaction_role_players',
+          activation.roleplayer.id,
+          {
+            status: 'active',
+            assignment_status: 'active',
+            notified_at: notifiedAt,
+            updated_at: notifiedAt,
+          },
+          'id, status, assignment_status, notified_at, updated_at',
+        )
+      }
     } catch (bondNotificationError) {
       console.warn('Bond intake started notification failed', bondNotificationError)
     }

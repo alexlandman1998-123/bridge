@@ -106,11 +106,42 @@ try {
     getBondIntakeStatus({
       transaction: {
         finance_type: 'bond',
+        onboarding_completed_at: '2026-05-27T10:00:00.000Z',
+      },
+      documentRequests: [],
+    }),
+    BOND_INTAKE_STATUSES.READY_FOR_REVIEW,
+    'completed buyer onboarding can create a new ready intake without a separate bond application payload',
+  )
+
+  assert.equal(
+    getBondIntakeStatus({
+      transaction: {
+        finance_type: 'bond',
         assigned_bond_originator_email: 'originator@example.test',
       },
     }),
     BOND_INTAKE_STATUSES.ACCEPTED,
     'assigned bond originator returns ACCEPTED',
+  )
+
+  assert.equal(
+    getBondIntakeStatus({
+      transaction: {
+        finance_type: 'bond',
+        assigned_bond_originator_email: 'originator@example.test',
+      },
+      rolePlayers: [
+        {
+          role_type: 'bond_originator',
+          assignment_status: 'active',
+          status: 'active',
+          selection_source: 'connected_partner',
+        },
+      ],
+    }),
+    BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION,
+    'active selected originator stays in intake until accepted by the bond team',
   )
 
   const rejectedDocInput = makeSubmittedInput({

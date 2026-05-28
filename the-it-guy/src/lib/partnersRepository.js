@@ -1238,7 +1238,7 @@ export function getPartnerAssignmentOptions(snapshot = {}, roleType = 'transfer_
       id: relationship.id,
       organisationId: relationship.partner?.id || relationship.counterpartOrganisationId,
       companyName: relationship.partner?.name || 'Connected partner',
-      email: '',
+      email: relationship.partner?.contactEmails?.[0] || '',
       relationshipType: relationship.relationshipType,
       preferred: Boolean(relationship.preferred),
       scopeType: relationship.scopeType,

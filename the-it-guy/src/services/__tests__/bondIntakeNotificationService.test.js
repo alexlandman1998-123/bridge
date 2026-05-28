@@ -133,9 +133,19 @@ function transaction(overrides = {}) {
 const baseState = {
   buyers: [{ id: 'buyer-1', name: 'Mila Buyer', email: 'mila@example.test' }],
   profiles: [
+    { id: 'buyer-user-1', email: 'mila@example.test', full_name: 'Mila Buyer' },
     { id: 'agent-user-1', email: 'agent@example.test', full_name: 'Alex Agent' },
     { id: 'originator-user-1', email: 'originator@example.test', full_name: 'Olive Originator' },
     { id: 'consultant-user-1', email: 'consultant@example.test', full_name: 'Case Consultant' },
+  ],
+  organisations: [
+    {
+      id: 'bond-org-1',
+      name: 'Originator Partners',
+      display_name: 'Originator Partners',
+      company_email: 'support@originator.test',
+      company_phone: '010 555 0101',
+    },
   ],
   transaction_participants: [
     {
@@ -154,6 +164,7 @@ const baseState = {
       contact_person: 'Olive Originator',
       partner_name: 'Originator Partners',
       email_address: 'originator@example.test',
+      phone_number: '082 555 0101',
       status: 'active',
     },
   ],
@@ -187,10 +198,18 @@ try {
     client: onboardingClient,
   })
   assert.equal(started.eventType, BOND_NOTIFICATION_EVENTS.BOND_INTAKE_STARTED)
-  assert.equal(onboardingClient.state.transaction_events.length, 1)
+  assert.equal(onboardingClient.state.transaction_events.length, 6)
+  assert.equal(started.buyerIntro.eventType, BOND_NOTIFICATION_EVENTS.BUYER_BOND_ORIGINATOR_INTRO)
   assert.equal(onboardingClient.state.transaction_events[0].event_data.event_key, 'bond_intake_started')
+  assert.equal(onboardingClient.state.transaction_events.some((row) => row.event_type === BOND_NOTIFICATION_EVENTS.BUYER_BOND_ORIGINATOR_INTRO), true)
+  assert.equal(onboardingClient.state.transaction_events.some((row) => row.event_type === 'buyer_bond_originator_introduced'), true)
+  assert.equal(onboardingClient.state.transaction_events.some((row) => row.event_type === 'application_added_to_pipeline'), true)
+  assert.equal(onboardingClient.state.transaction_events.some((row) => row.event_type === 'branch_manager_notified'), true)
+  assert.equal(onboardingClient.state.transaction_events.some((row) => row.event_type === 'consultant_notified'), true)
   assert.equal(started.emailSuppressed, true)
-  assert.equal(onboardingClient.state.transaction_notifications.some((row) => row.user_id === 'agent-user-1'), true)
+  assert.equal(onboardingClient.state.transaction_notifications.some((row) => row.user_id === 'manager-user-1'), true)
+  assert.equal(onboardingClient.state.transaction_notifications.some((row) => row.user_id === 'originator-user-1'), true)
+  assert.equal(onboardingClient.state.transaction_notifications.some((row) => row.user_id === 'buyer-user-1' && row.notification_type === 'buyer_intro_email_sent'), true)
 
   const duplicateStarted = await notifyBondIntakeStartedForOnboarding({
     transaction: transaction(),
@@ -198,7 +217,7 @@ try {
     client: onboardingClient,
   })
   assert.equal(duplicateStarted.duplicate, true)
-  assert.equal(onboardingClient.state.transaction_events.length, 1)
+  assert.equal(onboardingClient.state.transaction_events.length, 6)
 
   const cashClient = createMockClient(baseState)
   const cashResult = await notifyBondIntakeStartedForOnboarding({
@@ -313,6 +332,51 @@ try {
     client: emailClient,
   })
   assert.equal(emailCalls.length, 1)
+
+  const managerEmailCalls = []
+  const managerEmailClient = createMockClient(baseState)
+  await notifyBondIntakeEvent({
+    eventType: BOND_NOTIFICATION_EVENTS.BOND_INTAKE_STARTED,
+    transaction: transaction({ id: 'tx-bond-manager-email' }),
+    recipients: [{ userId: 'manager-user-1', email: 'manager@example.test', name: 'Morgan Manager', roleType: 'branch_manager' }],
+    emailEnabled: true,
+    invokeEmailFunction: async (functionName, request) => {
+      managerEmailCalls.push({ functionName, request })
+      return { data: { ok: true, sent: true }, error: null }
+    },
+    client: managerEmailClient,
+  })
+  assert.equal(managerEmailCalls.length, 1)
+  assert.equal(managerEmailCalls[0].request.body.subject, 'New Bond Application Added To Pipeline')
+
+  const buyerIntroEmailCalls = []
+  const buyerIntroEmailClient = createMockClient(baseState)
+  await notifyBondIntakeStartedForOnboarding({
+    transaction: transaction(),
+    formData: { finance_type: 'bond' },
+    metadata: { applicationPath: '/client-access' },
+    emailEnabled: true,
+    invokeEmailFunction: async (functionName, request) => {
+      buyerIntroEmailCalls.push({ functionName, request })
+      return { data: { ok: true, sent: true }, error: null }
+    },
+    client: buyerIntroEmailClient,
+  })
+  const buyerIntroCall = buyerIntroEmailCalls.find((call) => call.request.body.type === 'bond_originator_buyer_intro')
+  assert.ok(buyerIntroCall)
+  assert.equal(buyerIntroCall.request.body.to, 'mila@example.test')
+  assert.equal(buyerIntroCall.request.body.metadata.consultantName, 'Olive Originator')
+  assert.equal(buyerIntroCall.request.body.metadata.consultantPhone, '082 555 0101')
+  assert.equal(buyerIntroCall.request.body.metadata.organisationName, 'Originator Partners')
+  assert.equal(buyerIntroCall.request.body.metadata.applicationLink, '/client-access')
+  assert.equal(
+    buyerIntroEmailClient.state.transaction_events.some((row) => row.event_type === 'buyer_bond_originator_introduced'),
+    true,
+  )
+  assert.equal(
+    buyerIntroEmailClient.state.transaction_notifications.some((row) => row.user_id === 'buyer-user-1' && row.notification_type === 'buyer_intro_email_sent'),
+    true,
+  )
 
   const rawResolverClient = createMockClient({
     ...baseState,

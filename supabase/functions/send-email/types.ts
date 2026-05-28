@@ -24,6 +24,17 @@ export type SendBondIntakeNotificationPayload = {
   metadata?: JsonRecord;
 };
 
+export type SendBondOriginatorBuyerIntroPayload = {
+  type: "bond_originator_buyer_intro";
+  transactionId?: string;
+  to: string;
+  recipientName?: string;
+  subject?: string;
+  title?: string;
+  message?: string;
+  metadata?: JsonRecord;
+};
+
 export type SendReservationDepositPayload = {
   type: "reservation_deposit";
   transactionId: string;

@@ -111,8 +111,12 @@ function getFinanceTypeCandidates(transaction = {}, onboardingFormData = null) {
     transaction?.financeDetails?.financeType,
     formData.finance_type,
     formData.financeType,
+    formData.purchase_finance_type,
+    formData.purchaseFinanceType,
     formData.finance?.finance_type,
     formData.finance?.financeType,
+    formData.finance?.purchase_finance_type,
+    formData.finance?.purchaseFinanceType,
     formData.bond_application?.finance_type,
     formData.bond_application?.financeType,
     formData.finance?.bond_application?.finance_type,
@@ -165,8 +169,15 @@ function getSectionsCompleted(payload = null) {
 }
 
 export function getBondApplicationProgress(input = {}) {
+  const transaction = input.transaction || {}
   const payload = getBondApplicationPayload(input)
-  const submittedAt = normalizeDateValue(payload?.submitted_at || payload?.submittedAt)
+  const transactionSubmittedAt = normalizeDateValue(
+    transaction.onboarding_completed_at ||
+      transaction.onboardingCompletedAt ||
+      transaction.external_onboarding_submitted_at ||
+      transaction.externalOnboardingSubmittedAt,
+  )
+  const submittedAt = normalizeDateValue(payload?.submitted_at || payload?.submittedAt) || transactionSubmittedAt
   const startedAt = normalizeDateValue(payload?.started_at || payload?.startedAt || payload?.created_at || payload?.createdAt)
   const sectionsCompleted = getSectionsCompleted(payload)
   const explicitPercentage = normalizeNumber(
@@ -181,7 +192,7 @@ export function getBondApplicationProgress(input = {}) {
         ? Math.min(95, sectionsCompleted.length * 20)
         : 0
 
-  if (isSubmittedBondApplication(payload)) {
+  if (isSubmittedBondApplication(payload) || transactionSubmittedAt) {
     return {
       status: BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED,
       submittedAt: submittedAt || normalizeDateValue(payload?.updated_at || payload?.updatedAt),
@@ -485,7 +496,8 @@ function hasAcceptedAssignment(input = {}) {
   ])
   const financeManagedBy = normalizeLower(transaction.finance_managed_by || transaction.financeManagedBy)
 
-  const rolePlayerAccepted = getRolePlayers(input).some((rolePlayer) => {
+  const bondRolePlayers = getRolePlayers(input).filter((rolePlayer) => rolePlayerIsBondOriginator(rolePlayer, input.currentOrganisationId))
+  const rolePlayerAccepted = bondRolePlayers.some((rolePlayer) => {
     if (!rolePlayerIsBondOriginator(rolePlayer, input.currentOrganisationId)) return false
     const snapshot = getRolePlayerSnapshot(rolePlayer)
     const markerValues = [
@@ -502,8 +514,8 @@ function hasAcceptedAssignment(input = {}) {
 
   if (rolePlayerAccepted) return true
   if (ACCEPTED_ASSIGNMENT_STATUSES.has(assignmentStatus)) return true
-  if (assignedEmail || assignedUserId) return true
-  if (financeManagedBy === 'bond_originator' && (assignedEmail || assignedUserId)) return true
+  if (!bondRolePlayers.length && (assignedEmail || assignedUserId)) return true
+  if (!bondRolePlayers.length && financeManagedBy === 'bond_originator' && (assignedEmail || assignedUserId)) return true
   return rolePlayerAccepted
 }
 
