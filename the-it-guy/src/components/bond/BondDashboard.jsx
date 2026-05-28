@@ -810,12 +810,12 @@ function BankApprovalPanel({ items = [] }) {
           </div>
         </AnalyticsMetricTile>
         <AnalyticsMetricTile label="Approval Rate" className="flex flex-col">
-          <div className="flex flex-1 items-center justify-center gap-5">
-            <div className="relative h-24 w-24 shrink-0 rounded-full" style={{ background: radialBackground }}>
-              <div className="absolute inset-3 rounded-full bg-white" />
+          <div className="flex flex-1 items-center justify-center gap-4">
+            <div className="relative h-20 w-20 shrink-0 rounded-full" style={{ background: radialBackground }}>
+              <div className="absolute inset-2.5 rounded-full bg-white" />
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                <p className="text-[1.8rem] font-semibold leading-none text-[#142132]">{approvalRate}%</p>
-                <p className="mt-1 text-sm font-medium text-[#64788f]">Approved</p>
+                <p className="text-[1.45rem] font-semibold leading-none text-[#142132]">{approvalRate}%</p>
+                <p className="mt-1 text-[0.78rem] font-medium text-[#64788f]">Approved</p>
               </div>
             </div>
             <div className="hidden min-w-0 sm:block">
@@ -986,7 +986,7 @@ function PipelineOverview({ items = [], leadTimes = [] }) {
   const averageLeadDays = calculateAverageLeadDays(leadTimes)
 
   return (
-    <section className="overflow-hidden rounded-[28px] border border-[rgba(15,23,42,0.06)] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_rgba(15,23,42,0.03)] sm:p-7">
+    <section className="overflow-hidden rounded-[26px] border border-[rgba(15,23,42,0.06)] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_rgba(15,23,42,0.03)]">
       <PipelineHeader />
       <PipelineKpiStrip
         activeFiles={activeFiles}
@@ -1005,8 +1005,8 @@ function PipelineHeader() {
     <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
       <div className="min-w-0">
         <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#94a3b8]">Operational Flow</p>
-        <h2 className="mt-3 text-[2rem] font-semibold leading-[1.1] text-[#0f172a] sm:text-[2.5rem]">Pipeline Overview</h2>
-        <p className="mt-3 max-w-2xl text-[0.94rem] leading-6 text-[#64748b]">
+        <h2 className="mt-2 text-[1.45rem] font-semibold leading-tight text-[#0f172a]">Pipeline Overview</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-[#64748b]">
           Operational flow through core finance and approval stages.
         </p>
       </div>
@@ -1026,7 +1026,7 @@ function PipelineKpiStrip({ activeFiles = 0, approvalRate = 0, bottleneck = null
   const bottleneckCount = Number(bottleneck?.count || 0)
 
   return (
-    <div className="mt-7 grid gap-4 lg:grid-cols-4">
+    <div className="mt-6 grid gap-4 lg:grid-cols-4">
       <PipelineKpiCard icon={FileCheck2} value={activeFiles} label="Active Files" helper="vs last month ↑ 12%" tone="blue" />
       <PipelineKpiCard icon={CircleCheck} value={`${approvalRate}%`} label="Approval Rate" helper="vs last month —" tone="green" />
       <PipelineKpiCard
@@ -1061,18 +1061,18 @@ function PipelineKpiCard({ icon, eyebrow = '', value = '', label = '', helper = 
     : 'border-[rgba(15,23,42,0.06)] bg-white'
 
   return (
-    <article className={`min-h-[120px] rounded-[22px] border p-5 ${cardClass}`}>
-      <div className="flex items-center gap-4">
-        <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${tones[tone] || tones.blue}`}>
-          <Icon size={22} strokeWidth={2.1} />
+    <article className={`min-h-[104px] rounded-[18px] border p-4 ${cardClass}`}>
+      <div className="flex items-center gap-3.5">
+        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${tones[tone] || tones.blue}`}>
+          <Icon size={19} strokeWidth={2.1} />
         </span>
         <div className="min-w-0">
-          {eyebrow ? <p className="mb-2 text-[0.68rem] font-semibold text-[#64748b]">{eyebrow}</p> : null}
-          <p className={`${emphasized ? 'text-[1.25rem]' : 'text-[2rem]'} font-semibold leading-none text-[#0f172a]`}>{value}</p>
-          <p className={`${emphasized ? 'mt-3 text-sm font-semibold text-[#d97706]' : 'mt-2 text-[0.94rem] text-[#64748b]'}`}>{label}</p>
+          {eyebrow ? <p className="mb-1.5 text-[0.66rem] font-semibold text-[#64748b]">{eyebrow}</p> : null}
+          <p className={`${emphasized ? 'text-[1.05rem]' : 'text-[1.55rem]'} font-semibold leading-none text-[#0f172a]`}>{value}</p>
+          <p className={`${emphasized ? 'mt-2 text-[0.82rem] font-semibold text-[#d97706]' : 'mt-1.5 text-sm text-[#64748b]'}`}>{label}</p>
         </div>
       </div>
-      {helper ? <p className="mt-5 text-sm text-[#64748b]">{helper}</p> : null}
+      {helper ? <p className="mt-4 text-[0.82rem] text-[#64748b]">{helper}</p> : null}
     </article>
   )
 }
@@ -1082,8 +1082,8 @@ function PipelineTimeline({ rows = [], bottleneckKey = '' }) {
 
   return (
     <>
-      <div className="mt-8 hidden overflow-x-auto pb-2 md:block">
-        <div className="relative min-w-[1040px] pt-2">
+      <div className="mt-7 hidden overflow-x-auto pb-2 md:block">
+        <div className="relative min-w-[1040px] pt-1">
           <TimelineLine rows={safeRows} bottleneckKey={bottleneckKey} />
           <div
             className="relative z-10 grid items-start gap-4"
@@ -1096,7 +1096,7 @@ function PipelineTimeline({ rows = [], bottleneckKey = '' }) {
         </div>
       </div>
 
-      <div className="mt-8 grid gap-4 md:hidden">
+      <div className="mt-7 grid gap-4 md:hidden">
         {safeRows.map((row) => (
           <PipelineStageNode key={row.key} row={row} bottleneckKey={bottleneckKey} mobile />
         ))}
@@ -1109,7 +1109,7 @@ function TimelineLine({ rows = [], bottleneckKey = '' }) {
   const count = Math.max(rows.length, 1)
 
   return (
-    <div className="pointer-events-none absolute left-10 right-10 top-[36px] z-0 h-[3px] rounded-full bg-[#e2e8f0]">
+    <div className="pointer-events-none absolute left-10 right-10 top-[32px] z-0 h-[3px] rounded-full bg-[#e2e8f0]">
       {rows.slice(0, -1).map((row, index) => {
         const nextRow = rows[index + 1]
         const state = getPipelineStageState(row, bottleneckKey)
@@ -1158,15 +1158,15 @@ function PipelineStageNode({ row = {}, bottleneckKey = '', mobile = false }) {
 
   return (
     <article className={`${mobile ? 'grid grid-cols-[48px_minmax(0,1fr)] gap-4' : 'flex flex-col items-center'} group`}>
-      <span className={`${iconClasses[state]} relative z-20 flex h-12 w-12 items-center justify-center rounded-full border shadow-[0_8px_20px_rgba(15,23,42,0.05)] transition duration-200 group-hover:-translate-y-0.5`}>
-        <Icon size={21} strokeWidth={2.1} />
+      <span className={`${iconClasses[state]} relative z-20 flex h-10 w-10 items-center justify-center rounded-full border shadow-[0_8px_20px_rgba(15,23,42,0.05)] transition duration-200 group-hover:-translate-y-0.5`}>
+        <Icon size={18} strokeWidth={2.1} />
       </span>
       <div
-        className={`${mobile ? 'min-h-[150px]' : 'mt-6 min-h-[190px] w-full'} ${stateClasses[state]} rounded-[24px] border px-4 py-5 text-center transition duration-200 group-hover:-translate-y-1 group-hover:opacity-100 group-hover:shadow-[0_16px_32px_rgba(15,23,42,0.08)]`}
+        className={`${mobile ? 'min-h-[132px]' : 'mt-5 min-h-[150px] w-full'} ${stateClasses[state]} rounded-[18px] border px-3 py-4 text-center transition duration-200 group-hover:-translate-y-1 group-hover:opacity-100 group-hover:shadow-[0_16px_32px_rgba(15,23,42,0.08)]`}
       >
-        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#27425e]">{row.label}</p>
-        <p className="mt-7 text-[3rem] font-semibold leading-none text-[#0f172a]">{count}</p>
-        <p className={`mt-5 text-sm ${isIdle ? 'text-[#64748b]' : 'font-medium'}`} style={{ color: isIdle ? undefined : meta.tone }}>
+        <p className="text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-[#27425e]">{row.label}</p>
+        <p className="mt-5 text-[2.25rem] font-semibold leading-none text-[#0f172a]">{count}</p>
+        <p className={`mt-4 text-[0.82rem] ${isIdle ? 'text-[#64748b]' : 'font-medium'}`} style={{ color: isIdle ? undefined : meta.tone }}>
           {metaText}
         </p>
       </div>
