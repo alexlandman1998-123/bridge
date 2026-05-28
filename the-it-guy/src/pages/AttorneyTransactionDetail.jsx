@@ -414,6 +414,12 @@ function makeRoleplayerOptionKey(option = {}) {
   )
 }
 
+function findRoleplayerOptionInList(options = [], id = '') {
+  const normalizedId = normalizeRoleplayerOptionValue(id)
+  if (!normalizedId) return null
+  return options.find((option) => normalizeRoleplayerOptionValue(option?.id) === normalizedId) || null
+}
+
 function getRoleplayerStatusLabel(value = '') {
   const normalized = String(value || 'selected').trim().toLowerCase()
   if (normalized === 'active') return 'Active'
@@ -3396,9 +3402,9 @@ function AttorneyTransactionDetail() {
   useEffect(() => {
     if (!isAgentTransactionView || !roleplayerConfirmOpen) return
     setRoleplayerConfirmDraft((previous) => ({
-      transferAttorney: previous.transferAttorney || transferAttorneyOptions[0]?.id || '',
-      bondOriginator: previous.bondOriginator || bondOriginatorOptions[0]?.id || '',
-      bondAttorney: previous.bondAttorney || bondAttorneyOptions[0]?.id || '',
+      transferAttorney: findRoleplayerOptionInList(transferAttorneyOptions, previous.transferAttorney)?.id || transferAttorneyOptions[0]?.id || '',
+      bondOriginator: findRoleplayerOptionInList(bondOriginatorOptions, previous.bondOriginator)?.id || bondOriginatorOptions[0]?.id || '',
+      bondAttorney: findRoleplayerOptionInList(bondAttorneyOptions, previous.bondAttorney)?.id || bondAttorneyOptions[0]?.id || '',
     }))
   }, [bondAttorneyOptions, bondOriginatorOptions, isAgentTransactionView, roleplayerConfirmOpen, transferAttorneyOptions])
 
@@ -3542,9 +3548,9 @@ function AttorneyTransactionDetail() {
     }
     setRoleplayerConfirmError('')
     setRoleplayerConfirmDraft({
-      transferAttorney: roleplayerConfirmDraft.transferAttorney || transferAttorneyOptions[0]?.id || '',
-      bondOriginator: roleplayerConfirmDraft.bondOriginator || bondOriginatorOptions[0]?.id || '',
-      bondAttorney: roleplayerConfirmDraft.bondAttorney || bondAttorneyOptions[0]?.id || '',
+      transferAttorney: findRoleplayerOptionInList(transferAttorneyOptions, roleplayerConfirmDraft.transferAttorney)?.id || transferAttorneyOptions[0]?.id || '',
+      bondOriginator: findRoleplayerOptionInList(bondOriginatorOptions, roleplayerConfirmDraft.bondOriginator)?.id || bondOriginatorOptions[0]?.id || '',
+      bondAttorney: findRoleplayerOptionInList(bondAttorneyOptions, roleplayerConfirmDraft.bondAttorney)?.id || bondAttorneyOptions[0]?.id || '',
     })
     setRoleplayerConfirmOpen(true)
   }
@@ -3594,7 +3600,19 @@ function AttorneyTransactionDetail() {
     }
     const transferOption =
       findRoleplayerOption('transfer_attorney', roleplayerConfirmDraft.transferAttorney) ||
-      (transferAttorneyOptions.length === 1 ? transferAttorneyOptions[0] : null)
+      buildExistingRoleplayerOption(savedTransferRoleplayer, 'transfer_attorney') ||
+      buildExistingRoleplayerOption(transferAttorney, 'transfer_attorney') ||
+      (transaction?.attorney || transaction?.assigned_attorney_email
+        ? buildExistingRoleplayerOption(
+            {
+              partnerName: transaction?.attorney,
+              emailAddress: transaction?.assigned_attorney_email,
+            },
+            'transfer_attorney',
+          )
+        : null) ||
+      transferAttorneyOptions[0] ||
+      null
     const bondOriginatorOption = findRoleplayerOption('bond_originator', roleplayerConfirmDraft.bondOriginator)
     const bondAttorneyOption = findRoleplayerOption('bond_attorney', roleplayerConfirmDraft.bondAttorney)
 
