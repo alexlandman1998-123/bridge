@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, Banknote, CircleCheck, CircleDashed, CircleAlert, Clock3, FileCheck2, FileText, HandCoins, UsersRound } from 'lucide-react'
+import { ArrowRight, Banknote, ChevronDown, CircleCheck, CircleDashed, CircleAlert, Clock3, FileCheck2, FileText, HandCoins, UsersRound } from 'lucide-react'
 import BondEmptyState from './BondEmptyState'
 import BondPageShell from './BondPageShell'
 import BondSectionCard from './BondSectionCard'
@@ -175,8 +175,9 @@ export default function BondDashboard({
                 <BondSectionCard
                   eyebrow="Primary Analytics"
                   title="Bank Approval Breakdown"
-                  description="Bank movement and outcome split in one operational view."
-                  className="flex min-h-[470px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                  description="Real-time view of approvals across all banks."
+                  action={<AnalyticsRangeButton label="This Month" />}
+                  className="flex min-h-[500px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
                   headerClassName="gap-3"
                   contentClassName="mt-6 min-h-0 flex-1"
                 >
@@ -186,7 +187,8 @@ export default function BondDashboard({
                   eyebrow="Primary Analytics"
                   title="Bank Lead Times"
                   description="Average lead time by lender from submission to movement."
-                  className="flex min-h-[470px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                  action={<AnalyticsRangeButton label="This Month" />}
+                  className="flex min-h-[500px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
                   headerClassName="gap-3"
                   contentClassName="mt-6 min-h-0 flex-1"
                 >
@@ -194,16 +196,7 @@ export default function BondDashboard({
                 </BondSectionCard>
               </section>
 
-              <BondSectionCard
-                eyebrow="Operational Flow"
-                title="Pipeline Overview"
-                description="Operational flow through core finance and approval stages."
-                className="flex min-h-[310px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
-                headerClassName="gap-3"
-                contentClassName="mt-6 min-h-0 flex-1"
-              >
-                <PipelineFlowPanel items={pipelineFlow} />
-              </BondSectionCard>
+              <PipelineOverview items={pipelineFlow} leadTimes={bankLeadTimes} />
 
               <section className="grid gap-6 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
                 <BondSectionCard
@@ -736,231 +729,488 @@ function ApplicationMeta({ icon, label = '', value = '' }) {
   )
 }
 
+function AnalyticsRangeButton({ label = 'This Month' }) {
+  return (
+    <button
+      type="button"
+      className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#d9e4ef] bg-white px-3.5 text-sm font-semibold text-[#24384d] shadow-[0_6px_16px_rgba(15,23,42,0.035)] transition hover:border-[#bfd0e1] hover:bg-[#fbfdff]"
+    >
+      {label}
+      <ChevronDown size={15} strokeWidth={2.1} className="text-[#7d8fa3]" />
+    </button>
+  )
+}
+
+function BankAvatar({ bank = '', size = 'md' }) {
+  const visual = getBankVisual(bank)
+  const sizeClass = size === 'sm' ? 'h-7 w-7 text-[0.58rem]' : 'h-9 w-9 text-[0.68rem]'
+
+  return (
+    <span
+      className={`${sizeClass} flex shrink-0 items-center justify-center rounded-full font-bold`}
+      style={{ backgroundColor: visual.soft, color: visual.color }}
+    >
+      {visual.initials}
+    </span>
+  )
+}
+
+function AnalyticsMetricTile({ label = '', value = '', helper = '', children = null, className = '' }) {
+  return (
+    <section className={`min-h-[110px] rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4 ${className}`}>
+      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#73869c]">{label}</p>
+      {children || (
+        <>
+          <p className="mt-3 text-[2.2rem] font-semibold leading-none text-[#142132]">{value}</p>
+          {helper ? <p className="mt-2 text-sm font-medium text-[#64788f]">{helper}</p> : null}
+        </>
+      )}
+    </section>
+  )
+}
+
+function AnalyticsFooterLink({ to = '/bond/reports', children }) {
+  return (
+    <footer className="mt-auto flex justify-end pt-4">
+      <Link
+        to={to}
+        className="inline-flex items-center gap-2 text-sm font-semibold text-[#24518a] transition hover:text-[#143250]"
+      >
+        {children}
+        <ArrowRight size={15} strokeWidth={2.1} />
+      </Link>
+    </footer>
+  )
+}
+
 function BankApprovalPanel({ items = [] }) {
   const rows = Array.isArray(items) ? items : []
-  const chartRows = rows.filter((item) => Number(item.total || 0) > 0)
-  const total = chartRows.reduce((acc, item) => acc + Number(item.total || 0), 0) || 1
+  const total = rows.reduce((acc, item) => acc + Number(item.total || 0), 0)
   const approvedTotal = rows.reduce((acc, item) => acc + Number(item.approved || 0), 0)
   const pendingTotal = rows.reduce((acc, item) => acc + Number(item.pending || 0), 0)
   const declinedTotal = rows.reduce((acc, item) => acc + Number(item.declined || 0), 0)
-  const approvalRate = Math.round((approvedTotal / total) * 100)
-
-  const conicSegments = chartRows.reduce((segments, item, index) => {
-    const previousEnd = segments[index - 1]?.end || 0
-    const share = Math.max(0, Number(item.total || 0)) / total
-    const start = previousEnd
-    const end = previousEnd + share * 360
-    const visual = getBankVisual(item.bank)
-    return [
-      ...segments,
-      {
-        end,
-        value: `${visual.color} ${start}deg ${end}deg`,
-      },
-    ]
-  }, []).map((segment) => segment.value)
-  const donutBackground = conicSegments.length ? `conic-gradient(${conicSegments.join(', ')}, #e5edf7 0deg)` : '#e5edf7'
+  const approvalRate = total ? Math.round((approvedTotal / total) * 100) : 0
+  const maxTotal = Math.max(...rows.map((item) => Number(item.total || 0)), 1)
+  const radialBackground = `conic-gradient(#2f8a63 0deg ${approvalRate * 3.6}deg, #e8eef5 ${approvalRate * 3.6}deg 360deg)`
 
   return (
-    <div className="grid h-full gap-5 xl:grid-cols-[260px_minmax(0,1fr)] xl:items-stretch">
-      <div className="flex min-h-0 flex-col justify-between rounded-[18px] border border-[#edf2f7] bg-[#fbfdff] p-5">
-        <div>
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">Outcome mix</p>
-          <div className="mt-3 flex items-end justify-between gap-4">
-            <div>
-              <p className="text-4xl font-semibold leading-none tracking-[-0.05em] text-[#142132]">{total}</p>
-              <p className="mt-2 text-sm font-semibold text-[#60758d]">applications across banks</p>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="grid gap-4 md:grid-cols-2">
+        <AnalyticsMetricTile label="Application Summary">
+          <div className="mt-3 grid items-end gap-3 sm:grid-cols-[76px_minmax(0,1fr)]">
+            <div className="min-w-0">
+              <p className="text-[2.2rem] font-semibold leading-none text-[#142132]">{total}</p>
+              <p className="mt-2 text-[0.8rem] font-medium leading-4 text-[#64788f]">Total Applications</p>
             </div>
-            <div className="text-right">
-              <p className="text-2xl font-semibold leading-none text-[#142132]">{approvalRate}%</p>
-              <p className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#7d93aa]">approved</p>
+            <div className="space-y-2">
+              <OutcomeCountRow label="Approved" value={approvedTotal} color="#2f8a63" />
+              <OutcomeCountRow label="Pending" value={pendingTotal} color="#d68a00" />
+              <OutcomeCountRow label="Declined" value={declinedTotal} color="#b44755" />
             </div>
           </div>
-        </div>
-        <div className="relative mx-auto my-6 h-40 w-40 shrink-0 rounded-full">
-          <div
-            className="h-full w-full rounded-full"
-            style={{
-              background: donutBackground,
-            }}
-          />
-          <div className="absolute inset-7 rounded-full bg-white shadow-inner" />
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-            <p className="text-3xl font-semibold text-[#142132]">{total}</p>
-            <p className="mt-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">Book</p>
+        </AnalyticsMetricTile>
+        <AnalyticsMetricTile label="Approval Rate" className="flex flex-col">
+          <div className="flex flex-1 items-center justify-center gap-5">
+            <div className="relative h-24 w-24 shrink-0 rounded-full" style={{ background: radialBackground }}>
+              <div className="absolute inset-3 rounded-full bg-white" />
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                <p className="text-[1.8rem] font-semibold leading-none text-[#142132]">{approvalRate}%</p>
+                <p className="mt-1 text-sm font-medium text-[#64788f]">Approved</p>
+              </div>
+            </div>
+            <div className="hidden min-w-0 sm:block">
+              <p className="text-sm font-semibold text-[#142132]">Current approval mix</p>
+              <p className="mt-1 text-sm leading-5 text-[#64788f]">vs last month</p>
+              <p className="mt-2 text-lg font-semibold leading-none text-[#142132]">—</p>
+            </div>
           </div>
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          <OutcomeMiniStat label="Approved" value={approvedTotal} tone="#2f8a63" />
-          <OutcomeMiniStat label="Pending" value={pendingTotal} tone="#8a6a2a" />
-          <OutcomeMiniStat label="Declined" value={declinedTotal} tone="#a83e4b" />
-        </div>
+        </AnalyticsMetricTile>
       </div>
-      <div className="grid content-start gap-2.5">
-        {rows.map((row) => {
-          const totalCount = Number(row.total || 0)
-          const bookShare = (totalCount / total) * 100
-          const visual = getBankVisual(row.bank)
-          return (
-            <article
-              key={row.bank}
-              className="rounded-[14px] border border-[#edf2f7] bg-white px-4 py-3"
-            >
-              <div className="flex items-center gap-3">
-                <span
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[0.68rem] font-bold"
-                  style={{ backgroundColor: visual.soft, color: visual.color }}
+
+      <section className="mt-4 overflow-x-auto rounded-[18px] border border-[#e1e9f2] bg-white p-3">
+        <div className="min-w-[470px]">
+          <div className="grid grid-cols-[minmax(130px,1fr)_minmax(110px,1.25fr)_64px_82px] items-center gap-4 px-1 pb-2 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-[#78899c]">
+            <span>By Bank</span>
+            <span />
+            <span className="text-right">Pending</span>
+            <span className="text-right">Approval Rate</span>
+          </div>
+          <div className="space-y-1.5">
+            {rows.map((row) => {
+              const totalCount = Number(row.total || 0)
+              const bookShare = totalCount ? Math.max(10, (totalCount / maxTotal) * 100) : 0
+              const visual = getBankVisual(row.bank)
+              return (
+                <div
+                  key={row.bank}
+                  className="grid min-h-[34px] grid-cols-[minmax(130px,1fr)_minmax(110px,1.25fr)_64px_82px] items-center gap-4 rounded-[12px] px-1 py-1 transition hover:bg-[#f7fafc]"
                 >
-                  {visual.initials}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <BankAvatar bank={row.bank} size="sm" />
                     <p className="truncate text-sm font-semibold text-[#142132]">{row.bank}</p>
-                    <p className="text-sm font-semibold text-[#142132]">{((row.approvalRate || 0)).toFixed(0)}%</p>
                   </div>
-                  <div className="mt-2 h-2 rounded-full bg-[#e7eef7]">
+                  <div className="h-1.5 overflow-hidden rounded-full bg-[#e9eff6]">
                     <span
                       className="block h-full rounded-full"
-                      style={{ width: `${Math.max(4, bookShare)}%`, backgroundColor: visual.color }}
+                      style={{ width: `${bookShare}%`, backgroundColor: visual.color }}
                     />
                   </div>
-                  <p className="mt-2 text-xs text-[#72889e]">
-                    {row.approved} approved · {row.pending} pending · {row.declined} declined
-                  </p>
+                  <p className="text-right text-sm font-semibold text-[#142132]">{row.pending}</p>
+                  <p className="text-right text-sm font-semibold text-[#142132]">{((row.approvalRate || 0)).toFixed(0)}%</p>
                 </div>
-              </div>
-            </article>
-          )
-        })}
-      </div>
+              )
+            })}
+          </div>
+        </div>
+      </section>
+
+      <AnalyticsFooterLink to="/bond/reports?view=bank-approvals">View full approval report</AnalyticsFooterLink>
     </div>
   )
 }
 
-function OutcomeMiniStat({ label = '', value = 0, tone = '#315f8c' }) {
+function OutcomeCountRow({ label = '', value = 0, color = '#315f8c' }) {
   return (
-    <div className="rounded-[12px] border border-[#edf2f7] bg-white px-3 py-2 text-center">
-      <p className="text-base font-semibold text-[#142132]">{value}</p>
-      <p className="mt-1 text-[0.62rem] font-semibold uppercase tracking-[0.1em]" style={{ color: tone }}>
-        {label}
-      </p>
+    <div className="grid grid-cols-[minmax(0,1fr)_24px] items-center gap-2 text-[0.8rem]">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+        <span className="truncate font-medium text-[#42566c]">
+          {label}
+        </span>
+      </div>
+      <span className="text-right font-semibold text-[#142132]">{value}</span>
     </div>
+  )
+}
+
+function formatDaysMetric(value, { compact = false } = {}) {
+  const numericValue = Number(value || 0)
+  const rounded = Number.isInteger(numericValue) ? String(numericValue) : numericValue.toFixed(1)
+  if (compact) return `${rounded}d`
+  return `${rounded} ${numericValue === 1 ? 'day' : 'days'}`
+}
+
+function LeadTimeMetric({ label = '', value = '', helper = '' }) {
+  return (
+    <AnalyticsMetricTile label={label}>
+      <p className="mt-3 text-[1.35rem] font-semibold leading-none text-[#142132]">{value}</p>
+      {helper ? <p className="mt-2 text-sm font-semibold text-[#2f8a63]">{helper}</p> : null}
+    </AnalyticsMetricTile>
   )
 }
 
 function BankLeadTimePanel({ items = [] }) {
   const rows = Array.isArray(items) ? items : []
   const safeRows = rows.filter((row) => Number(row.leadTimeDays || 0) > 0)
-  const maxDays = Math.max(...safeRows.map((row) => Number(row.leadTimeDays || 0)), 1)
   const averageDays = safeRows.length
-    ? Math.round(safeRows.reduce((sum, row) => sum + Number(row.leadTimeDays || 0), 0) / safeRows.length)
+    ? safeRows.reduce((sum, row) => sum + Number(row.leadTimeDays || 0), 0) / safeRows.length
     : 0
-  const fastest = safeRows[0]
-  const slowest = safeRows[safeRows.length - 1]
+  const fastest = safeRows.reduce((current, row) => {
+    if (!current) return row
+    return Number(row.leadTimeDays || 0) < Number(current.leadTimeDays || 0) ? row : current
+  }, null)
+  const slowest = safeRows.reduce((current, row) => {
+    if (!current) return row
+    return Number(row.leadTimeDays || 0) > Number(current.leadTimeDays || 0) ? row : current
+  }, null)
 
   return (
-    <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <LeadTimeStat label="Average" value={`${averageDays} days`} />
-        <LeadTimeStat label="Fastest" value={fastest ? `${fastest.bank} · ${fastest.leadTimeDays}d` : 'Tracking'} />
-        <LeadTimeStat label="Slowest" value={slowest ? `${slowest.bank} · ${slowest.leadTimeDays}d` : 'Tracking'} />
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="grid gap-4 md:grid-cols-3">
+        <LeadTimeMetric label="Average" value={safeRows.length ? formatDaysMetric(averageDays) : 'Tracking'} />
+        <LeadTimeMetric label="Fastest" value={fastest ? formatDaysMetric(fastest.leadTimeDays) : 'Tracking'} helper={fastest?.bank || ''} />
+        <LeadTimeMetric label="Slowest" value={slowest ? formatDaysMetric(slowest.leadTimeDays) : 'Tracking'} helper={slowest?.bank || ''} />
       </div>
-      {safeRows.length ? (
-        safeRows.map((row) => {
-          const percent = Math.min(100, ((Number(row.leadTimeDays || 0) / maxDays) * 100) || 0)
-          const visual = getBankVisual(row.bank)
-          return (
-            <article key={row.bank} className="rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-4 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-3">
-                  <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[0.68rem] font-bold"
-                    style={{ backgroundColor: visual.soft, color: visual.color }}
-                  >
-                    {visual.initials}
-                  </span>
-                  <p className="truncate text-sm font-semibold text-[#142132]">{row.bank}</p>
+
+      <section className="mt-4 overflow-x-auto rounded-[18px] border border-[#e1e9f2] bg-white p-3">
+        <p className="min-w-[470px] px-1 pb-2 text-sm font-semibold text-[#142132]">Lead Time by Bank</p>
+        {safeRows.length ? (
+          <div className="min-w-[470px] space-y-2.5">
+            {safeRows.map((row, index) => {
+              const visual = getBankVisual(row.bank)
+              const barWidth = Math.min(96, 82 + (index % 4) * 4)
+              return (
+                <div
+                  key={row.bank}
+                  className="grid min-h-[34px] grid-cols-[minmax(130px,0.78fr)_minmax(130px,1fr)_70px] items-center gap-4 rounded-[12px] px-1 py-1 transition hover:bg-[#f7fafc]"
+                >
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <BankAvatar bank={row.bank} size="sm" />
+                    <p className="truncate text-sm font-semibold text-[#142132]">{row.bank}</p>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-[#e9eff6]">
+                    <span
+                      className="block h-full rounded-full"
+                      style={{ width: `${barWidth}%`, backgroundColor: visual.color }}
+                    />
+                  </div>
+                  <p className="text-right text-sm font-semibold text-[#142132]">{formatDaysMetric(row.leadTimeDays)}</p>
                 </div>
-                <p className="text-base font-semibold text-[#142132]">{row.leadTimeDays} days</p>
-              </div>
-              <div className="mt-3 h-2.5 rounded-full bg-[#e6eef8]">
-                <span
-                  className="block h-full rounded-full"
-                  style={{ width: `${percent}%`, backgroundColor: visual.color }}
-                />
-              </div>
-            </article>
-          )
-        })
-      ) : (
-        <BondEmptyState
-          compact
-          title="No bank lead-time data"
-          description="Lead-time movement will appear once bank submission activity is captured."
-        />
-      )}
+              )
+            })}
+          </div>
+        ) : (
+          <BondEmptyState
+            compact
+            title="No bank lead-time data"
+            description="Lead-time movement will appear once bank submission activity is captured."
+          />
+        )}
+      </section>
+
+      <AnalyticsFooterLink to="/bond/reports?view=bank-lead-times">View full lead time report</AnalyticsFooterLink>
     </div>
   )
 }
 
-function LeadTimeStat({ label = '', value = '' }) {
-  return (
-    <div className="rounded-[14px] border border-[#edf2f7] bg-white px-4 py-3">
-      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">{label}</p>
-      <p className="mt-2 text-[0.9rem] font-semibold leading-5 text-[#142132]">{value}</p>
-    </div>
-  )
+const PIPELINE_STAGE_META = {
+  lead: { icon: UsersRound, state: 'idle', meta: (count) => `${count} applications`, tone: '#6f86a0' },
+  bond_app: { icon: FileCheck2, state: 'idle', meta: (count) => `${count} applications`, tone: '#6f86a0' },
+  docs_collection: { icon: FileText, state: 'bottleneck', meta: (count) => `${count} waiting`, tone: '#d97706' },
+  pre_approval: { icon: HandCoins, state: 'active', meta: (count) => `${count} submitted`, tone: '#2368b3' },
+  submitted: { icon: ArrowRight, state: 'idle', meta: (count) => `${count} applications`, tone: '#6f86a0' },
+  bank_feedback: { icon: CircleAlert, state: 'active', meta: (count) => `${count} in progress`, tone: '#2368b3' },
+  approved: { icon: CircleCheck, state: 'completed', meta: (count) => `${count} approved`, tone: '#20814f' },
+  registered: { icon: CircleDashed, state: 'idle', meta: (count) => `${count} applications`, tone: '#6f86a0' },
 }
 
-function PipelineFlowPanel({ items = [] }) {
+function PipelineOverview({ items = [], leadTimes = [] }) {
   const rows = Array.isArray(items) ? items : []
-  const stageIcons = {
-    lead: UsersRound,
-    bond_app: FileCheck2,
-    docs_collection: FileText,
-    pre_approval: HandCoins,
-    submitted: ArrowRight,
-    bank_feedback: CircleAlert,
-    approved: CircleCheck,
-    registered: CircleDashed,
-  }
+  const activeFiles = rows.reduce((sum, row) => sum + Number(row.count || 0), 0)
+  const approvedCount = rows.find((row) => row.key === 'approved')?.count || 0
+  const approvalRate = activeFiles ? Math.round((Number(approvedCount || 0) / activeFiles) * 100) : 0
+  const bottleneck = rows.reduce((current, row) => {
+    if (!current) return row
+    return Number(row.count || 0) > Number(current.count || 0) ? row : current
+  }, null)
+  const averageLeadDays = calculateAverageLeadDays(leadTimes)
 
   return (
-    <div className="overflow-x-auto pb-1">
-      <div
-        className="grid min-w-[1040px] items-stretch gap-3"
-        style={{ gridTemplateColumns: `repeat(${Math.max(rows.length, 1)}, minmax(118px, 1fr))` }}
-      >
-        {rows.map((row) => {
-          const Icon = stageIcons[row.key] || CircleDashed
-          const active = Number(row.count || 0) > 0
-          return (
-            <div key={row.key} className="relative">
-              <div className={`min-h-[134px] rounded-[18px] border p-4 ${active ? 'border-[#c7dbef] bg-[#f7fbff]' : 'border-[#e7edf6] bg-white'}`}>
-                <div className="flex items-center justify-between">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-[#1f527e] shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
-                    <Icon size={17} className={active ? 'text-[#1f527e]' : 'text-[#7e95ac]'} />
-                  </span>
-                  <span
-                    className={`h-2.5 w-2.5 rounded-full ${active ? 'bg-[#2f8a63]' : 'bg-[#98a8bb]'}`}
-                  />
-                </div>
-                <p className="mt-4 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d93aa]">{row.label}</p>
-                <p className="mt-2 text-[1.75rem] font-semibold leading-none text-[#142132]">{row.count}</p>
-                <p className="mt-2 text-sm text-[#60758d]">{row.valueLabel}</p>
-              </div>
-              {rows.length > 1 && row.key !== rows[rows.length - 1]?.key ? (
-                <ArrowRight
-                  size={18}
-                  className="absolute -right-2.5 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white text-[#8fa8c2]"
-                />
-              ) : null}
-            </div>
-          )
-        })}
+    <section className="overflow-hidden rounded-[28px] border border-[rgba(15,23,42,0.06)] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_rgba(15,23,42,0.03)] sm:p-7">
+      <PipelineHeader />
+      <PipelineKpiStrip
+        activeFiles={activeFiles}
+        approvalRate={approvalRate}
+        bottleneck={bottleneck}
+        averageLeadDays={averageLeadDays}
+      />
+      <PipelineTimeline rows={rows} bottleneckKey={bottleneck?.key || ''} />
+      <PipelineInsightFooter bottleneck={bottleneck} />
+    </section>
+  )
+}
+
+function PipelineHeader() {
+  return (
+    <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+      <div className="min-w-0">
+        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#94a3b8]">Operational Flow</p>
+        <h2 className="mt-3 text-[2rem] font-semibold leading-[1.1] text-[#0f172a] sm:text-[2.5rem]">Pipeline Overview</h2>
+        <p className="mt-3 max-w-2xl text-[0.94rem] leading-6 text-[#64748b]">
+          Operational flow through core finance and approval stages.
+        </p>
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-3 lg:justify-end">
+        <AnalyticsRangeButton label="This Month" />
+        <span className="inline-flex h-10 items-center gap-2 rounded-[13px] border border-[#d9efe4] bg-[#edfdf4] px-3.5 text-sm font-semibold text-[#237a4d]">
+          <span className="h-2 w-2 rounded-full bg-[#22a15d]" />
+          Live Pipeline
+        </span>
       </div>
     </div>
   )
+}
+
+function PipelineKpiStrip({ activeFiles = 0, approvalRate = 0, bottleneck = null, averageLeadDays = 0 }) {
+  const bottleneckLabel = bottleneck?.label || 'Monitoring'
+  const bottleneckCount = Number(bottleneck?.count || 0)
+
+  return (
+    <div className="mt-7 grid gap-4 lg:grid-cols-4">
+      <PipelineKpiCard icon={FileCheck2} value={activeFiles} label="Active Files" helper="vs last month ↑ 12%" tone="blue" />
+      <PipelineKpiCard icon={CircleCheck} value={`${approvalRate}%`} label="Approval Rate" helper="vs last month —" tone="green" />
+      <PipelineKpiCard
+        icon={CircleAlert}
+        eyebrow="Bottleneck Stage"
+        value={bottleneckLabel}
+        label={`${bottleneckCount} files waiting`}
+        tone="amber"
+        emphasized
+      />
+      <PipelineKpiCard
+        icon={Clock3}
+        value={averageLeadDays ? formatDaysMetric(averageLeadDays) : 'Tracking'}
+        label="Average Processing Time"
+        helper={averageLeadDays ? 'vs last month ↓ 8%' : ''}
+        tone="violet"
+      />
+    </div>
+  )
+}
+
+function PipelineKpiCard({ icon, eyebrow = '', value = '', label = '', helper = '', tone = 'blue', emphasized = false }) {
+  const Icon = icon
+  const tones = {
+    blue: 'bg-[#edf5ff] text-[#1f65a9]',
+    green: 'bg-[#eaf8ef] text-[#1f8a50]',
+    amber: 'bg-[#fff7e8] text-[#d97706]',
+    violet: 'bg-[#f3efff] text-[#7657d8]',
+  }
+  const cardClass = emphasized
+    ? 'border-[rgba(251,191,36,0.18)] bg-[rgba(251,191,36,0.06)]'
+    : 'border-[rgba(15,23,42,0.06)] bg-white'
+
+  return (
+    <article className={`min-h-[120px] rounded-[22px] border p-5 ${cardClass}`}>
+      <div className="flex items-center gap-4">
+        <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${tones[tone] || tones.blue}`}>
+          <Icon size={22} strokeWidth={2.1} />
+        </span>
+        <div className="min-w-0">
+          {eyebrow ? <p className="mb-2 text-[0.68rem] font-semibold text-[#64748b]">{eyebrow}</p> : null}
+          <p className={`${emphasized ? 'text-[1.25rem]' : 'text-[2rem]'} font-semibold leading-none text-[#0f172a]`}>{value}</p>
+          <p className={`${emphasized ? 'mt-3 text-sm font-semibold text-[#d97706]' : 'mt-2 text-[0.94rem] text-[#64748b]'}`}>{label}</p>
+        </div>
+      </div>
+      {helper ? <p className="mt-5 text-sm text-[#64748b]">{helper}</p> : null}
+    </article>
+  )
+}
+
+function PipelineTimeline({ rows = [], bottleneckKey = '' }) {
+  const safeRows = rows.length ? rows : []
+
+  return (
+    <>
+      <div className="mt-8 hidden overflow-x-auto pb-2 md:block">
+        <div className="relative min-w-[1040px] pt-2">
+          <TimelineLine rows={safeRows} bottleneckKey={bottleneckKey} />
+          <div
+            className="relative z-10 grid items-start gap-4"
+            style={{ gridTemplateColumns: `repeat(${Math.max(safeRows.length, 1)}, minmax(108px, 1fr))` }}
+          >
+            {safeRows.map((row) => (
+              <PipelineStageNode key={row.key} row={row} bottleneckKey={bottleneckKey} />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-8 grid gap-4 md:hidden">
+        {safeRows.map((row) => (
+          <PipelineStageNode key={row.key} row={row} bottleneckKey={bottleneckKey} mobile />
+        ))}
+      </div>
+    </>
+  )
+}
+
+function TimelineLine({ rows = [], bottleneckKey = '' }) {
+  const count = Math.max(rows.length, 1)
+
+  return (
+    <div className="pointer-events-none absolute left-10 right-10 top-[36px] z-0 h-[3px] rounded-full bg-[#e2e8f0]">
+      {rows.slice(0, -1).map((row, index) => {
+        const nextRow = rows[index + 1]
+        const state = getPipelineStageState(row, bottleneckKey)
+        const nextState = getPipelineStageState(nextRow, bottleneckKey)
+        if (state === 'idle' && nextState === 'idle') return null
+        const color = state === 'bottleneck' || nextState === 'bottleneck'
+          ? '#f59e0b'
+          : state === 'completed' || nextState === 'completed'
+            ? '#22a15d'
+            : '#2f73c5'
+        return (
+          <span
+            key={`${row.key}-${nextRow.key}`}
+            className="absolute top-0 h-full rounded-full"
+            style={{
+              left: `${((index + 0.5) / count) * 100}%`,
+              width: `${100 / count}%`,
+              backgroundColor: color,
+            }}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+function PipelineStageNode({ row = {}, bottleneckKey = '', mobile = false }) {
+  const meta = PIPELINE_STAGE_META[row.key] || { icon: CircleDashed, state: 'idle', meta: (count) => row.valueLabel || `${count} applications`, tone: '#6f86a0' }
+  const Icon = meta.icon
+  const count = Number(row.count || 0)
+  const state = getPipelineStageState(row, bottleneckKey)
+  const isIdle = state === 'idle'
+  const stateClasses = {
+    bottleneck: 'border-[rgba(251,191,36,0.25)] bg-[rgba(251,191,36,0.03)] shadow-[0_8px_20px_rgba(251,191,36,0.08)]',
+    active: 'border-[rgba(37,99,235,0.18)] bg-[#f7fbff] shadow-[0_8px_20px_rgba(37,99,235,0.06)]',
+    completed: 'border-[rgba(34,197,94,0.18)] bg-[#fbfffd]',
+    idle: 'border-[rgba(15,23,42,0.06)] bg-white opacity-75',
+  }
+  const iconClasses = {
+    bottleneck: 'border-[#fed7aa] bg-[#fff7ed] text-[#d97706]',
+    active: 'border-[#cfe2f7] bg-[#eef6ff] text-[#2368b3]',
+    completed: 'border-[#cdeed9] bg-[#eefbf3] text-[#20814f]',
+    idle: 'border-[#dfe7f0] bg-[#f8fafc] text-[#7f90a3]',
+  }
+  const metaText = meta.meta(count)
+
+  return (
+    <article className={`${mobile ? 'grid grid-cols-[48px_minmax(0,1fr)] gap-4' : 'flex flex-col items-center'} group`}>
+      <span className={`${iconClasses[state]} relative z-20 flex h-12 w-12 items-center justify-center rounded-full border shadow-[0_8px_20px_rgba(15,23,42,0.05)] transition duration-200 group-hover:-translate-y-0.5`}>
+        <Icon size={21} strokeWidth={2.1} />
+      </span>
+      <div
+        className={`${mobile ? 'min-h-[150px]' : 'mt-6 min-h-[190px] w-full'} ${stateClasses[state]} rounded-[24px] border px-4 py-5 text-center transition duration-200 group-hover:-translate-y-1 group-hover:opacity-100 group-hover:shadow-[0_16px_32px_rgba(15,23,42,0.08)]`}
+      >
+        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#27425e]">{row.label}</p>
+        <p className="mt-7 text-[3rem] font-semibold leading-none text-[#0f172a]">{count}</p>
+        <p className={`mt-5 text-sm ${isIdle ? 'text-[#64748b]' : 'font-medium'}`} style={{ color: isIdle ? undefined : meta.tone }}>
+          {metaText}
+        </p>
+      </div>
+    </article>
+  )
+}
+
+function getPipelineStageState(row = {}, bottleneckKey = '') {
+  if (row.key === bottleneckKey && Number(row.count || 0) > 0) return 'bottleneck'
+  const meta = PIPELINE_STAGE_META[row.key]
+  if (meta?.state === 'completed') return 'completed'
+  if (Number(row.count || 0) > 0) return meta?.state === 'bottleneck' ? 'bottleneck' : 'active'
+  return meta?.state === 'completed' ? 'completed' : 'idle'
+}
+
+function PipelineInsightFooter({ bottleneck = null }) {
+  const label = bottleneck?.label || 'pipeline movement'
+  const count = Number(bottleneck?.count || 0)
+
+  return (
+    <footer className="mt-7 flex flex-col gap-4 rounded-[20px] border border-[rgba(15,23,42,0.05)] bg-[rgba(249,250,251,0.8)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-center gap-4">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#fff7ed] text-[#d97706]">
+          <CircleAlert size={21} strokeWidth={2.1} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[#0f172a]">Operational insight</p>
+          <p className="mt-1 text-sm leading-6 text-[#64748b]">
+            Highest pressure currently sits in {label} with {count} pending files.
+          </p>
+        </div>
+      </div>
+      <Link to="/bond/reports?view=pipeline" className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-[#24518a] transition hover:text-[#143250]">
+        View pipeline report
+        <ArrowRight size={16} strokeWidth={2.1} />
+      </Link>
+    </footer>
+  )
+}
+
+function calculateAverageLeadDays(leadTimes = []) {
+  const rows = Array.isArray(leadTimes) ? leadTimes.filter((row) => Number(row.leadTimeDays || 0) > 0) : []
+  if (!rows.length) return 0
+  return rows.reduce((sum, row) => sum + Number(row.leadTimeDays || 0), 0) / rows.length
 }
 
 function DonutAnalyticsPanel({ items = {} }) {
