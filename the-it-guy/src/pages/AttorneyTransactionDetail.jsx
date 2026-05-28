@@ -500,13 +500,17 @@ function dedupeRoleplayerOptions(options = []) {
 
 function RoleplayerSelect({ label, value, onChange, options = [], required = false, helper = '' }) {
   const groups = ['Preferred Partners', 'Connected Partners', 'Recently Used']
+  const normalizedValue = normalizeRoleplayerOptionValue(value)
+  const effectiveValue = options.some((option) => normalizeRoleplayerOptionValue(option.id) === normalizedValue)
+    ? normalizedValue
+    : ''
   return (
     <label className="flex flex-col gap-1.5">
       <span className="text-label font-semibold uppercase text-textMuted">
         {label}
         {required ? <span className="text-danger"> *</span> : null}
       </span>
-      <Field as="select" value={value} onChange={(event) => onChange(event.target.value)}>
+      <Field as="select" value={effectiveValue} onChange={(event) => onChange(event.target.value)}>
         <option value="">{required ? 'Select roleplayer' : 'No selection'}</option>
         {groups.map((group) => {
           const groupOptions = options.filter((option) => option.group === group)
@@ -3387,6 +3391,15 @@ function AttorneyTransactionDetail() {
       bondOriginator: bondOriginatorOptions[0]?.id || '',
       bondAttorney: bondAttorneyOptions[0]?.id || '',
     })
+  }, [bondAttorneyOptions, bondOriginatorOptions, isAgentTransactionView, roleplayerConfirmOpen, transferAttorneyOptions])
+
+  useEffect(() => {
+    if (!isAgentTransactionView || !roleplayerConfirmOpen) return
+    setRoleplayerConfirmDraft((previous) => ({
+      transferAttorney: previous.transferAttorney || transferAttorneyOptions[0]?.id || '',
+      bondOriginator: previous.bondOriginator || bondOriginatorOptions[0]?.id || '',
+      bondAttorney: previous.bondAttorney || bondAttorneyOptions[0]?.id || '',
+    }))
   }, [bondAttorneyOptions, bondOriginatorOptions, isAgentTransactionView, roleplayerConfirmOpen, transferAttorneyOptions])
 
   function openPrintDocument(content, popupErrorMessage) {

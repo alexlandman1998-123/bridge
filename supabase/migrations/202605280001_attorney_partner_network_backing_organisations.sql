@@ -6,6 +6,70 @@ alter table if exists public.attorney_firms
 alter table if exists public.partner_invitations
   alter column recipient_email drop not null;
 
+alter table if exists public.organisation_partners
+  add column if not exists partner_type text,
+  add column if not exists status text,
+  add column if not exists scope_type text not null default 'organisation',
+  add column if not exists scope_id uuid,
+  add column if not exists scope_name text,
+  add column if not exists preferred boolean not null default false;
+
+update public.organisation_partners
+set
+  status = coalesce(nullif(status, ''), nullif(relationship_status, ''), 'pending'),
+  scope_type = coalesce(nullif(scope_type, ''), 'organisation'),
+  scope_id = coalesce(scope_id, organisation_id),
+  preferred = coalesce(preferred, false) or relationship_type = 'preferred' or visibility_level = 'preferred_partners_only'
+where true;
+
+alter table if exists public.partner_invitations
+  add column if not exists invited_email text,
+  add column if not exists from_organisation_name text,
+  add column if not exists to_organisation_name text,
+  add column if not exists from_workspace_type text,
+  add column if not exists to_workspace_type text,
+  add column if not exists partner_type text,
+  add column if not exists scope_type text not null default 'organisation',
+  add column if not exists scope_id uuid,
+  add column if not exists scope_name text,
+  add column if not exists preferred boolean not null default false,
+  add column if not exists invited_by_user_id uuid references auth.users(id) on delete set null,
+  add column if not exists responded_by_user_id uuid references auth.users(id) on delete set null,
+  add column if not exists responded_at timestamptz;
+
+update public.partner_invitations
+set
+  invited_email = coalesce(invited_email, recipient_email),
+  scope_type = coalesce(nullif(scope_type, ''), 'organisation'),
+  scope_id = coalesce(scope_id, sender_organisation_id),
+  preferred = coalesce(preferred, false),
+  partner_type = coalesce(nullif(partner_type, ''), nullif(to_workspace_type, '')),
+  invited_by_user_id = coalesce(invited_by_user_id, created_by)
+where true;
+
+alter table if exists public.transaction_role_players
+  add column if not exists partner_relationship_id uuid references public.organisation_partners(id) on delete set null,
+  add column if not exists organisation_id uuid references public.organisations(id) on delete set null,
+  add column if not exists status text,
+  add column if not exists assignment_status text,
+  add column if not exists activation_trigger text,
+  add column if not exists activated_at timestamptz,
+  add column if not exists notified_at timestamptz,
+  add column if not exists assigned_by uuid references auth.users(id) on delete set null;
+
+update public.transaction_role_players
+set
+  status = coalesce(status, 'selected'),
+  assignment_status = coalesce(assignment_status, status, 'selected')
+where true;
+
+alter table if exists public.transaction_role_players
+  drop constraint if exists transaction_role_players_selection_source_check;
+
+alter table if exists public.transaction_role_players
+  add constraint transaction_role_players_selection_source_check
+  check (selection_source in ('agency_preferred', 'buyer_appointed', 'manual', 'connected_partner', 'preferred_partner', 'recently_used'));
+
 create or replace function public.bridge_attorney_role_to_organisation_role(role_value text)
 returns text
 language sql
