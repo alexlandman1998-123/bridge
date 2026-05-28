@@ -32,7 +32,7 @@ import { inviteAttorneyFirmMember } from './attorneyFirmInvitations'
 import { completeOnboarding } from './onboarding/onboardingEngine'
 
 const ATTORNEY_FIRM_SELECT_COLUMNS =
-  'id, name, registration_number, vat_number, website, email, phone, address_line_1, address_line_2, city, province, postal_code, country, logo_url, primary_colour, secondary_colour, created_by, created_at, updated_at, is_active'
+  'id, organisation_id, name, registration_number, vat_number, website, email, phone, address_line_1, address_line_2, city, province, postal_code, country, logo_url, primary_colour, secondary_colour, created_by, created_at, updated_at, is_active'
 const ATTORNEY_FIRM_RECOVERY_CACHE_KEY_PREFIX = 'itg:attorney-firm-recovery'
 
 function buildAttorneyFirmRecoveryCacheKey(userId = '') {
@@ -177,6 +177,25 @@ function buildMembershipBootstrapError(message, cause = null) {
   error.code = 'attorney_membership_bootstrap_unavailable'
   if (cause) error.cause = cause
   return error
+}
+
+async function ensureAttorneyFirmBackingOrganisation(client, firmId) {
+  const normalizedFirmId = normalizeText(firmId)
+  if (!normalizedFirmId) return null
+
+  const result = await client.rpc('bridge_ensure_attorney_firm_organisation', {
+    target_firm_id: normalizedFirmId,
+  })
+
+  if (result.error) {
+    if (isMissingRpcError(result.error, 'bridge_ensure_attorney_firm_organisation')) {
+      console.warn('[Attorney Onboarding] attorney firm backing organisation RPC unavailable; partner network may need migration.', result.error)
+      return null
+    }
+    throw result.error
+  }
+
+  return normalizeText(result.data)
 }
 
 async function bootstrapFirmAdminMembershipWithRpc(client, firmId, userId) {
@@ -593,6 +612,7 @@ export async function createAttorneyFirm(payload = {}) {
   }
 
   await ensureCurrentUserAttorneyFirmAdminMembership(firm.id)
+  const backingOrganisationId = await ensureAttorneyFirmBackingOrganisation(client, firm.id)
 
   await createDefaultAttorneyDepartments(firm.id)
 
@@ -637,7 +657,10 @@ export async function createAttorneyFirm(payload = {}) {
     })
   }
 
-  return mapFirmRow(firm)
+  return mapFirmRow({
+    ...firm,
+    organisation_id: backingOrganisationId || firm.organisation_id || null,
+  })
 }
 
 export async function getAttorneyFirmById(firmId) {
@@ -654,7 +677,7 @@ export async function getAttorneyFirmById(firmId) {
   const query = await client
     .from('attorney_firms')
     .select(
-      'id, name, registration_number, vat_number, website, email, phone, address_line_1, address_line_2, city, province, postal_code, country, logo_url, primary_colour, secondary_colour, created_by, created_at, updated_at, is_active',
+      ATTORNEY_FIRM_SELECT_COLUMNS,
     )
     .eq('id', normalizedFirmId)
     .maybeSingle()
@@ -784,7 +807,7 @@ export async function getCurrentUserAttorneyFirms() {
   const firmsQuery = await client
     .from('attorney_firms')
     .select(
-      'id, name, registration_number, vat_number, website, email, phone, address_line_1, address_line_2, city, province, postal_code, country, logo_url, primary_colour, secondary_colour, created_by, created_at, updated_at, is_active',
+      ATTORNEY_FIRM_SELECT_COLUMNS,
     )
     .in('id', firmIds)
 
@@ -918,7 +941,7 @@ export async function updateAttorneyFirm(firmId, payload = {}) {
     .update(firmPayload)
     .eq('id', normalizedFirmId)
     .select(
-      'id, name, registration_number, vat_number, website, email, phone, address_line_1, address_line_2, city, province, postal_code, country, logo_url, primary_colour, secondary_colour, created_by, created_at, updated_at, is_active',
+      ATTORNEY_FIRM_SELECT_COLUMNS,
     )
     .single()
 

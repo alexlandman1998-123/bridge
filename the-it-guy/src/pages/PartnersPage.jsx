@@ -315,7 +315,7 @@ export default function PartnersPage() {
   const { partnerId = '' } = useParams()
   const { workspace, workspaceType, role, profile, currentMembership } = useWorkspace()
   const { organisation } = useOrganisation()
-  const organisationId = organisation?.id || workspace?.id || ''
+  const organisationId = organisation?.partnerOrganisationId || organisation?.organisationId || workspace?.organisationId || organisation?.id || workspace?.id || ''
   const resolvedWorkspaceType = organisation?.type || workspaceType || role
 
   const [activeTab, setActiveTab] = useState('connected')

@@ -97,8 +97,12 @@ function buildWorkspaceOrganisationSnapshot(authState) {
   const workspace = authState.currentWorkspace || {}
   const membership = authState.currentMembership || {}
   const logoUrl = normalizeText(workspace.logoUrl || workspace.logo_url || workspace.raw?.logo_url)
+  const backingOrganisationId = normalizeText(workspace.organisationId || workspace.organisation_id || workspace.raw?.organisation_id)
   const organisation = normalizeOrganisation({
     id: workspace.id || membership.workspaceId || '',
+    workspaceId: workspace.id || membership.workspaceId || '',
+    organisationId: backingOrganisationId || workspace.id || membership.workspaceId || '',
+    partnerOrganisationId: backingOrganisationId || workspace.id || membership.workspaceId || '',
     name: workspace.name || 'Bridge Workspace',
     displayName: workspace.name || 'Bridge Workspace',
     type: workspace.type || authState.workspaceType || '',

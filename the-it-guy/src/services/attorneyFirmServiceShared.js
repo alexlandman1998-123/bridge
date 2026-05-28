@@ -143,6 +143,7 @@ export function mapFirmRow(row) {
     logoUrl: row.logo_url || '',
     primaryColour: row.primary_colour || '',
     secondaryColour: row.secondary_colour || '',
+    organisationId: row.organisation_id || row.organisationId || null,
     createdBy: row.created_by || null,
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null,

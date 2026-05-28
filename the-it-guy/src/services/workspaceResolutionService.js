@@ -122,6 +122,8 @@ function normalizeAttorneyFirmRow(row = null) {
     logo_url: logoUrl || null,
     primaryColour: normalizeText(row.primary_colour || row.primaryColour),
     secondaryColour: normalizeText(row.secondary_colour || row.secondaryColour),
+    organisationId: normalizeText(row.organisation_id || row.organisationId),
+    organisation_id: normalizeText(row.organisation_id || row.organisationId) || null,
     raw: row,
   }
 }
@@ -738,7 +740,7 @@ async function fetchAttorneyFirmRows(client, firmIds = []) {
 
   const query = await client
     .from('attorney_firms')
-    .select('id, name, email, phone, logo_url, primary_colour, secondary_colour, created_by, is_active')
+    .select('id, organisation_id, name, email, phone, logo_url, primary_colour, secondary_colour, created_by, is_active')
     .in('id', ids)
 
   if (query.error) {

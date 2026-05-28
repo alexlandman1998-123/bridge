@@ -82,6 +82,7 @@ try {
 
   const attorneyFirm = {
     id: '33333333-3333-4333-8333-333333333333',
+    organisation_id: '44444444-4444-4444-8444-444444444444',
     name: 'Tuckers Mock',
     type: 'attorney_firm',
     logo_url: 'https://example.test/tuckers-logo.png',
@@ -107,6 +108,7 @@ try {
 
   assert.equal(attorney.ok, true)
   assert.equal(attorney.currentWorkspace.id, attorneyFirm.id)
+  assert.equal(attorney.currentWorkspace.organisationId, attorneyFirm.organisation_id)
   assert.equal(attorney.currentWorkspace.logoUrl, attorneyFirm.logo_url)
 
   assert.throws(
