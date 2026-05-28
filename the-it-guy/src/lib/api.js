@@ -8716,39 +8716,120 @@ async function fetchNotificationTargetsByRole(client, { transactionId, roleTypes
     return []
   }
 
+  const normalizeNotificationRoleTarget = (value) =>
+    String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, '_')
+
+  const requestedRoles = new Set(roleTypes.map(normalizeNotificationRoleTarget).filter(Boolean))
+  const attorneyRoleplayerRoles = new Set(['transfer_attorney', 'bond_attorney', 'cancellation_attorney'])
+  const roleMatchesRequest = (roleType) => {
+    const normalized = normalizeNotificationRoleTarget(roleType)
+    if (!normalized) return false
+    if (requestedRoles.has(normalized)) return true
+    return requestedRoles.has('attorney') && attorneyRoleplayerRoles.has(normalized)
+  }
+  const notificationRoleForTarget = (roleType) => {
+    const normalized = normalizeNotificationRoleTarget(roleType)
+    return attorneyRoleplayerRoles.has(normalized) ? 'attorney' : normalizeRoleType(normalized)
+  }
+
   const participantsQuery = await client
     .from('transaction_participants')
     .select('transaction_id, user_id, role_type, participant_email, participant_name, status, removed_at')
     .eq('transaction_id', transactionId)
 
+  let participantRows = []
   if (participantsQuery.error) {
-    if (isMissingTableError(participantsQuery.error, 'transaction_participants')) {
-      return []
+    if (!isMissingTableError(participantsQuery.error, 'transaction_participants') && !isPermissionDeniedError(participantsQuery.error)) {
+      throw participantsQuery.error
     }
-    throw participantsQuery.error
+  } else {
+    participantRows = participantsQuery.data || []
   }
 
-  const normalizedRoleTypes = roleTypes.map((item) => normalizeRoleType(item))
-  const filteredParticipants = (participantsQuery.data || []).filter((row) =>
-    normalizedRoleTypes.includes(normalizeRoleType(row.role_type)) &&
+  const filteredParticipants = participantRows.filter((row) =>
+    roleMatchesRequest(row.role_type) &&
     !row.removed_at &&
     normalizeStakeholderStatus(row.status, 'active') === 'active',
   )
 
-  const missingEmails = filteredParticipants
-    .filter((row) => !row.user_id && row.participant_email)
-    .map((row) => row.participant_email)
+  let roleplayerRows = []
+  let roleplayersQuery = await client
+    .from('transaction_role_players')
+    .select('id, transaction_id, role_type, contact_person, partner_name, email_address, status, assignment_status, snapshot_json')
+    .eq('transaction_id', transactionId)
+
+  if (
+    roleplayersQuery.error &&
+    (isMissingColumnError(roleplayersQuery.error, 'contact_person') ||
+      isMissingColumnError(roleplayersQuery.error, 'partner_name') ||
+      isMissingColumnError(roleplayersQuery.error, 'email_address') ||
+      isMissingColumnError(roleplayersQuery.error, 'status') ||
+      isMissingColumnError(roleplayersQuery.error, 'assignment_status') ||
+      isMissingColumnError(roleplayersQuery.error, 'snapshot_json'))
+  ) {
+    roleplayersQuery = await client
+      .from('transaction_role_players')
+      .select('id, transaction_id, role_type')
+      .eq('transaction_id', transactionId)
+  }
+
+  if (roleplayersQuery.error) {
+    if (!isMissingTableError(roleplayersQuery.error, 'transaction_role_players') && !isPermissionDeniedError(roleplayersQuery.error)) {
+      throw roleplayersQuery.error
+    }
+  } else {
+    roleplayerRows = (roleplayersQuery.data || []).filter((row) => {
+      const status = normalizeNotificationRoleTarget(row.assignment_status || row.status || 'selected')
+      return roleMatchesRequest(row.role_type) && !['removed', 'declined', 'rejected'].includes(status)
+    })
+  }
+
+  const missingEmails = [
+    ...filteredParticipants.filter((row) => !row.user_id).map((row) => row.participant_email),
+    ...roleplayerRows.map((row) => {
+      const snapshot = row.snapshot_json && typeof row.snapshot_json === 'object' ? row.snapshot_json : {}
+      return row.email_address || snapshot.email || snapshot.assigned_user_email
+    }),
+  ]
   const profileIdByEmail = await resolveProfileIdsByEmail(client, missingEmails)
 
-  return filteredParticipants
+  const participantTargets = filteredParticipants
     .map((row) => ({
       transactionId: row.transaction_id || transactionId,
       userId: row.user_id || profileIdByEmail[String(row.participant_email || '').trim().toLowerCase()] || null,
-      roleType: normalizeRoleType(row.role_type),
+      roleType: notificationRoleForTarget(row.role_type),
       participantName: row.participant_name || '',
       participantEmail: row.participant_email || '',
     }))
     .filter((row) => row.userId)
+
+  const roleplayerTargets = roleplayerRows
+    .map((row) => {
+      const snapshot = row.snapshot_json && typeof row.snapshot_json === 'object' ? row.snapshot_json : {}
+      const email = String(row.email_address || snapshot.email || snapshot.assigned_user_email || '').trim().toLowerCase()
+      const userId = snapshot.assigned_user_id || snapshot.userId || snapshot.user_id || profileIdByEmail[email] || null
+      return {
+        transactionId: row.transaction_id || transactionId,
+        userId,
+        roleType: notificationRoleForTarget(row.role_type),
+        participantName: row.contact_person || snapshot.contactPerson || snapshot.assigned_user_name || row.partner_name || '',
+        participantEmail: email,
+      }
+    })
+    .filter((row) => row.userId)
+
+  return Array.from(
+    [...participantTargets, ...roleplayerTargets]
+      .reduce((targetsByKey, target) => {
+        const key = `${target.userId}:${target.roleType}`
+        if (!targetsByKey.has(key)) targetsByKey.set(key, target)
+        return targetsByKey
+      }, new Map())
+      .values(),
+  )
 }
 
 async function notifyRolesForTransaction(
@@ -16869,8 +16950,19 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
   return rolePlayers
 }
 
+function normalizeTransactionRoleplayerRoleType(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+  if (['transfer_attorney', 'bond_originator', 'bond_attorney', 'developer_contact', 'agent'].includes(normalized)) {
+    return normalized
+  }
+  return normalizeRoleType(normalized)
+}
+
 function normalizeTransactionRoleplayerSelection(item = {}) {
-  const roleType = normalizeRoleType(item.roleType || item.role_type || '')
+  const roleType = normalizeTransactionRoleplayerRoleType(item.roleType || item.role_type || '')
   const allowedRoleTypes = new Set(['transfer_attorney', 'bond_originator', 'bond_attorney', 'developer_contact', 'agent'])
   if (!allowedRoleTypes.has(roleType)) return null
 
@@ -17337,6 +17429,123 @@ async function createAgentBondOriginatorMissingNotification(client, { transactio
     throw insertResult.error
   }
   return insertResult.data || null
+}
+
+async function activateSelectedAttorneyRoleplayersForOnboarding(client, { transaction, financeType, buyer = null, formData = {} } = {}) {
+  const transactionId = normalizeTextValue(transaction?.id || transaction?.transaction_id)
+  if (!transactionId || !isBondActivationRequestedForOnboarding({ financeType, formData })) {
+    return []
+  }
+
+  const rolePlayers = await fetchTransactionRolePlayersIfPossible(client, transactionId)
+  const selectedAttorneyRoleplayers = rolePlayers.filter((item) => {
+    const status = normalizeTextValue(item.assignmentStatus || item.status).toLowerCase()
+    return ['transfer_attorney', 'bond_attorney'].includes(item.roleType) && !['removed', 'declined', 'rejected'].includes(status)
+  })
+
+  const now = new Date().toISOString()
+  const activated = []
+  for (const roleplayer of selectedAttorneyRoleplayers) {
+    if (roleplayer.id) {
+      await updateRecordByIdWithMissingColumnFallback(
+        client,
+        'transaction_role_players',
+        roleplayer.id,
+        {
+          status: 'active',
+          assignment_status: 'active',
+          activated_at: roleplayer.activatedAt || now,
+          updated_at: now,
+        },
+        'id, status, assignment_status, activated_at, updated_at',
+      )
+    }
+
+    await logTransactionEventIfPossible(client, {
+      transactionId,
+      eventType: roleplayer.roleType === 'bond_attorney' ? 'bond_attorney_activated' : 'transfer_attorney_activated',
+      createdByRole: 'client',
+      eventData: {
+        source: 'buyer_onboarding_completed',
+        financeType,
+        buyerName: buyer?.name || formData.full_name || null,
+        attorneyName: roleplayer.partnerName || roleplayer.contactPerson || null,
+        attorneyEmail: roleplayer.emailAddress || null,
+        roleplayerId: roleplayer.id || null,
+      },
+    })
+    activated.push(roleplayer)
+  }
+
+  return activated
+}
+
+async function notifyAttorneysForBuyerOnboardingSubmitted(client, { transactionId, financeType, buyer = null, formData = {} } = {}) {
+  if (!transactionId || !isBondActivationRequestedForOnboarding({ financeType, formData })) {
+    return []
+  }
+  return notifyRolesForTransaction(client, {
+    transactionId,
+    roleTypes: ['attorney'],
+    title: 'Buyer onboarding submitted',
+    message: 'Buyer onboarding has been submitted. The matter is now available, but signed OTP and supporting documents may still be outstanding.',
+    notificationType: 'lane_handoff',
+    eventType: 'TransactionUpdated',
+    eventData: {
+      source: 'buyer_onboarding_completed',
+      financeType,
+      buyerName: buyer?.name || formData.full_name || null,
+      readiness: 'onboarding_submitted_pre_otp',
+    },
+    dedupePrefix: 'buyer-onboarding-submitted-attorney',
+  })
+}
+
+async function sendBuyerRoleplayerIntroEmailForOnboarding(client, { transaction, buyer = null } = {}) {
+  const transactionId = normalizeTextValue(transaction?.id || transaction?.transaction_id)
+  const buyerEmail = normalizeTextValue(buyer?.email || transaction?.buyer_email || transaction?.buyerEmail || '').toLowerCase()
+  if (!transactionId || !buyerEmail) {
+    return { skipped: true, reason: 'missing_transaction_or_buyer_email' }
+  }
+
+  const { data, error } = await invokeEdgeFunction('send-email', {
+    client,
+    body: {
+      type: 'transaction_roleplayer_intro',
+      transactionId,
+      to: buyerEmail,
+      recipientName: normalizeTextValue(buyer?.name || transaction?.buyer_name || transaction?.buyerName || ''),
+      source: 'client_onboarding_submitted',
+      resend: false,
+    },
+  })
+
+  if (error) throw error
+  if (data?.ok === false || data?.error) {
+    throw new Error(data?.error || data?.message || 'Unable to send buyer roleplayer introduction.')
+  }
+  return data || { ok: true, type: 'transaction_roleplayer_intro', transactionId, recipientEmail: buyerEmail }
+}
+
+async function notifyAttorneysForBondDocumentsComplete(client, { transactionId, result = null, actor = {}, metadata = {} } = {}) {
+  if (!transactionId || result?.eventType !== BOND_NOTIFICATION_EVENTS.BOND_DOCUMENTS_COMPLETE || result?.skipped) {
+    return []
+  }
+
+  return notifyRolesForTransaction(client, {
+    transactionId,
+    roleTypes: ['attorney'],
+    title: 'Buyer documents complete',
+    message: 'All required buyer onboarding documents are uploaded and ready for legal review.',
+    notificationType: 'document_uploaded',
+    eventType: 'TransactionUpdated',
+    eventData: {
+      source: 'bond_documents_complete',
+      ...metadata,
+    },
+    dedupePrefix: 'buyer-documents-complete-attorney',
+    excludeUserId: actor?.id || actor?.userId || null,
+  })
 }
 
 async function activateSelectedBondOriginatorForOnboarding(client, { transaction, financeType, buyer = null, formData = {} } = {}) {
@@ -26176,6 +26385,12 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
     }
 
     try {
+      await activateSelectedAttorneyRoleplayersForOnboarding(client, {
+        transaction,
+        financeType: financeSnapshot.financeType || transaction.finance_type,
+        buyer,
+        formData: normalizedFormData,
+      })
       const activation = await activateSelectedBondOriginatorForOnboarding(client, {
         transaction,
         financeType: financeSnapshot.financeType || transaction.finance_type,
@@ -26223,8 +26438,29 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
           'id, status, assignment_status, notified_at, updated_at',
         )
       }
+
+      await notifyAttorneysForBuyerOnboardingSubmitted(client, {
+        transactionId: transaction.id,
+        financeType: financeSnapshot.financeType || transaction.finance_type,
+        buyer,
+        formData: normalizedFormData,
+      })
     } catch (bondNotificationError) {
       console.warn('Bond intake started notification failed', bondNotificationError)
+    }
+
+    try {
+      await sendBuyerRoleplayerIntroEmailForOnboarding(client, {
+        transaction: {
+          ...transaction,
+          finance_type: financeSnapshot.financeType || transaction.finance_type,
+          buyer_email: buyer?.email || null,
+          buyer_name: buyer?.name || null,
+        },
+        buyer,
+      })
+    } catch (roleplayerIntroError) {
+      console.warn('Buyer roleplayer introduction email failed', roleplayerIntroError)
     }
   }
 
@@ -26555,7 +26791,7 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
 
   if (isBondFinanceType(financeSnapshot.financeType)) {
     try {
-      await checkAndNotifyBondDocumentsComplete({
+      const bondDocumentsCompleteResult = await checkAndNotifyBondDocumentsComplete({
         transaction: {
           ...transaction,
           finance_type: financeSnapshot.financeType || transaction.finance_type,
@@ -26571,6 +26807,16 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
           documentId: insertResult.data.id,
         },
         client,
+      })
+      await notifyAttorneysForBondDocumentsComplete(client, {
+        transactionId: transaction.id,
+        result: bondDocumentsCompleteResult,
+        actor: { roleType: 'client' },
+        metadata: {
+          source: 'onboarding_upload',
+          documentKey: requiredDocument.key,
+          documentId: insertResult.data.id,
+        },
       })
     } catch (bondNotificationError) {
       console.warn('Bond document completion notification failed', bondNotificationError)
@@ -26740,7 +26986,7 @@ export async function updateTransactionRequiredDocumentStatus({
   const readiness = await computeTransactionReadinessSnapshot(client, transactionId)
   if (isBondFinanceType(readiness?.financeType)) {
     try {
-      await checkAndNotifyBondDocumentsComplete({
+      const bondDocumentsCompleteResult = await checkAndNotifyBondDocumentsComplete({
         transaction: { id: transactionId, finance_type: readiness?.financeType },
         previousMissingCount: previousReadiness?.missingRequiredDocs,
         readiness,
@@ -26751,6 +26997,16 @@ export async function updateTransactionRequiredDocumentStatus({
           status: normalizedStatus,
         },
         client,
+      })
+      await notifyAttorneysForBondDocumentsComplete(client, {
+        transactionId,
+        result: bondDocumentsCompleteResult,
+        actor: { id: effectiveActorUserId, roleType: effectiveActorRole },
+        metadata: {
+          source: 'required_document_status_update',
+          documentKey,
+          status: normalizedStatus,
+        },
       })
     } catch (bondNotificationError) {
       console.warn('Bond document completion notification failed', bondNotificationError)
