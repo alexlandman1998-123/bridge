@@ -308,9 +308,15 @@ export function getPartnerScopeBadge(relationship = {}) {
 
 function relationshipMatchesAccess(relationship = {}, accessContext = {}) {
   const context = normalizeAccessContext(accessContext)
+  const contextOrganisationId = normalizeText(context.organisationId)
+  const ownerOrganisationId = normalizeText(relationship.ownerOrganisationId || relationship.organisationId || relationship.organisation_id)
+  const partnerOrganisationId = normalizeText(relationship.partnerOrganisationId || relationship.partner_organisation_id)
   const scopeType = normalizePartnerScopeType(relationship.scopeType || relationship.scope_type)
   const scopeId = normalizeText(relationship.scopeId || relationship.scope_id)
 
+  if (contextOrganisationId && partnerOrganisationId === contextOrganisationId && ownerOrganisationId !== contextOrganisationId) {
+    return true
+  }
   if (scopeType === 'organisation') return true
   if (context.isHq) return true
   if (scopeType === 'region') return !scopeId || context.regionIds.has(scopeId)
@@ -988,6 +994,61 @@ function enrichInvitations(invitations, organisations) {
   })
 }
 
+function partnerRelationshipDedupeKey(relationship = {}) {
+  const leftId = normalizeText(relationship.organisationId || relationship.organisation_id || relationship.ownerOrganisationId)
+  const rightId = normalizeText(relationship.partnerOrganisationId || relationship.partner_organisation_id)
+  const pairKey = [leftId, rightId].filter(Boolean).sort().join(':')
+  const scopeType = normalizePartnerScopeType(relationship.scopeType || relationship.scope_type)
+  const scopeId = normalizeText(relationship.scopeId || relationship.scope_id) || (scopeType === 'organisation' ? leftId : '')
+  return `${pairKey}:${scopeType}:${scopeId}`
+}
+
+function buildRelationshipFromAcceptedInvitation(invitation = {}, currentOrganisationId = '') {
+  if ((normalizeLower(invitation.status) || 'pending') !== 'accepted') return null
+
+  const senderOrganisationId = normalizeText(invitation.fromOrganisationId)
+  const recipientOrganisationId = normalizeText(invitation.toOrganisationId)
+  const currentId = normalizeText(currentOrganisationId)
+  if (!senderOrganisationId || !recipientOrganisationId) return null
+  if (currentId && senderOrganisationId !== currentId && recipientOrganisationId !== currentId) return null
+
+  const scopeType = normalizePartnerScopeType(invitation.scopeType)
+  const scopeId = normalizeText(invitation.scopeId) || (scopeType === 'organisation' ? senderOrganisationId : '')
+  return {
+    id: `partner-invite-relationship-${invitation.id}`,
+    organisationId: senderOrganisationId,
+    ownerOrganisationId: senderOrganisationId,
+    partnerOrganisationId: recipientOrganisationId,
+    counterpartOrganisationId: currentId && senderOrganisationId === currentId ? recipientOrganisationId : senderOrganisationId,
+    relationshipStatus: 'accepted',
+    status: 'accepted',
+    relationshipType: normalizeText(invitation.relationshipType) || 'approved',
+    partnerType: currentId && senderOrganisationId === currentId ? invitation.toWorkspaceType : invitation.fromWorkspaceType,
+    preferred: Boolean(invitation.preferred || invitation.relationshipType === 'preferred'),
+    scopeType,
+    scopeId,
+    scopeName: normalizeText(invitation.scopeName),
+    visibilityLevel: 'connected_partners_only',
+    notes: normalizeText(invitation.message),
+    createdBy: normalizeText(invitation.invitedByUserId),
+    createdAt: normalizeText(invitation.createdAt),
+    acceptedAt: normalizeText(invitation.respondedAt) || normalizeText(invitation.acceptedAt),
+    updatedAt: normalizeText(invitation.respondedAt),
+  }
+}
+
+function mergeAcceptedInvitationRelationships(relationships = [], invitations = [], currentOrganisationId = '') {
+  const byKey = new Map(relationships.map((relationship) => [partnerRelationshipDedupeKey(relationship), relationship]))
+  invitations.forEach((invitation) => {
+    const relationship = buildRelationshipFromAcceptedInvitation(invitation, currentOrganisationId)
+    if (!relationship) return
+    const key = partnerRelationshipDedupeKey(relationship)
+    if (!key || byKey.has(key)) return
+    byKey.set(key, relationship)
+  })
+  return [...byKey.values()]
+}
+
 function getFallbackInvitationName({ organisationId = '', organisationsById, invitedEmail = '', direction = 'from' }) {
   const org = organisationsById.get(normalizeText(organisationId))
   if (org?.name) return org.name
@@ -1007,11 +1068,15 @@ function buildDemoSnapshot(organisationId, workspaceType, accessContext = {}) {
     .filter((item) => item.type !== currentType || item.id !== organisationId)
     .map(mapOrganisation)
 
+  const invitations = enrichInvitations(state.invitations, organisations)
   const relationships = enrichRelationships(
-    state.relationships.map((item) => mapRelationship(item, organisationId)),
+    mergeAcceptedInvitationRelationships(
+      state.relationships.map((item) => mapRelationship(item, organisationId)),
+      invitations,
+      organisationId,
+    ),
     organisations,
   )
-  const invitations = enrichInvitations(state.invitations, organisations)
   const referrals = state.referrals.map(mapReferral)
 
   return {
@@ -1165,14 +1230,18 @@ export async function fetchPartnersSnapshot({ organisationId = '', workspaceType
     }
 
     const organisations = (organisationsResult.data || []).map(mapOrganisation)
+    const invitations = enrichInvitations(invitationResult || [], organisations)
     const relationships = enrichRelationships(
       filterPartnerRelationshipsByScope(
-        (relationshipResult || []).map((item) => mapRelationship(item, scopedOrganisationId)),
+        mergeAcceptedInvitationRelationships(
+          (relationshipResult || []).map((item) => mapRelationship(item, scopedOrganisationId)),
+          invitations,
+          scopedOrganisationId,
+        ),
         { ...accessContext, organisationId: scopedOrganisationId },
       ),
       organisations,
     )
-    const invitations = enrichInvitations(invitationResult || [], organisations)
     const referrals = (referralResult.data || []).map(mapReferral)
 
     return {
@@ -1565,11 +1634,12 @@ export async function acceptPartnerInvitation({
   if (recipientId && normalizeText(organisationId) && recipientId !== normalizeText(organisationId)) {
     throw new Error('This invitation is not available for your organisation.')
   }
+  const resolvedRecipientOrganisationId = recipientId || normalizeText(organisationId)
 
   await updateInvitationResponse({ invitationId: id, status: 'accepted', userId })
   await ensureOrganisationRelationship({
     senderOrganisationId: normalizeText(invitation.sender_organisation_id),
-    recipientOrganisationId: normalizeText(invitation.recipient_organisation_id),
+    recipientOrganisationId: resolvedRecipientOrganisationId,
     relationshipType: normalizeText(invitation.relationship_type) || 'approved',
     scopeType: invitation.scope_type,
     scopeId: invitation.scope_id,
