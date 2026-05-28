@@ -57,6 +57,22 @@ import {
   normalizeFinanceType,
 } from '../core/transactions/financeType'
 import {
+  BOND_HYBRID_APPLICATION_STATUS_LABELS,
+  BOND_HYBRID_FINANCE_WORKFLOW_TYPE,
+  BOND_HYBRID_QUOTE_STATUS_LABELS,
+  buildBondHybridFinanceStageSteps,
+  getBondHybridFinanceStageIndex,
+  getBondHybridFinanceStageLabel,
+  normalizeBondHybridApplicationStatus,
+  normalizeBondHybridFinanceStage,
+  normalizeBondHybridQuoteStatus,
+  summarizeBondHybridFinanceWorkflow,
+} from '../core/transactions/bondHybridFinanceWorkflow'
+import {
+  TRANSACTION_LIFECYCLE_STAGE_LABELS,
+  normalizeTransactionLifecycleStage,
+} from '../core/transactions/transactionLifecycle'
+import {
   BOND_APPLICATION_PROGRESS_STATUSES,
   getBondApplicationProgress,
 } from '../core/transactions/bondIntakeSelectors'
@@ -216,11 +232,16 @@ export const TRANSACTION_EVENT_TYPES = [
   'WorkflowStepUpdated',
   'StatusLinkCreated',
   'OccupationalRentUpdated',
+  'BondHybridFinanceWorkflowUpdated',
+  'BondHybridFinanceApplicationUpdated',
+  'BondHybridFinanceQuoteUpdated',
+  'BondHybridFinanceInstructionSent',
 ]
 export const TRANSACTION_NOTIFICATION_TYPES = [
   'participant_assigned',
   'document_uploaded',
   'readiness_updated',
+  'workflow_updated',
   'lane_handoff',
   'registration_completed',
   'overdue_missing_docs',
@@ -8378,6 +8399,163 @@ export async function createTransactionEvent({
   })
 }
 
+function getLegacyMainStageForLifecycleStage(stage) {
+  const normalizedStage = normalizeTransactionLifecycleStage(stage)
+  if (normalizedStage === 'otp') return 'OTP'
+  if (normalizedStage === 'finance') return 'FIN'
+  if (normalizedStage === 'transfer') return 'XFER'
+  if (normalizedStage === 'registration') return 'REG'
+  return 'AVAIL'
+}
+
+async function upsertTransactionLifecycleWorkflow(client, {
+  transactionId,
+  currentStage,
+  status = 'active',
+  actorUserId = null,
+  source = 'system',
+  note = '',
+} = {}) {
+  if (!transactionId || !currentStage) {
+    return null
+  }
+
+  const normalizedStage = normalizeTransactionLifecycleStage(currentStage)
+  const normalizedStatus = ['active', 'completed', 'blocked'].includes(String(status || '').toLowerCase())
+    ? String(status).toLowerCase()
+    : 'active'
+  const now = new Date().toISOString()
+
+  const existing = await client
+    .from('transaction_lifecycle_workflows')
+    .select('id, transaction_id, current_stage, status')
+    .eq('transaction_id', transactionId)
+    .maybeSingle()
+
+  if (existing.error) {
+    if (isMissingTableError(existing.error, 'transaction_lifecycle_workflows') || isMissingSchemaError(existing.error)) return null
+    throw existing.error
+  }
+
+  const payload = {
+    transaction_id: transactionId,
+    current_stage: normalizedStage,
+    status: normalizedStatus,
+    last_updated_by: actorUserId || null,
+    last_updated_at: now,
+    completed_at: normalizedStatus === 'completed' ? now : null,
+    updated_at: now,
+  }
+
+  const result = existing.data?.id
+    ? await client
+      .from('transaction_lifecycle_workflows')
+      .update(payload)
+      .eq('id', existing.data.id)
+      .select('id, transaction_id, current_stage, status, last_updated_by, last_updated_at, completed_at, created_at, updated_at')
+      .single()
+    : await client
+      .from('transaction_lifecycle_workflows')
+      .insert({ ...payload, created_at: now })
+      .select('id, transaction_id, current_stage, status, last_updated_by, last_updated_at, completed_at, created_at, updated_at')
+      .single()
+
+  if (result.error) {
+    if (isMissingTableError(result.error, 'transaction_lifecycle_workflows') || isMissingSchemaError(result.error)) return null
+    throw result.error
+  }
+
+  if (existing.data?.current_stage !== normalizedStage || existing.data?.status !== normalizedStatus) {
+    const label = TRANSACTION_LIFECYCLE_STAGE_LABELS[normalizedStage]
+    await logTransactionEventIfPossible(client, {
+      transactionId,
+      eventType: normalizedStatus === 'completed' ? 'TransactionLifecycleCompleted' : 'TransactionLifecycleStageChanged',
+      createdBy: actorUserId || null,
+      eventData: {
+        source,
+        note: normalizeNullableText(note),
+        fromStage: existing.data?.current_stage || null,
+        toStage: normalizedStage,
+        status: normalizedStatus,
+        message: normalizedStatus === 'completed'
+          ? 'Transaction lifecycle completed'
+          : `Transaction lifecycle moved to ${label}`,
+      },
+    })
+  }
+
+  return result.data
+}
+
+export async function createOrGetTransactionLifecycle(transactionId, options = {}) {
+  const client = options.client || requireClient()
+  if (!transactionId) throw new Error('Transaction is required.')
+
+  const existing = await client
+    .from('transaction_lifecycle_workflows')
+    .select('id, transaction_id, current_stage, status, last_updated_by, last_updated_at, completed_at, created_at, updated_at')
+    .eq('transaction_id', transactionId)
+    .maybeSingle()
+
+  if (existing.error) {
+    if (isMissingTableError(existing.error, 'transaction_lifecycle_workflows') || isMissingSchemaError(existing.error)) return null
+    throw existing.error
+  }
+  if (existing.data) return existing.data
+
+  const transaction = await fetchTransactionRowById(client, transactionId)
+  const inferredStage = normalizeTransactionLifecycleStage(
+    transaction?.current_main_stage ||
+      transaction?.current_sub_stage_summary ||
+      transaction?.attorney_stage ||
+      transaction?.stage ||
+      'confirmed',
+  )
+
+  return upsertTransactionLifecycleWorkflow(client, {
+    transactionId,
+    currentStage: inferredStage,
+    status: transaction?.lifecycle_state === 'completed' ? 'completed' : 'active',
+    source: 'create_or_get',
+  })
+}
+
+export async function updateTransactionLifecycleStage(transactionId, nextStage, options = {}) {
+  const client = options.client || requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+  const normalizedStage = normalizeTransactionLifecycleStage(nextStage)
+  const status = options.status || (normalizedStage === 'registration' && options.completed ? 'completed' : 'active')
+  const workflow = await upsertTransactionLifecycleWorkflow(client, {
+    transactionId,
+    currentStage: normalizedStage,
+    status,
+    actorUserId: actorProfile.userId || null,
+    source: options.source || 'manual',
+    note: options.note || '',
+  })
+
+  const legacyMainStage = getLegacyMainStageForLifecycleStage(normalizedStage)
+  const transactionUpdate = await client
+    .from('transactions')
+    .update({
+      current_main_stage: legacyMainStage,
+      lifecycle_state: status === 'completed' ? 'completed' : 'active',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', transactionId)
+
+  if (
+    transactionUpdate.error &&
+    !isMissingColumnError(transactionUpdate.error, 'current_main_stage') &&
+    !isMissingColumnError(transactionUpdate.error, 'lifecycle_state') &&
+    !isMissingSchemaError(transactionUpdate.error)
+  ) {
+    throw transactionUpdate.error
+  }
+
+  return workflow
+}
+
 export async function fetchTransactionEvents(transactionId, options = {}) {
   const { limit = 200, client: scopedClient = null } = options
   const client = scopedClient || requireClient()
@@ -8401,6 +8579,823 @@ export async function fetchTransactionEvents(transactionId, options = {}) {
   }
 
   return (query.data || []).map((row) => normalizeTransactionEventRow(row))
+}
+
+function normalizeBondHybridWorkflowRow(row = {}, profileById = {}) {
+  if (!row) return null
+  const currentStage = normalizeBondHybridFinanceStage(row.current_stage)
+  const lastUpdatedBy = row.last_updated_by || null
+  const profile = lastUpdatedBy ? profileById[lastUpdatedBy] : null
+
+  return {
+    id: row.id,
+    transactionId: row.transaction_id,
+    workflowType: row.workflow_type || BOND_HYBRID_FINANCE_WORKFLOW_TYPE,
+    currentStage,
+    currentStageLabel: getBondHybridFinanceStageLabel(currentStage),
+    status: row.status || 'active',
+    lastUpdatedBy,
+    lastUpdatedByName: profile?.full_name || profile?.name || profile?.email || null,
+    lastUpdatedByEmail: profile?.email || null,
+    lastUpdatedAt: row.last_updated_at || row.updated_at || row.created_at || null,
+    completedAt: row.completed_at || null,
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  }
+}
+
+function normalizeBondApplicationRow(row = {}, profileById = {}) {
+  if (!row) return null
+  const createdBy = row.created_by || null
+  const updatedBy = row.updated_by || null
+  return {
+    id: row.id,
+    transactionId: row.transaction_id,
+    workflowId: row.workflow_id,
+    bankName: row.bank_name || '',
+    status: normalizeBondHybridApplicationStatus(row.status),
+    statusLabel: BOND_HYBRID_APPLICATION_STATUS_LABELS[normalizeBondHybridApplicationStatus(row.status)] || 'Pending',
+    submittedAt: row.submitted_at || null,
+    feedbackReceivedAt: row.feedback_received_at || null,
+    referenceNumber: row.reference_number || '',
+    notes: row.notes || '',
+    createdBy,
+    createdByName: createdBy ? profileById[createdBy]?.full_name || profileById[createdBy]?.email || null : null,
+    updatedBy,
+    updatedByName: updatedBy ? profileById[updatedBy]?.full_name || profileById[updatedBy]?.email || null : null,
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  }
+}
+
+function normalizeBondQuoteRow(row = {}, profileById = {}) {
+  if (!row) return null
+  const quoteStatus = normalizeBondHybridQuoteStatus(row.quote_status)
+  const createdBy = row.created_by || null
+  const updatedBy = row.updated_by || null
+  return {
+    id: row.id,
+    transactionId: row.transaction_id,
+    workflowId: row.workflow_id,
+    bondApplicationId: row.bond_application_id || null,
+    bankName: row.bank_name || '',
+    quotedAmount: row.quoted_amount === null || row.quoted_amount === undefined ? null : Number(row.quoted_amount),
+    interestRate: row.interest_rate === null || row.interest_rate === undefined ? null : Number(row.interest_rate),
+    termMonths: row.term_months === null || row.term_months === undefined ? null : Number(row.term_months),
+    quoteStatus,
+    quoteStatusLabel: BOND_HYBRID_QUOTE_STATUS_LABELS[quoteStatus] || 'Received',
+    quoteReceivedAt: row.quote_received_at || null,
+    quoteExpiryAt: row.quote_expiry_at || null,
+    approvedAt: row.approved_at || null,
+    notes: row.notes || '',
+    createdBy,
+    createdByName: createdBy ? profileById[createdBy]?.full_name || profileById[createdBy]?.email || null : null,
+    updatedBy,
+    updatedByName: updatedBy ? profileById[updatedBy]?.full_name || profileById[updatedBy]?.email || null : null,
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  }
+}
+
+function normalizeBondHybridWorkflowEventRow(row = {}, profileById = {}) {
+  if (!row) return null
+  const createdBy = row.created_by || null
+  return {
+    id: row.id,
+    workflowId: row.workflow_id,
+    fromStage: row.from_stage || null,
+    fromStageLabel: row.from_stage ? getBondHybridFinanceStageLabel(row.from_stage) : null,
+    toStage: normalizeBondHybridFinanceStage(row.to_stage),
+    toStageLabel: getBondHybridFinanceStageLabel(row.to_stage),
+    eventType: row.event_type || 'stage_changed',
+    notes: row.notes || '',
+    createdBy,
+    createdByName: createdBy ? profileById[createdBy]?.full_name || profileById[createdBy]?.email || null : null,
+    createdAt: row.created_at || null,
+  }
+}
+
+async function fetchProfilesByIds(client, ids = []) {
+  const uniqueIds = [...new Set((ids || []).filter(Boolean))]
+  if (!uniqueIds.length) return {}
+
+  const query = await client
+    .from('profiles')
+    .select('id, email, full_name, first_name, last_name, role')
+    .in('id', uniqueIds)
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'profiles') || isMissingSchemaError(query.error) || isPermissionDeniedError(query.error)) {
+      return {}
+    }
+    throw query.error
+  }
+
+  return (query.data || []).reduce((accumulator, profile) => {
+    const fullName =
+      normalizeNullableText(profile.full_name) ||
+      [profile.first_name, profile.last_name].map(normalizeNullableText).filter(Boolean).join(' ') ||
+      normalizeNullableText(profile.email)
+    accumulator[profile.id] = {
+      ...profile,
+      full_name: fullName,
+    }
+    return accumulator
+  }, {})
+}
+
+function normalizeBondWorkflowPayloadDate(value) {
+  const normalized = normalizeNullableText(value)
+  if (!normalized) return null
+  const parsed = new Date(normalized)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed.toISOString()
+}
+
+function normalizeBondWorkflowPayloadNumber(value) {
+  if (value === null || value === undefined || value === '') return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function normalizeBondWorkflowPayloadInteger(value) {
+  const parsed = normalizeBondWorkflowPayloadNumber(value)
+  if (parsed === null) return null
+  return Math.trunc(parsed)
+}
+
+async function fetchRawBondHybridWorkflow(client, transactionId, { createIfMissing = false } = {}) {
+  if (!transactionId) return null
+
+  let query = await client
+    .from('transaction_finance_workflows')
+    .select('id, transaction_id, workflow_type, current_stage, status, last_updated_by, last_updated_at, completed_at, created_at, updated_at')
+    .eq('transaction_id', transactionId)
+    .eq('workflow_type', BOND_HYBRID_FINANCE_WORKFLOW_TYPE)
+    .maybeSingle()
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'transaction_finance_workflows') || isMissingSchemaError(query.error)) return null
+    throw query.error
+  }
+
+  if (query.data || !createIfMissing) return query.data || null
+
+  return createOrGetBondHybridFinanceWorkflow(transactionId, { client })
+}
+
+async function insertBondHybridWorkflowEvent(client, { workflow, fromStage = null, toStage, eventType = 'stage_changed', notes = '', createdBy = null } = {}) {
+  if (!workflow?.id || !toStage) return null
+  const payload = {
+    workflow_id: workflow.id,
+    from_stage: fromStage || null,
+    to_stage: normalizeBondHybridFinanceStage(toStage),
+    event_type: eventType,
+    notes: normalizeNullableText(notes),
+    created_by: createdBy || null,
+  }
+
+  const insert = await client
+    .from('transaction_finance_workflow_events')
+    .insert(payload)
+    .select('id, workflow_id, from_stage, to_stage, event_type, notes, created_by, created_at')
+    .single()
+
+  if (insert.error) {
+    if (isMissingTableError(insert.error, 'transaction_finance_workflow_events') || isMissingSchemaError(insert.error)) return null
+    throw insert.error
+  }
+
+  return normalizeBondHybridWorkflowEventRow(insert.data)
+}
+
+function buildBondHybridWorkflowActivityMessage({ action, bankName = '', fromStage = '', toStage = '' } = {}) {
+  if (action === 'application_added') return `Bond application submitted to ${bankName}.`
+  if (action === 'application_updated') return `Bond application updated for ${bankName}.`
+  if (action === 'quote_added') return `Quote received from ${bankName}.`
+  if (action === 'quote_updated') return `Bond quote updated for ${bankName}.`
+  if (action === 'quote_approved') return `Buyer approved ${bankName} quote.`
+  if (action === 'instruction_sent') return 'Finance instruction sent.'
+  if (action === 'stage_changed') return `Bond finance workflow moved to ${getBondHybridFinanceStageLabel(toStage)}.`
+  return fromStage && toStage
+    ? `Bond finance workflow moved from ${getBondHybridFinanceStageLabel(fromStage)} to ${getBondHybridFinanceStageLabel(toStage)}.`
+    : 'Bond finance workflow updated.'
+}
+
+async function logBondHybridWorkflowActivity(client, { transactionId, actorRole, message, eventType = 'BondHybridFinanceWorkflowUpdated', eventData = {} } = {}) {
+  if (!transactionId || !message) return
+  const activeProfile = await resolveActiveProfileContext(client)
+
+  await Promise.allSettled([
+    addTransactionDiscussionComment({
+      transactionId,
+      authorName: activeProfile.name || activeProfile.email || null,
+      authorRole: actorRole || activeProfile.role || 'bond_originator',
+      commentText: `[system][shared] ${message}`,
+      client,
+    }),
+    logTransactionEventIfPossible(client, {
+      transactionId,
+      eventType,
+      createdBy: activeProfile.userId || null,
+      createdByRole: actorRole || activeProfile.role || 'bond_originator',
+      eventData: {
+        source: 'transaction_finance_workflows',
+        message,
+        ...eventData,
+      },
+    }),
+  ])
+}
+
+async function notifyBondHybridWorkflowRoles(client, { transactionId, stage, message, eventType = 'BondHybridFinanceWorkflowUpdated' } = {}) {
+  const rolesByStage = {
+    applications_submitted: ['agent'],
+    quotes_received: ['agent'],
+    quote_approved: ['agent', 'attorney'],
+    instruction_sent: ['agent', 'attorney'],
+  }
+  const roleTypes = rolesByStage[stage] || []
+  if (!roleTypes.length) return []
+
+  return notifyRolesForTransaction(client, {
+    transactionId,
+    roleTypes,
+    title: 'Bond Finance Update',
+    message,
+    notificationType: 'workflow_updated',
+    eventType,
+    eventData: { workflowType: BOND_HYBRID_FINANCE_WORKFLOW_TYPE, stage },
+    dedupePrefix: `bond_hybrid_finance:${stage}`,
+  })
+}
+
+function assertBondHybridWorkflowEditable(workflow, activeProfile = {}, actorRole = '') {
+  if (!workflow || workflow.status !== 'completed') return
+  const normalizedRole = normalizeRoleType(actorRole || activeProfile.role || '')
+  if (['developer', 'internal_admin'].includes(normalizedRole)) return
+  throw new Error('This finance workflow is completed. Only an admin can override completed bond finance workflows.')
+}
+
+async function assertBondHybridStageRequirements(client, workflow, nextStage) {
+  if (!workflow?.id) return
+  const normalizedStage = normalizeBondHybridFinanceStage(nextStage)
+
+  if (normalizedStage === 'applications_submitted') {
+    const query = await client
+      .from('transaction_bond_applications')
+      .select('id, status')
+      .eq('workflow_id', workflow.id)
+      .eq('status', 'submitted')
+      .limit(1)
+    if (query.error) {
+      if (isMissingTableError(query.error, 'transaction_bond_applications') || isMissingSchemaError(query.error)) {
+        throw new Error('Add at least one submitted bank/lender application before moving to Applications Submitted.')
+      }
+      throw query.error
+    }
+    if (!(query.data || []).length) {
+      throw new Error('Add at least one submitted bank/lender application before moving to Applications Submitted.')
+    }
+  }
+
+  if (normalizedStage === 'quotes_received') {
+    const [applicationFeedback, quoteQuery] = await Promise.all([
+      client
+        .from('transaction_bond_applications')
+        .select('id, status')
+        .eq('workflow_id', workflow.id)
+        .in('status', ['feedback_received', 'quote_received', 'additional_documents_required', 'declined', 'approved', 'buyer_approved'])
+        .limit(1),
+      client.from('transaction_bond_quotes').select('id').eq('workflow_id', workflow.id).limit(1),
+    ])
+    if (applicationFeedback.error && !isMissingTableError(applicationFeedback.error, 'transaction_bond_applications')) throw applicationFeedback.error
+    if (quoteQuery.error && !isMissingTableError(quoteQuery.error, 'transaction_bond_quotes')) throw quoteQuery.error
+    if (!(applicationFeedback.data || []).length && !(quoteQuery.data || []).length) {
+      throw new Error('Add bank feedback or at least one quote before moving to Quotes Received.')
+    }
+  }
+
+  if (normalizedStage === 'quote_approved' || normalizedStage === 'instruction_sent') {
+    const approvedQuote = await client
+      .from('transaction_bond_quotes')
+      .select('id')
+      .eq('workflow_id', workflow.id)
+      .eq('quote_status', 'approved_by_buyer')
+      .limit(1)
+    if (approvedQuote.error) {
+      if (isMissingTableError(approvedQuote.error, 'transaction_bond_quotes') || isMissingSchemaError(approvedQuote.error)) {
+        throw new Error('Approve one buyer-selected quote before moving to Quote Approved.')
+      }
+      throw approvedQuote.error
+    }
+    if (!(approvedQuote.data || []).length) {
+      throw new Error('Approve one buyer-selected quote before moving to Quote Approved.')
+    }
+  }
+}
+
+export async function getTransactionFinanceWorkflow(transactionId, options = {}) {
+  const client = options.client || requireClient()
+  if (!transactionId) return null
+
+  let workflow = await fetchRawBondHybridWorkflow(client, transactionId, { createIfMissing: Boolean(options.createIfMissing) })
+  if (!workflow) return null
+
+  const [applicationsQuery, quotesQuery, eventsQuery] = await Promise.all([
+    client
+      .from('transaction_bond_applications')
+      .select('id, transaction_id, workflow_id, bank_name, status, submitted_at, feedback_received_at, reference_number, notes, created_by, updated_by, created_at, updated_at')
+      .eq('workflow_id', workflow.id)
+      .order('created_at', { ascending: true }),
+    client
+      .from('transaction_bond_quotes')
+      .select('id, transaction_id, workflow_id, bond_application_id, bank_name, quoted_amount, interest_rate, term_months, quote_status, quote_received_at, quote_expiry_at, approved_at, notes, created_by, updated_by, created_at, updated_at')
+      .eq('workflow_id', workflow.id)
+      .order('created_at', { ascending: true }),
+    client
+      .from('transaction_finance_workflow_events')
+      .select('id, workflow_id, from_stage, to_stage, event_type, notes, created_by, created_at')
+      .eq('workflow_id', workflow.id)
+      .order('created_at', { ascending: false })
+      .limit(100),
+  ])
+
+  for (const result of [applicationsQuery, quotesQuery, eventsQuery]) {
+    if (result.error) {
+      if (isMissingSchemaError(result.error)) return null
+      throw result.error
+    }
+  }
+
+  const profileIds = [
+    workflow.last_updated_by,
+    ...(applicationsQuery.data || []).flatMap((row) => [row.created_by, row.updated_by]),
+    ...(quotesQuery.data || []).flatMap((row) => [row.created_by, row.updated_by]),
+    ...(eventsQuery.data || []).map((row) => row.created_by),
+  ].filter(Boolean)
+  const profileById = await fetchProfilesByIds(client, profileIds)
+  const normalizedWorkflow = normalizeBondHybridWorkflowRow(workflow, profileById)
+  const applications = (applicationsQuery.data || []).map((row) => normalizeBondApplicationRow(row, profileById)).filter(Boolean)
+  const quotes = (quotesQuery.data || []).map((row) => normalizeBondQuoteRow(row, profileById)).filter(Boolean)
+  const events = (eventsQuery.data || []).map((row) => normalizeBondHybridWorkflowEventRow(row, profileById)).filter(Boolean)
+  const snapshot = {
+    workflow: normalizedWorkflow,
+    applications,
+    quotes,
+    events,
+  }
+
+  return {
+    ...snapshot,
+    steps: buildBondHybridFinanceStageSteps(snapshot),
+    summary: summarizeBondHybridFinanceWorkflow(snapshot),
+  }
+}
+
+export async function createOrGetBondHybridFinanceWorkflow(transactionId, options = {}) {
+  const client = options.client || requireClient()
+  if (!transactionId) throw new Error('Transaction is required.')
+
+  let transactionQuery = await client
+    .from('transactions')
+    .select('id, finance_type')
+    .eq('id', transactionId)
+    .maybeSingle()
+
+  if (transactionQuery.error) throw transactionQuery.error
+  if (!transactionQuery.data) throw new Error('Transaction was not found.')
+  if (!isBondFinanceType(transactionQuery.data.finance_type)) {
+    throw new Error('Bond / Hybrid finance workflow only applies to Bond or Hybrid transactions.')
+  }
+
+  const activeProfile = await resolveActiveProfileContext(client)
+  const insertPayload = {
+    transaction_id: transactionId,
+    workflow_type: BOND_HYBRID_FINANCE_WORKFLOW_TYPE,
+    current_stage: 'documents_received',
+    status: 'active',
+    last_updated_by: activeProfile.userId || null,
+    last_updated_at: new Date().toISOString(),
+  }
+
+  const insert = await client
+    .from('transaction_finance_workflows')
+    .insert(insertPayload)
+    .select('id, transaction_id, workflow_type, current_stage, status, last_updated_by, last_updated_at, completed_at, created_at, updated_at')
+    .single()
+
+  if (insert.error) {
+    if (insert.error.code === '23505' || /duplicate key/i.test(String(insert.error.message || ''))) {
+      const existing = await client
+        .from('transaction_finance_workflows')
+        .select('id, transaction_id, workflow_type, current_stage, status, last_updated_by, last_updated_at, completed_at, created_at, updated_at')
+        .eq('transaction_id', transactionId)
+        .eq('workflow_type', BOND_HYBRID_FINANCE_WORKFLOW_TYPE)
+        .maybeSingle()
+      if (existing.error) throw existing.error
+      return existing.data || null
+    }
+    if (isMissingTableError(insert.error, 'transaction_finance_workflows') || isMissingSchemaError(insert.error)) {
+      return null
+    }
+    throw insert.error
+  }
+
+  return insert.data
+}
+
+export async function updateBondHybridFinanceStage(transactionId, nextStage, options = {}) {
+  const client = options.client || requireClient()
+  const actorRole = options.actorRole || null
+  const normalizedNextStage = normalizeBondHybridFinanceStage(nextStage)
+  const activeProfile = await resolveActiveProfileContext(client)
+  const workflow = await fetchRawBondHybridWorkflow(client, transactionId, { createIfMissing: true })
+  if (!workflow?.id) throw new Error('Bond / Hybrid finance workflow is not available.')
+
+  assertBondHybridWorkflowEditable(workflow, activeProfile, actorRole)
+  await assertBondHybridStageRequirements(client, workflow, normalizedNextStage)
+
+  const fromStage = normalizeBondHybridFinanceStage(workflow.current_stage)
+  const isCompleted = normalizedNextStage === 'instruction_sent'
+  const update = await client
+    .from('transaction_finance_workflows')
+    .update({
+      current_stage: normalizedNextStage,
+      status: isCompleted ? 'completed' : 'active',
+      completed_at: isCompleted ? new Date().toISOString() : null,
+      last_updated_by: activeProfile.userId || null,
+      last_updated_at: new Date().toISOString(),
+    })
+    .eq('id', workflow.id)
+    .select('id, transaction_id, workflow_type, current_stage, status, last_updated_by, last_updated_at, completed_at, created_at, updated_at')
+    .single()
+
+  if (update.error) throw update.error
+
+  if (fromStage !== normalizedNextStage) {
+    await insertBondHybridWorkflowEvent(client, {
+      workflow: update.data,
+      fromStage,
+      toStage: normalizedNextStage,
+      eventType: isCompleted ? 'instruction_sent' : 'stage_changed',
+      notes: options.notes || null,
+      createdBy: activeProfile.userId || null,
+    })
+  }
+
+  const stageLabel = getBondHybridFinanceStageLabel(normalizedNextStage)
+  const transactionFinanceStatusUpdate = await client
+    .from('transactions')
+    .update({
+      finance_status: stageLabel,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', transactionId)
+  if (
+    transactionFinanceStatusUpdate.error &&
+    !isMissingColumnError(transactionFinanceStatusUpdate.error, 'finance_status') &&
+    !isMissingSchemaError(transactionFinanceStatusUpdate.error)
+  ) {
+    throw transactionFinanceStatusUpdate.error
+  }
+
+  await upsertTransactionLifecycleWorkflow(client, {
+    transactionId,
+    currentStage: isCompleted ? 'transfer' : 'finance',
+    status: 'active',
+    actorUserId: activeProfile.userId || null,
+    source: 'bond_hybrid_finance_workflow',
+    note: isCompleted
+      ? 'Bond / hybrid finance workflow reached Instruction Sent.'
+      : `Bond / hybrid finance workflow moved to ${stageLabel}.`,
+  })
+
+  const message = buildBondHybridWorkflowActivityMessage({
+    action: isCompleted ? 'instruction_sent' : 'stage_changed',
+    fromStage,
+    toStage: normalizedNextStage,
+  })
+  await logBondHybridWorkflowActivity(client, {
+    transactionId,
+    actorRole,
+    message,
+    eventType: isCompleted ? 'BondHybridFinanceInstructionSent' : 'BondHybridFinanceWorkflowUpdated',
+    eventData: {
+      workflowId: workflow.id,
+      fromStage,
+      toStage: normalizedNextStage,
+    },
+  })
+  await notifyBondHybridWorkflowRoles(client, {
+    transactionId,
+    stage: normalizedNextStage,
+    message,
+    eventType: isCompleted ? 'BondHybridFinanceInstructionSent' : 'BondHybridFinanceWorkflowUpdated',
+  })
+
+  return getTransactionFinanceWorkflow(transactionId, { client })
+}
+
+export async function addBondApplication(transactionId, payload = {}, options = {}) {
+  const client = options.client || requireClient()
+  const actorRole = options.actorRole || null
+  const activeProfile = await resolveActiveProfileContext(client)
+  const workflow = await fetchRawBondHybridWorkflow(client, transactionId, { createIfMissing: true })
+  if (!workflow?.id) throw new Error('Bond / Hybrid finance workflow is not available.')
+  assertBondHybridWorkflowEditable(workflow, activeProfile, actorRole)
+
+  const bankName = normalizeNullableText(payload.bankName || payload.bank_name)
+  if (!bankName) throw new Error('Bank / lender name is required.')
+  const status = normalizeBondHybridApplicationStatus(payload.status || 'submitted')
+  const submittedAt = normalizeBondWorkflowPayloadDate(payload.submittedAt || payload.submitted_at) || (status === 'submitted' ? new Date().toISOString() : null)
+  const feedbackReceivedAt = normalizeBondWorkflowPayloadDate(payload.feedbackReceivedAt || payload.feedback_received_at)
+
+  const insert = await client
+    .from('transaction_bond_applications')
+    .insert({
+      transaction_id: transactionId,
+      workflow_id: workflow.id,
+      bank_name: bankName,
+      status,
+      submitted_at: submittedAt,
+      feedback_received_at: feedbackReceivedAt,
+      reference_number: normalizeNullableText(payload.referenceNumber || payload.reference_number),
+      notes: normalizeNullableText(payload.notes),
+      created_by: activeProfile.userId || null,
+      updated_by: activeProfile.userId || null,
+    })
+    .select('id, transaction_id, workflow_id, bank_name, status, submitted_at, feedback_received_at, reference_number, notes, created_by, updated_by, created_at, updated_at')
+    .single()
+
+  if (insert.error) throw insert.error
+  await insertBondHybridWorkflowEvent(client, {
+    workflow,
+    fromStage: workflow.current_stage,
+    toStage: workflow.current_stage,
+    eventType: 'bank_submission_added',
+    notes: `${bankName}: ${BOND_HYBRID_APPLICATION_STATUS_LABELS[status] || status}`,
+    createdBy: activeProfile.userId || null,
+  })
+  await logBondHybridWorkflowActivity(client, {
+    transactionId,
+    actorRole,
+    message: buildBondHybridWorkflowActivityMessage({ action: 'application_added', bankName }),
+    eventType: 'BondHybridFinanceApplicationUpdated',
+    eventData: { workflowId: workflow.id, applicationId: insert.data.id, bankName, status },
+  })
+
+  return getTransactionFinanceWorkflow(transactionId, { client })
+}
+
+export async function updateBondApplication(applicationId, payload = {}, options = {}) {
+  const client = options.client || requireClient()
+  const actorRole = options.actorRole || null
+  const activeProfile = await resolveActiveProfileContext(client)
+  if (!applicationId) throw new Error('Bond application is required.')
+
+  const existing = await client
+    .from('transaction_bond_applications')
+    .select('id, transaction_id, workflow_id, bank_name, status')
+    .eq('id', applicationId)
+    .maybeSingle()
+  if (existing.error) throw existing.error
+  if (!existing.data) throw new Error('Bond application was not found.')
+
+  const workflow = await fetchRawBondHybridWorkflow(client, existing.data.transaction_id, { createIfMissing: false })
+  assertBondHybridWorkflowEditable(workflow, activeProfile, actorRole)
+
+  const nextStatus = payload.status ? normalizeBondHybridApplicationStatus(payload.status) : existing.data.status
+  const updatePayload = {
+    updated_by: activeProfile.userId || null,
+  }
+  if (payload.bankName !== undefined || payload.bank_name !== undefined) updatePayload.bank_name = normalizeNullableText(payload.bankName || payload.bank_name)
+  if (payload.status !== undefined) updatePayload.status = nextStatus
+  if (payload.submittedAt !== undefined || payload.submitted_at !== undefined) updatePayload.submitted_at = normalizeBondWorkflowPayloadDate(payload.submittedAt || payload.submitted_at)
+  if (payload.feedbackReceivedAt !== undefined || payload.feedback_received_at !== undefined) updatePayload.feedback_received_at = normalizeBondWorkflowPayloadDate(payload.feedbackReceivedAt || payload.feedback_received_at)
+  if (payload.referenceNumber !== undefined || payload.reference_number !== undefined) updatePayload.reference_number = normalizeNullableText(payload.referenceNumber || payload.reference_number)
+  if (payload.notes !== undefined) updatePayload.notes = normalizeNullableText(payload.notes)
+  if (['feedback_received', 'quote_received', 'additional_documents_required', 'declined', 'approved', 'buyer_approved'].includes(nextStatus) && !updatePayload.feedback_received_at) {
+    updatePayload.feedback_received_at = new Date().toISOString()
+  }
+
+  const update = await client
+    .from('transaction_bond_applications')
+    .update(updatePayload)
+    .eq('id', applicationId)
+    .select('id, transaction_id, workflow_id, bank_name, status, submitted_at, feedback_received_at, reference_number, notes, created_by, updated_by, created_at, updated_at')
+    .single()
+  if (update.error) throw update.error
+
+  await insertBondHybridWorkflowEvent(client, {
+    workflow,
+    fromStage: workflow.current_stage,
+    toStage: workflow.current_stage,
+    eventType: ['feedback_received', 'quote_received', 'additional_documents_required', 'declined', 'approved', 'buyer_approved'].includes(nextStatus)
+      ? 'bank_feedback_added'
+      : 'bank_submission_added',
+    notes: `${update.data.bank_name}: ${BOND_HYBRID_APPLICATION_STATUS_LABELS[nextStatus] || nextStatus}`,
+    createdBy: activeProfile.userId || null,
+  })
+  await logBondHybridWorkflowActivity(client, {
+    transactionId: existing.data.transaction_id,
+    actorRole,
+    message: buildBondHybridWorkflowActivityMessage({ action: 'application_updated', bankName: update.data.bank_name }),
+    eventType: 'BondHybridFinanceApplicationUpdated',
+    eventData: { workflowId: workflow.id, applicationId, bankName: update.data.bank_name, status: nextStatus },
+  })
+
+  return getTransactionFinanceWorkflow(existing.data.transaction_id, { client })
+}
+
+export async function addBondQuote(transactionId, payload = {}, options = {}) {
+  const client = options.client || requireClient()
+  const actorRole = options.actorRole || null
+  const activeProfile = await resolveActiveProfileContext(client)
+  const workflow = await fetchRawBondHybridWorkflow(client, transactionId, { createIfMissing: true })
+  if (!workflow?.id) throw new Error('Bond / Hybrid finance workflow is not available.')
+  assertBondHybridWorkflowEditable(workflow, activeProfile, actorRole)
+
+  const bankName = normalizeNullableText(payload.bankName || payload.bank_name)
+  if (!bankName) throw new Error('Bank / lender name is required.')
+  const quoteStatus = normalizeBondHybridQuoteStatus(payload.quoteStatus || payload.quote_status || 'received')
+
+  const insert = await client
+    .from('transaction_bond_quotes')
+    .insert({
+      transaction_id: transactionId,
+      workflow_id: workflow.id,
+      bond_application_id: normalizeNullableText(payload.bondApplicationId || payload.bond_application_id),
+      bank_name: bankName,
+      quoted_amount: normalizeBondWorkflowPayloadNumber(payload.quotedAmount ?? payload.quoted_amount),
+      interest_rate: normalizeBondWorkflowPayloadNumber(payload.interestRate ?? payload.interest_rate),
+      term_months: normalizeBondWorkflowPayloadInteger(payload.termMonths ?? payload.term_months),
+      quote_status: quoteStatus,
+      quote_received_at: normalizeBondWorkflowPayloadDate(payload.quoteReceivedAt || payload.quote_received_at) || new Date().toISOString(),
+      quote_expiry_at: normalizeBondWorkflowPayloadDate(payload.quoteExpiryAt || payload.quote_expiry_at),
+      approved_at: quoteStatus === 'approved_by_buyer' ? new Date().toISOString() : null,
+      notes: normalizeNullableText(payload.notes),
+      created_by: activeProfile.userId || null,
+      updated_by: activeProfile.userId || null,
+    })
+    .select('id, transaction_id, workflow_id, bond_application_id, bank_name, quoted_amount, interest_rate, term_months, quote_status, quote_received_at, quote_expiry_at, approved_at, notes, created_by, updated_by, created_at, updated_at')
+    .single()
+
+  if (insert.error) throw insert.error
+  await insertBondHybridWorkflowEvent(client, {
+    workflow,
+    fromStage: workflow.current_stage,
+    toStage: workflow.current_stage,
+    eventType: 'quote_added',
+    notes: `${bankName}: ${BOND_HYBRID_QUOTE_STATUS_LABELS[quoteStatus] || quoteStatus}`,
+    createdBy: activeProfile.userId || null,
+  })
+  await logBondHybridWorkflowActivity(client, {
+    transactionId,
+    actorRole,
+    message: buildBondHybridWorkflowActivityMessage({ action: 'quote_added', bankName }),
+    eventType: 'BondHybridFinanceQuoteUpdated',
+    eventData: { workflowId: workflow.id, quoteId: insert.data.id, bankName, quoteStatus },
+  })
+
+  if (quoteStatus === 'approved_by_buyer') {
+    return approveBondQuote(insert.data.id, { client, actorRole })
+  }
+
+  return getTransactionFinanceWorkflow(transactionId, { client })
+}
+
+export async function updateBondQuote(quoteId, payload = {}, options = {}) {
+  const client = options.client || requireClient()
+  const actorRole = options.actorRole || null
+  const activeProfile = await resolveActiveProfileContext(client)
+  if (!quoteId) throw new Error('Bond quote is required.')
+
+  const existing = await client
+    .from('transaction_bond_quotes')
+    .select('id, transaction_id, workflow_id, bank_name, quote_status')
+    .eq('id', quoteId)
+    .maybeSingle()
+  if (existing.error) throw existing.error
+  if (!existing.data) throw new Error('Bond quote was not found.')
+
+  const workflow = await fetchRawBondHybridWorkflow(client, existing.data.transaction_id, { createIfMissing: false })
+  assertBondHybridWorkflowEditable(workflow, activeProfile, actorRole)
+  const quoteStatus = payload.quoteStatus || payload.quote_status ? normalizeBondHybridQuoteStatus(payload.quoteStatus || payload.quote_status) : existing.data.quote_status
+  if (quoteStatus === 'approved_by_buyer') {
+    return approveBondQuote(quoteId, { client, actorRole })
+  }
+
+  const updatePayload = {
+    updated_by: activeProfile.userId || null,
+  }
+  if (payload.bondApplicationId !== undefined || payload.bond_application_id !== undefined) updatePayload.bond_application_id = normalizeNullableText(payload.bondApplicationId || payload.bond_application_id)
+  if (payload.bankName !== undefined || payload.bank_name !== undefined) updatePayload.bank_name = normalizeNullableText(payload.bankName || payload.bank_name)
+  if (payload.quotedAmount !== undefined || payload.quoted_amount !== undefined) updatePayload.quoted_amount = normalizeBondWorkflowPayloadNumber(payload.quotedAmount ?? payload.quoted_amount)
+  if (payload.interestRate !== undefined || payload.interest_rate !== undefined) updatePayload.interest_rate = normalizeBondWorkflowPayloadNumber(payload.interestRate ?? payload.interest_rate)
+  if (payload.termMonths !== undefined || payload.term_months !== undefined) updatePayload.term_months = normalizeBondWorkflowPayloadInteger(payload.termMonths ?? payload.term_months)
+  if (payload.quoteStatus !== undefined || payload.quote_status !== undefined) updatePayload.quote_status = quoteStatus
+  if (payload.quoteReceivedAt !== undefined || payload.quote_received_at !== undefined) updatePayload.quote_received_at = normalizeBondWorkflowPayloadDate(payload.quoteReceivedAt || payload.quote_received_at)
+  if (payload.quoteExpiryAt !== undefined || payload.quote_expiry_at !== undefined) updatePayload.quote_expiry_at = normalizeBondWorkflowPayloadDate(payload.quoteExpiryAt || payload.quote_expiry_at)
+  if (payload.notes !== undefined) updatePayload.notes = normalizeNullableText(payload.notes)
+  if (quoteStatus !== 'approved_by_buyer') updatePayload.approved_at = null
+
+  const update = await client
+    .from('transaction_bond_quotes')
+    .update(updatePayload)
+    .eq('id', quoteId)
+    .select('id, transaction_id, workflow_id, bond_application_id, bank_name, quoted_amount, interest_rate, term_months, quote_status, quote_received_at, quote_expiry_at, approved_at, notes, created_by, updated_by, created_at, updated_at')
+    .single()
+  if (update.error) throw update.error
+
+  await logBondHybridWorkflowActivity(client, {
+    transactionId: existing.data.transaction_id,
+    actorRole,
+    message: buildBondHybridWorkflowActivityMessage({ action: 'quote_updated', bankName: update.data.bank_name }),
+    eventType: 'BondHybridFinanceQuoteUpdated',
+    eventData: { workflowId: workflow.id, quoteId, bankName: update.data.bank_name, quoteStatus },
+  })
+
+  return getTransactionFinanceWorkflow(existing.data.transaction_id, { client })
+}
+
+export async function approveBondQuote(quoteId, options = {}) {
+  const client = options.client || requireClient()
+  const actorRole = options.actorRole || null
+  const activeProfile = await resolveActiveProfileContext(client)
+  if (!quoteId) throw new Error('Bond quote is required.')
+
+  const quote = await client
+    .from('transaction_bond_quotes')
+    .select('id, transaction_id, workflow_id, bank_name')
+    .eq('id', quoteId)
+    .maybeSingle()
+  if (quote.error) throw quote.error
+  if (!quote.data) throw new Error('Bond quote was not found.')
+
+  const workflow = await fetchRawBondHybridWorkflow(client, quote.data.transaction_id, { createIfMissing: false })
+  assertBondHybridWorkflowEditable(workflow, activeProfile, actorRole)
+
+  const clearExisting = await client
+    .from('transaction_bond_quotes')
+    .update({
+      quote_status: 'received',
+      approved_at: null,
+      updated_by: activeProfile.userId || null,
+    })
+    .eq('workflow_id', quote.data.workflow_id)
+    .eq('quote_status', 'approved_by_buyer')
+    .neq('id', quoteId)
+
+  if (clearExisting.error) throw clearExisting.error
+
+  const update = await client
+    .from('transaction_bond_quotes')
+    .update({
+      quote_status: 'approved_by_buyer',
+      approved_at: new Date().toISOString(),
+      updated_by: activeProfile.userId || null,
+    })
+    .eq('id', quoteId)
+    .select('id, transaction_id, workflow_id, bond_application_id, bank_name, quoted_amount, interest_rate, term_months, quote_status, quote_received_at, quote_expiry_at, approved_at, notes, created_by, updated_by, created_at, updated_at')
+    .single()
+  if (update.error) throw update.error
+
+  await insertBondHybridWorkflowEvent(client, {
+    workflow,
+    fromStage: workflow.current_stage,
+    toStage: workflow.current_stage,
+    eventType: 'quote_approved',
+    notes: `${quote.data.bank_name} quote approved by buyer.`,
+    createdBy: activeProfile.userId || null,
+  })
+
+  if (getBondHybridFinanceStageIndex(workflow.current_stage) < getBondHybridFinanceStageIndex('quote_approved')) {
+    await updateBondHybridFinanceStage(quote.data.transaction_id, 'quote_approved', { client, actorRole, notes: `${quote.data.bank_name} quote approved by buyer.` })
+  }
+
+  await logBondHybridWorkflowActivity(client, {
+    transactionId: quote.data.transaction_id,
+    actorRole,
+    message: buildBondHybridWorkflowActivityMessage({ action: 'quote_approved', bankName: quote.data.bank_name }),
+    eventType: 'BondHybridFinanceQuoteUpdated',
+    eventData: { workflowId: workflow.id, quoteId, bankName: quote.data.bank_name, quoteStatus: 'approved_by_buyer' },
+  })
+  await notifyBondHybridWorkflowRoles(client, {
+    transactionId: quote.data.transaction_id,
+    stage: 'quote_approved',
+    message: 'Buyer has approved a finance quote.',
+    eventType: 'BondHybridFinanceQuoteUpdated',
+  })
+
+  return getTransactionFinanceWorkflow(quote.data.transaction_id, { client })
+}
+
+export async function markFinanceInstructionSent(transactionId, options = {}) {
+  return updateBondHybridFinanceStage(transactionId, 'instruction_sent', {
+    ...options,
+    notes: options.notes || 'Finance instruction sent.',
+  })
 }
 
 function normalizeAppointmentVisibilityScope(value = '') {
@@ -10842,6 +11837,15 @@ export async function markTransactionRegistered({
     throw updateResult.error
   }
 
+  await upsertTransactionLifecycleWorkflow(client, {
+    transactionId,
+    currentStage: 'registration',
+    status: 'active',
+    actorUserId: actorProfile.userId || null,
+    source: 'registration_flow',
+    note: 'Transaction marked as Registered.',
+  })
+
   await logTransactionEventIfPossible(client, {
     transactionId,
     eventType: 'TransactionStageChanged',
@@ -10935,6 +11939,15 @@ export async function undoTransactionRegistration({
     }
     throw updateResult.error
   }
+
+  await upsertTransactionLifecycleWorkflow(client, {
+    transactionId,
+    currentStage: 'transfer',
+    status: 'active',
+    actorUserId: actorProfile.userId || null,
+    source: 'registration_flow',
+    note: reversalReason,
+  })
 
   await logTransactionEventIfPossible(client, {
     transactionId,
@@ -11064,6 +12077,15 @@ export async function markTransactionCompleted(transactionId) {
     }
     throw updateResult.error
   }
+
+  await upsertTransactionLifecycleWorkflow(client, {
+    transactionId,
+    currentStage: 'registration',
+    status: 'completed',
+    actorUserId: actorProfile.userId || null,
+    source: 'completion_flow',
+    note: 'Transaction marked as completed.',
+  })
 
   await logTransactionEventIfPossible(client, {
     transactionId,
@@ -22125,6 +23147,7 @@ export async function fetchUnitDetail(unitId) {
     buyer,
   })
   let transactionSubprocesses = buildDefaultSubprocessState(transaction?.id || null)
+  let transactionFinanceWorkflow = null
   let onboarding = null
   let transactionRequiredDocuments = []
   let transactionParticipants = []
@@ -22184,6 +23207,12 @@ export async function fetchUnitDetail(unitId) {
     timer.mark('workflow_query_start')
     transactionSubprocesses = await ensureTransactionSubprocesses(client, transaction.id)
     transactionSubprocesses = await syncTransactionSubprocessOwners(client, transaction, transactionSubprocesses)
+    if (isBondFinanceType(transaction.finance_type)) {
+      transactionFinanceWorkflow = await getTransactionFinanceWorkflow(transaction.id, {
+        client,
+        createIfMissing: true,
+      })
+    }
     timer.mark('workflow_query_end')
 
     try {
@@ -22422,6 +23451,7 @@ export async function fetchUnitDetail(unitId) {
     handover,
     occupationalRent,
     transactionSubprocesses,
+    transactionFinanceWorkflow,
     onboarding,
     onboardingFormData,
     purchaserType: normalizePurchaserType(transaction?.purchaser_type),
@@ -26186,6 +27216,14 @@ async function advanceTransactionMainStageIfNeeded(
       throw unitUpdate.error
     }
   }
+
+  await upsertTransactionLifecycleWorkflow(client, {
+    transactionId,
+    currentStage: normalizeTransactionLifecycleStage(normalizedTargetMainStage),
+    status: 'active',
+    source,
+    note: normalizeNullableText(comment || nextAction),
+  })
 
   await logTransactionEventIfPossible(client, {
     transactionId,

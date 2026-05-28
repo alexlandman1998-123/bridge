@@ -33,6 +33,7 @@ import ClientDocumentCentre from '../components/client-portal/documents/ClientDo
 import ClientAppointmentsSection from '../components/client-portal/appointments/ClientAppointmentsSection'
 import SellerOffersPage from '../components/client-portal/offers/SellerOffersPage'
 import ProgressTimeline from '../components/ProgressTimeline'
+import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import AttorneyFirmRolePlayerCard from '../components/attorney/branding/AttorneyFirmRolePlayerCard'
 import {
   buildClientJourney,
@@ -5919,10 +5920,10 @@ function ClientPortal() {
                       </span>
                     </div>
                     <div className="mt-3">
-                      <ProgressTimeline
-                        currentStage={MAIN_STAGE_LABELS[mainStage]}
-                        stages={MAIN_PROCESS_STAGES.map((stage) => MAIN_STAGE_LABELS[stage])}
-                        progressPercent={progressPercent}
+                      <TransactionLifecycleProgress
+                        transaction={portal?.transaction}
+                        mainStage={mainStage}
+                        subprocesses={portal?.subprocesses || []}
                         compact
                         premium
                         framed={false}

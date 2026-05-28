@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import ProgressTimeline from '../components/ProgressTimeline'
+import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import TransactionProgressPanel from '../components/TransactionProgressPanel'
 import { financeTypeShortLabel, normalizeFinanceType } from '../core/transactions/financeType'
 import { MAIN_STAGE_LABELS, STAGES, getClientStageExplainer, getMainStageFromDetailedStage } from '../core/transactions/stageConfig'
@@ -1311,7 +1311,12 @@ function ExternalTransactionPortal() {
               <p>One timeline everyone can trust, from reservation to registration.</p>
             </div>
           </div>
-          <ProgressTimeline stage={safePortal.stage} />
+          <TransactionLifecycleProgress
+            transaction={safePortal.transaction}
+            mainStage={mainStage}
+            subprocesses={safePortal.subprocesses || []}
+            framed={false}
+          />
         </section>
 
         {error ? <p className="status-message error">{error}</p> : null}
@@ -1578,6 +1583,7 @@ function ExternalTransactionPortal() {
             title="Transaction Progress"
             subtitle="A client-friendly view of the major journey and the latest workspace updates."
             mainStage={mainStage}
+            progressContext={{ transaction: safePortal.transaction }}
             subprocesses={safePortal.subprocesses || []}
             comments={recentUpdates.map((note) => {
               const parsed = parseUpdate(note)

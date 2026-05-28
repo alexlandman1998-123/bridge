@@ -5,6 +5,7 @@ import {
   BadgeDollarSign,
   Building2,
   CalendarClock,
+  CheckCircle2,
   ChevronRight,
   CircleDollarSign,
   Clock3,
@@ -15,6 +16,7 @@ import {
   MoreHorizontal,
   PhoneCall,
   Scale,
+  Send,
   StickyNote,
   UploadCloud,
   UserRound,
@@ -29,8 +31,10 @@ import ProgressTimeline from '../components/ProgressTimeline'
 import SalesWorkflowLane from '../components/SalesWorkflowLane'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import StageAgingChip from '../components/StageAgingChip'
+import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import TransactionWorkspaceHeader from '../components/TransactionWorkspaceHeader'
 import TransactionWorkspaceMenu from '../components/TransactionWorkspaceMenu'
+import TransactionBondHybridFinanceWorkflowPanel from '../components/TransactionBondHybridFinanceWorkflowPanel'
 import TransferWorkflowLane from '../components/TransferWorkflowLane'
 import LegalDocumentWorkspace from '../components/documents/LegalDocumentWorkspace'
 import Button from '../components/ui/Button'
@@ -43,7 +47,10 @@ import {
   FINANCE_MANAGED_BY_OPTIONS,
   ONBOARDING_STATUSES,
   TRANSACTION_ROLE_LABELS,
+  addBondApplication,
+  addBondQuote,
   addTransactionDiscussionComment,
+  approveBondQuote,
   completeTransactionSubprocess,
   createTransactionDocumentRequests,
   createWorkspaceAlteration,
@@ -59,6 +66,9 @@ import {
   saveTransactionClientInformation,
   sendReservationDepositRequest,
   signOffClientIssue,
+  markFinanceInstructionSent,
+  updateBondApplication,
+  updateBondHybridFinanceStage,
   updateTransactionMainStage,
   updateDocumentClientVisibility,
   updateOtpDocumentWorkflowState,
@@ -2255,6 +2265,7 @@ function UnitDetail() {
   const [financeActionLoading, setFinanceActionLoading] = useState('')
   const [transferActionLoading, setTransferActionLoading] = useState('')
   const [bondActionLoading, setBondActionLoading] = useState('')
+  const [bondHybridFinanceActionLoading, setBondHybridFinanceActionLoading] = useState('')
   const [clientInfoSavedAt, setClientInfoSavedAt] = useState('')
   const purchaserTypeOptions = getPurchaserTypeOptions()
   const discussionPanelRef = useRef(null)
@@ -2577,7 +2588,7 @@ function UnitDetail() {
     }
   }
 
-  function openStageEditor(targetStage) {
+  function _openStageEditor(targetStage) {
     const transitionBlockers = stageProgressModel?.getTransitionBlockers?.(targetStage) || []
     if (transitionBlockers.length) {
       const targetLabel = MAIN_STAGE_LABELS[targetStage] || targetStage
@@ -4166,6 +4177,132 @@ function UnitDetail() {
     }
   }
 
+  async function handleBondHybridFinanceStage(stageKey) {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for bond finance workflow updates.')
+      return
+    }
+
+    try {
+      setBondHybridFinanceActionLoading(stageKey)
+      setError('')
+      const result = await updateBondHybridFinanceStage(transaction.id, stageKey, {
+        actorRole: effectiveEditorRole,
+      })
+      setDetail((previous) => previous ? { ...previous, transactionFinanceWorkflow: result } : previous)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (workflowError) {
+      setError(workflowError?.message || 'Unable to update bond finance workflow.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  async function handleAddBondHybridApplication(payload) {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for bond applications.')
+      return
+    }
+
+    try {
+      setBondHybridFinanceActionLoading('add_application')
+      setError('')
+      const result = await addBondApplication(transaction.id, payload, {
+        actorRole: effectiveEditorRole,
+      })
+      setDetail((previous) => previous ? { ...previous, transactionFinanceWorkflow: result } : previous)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (applicationError) {
+      setError(applicationError?.message || 'Unable to add bank application.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  async function handleUpdateBondHybridApplication(applicationId, payload) {
+    if (!applicationId) return
+
+    try {
+      setBondHybridFinanceActionLoading(`application_${applicationId}`)
+      setError('')
+      const result = await updateBondApplication(applicationId, payload, {
+        actorRole: effectiveEditorRole,
+      })
+      setDetail((previous) => previous ? { ...previous, transactionFinanceWorkflow: result } : previous)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (applicationError) {
+      setError(applicationError?.message || 'Unable to update bank application.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  async function handleAddBondHybridQuote(payload) {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for bond quotes.')
+      return
+    }
+
+    try {
+      setBondHybridFinanceActionLoading('add_quote')
+      setError('')
+      const result = await addBondQuote(transaction.id, payload, {
+        actorRole: effectiveEditorRole,
+      })
+      setDetail((previous) => previous ? { ...previous, transactionFinanceWorkflow: result } : previous)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (quoteError) {
+      setError(quoteError?.message || 'Unable to add bond quote.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  async function handleApproveBondHybridQuote(quoteId) {
+    if (!quoteId) return
+
+    try {
+      setBondHybridFinanceActionLoading(`quote_${quoteId}`)
+      setError('')
+      const result = await approveBondQuote(quoteId, {
+        actorRole: effectiveEditorRole,
+      })
+      setDetail((previous) => previous ? { ...previous, transactionFinanceWorkflow: result } : previous)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (quoteError) {
+      setError(quoteError?.message || 'Unable to approve bond quote.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  async function handleMarkBondHybridInstructionSent() {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for finance instruction.')
+      return
+    }
+
+    try {
+      setBondHybridFinanceActionLoading('instruction_sent')
+      setError('')
+      const result = await markFinanceInstructionSent(transaction.id, {
+        actorRole: effectiveEditorRole,
+      })
+      setDetail((previous) => previous ? { ...previous, transactionFinanceWorkflow: result } : previous)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (instructionError) {
+      setError(instructionError?.message || 'Unable to mark finance instruction sent.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
   function handleOpenClientPortalLink() {
     if (!clientPortalLink?.token) {
       setError('Client portal link is not available yet for this transaction.')
@@ -4237,6 +4374,7 @@ function UnitDetail() {
     alterationRequests,
     developmentSettings,
     transactionSubprocesses,
+    transactionFinanceWorkflow,
     mainStage,
     onboarding,
     purchaserTypeLabel,
@@ -4596,6 +4734,21 @@ function UnitDetail() {
   const activeFinanceType = normalizeFinanceType(transaction?.finance_type || stageForm.finance_type || 'cash')
   const isBondOrHybridFinance = activeFinanceType === 'bond' || activeFinanceType === 'combination'
   const canViewBondWorkspaceTab = ['developer', 'agent'].includes(workspaceRole) && isBondOrHybridFinance
+  const bondHybridFinanceSummary = transactionFinanceWorkflow?.summary || null
+  const bondHybridFinanceWorkflowPanel = isBondOrHybridFinance && transactionFinanceWorkflow ? (
+    <TransactionBondHybridFinanceWorkflowPanel
+      workflowData={transactionFinanceWorkflow}
+      canEdit={canEditFinanceWorkflowLane}
+      variant={effectiveEditorRole === 'bond_originator' ? 'originator' : 'agent'}
+      loadingAction={bondHybridFinanceActionLoading}
+      onAdvanceStage={(stageKey) => void handleBondHybridFinanceStage(stageKey)}
+      onAddApplication={(payload) => void handleAddBondHybridApplication(payload)}
+      onUpdateApplication={(applicationId, payload) => void handleUpdateBondHybridApplication(applicationId, payload)}
+      onAddQuote={(payload) => void handleAddBondHybridQuote(payload)}
+      onApproveQuote={(quoteId) => void handleApproveBondHybridQuote(quoteId)}
+      onInstructionSent={() => void handleMarkBondHybridInstructionSent()}
+    />
+  ) : null
   const onboardingBondApplication =
     onboardingFormData?.formData?.bond_application &&
     typeof onboardingFormData.formData.bond_application === 'object' &&
@@ -4901,13 +5054,23 @@ function UnitDetail() {
       ? targetRegistrationLabel
       : 'No due date'
   const nextActionPriority = matterHealthLabel === 'Attention' ? 'High' : matterHealthLabel === 'Waiting' ? 'Medium' : 'Normal'
-  const agentMetricCards = [
-    { label: 'Purchase Price', value: currency.format(purchasePriceValue || 0), subtext: unit?.status ? toTitleLabel(unit.status) : 'Transaction value', icon: CircleDollarSign },
-    { label: 'Finance Type', value: financeLabel === 'n/a' ? 'Not set' : toTitleLabel(financeLabel), subtext: stageForm.finance_managed_by ? toTitleLabel(stageForm.finance_managed_by) : 'Funding route', icon: Landmark },
-    { label: 'Bond Amount', value: bondAmountLabel, subtext: isBondOrHybridFinance ? 'Bond finance' : 'Cash transaction', icon: BadgeDollarSign },
-    { label: 'Deposit', value: depositAmountLabel, subtext: reservationRequired ? reservationStatusLabel : 'Deposit captured', icon: Building2 },
-    { label: 'Target Registration', value: targetRegistrationLabel, subtext: formatTransactionAge(transaction?.created_at || transaction?.updated_at), icon: CalendarClock },
-  ]
+  const agentMetricCards = isBondOrHybridFinance
+    ? [
+        { label: 'Finance Type', value: activeFinanceType === 'combination' ? 'Hybrid' : 'Bond', subtext: 'Bond / Hybrid', icon: Landmark },
+        { label: 'Finance Stage', value: bondHybridFinanceSummary?.currentStageLabel || 'Not started', subtext: 'Shared workflow', icon: UploadCloud },
+        { label: 'Bond Originator', value: stageForm.bond_originator || transaction?.bond_originator || 'Not assigned', subtext: stageForm.assigned_bond_originator_email || transaction?.assigned_bond_originator_email || 'No email', icon: UserRound },
+        { label: 'Submitted Banks', value: String(bondHybridFinanceSummary?.submittedBanksCount ?? 0), subtext: 'Applications captured', icon: Landmark },
+        { label: 'Quotes Received', value: String(bondHybridFinanceSummary?.quotesReceivedCount ?? 0), subtext: 'Feedback and quotes', icon: BadgeDollarSign },
+        { label: 'Approved Bank', value: bondHybridFinanceSummary?.approvedBank || 'Not approved yet', subtext: 'Buyer-selected quote', icon: CheckCircle2 },
+        { label: 'Instruction Sent', value: bondHybridFinanceSummary?.instructionSent ? 'Yes' : 'No', subtext: bondHybridFinanceSummary?.instructionSent ? 'Ready for attorney workflow' : 'Pending instruction', icon: Send },
+      ]
+    : [
+        { label: 'Purchase Price', value: currency.format(purchasePriceValue || 0), subtext: unit?.status ? toTitleLabel(unit.status) : 'Transaction value', icon: CircleDollarSign },
+        { label: 'Finance Type', value: financeLabel === 'n/a' ? 'Not set' : toTitleLabel(financeLabel), subtext: stageForm.finance_managed_by ? toTitleLabel(stageForm.finance_managed_by) : 'Funding route', icon: Landmark },
+        { label: 'Bond Amount', value: bondAmountLabel, subtext: 'Cash transaction', icon: BadgeDollarSign },
+        { label: 'Deposit', value: depositAmountLabel, subtext: reservationRequired ? reservationStatusLabel : 'Deposit captured', icon: Building2 },
+        { label: 'Target Registration', value: targetRegistrationLabel, subtext: formatTransactionAge(transaction?.created_at || transaction?.updated_at), icon: CalendarClock },
+      ]
   const agentQuickActions = [
     {
       label: 'Request Documents',
@@ -5616,39 +5779,19 @@ function UnitDetail() {
           <>
             {agentMetricSection}
             {workspaceNavigationSection}
-            <section className="rounded-[22px] border border-[#dfe8f2] bg-white px-4 py-4 shadow-[0_12px_26px_rgba(15,23,42,0.04)] md:px-5">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8496ab]">Current Stage Progress</span>
-                  <h3 className="mt-1 text-[1.04rem] font-semibold tracking-[-0.025em] text-[#142132]">{mainStageLabel}</h3>
-                </div>
-                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${matterHealthTone}`}>
-                  {stageProgressModel.totalProgressPercent}% complete
-                </span>
-              </div>
-              <div className="overflow-x-auto pb-1">
-                <div className="min-w-[760px]">
-                  <ProgressTimeline
-                    currentStage={mainStage}
-                    stages={MAIN_PROCESS_STAGES}
-                    stageLabelMap={MAIN_STAGE_LABELS}
-                    framed={false}
-                    compact
-                    premium
-                    progressPercent={stageProgressModel.totalProgressPercent}
-                    blockersByStage={stageProgressModel.stepBlockersByStage}
-                    helperText={
-                      stageProgressModel.currentStageBlockers.length
-                        ? `Blockers: ${stageProgressModel.currentStageBlockers.slice(0, 2).join(' • ')}`
-                        : `${mainStageLabel} is currently healthy.`
-                    }
-                    lastUpdatedLabel={stageProgressModel.latestUpdatedLabel}
-                    onStageClick={canEditMainStage ? (stageOption) => openStageEditor(stageOption) : null}
-                    isStageSelectable={(stageOption) => stageOption !== mainStage && stageProgressModel.canMoveTo(stageOption)}
-                  />
-                </div>
-              </div>
-            </section>
+            <TransactionLifecycleProgress
+              transaction={transaction}
+              mainStage={mainStage}
+              subprocesses={transactionSubprocesses || []}
+              framed
+              compact
+              premium
+              helperText={
+                stageProgressModel.currentStageBlockers.length
+                  ? `Blockers: ${stageProgressModel.currentStageBlockers.slice(0, 2).join(' • ')}`
+                  : `${mainStageLabel} is currently healthy.`
+              }
+            />
           </>
         ) : null}
 
@@ -5656,21 +5799,16 @@ function UnitDetail() {
           <section className="rounded-[28px] border border-[#e5e7eb] bg-[#f7f8fa] p-6 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
             <div>
               <div className="rounded-[24px] border border-[#e5e7eb] bg-white px-4 py-5 shadow-[0_8px_18px_rgba(15,23,42,0.04)] md:px-5">
-                <ProgressTimeline
-                  currentStage={mainStage}
-                  stages={MAIN_PROCESS_STAGES}
-                  stageLabelMap={MAIN_STAGE_LABELS}
+                <TransactionLifecycleProgress
+                  transaction={transaction}
+                  mainStage={mainStage}
+                  subprocesses={transactionSubprocesses || []}
                   framed={false}
-                  progressPercent={stageProgressModel.totalProgressPercent}
-                  blockersByStage={stageProgressModel.stepBlockersByStage}
                   helperText={
                     stageProgressModel.currentStageBlockers.length
                       ? `Blockers: ${stageProgressModel.currentStageBlockers.slice(0, 2).join(' • ')}`
                       : `${mainStageLabel} is currently healthy.`
                   }
-                  lastUpdatedLabel={stageProgressModel.latestUpdatedLabel}
-                  onStageClick={canEditMainStage ? (stageOption) => openStageEditor(stageOption) : null}
-                  isStageSelectable={(stageOption) => stageOption !== mainStage && stageProgressModel.canMoveTo(stageOption)}
                 />
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#e5e7eb] pt-4">
                   <p className="text-sm text-[#4b5563]">
@@ -6370,7 +6508,7 @@ function UnitDetail() {
                 </div>
               </WorkspacePanel>
             ) : null}
-            {financeWorkflowSection}
+            {isBondOrHybridFinance ? bondHybridFinanceWorkflowPanel : financeWorkflowSection}
           </div>
         ) : null}
 
@@ -7140,6 +7278,7 @@ function UnitDetail() {
 
         {activeWorkspaceMenu === 'bond' || (isAgentWorkspace && activeWorkspaceMenu === 'financials' && canViewBondWorkspaceTab) ? (
           <div className="space-y-4">
+            {activeWorkspaceMenu === 'bond' ? bondHybridFinanceWorkflowPanel : null}
             <WorkspacePanel
               title="Bond Application"
               copy="Read-only view of the client bond application, offers, and grant records."

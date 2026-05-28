@@ -1,6 +1,6 @@
 import { CheckCircle2, ChevronDown, ChevronRight, Circle, Clock3, MessageSquare } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import ProgressTimeline from './ProgressTimeline'
+import TransactionLifecycleProgress from './TransactionLifecycleProgress'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS } from '../lib/stages'
 import { buildTransactionStageProgressModel } from '../core/transactions/stageProgressEngine'
 
@@ -174,7 +174,6 @@ function TransactionProgressPanel({
   progressModel = null,
   progressContext = null,
   canEditMainStage = false,
-  onStageClick = null,
   onOpenWorkflowGroup = null,
 }) {
   const normalizedMainStage = normalizeMainStage(mainStage || stages[0] || 'AVAIL')
@@ -281,24 +280,18 @@ function TransactionProgressPanel({
 
         <section className="rounded-[22px] border border-[#e5e7eb] bg-[#f7f8fa] p-5">
           <div className="rounded-[18px] border border-[#e5e7eb] bg-white px-4 py-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
-            <ProgressTimeline
-              currentStage={normalizedMainStage}
-              stages={stages}
-              stageLabelMap={stageLabelMap}
+            <TransactionLifecycleProgress
+              transaction={progressContext?.transaction}
+              mainStage={normalizedMainStage}
+              subprocesses={subprocesses}
               framed={false}
-              progressPercent={computedProgressModel?.totalProgressPercent}
-              blockersByStage={computedProgressModel?.stepBlockersByStage}
               helperText={getCurrentStageHelper(computedProgressModel)}
-              lastUpdatedLabel={computedProgressModel?.latestUpdatedLabel || ''}
-              onStageClick={canEditMainStage ? onStageClick : null}
-              isStageSelectable={(stageOption) =>
-                stageOption !== normalizedMainStage &&
-                (computedProgressModel?.canMoveTo?.(stageOption) ?? true)
-              }
+              onStageClick={null}
+              isStageSelectable={null}
             />
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#e5e7eb] pt-4">
               <p className="text-sm text-[#4b5563]">
-                {canEditMainStage ? 'Click a stage node to move the transaction after validation.' : 'Main stage is visible only for this role.'}
+                {canEditMainStage ? 'Main lifecycle overrides are handled through the controlled lifecycle action.' : 'Main stage is visible only for this role.'}
               </p>
               {computedProgressModel?.isAtRisk ? (
                 <span className="inline-flex items-center rounded-full border border-[#f2d3d1] bg-[#fcf2f1] px-3 py-1 text-[0.72rem] font-semibold text-[#b54745]">

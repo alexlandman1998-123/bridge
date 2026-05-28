@@ -1,10 +1,10 @@
 import { AlertCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import ProgressTimeline from '../components/ProgressTimeline'
+import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import TransactionProgressPanel from '../components/TransactionProgressPanel'
 import { fetchTransactionStatusByToken } from '../lib/api'
-import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS, getClientStageExplainer } from '../lib/stages'
+import { MAIN_STAGE_LABELS, getClientStageExplainer } from '../lib/stages'
 
 function formatDateTime(value) {
   if (!value) {
@@ -154,7 +154,7 @@ function TransactionStatusShare() {
         </section>
 
         <section className="status-share-timeline">
-          <ProgressTimeline currentStage={mainStage} stages={MAIN_PROCESS_STAGES} stageLabelMap={MAIN_STAGE_LABELS} />
+          <TransactionLifecycleProgress transaction={statusData} mainStage={mainStage} framed={false} />
         </section>
 
         <TransactionProgressPanel
@@ -162,6 +162,7 @@ function TransactionStatusShare() {
           title="Transaction Progress"
           subtitle="A client-friendly explanation of where the matter is and what comes next."
           mainStage={mainStage}
+          progressContext={{ transaction: statusData }}
           subprocesses={[
             financeSummary ? { process_type: 'finance', summary: financeSummary, steps: [] } : null,
             resolvedTransferSummary ? { process_type: 'transfer', summary: resolvedTransferSummary, steps: [] } : null,

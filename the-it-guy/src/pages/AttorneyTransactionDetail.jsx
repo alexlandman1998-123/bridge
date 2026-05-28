@@ -4,10 +4,10 @@ import {
   AtSign,
   Building2,
   CalendarDays,
-  Check,
   ChevronRight,
   CircleDollarSign,
   Clock3,
+  Copy,
   FileText,
   GaugeCircle,
   MessageSquarePlus,
@@ -25,6 +25,7 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
+import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
@@ -900,19 +901,6 @@ function getMatterStageProgressIndex({ transferStageKey = '', transferStageLabel
   return 0
 }
 
-function getMatterStageExplanation(stage = {}) {
-  const key = String(stage?.key || '').trim().toLowerCase()
-  if (key === 'instruction') return 'The transaction has been opened and the instruction details are being confirmed.'
-  if (key === 'fica') return 'Client onboarding and FICA requirements are being collected and reviewed.'
-  if (key === 'drafting') return 'Transfer documents are being prepared before signing can be scheduled.'
-  if (key === 'signing') return 'Signature packs and signing appointments are being coordinated with the parties.'
-  if (key === 'guarantees') return 'Finance guarantees and related bank requirements are being confirmed.'
-  if (key === 'lodgement') return 'The matter is being prepared for lodgement at the Deeds Office.'
-  if (key === 'registration') return 'Registration is in progress or ready to be confirmed with the transaction team.'
-  if (key === 'complete') return 'The transaction has reached completion and close-out activity can be finalised.'
-  return 'The transaction team is updating the current workflow stage.'
-}
-
 const ACTIVITY_FILTER_OPTIONS = [
   { key: 'all', label: 'All' },
   { key: 'transfer', label: 'Transfer' },
@@ -1297,6 +1285,8 @@ function MatterOverviewHeader({
   clientTitle = '',
   transactionReference = '',
   transactionStageLabel = '',
+  transaction = null,
+  mainStage = '',
   buyerName,
   sellerName,
   agentName,
@@ -1378,39 +1368,13 @@ function MatterOverviewHeader({
           })}
         </section>
 
-        <section className="rounded-[22px] border border-borderDefault bg-white px-5 py-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-textStrong">Current Stage Progress</h2>
-              <p className="mt-1 text-sm text-textMuted">Current stage: <span className="font-semibold text-textStrong">{currentStage.label}</span></p>
-            </div>
-            <span className="rounded-full border border-primary/15 bg-primarySoft px-3 py-1 text-xs font-semibold text-primary">
-              {currentStage.label}
-            </span>
-          </div>
-          <div className="overflow-x-auto pb-1">
-            <div className="grid min-w-[920px] grid-cols-8 gap-3">
-              {MATTER_STAGE_MILESTONES.map((step, index) => {
-                const completed = index < progressIndex
-                const current = index === progressIndex
-                return (
-                  <div key={step.key} className="min-w-0">
-                    <div className={`h-2.5 rounded-full ${completed ? 'bg-success' : current ? 'bg-primary' : 'bg-slate-200'}`} />
-                    <div className="mt-3 flex items-center gap-2">
-                      <span className={`inline-flex size-4 shrink-0 items-center justify-center rounded-full ${completed ? 'bg-success text-white' : current ? 'bg-primary text-white ring-4 ring-primary/10' : 'bg-slate-300 text-white'}`}>
-                        {completed ? <Check size={11} strokeWidth={3} /> : null}
-                      </span>
-                      <span className={`truncate text-sm font-semibold ${completed || current ? 'text-textStrong' : 'text-textMuted'}`}>
-                        {step.label}
-                      </span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-          <p className="mt-5 max-w-3xl text-sm leading-6 text-textMuted">{getMatterStageExplanation(currentStage)}</p>
-        </section>
+        <TransactionLifecycleProgress
+          transaction={transaction}
+          mainStage={mainStage}
+          framed
+          premium
+          helperText={`Transfer status: ${transactionStageLabel || currentStage.label}`}
+        />
       </div>
     )
   }
@@ -1484,33 +1448,13 @@ function MatterOverviewHeader({
         })}
       </section>
 
-      <section className="rounded-[18px] border border-borderDefault bg-white px-4 py-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-textStrong">Current Stage Progress</h2>
-          <span className="text-xs font-semibold text-textMuted">
-            {MATTER_STAGE_MILESTONES[Math.min(progressIndex, MATTER_STAGE_MILESTONES.length - 1)]?.label || 'Instruction'}
-          </span>
-        </div>
-        <div className="overflow-x-auto pb-1">
-          <div className="grid min-w-[760px] grid-cols-8 gap-2">
-            {MATTER_STAGE_MILESTONES.map((step, index) => {
-              const completed = index < progressIndex
-              const current = index === progressIndex
-              return (
-                <div key={step.key} className="min-w-0">
-                  <div className={`h-2 rounded-full ${completed ? 'bg-success' : current ? 'bg-primary' : 'bg-slate-200'}`} />
-                  <div className="mt-2 flex items-center gap-2">
-                    <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${completed ? 'bg-success' : current ? 'bg-primary' : 'bg-slate-300'}`} />
-                    <span className={`truncate text-xs font-semibold ${completed || current ? 'text-textStrong' : 'text-textMuted'}`}>
-                      {step.label}
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      </section>
+      <TransactionLifecycleProgress
+        transaction={transaction}
+        mainStage={mainStage}
+        framed
+        compact
+        helperText={`Transfer status: ${transactionStageLabel || currentStage.label}`}
+      />
     </div>
   )
 }
@@ -3465,6 +3409,34 @@ function AttorneyTransactionDetail() {
     return `${window.location.origin}/client/onboarding/${record.token}`
   }
 
+  async function sendBuyerOnboardingViaResend({ resend = false, source = 'agent_transaction_workspace' } = {}) {
+    if (!transaction?.id) {
+      throw new Error('Transaction data is not available for buyer onboarding.')
+    }
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase is not configured in this environment.')
+    }
+
+    const response = await invokeEdgeFunction('send-email', {
+      body: {
+        type: 'client_onboarding',
+        transactionId: transaction.id,
+        resend,
+        source,
+      },
+    })
+    const responseError = response?.error || response?.data?.error
+    if (responseError) {
+      const parsedMessage = response?.error
+        ? await parseEdgeFunctionError(response.error, 'Unable to send buyer onboarding right now.')
+        : typeof responseError === 'string'
+          ? responseError
+          : responseError?.message || 'Unable to send buyer onboarding right now.'
+      throw new Error(parsedMessage)
+    }
+    return response?.data || {}
+  }
+
   async function handleCopyOnboardingLinkForRecipient(recipient) {
     if (!recipient?.canSend) {
       return
@@ -3487,19 +3459,23 @@ function AttorneyTransactionDetail() {
     if (!recipient?.canSend) {
       return
     }
+    if (recipient.key !== 'buyer') {
+      setOnboardingActionMessage('Resend delivery is available for buyer onboarding. Copy the link for this recipient instead.')
+      return
+    }
 
     try {
       setOnboardingActionBusy(true)
       setError('')
-      const linkUrl = await getOnboardingLinkUrl()
-      const subject = encodeURIComponent('Bridge Onboarding Link')
-      const body = encodeURIComponent(
-        `Hello ${recipient.name || ''},\n\nPlease complete your onboarding here:\n${linkUrl}\n\nBridge`,
-      )
-      window.open(`mailto:${recipient.email}?subject=${subject}&body=${body}`, '_blank', 'noopener,noreferrer')
-      setOnboardingActionMessage(`Mail draft opened for ${recipient.roleLabel.toLowerCase()}.`)
+      const result = await sendBuyerOnboardingViaResend({
+        resend: onboardingCompleted,
+        source: 'transaction_workspace_recipient_action',
+      })
+      setOnboardingActionMessage(`Buyer onboarding sent to ${result?.recipientEmail || recipient.email}.`)
+      await loadData({ background: true })
+      window.dispatchEvent(new Event('itg:transaction-updated'))
     } catch (sendError) {
-      setError(sendError?.message || 'Unable to prepare onboarding send action right now.')
+      setError(sendError?.message || 'Unable to send buyer onboarding right now.')
     } finally {
       setOnboardingActionBusy(false)
     }
@@ -3552,12 +3528,27 @@ function AttorneyTransactionDetail() {
       return
     }
     setRoleplayerConfirmError('')
+    setOnboardingActionMessage('')
     setRoleplayerConfirmDraft({
       transferAttorney: findRoleplayerOptionInList(transferAttorneyOptions, roleplayerConfirmDraft.transferAttorney)?.id || transferAttorneyOptions[0]?.id || '',
       bondOriginator: findRoleplayerOptionInList(bondOriginatorOptions, roleplayerConfirmDraft.bondOriginator)?.id || bondOriginatorOptions[0]?.id || '',
       bondAttorney: findRoleplayerOptionInList(bondAttorneyOptions, roleplayerConfirmDraft.bondAttorney)?.id || bondAttorneyOptions[0]?.id || '',
     })
     setRoleplayerConfirmOpen(true)
+  }
+
+  async function handleCopyBuyerOnboardingLinkFromConfirmation() {
+    try {
+      setOnboardingActionBusy(true)
+      setRoleplayerConfirmError('')
+      const linkUrl = await getOnboardingLinkUrl()
+      await navigator.clipboard.writeText(linkUrl)
+      setOnboardingActionMessage('Buyer onboarding link copied. The agent can paste it into WhatsApp, SMS, or a manual email.')
+    } catch (copyError) {
+      setRoleplayerConfirmError(copyError?.message || 'Unable to copy the buyer onboarding link right now.')
+    } finally {
+      setOnboardingActionBusy(false)
+    }
   }
 
   async function handleAgentHeaderOnboardingAction() {
@@ -3581,17 +3572,19 @@ function AttorneyTransactionDetail() {
     try {
       setOnboardingActionBusy(true)
       setError('')
-      const linkUrl = await getOnboardingLinkUrl()
-      const subject = encodeURIComponent(onboardingCompleted ? 'Bridge Client Portal Link' : 'Bridge Buyer Onboarding')
-      const body = encodeURIComponent(
+      const result = await sendBuyerOnboardingViaResend({
+        resend: onboardingCompleted,
+        source: onboardingCompleted ? 'agent_transaction_header_client_portal_resend' : 'agent_transaction_header_buyer_onboarding',
+      })
+      setOnboardingActionMessage(
         onboardingCompleted
-          ? `Hello ${recipient.name || ''},\n\nYou can access your Bridge client portal here:\n${linkUrl}\n\nBridge`
-          : `Hello ${recipient.name || ''},\n\nPlease complete your buyer onboarding here:\n${linkUrl}\n\nBridge`,
+          ? `Client portal email sent to ${result?.recipientEmail || recipient.email}.`
+          : `Buyer onboarding sent to ${result?.recipientEmail || recipient.email}.`,
       )
-      window.open(`mailto:${recipient.email}?subject=${subject}&body=${body}`, '_blank', 'noopener,noreferrer')
-      setOnboardingActionMessage(onboardingCompleted ? 'Client portal mail draft opened.' : 'Buyer onboarding mail draft opened.')
+      await loadData({ background: true })
+      window.dispatchEvent(new Event('itg:transaction-updated'))
     } catch (sendError) {
-      setError(sendError?.message || 'Unable to prepare the client link right now.')
+      setError(sendError?.message || 'Unable to send the client link right now.')
     } finally {
       setOnboardingActionBusy(false)
     }
@@ -3648,18 +3641,18 @@ function AttorneyTransactionDetail() {
       if (refreshed) {
         setData(refreshed)
       }
-      const linkUrl = await getOnboardingLinkUrl()
+      const sendResult = await sendBuyerOnboardingViaResend({
+        resend: false,
+        source: 'buyer_onboarding_roleplayer_confirmation',
+      })
       await recordBuyerOnboardingSent({
         transactionId: transaction.id,
         actorRole: workspaceRole,
         recipientEmail: recipient.email,
         roleplayers: selections,
       })
-      const subject = encodeURIComponent('Bridge Buyer Onboarding')
-      const body = encodeURIComponent(`Hello ${recipient.name || ''},\n\nPlease complete your buyer onboarding here:\n${linkUrl}\n\nBridge`)
-      window.open(`mailto:${recipient.email}?subject=${subject}&body=${body}`, '_blank', 'noopener,noreferrer')
       setRoleplayerConfirmOpen(false)
-      setOnboardingActionMessage('Buyer onboarding mail draft opened after confirming roleplayers.')
+      setOnboardingActionMessage(`Buyer onboarding sent to ${sendResult?.recipientEmail || recipient.email} after confirming roleplayers.`)
       await loadData({ background: true })
       window.dispatchEvent(new Event('itg:transaction-updated'))
     } catch (sendError) {
@@ -4276,6 +4269,8 @@ function AttorneyTransactionDetail() {
               clientTitle={buyer?.name || transaction?.buyer_name || 'Client'}
               transactionReference={workspaceReference}
               transactionStageLabel={transferStageLabel}
+              transaction={transaction}
+              mainStage={mainStage}
               statusLabel={hydratingDetail ? 'Refreshing' : lifecycleLabel}
               statusClassName={getLifecycleStateClasses(lifecycleState)}
               propertyLabel={isAgentTransactionView ? (propertyAddress || matterHeadline) : matterHeadline}
@@ -6237,6 +6232,10 @@ function AttorneyTransactionDetail() {
               <Button type="button" variant="secondary" onClick={() => setRoleplayerConfirmOpen(false)} disabled={onboardingActionBusy}>
                 Cancel
               </Button>
+              <Button type="button" variant="secondary" onClick={() => void handleCopyBuyerOnboardingLinkFromConfirmation()} disabled={onboardingActionBusy}>
+                <Copy size={14} />
+                Copy Link
+              </Button>
               <Button type="button" onClick={() => void handleConfirmRoleplayersAndSendOnboarding()} disabled={onboardingActionBusy || partnerOptionsLoading}>
                 <Send size={14} />
                 {onboardingActionBusy ? 'Preparing...' : 'Confirm & Send Onboarding'}
@@ -6291,6 +6290,9 @@ function AttorneyTransactionDetail() {
               {roleplayerConfirmError}
             </p>
           ) : null}
+          {onboardingActionMessage ? (
+            <p className="rounded-[14px] border border-borderDefault bg-surfaceAlt px-4 py-2.5 text-helper text-textMuted">{onboardingActionMessage}</p>
+          ) : null}
         </div>
       </Modal>
 
@@ -6313,7 +6315,7 @@ function AttorneyTransactionDetail() {
       >
         <div className="space-y-5">
           <p className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-secondary text-textMuted">
-            Choose a recipient below and either copy the onboarding link or open a prefilled email draft.
+            Choose a recipient below and either copy the onboarding link or send buyer onboarding through Resend.
           </p>
           {onboardingRecipients.map((recipient) => (
             <article key={recipient.key} className="rounded-[16px] border border-borderSoft bg-surfaceAlt px-4 py-4">
