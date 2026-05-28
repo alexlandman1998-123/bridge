@@ -81,6 +81,12 @@ export function resolveAttorneyOnboardingErrorMessage(error) {
   if (code === '23503' || message.includes('foreign key')) {
     return 'Some setup references are out of date. Please retry so we can refresh your onboarding context.'
   }
+  if (message.includes('no_active_membership') || message.includes('active membership')) {
+    return 'Your firm profile was created, but your firm admin access was not activated. Please retry setup so we can repair your membership.'
+  }
+  if (code === 'attorney_membership_bootstrap_unavailable' || message.includes('membership bootstrap')) {
+    return 'Your firm profile was created, but we could not activate your firm admin access. Please contact support to repair the firm membership.'
+  }
   if (code === '42501' || message.includes('row-level security') || message.includes('permission')) {
     return 'Your account could not complete this step due to access controls. Please sign out, sign in, and try again.'
   }
@@ -166,6 +172,13 @@ function buildSyntheticFirmAdminMembership({ firmId, userId, joinedAt = null } =
   })
 }
 
+function buildMembershipBootstrapError(message, cause = null) {
+  const error = new Error(message)
+  error.code = 'attorney_membership_bootstrap_unavailable'
+  if (cause) error.cause = cause
+  return error
+}
+
 async function bootstrapFirmAdminMembershipWithRpc(client, firmId, userId) {
   const rpcResult = await client.rpc('bootstrap_attorney_firm_admin_membership', {
     target_firm_id: firmId,
@@ -177,6 +190,10 @@ async function bootstrapFirmAdminMembershipWithRpc(client, firmId, userId) {
 
   if (!isMissingRpcError(rpcResult.error, 'bootstrap_attorney_firm_admin_membership')) {
     throw rpcResult.error
+  }
+
+  if (!isUnsafeFallbackAllowed()) {
+    throw buildMembershipBootstrapError('Attorney firm membership bootstrap is not available in this environment.', rpcResult.error)
   }
 
   const firmLookup = await client
@@ -195,6 +212,25 @@ async function bootstrapFirmAdminMembershipWithRpc(client, firmId, userId) {
 
   console.warn('[Attorney Onboarding] bootstrap membership RPC unavailable; using owner-admin route fallback.')
   return buildSyntheticFirmAdminMembership({ firmId, userId })
+}
+
+async function loadCurrentUserAttorneyFirmAdminMembership(client, firmId, userId) {
+  const membershipQuery = await client
+    .from('attorney_firm_members')
+    .select('id, firm_id, user_id, department_id, role, status, invited_by, joined_at, created_at, updated_at')
+    .eq('firm_id', firmId)
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .maybeSingle()
+
+  if (membershipQuery.error) {
+    if (isMissingTableError(membershipQuery.error, 'attorney_firm_members') && isUnsafeFallbackAllowed()) {
+      return buildSyntheticFirmAdminMembership({ firmId, userId })
+    }
+    throw membershipQuery.error
+  }
+
+  return mapMemberRow(membershipQuery.data)
 }
 
 export async function ensureCurrentUserAttorneyFirmAdminMembership(firmId) {
@@ -222,14 +258,19 @@ export async function ensureCurrentUserAttorneyFirmAdminMembership(firmId) {
     .maybeSingle()
 
   if (!membershipResult.error) {
-    return mapMemberRow(membershipResult.data) || buildSyntheticFirmAdminMembership({
-      firmId: normalizedFirmId,
-      userId: user.id,
-      joinedAt: nowIso,
-    })
+    const directMembership = mapMemberRow(membershipResult.data)
+    if (directMembership?.id) return directMembership
+
+    const visibleMembership = await loadCurrentUserAttorneyFirmAdminMembership(client, normalizedFirmId, user.id)
+    if (visibleMembership?.id) return visibleMembership
+
+    return bootstrapFirmAdminMembershipWithRpc(client, normalizedFirmId, user.id)
   }
 
   if (isMissingTableError(membershipResult.error, 'attorney_firm_members')) {
+    if (!isUnsafeFallbackAllowed()) {
+      throw buildMembershipBootstrapError('Attorney firm membership storage is not available.', membershipResult.error)
+    }
     return buildSyntheticFirmAdminMembership({ firmId: normalizedFirmId, userId: user.id, joinedAt: nowIso })
   }
 
