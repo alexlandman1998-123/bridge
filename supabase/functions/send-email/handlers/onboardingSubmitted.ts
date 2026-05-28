@@ -18,6 +18,14 @@ import { resolveAppBaseUrl } from "../utils/url.ts";
 
 const AUTH_MODEL = "token_scoped_client_portal_link";
 
+function normalizeUuidText(value: unknown) {
+  const normalized = normalizeText(value).toLowerCase();
+  if (!normalized || normalized === "null" || normalized === "undefined") return "";
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(normalized)
+    ? normalized
+    : "";
+}
+
 export async function handleOnboardingSubmittedEmail(
   req: Request,
   payload: SendOnboardingSubmittedPayload,
@@ -78,27 +86,30 @@ export async function handleOnboardingSubmittedEmail(
   if (!transaction) {
     return jsonResponse(404, { error: "Transaction not found." });
   }
+  const buyerId = normalizeUuidText(transaction.buyer_id);
+  const developmentId = normalizeUuidText(transaction.development_id);
+  const unitId = normalizeUuidText(transaction.unit_id);
 
   const [buyerQuery, developmentQuery, unitQuery, portalLinkQuery] = await Promise.all([
-    transaction.buyer_id
+    buyerId
       ? supabase
           .from("buyers")
           .select("id, name, email")
-          .eq("id", transaction.buyer_id)
+          .eq("id", buyerId)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
-    transaction.development_id
+    developmentId
       ? supabase
           .from("developments")
           .select("id, name")
-          .eq("id", transaction.development_id)
+          .eq("id", developmentId)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
-    transaction.unit_id
+    unitId
       ? supabase
           .from("units")
           .select("id, unit_number")
-          .eq("id", transaction.unit_id)
+          .eq("id", unitId)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     supabase
@@ -178,8 +189,8 @@ export async function handleOnboardingSubmittedEmail(
   }
 
   const clientPortalToken = normalizeText(portalLinkQuery.data?.token);
-  const portalLinkBuyerId = normalizeText(portalLinkQuery.data?.buyer_id);
-  const transactionBuyerId = normalizeText(transaction.buyer_id);
+  const portalLinkBuyerId = normalizeUuidText(portalLinkQuery.data?.buyer_id);
+  const transactionBuyerId = buyerId;
   const portalBuyerAligned =
     !portalLinkBuyerId || !transactionBuyerId || portalLinkBuyerId === transactionBuyerId;
 

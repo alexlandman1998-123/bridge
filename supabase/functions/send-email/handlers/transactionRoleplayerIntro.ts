@@ -34,6 +34,14 @@ function isBondFinance(value: unknown) {
   return ["bond", "combination", "hybrid"].includes(normalized);
 }
 
+function normalizeUuidText(value: unknown) {
+  const normalized = normalizeText(value).toLowerCase();
+  if (!normalized || normalized === "null" || normalized === "undefined") return "";
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(normalized)
+    ? normalized
+    : "";
+}
+
 function firstContactName(...values: unknown[]) {
   return values.map((value) => normalizeText(value)).find(Boolean) || "";
 }
@@ -409,25 +417,28 @@ export async function handleTransactionRoleplayerIntroEmail(
   if (!transaction) {
     return jsonResponse(404, { error: "Transaction not found." });
   }
+  const buyerId = normalizeUuidText(transaction.buyer_id);
+  const unitId = normalizeUuidText(transaction.unit_id);
+  const developmentId = normalizeUuidText(transaction.development_id);
 
   const [buyerQuery, unitQuery, developmentQuery, participants] = await Promise
     .all([
-      transaction.buyer_id
+      buyerId
         ? supabase.from("buyers").select("id, name, email").eq(
           "id",
-          transaction.buyer_id,
+          buyerId,
         ).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
-      transaction.unit_id
+      unitId
         ? supabase.from("units").select("id, unit_number").eq(
           "id",
-          transaction.unit_id,
+          unitId,
         ).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
-      transaction.development_id
+      developmentId
         ? supabase.from("developments").select("id, name").eq(
           "id",
-          transaction.development_id,
+          developmentId,
         ).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
       fetchParticipants(supabase, transactionId),
@@ -723,25 +734,28 @@ export async function handleTransactionRoleplayerHandoffEmail(
   if (!transaction) {
     return jsonResponse(404, { error: "Transaction not found." });
   }
+  const buyerId = normalizeUuidText(transaction.buyer_id);
+  const unitId = normalizeUuidText(transaction.unit_id);
+  const developmentId = normalizeUuidText(transaction.development_id);
 
   const [buyerQuery, unitQuery, developmentQuery, participants] = await Promise
     .all([
-      transaction.buyer_id
+      buyerId
         ? supabase.from("buyers").select("id, name, email, phone").eq(
           "id",
-          transaction.buyer_id,
+          buyerId,
         ).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
-      transaction.unit_id
+      unitId
         ? supabase.from("units").select("id, unit_number").eq(
           "id",
-          transaction.unit_id,
+          unitId,
         ).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
-      transaction.development_id
+      developmentId
         ? supabase.from("developments").select("id, name").eq(
           "id",
-          transaction.development_id,
+          developmentId,
         ).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
       fetchParticipants(supabase, transactionId),
@@ -804,27 +818,15 @@ export async function handleTransactionRoleplayerHandoffEmail(
   const agentName = firstContactName(transaction.assigned_agent);
   const agentEmail = firstContactEmail(transaction.assigned_agent_email);
 
-  if (!transferAttorneyEmail) {
-    return jsonResponse(400, {
-      error:
-        "Transfer attorney email is missing. Capture the transfer attorney email before sending the team handoff.",
-    });
-  }
-
-  if (bondFinance && !bondOriginatorEmail) {
-    return jsonResponse(400, {
-      error:
-        "Bond originator email is missing for this financed transaction. Capture the originator email before sending the team handoff.",
-    });
-  }
-
   const recipients = [
-    {
-      role: "transfer_attorney" as const,
-      name: transferAttorneyName || "Transfer Attorney",
-      email: transferAttorneyEmail,
-    },
-    bondFinance
+    transferAttorneyEmail
+      ? {
+        role: "transfer_attorney" as const,
+        name: transferAttorneyName || "Transfer Attorney",
+        email: transferAttorneyEmail,
+      }
+      : null,
+    bondFinance && bondOriginatorEmail
       ? {
         role: "bond_originator" as const,
         name: bondOriginatorName || "Bond Originator",
@@ -836,6 +838,20 @@ export async function handleTransactionRoleplayerHandoffEmail(
     name: string;
     email: string;
   }>;
+
+  if (!recipients.length) {
+    return jsonResponse(200, {
+      ok: true,
+      type: "transaction_roleplayer_handoff",
+      sent: false,
+      reason: "missing_roleplayer_emails",
+      transactionId,
+      missing: {
+        transferAttorneyEmail: !transferAttorneyEmail,
+        bondOriginatorEmail: bondFinance && !bondOriginatorEmail,
+      },
+    });
+  }
 
   const organisationName =
     normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||

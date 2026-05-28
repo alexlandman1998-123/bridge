@@ -18358,6 +18358,354 @@ async function fetchPartnerRelationshipForRoleplayer(client, roleplayer = {}) {
   return query.data || null
 }
 
+async function resolveProfileIdForEmail(client, email = '') {
+  const normalizedEmail = normalizeEmailAddress(email)
+  if (!normalizedEmail) return null
+  const query = await client
+    .from('profiles')
+    .select('id, email')
+    .ilike('email', normalizedEmail)
+    .limit(1)
+    .maybeSingle()
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'profiles') || isMissingSchemaError(query.error) || isPermissionDeniedError(query.error)) {
+      return null
+    }
+    throw query.error
+  }
+
+  return normalizeNullableUuid(query.data?.id)
+}
+
+async function ensureRoleplayerParticipantForOnboarding(client, {
+  transactionId,
+  roleplayer = {},
+  participantRole = '',
+  legalRole = 'none',
+  financeManagedBy = 'bond_originator',
+} = {}) {
+  const normalizedTransactionId = normalizeNullableUuid(transactionId)
+  const normalizedRole = normalizeRoleType(participantRole)
+  if (!normalizedTransactionId || !normalizedRole) return null
+
+  const email = normalizeEmailAddress(roleplayer.emailAddress || roleplayer.email_address || roleplayer.email || '')
+  const participantName =
+    normalizeNullableText(roleplayer.partnerName || roleplayer.partner_name || roleplayer.contactPerson || roleplayer.contact_person) ||
+    (normalizedRole === 'attorney' ? 'Attorney / Conveyancer' : 'Bond Originator')
+  const userId = await resolveProfileIdForEmail(client, email)
+  const permissions = getRolePermissions({ role: normalizedRole, financeManagedBy })
+  const now = new Date().toISOString()
+  const row = {
+    transaction_id: normalizedTransactionId,
+    user_id: userId,
+    role_type: normalizedRole,
+    legal_role: normalizedRole === 'attorney' ? normalizeAttorneyLegalRole(legalRole, 'transfer') : 'none',
+    status: 'active',
+    invited_at: now,
+    accepted_at: now,
+    removed_at: null,
+    visibility_scope: 'internal',
+    is_internal: true,
+    participant_name: participantName,
+    participant_email: email || null,
+    participant_scope: 'transaction',
+    assignment_source: 'buyer_onboarding_roleplayer_activation',
+    can_view: permissions.canView,
+    can_comment: permissions.canComment,
+    can_upload_documents: permissions.canUploadDocuments,
+    can_edit_finance_workflow: permissions.canEditFinanceWorkflow,
+    can_edit_attorney_workflow: permissions.canEditAttorneyWorkflow,
+    can_edit_core_transaction: permissions.canEditCoreTransaction,
+  }
+
+  let result = await upsertTransactionParticipantsRowsWithFallback(client, {
+    rows: [row],
+    onConflict: 'transaction_id,role_type,legal_role',
+    rowSelect: 'id, transaction_id, user_id, role_type, legal_role, participant_email, status',
+    matchOnLegalRole: true,
+  })
+
+  if (
+    result.error &&
+    (isMissingColumnError(result.error, 'user_id') ||
+      isMissingColumnError(result.error, 'legal_role') ||
+      isMissingColumnError(result.error, 'status') ||
+      isMissingColumnError(result.error, 'invited_at') ||
+      isMissingColumnError(result.error, 'accepted_at') ||
+      isMissingColumnError(result.error, 'removed_at') ||
+      isMissingColumnError(result.error, 'visibility_scope') ||
+      isMissingColumnError(result.error, 'is_internal') ||
+      isMissingColumnError(result.error, 'participant_scope') ||
+      isMissingColumnError(result.error, 'assignment_source') ||
+      isMissingColumnError(result.error, 'can_edit_core_transaction'))
+  ) {
+    const fallback = { ...row }
+    for (const key of [
+      'user_id',
+      'status',
+      'invited_at',
+      'accepted_at',
+      'removed_at',
+      'visibility_scope',
+      'is_internal',
+      'participant_scope',
+      'assignment_source',
+      'can_edit_core_transaction',
+    ]) {
+      if (isMissingColumnError(result.error, key)) delete fallback[key]
+    }
+    if (isMissingColumnError(result.error, 'legal_role')) delete fallback.legal_role
+
+    result = await upsertTransactionParticipantsRowsWithFallback(client, {
+      rows: [fallback],
+      onConflict: fallback.legal_role ? 'transaction_id,role_type,legal_role' : 'transaction_id,role_type',
+      rowSelect: fallback.legal_role
+        ? 'id, transaction_id, role_type, legal_role, participant_email'
+        : 'id, transaction_id, role_type, participant_email',
+      matchOnLegalRole: Boolean(fallback.legal_role),
+    })
+  }
+
+  if (result.error) {
+    if (isMissingTableError(result.error, 'transaction_participants') || isMissingSchemaError(result.error) || isPermissionDeniedError(result.error)) {
+      return null
+    }
+    throw result.error
+  }
+  return result.data?.[0] || null
+}
+
+async function resolveAttorneyFirmForRoleplayer(client, roleplayer = {}) {
+  const organisationId = normalizeNullableUuid(roleplayer.organisationId || roleplayer.organisation_id || roleplayer.snapshot?.organisationId || roleplayer.snapshot?.organisation_id)
+  if (organisationId) {
+    const byOrganisation = await client
+      .from('attorney_firms')
+      .select('id, name, organisation_id')
+      .eq('organisation_id', organisationId)
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle()
+    if (!byOrganisation.error && byOrganisation.data?.id) return byOrganisation.data
+    if (
+      byOrganisation.error &&
+      !isMissingColumnError(byOrganisation.error, 'organisation_id') &&
+      !isMissingColumnError(byOrganisation.error, 'is_active') &&
+      !isMissingTableError(byOrganisation.error, 'attorney_firms') &&
+      !isMissingSchemaError(byOrganisation.error) &&
+      !isPermissionDeniedError(byOrganisation.error)
+    ) {
+      throw byOrganisation.error
+    }
+  }
+
+  const email = normalizeEmailAddress(roleplayer.emailAddress || roleplayer.email_address || roleplayer.email || '')
+  if (email) {
+    const byEmail = await client
+      .from('attorney_firms')
+      .select('id, name, email')
+      .ilike('email', email)
+      .limit(1)
+      .maybeSingle()
+    if (!byEmail.error && byEmail.data?.id) return byEmail.data
+    if (
+      byEmail.error &&
+      !isMissingColumnError(byEmail.error, 'email') &&
+      !isMissingTableError(byEmail.error, 'attorney_firms') &&
+      !isMissingSchemaError(byEmail.error) &&
+      !isPermissionDeniedError(byEmail.error)
+    ) {
+      throw byEmail.error
+    }
+  }
+
+  const name = normalizeTextValue(roleplayer.partnerName || roleplayer.partner_name || roleplayer.contactPerson || roleplayer.contact_person)
+  if (!name) return null
+  const byName = await client
+    .from('attorney_firms')
+    .select('id, name')
+    .ilike('name', name)
+    .limit(1)
+    .maybeSingle()
+  if (!byName.error && byName.data?.id) return byName.data
+  if (byName.error && !isMissingTableError(byName.error, 'attorney_firms') && !isMissingSchemaError(byName.error) && !isPermissionDeniedError(byName.error)) {
+    throw byName.error
+  }
+  return null
+}
+
+async function resolveAttorneyFirmAssignmentPeople(client, { firmId, assignmentType = 'transfer', email = '' } = {}) {
+  const normalizedFirmId = normalizeNullableUuid(firmId)
+  if (!normalizedFirmId) return { primaryAttorneyId: null, departmentId: null }
+
+  const emailUserId = await resolveProfileIdForEmail(client, email)
+  let membersQuery = await client
+    .from('attorney_firm_members')
+    .select('user_id, department_id, role, status')
+    .eq('firm_id', normalizedFirmId)
+    .eq('status', 'active')
+
+  if (membersQuery.error && isMissingColumnError(membersQuery.error, 'status')) {
+    membersQuery = await client
+      .from('attorney_firm_members')
+      .select('user_id, department_id, role')
+      .eq('firm_id', normalizedFirmId)
+  }
+
+  if (membersQuery.error) {
+    if (isMissingTableError(membersQuery.error, 'attorney_firm_members') || isMissingSchemaError(membersQuery.error) || isPermissionDeniedError(membersQuery.error)) {
+      return { primaryAttorneyId: emailUserId, departmentId: null }
+    }
+    throw membersQuery.error
+  }
+
+  const members = membersQuery.data || []
+  const rolePriority = assignmentType === 'bond'
+    ? ['bond_attorney', 'director_partner', 'firm_admin']
+    : ['transfer_attorney', 'director_partner', 'firm_admin']
+  const memberByEmail = emailUserId
+    ? members.find((member) => normalizeNullableUuid(member.user_id) === emailUserId)
+    : null
+  const primaryMember = memberByEmail || rolePriority.map((role) => members.find((member) => normalizeTextValue(member.role).toLowerCase() === role)).find(Boolean) || members[0] || null
+
+  let departmentId = normalizeNullableUuid(primaryMember?.department_id)
+  if (!departmentId) {
+    const departmentType = assignmentType === 'bond' ? 'bond' : 'transfer'
+    let departmentQuery = await client
+      .from('attorney_firm_departments')
+      .select('id, department_type, is_active')
+      .eq('firm_id', normalizedFirmId)
+      .eq('department_type', departmentType)
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle()
+    if (departmentQuery.error && isMissingColumnError(departmentQuery.error, 'is_active')) {
+      departmentQuery = await client
+        .from('attorney_firm_departments')
+        .select('id, department_type')
+        .eq('firm_id', normalizedFirmId)
+        .eq('department_type', departmentType)
+        .limit(1)
+        .maybeSingle()
+    }
+    if (!departmentQuery.error) {
+      departmentId = normalizeNullableUuid(departmentQuery.data?.id)
+    } else if (!isMissingTableError(departmentQuery.error, 'attorney_firm_departments') && !isMissingSchemaError(departmentQuery.error) && !isPermissionDeniedError(departmentQuery.error)) {
+      throw departmentQuery.error
+    }
+  }
+
+  return {
+    primaryAttorneyId: normalizeNullableUuid(primaryMember?.user_id) || emailUserId,
+    departmentId,
+  }
+}
+
+async function upsertAttorneyAssignmentForRoleplayer(client, {
+  transactionId,
+  roleplayer = {},
+  assignmentType = 'transfer',
+  attorneyRole = 'transfer_attorney',
+} = {}) {
+  const normalizedTransactionId = normalizeNullableUuid(transactionId)
+  if (!normalizedTransactionId) return null
+  const firm = await resolveAttorneyFirmForRoleplayer(client, roleplayer)
+  const firmId = normalizeNullableUuid(firm?.id)
+  if (!firmId) return null
+
+  const now = new Date().toISOString()
+  const email = normalizeEmailAddress(roleplayer.emailAddress || roleplayer.email_address || roleplayer.email || '')
+  const people = await resolveAttorneyFirmAssignmentPeople(client, { firmId, assignmentType, email })
+  const payload = {
+    transaction_id: normalizedTransactionId,
+    firm_id: firmId,
+    attorney_firm_id: firmId,
+    assignment_type: assignmentType,
+    attorney_role: attorneyRole,
+    department_id: people.departmentId,
+    attorney_department_id: people.departmentId,
+    primary_attorney_id: people.primaryAttorneyId,
+    attorney_user_id: people.primaryAttorneyId,
+    status: 'active',
+    assignment_status: 'active',
+    is_primary: true,
+    visibility_scope: 'assigned_matter',
+    can_edit: true,
+    can_manage_documents: true,
+    can_manage_signing: true,
+    can_add_internal_notes: true,
+    can_add_shared_updates: true,
+    can_update_workflow_lane: true,
+    assigned_by: null,
+    assigned_at: now,
+    updated_at: now,
+  }
+
+  let existingQuery = await client
+    .from('transaction_attorney_assignments')
+    .select('id')
+    .eq('transaction_id', normalizedTransactionId)
+    .eq('attorney_role', attorneyRole)
+    .limit(1)
+    .maybeSingle()
+
+  if (
+    existingQuery.error &&
+    (isMissingColumnError(existingQuery.error, 'attorney_role') ||
+      isMissingColumnError(existingQuery.error, 'assignment_status'))
+  ) {
+    existingQuery = await client
+      .from('transaction_attorney_assignments')
+      .select('id')
+      .eq('transaction_id', normalizedTransactionId)
+      .eq('assignment_type', assignmentType)
+      .limit(1)
+      .maybeSingle()
+  }
+
+  if (existingQuery.error) {
+    if (isMissingTableError(existingQuery.error, 'transaction_attorney_assignments') || isMissingSchemaError(existingQuery.error) || isPermissionDeniedError(existingQuery.error)) {
+      return null
+    }
+    throw existingQuery.error
+  }
+
+  const write = async (nextPayload) =>
+    existingQuery.data?.id
+      ? client
+          .from('transaction_attorney_assignments')
+          .update(nextPayload)
+          .eq('id', existingQuery.data.id)
+          .select('id, transaction_id, firm_id, attorney_firm_id, assignment_type, attorney_role, assignment_status, status')
+          .maybeSingle()
+      : client
+          .from('transaction_attorney_assignments')
+          .insert({ ...nextPayload, created_at: now })
+          .select('id, transaction_id, firm_id, attorney_firm_id, assignment_type, attorney_role, assignment_status, status')
+          .maybeSingle()
+
+  let currentPayload = { ...payload }
+  let result = await write(currentPayload)
+  let guard = 0
+  while (result.error && guard < 16) {
+    const missingKey = Object.keys(currentPayload).find((key) => isMissingColumnError(result.error, key))
+    if (!missingKey) break
+    delete currentPayload[missingKey]
+    if (!Object.keys(currentPayload).length) return null
+    result = await write(currentPayload)
+    guard += 1
+  }
+
+  if (result.error) {
+    if (isMissingTableError(result.error, 'transaction_attorney_assignments') || isMissingSchemaError(result.error) || isPermissionDeniedError(result.error)) {
+      return null
+    }
+    throw result.error
+  }
+
+  return result.data || null
+}
+
 function resolveBondActivationScope({ transaction = {}, roleplayer = {}, relationship = null } = {}) {
   const snapshot = roleplayer?.snapshot || {}
   const scopeType = normalizeTextValue(snapshot.scopeType || snapshot.scope_type || relationship?.scope_type || '').toLowerCase()
@@ -18478,6 +18826,11 @@ async function activateSelectedAttorneyRoleplayersForOnboarding(client, { transa
   const now = new Date().toISOString()
   const activated = []
   for (const roleplayer of selectedAttorneyRoleplayers) {
+    const isBondAttorney = roleplayer.roleType === 'bond_attorney'
+    const legalRole = isBondAttorney ? 'bond' : 'transfer'
+    const attorneyRole = isBondAttorney ? 'bond_attorney' : 'transfer_attorney'
+    const assignmentType = isBondAttorney ? 'bond' : 'transfer'
+
     if (roleplayer.id) {
       await updateRecordByIdWithMissingColumnFallback(
         client,
@@ -18493,9 +18846,24 @@ async function activateSelectedAttorneyRoleplayersForOnboarding(client, { transa
       )
     }
 
+    await ensureRoleplayerParticipantForOnboarding(client, {
+      transactionId,
+      roleplayer,
+      participantRole: 'attorney',
+      legalRole,
+      financeManagedBy: isBondFinanceType(financeType) ? 'bond_originator' : transaction?.finance_managed_by,
+    })
+
+    await upsertAttorneyAssignmentForRoleplayer(client, {
+      transactionId,
+      roleplayer,
+      assignmentType,
+      attorneyRole,
+    })
+
     await logTransactionEventIfPossible(client, {
       transactionId,
-      eventType: roleplayer.roleType === 'bond_attorney' ? 'bond_attorney_activated' : 'transfer_attorney_activated',
+      eventType: isBondAttorney ? 'bond_attorney_activated' : 'transfer_attorney_activated',
       createdByRole: 'client',
       eventData: {
         source: 'buyer_onboarding_completed',
@@ -18559,6 +18927,28 @@ async function sendBuyerRoleplayerIntroEmailForOnboarding(client, { transaction,
   return data || { ok: true, type: 'transaction_roleplayer_intro', transactionId, recipientEmail: buyerEmail }
 }
 
+async function sendRoleplayerHandoffEmailForOnboarding(client, { transactionId } = {}) {
+  const normalizedTransactionId = normalizeNullableUuid(transactionId)
+  if (!normalizedTransactionId) {
+    return { skipped: true, reason: 'missing_transaction' }
+  }
+
+  const { data, error } = await invokeEdgeFunction('send-email', {
+    client,
+    body: {
+      type: 'transaction_roleplayer_handoff',
+      transactionId: normalizedTransactionId,
+      resend: false,
+    },
+  })
+
+  if (error) throw error
+  if (data?.ok === false || data?.error) {
+    throw new Error(data?.error || data?.message || 'Unable to send transaction roleplayer handoff emails.')
+  }
+  return data || { ok: true, type: 'transaction_roleplayer_handoff', transactionId: normalizedTransactionId }
+}
+
 async function notifyAttorneysForBondDocumentsComplete(client, { transactionId, result = null, actor = {}, metadata = {} } = {}) {
   if (!transactionId || result?.eventType !== BOND_NOTIFICATION_EVENTS.BOND_DOCUMENTS_COMPLETE || result?.skipped) {
     return []
@@ -18598,6 +18988,7 @@ async function activateSelectedBondOriginatorForOnboarding(client, { transaction
   const now = new Date().toISOString()
   const relationship = await fetchPartnerRelationshipForRoleplayer(client, selectedBondOriginator)
   const scope = resolveBondActivationScope({ transaction, roleplayer: selectedBondOriginator, relationship })
+  const bondOriginatorProfileId = await resolveProfileIdForEmail(client, selectedBondOriginator.emailAddress)
   await updateRecordByIdWithMissingColumnFallback(
     client,
     'transaction_role_players',
@@ -18611,22 +19002,32 @@ async function activateSelectedBondOriginatorForOnboarding(client, { transaction
     'id, status, assignment_status, activated_at, updated_at',
   )
 
+  await ensureRoleplayerParticipantForOnboarding(client, {
+    transactionId,
+    roleplayer: selectedBondOriginator,
+    participantRole: 'bond_originator',
+    legalRole: 'none',
+    financeManagedBy: 'bond_originator',
+  })
+
   await updateRecordByIdWithMissingColumnFallback(
     client,
     'transactions',
     transactionId,
     {
       bond_originator: selectedBondOriginator.partnerName || selectedBondOriginator.contactPerson || transaction?.bond_originator || null,
+      assigned_bond_originator_email: selectedBondOriginator.emailAddress || transaction?.assigned_bond_originator_email || null,
       bond_workspace_id: scope.bondWorkspaceId || transaction?.bond_workspace_id || null,
       bond_region_id: scope.bondRegionId || null,
       bond_workspace_unit_id: scope.bondWorkspaceUnitId || null,
+      primary_bond_consultant_user_id: bondOriginatorProfileId || transaction?.primary_bond_consultant_user_id || null,
       bond_assignment_source: 'workflow_assignment',
       finance_managed_by: 'bond_originator',
       finance_status: 'Bond originator activated · Pipeline created',
       last_meaningful_activity_at: now,
       updated_at: now,
     },
-    'id, bond_originator, bond_workspace_id, bond_region_id, bond_workspace_unit_id, bond_assignment_source, finance_managed_by, finance_status, updated_at',
+    'id, bond_originator, assigned_bond_originator_email, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, bond_assignment_source, finance_managed_by, finance_status, updated_at',
   )
 
   await logTransactionEventIfPossible(client, {
@@ -20232,6 +20633,99 @@ async function fetchDirectTransactionIdsForUser(
       }
       if (row?.transaction_id) {
         transactionIds.add(row.transaction_id)
+      }
+    }
+  }
+
+  if (userId && normalizedRole === 'bond_originator') {
+    let membershipsQuery = await client
+      .from('organisation_users')
+      .select('organisation_id, status')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+
+    if (membershipsQuery.error && isMissingColumnError(membershipsQuery.error, 'status')) {
+      membershipsQuery = await client
+        .from('organisation_users')
+        .select('organisation_id')
+        .eq('user_id', userId)
+    }
+
+    if (
+      membershipsQuery.error &&
+      !isMissingSchemaError(membershipsQuery.error) &&
+      !isMissingTableError(membershipsQuery.error, 'organisation_users') &&
+      !isPermissionDeniedError(membershipsQuery.error)
+    ) {
+      throw membershipsQuery.error
+    }
+
+    const organisationIds = [
+      ...new Set(
+        (membershipsQuery.data || [])
+          .map((row) => normalizeNullableUuid(row?.organisation_id))
+          .filter(Boolean),
+      ),
+    ]
+
+    if (organisationIds.length) {
+      let workspaceTransactionsQuery = await client
+        .from('transactions')
+        .select('id, is_active')
+        .in('bond_workspace_id', organisationIds)
+
+      if (workspaceTransactionsQuery.error && isMissingColumnError(workspaceTransactionsQuery.error, 'is_active')) {
+        workspaceTransactionsQuery = await client
+          .from('transactions')
+          .select('id')
+          .in('bond_workspace_id', organisationIds)
+      }
+
+      if (
+        workspaceTransactionsQuery.error &&
+        !isMissingColumnError(workspaceTransactionsQuery.error, 'bond_workspace_id') &&
+        !isMissingSchemaError(workspaceTransactionsQuery.error)
+      ) {
+        throw workspaceTransactionsQuery.error
+      }
+
+      for (const row of workspaceTransactionsQuery.data || []) {
+        if (row?.is_active === false) continue
+        if (row?.id) transactionIds.add(row.id)
+      }
+
+      let roleplayerQuery = await client
+        .from('transaction_role_players')
+        .select('transaction_id, role_type, status, assignment_status, organisation_id')
+        .eq('role_type', 'bond_originator')
+        .in('organisation_id', organisationIds)
+
+      if (
+        roleplayerQuery.error &&
+        (isMissingColumnError(roleplayerQuery.error, 'status') ||
+          isMissingColumnError(roleplayerQuery.error, 'assignment_status'))
+      ) {
+        roleplayerQuery = await client
+          .from('transaction_role_players')
+          .select('transaction_id, role_type, organisation_id')
+          .eq('role_type', 'bond_originator')
+          .in('organisation_id', organisationIds)
+      }
+
+      if (
+        roleplayerQuery.error &&
+        !isMissingColumnError(roleplayerQuery.error, 'organisation_id') &&
+        !isMissingSchemaError(roleplayerQuery.error) &&
+        !isMissingTableError(roleplayerQuery.error, 'transaction_role_players') &&
+        !isPermissionDeniedError(roleplayerQuery.error)
+      ) {
+        throw roleplayerQuery.error
+      }
+
+      for (const row of roleplayerQuery.data || []) {
+        const status = normalizeTextValue(row?.assignment_status || row?.status || '').toLowerCase()
+        if (['removed', 'declined', 'rejected'].includes(status)) continue
+        if (row?.transaction_id) transactionIds.add(row.transaction_id)
       }
     }
   }
@@ -26329,19 +26823,52 @@ export async function fetchClientPortalLinks(transactionId) {
 export async function getOrCreateClientPortalLink({ developmentId, unitId, transactionId, buyerId = null }) {
   const client = requireClient()
 
-  if (!developmentId || !unitId || !transactionId) {
+  const link = await getOrCreateClientPortalLinkRecord(client, {
+    developmentId,
+    unitId,
+    transactionId,
+    buyerId,
+    requireDevelopmentSettings: true,
+  })
+
+  if (!link) {
     throw new Error('Development, unit, and transaction are required.')
   }
 
-  const settings = await ensureDevelopmentSettings(client, developmentId)
+  return link
+}
+
+async function getOrCreateClientPortalLinkRecord(
+  client,
+  {
+    developmentId,
+    unitId,
+    transactionId,
+    buyerId = null,
+    requireDevelopmentSettings = false,
+  } = {},
+) {
+  const normalizedDevelopmentId = normalizeNullableUuid(developmentId)
+  const normalizedUnitId = normalizeNullableUuid(unitId)
+  const normalizedTransactionId = normalizeNullableUuid(transactionId)
+  const normalizedBuyerId = normalizeNullableUuid(buyerId)
+
+  if (!normalizedDevelopmentId || !normalizedUnitId || !normalizedTransactionId) {
+    return null
+  }
+
+  const settings = await ensureDevelopmentSettings(client, normalizedDevelopmentId)
   if (!settings.client_portal_enabled) {
-    throw new Error('Client portal is disabled for this development.')
+    if (requireDevelopmentSettings) {
+      throw new Error('Client portal is disabled for this development.')
+    }
+    return null
   }
 
   const { data: existing, error: existingError } = await client
     .from('client_portal_links')
     .select('id, development_id, unit_id, transaction_id, buyer_id, token, is_active, created_at, updated_at')
-    .eq('transaction_id', transactionId)
+    .eq('transaction_id', normalizedTransactionId)
     .eq('is_active', true)
     .order('updated_at', { ascending: false })
     .limit(1)
@@ -26362,10 +26889,10 @@ export async function getOrCreateClientPortalLink({ developmentId, unitId, trans
   const { data, error } = await client
     .from('client_portal_links')
     .insert({
-      development_id: developmentId,
-      unit_id: unitId,
-      transaction_id: transactionId,
-      buyer_id: buyerId || null,
+      development_id: normalizedDevelopmentId,
+      unit_id: normalizedUnitId,
+      transaction_id: normalizedTransactionId,
+      buyer_id: normalizedBuyerId,
       token: generateClientPortalToken(),
       is_active: true,
     })
@@ -26376,7 +26903,7 @@ export async function getOrCreateClientPortalLink({ developmentId, unitId, trans
     const { data: conflicted, error: conflictedError } = await client
       .from('client_portal_links')
       .select('id, development_id, unit_id, transaction_id, buyer_id, token, is_active, created_at, updated_at')
-      .eq('transaction_id', transactionId)
+      .eq('transaction_id', normalizedTransactionId)
       .eq('is_active', true)
       .maybeSingle()
 
@@ -26432,7 +26959,7 @@ export async function getOrCreateTransactionOnboarding({ transactionId, purchase
 
   const { data: transaction, error: transactionError } = await client
     .from('transactions')
-    .select('id, purchaser_type, finance_type, cash_amount, bond_amount, reservation_required')
+    .select('id, purchaser_type, finance_type, cash_amount, bond_amount, reservation_required, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at')
     .eq('id', normalizedTransactionId)
     .maybeSingle()
 
@@ -26442,9 +26969,33 @@ export async function getOrCreateTransactionOnboarding({ transactionId, purchase
     !isMissingColumnError(transactionError, 'finance_type') &&
     !isMissingColumnError(transactionError, 'cash_amount') &&
     !isMissingColumnError(transactionError, 'bond_amount') &&
-    !isMissingColumnError(transactionError, 'reservation_required')
+    !isMissingColumnError(transactionError, 'reservation_required') &&
+    !isMissingColumnError(transactionError, 'onboarding_status') &&
+    !isMissingColumnError(transactionError, 'onboarding_completed_at') &&
+    !isMissingColumnError(transactionError, 'external_onboarding_submitted_at')
   ) {
     throw transactionError
+  }
+
+  if (
+    transaction?.id &&
+    ['Submitted', 'Reviewed', 'Approved'].includes(onboarding.status) &&
+    !transaction.onboarding_completed_at &&
+    !transaction.external_onboarding_submitted_at
+  ) {
+    const completedAt = onboarding.submittedAt || onboarding.updatedAt || new Date().toISOString()
+    await updateRecordByIdWithMissingColumnFallback(
+      client,
+      'transactions',
+      normalizedTransactionId,
+      {
+        onboarding_status: 'client_onboarding_complete',
+        onboarding_completed_at: completedAt,
+        external_onboarding_submitted_at: completedAt,
+        updated_at: new Date().toISOString(),
+      },
+      'id, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, updated_at',
+    )
   }
 
   const resolvedType = normalizePurchaserType(transaction?.purchaser_type || purchaserType || onboarding.purchaserType)
@@ -26692,43 +27243,20 @@ async function syncOnboardingTransactionFinanceSnapshot(
     onboarding_completed_at: onboardingCompletedAt,
     external_onboarding_submitted_at: externalOnboardingSubmittedAt,
   }
-  const fallbackPayload = { ...payload }
-  delete fallbackPayload.purchaser_type
-  delete fallbackPayload.purchase_price
-  delete fallbackPayload.cash_amount
-  delete fallbackPayload.bond_amount
-  delete fallbackPayload.deposit_amount
-  delete fallbackPayload.reservation_required
-  delete fallbackPayload.reservation_amount
-  delete fallbackPayload.reservation_status
-  delete fallbackPayload.reservation_paid_date
-  delete fallbackPayload.onboarding_status
-  delete fallbackPayload.onboarding_completed_at
-  delete fallbackPayload.external_onboarding_submitted_at
+  let currentPayload = { ...payload }
+  let result = await client.from('transactions').update(currentPayload).eq('id', transaction.id)
 
-  let result = await client.from('transactions').update(payload).eq('id', transaction.id)
-
-  if (
-    result.error &&
-    (isMissingColumnError(result.error, 'purchaser_type') ||
-      isMissingColumnError(result.error, 'purchase_price') ||
-      isMissingColumnError(result.error, 'cash_amount') ||
-      isMissingColumnError(result.error, 'bond_amount') ||
-      isMissingColumnError(result.error, 'deposit_amount') ||
-      isMissingColumnError(result.error, 'reservation_required') ||
-      isMissingColumnError(result.error, 'reservation_amount') ||
-      isMissingColumnError(result.error, 'reservation_status') ||
-      isMissingColumnError(result.error, 'reservation_paid_date') ||
-      isMissingColumnError(result.error, 'onboarding_status') ||
-      isMissingColumnError(result.error, 'onboarding_completed_at') ||
-      isMissingColumnError(result.error, 'external_onboarding_submitted_at'))
-  ) {
-    result = await client.from('transactions').update(fallbackPayload).eq('id', transaction.id)
+  for (let attempts = 0; result.error && attempts < 16; attempts += 1) {
+    const missingKey = Object.keys(currentPayload).find((key) => isMissingColumnError(result.error, key))
+    if (!missingKey) break
+    delete currentPayload[missingKey]
+    if (!Object.keys(currentPayload).length) break
+    result = await client.from('transactions').update(currentPayload).eq('id', transaction.id)
   }
 
   if (result.error && isFinanceTypeConstraintError(result.error) && payload.finance_type === 'combination') {
     const legacyPayload = {
-      ...fallbackPayload,
+      ...currentPayload,
       finance_type: 'hybrid',
     }
     result = await client.from('transactions').update(legacyPayload).eq('id', transaction.id)
@@ -26881,6 +27409,13 @@ export async function fetchClientOnboardingByToken(token) {
 
     if (!portalLinkQuery.error && portalLinkQuery.data) {
       clientPortalLink = portalLinkQuery.data
+    } else if (!portalLinkQuery.error) {
+      clientPortalLink = await getOrCreateClientPortalLinkRecord(client, {
+        developmentId: unit?.development_id || transaction.development_id,
+        unitId: unit?.id || transaction.unit_id,
+        transactionId: transaction.id,
+        buyerId: transaction.buyer_id || buyer?.id || null,
+      })
     } else if (
       portalLinkQuery.error &&
       !isMissingTableError(portalLinkQuery.error, 'client_portal_links') &&
@@ -26955,7 +27490,7 @@ export async function fetchClientOnboardingByToken(token) {
     uploadedDocuments,
     fundingSources,
     clientPortalLink,
-    clientPortalPath: clientPortalLink?.token ? `/client/${clientPortalLink.token}` : '/client-access',
+    clientPortalPath: clientPortalLink?.token ? `/client/${clientPortalLink.token}` : '',
   }
 }
 
@@ -27221,11 +27756,12 @@ async function advanceTransactionMainStageIfNeeded(
     throw updateResult.error
   }
 
-  if (transactionRow.unit_id) {
+  const normalizedUnitId = normalizeNullableUuid(transactionRow.unit_id)
+  if (normalizedUnitId) {
     const unitUpdate = await client
       .from('units')
       .update({ status: nextStage })
-      .eq('id', transactionRow.unit_id)
+      .eq('id', normalizedUnitId)
 
     if (unitUpdate.error && !isMissingSchemaError(unitUpdate.error)) {
       throw unitUpdate.error
@@ -27326,6 +27862,20 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
     formData: normalizedFormData,
     transaction,
   })
+  let clientPortalLink = null
+  try {
+    clientPortalLink = await getOrCreateClientPortalLinkRecord(client, {
+      developmentId: unit?.development_id || transaction.development_id,
+      unitId: unit?.id || transaction.unit_id,
+      transactionId: transaction.id,
+      buyerId: transaction.buyer_id || buyer?.id || null,
+    })
+  } catch (portalLinkError) {
+    if (!isMissingSchemaError(portalLinkError) && !isPermissionDeniedError(portalLinkError)) {
+      console.warn('Client portal link creation during onboarding failed', portalLinkError)
+    }
+  }
+  const clientPortalPath = clientPortalLink?.token ? `/client/${clientPortalLink.token}` : ''
 
   await ensureTransactionRequiredDocuments(client, {
     transactionId: transaction.id,
@@ -27403,7 +27953,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       await advanceTransactionMainStageIfNeeded(client, {
         transactionId: transaction.id,
         targetMainStage: 'DEP',
-        allowedCurrentMainStages: ['AVAIL', 'DEP'],
+        allowedCurrentMainStages: ['AVAIL', 'FICA', 'DEP'],
         nextAction: onboardingDepositUpdateMessage,
         comment: onboardingDepositUpdateMessage,
         source: 'client_onboarding_submitted',
@@ -27471,6 +28021,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
             bond_region_id: activation.scope?.bondRegionId || transaction.bond_region_id || null,
             bond_workspace_unit_id: activation.scope?.bondWorkspaceUnitId || transaction.bond_workspace_unit_id || null,
             transaction_role_players: [{ ...activation.roleplayer, status: 'active', assignment_status: 'active' }],
+            buyerPortalPath: clientPortalPath,
             unit_number: unit?.unit_number || null,
             development_name:
               unit?.development && Array.isArray(unit.development)
@@ -27481,6 +28032,10 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
           actor: { roleType: 'client' },
           client,
           emailEnabled: true,
+          metadata: {
+            portalPath: clientPortalPath,
+            applicationPath: clientPortalPath,
+          },
         })
         const notifiedAt = new Date().toISOString()
         await updateRecordByIdWithMissingColumnFallback(
@@ -27503,6 +28058,10 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
         buyer,
         formData: normalizedFormData,
       })
+
+      await sendRoleplayerHandoffEmailForOnboarding(client, {
+        transactionId: transaction.id,
+      })
     } catch (bondNotificationError) {
       console.warn('Bond intake started notification failed', bondNotificationError)
     }
@@ -27522,7 +28081,12 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
     }
   }
 
-  return normalizeOnboardingRow(updatedOnboarding, purchaserType)
+  return {
+    ...normalizeOnboardingRow(updatedOnboarding, purchaserType),
+    transactionId: transaction.id,
+    clientPortalPath,
+    clientPortalLink,
+  }
 }
 
 export async function saveClientOnboardingDraft({ token, formData }) {

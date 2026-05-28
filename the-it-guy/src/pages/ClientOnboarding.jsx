@@ -913,6 +913,7 @@ function ClientOnboarding() {
   const [error, setError] = useState('')
   const [payload, setPayload] = useState(null)
   const [formData, setFormData] = useState({})
+  const [submittedClientPortalPath, setSubmittedClientPortalPath] = useState('')
   const [activeStepIndex, setActiveStepIndex] = useState(0)
   const [completionBannerVisible, setCompletionBannerVisible] = useState(false)
   const [fieldErrors, setFieldErrors] = useState({})
@@ -929,6 +930,7 @@ function ClientOnboarding() {
       setLoading(true)
       setError('')
       const data = await fetchClientOnboardingByToken(token)
+      setSubmittedClientPortalPath('')
       const transactionPurchasePriceValue = normalizeInputValue(data?.transaction?.purchase_price)
       const initialPurchaserType = normalizePurchaserType(data.formData?.purchaser_type || data.purchaserType)
       const initialPurchaserEntityType = String(
@@ -1005,7 +1007,7 @@ function ClientOnboarding() {
     : [payload?.unit?.development?.name, payload?.unit?.unit_number ? `Unit ${payload.unit.unit_number}` : '']
         .filter(Boolean)
         .join(' | ')
-  const clientPortalPath = String(payload?.clientPortalPath || '').trim() || '/client-access'
+  const clientPortalPath = String(submittedClientPortalPath || payload?.clientPortalPath || '').trim()
   const fundingSources = normalizeFundingSources(formData.funding_sources || payload?.fundingSources || [])
   const stepDefinitions = useMemo(
     () =>
@@ -1370,6 +1372,8 @@ function ClientOnboarding() {
         token,
         formData: submissionData,
       })
+      const nextClientPortalPath = String(submitResult?.clientPortalPath || payload?.clientPortalPath || '').trim()
+      setSubmittedClientPortalPath(nextClientPortalPath)
       const submittedTransactionId = String(
         submitResult?.transactionId || payload?.transaction?.id || '',
       ).trim()
@@ -2096,13 +2100,15 @@ function ClientOnboarding() {
             </div>
             <h2 className="mt-5 text-2xl font-semibold tracking-[-0.03em] text-[#142132]">Onboarding Submitted</h2>
             <p className="mt-3 text-sm leading-6 text-[#516277]">
-              Thank you — your information has been received. The next step is to upload your supporting documents in the client portal.
+              Thank you — your information has been received. The transaction team has been notified and will continue with the next step.
             </p>
-            <Button asChild className="mt-6 w-full min-h-[52px]">
-              <Link to={clientPortalPath}>
-                Go to Client Portal <ChevronRight size={14} />
-              </Link>
-            </Button>
+            {clientPortalPath ? (
+              <Button asChild className="mt-6 w-full min-h-[52px]">
+                <Link to={clientPortalPath}>
+                  Go to Client Portal <ChevronRight size={14} />
+                </Link>
+              </Button>
+            ) : null}
           </section>
         ) : (
           <>

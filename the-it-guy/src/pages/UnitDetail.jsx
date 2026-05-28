@@ -4426,7 +4426,7 @@ function UnitDetail() {
   const isAttorneyLens = workspaceRole === 'attorney' || actingRole === 'attorney'
   const canSeeAttorneyCloseout = ['developer', 'internal_admin', 'attorney'].includes(effectiveEditorRole)
   const purchasePriceValue = Number(transaction?.purchase_price || transaction?.sales_price || unit?.price || 0)
-  const financeLabel = transaction?.finance_type ? normalizeFinanceType(transaction.finance_type) : 'n/a'
+  const financeLabel = transaction?.finance_type ? normalizeFinanceType(transaction.finance_type, { allowUnknown: true }) : 'unknown'
   const mainStageLabel = MAIN_STAGE_LABELS[mainStage] || mainStage
   const resolvedPurchaserTypeLabel = purchaserTypeLabel || getPurchaserTypeLabel(transaction?.purchaser_type)
   const onboardingStatus = onboarding?.status || 'Not Started'
@@ -4465,6 +4465,11 @@ function UnitDetail() {
     updatedAt: transaction?.updated_at || transaction?.created_at,
   })
   const onboardingComplete = ['Submitted', 'Reviewed', 'Approved'].includes(onboardingStatus)
+  const hasCapturedFinancials = onboardingComplete
+  const hasCapturedFinanceType = hasCapturedFinancials && financeLabel !== 'unknown'
+  const displayPurchasePriceValue = hasCapturedFinancials ? Number(transaction?.purchase_price || transaction?.sales_price || 0) : 0
+  const displayPurchasePriceLabel = displayPurchasePriceValue ? currency.format(displayPurchasePriceValue) : 'Not captured'
+  const displayFinanceTypeLabel = hasCapturedFinanceType ? toTitleLabel(financeLabel) : 'Not captured'
   const onboardingHeaderLabel = onboardingComplete
     ? 'Onboarding completed'
     : onboardingEmailSent
@@ -4764,7 +4769,9 @@ function UnitDetail() {
     'first_time_buyer',
     'primary_residence',
   ])
-  const activeFinanceType = normalizeFinanceType(transaction?.finance_type || stageForm.finance_type || 'cash')
+  const activeFinanceType = hasCapturedFinanceType
+    ? normalizeFinanceType(transaction?.finance_type || stageForm.finance_type, { allowUnknown: true })
+    : 'unknown'
   const isBondOrHybridFinance = activeFinanceType === 'bond' || activeFinanceType === 'combination'
   const canViewBondWorkspaceTab = ['developer', 'agent'].includes(workspaceRole) && isBondOrHybridFinance
   const bondHybridFinanceSummary = transactionFinanceWorkflow?.summary || null
@@ -5062,8 +5069,8 @@ function UnitDetail() {
     'Not assigned'
   const targetRegistrationLabel =
     formatDate(transaction?.expected_transfer_date || transaction?.registration_date || transaction?.registered_at || transaction?.completed_at)
-  const bondAmountLabel = transaction?.bond_amount ? currency.format(Number(transaction.bond_amount || 0)) : 'Not captured'
-  const depositAmountLabel = transaction?.deposit_amount ? currency.format(Number(transaction.deposit_amount || 0)) : 'Not captured'
+  const bondAmountLabel = hasCapturedFinancials && transaction?.bond_amount ? currency.format(Number(transaction.bond_amount || 0)) : 'Not captured'
+  const depositAmountLabel = hasCapturedFinancials && transaction?.deposit_amount ? currency.format(Number(transaction.deposit_amount || 0)) : 'Not captured'
   const matterHealthLabel = stageProgressModel.currentStageBlockers.length
     ? 'Attention'
     : missingDocumentCount > 0
@@ -5098,10 +5105,10 @@ function UnitDetail() {
         { label: 'Instruction Sent', value: bondHybridFinanceSummary?.instructionSent ? 'Yes' : 'No', subtext: bondHybridFinanceSummary?.instructionSent ? 'Ready for attorney workflow' : 'Pending instruction', icon: Send },
       ]
     : [
-        { label: 'Purchase Price', value: currency.format(purchasePriceValue || 0), subtext: unit?.status ? toTitleLabel(unit.status) : 'Transaction value', icon: CircleDollarSign },
-        { label: 'Finance Type', value: financeLabel === 'n/a' ? 'Not set' : toTitleLabel(financeLabel), subtext: stageForm.finance_managed_by ? toTitleLabel(stageForm.finance_managed_by) : 'Funding route', icon: Landmark },
-        { label: 'Bond Amount', value: bondAmountLabel, subtext: 'Cash transaction', icon: BadgeDollarSign },
-        { label: 'Deposit', value: depositAmountLabel, subtext: reservationRequired ? reservationStatusLabel : 'Deposit captured', icon: Building2 },
+        { label: 'Purchase Price', value: displayPurchasePriceLabel, subtext: hasCapturedFinancials ? 'Transaction value' : 'Awaiting onboarding', icon: CircleDollarSign },
+        { label: 'Finance Type', value: displayFinanceTypeLabel, subtext: hasCapturedFinanceType && stageForm.finance_managed_by ? toTitleLabel(stageForm.finance_managed_by) : 'Awaiting onboarding', icon: Landmark },
+        { label: 'Bond Amount', value: bondAmountLabel, subtext: hasCapturedFinanceType && activeFinanceType === 'cash' ? 'Cash transaction' : 'Awaiting onboarding', icon: BadgeDollarSign },
+        { label: 'Deposit', value: depositAmountLabel, subtext: hasCapturedFinancials && reservationRequired ? reservationStatusLabel : 'Awaiting onboarding', icon: Building2 },
         { label: 'Target Registration', value: targetRegistrationLabel, subtext: formatTransactionAge(transaction?.created_at || transaction?.updated_at), icon: CalendarClock },
       ]
   const agentQuickActions = [
@@ -5197,7 +5204,7 @@ function UnitDetail() {
         { id: 'overview', label: 'Overview' },
         { id: 'onboarding', label: 'Parties', meta: onboardingStatus },
         { id: 'documents', label: 'Documents', meta: `${documents?.length || 0}` },
-        { id: 'financials', label: 'Finance', meta: financeLabel === 'n/a' ? 'Not set' : financeLabel },
+        { id: 'financials', label: 'Finance', meta: hasCapturedFinanceType ? financeLabel : 'Not set' },
         { id: 'transfer', label: 'Transfer', meta: mainStageLabel },
         { id: 'tasks', label: 'Next Actions', meta: `${agentUpcomingActions.length}` },
         { id: 'activity', label: 'Activity', meta: `${(transactionDiscussion || []).length}` },
@@ -5238,7 +5245,7 @@ function UnitDetail() {
     mainStageLabel,
     onboardingLabel: onboardingHeaderLabel,
     operationalStateLabel: onboardingComplete ? 'On track' : 'Needs action',
-    financeTypeLabel: financeLabel === 'n/a' ? 'Not set' : financeLabel,
+    financeTypeLabel: hasCapturedFinanceType ? financeLabel : 'Not set',
     purchasePriceLabel: currency.format(purchasePriceValue || 0),
     timeInStageValue: formatTransactionAge(transaction?.created_at || transaction?.updated_at),
     timeInStageMeta: `Updated ${formatDate(transaction?.updated_at || transaction?.created_at)}`,
@@ -5748,7 +5755,7 @@ function UnitDetail() {
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {[
               ['Current Stage', mainStageLabel],
-              ['Purchase Price', currency.format(purchasePriceValue || 0)],
+              ['Purchase Price', displayPurchasePriceLabel],
               ['Onboarding', onboardingStatus],
               [
                 'Time In Stage',
@@ -5773,7 +5780,7 @@ function UnitDetail() {
             ['Development', unit.development?.name || 'Not set'],
             ['Unit', unit.unit_number || 'Not set'],
             ['Buyer', buyer?.name || 'Buyer not assigned yet'],
-            ['Finance Type', financeLabel],
+            ['Finance Type', hasCapturedFinanceType ? financeLabel : 'Not captured'],
             ['Documents', documentReadinessText],
           ].map(([label, value]) => (
             <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
@@ -7329,7 +7336,7 @@ function UnitDetail() {
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {[
                   ['Application Status', bondApplicationStatus],
-                  ['Finance Type', financeLabel],
+                  ['Finance Type', hasCapturedFinanceType ? financeLabel : 'Not captured'],
                   ['Selected Banks', selectedBondBanks.length ? selectedBondBanks.join(', ') : 'Not selected'],
                   ['Submitted', formatDate(onboardingBondApplication?.submitted_at)],
                 ].map(([label, value]) => (
