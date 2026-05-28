@@ -6405,8 +6405,8 @@ function normalizeOnboardingRow(row, fallbackPurchaserType = 'individual') {
 
   const normalizedType = normalizePurchaserType(row.purchaser_type || fallbackPurchaserType)
   return {
-    id: row.id,
-    transactionId: row.transaction_id,
+    id: normalizeNullableUuid(row.id),
+    transactionId: normalizeNullableUuid(row.transaction_id),
     token: row.token,
     status: ONBOARDING_STATUSES.includes(row.status) ? row.status : 'Not Started',
     purchaserType: normalizedType,
@@ -6540,7 +6540,8 @@ async function getOrCreateTransactionOnboardingRecord(
   { transactionId, purchaserType = 'individual' },
   { createIfMissing = true } = {},
 ) {
-  if (!transactionId) {
+  const normalizedTransactionId = normalizeNullableUuid(transactionId)
+  if (!normalizedTransactionId) {
     return null
   }
 
@@ -6573,7 +6574,7 @@ async function getOrCreateTransactionOnboardingRecord(
   const existingQuery = await client
     .from('transaction_onboarding')
     .select(rowSelect)
-    .eq('transaction_id', transactionId)
+    .eq('transaction_id', normalizedTransactionId)
     .eq('is_active', true)
   const existingError = existingQuery.error
 
@@ -6620,7 +6621,7 @@ async function getOrCreateTransactionOnboardingRecord(
     return normalizeOnboardingRow(
       {
         id: null,
-        transaction_id: transactionId,
+        transaction_id: normalizedTransactionId,
         token: null,
         status: 'Not Started',
         purchaser_type: normalizedType,
@@ -6634,7 +6635,7 @@ async function getOrCreateTransactionOnboardingRecord(
   }
 
   const insertPayload = {
-    transaction_id: transactionId,
+    transaction_id: normalizedTransactionId,
     token: generateOnboardingToken(),
     status: 'Not Started',
     purchaser_type: normalizedType,
@@ -6647,7 +6648,7 @@ async function getOrCreateTransactionOnboardingRecord(
     const conflictLookup = await client
       .from('transaction_onboarding')
       .select(rowSelect)
-      .eq('transaction_id', transactionId)
+      .eq('transaction_id', normalizedTransactionId)
       .eq('is_active', true)
     const conflictRow = pickMostRecentOnboardingRow(Array.isArray(conflictLookup.data) ? conflictLookup.data : [])
     if (conflictLookup.error) {
@@ -12504,7 +12505,11 @@ async function resolveOnboardingTokenContext(client, token) {
   }
 
   if (data) {
-    return normalizeOnboardingRow(data)
+    const onboarding = normalizeOnboardingRow(data)
+    if (!onboarding?.transactionId) {
+      throw new Error('Onboarding link is missing its linked transaction. Please ask your agent to resend the onboarding link.')
+    }
+    return onboarding
   }
 
   throw new Error('Onboarding link is invalid or inactive.')
@@ -26410,13 +26415,14 @@ export async function revokeClientPortalLink(linkId) {
 
 export async function getOrCreateTransactionOnboarding({ transactionId, purchaserType = 'individual' }) {
   const client = requireClient()
+  const normalizedTransactionId = normalizeNullableUuid(transactionId)
 
-  if (!transactionId) {
+  if (!normalizedTransactionId) {
     throw new Error('Transaction is required.')
   }
 
   const onboarding = await getOrCreateTransactionOnboardingRecord(client, {
-    transactionId,
+    transactionId: normalizedTransactionId,
     purchaserType,
   })
 
@@ -26427,7 +26433,7 @@ export async function getOrCreateTransactionOnboarding({ transactionId, purchase
   const { data: transaction, error: transactionError } = await client
     .from('transactions')
     .select('id, purchaser_type, finance_type, cash_amount, bond_amount, reservation_required')
-    .eq('id', transactionId)
+    .eq('id', normalizedTransactionId)
     .maybeSingle()
 
   if (
@@ -26444,7 +26450,7 @@ export async function getOrCreateTransactionOnboarding({ transactionId, purchase
   const resolvedType = normalizePurchaserType(transaction?.purchaser_type || purchaserType || onboarding.purchaserType)
   const resolvedFinanceType = normalizeFinanceType(transaction?.finance_type || 'cash')
   const requiredDocuments = await ensureTransactionRequiredDocuments(client, {
-    transactionId,
+    transactionId: normalizedTransactionId,
     purchaserType: resolvedType,
     financeType: resolvedFinanceType,
     reservationRequired: Boolean(transaction?.reservation_required),
@@ -26734,12 +26740,17 @@ async function syncOnboardingTransactionFinanceSnapshot(
 }
 
 async function resolveTransactionAndContext(client, transactionId) {
+  const normalizedTransactionId = normalizeNullableUuid(transactionId)
+  if (!normalizedTransactionId) {
+    throw new Error('Onboarding link is missing its linked transaction. Please ask your agent to resend the onboarding link.')
+  }
+
   let transactionQuery = await client
     .from('transactions')
     .select(
       'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, purchaser_type, stage, current_main_stage, attorney, bond_originator, next_action, comment, updated_at, created_at',
     )
-    .eq('id', transactionId)
+    .eq('id', normalizedTransactionId)
     .maybeSingle()
 
   if (
@@ -26771,7 +26782,7 @@ async function resolveTransactionAndContext(client, transactionId) {
       .select(
         'id, development_id, unit_id, buyer_id, sales_price, finance_type, purchaser_type, stage, current_main_stage, attorney, bond_originator, next_action, comment, updated_at, created_at',
       )
-      .eq('id', transactionId)
+      .eq('id', normalizedTransactionId)
       .maybeSingle()
   }
 
@@ -26781,7 +26792,7 @@ async function resolveTransactionAndContext(client, transactionId) {
       .select(
         'id, development_id, unit_id, buyer_id, finance_type, stage, current_main_stage, attorney, bond_originator, next_action, comment, updated_at, created_at',
       )
-      .eq('id', transactionId)
+      .eq('id', normalizedTransactionId)
       .maybeSingle()
   }
 

@@ -8,6 +8,34 @@ import {
   revokeClientPortalLink,
 } from '../lib/api'
 
+async function copyTextToClipboard(text) {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return
+    } catch {
+      // Fall through to the textarea fallback for browsers that block async clipboard writes.
+    }
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  textarea.style.top = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+
+  const copied = document.execCommand('copy')
+  document.body.removeChild(textarea)
+
+  if (!copied) {
+    throw new Error('Unable to copy link. Please copy it manually from your browser.')
+  }
+}
+
 function ClientPortalAccessPanel({
   developmentId,
   unitId,
@@ -101,21 +129,45 @@ function ClientPortalAccessPanel({
   }
 
   async function handleCopy(link) {
-    const url = `${window.location.origin}/client/${link.token}`
-    await navigator.clipboard.writeText(url)
-    setCopiedId(link.id)
-    setTimeout(() => setCopiedId(''), 1400)
+    try {
+      setError('')
+      const url = `${window.location.origin}/client/${link.token}`
+      await copyTextToClipboard(url)
+      setCopiedId(link.id)
+      setTimeout(() => setCopiedId(''), 1400)
+    } catch (copyError) {
+      setError(copyError.message)
+    }
   }
 
   async function handleCopyOnboarding() {
-    if (!onboarding?.token) {
+    if (!transactionId) {
+      setError('Create a transaction first to generate an onboarding link.')
       return
     }
 
-    const url = `${window.location.origin}/client/onboarding/${onboarding.token}`
-    await navigator.clipboard.writeText(url)
-    setCopiedOnboarding(true)
-    setTimeout(() => setCopiedOnboarding(false), 1400)
+    try {
+      setSaving(true)
+      setError('')
+      const onboardingRecord = onboarding?.token
+        ? onboarding
+        : await getOrCreateTransactionOnboarding({
+            transactionId,
+            purchaserType,
+          })
+      if (!onboardingRecord?.token) {
+        throw new Error('Unable to generate onboarding link right now.')
+      }
+      setOnboarding(onboardingRecord)
+      const url = `${window.location.origin}/client/onboarding/${onboardingRecord.token}`
+      await copyTextToClipboard(url)
+      setCopiedOnboarding(true)
+      setTimeout(() => setCopiedOnboarding(false), 1400)
+    } catch (copyError) {
+      setError(copyError.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -181,7 +233,7 @@ function ClientPortalAccessPanel({
             <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#fbfcfe] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
               {onboarding.purchaserTypeLabel}
             </span>
-            <Button type="button" variant="secondary" onClick={handleCopyOnboarding} disabled={saving || disabled}>
+            <Button type="button" variant="secondary" onClick={handleCopyOnboarding} disabled={saving || disabled || !transactionId}>
               <Copy size={14} />
               {copiedOnboarding ? 'Copied' : 'Copy Onboarding Link'}
             </Button>

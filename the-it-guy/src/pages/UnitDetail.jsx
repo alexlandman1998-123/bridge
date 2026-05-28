@@ -125,6 +125,35 @@ const DEFAULT_SECTION_COMPLETION = {
   employment: false,
   purchase_structure: false,
 }
+
+async function copyTextToClipboard(text) {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return
+    } catch {
+      // Fall through to the textarea fallback for browsers that block async clipboard writes.
+    }
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  textarea.style.top = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+
+  const copied = document.execCommand('copy')
+  document.body.removeChild(textarea)
+
+  if (!copied) {
+    throw new Error('Unable to copy onboarding link. Please copy it manually from your browser.')
+  }
+}
+
 const WORKSPACE_DOCUMENT_TABS = [
   { key: 'sales', label: 'Sales Documents' },
   { key: 'fica', label: 'FICA Documents' },
@@ -2168,6 +2197,7 @@ function UnitDetail() {
   const [deferredLoading, setDeferredLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [sendingOnboardingEmail, setSendingOnboardingEmail] = useState(false)
+  const [onboardingLinkCopied, setOnboardingLinkCopied] = useState(false)
   const [deletingTransaction, setDeletingTransaction] = useState(false)
   const [deleteTransactionConfirmOpen, setDeleteTransactionConfirmOpen] = useState(false)
   const [error, setError] = useState('')
@@ -3373,9 +3403,12 @@ function UnitDetail() {
 
   async function handleCopyOnboardingLink() {
     try {
+      setError('')
       const record = detail?.onboarding?.token ? detail.onboarding : await ensureOnboardingToken()
       const url = `${window.location.origin}/client/onboarding/${record.token}`
-      await navigator.clipboard.writeText(url)
+      await copyTextToClipboard(url)
+      setOnboardingLinkCopied(true)
+      window.setTimeout(() => setOnboardingLinkCopied(false), 1400)
     } catch (copyError) {
       setError(copyError?.message || 'Unable to copy onboarding link. Please copy it manually from your browser.')
     }
@@ -5266,12 +5299,12 @@ function UnitDetail() {
     ...((onboardingEmailSent || onboardingComplete)
       ? [{
           id: 'copy-onboarding-link',
-          label: 'Copy Onboarding Link',
+          label: onboardingLinkCopied ? 'Copied Onboarding Link' : 'Copy Onboarding Link',
           icon: 'onboarding_link',
           variant: onboardingComplete ? 'secondary' : 'ghost',
           className: 'min-w-[206px]',
           onClick: handleCopyOnboardingLink,
-          disabled: !onboarding?.token || !canEditSalesWorkflow,
+          disabled: !transaction?.id || !canEditSalesWorkflow,
           hidden: !canEditSalesWorkflow,
         }]
       : []),
@@ -5469,9 +5502,14 @@ function UnitDetail() {
             disabled: sendingOnboardingEmail || !transaction?.id || !buyer?.email,
           },
         )
-        addAction('copy_onboarding_link', 'Copy Onboarding Link', handleCopyOnboardingLink, {
-          disabled: !onboarding?.token,
-        })
+        addAction(
+          'copy_onboarding_link',
+          onboardingLinkCopied ? 'Copied Onboarding Link' : 'Copy Onboarding Link',
+          handleCopyOnboardingLink,
+          {
+            disabled: !transaction?.id,
+          },
+        )
         break
       case 'generate_otp':
         addAction(
@@ -5533,9 +5571,14 @@ function UnitDetail() {
             disabled: !salesWorkflowSnapshot.supportingDocsComplete,
           },
         )
-        addAction('copy_onboarding_link', 'Copy Onboarding Link', handleCopyOnboardingLink, {
-          disabled: !onboarding?.token,
-        })
+        addAction(
+          'copy_onboarding_link',
+          onboardingLinkCopied ? 'Copied Onboarding Link' : 'Copy Onboarding Link',
+          handleCopyOnboardingLink,
+          {
+            disabled: !transaction?.id,
+          },
+        )
         break
       default:
         addAction(
