@@ -25,13 +25,14 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
+import TransactionBondHybridFinanceWorkflowPanel from '../components/TransactionBondHybridFinanceWorkflowPanel'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import { getAttorneyTransferStage, stageLabelFromAttorneyKey } from '../core/transactions/attorneySelectors'
-import { normalizeFinanceType } from '../core/transactions/financeType'
+import { isBondFinanceType, normalizeFinanceType } from '../core/transactions/financeType'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import {
@@ -42,6 +43,9 @@ import {
 } from '../services/attorneyWorkflow/attorneyWorkflowLaneService'
 import {
   addTransactionDiscussionComment,
+  addBondApplication,
+  addBondQuote,
+  approveBondQuote,
   archiveTransactionLifecycle,
   cancelTransactionLifecycle,
   archiveTransactionDocument,
@@ -50,8 +54,10 @@ import {
   fetchTransactionById,
   getCompletionBlockers,
   getFinalReportData,
+  getTransactionFinanceWorkflow,
   getOrCreateTransactionOnboarding,
   getRegistrationBlockers,
+  markFinanceInstructionSent,
   markTransactionCompleted,
   markTransactionRegistered,
   removeStakeholder,
@@ -61,6 +67,8 @@ import {
   undoTransactionRegistration,
   unarchiveTransactionLifecycle,
   updateTransactionAccessControl,
+  updateBondApplication,
+  updateBondHybridFinanceStage,
   updateTransactionStakeholderContacts,
   uploadDocument,
 } from '../lib/api'
@@ -1961,6 +1969,7 @@ function AttorneyTransactionDetail() {
   const [workflowNoteDraft, setWorkflowNoteDraft] = useState(null)
   const [workflowDocumentDraft, setWorkflowDocumentDraft] = useState(null)
   const [workflowSaving, setWorkflowSaving] = useState(false)
+  const [bondHybridFinanceActionLoading, setBondHybridFinanceActionLoading] = useState('')
   const [activityFilter, setActivityFilter] = useState('all')
 
   const loadData = useCallback(async ({ background = false } = {}) => {
@@ -2156,6 +2165,7 @@ function AttorneyTransactionDetail() {
     [canViewInternalDiscussion, transactionDiscussion],
   )
   const transactionEvents = data?.transactionEvents ?? EMPTY_ARRAY
+  const transactionFinanceWorkflow = data?.transactionFinanceWorkflow || null
   const transactionParticipants = data?.transactionParticipants ?? EMPTY_ARRAY
   const rawTransactionRolePlayers = data?.transactionRolePlayers || data?.rolePlayers || data?.transaction_role_players
   const transactionRolePlayers = Array.isArray(rawTransactionRolePlayers) ? rawTransactionRolePlayers.filter(Boolean) : EMPTY_ARRAY
@@ -2266,7 +2276,8 @@ function AttorneyTransactionDetail() {
   const hasCapturedFinancials = onboardingCompleted
   const hasCapturedFinanceType = hasCapturedFinancials && normalizedFinanceType !== 'unknown'
   const financeTypeLabel = hasCapturedFinanceType ? toTitle(normalizedFinanceType) : 'Not captured'
-  const financeRequiresBondSupport = hasCapturedFinanceType && ['bond', 'combination', 'hybrid'].includes(normalizedFinanceType)
+  const isBondOrHybridFinance = hasCapturedFinanceType && isBondFinanceType(normalizedFinanceType)
+  const financeRequiresBondSupport = hasCapturedFinanceType && isBondOrHybridFinance
   const isCapturedCashFinance = hasCapturedFinanceType && normalizedFinanceType === 'cash'
   const displayPurchasePriceValue = hasCapturedFinancials ? Number(transaction?.purchase_price || transaction?.sales_price || 0) : 0
   const bondAmountFallback = hasCapturedFinanceType ? (financeRequiresBondSupport ? 'Pending' : 'N/A') : 'Not captured'
@@ -2806,10 +2817,28 @@ function AttorneyTransactionDetail() {
       return workflowLanes.filter((lane) => ['transfer', 'cancellation'].includes(lane.laneKey))
     }
     if (activeWorkspaceMenu === 'finance') {
+      if (isBondOrHybridFinance) return EMPTY_ARRAY
       return workflowLanes.filter((lane) => lane.laneKey === 'bond')
     }
     return EMPTY_ARRAY
-  }, [activeWorkspaceMenu, workflowLanes])
+  }, [activeWorkspaceMenu, isBondOrHybridFinance, workflowLanes])
+  const canEditBondHybridFinanceWorkflow = ['bond_originator', 'developer', 'internal_admin', 'admin'].includes(
+    String(workspaceRole || '').toLowerCase(),
+  )
+  const bondHybridFinanceWorkflowPanel = isBondOrHybridFinance ? (
+    <TransactionBondHybridFinanceWorkflowPanel
+      workflowData={transactionFinanceWorkflow}
+      canEdit={canEditBondHybridFinanceWorkflow}
+      variant={workspaceRole === 'bond_originator' ? 'originator' : 'agent'}
+      loadingAction={bondHybridFinanceActionLoading}
+      onAdvanceStage={(stageKey) => void handleBondHybridFinanceStage(stageKey)}
+      onAddApplication={(payload) => void handleAddBondHybridApplication(payload)}
+      onUpdateApplication={(applicationId, payload) => void handleUpdateBondHybridApplication(applicationId, payload)}
+      onAddQuote={(payload) => void handleAddBondHybridQuote(payload)}
+      onApproveQuote={(quoteId) => void handleApproveBondHybridQuote(quoteId)}
+      onInstructionSent={() => void handleMarkBondHybridInstructionSent()}
+    />
+  ) : null
   const activeWorkflowLane = useMemo(
     () => workflowLanes.find((lane) => lane.laneKey === workflowDrawerLaneKey) || null,
     [workflowDrawerLaneKey, workflowLanes],
@@ -2823,6 +2852,121 @@ function AttorneyTransactionDetail() {
       setWorkflowOperations(operations)
     }
     await loadData({ background: true })
+  }
+
+  async function refreshBondHybridFinanceWorkflow(nextWorkflow = null) {
+    if (nextWorkflow) {
+      setData((previous) => previous ? { ...previous, transactionFinanceWorkflow: nextWorkflow } : previous)
+      return nextWorkflow
+    }
+    if (!transaction?.id) return null
+    const workflow = await getTransactionFinanceWorkflow(transaction.id, { createIfMissing: true })
+    setData((previous) => previous ? { ...previous, transactionFinanceWorkflow: workflow } : previous)
+    return workflow
+  }
+
+  async function handleBondHybridFinanceStage(stageKey) {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for bond finance workflow updates.')
+      return
+    }
+
+    try {
+      setBondHybridFinanceActionLoading(stageKey)
+      setError('')
+      const result = await updateBondHybridFinanceStage(transaction.id, stageKey, { actorRole: workspaceRole })
+      await refreshBondHybridFinanceWorkflow(result)
+      await loadData({ background: true })
+    } catch (workflowActionError) {
+      setError(workflowActionError?.message || 'Unable to update bond finance workflow.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  async function handleAddBondHybridApplication(payload) {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for bond applications.')
+      return
+    }
+
+    try {
+      setBondHybridFinanceActionLoading('add_application')
+      setError('')
+      const result = await addBondApplication(transaction.id, payload, { actorRole: workspaceRole })
+      await refreshBondHybridFinanceWorkflow(result)
+      await loadData({ background: true })
+    } catch (workflowActionError) {
+      setError(workflowActionError?.message || 'Unable to add bank/lender application.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  async function handleUpdateBondHybridApplication(applicationId, payload) {
+    try {
+      setBondHybridFinanceActionLoading(applicationId)
+      setError('')
+      const result = await updateBondApplication(applicationId, payload, { actorRole: workspaceRole })
+      await refreshBondHybridFinanceWorkflow(result)
+      await loadData({ background: true })
+    } catch (workflowActionError) {
+      setError(workflowActionError?.message || 'Unable to update bank/lender application.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  async function handleAddBondHybridQuote(payload) {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for bond quotes.')
+      return
+    }
+
+    try {
+      setBondHybridFinanceActionLoading('add_quote')
+      setError('')
+      const result = await addBondQuote(transaction.id, payload, { actorRole: workspaceRole })
+      await refreshBondHybridFinanceWorkflow(result)
+      await loadData({ background: true })
+    } catch (workflowActionError) {
+      setError(workflowActionError?.message || 'Unable to add finance quote.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  async function handleApproveBondHybridQuote(quoteId) {
+    try {
+      setBondHybridFinanceActionLoading(quoteId)
+      setError('')
+      const result = await approveBondQuote(quoteId, { actorRole: workspaceRole })
+      await refreshBondHybridFinanceWorkflow(result)
+      await loadData({ background: true })
+    } catch (workflowActionError) {
+      setError(workflowActionError?.message || 'Unable to approve finance quote.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  async function handleMarkBondHybridInstructionSent() {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for instruction updates.')
+      return
+    }
+
+    try {
+      setBondHybridFinanceActionLoading('instruction_sent')
+      setError('')
+      const result = await markFinanceInstructionSent(transaction.id, { actorRole: workspaceRole })
+      await refreshBondHybridFinanceWorkflow(result)
+      await loadData({ background: true })
+    } catch (workflowActionError) {
+      setError(workflowActionError?.message || 'Unable to mark finance instruction sent.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
   }
 
   function openWorkflowDrawer(lane) {
@@ -3164,6 +3308,23 @@ function AttorneyTransactionDetail() {
     ['Commission', formatCurrencyValue(transaction?.commission_amount, 'Pending')],
     ['Trust / Disbursements', formatCurrencyValue(transaction?.trust_balance, 'Placeholder')],
   ]
+  const bondHybridFinanceSummary = transactionFinanceWorkflow?.summary || null
+  const bondHybridFundingSnapshotRows = isBondOrHybridFinance
+    ? [
+        ['Finance Type', financeTypeLabel],
+        ['Finance Stage', bondHybridFinanceSummary?.currentStageLabel || 'Documents Received'],
+        ['Bond Originator', getParticipantDisplayName(assignedBondOriginator) || transaction?.bond_originator || 'Not assigned'],
+        ['Submitted Banks', String(bondHybridFinanceSummary?.submittedBanksCount || 0)],
+        ['Quotes Received', String(bondHybridFinanceSummary?.quotesReceivedCount || 0)],
+        ['Approved Bank', bondHybridFinanceSummary?.approvedQuote?.bankName || 'Not approved yet'],
+        ['Instruction Sent', bondHybridFinanceSummary?.instructionSent ? 'Yes' : 'No'],
+      ]
+    : [
+        ['Finance Type', financeTypeLabel],
+        ['Bond Attorney', bondAttorney?.organisationName || bondAttorney?.participantName || bondAttorney?.participantEmail || 'Not assigned'],
+        ['Expected Transfer Date', formatDate(transaction?.expected_transfer_date)],
+        ['Registration Date', formatDate(transaction?.registration_date || transaction?.registered_at)],
+      ]
   const filteredActivityFeed = useMemo(
     () =>
       activityFeed.filter((entry) => {
@@ -5035,12 +5196,7 @@ function AttorneyTransactionDetail() {
                 <h3 className="text-section-title font-semibold text-textStrong">Funding Snapshot</h3>
                 <p className="mt-1 text-secondary text-textMuted">Compact view of finance type, guarantees, and registration timing.</p>
                 <div className="mt-4 grid gap-3">
-                  {[
-                    ['Finance Type', financeTypeLabel],
-                    ['Bond Attorney', bondAttorney?.organisationName || bondAttorney?.participantName || bondAttorney?.participantEmail || 'Not assigned'],
-                    ['Expected Transfer Date', formatDate(transaction?.expected_transfer_date)],
-                    ['Registration Date', formatDate(transaction?.registration_date || transaction?.registered_at)],
-                  ].map(([label, value]) => (
+                  {bondHybridFundingSnapshotRows.map(([label, value]) => (
                     <div key={label} className="flex items-center justify-between gap-3 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
                       <span className="text-sm text-textMuted">{label}</span>
                       <strong className="truncate text-right text-sm text-textStrong">{value}</strong>
@@ -5049,29 +5205,33 @@ function AttorneyTransactionDetail() {
                 </div>
               </section>
 
-              <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-section-title font-semibold text-textStrong">Funding Workflow</h3>
-                    <p className="mt-1 text-secondary text-textMuted">Bond approval, guarantees, proof of funds, and bank-related workflow movement.</p>
+              {isBondOrHybridFinance ? (
+                bondHybridFinanceWorkflowPanel
+              ) : (
+                <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-section-title font-semibold text-textStrong">Funding Workflow</h3>
+                      <p className="mt-1 text-secondary text-textMuted">Proof of funds, deposits, guarantees, and finance-related workflow movement.</p>
+                    </div>
+                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-helper font-semibold ${
+                      isCapturedCashFinance
+                        ? 'border-success/30 bg-successSoft text-success'
+                        : 'border-primary/20 bg-primarySoft text-primary'
+                    }`}>
+                      {hasCapturedFinanceType ? (isCapturedCashFinance ? 'Cash transaction' : 'Finance workflow') : 'Awaiting onboarding'}
+                    </span>
                   </div>
-                  <span className={`inline-flex items-center rounded-full border px-3 py-1 text-helper font-semibold ${
-                    isCapturedCashFinance
-                      ? 'border-success/30 bg-successSoft text-success'
-                      : 'border-primary/20 bg-primarySoft text-primary'
-                  }`}>
-                    {hasCapturedFinanceType ? (isCapturedCashFinance ? 'Cash transaction' : 'Bond workflow') : 'Awaiting onboarding'}
-                  </span>
-                </div>
-              </section>
+                </section>
+              )}
 
-              {workflowLoading ? (
+              {!isBondOrHybridFinance && workflowLoading ? (
                 <LoadingSkeleton lines={4} className="rounded-[16px] border border-borderDefault bg-white p-4" />
-              ) : workflowError ? (
+              ) : !isBondOrHybridFinance && workflowError ? (
                 <p className="rounded-[16px] border border-warning/30 bg-warningSoft px-4 py-3 text-sm font-medium text-warning">
                   {workflowError}
                 </p>
-              ) : displayedWorkflowLanes.length ? (
+              ) : !isBondOrHybridFinance && displayedWorkflowLanes.length ? (
                 displayedWorkflowLanes.map((lane) => (
                   <WorkflowLaneCard
                     key={lane.id || lane.laneKey}
@@ -5080,7 +5240,7 @@ function AttorneyTransactionDetail() {
                     onPrimaryAction={handleWorkflowPrimaryAction}
                   />
                 ))
-              ) : (
+              ) : !isBondOrHybridFinance ? (
                 <section className="rounded-[18px] border border-dashed border-borderDefault bg-surface px-5 py-5 shadow-surface">
                   <h4 className="text-sm font-semibold text-textStrong">
                     {hasCapturedFinanceType
@@ -5093,7 +5253,7 @@ function AttorneyTransactionDetail() {
                       : 'Bond or guarantee workflow steps will appear here once the buyer onboarding captures the finance route.'}
                   </p>
                 </section>
-              )}
+              ) : null}
             </section>
           </section>
         ) : null}

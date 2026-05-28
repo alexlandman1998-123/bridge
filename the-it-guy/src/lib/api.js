@@ -22733,6 +22733,13 @@ export async function fetchTransactionById(transactionId) {
     viewer: 'internal',
   })
   const transactionSubprocesses = await ensureTransactionSubprocesses(client, transaction.id)
+  let transactionFinanceWorkflow = null
+  if (isBondFinanceType(transaction.finance_type)) {
+    transactionFinanceWorkflow = await getTransactionFinanceWorkflow(transaction.id, {
+      client,
+      createIfMissing: true,
+    })
+  }
   try {
     await ensureTransactionChecklistItems({ transactionId })
   } catch (ensureError) {
@@ -22785,6 +22792,7 @@ export async function fetchTransactionById(transactionId) {
     trustInvestmentForm: null,
     handover: null,
     transactionSubprocesses,
+    transactionFinanceWorkflow,
     onboarding: null,
     onboardingFormData: onboardingFormData || null,
     purchaserType: normalizePurchaserType(transaction?.purchaser_type),
