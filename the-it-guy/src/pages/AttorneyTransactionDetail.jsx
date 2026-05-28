@@ -403,6 +403,11 @@ function normalizeRoleplayerOptionValue(value) {
   return String(value || '').trim()
 }
 
+function normalizeRoleplayerUuidValue(value) {
+  const normalized = normalizeRoleplayerOptionValue(value)
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized) ? normalized : ''
+}
+
 function makeRoleplayerOptionKey(option = {}) {
   const normalizedOption = option || {}
   return normalizeRoleplayerOptionValue(
@@ -454,7 +459,7 @@ function buildPartnerRoleplayerOption(option = {}, roleType = 'transfer_attorney
     contactPerson: companyName,
     email: normalizeRoleplayerOptionValue(normalizedOption.email),
     organisationId: normalizeRoleplayerOptionValue(normalizedOption.organisationId),
-    relationshipId: normalizeRoleplayerOptionValue(normalizedOption.relationshipId || normalizedOption.id),
+    relationshipId: normalizeRoleplayerUuidValue(normalizedOption.relationshipId || normalizedOption.id),
     scopeType: normalizeRoleplayerOptionValue(normalizedOption.scopeType),
     scopeId: normalizeRoleplayerOptionValue(normalizedOption.scopeId),
     scopeLabel,
@@ -487,7 +492,7 @@ function buildExistingRoleplayerOption(item = {}, roleType = 'transfer_attorney'
     contactPerson: contactPerson || companyName || email,
     email,
     organisationId: normalizeRoleplayerOptionValue(normalizedItem.organisationId || normalizedItem.organisation_id),
-    relationshipId: normalizeRoleplayerOptionValue(normalizedItem.partnerRelationshipId || normalizedItem.partner_relationship_id || normalizedItem.relationshipId),
+    relationshipId: normalizeRoleplayerUuidValue(normalizedItem.partnerRelationshipId || normalizedItem.partner_relationship_id || normalizedItem.relationshipId),
     scopeLabel: normalizeRoleplayerOptionValue(normalizedItem.scopeLabel || normalizedItem.scope_label || normalizedItem.snapshot?.scopeLabel),
     preferred: false,
     label,

@@ -944,6 +944,11 @@ function normalizeNullableText(value) {
   return text || null
 }
 
+function normalizeNullableUuid(value) {
+  const text = normalizeNullableText(value)
+  return text && isUuidLike(text) ? text : null
+}
+
 function normalizeEmailAddress(value) {
   const normalized = String(value || '')
     .trim()
@@ -16858,9 +16863,9 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = []) {
       return {
         roleType,
         selectionSource: normalizedSource,
-        preferredPartnerId: normalizeNullableText(item?.preferredPartnerId || partner.partnerId),
-        partnerRelationshipId: normalizeNullableText(item?.partnerRelationshipId || partner.partnerRelationshipId),
-        partnerOrganisationId: normalizeNullableText(item?.partnerOrganisationId || partner.partnerOrganisationId),
+        preferredPartnerId: normalizeNullableUuid(item?.preferredPartnerId || partner.partnerId),
+        partnerRelationshipId: normalizeNullableUuid(item?.partnerRelationshipId || partner.partnerRelationshipId),
+        partnerOrganisationId: normalizeNullableUuid(item?.partnerOrganisationId || partner.partnerOrganisationId),
         partnerName: partnerName || null,
         contactPerson: normalizeNullableText(partner.contactPerson),
         email: normalizeNullableText(partner.email)?.toLowerCase() || null,
@@ -16872,9 +16877,9 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = []) {
         snapshot: {
           roleType,
           selectionSource: normalizedSource,
-          preferredPartnerId: normalizeNullableText(item?.preferredPartnerId || partner.partnerId),
-          partnerRelationshipId: normalizeNullableText(item?.partnerRelationshipId || partner.partnerRelationshipId),
-          partnerOrganisationId: normalizeNullableText(item?.partnerOrganisationId || partner.partnerOrganisationId),
+          preferredPartnerId: normalizeNullableUuid(item?.preferredPartnerId || partner.partnerId),
+          partnerRelationshipId: normalizeNullableUuid(item?.partnerRelationshipId || partner.partnerRelationshipId),
+          partnerOrganisationId: normalizeNullableUuid(item?.partnerOrganisationId || partner.partnerOrganisationId),
           partner: {
             companyName: normalizeNullableText(partner.companyName),
             contactPerson: normalizeNullableText(partner.contactPerson),
@@ -16967,8 +16972,8 @@ function normalizeTransactionRoleplayerSelection(item = {}) {
   if (!allowedRoleTypes.has(roleType)) return null
 
   const partner = item.partner && typeof item.partner === 'object' ? item.partner : item
-  const organisationId = normalizeNullableText(item.organisationId || item.organisation_id || partner.organisationId || partner.organisation_id)
-  const relationshipId = normalizeNullableText(item.relationshipId || item.relationship_id || partner.relationshipId || partner.relationship_id)
+  const organisationId = normalizeNullableUuid(item.organisationId || item.organisation_id || partner.organisationId || partner.organisation_id)
+  const relationshipId = normalizeNullableUuid(item.relationshipId || item.relationship_id || partner.relationshipId || partner.relationship_id)
   const companyName = normalizeNullableText(partner.companyName || partner.organisationName || partner.partnerName || partner.name)
   const contactPerson = normalizeNullableText(partner.contactPerson || partner.contactName || partner.name || companyName)
   const email = normalizeNullableText(partner.email || partner.emailAddress || partner.email_address)?.toLowerCase() || null

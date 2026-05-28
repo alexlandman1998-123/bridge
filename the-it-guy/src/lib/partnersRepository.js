@@ -8,6 +8,15 @@ const PARTNERS_DEMO_MODE = Boolean(
     (importMetaEnv.DEV && String(importMetaEnv.VITE_ENABLE_MOCK_DATA || '').trim().toLowerCase() === 'true'),
 )
 
+function isUuidLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())
+}
+
+function normalizeNullableUuid(value) {
+  const normalized = String(value || '').trim()
+  return normalized && isUuidLike(normalized) ? normalized : null
+}
+
 export const PARTNER_TYPES = [
   { value: 'agency', label: 'Agent' },
   { value: 'attorney_firm', label: 'Attorney' },
@@ -1324,7 +1333,7 @@ export function getPartnerAssignmentOptions(snapshot = {}, roleType = 'transfer_
       scopeType: relationship.scopeType,
       scopeId: relationship.scopeId,
       scopeLabel: getPartnerScopeBadge(relationship).label,
-      relationshipId: relationship.id,
+      relationshipId: normalizeNullableUuid(relationship.id),
       roleType,
     }))
 }
