@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Building2, Plus, Users } from 'lucide-react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import AttorneyOnboardingLayout from '../components/attorney/onboarding/AttorneyOnboardingLayout'
@@ -601,7 +602,7 @@ function AttorneyOnboardingPage() {
   if (firmLoading) {
     return (
       <section className="page">
-        <div className="panel card-tier-standard">
+        <div className="ui-panel" style={{ padding: '1rem' }}>
           <p className="status-message" style={{ margin: 0 }}>Loading attorney onboarding workspace...</p>
         </div>
       </section>
@@ -611,13 +612,13 @@ function AttorneyOnboardingPage() {
   if (completedOnboarding?.firm?.id) {
     return (
       <section className="page" style={{ maxWidth: '1040px' }}>
-        <div className="panel card-tier-standard" style={{ display: 'grid', gap: '1rem' }}>
+        <div className="ui-panel" style={{ display: 'grid', gap: '1rem', padding: '1.1rem' }}>
           <h2 style={{ margin: 0 }}>Firm setup complete</h2>
           <p className="status-message" style={{ margin: 0 }}>
             {completedOnboarding.firm.name} is ready. Your legal workspace, branding, and departments are now active.
           </p>
           {Array.isArray(completedOnboarding.inviteWarnings) && completedOnboarding.inviteWarnings.length ? (
-            <div className="panel card-tier-soft" style={{ display: 'grid', gap: '0.35rem', padding: '0.85rem' }}>
+            <div className="ui-panel-muted" style={{ display: 'grid', gap: '0.35rem', padding: '0.85rem' }}>
               <strong>Invite follow-ups</strong>
               {completedOnboarding.inviteWarnings.map((warning) => (
                 <p key={warning} className="status-message" style={{ margin: 0 }}>{warning}</p>
@@ -625,13 +626,16 @@ function AttorneyOnboardingPage() {
             </div>
           ) : null}
           <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
-            <button type="button" className="header-primary-cta" onClick={() => navigate('/attorney/dashboard', { replace: true })}>
+            <button type="button" className="ui-button-primary" onClick={() => navigate('/attorney/dashboard', { replace: true })}>
+              <Building2 size={16} aria-hidden="true" />
               Open Attorney Dashboard
             </button>
-            <button type="button" className="header-secondary-cta" onClick={() => navigate('/transactions')}>
+            <button type="button" className="ui-button-secondary" onClick={() => navigate('/transactions')}>
+              <Plus size={16} aria-hidden="true" />
               Create First Transaction
             </button>
-            <button type="button" className="header-secondary-cta" onClick={() => navigate('/settings/organisation')}>
+            <button type="button" className="ui-button-secondary" onClick={() => navigate('/settings/organisation')}>
+              <Users size={16} aria-hidden="true" />
               Invite More Team Members
             </button>
           </div>

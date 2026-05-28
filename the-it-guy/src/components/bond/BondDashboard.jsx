@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, Banknote, ChevronDown, CircleCheck, CircleDashed, CircleAlert, Clock3, FileCheck2, FileText, HandCoins, UsersRound } from 'lucide-react'
+import { ArrowRight, Banknote, Building2, ChevronDown, CircleCheck, CircleDashed, CircleAlert, Clock3, FileCheck2, FileText, HandCoins, UsersRound } from 'lucide-react'
 import BondEmptyState from './BondEmptyState'
 import BondPageShell from './BondPageShell'
 import BondSectionCard from './BondSectionCard'
@@ -125,6 +125,7 @@ export default function BondDashboard({
   const teamPerformance = snapshot.teamPerformance || []
   const connectedPartners = snapshot.connectedPartners || []
   const heatmapRows = snapshot.operationalHeatmap || []
+  const organisationSnapshot = buildOrganisationSnapshot(snapshot, state.reportingScope)
 
   if (!safeWorkspaceId) {
     return (
@@ -170,6 +171,8 @@ export default function BondDashboard({
                 activeFilter={activeFilter}
                 onFilterChange={setActiveFilter}
               />
+
+              {organisationSnapshot ? <OrganisationSnapshotCard snapshot={organisationSnapshot} /> : null}
 
               <section className="grid gap-6 xl:grid-cols-2">
                 <BondSectionCard
@@ -388,6 +391,79 @@ function KpiStrip({ items = [] }) {
       {rows.map((item) => (
         <ExecutiveKpiCard key={item.key} item={item} />
       ))}
+    </section>
+  )
+}
+
+function getHeroKpiValue(items = [], key = '') {
+  const item = (Array.isArray(items) ? items : []).find((row) => row?.key === key)
+  return normalizeText(item?.value) || '0'
+}
+
+function buildOrganisationSnapshot(snapshot = {}, reportingScope = {}) {
+  const scopeLevel = normalizeText(reportingScope?.scopeLevel)
+  if (!scopeLevel || scopeLevel === 'assigned') return null
+  const teamRows = Array.isArray(snapshot.teamPerformance) ? snapshot.teamPerformance : []
+  const pipelineRows = Array.isArray(snapshot.pipelineFlow) ? snapshot.pipelineFlow : []
+  const pressure = [...pipelineRows].sort((left, right) => normalizeNumber(right.count) - normalizeNumber(left.count))[0]
+  const scopeLabel = scopeLevel === 'workspace_hq'
+    ? 'National command'
+    : scopeLevel === 'region'
+      ? 'Regional command'
+      : 'Branch command'
+
+  return {
+    scopeLabel,
+    consultants: teamRows.length,
+    activeFiles: normalizeNumber(snapshot.totalApplications),
+    approvalRate: getHeroKpiValue(snapshot.heroKpis, 'approval_rate'),
+    pressureLabel: pressure?.label || 'Pipeline clear',
+    pressureDetail: pressure?.count ? `${pressure.count} active files` : 'No elevated pressure',
+  }
+}
+
+function OrganisationSnapshotCard({ snapshot = {} }) {
+  const metrics = [
+    { label: 'Visible Scope', value: snapshot.scopeLabel, icon: Building2 },
+    { label: 'Consultants', value: snapshot.consultants, icon: UsersRound },
+    { label: 'Active Files', value: snapshot.activeFiles, icon: FileText },
+    { label: 'Approval Rate', value: snapshot.approvalRate, icon: CircleCheck },
+  ]
+
+  return (
+    <section className="rounded-[24px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.03)]">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#748aa0]">Organisation Snapshot</p>
+          <h2 className="mt-2 text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Network operating health</h2>
+        </div>
+        <Link to="/bond/organisation" className="inline-flex items-center gap-2 text-sm font-semibold text-[#204b84] hover:text-[#17324d]">
+          View Organisation <ArrowRight size={15} />
+        </Link>
+      </div>
+      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {metrics.map((metric) => {
+          const Icon = metric.icon
+          return (
+            <article key={metric.label} className="rounded-[18px] border border-[#edf2f7] bg-[#fbfdff] p-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#eef5ff] text-[#24518a]">
+                  <Icon size={17} />
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-[#142132]">{metric.value}</p>
+                  <p className="mt-0.5 text-xs font-medium text-[#60758d]">{metric.label}</p>
+                </div>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+      <div className="mt-4 rounded-[18px] border border-[#f1dfbf] bg-[#fffaf0] px-4 py-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#b7791f]">Highest pressure</p>
+        <p className="mt-1 text-sm font-semibold text-[#142132]">{snapshot.pressureLabel}</p>
+        <p className="mt-1 text-sm text-[#60758d]">{snapshot.pressureDetail}</p>
+      </div>
     </section>
   )
 }

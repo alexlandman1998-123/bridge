@@ -1735,6 +1735,8 @@ function mapTransactionTrackerRow(row = {}) {
     partner: getPartnerLabel(row),
     attorney: normalizeText(row?.transaction?.attorney) || 'Awaiting attorney',
     consultant: getDisplayNameFromAssignment(assignment, row, 'consultant'),
+    assignedUserId: normalizeText(assignment.primaryConsultantUserId || row?.transaction?.primary_bond_consultant_user_id),
+    assignedUserEmail: normalizeText(assignment.primaryConsultantEmail || row?.transaction?.assigned_bond_originator_email),
     processor: getDisplayNameFromAssignment(assignment, row, 'processor'),
     regionId: normalizeText(assignment.bondRegionId || row?.transaction?.bond_region_id || row?.transaction?.region_id),
     workspaceUnitId: normalizeText(

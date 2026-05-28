@@ -1,3 +1,5 @@
+import { ArrowLeft, ArrowRight, CheckCircle2, Save } from 'lucide-react'
+
 function AttorneyOnboardingLayout({
   steps = [],
   currentStepIndex = 0,
@@ -22,7 +24,7 @@ function AttorneyOnboardingLayout({
 
   return (
     <section className="page" style={{ maxWidth: '1120px' }}>
-      <div className="panel card-tier-standard" style={{ display: 'grid', gap: '1rem' }}>
+      <div className="ui-panel" style={{ display: 'grid', gap: '1rem', padding: '1.1rem' }}>
         <div style={{ display: 'grid', gap: '0.35rem' }}>
           <h2 style={{ margin: 0 }}>{title}</h2>
           {subtitle ? (
@@ -57,7 +59,7 @@ function AttorneyOnboardingLayout({
             alignItems: 'start',
           }}
         >
-          <aside className="panel card-tier-soft" style={{ padding: '0.9rem', display: 'grid', gap: '0.55rem' }}>
+          <aside className="ui-panel-muted" style={{ padding: '0.9rem', display: 'grid', gap: '0.55rem' }}>
             {steps.map((step, index) => {
               const isActive = index === currentStepIndex
               const isComplete = index < currentStepIndex
@@ -95,45 +97,49 @@ function AttorneyOnboardingLayout({
               </p>
             ) : null}
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.6rem', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', gap: '0.55rem', flexWrap: 'wrap' }}>
+            <div className="attorney-onboarding-actions">
+              <div className="attorney-onboarding-actions-group">
                 <button
                   type="button"
-                  className="header-secondary-cta"
+                  className="ui-button-secondary"
                   onClick={onBack}
                   disabled={!canBack || isSubmitting}
                 >
+                  <ArrowLeft size={16} aria-hidden="true" />
                   {backLabel}
                 </button>
                 {onSaveDraft ? (
                   <button
                     type="button"
-                    className="header-secondary-cta"
+                    className="ui-button-secondary"
                     onClick={onSaveDraft}
                     disabled={isSubmitting}
                   >
+                    <Save size={16} aria-hidden="true" />
                     Save Draft
                   </button>
                 ) : null}
               </div>
 
-              <div style={{ display: 'grid', gap: '0.2rem', justifyItems: 'end' }}>
+              <div className="attorney-onboarding-primary-action">
                 {isFinalStep ? (
                   <button
                     type="button"
-                    className="header-primary-cta"
+                    className="ui-button-primary"
                     onClick={onConfirm}
                     disabled={!canNext || isSubmitting}
                   >
+                    <CheckCircle2 size={16} aria-hidden="true" />
                     {isSubmitting ? 'Completing setup…' : confirmLabel}
                   </button>
                 ) : (
                   <button
                     type="button"
-                    className="header-primary-cta"
+                    className="ui-button-primary"
                     onClick={onNext}
                     disabled={!canNext || isSubmitting}
                   >
+                    <ArrowRight size={16} aria-hidden="true" />
                     {nextLabel}
                   </button>
                 )}

@@ -1,3 +1,5 @@
+import { Image, Trash2, Upload } from 'lucide-react'
+
 function UploadCard({
   title,
   description,
@@ -9,7 +11,7 @@ function UploadCard({
   inputId,
 }) {
   return (
-    <div className="panel card-tier-soft" style={{ display: 'grid', gap: '0.7rem', padding: '0.95rem' }}>
+    <div className="ui-panel-muted" style={{ display: 'grid', gap: '0.7rem', padding: '0.95rem' }}>
       <div style={{ display: 'grid', gap: '0.2rem' }}>
         <strong>{title}</strong>
         <span className="status-message">{description}</span>
@@ -24,11 +26,13 @@ function UploadCard({
       />
 
       <div style={{ display: 'flex', gap: '0.55rem', flexWrap: 'wrap' }}>
-        <label htmlFor={inputId} className="header-primary-cta" style={{ cursor: isUploading ? 'wait' : 'pointer', opacity: isUploading ? 0.8 : 1 }}>
+        <label htmlFor={inputId} className="ui-button-primary" style={{ cursor: isUploading ? 'wait' : 'pointer', opacity: isUploading ? 0.8 : 1 }}>
+          <Upload size={16} aria-hidden="true" />
           {isUploading ? 'Uploading...' : 'Upload Logo'}
         </label>
         {logoUrl ? (
-          <button type="button" className="header-secondary-cta" onClick={onRemove} disabled={isUploading}>
+          <button type="button" className="ui-button-secondary" onClick={onRemove} disabled={isUploading}>
+            <Trash2 size={16} aria-hidden="true" />
             Remove Logo
           </button>
         ) : null}
@@ -50,7 +54,10 @@ function UploadCard({
         {logoUrl ? (
           <img src={logoUrl} alt="Firm logo preview" style={{ maxHeight: '72px', maxWidth: '100%', objectFit: 'contain' }} />
         ) : (
-          <span className="status-message">No logo uploaded yet.</span>
+          <span className="status-message" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+            <Image size={16} aria-hidden="true" />
+            No logo uploaded yet.
+          </span>
         )}
       </div>
     </div>
@@ -108,19 +115,37 @@ function BrandingStep({
       <div style={{ display: 'grid', gap: '0.85rem', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
         <label className="form-field">
           <span>Primary Colour</span>
-          <input type="color" value={values.primaryColour} onChange={(event) => onChange('primaryColour', event.target.value)} />
+          <span className="attorney-colour-control">
+            <input
+              type="color"
+              className="attorney-colour-swatch"
+              value={values.primaryColour}
+              onChange={(event) => onChange('primaryColour', event.target.value)}
+              aria-label="Primary colour"
+            />
+            <span className="attorney-colour-value">{values.primaryColour}</span>
+          </span>
           {errors.primaryColour ? <small style={{ color: '#b42318' }}>{errors.primaryColour}</small> : null}
         </label>
 
         <label className="form-field">
           <span>Secondary Colour</span>
-          <input type="color" value={values.secondaryColour} onChange={(event) => onChange('secondaryColour', event.target.value)} />
+          <span className="attorney-colour-control">
+            <input
+              type="color"
+              className="attorney-colour-swatch"
+              value={values.secondaryColour}
+              onChange={(event) => onChange('secondaryColour', event.target.value)}
+              aria-label="Secondary colour"
+            />
+            <span className="attorney-colour-value">{values.secondaryColour}</span>
+          </span>
           {errors.secondaryColour ? <small style={{ color: '#b42318' }}>{errors.secondaryColour}</small> : null}
         </label>
       </div>
 
       <div
-        className="panel card-tier-soft"
+        className="ui-panel-muted"
         style={{
           padding: '1rem',
           borderRadius: '1rem',
@@ -171,15 +196,15 @@ function BrandingStep({
         </div>
 
         <div style={{ display: 'grid', gap: '0.65rem' }}>
-          <div className="panel card-tier-soft" style={{ background: '#fff', padding: '0.7rem', borderRadius: '0.75rem' }}>
+          <div className="ui-panel" style={{ padding: '0.7rem' }}>
             <strong style={{ display: 'block', marginBottom: '0.25rem' }}>Email signature preview</strong>
             <p className="status-message" style={{ margin: 0 }}>{previewName} | Conveyancing & Legal Operations</p>
           </div>
-          <div className="panel card-tier-soft" style={{ background: '#fff', padding: '0.7rem', borderRadius: '0.75rem' }}>
+          <div className="ui-panel" style={{ padding: '0.7rem' }}>
             <strong style={{ display: 'block', marginBottom: '0.25rem' }}>Document header preview</strong>
             <div style={{ height: 6, borderRadius: 999, background: values.primaryColour || '#0f4c81' }} />
           </div>
-          <div className="panel card-tier-soft" style={{ background: '#fff', padding: '0.7rem', borderRadius: '0.75rem' }}>
+          <div className="ui-panel" style={{ padding: '0.7rem' }}>
             <strong style={{ display: 'block', marginBottom: '0.25rem' }}>Client portal preview</strong>
             <p className="status-message" style={{ margin: 0 }}>Calm legal workspace branding will be applied after setup.</p>
           </div>

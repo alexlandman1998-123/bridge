@@ -17,15 +17,23 @@ const ROLE_LABELS = {
 
 function SummaryCard({ title, children }) {
   return (
-    <div className="panel card-tier-soft" style={{ display: 'grid', gap: '0.5rem', padding: '0.9rem' }}>
+    <div className="ui-panel-muted" style={{ display: 'grid', gap: '0.5rem', padding: '0.9rem' }}>
       <h4 style={{ margin: 0 }}>{title}</h4>
       {children}
     </div>
   )
 }
 
+function getLogoSummary(branding) {
+  if (branding.logoFileName) return branding.logoFileName
+  if (branding.logoPath) return branding.logoPath.split('/').filter(Boolean).pop() || 'Uploaded logo'
+  if (branding.logoUrl) return 'Uploaded logo'
+  return 'No logo provided'
+}
+
 function ReviewConfirmStep({ firmInformation, branding, activeDepartmentTypes, invites }) {
   const departmentList = activeDepartmentTypes.map((type) => DEPARTMENT_LABELS[type] || type)
+  const logoSummary = getLogoSummary(branding)
 
   return (
     <div style={{ display: 'grid', gap: '0.9rem' }}>
@@ -49,9 +57,9 @@ function ReviewConfirmStep({ firmInformation, branding, activeDepartmentTypes, i
       </SummaryCard>
 
       <SummaryCard title="Branding">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.8rem' }}>
-          <p className="status-message" style={{ margin: 0 }}>
-            <strong>Logo:</strong> {branding.logoFileName || branding.logoUrl || 'No logo provided'}
+        <div className="attorney-review-branding-row">
+          <p className="status-message attorney-review-text" style={{ margin: 0 }}>
+            <strong>Logo:</strong> {logoSummary}
           </p>
           <div style={{ display: 'flex', gap: '0.45rem' }}>
             <span style={{ width: 18, height: 18, borderRadius: '999px', background: branding.primaryColour || '#0f4c81', border: '1px solid rgba(20,33,61,0.2)' }} />

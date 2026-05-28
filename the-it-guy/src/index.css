@@ -756,6 +756,111 @@
     border-color: var(--color-primary);
   }
 
+  .status-message {
+    @apply text-secondary text-textMuted;
+    line-height: 1.55;
+  }
+
+  .attorney-departments-grid {
+    display: grid;
+    gap: 0.9rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-width: 760px;
+  }
+
+  .attorney-colour-control {
+    @apply flex min-h-[42px] items-center gap-3 rounded-control border border-borderDefault bg-surface px-3 py-2 shadow-surface;
+    box-shadow: var(--shadow-soft-edge);
+  }
+
+  .attorney-colour-swatch {
+    width: 2rem;
+    height: 2rem;
+    flex: 0 0 auto;
+    cursor: pointer;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    padding: 0;
+  }
+
+  .attorney-colour-swatch::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+
+  .attorney-colour-swatch::-webkit-color-swatch {
+    border: 1px solid var(--color-border-default);
+    border-radius: 999px;
+  }
+
+  .attorney-colour-value {
+    @apply min-w-0 text-secondary font-semibold text-textStrong;
+    text-transform: uppercase;
+  }
+
+  .attorney-review-branding-row {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+  }
+
+  .attorney-review-text {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .attorney-onboarding-actions {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .attorney-onboarding-actions-group {
+    display: flex;
+    min-width: 0;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+  }
+
+  .attorney-onboarding-primary-action {
+    display: grid;
+    min-width: 0;
+    gap: 0.2rem;
+    justify-items: end;
+    margin-left: auto;
+  }
+
+  @media (max-width: 780px) {
+    .attorney-departments-grid {
+      grid-template-columns: 1fr;
+      max-width: none;
+    }
+
+    .attorney-review-branding-row {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .attorney-onboarding-actions,
+    .attorney-onboarding-actions-group,
+    .attorney-onboarding-primary-action,
+    .attorney-onboarding-actions button {
+      width: 100%;
+    }
+
+    .attorney-onboarding-primary-action {
+      margin-left: 0;
+      justify-items: stretch;
+    }
+  }
+
   .ui-select-dark {
     @apply w-full rounded-control border px-4 py-3 text-sm text-textInverse outline-none transition duration-150 ease-out focus:ring-4;
     border-color: rgba(248, 250, 252, 0.14);

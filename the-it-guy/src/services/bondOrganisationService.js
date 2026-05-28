@@ -131,24 +131,6 @@ function getStructureLabel(structureType = '') {
   return BOND_ORGANISATION_STRUCTURE_OPTIONS.find((option) => option.value === structureType)?.label || 'Organisation'
 }
 
-function getStructureExpectations(structureType = '') {
-  return {
-    expectsRegions: [BOND_ORGANISATION_STRUCTURE_TYPES.regional, BOND_ORGANISATION_STRUCTURE_TYPES.enterprise].includes(structureType),
-    expectsBranches: [
-      BOND_ORGANISATION_STRUCTURE_TYPES.branchBased,
-      BOND_ORGANISATION_STRUCTURE_TYPES.regional,
-      BOND_ORGANISATION_STRUCTURE_TYPES.enterprise,
-    ].includes(structureType),
-    expectsTeams: [
-      BOND_ORGANISATION_STRUCTURE_TYPES.smallTeam,
-      BOND_ORGANISATION_STRUCTURE_TYPES.branchBased,
-      BOND_ORGANISATION_STRUCTURE_TYPES.regional,
-      BOND_ORGANISATION_STRUCTURE_TYPES.enterprise,
-    ].includes(structureType),
-    expectsConsultants: structureType !== BOND_ORGANISATION_STRUCTURE_TYPES.independent,
-  }
-}
-
 function resolveCapabilities(context = {}) {
   const resolved = resolvePermissionContext(context)
   const scopeLevel = normalizeLower(resolved.scopeLevel) || BOND_SCOPE_LEVELS.assigned
@@ -163,6 +145,17 @@ function resolveCapabilities(context = {}) {
   return {
     resolved,
     scopeLevel,
+    userEmail: normalizeLower(context.email || context.user?.email || context.authState?.user?.email || context.profile?.email),
+    userName: normalizeLower(
+      context.name ||
+        context.fullName ||
+        context.profile?.full_name ||
+        context.profile?.fullName ||
+        [context.firstName || context.first_name || context.profile?.first_name, context.lastName || context.last_name || context.profile?.last_name]
+          .map(normalizeText)
+          .filter(Boolean)
+          .join(' '),
+    ),
     canSetUpStructure,
     canViewRegions: scopeLevel === BOND_SCOPE_LEVELS.workspaceHq,
     canViewBranches: [BOND_SCOPE_LEVELS.workspaceHq, BOND_SCOPE_LEVELS.region, BOND_SCOPE_LEVELS.branch, BOND_SCOPE_LEVELS.team].includes(scopeLevel),
@@ -214,7 +207,20 @@ function scopeApplicationRows(rows = [], capabilities = {}) {
     const scopedRows = rows.filter((row) => getRowUnitId(row) === normalizeText(resolved.workspaceUnitId))
     return rows.some((row) => getRowUnitId(row)) ? scopedRows : rows
   }
-  return rows
+  const scopedUserId = normalizeText(resolved.userId)
+  const scopedEmail = normalizeLower(capabilities.userEmail)
+  const scopedName = normalizeLower(capabilities.userName)
+  const scopedRows = rows.filter((row) => {
+    const assignedUserId = normalizeText(row.assignedUserId || row.assigned_user_id)
+    const assignedEmail = normalizeLower(row.assignedUserEmail || row.assigned_user_email || row.assignedBondOriginatorEmail)
+    const consultant = normalizeLower(row.consultant)
+    return (
+      (scopedUserId && assignedUserId === scopedUserId) ||
+      (scopedEmail && assignedEmail === scopedEmail) ||
+      (scopedName && consultant === scopedName)
+    )
+  })
+  return scopedRows
 }
 
 function enrichApplicationRows(rows = [], { regions = [], branches = [], teams = [] } = {}) {
@@ -238,42 +244,330 @@ function enrichApplicationRows(rows = [], { regions = [], branches = [], teams =
   })
 }
 
+function buildDerivedBranchesFromApplications(applications = [], regions = []) {
+  if (!applications.length) return []
+  const region = regions[0] || null
+  const branchesByName = new Map()
+  applications.forEach((row) => {
+    const branchName = normalizeText(row.branch && row.branch !== 'Unassigned' ? row.branch : '')
+    const key = normalizeLower(branchName || 'National Bond Desk')
+    if (!branchesByName.has(key)) {
+      branchesByName.set(key, {
+        id: `derived-branch-${key.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'national-desk'}`,
+        name: branchName || 'National Bond Desk',
+        region_id: normalizeText(row.regionId || region?.id),
+        regionId: normalizeText(row.regionId || region?.id),
+        region: normalizeText(row.region && row.region !== 'Unassigned' ? row.region : region?.name) || 'Visible Scope',
+        manager_user_id: '',
+        active: true,
+        derived: true,
+      })
+    }
+  })
+  return [...branchesByName.values()]
+}
+
+function buildDerivedConsultantsFromApplications(applications = [], branches = []) {
+  if (!applications.length) return []
+  const defaultBranch = branches[0] || null
+  const consultantsByKey = new Map()
+  applications.forEach((row) => {
+    const name = normalizeText(row.consultant) || 'Bond Consultant'
+    const email = normalizeText(row.assignedUserEmail)
+    const key = normalizeLower(row.assignedUserId || email || name)
+    if (!key || consultantsByKey.has(key)) return
+    const branch = branches.find((item) => (
+      normalizeText(item.id) === normalizeText(row.branchId || row.workspaceUnitId) ||
+      normalizeText(item.name) === normalizeText(row.branch)
+    )) || defaultBranch
+    consultantsByKey.set(key, {
+      id: row.assignedUserId || `derived-consultant-${key.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`,
+      user_id: row.assignedUserId || '',
+      userId: row.assignedUserId || '',
+      name,
+      email,
+      workspaceRole: 'consultant',
+      role: 'consultant',
+      status: 'active',
+      regionId: normalizeText(row.regionId || branch?.regionId || branch?.region_id),
+      workspaceUnitId: normalizeText(row.branchId || row.workspaceUnitId || branch?.id),
+      derived: true,
+    })
+  })
+  return [...consultantsByKey.values()]
+}
+
 function buildTabs({
-  structureType = '',
-  hasRegions = false,
-  hasBranches = false,
-  hasTeams = false,
-  hasMultipleUsers = false,
   capabilities = {},
 } = {}) {
-  const expectations = getStructureExpectations(structureType)
-  const canShowSetupTabs = Boolean(capabilities.canSetUpStructure)
   const tabs = [
     { key: 'overview', label: 'Overview', alwaysShow: true },
-    {
-      key: 'regions',
-      label: 'Regions',
-      showIf: capabilities.canViewRegions && (hasRegions || (canShowSetupTabs && expectations.expectsRegions)),
-    },
-    {
-      key: 'branches',
-      label: capabilities.scopeLevel === BOND_SCOPE_LEVELS.branch ? 'My Branch' : 'Branches',
-      showIf: capabilities.canViewBranches && (hasBranches || (canShowSetupTabs && expectations.expectsBranches)),
-    },
-    {
-      key: 'consultants',
-      label: 'Consultants',
-      showIf: capabilities.canViewConsultants && (hasMultipleUsers || (canShowSetupTabs && expectations.expectsConsultants)),
-    },
-    {
-      key: 'teams',
-      label: 'Teams',
-      showIf: capabilities.canViewTeams && (hasTeams || (canShowSetupTabs && expectations.expectsTeams && structureType !== BOND_ORGANISATION_STRUCTURE_TYPES.independent)),
-    },
+    { key: 'branches', label: capabilities.scopeLevel === BOND_SCOPE_LEVELS.branch ? 'My Branch' : 'Branches', showIf: capabilities.canViewBranches },
+    { key: 'consultants', label: 'Consultants', showIf: capabilities.canViewConsultants },
     { key: 'applications', label: 'Applications', alwaysShow: true },
+    { key: 'permissions', label: 'Permissions', showIf: capabilities.canSetUpStructure },
+    { key: 'settings', label: 'Settings', showIf: capabilities.scopeLevel === BOND_SCOPE_LEVELS.workspaceHq && capabilities.canSetUpStructure },
   ]
 
   return tabs.filter((tab) => tab.alwaysShow || tab.showIf)
+}
+
+function getDaysBetween(start, end) {
+  const startDate = start ? new Date(start) : null
+  const endDate = end ? new Date(end) : null
+  if (!startDate || !endDate || Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return 0
+  return Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)))
+}
+
+function getApplicationLeadDays(row = {}) {
+  return Number(row.velocity?.expectedCompletionDays || row.velocity?.expectedApprovalDays || 0) || getDaysBetween(row.createdAt || row.created_at, row.lastActivityAt)
+}
+
+function getApplicationBottleneck(row = {}) {
+  const stage = normalizeLower(row.financeStageKey || row.financeStageLabel || row.nextAction)
+  const risk = normalizeLower(row.riskStatus || '')
+  if (stage.includes('doc') || risk.includes('document') || risk.includes('docs')) return 'Docs Collection'
+  if (stage.includes('feedback') || stage.includes('bank')) return 'Bank Feedback'
+  if (stage.includes('pre')) return 'Pre-Approval'
+  if (stage.includes('submit')) return 'Submission'
+  if (stage.includes('approved') || stage.includes('grant')) return 'Approval'
+  return row.financeStageLabel || 'Pipeline Review'
+}
+
+function isApplicationApproved(row = {}) {
+  const signal = normalizeLower(`${row.status || ''} ${row.financeStageKey || ''} ${row.financeStageLabel || ''} ${row.registrationStatus || ''}`)
+  return signal.includes('approved') || signal.includes('registered') || signal.includes('grant')
+}
+
+function isPendingDocs(row = {}) {
+  const signal = normalizeLower(`${row.financeStageKey || ''} ${row.financeStageLabel || ''} ${row.riskStatus || ''} ${row.nextAction || ''}`)
+  return signal.includes('doc') || signal.includes('payslip') || signal.includes('statement')
+}
+
+function averageNumber(values = []) {
+  const safeValues = values.map(Number).filter((value) => Number.isFinite(value) && value > 0)
+  if (!safeValues.length) return 0
+  return Math.round((safeValues.reduce((sum, value) => sum + value, 0) / safeValues.length) * 10) / 10
+}
+
+function percent(part = 0, total = 0) {
+  return total ? Math.round((Number(part || 0) / total) * 100) : 0
+}
+
+function getBranchApplicationRows(branch = {}, applications = []) {
+  const branchId = normalizeText(branch.id)
+  return applications.filter((row) => normalizeText(row.branchId || row.workspaceUnitId) === branchId || normalizeText(row.branch) === normalizeText(branch.name))
+}
+
+function getConsultantApplicationRows(consultant = {}, applications = []) {
+  const name = normalizeLower(consultant.name)
+  const userId = normalizeText(consultant.user_id || consultant.userId)
+  return applications.filter((row) => normalizeLower(row.consultant) === name || normalizeText(row.assignedUserId || row.assigned_user_id) === userId)
+}
+
+function getStatusFromPressure({ activeApplications = 0, pendingDocs = 0, avgLeadTime = 0, lastActivityAt = '' } = {}) {
+  const inactiveDays = getDaysBetween(lastActivityAt, new Date().toISOString())
+  if (lastActivityAt && inactiveDays >= 7) return 'Inactive'
+  if (pendingDocs >= 10 || avgLeadTime >= 5) return 'Needs Attention'
+  if (activeApplications >= 30) return 'Overloaded'
+  return 'Healthy'
+}
+
+function getManagerName(managerId = '', users = []) {
+  const manager = users.find((user) => normalizeText(user.user_id || user.userId || user.id) === normalizeText(managerId))
+  return manager?.name || 'Unassigned'
+}
+
+export function getVisibleOrganisationScope({ capabilities = {}, regions = [], branches = [], consultants = [], applications = [] } = {}) {
+  const scopeLevel = capabilities.scopeLevel || BOND_SCOPE_LEVELS.assigned
+  return {
+    scopeLevel,
+    label: scopeLevel === BOND_SCOPE_LEVELS.workspaceHq
+      ? 'National HQ'
+      : scopeLevel === BOND_SCOPE_LEVELS.region
+        ? 'Regional command'
+        : scopeLevel === BOND_SCOPE_LEVELS.branch
+          ? 'Branch command'
+          : 'Consultant workspace',
+    canManageOrganisation: Boolean(capabilities.canSetUpStructure && scopeLevel !== BOND_SCOPE_LEVELS.assigned),
+    canViewNetwork: scopeLevel !== BOND_SCOPE_LEVELS.assigned,
+    regions,
+    branches,
+    consultants,
+    applications,
+  }
+}
+
+export function getBranchPerformance(scope = {}) {
+  return (scope.branches || []).map((branch) => {
+    const rows = getBranchApplicationRows(branch, scope.applications)
+    const approved = rows.filter(isApplicationApproved).length
+    const pendingDocs = rows.filter(isPendingDocs).length
+    const leadTime = averageNumber(rows.map(getApplicationLeadDays))
+    const bottleneck = getMostCommon(rows.map(getApplicationBottleneck)) || 'Clear'
+    return {
+      id: branch.id,
+      branch: branch.name,
+      regionId: normalizeText(branch.region_id || branch.regionId),
+      region: branch.region || 'Unassigned',
+      manager: getManagerName(branch.manager_user_id || branch.managerUserId, scope.consultants),
+      consultants: (scope.consultants || []).filter((user) => getUserUnitId(user) === normalizeText(branch.id)).length,
+      activeApplications: rows.length,
+      pendingDocs,
+      avgLeadTime: leadTime,
+      approvalRate: percent(approved, rows.length),
+      bottleneck,
+      status: getStatusFromPressure({ activeApplications: rows.length, pendingDocs, avgLeadTime: leadTime, lastActivityAt: rows[0]?.lastActivityAt }),
+    }
+  })
+}
+
+export function getConsultantPerformance(scope = {}) {
+  return (scope.consultants || []).map((consultant) => {
+    const rows = getConsultantApplicationRows(consultant, scope.applications)
+    const approved = rows.filter(isApplicationApproved).length
+    const pendingDocs = rows.filter(isPendingDocs).length
+    const leadTime = averageNumber(rows.map(getApplicationLeadDays))
+    const newThisMonth = rows.filter((row) => {
+      const date = new Date(row.lastActivityAt || '')
+      const now = new Date()
+      return !Number.isNaN(date.getTime()) && date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()
+    }).length
+    const branch = (scope.branches || []).find((item) => normalizeText(item.id) === getUserUnitId(consultant))
+    return {
+      id: consultant.id || consultant.user_id || consultant.email,
+      consultant: consultant.name,
+      email: consultant.email,
+      branch: branch?.name || consultant.branch || 'Unassigned',
+      activeApplications: rows.length,
+      newThisMonth,
+      pendingDocs,
+      avgLeadTime: leadTime,
+      approvalRate: percent(approved, rows.length),
+      lastActivity: rows[0]?.lastActivityLabel || 'No recent activity',
+      status: getStatusFromPressure({ activeApplications: rows.length, pendingDocs, avgLeadTime: leadTime, lastActivityAt: rows[0]?.lastActivityAt }),
+      role: consultant.workspaceRole,
+      scope: consultant.scope_level || consultant.scopeLevel || '',
+    }
+  })
+}
+
+function getMostCommon(values = []) {
+  const counts = values.filter(Boolean).reduce((map, value) => map.set(value, (map.get(value) || 0) + 1), new Map())
+  return [...counts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] || ''
+}
+
+export function getOrganisationKpis(scope = {}) {
+  const applications = scope.applications || []
+  const approved = applications.filter(isApplicationApproved).length
+  return {
+    regions: scope.regions?.length || 0,
+    branches: scope.branches?.length || 0,
+    consultants: scope.consultants?.length || 0,
+    activeApplications: applications.length,
+    approvalRate: percent(approved, applications.length),
+    avgLeadTime: averageNumber(applications.map(getApplicationLeadDays)),
+  }
+}
+
+export function getHierarchyTree(scope = {}) {
+  const consultantsByUnit = new Map()
+  ;(scope.consultants || []).forEach((consultant) => {
+    const unitId = getUserUnitId(consultant) || 'unassigned'
+    consultantsByUnit.set(unitId, [...(consultantsByUnit.get(unitId) || []), consultant])
+  })
+  const branchesByRegion = new Map()
+  ;(scope.branches || []).forEach((branch) => {
+    const regionId = normalizeText(branch.region_id || branch.regionId) || 'unassigned'
+    branchesByRegion.set(regionId, [...(branchesByRegion.get(regionId) || []), branch])
+  })
+
+  const makeConsultantNode = (consultant) => {
+    const rows = getConsultantApplicationRows(consultant, scope.applications)
+    return buildHierarchyNode({
+      id: consultant.id || consultant.user_id || consultant.email,
+      name: consultant.name,
+      type: 'Consultant',
+      rows,
+    })
+  }
+  const makeBranchNode = (branch) => {
+    const rows = getBranchApplicationRows(branch, scope.applications)
+    return buildHierarchyNode({
+      id: branch.id,
+      name: branch.name,
+      type: 'Branch',
+      rows,
+      children: (consultantsByUnit.get(normalizeText(branch.id)) || []).map(makeConsultantNode),
+    })
+  }
+  const visibleRegionIds = new Set((scope.regions || []).map((region) => normalizeText(region.id)).filter(Boolean))
+  const regionNodes = (scope.regions || []).map((region) => {
+    const branches = branchesByRegion.get(normalizeText(region.id)) || []
+    const rows = (scope.applications || []).filter((row) => normalizeText(row.regionId) === normalizeText(region.id))
+    return buildHierarchyNode({
+      id: region.id,
+      name: region.name,
+      type: 'Region',
+      rows,
+      children: branches.map(makeBranchNode),
+    })
+  })
+  const directBranches = (scope.branches || [])
+    .filter((branch) => {
+      const regionId = normalizeText(branch.region_id || branch.regionId) || 'unassigned'
+      return regionId === 'unassigned' || !visibleRegionIds.has(regionId)
+    })
+    .map(makeBranchNode)
+  return buildHierarchyNode({
+    id: 'hq',
+    name: scope.label || 'National HQ',
+    type: scope.scopeLevel === BOND_SCOPE_LEVELS.assigned ? 'Consultant' : 'HQ',
+    rows: scope.applications || [],
+    children: [...regionNodes, ...directBranches],
+  })
+}
+
+function buildHierarchyNode({ id = '', name = '', type = '', rows = [], children = [] } = {}) {
+  const approved = rows.filter(isApplicationApproved).length
+  return {
+    id,
+    name,
+    type,
+    activeApplications: rows.length,
+    approvalRate: percent(approved, rows.length),
+    avgLeadTime: averageNumber(rows.map(getApplicationLeadDays)),
+    bottleneck: getMostCommon(rows.map(getApplicationBottleneck)) || 'Clear',
+    status: getStatusFromPressure({ activeApplications: rows.length, pendingDocs: rows.filter(isPendingDocs).length, avgLeadTime: averageNumber(rows.map(getApplicationLeadDays)), lastActivityAt: rows[0]?.lastActivityAt }),
+    children,
+  }
+}
+
+export function getOperationalHealth(scope = {}, branchPerformance = []) {
+  const branches = branchPerformance.length ? branchPerformance : getBranchPerformance(scope)
+  const pressure = [...branches].sort((left, right) => right.pendingDocs - left.pendingDocs || right.activeApplications - left.activeApplications)[0]
+  const slowest = [...branches].sort((left, right) => right.avgLeadTime - left.avgLeadTime)[0]
+  const best = [...branches].sort((left, right) => right.approvalRate - left.approvalRate)[0]
+  const inactiveConsultants = getConsultantPerformance(scope).filter((row) => row.status === 'Inactive').length
+  return [
+    { key: 'pressure', label: 'Highest Pressure', title: pressure?.branch || 'No branch pressure', detail: pressure ? `${pressure.bottleneck} • ${pressure.pendingDocs} pending files` : 'No bottleneck detected', tone: 'amber' },
+    { key: 'slowest', label: 'Slowest Lead Time', title: slowest?.branch || 'Lead time clear', detail: slowest?.avgLeadTime ? `${slowest.avgLeadTime} days average` : 'No lead time data yet', tone: 'blue' },
+    { key: 'best', label: 'Best Performing', title: best?.branch || 'Performance building', detail: best ? `${best.approvalRate}% approval rate` : 'Approval data will appear soon', tone: 'green' },
+    { key: 'attention', label: 'Needs Attention', title: `${inactiveConsultants} consultants`, detail: 'No activity in 7 days', tone: inactiveConsultants ? 'amber' : 'green' },
+  ]
+}
+
+export function getRecentOrganisationActivity(scope = {}) {
+  return (scope.applications || []).slice(0, 8).map((row, index) => ({
+    id: row.key || `${row.client}-${index}`,
+    timestamp: row.lastActivityLabel || 'Recently',
+    actor: row.consultant || 'Bond desk',
+    branch: row.branch || 'Unassigned branch',
+    region: row.region || 'Unassigned region',
+    type: row.financeStageLabel || 'Application movement',
+    description: `${row.client || 'A client'} moved to ${row.financeStageLabel || 'the next stage'}`,
+    href: row.transactionId ? `/bond/files/${row.transactionId}` : '/bond/applications',
+  }))
 }
 
 async function fetchOrganisationUsers(workspaceId = '') {
@@ -355,16 +649,46 @@ export async function getBondOrganisationSnapshot(context = {}, workspaceId = ''
     branches: allBranches,
     teams: allTeams,
   })
-  const scopedApplications = scopeApplicationRows(enrichedApplicationRows, capabilities)
+  let scopedApplications = scopeApplicationRows(enrichedApplicationRows, capabilities)
+  const regionById = buildLookup(allRegions)
+  let scopedBranchesWithRegions = scopedBranches.map((branch) => ({
+    ...branch,
+    region: normalizeText(branch.region || regionById.get(normalizeText(branch.region_id || branch.regionId))?.name) || 'Unassigned',
+  }))
+  if (!scopedBranchesWithRegions.length && scopedApplications.length && capabilities.canViewBranches) {
+    scopedBranchesWithRegions = buildDerivedBranchesFromApplications(scopedApplications, scopedRegions)
+    scopedApplications = scopedApplications.map((row) => {
+      if (normalizeText(row.branchId || row.workspaceUnitId) || normalizeText(row.branch) !== 'Unassigned') return row
+      const fallbackBranch = scopedBranchesWithRegions[0]
+      return {
+        ...row,
+        branchId: fallbackBranch?.id || row.branchId,
+        workspaceUnitId: fallbackBranch?.id || row.workspaceUnitId,
+        branch: fallbackBranch?.name || row.branch,
+        regionId: fallbackBranch?.regionId || row.regionId,
+        region: fallbackBranch?.region || row.region,
+      }
+    })
+  }
+  let visibleConsultants = scopedUsers
+  if (!visibleConsultants.length && scopedApplications.length && capabilities.canViewConsultants) {
+    visibleConsultants = buildDerivedConsultantsFromApplications(scopedApplications, scopedBranchesWithRegions)
+  }
   const hasMultipleUsers = scopedUsers.length > 1 || users.length > 1
-  const tabs = buildTabs({
-    structureType,
-    hasRegions: scopedRegions.length > 0,
-    hasBranches: scopedBranches.length > 0,
-    hasTeams: scopedTeams.length > 0,
-    hasMultipleUsers,
+  const tabs = buildTabs({ capabilities })
+  const visibleScope = getVisibleOrganisationScope({
     capabilities,
+    regions: scopedRegions,
+    branches: scopedBranchesWithRegions,
+    consultants: visibleConsultants,
+    applications: scopedApplications,
   })
+  const branchPerformance = getBranchPerformance(visibleScope)
+  const consultantPerformance = getConsultantPerformance(visibleScope)
+  const hierarchyTree = getHierarchyTree(visibleScope)
+  const operationalHealth = getOperationalHealth(visibleScope, branchPerformance)
+  const recentActivity = getRecentOrganisationActivity(visibleScope)
+  const kpis = getOrganisationKpis(visibleScope)
 
   return {
     workspaceId: safeWorkspaceId,
@@ -375,19 +699,26 @@ export async function getBondOrganisationSnapshot(context = {}, workspaceId = ''
     capabilities,
     tabs,
     regions: scopedRegions,
-    branches: scopedBranches,
+    branches: scopedBranchesWithRegions,
     teams: scopedTeams,
-    consultants: scopedUsers,
+    consultants: visibleConsultants,
     applications: scopedApplications,
+    visibleScope,
+    kpis,
+    hierarchyTree,
+    branchPerformance,
+    consultantPerformance,
+    operationalHealth,
+    recentActivity,
     applicationSnapshot: {
       ...applicationSnapshot,
       rows: scopedApplications,
     },
     counts: {
       regions: scopedRegions.length,
-      branches: scopedBranches.length,
+      branches: scopedBranchesWithRegions.length,
       teams: scopedTeams.length,
-      consultants: scopedUsers.length,
+      consultants: visibleConsultants.length,
       applications: scopedApplications.length,
     },
     showRegionColumn: allRegions.length > 0,

@@ -20,6 +20,15 @@ function isMissingSchemaError(error, token = '') {
   return code === '42p01' || code === '42703' || code === 'pgrst204' || code === 'pgrst205' || message.includes(token.toLowerCase())
 }
 
+function isWorkspaceForeignKeyError(error) {
+  if (!error) return false
+  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
+  return (
+    String(error.code || '').toLowerCase() === '23503' &&
+    (message.includes('workspace_id') || message.includes('onboarding_events_workspace_id_fkey'))
+  )
+}
+
 export function mapOnboardingStateRow(row = null) {
   if (!row) return null
   return {
@@ -127,17 +136,35 @@ export async function recordOnboardingEvent({
   const id = normalizeText(userId)
   if (!id) return null
   const client = requireClient()
-  const result = await client
+  const normalizedWorkspaceId = normalizeText(workspaceId)
+  const payload = {
+    user_id: id,
+    workspace_id: normalizedWorkspaceId || null,
+    event_type: normalizeText(eventType) || ONBOARDING_EVENT_TYPES.stepCompleted,
+    onboarding_step: normalizeText(onboardingStep) || null,
+    failure_reason: normalizeText(failureReason) || null,
+    recovery_reason: normalizeText(recoveryReason) || null,
+    metadata: metadata && typeof metadata === 'object' ? metadata : {},
+  }
+
+  let result = await client
     .from('onboarding_events')
-    .insert({
-      user_id: id,
-      workspace_id: workspaceId || null,
-      event_type: normalizeText(eventType) || ONBOARDING_EVENT_TYPES.stepCompleted,
-      onboarding_step: normalizeText(onboardingStep) || null,
-      failure_reason: normalizeText(failureReason) || null,
-      recovery_reason: normalizeText(recoveryReason) || null,
-      metadata: metadata && typeof metadata === 'object' ? metadata : {},
-    })
+    .insert(payload)
+
+  if (result.error && normalizedWorkspaceId && isWorkspaceForeignKeyError(result.error)) {
+    console.warn('[Onboarding] onboarding event workspace_id is not organisation-backed; recording event without FK workspace.', result.error)
+    result = await client
+      .from('onboarding_events')
+      .insert({
+        ...payload,
+        workspace_id: null,
+        metadata: {
+          ...payload.metadata,
+          workspaceId: normalizedWorkspaceId,
+          workspaceForeignKeySkipped: true,
+        },
+      })
+  }
 
   if (result.error) {
     if (isMissingSchemaError(result.error, 'onboarding_events')) {

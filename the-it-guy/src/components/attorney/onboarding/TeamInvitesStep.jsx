@@ -1,3 +1,4 @@
+import { Plus, Trash2 } from 'lucide-react'
 import { ATTORNEY_FIRM_ROLE_VALUES } from '../../../lib/attorneyPermissions'
 import { getAllowedDepartmentsForRole } from './teamInviteUtils'
 
@@ -27,7 +28,10 @@ function TeamInvitesStep({ invites = [], activeDepartmentTypes = [], onAddInvite
         <p className="status-message" style={{ margin: 0 }}>
           Invitations are optional in onboarding. You can resend or revoke invites from firm settings once setup is complete.
         </p>
-        <button type="button" className="header-secondary-cta" onClick={onAddInvite}>+ Add Team Member</button>
+        <button type="button" className="ui-button-secondary" onClick={onAddInvite}>
+          <Plus size={16} aria-hidden="true" />
+          Add Team Member
+        </button>
       </div>
 
       {errors._global ? <p className="status-message" style={{ margin: 0, color: '#b42318' }}>{errors._global}</p> : null}
@@ -38,10 +42,13 @@ function TeamInvitesStep({ invites = [], activeDepartmentTypes = [], onAddInvite
             const rowErrors = errors[invite.id] || {}
             const allowedDepartmentTypes = getAllowedDepartmentsForRole(invite.role, activeDepartmentTypes)
             return (
-              <div key={invite.id} className="panel card-tier-soft" style={{ display: 'grid', gap: '0.6rem', padding: '0.85rem' }}>
+              <div key={invite.id} className="ui-panel-muted" style={{ display: 'grid', gap: '0.6rem', padding: '0.85rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <strong>Invite {index + 1}</strong>
-                  <button type="button" className="header-secondary-cta" onClick={() => onRemoveInvite(invite.id)}>Remove</button>
+                  <button type="button" className="ui-button-secondary" onClick={() => onRemoveInvite(invite.id)}>
+                    <Trash2 size={16} aria-hidden="true" />
+                    Remove
+                  </button>
                 </div>
 
                 <div style={{ display: 'grid', gap: '0.7rem', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
