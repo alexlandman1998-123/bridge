@@ -1,7 +1,6 @@
 import { APP_ROLES, isCanonicalAppRole, normalizeCanonicalAppRole } from '../constants/appRoles'
 import { MEMBERSHIP_STATUSES, isActiveMembershipStatus, normalizeMembershipStatus } from '../constants/membershipStatuses'
 import { ONBOARDING_REQUIRED_REASONS } from '../constants/onboardingStatuses'
-import { normalizeOrgRole } from '../constants/orgRoles'
 import { getDefaultBranchScope, normalizeBranchScope } from '../constants/workspaceUnits'
 import { WORKSPACE_TYPES, inferWorkspaceTypeFromAppRole, normalizeWorkspaceType } from '../constants/workspaceTypes'
 import { permissionsByWorkspaceRole } from '../auth/permissions/permissionRegistry'
@@ -111,6 +110,7 @@ function normalizeOrganisationRow(row = null, fallback = {}) {
 
 function normalizeAttorneyFirmRow(row = null) {
   if (!row) return null
+  const logoUrl = normalizeText(row.logo_url || row.logoUrl)
   return {
     id: row.id,
     type: WORKSPACE_TYPES.attorneyFirm,
@@ -118,6 +118,10 @@ function normalizeAttorneyFirmRow(row = null) {
     legalName: normalizeText(row.name),
     email: normalizeEmail(row.email),
     phone: normalizeText(row.phone),
+    logoUrl,
+    logo_url: logoUrl || null,
+    primaryColour: normalizeText(row.primary_colour || row.primaryColour),
+    secondaryColour: normalizeText(row.secondary_colour || row.secondaryColour),
     raw: row,
   }
 }
@@ -734,7 +738,7 @@ async function fetchAttorneyFirmRows(client, firmIds = []) {
 
   const query = await client
     .from('attorney_firms')
-    .select('id, name, email, phone, created_by, is_active')
+    .select('id, name, email, phone, logo_url, primary_colour, secondary_colour, created_by, is_active')
     .in('id', ids)
 
   if (query.error) {

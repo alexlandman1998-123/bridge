@@ -80,6 +80,35 @@ try {
   assert.equal(security.currentWorkspace.id, organisation.id)
   assert.ok(security.diagnostics.warnings.includes('requested_workspace_invalid'))
 
+  const attorneyFirm = {
+    id: '33333333-3333-4333-8333-333333333333',
+    name: 'Tuckers Mock',
+    type: 'attorney_firm',
+    logo_url: 'https://example.test/tuckers-logo.png',
+  }
+  const attorneyProfile = {
+    ...profile,
+    role: 'attorney',
+    primary_attorney_firm_id: attorneyFirm.id,
+  }
+  const attorney = buildWorkspaceResolution({
+    user,
+    profile: attorneyProfile,
+    attorneyFirmRows: [attorneyFirm],
+    attorneyMembershipRows: [{
+      id: 'attorney-membership-1',
+      firm_id: attorneyFirm.id,
+      user_id: user.id,
+      role: 'firm_admin',
+      status: 'active',
+    }],
+    requestedWorkspaceId: attorneyFirm.id,
+  })
+
+  assert.equal(attorney.ok, true)
+  assert.equal(attorney.currentWorkspace.id, attorneyFirm.id)
+  assert.equal(attorney.currentWorkspace.logoUrl, attorneyFirm.logo_url)
+
   assert.throws(
     () => assertResolvedWorkspaceContext({ organisationId: 'default', appRole: 'agent' }),
     /resolved workspace context|required/i,

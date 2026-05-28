@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { useAuthSession } from './AuthSessionContext'
 import { fetchAgencyOnboardingSettings } from '../lib/settingsApi'
 import { resolveWorkspaceRole } from '../services/roleResolutionService'
+import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
 
 const EMPTY_ORGANISATION_BRANDING = Object.freeze({
   logoUrl: '',
@@ -92,8 +93,46 @@ function buildAuthOrganisationSnapshot(authState) {
   })
 }
 
+function buildWorkspaceOrganisationSnapshot(authState) {
+  const workspace = authState.currentWorkspace || {}
+  const membership = authState.currentMembership || {}
+  const logoUrl = normalizeText(workspace.logoUrl || workspace.logo_url || workspace.raw?.logo_url)
+  const organisation = normalizeOrganisation({
+    id: workspace.id || membership.workspaceId || '',
+    name: workspace.name || 'Bridge Workspace',
+    displayName: workspace.name || 'Bridge Workspace',
+    type: workspace.type || authState.workspaceType || '',
+    logoUrl,
+  })
+
+  return normalizeOrganisationSnapshot({
+    organisation,
+    organisationSettings: {},
+    onboarding: {
+      agencyInformation: {
+        agencyName: organisation.name,
+        tradingName: organisation.displayName,
+      },
+      branding: {
+        logoLight: logoUrl,
+      },
+    },
+    membershipRole: resolveWorkspaceRole(membership, {
+      appRole: authState.appRole,
+      workspaceType: workspace.type || authState.workspaceType,
+    }),
+    membershipStatus: membership.status || 'active',
+    onboardingMode: 'workspace_auth_snapshot',
+    persisted: Boolean(workspace.id || membership.workspaceId),
+  })
+}
+
 function isDevAuthOrganisation(authState) {
   return authState.currentMembership?.source === 'dev_auth_bypass'
+}
+
+function shouldUseWorkspaceBranding(authState) {
+  return authState.workspaceType === WORKSPACE_TYPES.attorneyFirm || authState.currentWorkspace?.type === WORKSPACE_TYPES.attorneyFirm
 }
 
 function logOrganisationHydration(snapshot) {
@@ -124,12 +163,19 @@ export function OrganisationProvider({ children }) {
       return null
     }
 
-    if (isDevAuthOrganisation(authState)) {
-      const nextState = buildAuthOrganisationSnapshot(authState)
-      setLoading(false)
-      setError('')
-      return applyOrganisationState(nextState)
-    }
+      if (isDevAuthOrganisation(authState)) {
+        const nextState = buildAuthOrganisationSnapshot(authState)
+        setLoading(false)
+        setError('')
+        return applyOrganisationState(nextState)
+      }
+
+      if (shouldUseWorkspaceBranding(authState)) {
+        const nextState = buildWorkspaceOrganisationSnapshot(authState)
+        setLoading(false)
+        setError('')
+        return applyOrganisationState(nextState)
+      }
 
     setLoading(true)
     setError('')
@@ -161,6 +207,15 @@ export function OrganisationProvider({ children }) {
       if (isDevAuthOrganisation(authState)) {
         if (active) {
           applyOrganisationState(buildAuthOrganisationSnapshot(authState))
+          setLoading(false)
+          setError('')
+        }
+        return
+      }
+
+      if (shouldUseWorkspaceBranding(authState)) {
+        if (active) {
+          applyOrganisationState(buildWorkspaceOrganisationSnapshot(authState))
           setLoading(false)
           setError('')
         }

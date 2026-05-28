@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Building2, Plus, Users } from 'lucide-react'
 import { Navigate, useNavigate } from 'react-router-dom'
+import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import AttorneyOnboardingLayout from '../components/attorney/onboarding/AttorneyOnboardingLayout'
 import FirmInfoStep from '../components/attorney/onboarding/FirmInfoStep'
@@ -250,6 +251,7 @@ function buildDraftStorageKey(profileId = '') {
 
 function AttorneyOnboardingPage() {
   const navigate = useNavigate()
+  const { authState } = useAuthSession()
   const { role, profile } = useWorkspace()
   const [firmLoading, setFirmLoading] = useState(true)
   const [existingFirm, setExistingFirm] = useState(null)
@@ -268,6 +270,15 @@ function AttorneyOnboardingPage() {
 
   const activeDepartmentTypes = useMemo(() => getActiveDepartmentTypes(selectedDepartments), [selectedDepartments])
   const draftStorageKey = useMemo(() => buildDraftStorageKey(profile?.id), [profile?.id])
+
+  function openAttorneyDashboard() {
+    authState.refreshAuthState?.()
+    if (typeof window !== 'undefined') {
+      window.location.assign('/attorney/dashboard')
+      return
+    }
+    navigate('/attorney/dashboard', { replace: true })
+  }
 
   useEffect(() => {
     let active = true
@@ -626,7 +637,7 @@ function AttorneyOnboardingPage() {
             </div>
           ) : null}
           <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
-            <button type="button" className="ui-button-primary" onClick={() => navigate('/attorney/dashboard', { replace: true })}>
+            <button type="button" className="ui-button-primary" onClick={openAttorneyDashboard}>
               <Building2 size={16} aria-hidden="true" />
               Open Attorney Dashboard
             </button>
