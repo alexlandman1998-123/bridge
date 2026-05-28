@@ -404,7 +404,14 @@ function normalizeRoleplayerOptionValue(value) {
 }
 
 function makeRoleplayerOptionKey(option = {}) {
-  return normalizeRoleplayerOptionValue(option.id || option.relationshipId || option.organisationId || option.email || option.companyName)
+  const normalizedOption = option || {}
+  return normalizeRoleplayerOptionValue(
+    normalizedOption.id ||
+      normalizedOption.relationshipId ||
+      normalizedOption.organisationId ||
+      normalizedOption.email ||
+      normalizedOption.companyName,
+  )
 }
 
 function getRoleplayerStatusLabel(value = '') {
@@ -429,20 +436,21 @@ function getRoleplayerTriggerLabel(value = '', roleType = '') {
 }
 
 function buildPartnerRoleplayerOption(option = {}, roleType = 'transfer_attorney') {
-  const companyName = normalizeRoleplayerOptionValue(option.companyName)
-  const scopeLabel = normalizeRoleplayerOptionValue(option.scopeLabel)
-  const preferred = Boolean(option.preferred || option.relationshipType === 'preferred')
+  const normalizedOption = option || {}
+  const companyName = normalizeRoleplayerOptionValue(normalizedOption.companyName)
+  const scopeLabel = normalizeRoleplayerOptionValue(normalizedOption.scopeLabel)
+  const preferred = Boolean(normalizedOption.preferred || normalizedOption.relationshipType === 'preferred')
   return {
-    id: makeRoleplayerOptionKey(option),
+    id: makeRoleplayerOptionKey(normalizedOption),
     roleType,
     group: preferred ? 'Preferred Partners' : 'Connected Partners',
     companyName,
     contactPerson: companyName,
-    email: normalizeRoleplayerOptionValue(option.email),
-    organisationId: normalizeRoleplayerOptionValue(option.organisationId),
-    relationshipId: normalizeRoleplayerOptionValue(option.relationshipId || option.id),
-    scopeType: normalizeRoleplayerOptionValue(option.scopeType),
-    scopeId: normalizeRoleplayerOptionValue(option.scopeId),
+    email: normalizeRoleplayerOptionValue(normalizedOption.email),
+    organisationId: normalizeRoleplayerOptionValue(normalizedOption.organisationId),
+    relationshipId: normalizeRoleplayerOptionValue(normalizedOption.relationshipId || normalizedOption.id),
+    scopeType: normalizeRoleplayerOptionValue(normalizedOption.scopeType),
+    scopeId: normalizeRoleplayerOptionValue(normalizedOption.scopeId),
     scopeLabel,
     preferred,
     label: `${companyName || 'Connected partner'}${scopeLabel ? ` · ${preferred ? 'Preferred for ' : ''}${scopeLabel.replace(/^Scope:\s*/i, '')}` : ''}`,
@@ -450,21 +458,31 @@ function buildPartnerRoleplayerOption(option = {}, roleType = 'transfer_attorney
 }
 
 function buildExistingRoleplayerOption(item = {}, roleType = 'transfer_attorney') {
-  const companyName = normalizeRoleplayerOptionValue(item.partnerName || item.partner_name || item.organisationName || item.companyName)
-  const contactPerson = normalizeRoleplayerOptionValue(item.contactPerson || item.contact_person || item.participantName || item.name)
-  const email = normalizeRoleplayerOptionValue(item.emailAddress || item.email_address || item.participantEmail || item.email)
+  const normalizedItem = item || {}
+  const companyName = normalizeRoleplayerOptionValue(
+    normalizedItem.partnerName || normalizedItem.partner_name || normalizedItem.organisationName || normalizedItem.companyName,
+  )
+  const contactPerson = normalizeRoleplayerOptionValue(
+    normalizedItem.contactPerson || normalizedItem.contact_person || normalizedItem.participantName || normalizedItem.name,
+  )
+  const email = normalizeRoleplayerOptionValue(normalizedItem.emailAddress || normalizedItem.email_address || normalizedItem.participantEmail || normalizedItem.email)
   const label = companyName || contactPerson || email
   if (!label) return null
   return {
-    id: makeRoleplayerOptionKey({ id: item.id, organisationId: item.organisationId || item.organisation_id, email, companyName: label }),
+    id: makeRoleplayerOptionKey({
+      id: normalizedItem.id,
+      organisationId: normalizedItem.organisationId || normalizedItem.organisation_id,
+      email,
+      companyName: label,
+    }),
     roleType,
     group: 'Recently Used',
     companyName: companyName || contactPerson || email,
     contactPerson: contactPerson || companyName || email,
     email,
-    organisationId: normalizeRoleplayerOptionValue(item.organisationId || item.organisation_id),
-    relationshipId: normalizeRoleplayerOptionValue(item.partnerRelationshipId || item.partner_relationship_id || item.relationshipId),
-    scopeLabel: normalizeRoleplayerOptionValue(item.scopeLabel || item.scope_label || item.snapshot?.scopeLabel),
+    organisationId: normalizeRoleplayerOptionValue(normalizedItem.organisationId || normalizedItem.organisation_id),
+    relationshipId: normalizeRoleplayerOptionValue(normalizedItem.partnerRelationshipId || normalizedItem.partner_relationship_id || normalizedItem.relationshipId),
+    scopeLabel: normalizeRoleplayerOptionValue(normalizedItem.scopeLabel || normalizedItem.scope_label || normalizedItem.snapshot?.scopeLabel),
     preferred: false,
     label,
   }
@@ -2180,7 +2198,8 @@ function AttorneyTransactionDetail() {
   )
   const transactionEvents = data?.transactionEvents ?? EMPTY_ARRAY
   const transactionParticipants = data?.transactionParticipants ?? EMPTY_ARRAY
-  const transactionRolePlayers = data?.transactionRolePlayers || data?.rolePlayers || data?.transaction_role_players || EMPTY_ARRAY
+  const rawTransactionRolePlayers = data?.transactionRolePlayers || data?.rolePlayers || data?.transaction_role_players
+  const transactionRolePlayers = Array.isArray(rawTransactionRolePlayers) ? rawTransactionRolePlayers.filter(Boolean) : EMPTY_ARRAY
   const isAgentTransactionView = workspaceRole === 'agent'
   const workspaceOrganisationId =
     workspace?.id ||
@@ -5482,7 +5501,7 @@ function AttorneyTransactionDetail() {
                   { roleType: 'bond_originator', label: 'Bond Originator', fallback: assignedBondOriginator },
                   { roleType: 'bond_attorney', label: 'Bond Attorney', fallback: bondAttorney },
                 ].map((entry) => {
-                  const saved = transactionRolePlayers.find((item) => item.roleType === entry.roleType || item.role_type === entry.roleType)
+                  const saved = transactionRolePlayers.find((item) => item?.roleType === entry.roleType || item?.role_type === entry.roleType)
                   const name =
                     saved?.partnerName ||
                     saved?.partner_name ||
