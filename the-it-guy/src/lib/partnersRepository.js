@@ -1098,6 +1098,16 @@ function filterInvitationPayload(payload = {}) {
   return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== null && value !== undefined && `${value}`.trim() !== ''))
 }
 
+function resolveRecipientEmailForStorage(recipientEmail = '', recipientOrganisationId = '') {
+  const email = normalizeText(recipientEmail).toLowerCase()
+  if (email) return email
+
+  const organisationId = normalizeText(recipientOrganisationId)
+  if (!organisationId) return null
+
+  return `organisation-${organisationId}@bridge.internal`
+}
+
 async function fetchInvitationRows(scopedOrganisationId) {
   try {
     const baseResult = await supabase
@@ -1172,9 +1182,10 @@ function buildInvitePayloadBase({
   const toWorkspaceType = normalizeOrganisationType(recipientWorkspaceType || workspaceType)
   const fromOrganisationName = normalizeText(senderOrganisationName) || 'Bridge Organisation'
   const normalizedScopeType = normalizePartnerScopeType(scopeType)
+  const storageRecipientEmail = resolveRecipientEmailForStorage(recipientEmail, recipientOrganisationId)
   return filterInvitationPayload({
     sender_organisation_id: scopedOrganisationId,
-    recipient_email: recipientEmail,
+    recipient_email: storageRecipientEmail,
     recipient_organisation_id: recipientOrganisationId || null,
     from_organisation_name: fromOrganisationName,
     to_organisation_name: recipientOrganisationName || null,

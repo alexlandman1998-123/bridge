@@ -3,6 +3,9 @@ begin;
 alter table if exists public.attorney_firms
   add column if not exists organisation_id uuid references public.organisations(id) on delete set null;
 
+alter table if exists public.partner_invitations
+  alter column recipient_email drop not null;
+
 create or replace function public.bridge_attorney_role_to_organisation_role(role_value text)
 returns text
 language sql
