@@ -18410,7 +18410,7 @@ async function ensureRoleplayerParticipantForOnboarding(client, {
     participant_name: participantName,
     participant_email: email || null,
     participant_scope: 'transaction',
-    assignment_source: 'buyer_onboarding_roleplayer_activation',
+    assignment_source: 'transaction_direct',
     can_view: permissions.canView,
     can_comment: permissions.canComment,
     can_upload_documents: permissions.canUploadDocuments,
