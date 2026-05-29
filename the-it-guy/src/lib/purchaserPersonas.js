@@ -1952,6 +1952,18 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
   const cashAmount = normalizeNumber(finance.cash_amount)
   const bondAmount = normalizeNumber(finance.bond_amount)
 
+  if (!Number.isFinite(purchasePrice) || purchasePrice <= 0) {
+    throw new Error('Purchase Price is required.')
+  }
+
+  if ((financeType === 'cash' || financeType === 'combination') && (!Number.isFinite(cashAmount) || cashAmount <= 0)) {
+    throw new Error('Cash Amount is required.')
+  }
+
+  if ((financeType === 'bond' || financeType === 'combination') && (!Number.isFinite(bondAmount) || bondAmount <= 0)) {
+    throw new Error('Bond Amount is required.')
+  }
+
   if (financeType === 'combination') {
     if (
       Number.isFinite(purchasePrice) &&

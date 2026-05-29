@@ -21,7 +21,7 @@ import {
   X,
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useLocation, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
@@ -1850,6 +1850,7 @@ function WorkflowDetailsDrawer({
 function AttorneyTransactionDetail() {
   const { transactionId } = useParams()
   const location = useLocation()
+  const navigate = useNavigate()
   const { profile, role: workspaceRole, workspace, workspaceType, currentMembership } = useWorkspace()
   const attorneyPermissionState = useAttorneyPermissions()
   const navigationPreviewData = useMemo(
@@ -3115,6 +3116,18 @@ function AttorneyTransactionDetail() {
       visibility: 'internal',
       message: 'Signing appointment to be scheduled.',
     })
+  }
+
+  function openAgentSalesAgreementWorkspace() {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for sales agreement generation.')
+      return
+    }
+
+    const params = new URLSearchParams()
+    params.set('mode', 'generate')
+    params.set('returnTo', `${location.pathname}${location.search || ''}`)
+    navigate(`/transactions/${transaction.id}/legal/otp?${params.toString()}`)
   }
 
   const matterHeaderMetrics = useMemo(
@@ -4666,7 +4679,7 @@ function AttorneyTransactionDetail() {
                       ['Upload Document', Upload, () => setWorkspaceMenu('documents')],
                       ['Add Note', MessageSquarePlus, handleQuickAddWorkflowNote],
                       ['Schedule Signing', CalendarDays, handleQuickScheduleSigning],
-                      ['Generate Document', FileText, () => setWorkspaceMenu('documents')],
+                      ['Generate Sales Agreement', FileText, openAgentSalesAgreementWorkspace],
                     ].map(([label, Icon, action]) => (
                       <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
                         {createElement(Icon, { size: 14 })}
@@ -5533,7 +5546,7 @@ function AttorneyTransactionDetail() {
                       ['Request Documents', FileText, handleQuickRequestDocuments],
                       ['Upload Document', Upload, () => setWorkspaceMenu('documents')],
                       ['Schedule Appointment', CalendarDays, handleQuickScheduleSigning],
-                      ['Generate Document', FileText, () => setWorkspaceMenu('documents')],
+                      ['Generate Sales Agreement', FileText, openAgentSalesAgreementWorkspace],
                       ['Add Internal Note', MessageSquarePlus, () => {
                         setDiscussionType('internal_note')
                         setDiscussionVisibility('internal')

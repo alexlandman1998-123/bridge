@@ -996,6 +996,16 @@ function ClientOnboarding() {
   const structuredFinance = detailsState.finance
   const structuredCompany = detailsState.company
   const structuredTrust = detailsState.trust
+  const visibleFinanceFields = useMemo(
+    () =>
+      FINANCE_DETAIL_FIELDS.filter((fieldConfig) =>
+        isDetailFieldVisible(fieldConfig, {
+          financeType: normalizedFinanceType,
+          purchaserEntityType,
+        }),
+      ),
+    [normalizedFinanceType, purchaserEntityType],
+  )
   const propertyAddressLine = String(
     payload?.unit?.address ||
       payload?.transaction?.property_address ||
@@ -1140,6 +1150,10 @@ function ClientOnboarding() {
       })
     }
 
+    visibleFinanceFields.forEach((fieldConfig) => {
+      keys.push(detailFieldPath('finance', 0, fieldConfig.key))
+    })
+
     return keys
   }
 
@@ -1169,6 +1183,16 @@ function ClientOnboarding() {
         if (digits.length < 10) {
           nextErrors[pathKey] = 'Enter a valid phone number.'
         }
+      }
+    }
+
+    function requirePositiveFinanceAmount(pathKey, label, value) {
+      if (nextErrors[pathKey] || !normalizeInputValue(value)) {
+        return
+      }
+      const parsed = Number(String(value).replace(/[^\d.-]/g, ''))
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        nextErrors[pathKey] = `${label} must be greater than zero.`
       }
     }
 
@@ -1220,8 +1244,24 @@ function ClientOnboarding() {
       })
     }
 
+    visibleFinanceFields.forEach((fieldConfig) => {
+      const pathKey = detailFieldPath('finance', 0, fieldConfig.key)
+      const shouldRequire =
+        (typeof fieldConfig.requiredWhen === 'function'
+          ? fieldConfig.requiredWhen({ financeType: normalizedFinanceType, purchaserEntityType })
+          : fieldConfig.required) !== false
+      const value = details.finance[fieldConfig.key]
+      requireField(pathKey, fieldConfig.label, value, {
+        type: fieldConfig.type,
+        required: shouldRequire,
+      })
+      if (fieldConfig.type === 'number' && shouldRequire) {
+        requirePositiveFinanceAmount(pathKey, fieldConfig.label, value)
+      }
+    })
+
     return nextErrors
-  }, [isNaturalPersonPurchase, normalizedFinanceType, purchaserEntityType])
+  }, [isNaturalPersonPurchase, normalizedFinanceType, purchaserEntityType, visibleFinanceFields])
 
   useEffect(() => {
     if (!Object.keys(touchedFields).length || activeStep?.key !== 'details') {
@@ -1902,6 +1942,34 @@ function ClientOnboarding() {
     )
   }
 
+  function renderFinanceDetailsCard() {
+    if (!visibleFinanceFields.length) {
+      return null
+    }
+
+    return (
+      <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+        <header className="mb-5 border-b border-[#edf2f7] pb-4">
+          <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Transaction Finance</h4>
+        </header>
+        <div className="grid gap-3 md:grid-cols-2">
+          {visibleFinanceFields.map((fieldConfig) => {
+            const fieldPath = detailFieldPath('finance', 0, fieldConfig.key)
+            const value = structuredFinance[fieldConfig.key] ?? ''
+            return renderDetailField({
+              fieldConfig,
+              value,
+              fieldPath,
+              className: fieldConfig.type === 'textarea' ? 'md:col-span-2' : '',
+              onChange: (nextValue) => updateFinanceField(fieldConfig.key, nextValue),
+              onBlur: () => markFieldTouched(fieldPath),
+            })
+          })}
+        </div>
+      </article>
+    )
+  }
+
   function renderDetailsStep() {
     const modeError = fieldErrors.natural_person_purchase_mode
     const showModeError = Boolean(modeError && touchedFields.natural_person_purchase_mode)
@@ -1948,6 +2016,8 @@ function ClientOnboarding() {
           {isCoPurchasingSelected && structuredPurchasers[1] ? (
             <div>{renderNaturalPurchaserCard(structuredPurchasers[1], 1)}</div>
           ) : null}
+
+          <div>{renderFinanceDetailsCard()}</div>
         </div>
       )
     }
@@ -1955,6 +2025,7 @@ function ClientOnboarding() {
     return (
       <div className={DETAIL_FLOW_WRAP_CLASS}>
         <div>{renderCompanyOrTrustDetailsCard()}</div>
+        <div>{renderFinanceDetailsCard()}</div>
       </div>
     )
   }

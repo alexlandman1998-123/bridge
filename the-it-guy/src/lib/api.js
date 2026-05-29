@@ -13032,7 +13032,7 @@ async function fetchTransactionRowById(client, transactionId) {
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+        'id, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
       ),
     )
     .eq('id', transactionId)
@@ -13048,6 +13048,10 @@ async function fetchTransactionRowById(client, transactionId) {
       isMissingColumnError(query.error, 'matter_owner') ||
       isMissingColumnError(query.error, 'development_id') ||
       isMissingColumnError(query.error, 'sales_price') ||
+      isMissingColumnError(query.error, 'purchase_price') ||
+      isMissingColumnError(query.error, 'cash_amount') ||
+      isMissingColumnError(query.error, 'bond_amount') ||
+      isMissingColumnError(query.error, 'deposit_amount') ||
       isMissingColumnError(query.error, 'purchaser_type') ||
       isMissingColumnError(query.error, 'finance_managed_by') ||
       isMissingColumnError(query.error, 'reservation_required') ||
@@ -13062,6 +13066,9 @@ async function fetchTransactionRowById(client, transactionId) {
       isMissingColumnError(query.error, 'reservation_reviewed_at') ||
       isMissingColumnError(query.error, 'reservation_reviewed_by') ||
       isMissingColumnError(query.error, 'reservation_review_notes') ||
+      isMissingColumnError(query.error, 'onboarding_status') ||
+      isMissingColumnError(query.error, 'onboarding_completed_at') ||
+      isMissingColumnError(query.error, 'external_onboarding_submitted_at') ||
       isMissingColumnError(query.error, 'current_main_stage') ||
       isMissingColumnError(query.error, 'current_sub_stage_summary') ||
       isMissingColumnError(query.error, 'risk_status') ||
@@ -13092,6 +13099,10 @@ async function fetchTransactionRowById(client, transactionId) {
       'matter_owner',
       'development_id',
       'sales_price',
+      'purchase_price',
+      'cash_amount',
+      'bond_amount',
+      'deposit_amount',
       'purchaser_type',
       'finance_managed_by',
       'reservation_required',
@@ -13106,6 +13117,9 @@ async function fetchTransactionRowById(client, transactionId) {
       'reservation_reviewed_at',
       'reservation_reviewed_by',
       'reservation_review_notes',
+      'onboarding_status',
+      'onboarding_completed_at',
+      'external_onboarding_submitted_at',
       'current_main_stage',
       'current_sub_stage_summary',
       'risk_status',
@@ -13129,7 +13143,11 @@ async function fetchTransactionRowById(client, transactionId) {
     ])
     query = await client
       .from('transactions')
-      .select('id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, updated_at, created_at')
+      .select(
+        selectWithoutKnownMissingColumns(
+          'id, unit_id, buyer_id, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, finance_type, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, stage, attorney, bond_originator, next_action, updated_at, created_at',
+        ),
+      )
       .eq('id', transactionId)
       .maybeSingle()
   }
@@ -28155,13 +28173,34 @@ async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
     throw formDataError
   }
 
+  const onboardingRecord = await getOrCreateTransactionOnboardingRecord(
+    client,
+    {
+      transactionId: transaction.id,
+      purchaserType,
+    },
+    { createIfMissing: true },
+  )
+  const existingOnboardingStatus = normalizeTextValue(transaction?.onboarding_status).toLowerCase()
+  const existingOnboardingRecordStatus = normalizeTextValue(onboardingRecord?.status).toLowerCase()
+  const onboardingAlreadyCompleted =
+    existingOnboardingStatus === 'client_onboarding_complete' ||
+    Boolean(transaction?.onboarding_completed_at || transaction?.external_onboarding_submitted_at) ||
+    ['submitted', 'reviewed', 'approved'].includes(existingOnboardingRecordStatus)
+  const preservedCompletedAt =
+    transaction?.onboarding_completed_at ||
+    transaction?.external_onboarding_submitted_at ||
+    onboardingRecord?.submittedAt ||
+    onboardingRecord?.updatedAt ||
+    now
+
   await syncOnboardingTransactionFinanceSnapshot(client, {
     transaction,
     formData: normalizedFormData,
     purchaserType,
-    onboardingStatus: 'awaiting_client_onboarding',
-    onboardingCompletedAt: null,
-    externalOnboardingSubmittedAt: null,
+    onboardingStatus: onboardingAlreadyCompleted ? 'client_onboarding_complete' : 'awaiting_client_onboarding',
+    onboardingCompletedAt: onboardingAlreadyCompleted ? preservedCompletedAt : null,
+    externalOnboardingSubmittedAt: onboardingAlreadyCompleted ? preservedCompletedAt : null,
   })
 
   await replaceTransactionFundingSources(client, {
@@ -28183,15 +28222,6 @@ async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
     bondAmount: financeSnapshot.bondAmount,
     formData: normalizedFormData,
   })
-
-  const onboardingRecord = await getOrCreateTransactionOnboardingRecord(
-    client,
-    {
-      transactionId: transaction.id,
-      purchaserType,
-    },
-    { createIfMissing: true },
-  )
 
   if (onboardingRecord?.id) {
     const nextStatus = onboardingRecord.status === 'Not Started' ? 'In Progress' : onboardingRecord.status
