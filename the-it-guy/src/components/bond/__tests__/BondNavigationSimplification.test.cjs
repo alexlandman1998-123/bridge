@@ -17,15 +17,39 @@ async function main() {
 
   try {
     const rolesModule = await server.ssrLoadModule('/src/lib/roles.js')
+    const permissionResolver = await server.ssrLoadModule('/src/auth/permissions/permissionResolver.js')
     const viewsModule = await server.ssrLoadModule('/src/config/bondViews.js')
     const tabsModule = await server.ssrLoadModule('/src/components/bond/BondViewTabs.jsx')
     const serviceModule = await server.ssrLoadModule('/src/services/bondCommandCenterService.js')
 
     const bondNav = rolesModule.getRoleNavItems('bond_originator')
+    const consultantNav = permissionResolver.filterNavigationItems(bondNav, {
+      role: 'bond_originator',
+      currentWorkspace: { id: 'workspace-1', type: 'bond_originator' },
+      currentMembership: {
+        id: 'membership-1',
+        organisation_id: 'workspace-1',
+        role: 'consultant',
+        workspace_role: 'consultant',
+        workspace_type: 'bond_originator',
+        status: 'active',
+      },
+      activeMemberships: [
+        {
+          id: 'membership-1',
+          organisation_id: 'workspace-1',
+          role: 'consultant',
+          workspace_role: 'consultant',
+          workspace_type: 'bond_originator',
+          status: 'active',
+        },
+      ],
+    })
     assert.deepEqual(
       bondNav.map((item) => item.label),
       ['Dashboard', 'Pipeline', 'Applications', 'Developments', 'Clients', 'Partners', 'Reports', 'Organisation', 'Settings'],
     )
+    assert.equal(consultantNav.some((item) => item.key === 'settings'), true)
     assert.deepEqual(
       bondNav.filter((item) => item.navSection !== 'secondary').map((item) => item.label),
       ['Dashboard', 'Pipeline', 'Applications', 'Developments', 'Clients', 'Partners', 'Reports', 'Organisation'],

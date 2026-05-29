@@ -32,12 +32,11 @@ try {
     assert.equal(organisationItem.label, 'Organisation')
     assert.equal(organisationItem.to, '/bond/organisation')
 
-    assert.equal(items.some((item) => item.key === 'documents'), true)
-    assert.equal(items.some((item) => item.key === 'tasks'), true)
-    assert.equal(items.some((item) => item.key === 'bond_calendar'), true)
+    assert.equal(items.some((item) => item.key === 'documents'), false)
+    assert.equal(items.some((item) => item.key === 'tasks'), false)
+    assert.equal(items.some((item) => item.key === 'bond_calendar'), false)
     assert.equal(items.some((item) => item.key === 'settings'), true)
     assert.equal(items.find((item) => item.key === 'dashboard')?.navSection, 'main')
-    assert.equal(items.find((item) => item.key === 'documents')?.navSection, 'secondary')
     assert.equal(items.find((item) => item.key === 'settings')?.navSection, 'secondary')
 
     console.log('bond role navigation tests passed')

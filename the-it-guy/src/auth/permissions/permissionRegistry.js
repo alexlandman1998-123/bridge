@@ -466,7 +466,6 @@ export const navPermissionByKey = Object.freeze({
   snags: PERMISSIONS.viewClientPortal,
   team: PERMISSIONS.manageDevelopmentTeam,
   users: PERMISSIONS.manageUsers,
-  settings: PERMISSIONS.manageWorkspaceSettings,
 })
 
 export const routePermissionRules = Object.freeze([
