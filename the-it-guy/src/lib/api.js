@@ -729,7 +729,7 @@ const knownMissingSchemaColumns = new Set()
 const TRANSACTION_SUMMARY_SELECT_CLAUSE =
   'id, organisation_id, assigned_branch_id, lifecycle_state, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, cash_amount, bond_amount, deposit_amount, onboarding_status, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, comment, expected_transfer_date, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, assigned_bond_processor_user_id, assigned_bond_manager_user_id, assigned_bond_compliance_user_id, bond_assignment_status, bond_assignment_source, finance_status, compliance_status, compliance_review_required, application_prepared, submitted_to_banks, documents_complete, finance_documents_complete, documents_missing, required_documents_missing, finance_documents_missing, missing_documents_count, uploaded_documents_count, total_required_documents, bank_feedback_pending, bank_feedback_status, next_action_due_at, finance_due_at, attorney_stage, risk_status, operational_state, processor_name, assigned_bond_processor_name, compliance_name, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, registered_at, completed_at, archived_at, cancelled_at, deleted_at, last_meaningful_activity_at, updated_at, created_at, is_active'
 const TRANSACTION_SUMMARY_FALLBACK_SELECT_CLAUSE =
-  'id, organisation_id, development_id, unit_id, buyer_id, finance_type, purchaser_type, purchase_price, sales_price, cash_amount, bond_amount, deposit_amount, onboarding_status, stage, attorney, bond_originator, next_action, updated_at, created_at'
+  'id, organisation_id, bond_workspace_id, development_id, unit_id, buyer_id, finance_type, purchaser_type, purchase_price, sales_price, cash_amount, bond_amount, deposit_amount, onboarding_status, stage, attorney, bond_originator, next_action, updated_at, created_at'
 
 function registerKnownMissingColumns(error, columnNames = []) {
   if (!error) {
@@ -13032,7 +13032,7 @@ async function fetchTransactionRowById(client, transactionId) {
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+        'id, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
       ),
     )
     .eq('id', transactionId)
@@ -13076,6 +13076,10 @@ async function fetchTransactionRowById(client, transactionId) {
       isMissingColumnError(query.error, 'assigned_agent_email') ||
       isMissingColumnError(query.error, 'assigned_attorney_email') ||
       isMissingColumnError(query.error, 'assigned_bond_originator_email') ||
+      isMissingColumnError(query.error, 'bond_workspace_id') ||
+      isMissingColumnError(query.error, 'bond_region_id') ||
+      isMissingColumnError(query.error, 'bond_workspace_unit_id') ||
+      isMissingColumnError(query.error, 'primary_bond_consultant_user_id') ||
       isMissingColumnError(query.error, 'bank') ||
       isMissingColumnError(query.error, 'expected_transfer_date') ||
       isMissingColumnError(query.error, 'comment') ||
@@ -13127,6 +13131,10 @@ async function fetchTransactionRowById(client, transactionId) {
       'assigned_agent_email',
       'assigned_attorney_email',
       'assigned_bond_originator_email',
+      'bond_workspace_id',
+      'bond_region_id',
+      'bond_workspace_unit_id',
+      'primary_bond_consultant_user_id',
       'bank',
       'expected_transfer_date',
       'comment',
@@ -18181,9 +18189,18 @@ async function upsertTransactionRoleplayerSelection(client, { transactionId, sel
       .eq('role_type', selection.roleType)
       .limit(1)
   }
+  if (existingRows.error) {
+    if (isMissingTableError(existingRows.error, 'transaction_role_players')) {
+      throw new Error('Transaction roleplayer storage is not set up yet.')
+    }
+    if (isPermissionDeniedError(existingRows.error)) {
+      throw new Error('Your role does not have permission to save transaction roleplayers.')
+    }
+    throw existingRows.error
+  }
 
   let result = null
-  if (!existingRows.error && existingRows.data?.[0]?.id) {
+  if (existingRows.data?.[0]?.id) {
     result = await updateRecordByIdWithMissingColumnFallback(
       client,
       'transaction_role_players',
@@ -18191,6 +18208,9 @@ async function upsertTransactionRoleplayerSelection(client, { transactionId, sel
       payload,
       'id, transaction_id, role_type, selection_source, partner_name, contact_person, email_address, phone_number, snapshot_json, created_at, updated_at',
     )
+    if (!Array.isArray(result) || !result.length) {
+      throw new Error(`Unable to save ${selection.roleType.replaceAll('_', ' ')} roleplayer.`)
+    }
     return result
   }
 
@@ -18225,10 +18245,182 @@ async function upsertTransactionRoleplayerSelection(client, { transactionId, sel
   }
 
   if (result.error) {
-    if (isMissingTableError(result.error, 'transaction_role_players') || isPermissionDeniedError(result.error)) return null
+    if (isMissingTableError(result.error, 'transaction_role_players')) {
+      throw new Error('Transaction roleplayer storage is not set up yet.')
+    }
+    if (isPermissionDeniedError(result.error)) {
+      throw new Error('Your role does not have permission to save transaction roleplayers.')
+    }
     throw result.error
   }
+  if (!Array.isArray(result.data) || !result.data.length) {
+    throw new Error(`Unable to save ${selection.roleType.replaceAll('_', ' ')} roleplayer.`)
+  }
   return result.data || null
+}
+
+function isTransactionOnboardingCompleteForRoleplayerReplay(transaction = {}, onboarding = null) {
+  const transactionStatus = normalizeTextValue(transaction?.onboarding_status || transaction?.onboardingStatus).toLowerCase()
+  const onboardingStatus = normalizeTextValue(onboarding?.status).toLowerCase()
+  return (
+    ['client_onboarding_complete', 'submitted', 'complete', 'completed'].includes(transactionStatus) ||
+    ['submitted', 'reviewed', 'approved', 'complete', 'completed'].includes(onboardingStatus) ||
+    Boolean(transaction?.onboarding_completed_at || transaction?.onboardingCompletedAt) ||
+    Boolean(transaction?.external_onboarding_submitted_at || transaction?.externalOnboardingSubmittedAt) ||
+    Boolean(onboarding?.submittedAt || onboarding?.submitted_at)
+  )
+}
+
+async function fetchClientPortalPathForTransactionIfPossible(client, transactionId) {
+  const normalizedTransactionId = normalizeNullableUuid(transactionId)
+  if (!normalizedTransactionId) return ''
+  const query = await client
+    .from('client_portal_links')
+    .select('token')
+    .eq('transaction_id', normalizedTransactionId)
+    .eq('is_active', true)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (query.error) {
+    if (
+      isMissingTableError(query.error, 'client_portal_links') ||
+      isMissingSchemaError(query.error) ||
+      isPermissionDeniedError(query.error) ||
+      isMissingColumnError(query.error, 'is_active')
+    ) {
+      return ''
+    }
+    throw query.error
+  }
+  return query.data?.token ? `/client/${query.data.token}` : ''
+}
+
+async function replayRoleplayerAllocationForCompletedOnboarding(
+  client,
+  { transactionId, transaction: providedTransaction = null, actorProfile = null, actorRole = 'agent' } = {},
+) {
+  const normalizedTransactionId = normalizeNullableUuid(transactionId || providedTransaction?.id)
+  if (!normalizedTransactionId) return { skipped: true, reason: 'missing_transaction' }
+
+  const transaction = providedTransaction?.id === normalizedTransactionId
+    ? providedTransaction
+    : await fetchTransactionRowById(client, normalizedTransactionId)
+  if (!transaction?.id) {
+    throw new Error('Transaction not found while replaying roleplayer allocation.')
+  }
+
+  const onboarding = await getOrCreateTransactionOnboardingRecord(
+    client,
+    {
+      transactionId: normalizedTransactionId,
+      purchaserType: transaction.purchaser_type || 'individual',
+    },
+    { createIfMissing: false },
+  )
+  if (!isTransactionOnboardingCompleteForRoleplayerReplay(transaction, onboarding)) {
+    return { skipped: true, reason: 'onboarding_not_complete' }
+  }
+
+  const [context, formDataRow, clientPortalPath] = await Promise.all([
+    resolveTransactionAndContext(client, normalizedTransactionId),
+    fetchOnboardingFormDataForTransaction(client, normalizedTransactionId, transaction.purchaser_type || 'individual'),
+    fetchClientPortalPathForTransactionIfPossible(client, normalizedTransactionId),
+  ])
+  const resolvedTransaction = {
+    ...context.transaction,
+    ...transaction,
+  }
+  const formData = formDataRow?.formData || {}
+  const financeSnapshot = getOnboardingFinanceSnapshot({ formData, transaction: resolvedTransaction })
+
+  await activateSelectedAttorneyRoleplayersForOnboarding(client, {
+    transaction: resolvedTransaction,
+    financeType: financeSnapshot.financeType || resolvedTransaction.finance_type,
+    buyer: context.buyer,
+    formData,
+  })
+
+  const activation = await activateSelectedBondOriginatorForOnboarding(client, {
+    transaction: resolvedTransaction,
+    financeType: financeSnapshot.financeType || resolvedTransaction.finance_type,
+    buyer: context.buyer,
+    formData,
+  })
+
+  if (activation?.activated) {
+    await notifyBondIntakeStartedForOnboarding({
+      transaction: {
+        ...resolvedTransaction,
+        finance_type: financeSnapshot.financeType || resolvedTransaction.finance_type,
+        buyer_name: context.buyer?.name || null,
+        buyer_email: context.buyer?.email || null,
+        bond_workspace_id: activation.scope?.bondWorkspaceId || resolvedTransaction.bond_workspace_id || null,
+        bond_region_id: activation.scope?.bondRegionId || resolvedTransaction.bond_region_id || null,
+        bond_workspace_unit_id: activation.scope?.bondWorkspaceUnitId || resolvedTransaction.bond_workspace_unit_id || null,
+        transaction_role_players: [{ ...activation.roleplayer, status: 'active', assignment_status: 'active' }],
+        buyerPortalPath: clientPortalPath,
+        unit_number: context.unit?.unit_number || null,
+        development_name:
+          context.unit?.development && Array.isArray(context.unit.development)
+            ? context.unit.development[0]?.name || null
+            : context.unit?.development?.name || null,
+      },
+      formData,
+      actor: { roleType: normalizeRoleType(actorRole || actorProfile?.role || 'agent') },
+      client,
+      emailEnabled: true,
+      metadata: {
+        source: 'roleplayers_saved_after_onboarding_complete',
+        portalPath: clientPortalPath,
+        applicationPath: clientPortalPath,
+      },
+    })
+
+    const notifiedAt = new Date().toISOString()
+    await updateRecordByIdWithMissingColumnFallback(
+      client,
+      'transaction_role_players',
+      activation.roleplayer.id,
+      {
+        status: 'active',
+        assignment_status: 'active',
+        notified_at: notifiedAt,
+        updated_at: notifiedAt,
+      },
+      'id, status, assignment_status, notified_at, updated_at',
+    )
+  }
+
+  await notifyAttorneysForBuyerOnboardingSubmitted(client, {
+    transactionId: normalizedTransactionId,
+    financeType: financeSnapshot.financeType || resolvedTransaction.finance_type,
+    buyer: context.buyer,
+    formData,
+  })
+
+  const handoff = await sendRoleplayerHandoffEmailForOnboarding(client, {
+    transactionId: normalizedTransactionId,
+  })
+
+  await logTransactionEventIfPossible(client, {
+    transactionId: normalizedTransactionId,
+    eventType: 'roleplayer_handoff_replayed',
+    createdBy: actorProfile?.userId || null,
+    createdByRole: normalizeRoleType(actorRole || actorProfile?.role || 'agent'),
+    eventData: {
+      source: 'roleplayers_saved_after_onboarding_complete',
+      bondOriginatorActivated: Boolean(activation?.activated),
+      bondOriginatorActivationReason: activation?.reason || null,
+      handoff,
+    },
+  })
+
+  return {
+    skipped: false,
+    bondOriginatorActivated: Boolean(activation?.activated),
+    handoff,
+  }
 }
 
 export async function saveTransactionRoleplayerSelections({
@@ -18250,12 +18442,20 @@ export async function saveTransactionRoleplayerSelections({
     throw new Error('Transfer Attorney is required before buyer onboarding can be sent.')
   }
 
+  const transaction = await fetchTransactionRowById(client, transactionId)
+  if (!transaction?.id) {
+    throw new Error('Transaction not found.')
+  }
+
   for (const selection of selections) {
-    await upsertTransactionRoleplayerSelection(client, {
+    const savedRows = await upsertTransactionRoleplayerSelection(client, {
       transactionId,
       selection,
       actorProfile,
     })
+    if (!Array.isArray(savedRows) || !savedRows.length) {
+      throw new Error(`Unable to save ${selection.roleType.replaceAll('_', ' ')} roleplayer.`)
+    }
   }
 
   const bondOriginator = selections.find((item) => item.roleType === 'bond_originator')
@@ -18317,6 +18517,19 @@ export async function saveTransactionRoleplayerSelections({
       },
     })
   }
+
+  await replayRoleplayerAllocationForCompletedOnboarding(client, {
+    transactionId,
+    transaction: {
+      ...transaction,
+      attorney: transferAttorney.companyName || transferAttorney.contactPerson || null,
+      assigned_attorney_email: transferAttorney.email || null,
+      bond_originator: bondOriginator?.companyName || bondOriginator?.contactPerson || null,
+      assigned_bond_originator_email: bondOriginator?.email || null,
+    },
+    actorProfile,
+    actorRole: normalizedActorRole,
+  })
 
   return fetchTransactionById(transactionId)
 }
@@ -22045,24 +22258,26 @@ export async function getAccessibleTransactionsForUser({ userId, roleType = null
   return dedupeTransactionRows(await enrichRowsWithReadinessContext(client, scopedRows))
 }
 
-async function fetchTransactionSummaryRowsByIds(client, transactionIds = [], { organisationId = '' } = {}) {
+async function fetchTransactionSummaryRowsByIds(client, transactionIds = [], { organisationId = '', roleType = null } = {}) {
   const ids = [...new Set((transactionIds || []).filter(Boolean))]
   if (!ids.length) {
     return []
   }
   const normalizedOrganisationId = String(organisationId || '').trim()
+  const normalizedRoleType = normalizeRoleType(roleType)
+  const workspaceScopeColumn = normalizedRoleType === 'bond_originator' ? 'bond_workspace_id' : 'organisation_id'
 
   let transactionsBuilder = client
     .from('transactions')
     .select(selectWithoutKnownMissingColumns(TRANSACTION_SUMMARY_SELECT_CLAUSE))
     .in('id', ids)
   if (normalizedOrganisationId) {
-    transactionsBuilder = transactionsBuilder.eq('organisation_id', normalizedOrganisationId)
+    transactionsBuilder = transactionsBuilder.eq(workspaceScopeColumn, normalizedOrganisationId)
   }
   let transactionsQuery = await transactionsBuilder
 
   if (transactionsQuery.error && isMissingColumnError(transactionsQuery.error)) {
-    if (normalizedOrganisationId && isMissingColumnError(transactionsQuery.error, 'organisation_id')) {
+    if (normalizedOrganisationId && isMissingColumnError(transactionsQuery.error, workspaceScopeColumn)) {
       return []
     }
     registerKnownMissingColumns(transactionsQuery.error, [
@@ -22138,10 +22353,10 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = [], { o
       .select(selectWithoutKnownMissingColumns(TRANSACTION_SUMMARY_FALLBACK_SELECT_CLAUSE))
       .in('id', ids)
     if (normalizedOrganisationId) {
-      fallbackBuilder = fallbackBuilder.eq('organisation_id', normalizedOrganisationId)
+      fallbackBuilder = fallbackBuilder.eq(workspaceScopeColumn, normalizedOrganisationId)
     }
     transactionsQuery = await fallbackBuilder
-    if (transactionsQuery.error && normalizedOrganisationId && isMissingColumnError(transactionsQuery.error, 'organisation_id')) {
+    if (transactionsQuery.error && normalizedOrganisationId && isMissingColumnError(transactionsQuery.error, workspaceScopeColumn)) {
       return []
     }
   }
@@ -22152,7 +22367,7 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = [], { o
 
   const transactionRows = (transactionsQuery.data || [])
     .filter((item) => item?.is_active !== false)
-    .filter((item) => !normalizedOrganisationId || String(item?.organisation_id || '').trim() === normalizedOrganisationId)
+    .filter((item) => !normalizedOrganisationId || String(item?.[workspaceScopeColumn] || '').trim() === normalizedOrganisationId)
   if (!transactionRows.length) {
     return []
   }
@@ -22257,7 +22472,7 @@ export async function fetchTransactionsByParticipantSummary({ userId, roleType =
   const client = requireClient()
   const transactionIds = await getAccessibleTransactionIdsForUser({ userId, roleType, organisationId: normalizedOrganisationId })
   timer.mark('resolve_access_end', { transactionCount: transactionIds.length })
-  const rows = await fetchTransactionSummaryRowsByIds(client, transactionIds, { organisationId: normalizedOrganisationId })
+  const rows = await fetchTransactionSummaryRowsByIds(client, transactionIds, { organisationId: normalizedOrganisationId, roleType })
   timer.end({ rowCount: rows.length })
   return rows
 }

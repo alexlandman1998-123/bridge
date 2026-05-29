@@ -27,11 +27,9 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 
 const INACTIVITY_TIMEOUT_MINUTES = 15
 const WARNING_BEFORE_LOGOUT_MINUTES = 1
-const MAX_SESSION_HOURS = 8
 const INACTIVITY_TIMEOUT_MS = INACTIVITY_TIMEOUT_MINUTES * 60 * 1000
 const WARNING_BEFORE_LOGOUT_MS = WARNING_BEFORE_LOGOUT_MINUTES * 60 * 1000
 const WARNING_DELAY_MS = Math.max(INACTIVITY_TIMEOUT_MS - WARNING_BEFORE_LOGOUT_MS, 0)
-const MAX_SESSION_MS = MAX_SESSION_HOURS * 60 * 60 * 1000
 
 const lazyNamed = (loader, exportName) => lazy(() => loader().then((module) => ({ default: module[exportName] })))
 
@@ -249,27 +247,13 @@ function HeaderSkeleton() {
   )
 }
 
-function getSessionStartedAt(session) {
-  const candidates = [
-    session?.user?.last_sign_in_at,
-    session?.user?.created_at,
-  ]
-  for (const candidate of candidates) {
-    const timestamp = new Date(candidate || '').getTime()
-    if (Number.isFinite(timestamp)) return timestamp
-  }
-  return Date.now()
-}
-
 function AppLayout({ onLogout, session = null, user }) {
   const { workspace, role, profile, agencyWorkflowMode } = useWorkspace()
   const location = useLocation()
   const navigate = useNavigate()
   const mainScrollRef = useRef(null)
-  const sessionStartedAtRef = useRef(getSessionStartedAt(session))
   const inactivityTimerRef = useRef(null)
   const warningTimerRef = useRef(null)
-  const maxSessionTimerRef = useRef(null)
   const securityLogoutInProgressRef = useRef(false)
   const routeContentKey = `${location.pathname}${location.search}`
   const [sessionWarningOpen, setSessionWarningOpen] = useState(false)
@@ -287,17 +271,11 @@ function AppLayout({ onLogout, session = null, user }) {
   const defaultDevelopmentId = workspace.id === 'all' ? '' : workspace.id
 
   useEffect(() => {
-    sessionStartedAtRef.current = getSessionStartedAt(session)
-  }, [session])
-
-  useEffect(() => {
     function clearSessionTimers() {
       if (inactivityTimerRef.current) window.clearTimeout(inactivityTimerRef.current)
       if (warningTimerRef.current) window.clearTimeout(warningTimerRef.current)
-      if (maxSessionTimerRef.current) window.clearTimeout(maxSessionTimerRef.current)
       inactivityTimerRef.current = null
       warningTimerRef.current = null
-      maxSessionTimerRef.current = null
     }
 
     async function performSecurityLogout() {
@@ -335,13 +313,22 @@ function AppLayout({ onLogout, session = null, user }) {
     securityLogoutInProgressRef.current = false
     scheduleInactivityTimers()
 
-    const elapsed = Date.now() - sessionStartedAtRef.current
-    const remainingSessionMs = Math.max(MAX_SESSION_MS - elapsed, 0)
-    maxSessionTimerRef.current = window.setTimeout(() => {
-      void performSecurityLogout()
-    }, remainingSessionMs)
-
-    const activityEvents = ['mousemove', 'mousedown', 'click', 'keydown', 'scroll', 'touchstart', 'touchmove']
+    const activityEvents = [
+      'pointermove',
+      'pointerdown',
+      'mousemove',
+      'mousedown',
+      'click',
+      'keydown',
+      'wheel',
+      'scroll',
+      'touchstart',
+      'touchmove',
+      'input',
+      'change',
+      'dragstart',
+      'drop',
+    ]
     activityEvents.forEach((eventName) => {
       window.addEventListener(eventName, resetInactivityTimer, { passive: true })
     })
