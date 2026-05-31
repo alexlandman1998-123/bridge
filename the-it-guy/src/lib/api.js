@@ -20074,6 +20074,28 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         transactionType,
         propertyType: transactionPayload.property_type || null,
         propertyAddressLine1: transactionPayload.property_address_line_1 || null,
+        originPath: options?.creationOrigin || null,
+        originLabel: options?.sourceContext?.originLabel || null,
+        createdByUserId: actorProfile.userId || null,
+        branchId: options?.sourceContext?.branchId || setup?.assignedBranchId || null,
+        workspaceId: options?.sourceContext?.workspaceId || options?.sourceContext?.organisationId || null,
+        sourceContext: options?.sourceContext || null,
+        completeness: options?.completeness || null,
+        missingFollowUpItems: Array.isArray(options?.completeness?.missingItems) ? options.completeness.missingItems : [],
+        canonicalStructure: Array.isArray(options?.canonicalStructure)
+          ? options.canonicalStructure
+          : [
+              'transaction',
+              'property',
+              'seller_party',
+              'buyer_party',
+              'agent_assignment',
+              'deal_terms',
+              'finance_profile',
+              'roleplayers',
+              'documents',
+              'activity_log',
+            ],
         rolePlayers: rolePlayerSelections.map((item) => ({
           roleType: item.roleType,
           selectionSource: item.selectionSource,

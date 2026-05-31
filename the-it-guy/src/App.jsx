@@ -248,7 +248,7 @@ function HeaderSkeleton() {
 }
 
 function AppLayout({ onLogout, session = null, user }) {
-  const { workspace, role, profile, agencyWorkflowMode } = useWorkspace()
+  const { workspace, role, profile } = useWorkspace()
   const location = useLocation()
   const navigate = useNavigate()
   const mainScrollRef = useRef(null)
@@ -512,7 +512,7 @@ function AppLayout({ onLogout, session = null, user }) {
 
       {wizardOpen ? (
         <Suspense fallback={<ModalSkeleton />}>
-          {role === 'agent' && agencyWorkflowMode !== 'principal' ? (
+          {role === 'agent' ? (
             <AgentNewDealWizard
               open={wizardOpen}
               onClose={handleCloseNewTransaction}

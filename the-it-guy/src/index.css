@@ -1798,6 +1798,21 @@
     box-shadow: 0 18px 48px rgba(16, 35, 56, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.85);
   }
 
+  .agent-transactions-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.85rem;
+  }
+
+  .agent-transactions-create-button {
+    min-height: 44px;
+    border-radius: 14px;
+    padding-inline: 1rem;
+    box-shadow: 0 14px 30px rgba(31, 79, 120, 0.18);
+  }
+
   .agent-transaction-metric {
     position: relative;
     min-width: 0;
@@ -2534,8 +2549,8 @@
 
   .ui-drawer-overlay,
   .ui-modal-overlay {
-    @apply fixed inset-0 z-[110] flex items-stretch justify-end backdrop-blur-[2px];
-    background: var(--color-overlay);
+    @apply fixed inset-0 z-[110] flex items-stretch justify-end backdrop-blur-md;
+    background: rgba(15, 23, 32, 0.72);
   }
 
   .ui-drawer {

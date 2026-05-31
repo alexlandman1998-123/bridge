@@ -203,33 +203,41 @@ function AgentTransactionsTable({
   return (
     <DataTable
       title={title}
-      copy={isPrincipalView ? 'Organisation-wide transaction oversight across agents, stages, and bottlenecks.' : 'Your assigned transaction workload, stages, and next operational actions.'}
+      copy=""
       actions={
-        hasAnyRows ? (
-          <div className="agent-transactions-metrics">
-            <div className="agent-transaction-metric">
-              <strong>{metrics.total}</strong>
-              <span>Transactions</span>
+        <div className="agent-transactions-header-actions">
+          {hasAnyRows ? (
+            <div className="agent-transactions-metrics">
+              <div className="agent-transaction-metric">
+                <strong>{metrics.total}</strong>
+                <span>Transactions</span>
+              </div>
+              <div className="agent-transaction-metric">
+                <strong>{metrics.active}</strong>
+                <span>Active</span>
+              </div>
+              <div className="agent-transaction-metric">
+                <strong>{metrics.transfer}</strong>
+                <span>Transfer</span>
+              </div>
+              <div className="agent-transaction-metric">
+                <strong>{metrics.registered}</strong>
+                <span>Registered</span>
+              </div>
             </div>
-            <div className="agent-transaction-metric">
-              <strong>{metrics.active}</strong>
-              <span>Active</span>
+          ) : (
+            <div className="agent-transactions-empty-summary">
+              <span>Waiting for first deal</span>
+              <strong>0 live transactions</strong>
             </div>
-            <div className="agent-transaction-metric">
-              <strong>{metrics.transfer}</strong>
-              <span>Transfer</span>
-            </div>
-            <div className="agent-transaction-metric">
-              <strong>{metrics.registered}</strong>
-              <span>Registered</span>
-            </div>
-          </div>
-        ) : (
-          <div className="agent-transactions-empty-summary">
-            <span>Waiting for first deal</span>
-            <strong>0 live transactions</strong>
-          </div>
-        )
+          )}
+          {onCreateTransaction ? (
+            <Button type="button" className="agent-transactions-create-button" onClick={onCreateTransaction}>
+              <Plus size={16} />
+              Create Deal
+            </Button>
+          ) : null}
+        </div>
       }
       className="table-panel agent-transactions-panel"
     >

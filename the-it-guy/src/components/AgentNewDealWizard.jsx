@@ -2,14 +2,15 @@ import { CheckCircle2, CircleAlert, ExternalLink } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createTransactionFromWizard, fetchDevelopmentOptions, fetchUnitsForTransactionSetup } from '../lib/api'
-import { isAgentListingReadyForDeal, readAgentPrivateListings, writeAgentPrivateListings } from '../lib/agentListingStorage'
-import { listOrganisationPreferredPartners, resolveCommissionSnapshotForAgent } from '../lib/settingsApi'
+import { readAgentPrivateListings, writeAgentPrivateListings } from '../lib/agentListingStorage'
+import { fetchOrganisationSettings, listOrganisationPreferredPartners, resolveCommissionSnapshotForAgent } from '../lib/settingsApi'
 import {
   filterPreferredPartners,
   getDefaultPreferredPartnerByType,
 } from '../lib/preferredPartners'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { getAgentPrivateListings } from '../services/privateListingService'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
 
@@ -19,6 +20,22 @@ const STEP_ORDER = ['property', 'client', 'terms', 'attorney', 'review']
 const PARTNER_MODE_NONE = 'none'
 const PARTNER_MODE_AGENCY = 'agency'
 const PARTNER_MODE_BUYER = 'buyer'
+const PROPERTY_MODE_PRIVATE = 'private'
+const PROPERTY_MODE_DEVELOPMENT = 'development'
+const PROPERTY_MODE_IMPORT = 'import'
+const BOND_FINANCE_TYPES = new Set(['bond', 'combination', 'hybrid'])
+const CANONICAL_TRANSACTION_STRUCTURE = [
+  'transaction',
+  'property',
+  'seller_party',
+  'buyer_party',
+  'agent_assignment',
+  'deal_terms',
+  'finance_profile',
+  'roleplayers',
+  'documents',
+  'activity_log',
+]
 const PARTNER_ROLE_FIELD_OPTIONS = [
   { value: PARTNER_MODE_AGENCY, label: 'Use Agency Preferred Partner' },
   { value: PARTNER_MODE_BUYER, label: 'Use Buyer Appointed Partner' },
@@ -52,6 +69,149 @@ function formatCurrency(value) {
     currency: 'ZAR',
     maximumFractionDigits: 0,
   }).format(amount)
+}
+
+function normalizeText(value) {
+  return String(value || '').trim()
+}
+
+function normalizeKey(value) {
+  return normalizeText(value).toLowerCase()
+}
+
+function getListingStatus(listing) {
+  return normalizeKey(listing?.listingStatus || listing?.status || listing?.lifecycleStatus || listing?.listing_status)
+}
+
+function hasActiveDeal(listing) {
+  return Boolean(
+    listing?.activeDeal &&
+      (normalizeText(listing?.activeDeal?.transactionId) ||
+        normalizeText(listing?.activeDeal?.id)),
+  )
+}
+
+function isDealEligibleListing(listing) {
+  if (!listing || hasActiveDeal(listing)) return false
+  const status = getListingStatus(listing)
+  const visibility = normalizeKey(listing?.listingVisibility || listing?.listing_visibility)
+  if (visibility === 'archived') return false
+  if (['withdrawn', 'deleted', 'archived', 'sold', 'cancelled', 'transaction_created'].includes(status)) return false
+  if (!status) return true
+  return [
+    'active',
+    'active_market',
+    'under_offer',
+    'in_progress',
+    'mandate_signed',
+    'listing_active',
+    'live',
+  ].includes(status)
+}
+
+function getListingAddress(listing) {
+  return normalizeText(
+    listing?.propertyAddress ||
+      listing?.propertyDetails?.addressLine1 ||
+      listing?.addressLine1 ||
+      listing?.address_line_1 ||
+      listing?.listingTitle ||
+      listing?.title,
+  )
+}
+
+function getListingTitle(listing) {
+  return normalizeText(listing?.listingTitle || listing?.title || getListingAddress(listing) || 'Active listing')
+}
+
+function getListingCity(listing) {
+  return normalizeText(listing?.propertyDetails?.city || listing?.city || listing?.suburb || listing?.propertyDetails?.suburb)
+}
+
+function getListingSeller(listing) {
+  const facts = listing?.sellerCanonicalFacts || listing?.sellerOnboarding?.canonicalFacts || listing?.sellerOnboarding?.formData || {}
+  const seller = listing?.seller || {}
+  const firstName = normalizeText(facts.firstName || facts.sellerFirstName || facts.name)
+  const lastName = normalizeText(facts.lastName || facts.sellerLastName || facts.surname)
+  const sellerName = normalizeText(
+    seller.name ||
+      facts.sellerName ||
+      facts.fullName ||
+      facts.registeredName ||
+      [firstName, lastName].filter(Boolean).join(' '),
+  )
+  return {
+    name: sellerName,
+    email: normalizeText(seller.email || facts.email || facts.sellerEmail),
+    phone: normalizeText(seller.phone || facts.phone || facts.mobile || facts.sellerPhone),
+  }
+}
+
+function getListingMandateReady(listing) {
+  const mandateStatus = normalizeKey(listing?.mandateStatus || listing?.mandate_status)
+  const docs = [
+    ...(Array.isArray(listing?.requiredDocuments) ? listing.requiredDocuments : []),
+    ...(Array.isArray(listing?.documentRequirements) ? listing.documentRequirements : []),
+    ...(Array.isArray(listing?.documents) ? listing.documents : []),
+  ]
+  const mandateDoc = docs.find((doc) => ['mandate_to_sell', 'signed_mandate', 'mandate'].includes(normalizeKey(doc?.key || doc?.documentType || doc?.document_type || doc?.name)))
+  const docStatus = normalizeKey(mandateDoc?.status || mandateDoc?.documentStatus || mandateDoc?.document_status)
+  return ['signed', 'approved', 'verified', 'completed'].includes(mandateStatus) ||
+    ['approved', 'verified', 'completed', 'signed'].includes(docStatus)
+}
+
+function getSellerFicaReady(listing) {
+  const docs = [
+    ...(Array.isArray(listing?.requiredDocuments) ? listing.requiredDocuments : []),
+    ...(Array.isArray(listing?.documentRequirements) ? listing.documentRequirements : []),
+    ...(Array.isArray(listing?.documents) ? listing.documents : []),
+  ]
+  return docs.some((doc) => {
+    const key = normalizeKey(doc?.key || doc?.documentType || doc?.document_type || doc?.name)
+    const status = normalizeKey(doc?.status || doc?.documentStatus || doc?.document_status)
+    return key.includes('fica') && ['approved', 'verified', 'completed'].includes(status)
+  })
+}
+
+function formatListingDealOption(listing) {
+  const title = getListingTitle(listing)
+  const address = getListingAddress(listing)
+  const seller = getListingSeller(listing).name || 'Seller pending'
+  const primary = title && address && title !== address ? `${title}, ${address}` : title || address || 'Active listing'
+  return `${primary} — ${seller}`
+}
+
+function mergeListings(...groups) {
+  const byId = new Map()
+  groups.flat().filter(Boolean).forEach((listing) => {
+    const key = normalizeText(listing?.id || listing?.listingReference || listing?.listingCode || formatListingDealOption(listing))
+    if (!key) return
+    byId.set(key, { ...(byId.get(key) || {}), ...listing })
+  })
+  return Array.from(byId.values()).filter(isDealEligibleListing)
+}
+
+function normalizeFinanceTypeForApi(value) {
+  const normalized = normalizeKey(value)
+  if (normalized === 'hybrid') return 'combination'
+  if (['cash', 'bond', 'combination'].includes(normalized)) return normalized
+  return ''
+}
+
+function requiresBondRolePlayers(financeType) {
+  return BOND_FINANCE_TYPES.has(normalizeKey(financeType))
+}
+
+function getCreationOrigin(propertyMode) {
+  if (propertyMode === PROPERTY_MODE_DEVELOPMENT) return 'development_unit'
+  if (propertyMode === PROPERTY_MODE_IMPORT) return 'imported_existing_deal'
+  return 'active_listing'
+}
+
+function getOriginLabel(propertyMode) {
+  if (propertyMode === PROPERTY_MODE_DEVELOPMENT) return 'Created via development unit'
+  if (propertyMode === PROPERTY_MODE_IMPORT) return 'Imported existing deal'
+  return 'Created via active listing'
 }
 
 function fieldClass() {
@@ -128,9 +288,57 @@ function findPartnerById(partners, partnerId) {
   return partners.find((item) => String(item?.id || '').trim() === normalizedId) || null
 }
 
+function buildCompletenessSnapshot({ form, listing = null, propertyMode = PROPERTY_MODE_PRIVATE }) {
+  const checks = [
+    {
+      label: 'Signed mandate',
+      complete: propertyMode !== PROPERTY_MODE_PRIVATE ||
+        Boolean(form.importMandateUploaded) ||
+        getListingMandateReady(listing),
+    },
+    {
+      label: 'Seller FICA',
+      complete: propertyMode !== PROPERTY_MODE_PRIVATE ||
+        getSellerFicaReady(listing) ||
+        propertyMode === PROPERTY_MODE_IMPORT,
+    },
+    {
+      label: 'Buyer ID',
+      complete: false,
+    },
+    {
+      label: 'OTP upload',
+      complete: Boolean(form.importOtpUploaded),
+    },
+    {
+      label: 'Finance type',
+      complete: Boolean(normalizeFinanceTypeForApi(form.financeType)),
+    },
+    {
+      label: 'Transfer attorney',
+      complete: form.transferPartnerMode === PARTNER_MODE_AGENCY
+        ? Boolean(form.transferPreferredPartnerId)
+        : Boolean(normalizeText(form.transferBuyerCompanyName) && normalizeText(form.transferBuyerEmail)),
+    },
+    {
+      label: 'Seller contact details',
+      complete: propertyMode === PROPERTY_MODE_IMPORT
+        ? Boolean(normalizeText(form.importSellerEmail) && normalizeText(form.importSellerPhone))
+        : Boolean(getListingSeller(listing).email && getListingSeller(listing).phone),
+    },
+  ]
+  const total = checks.length
+  const complete = checks.filter((item) => item.complete).length
+  return {
+    score: total ? Math.round((complete / total) * 100) : 0,
+    missingItems: checks.filter((item) => !item.complete).map((item) => item.label),
+    completedItems: checks.filter((item) => item.complete).map((item) => item.label),
+  }
+}
+
 function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved }) {
   const navigate = useNavigate()
-  const { profile } = useWorkspace()
+  const { profile, agencyWorkflowMode, currentMembership, workspace } = useWorkspace()
   const [activeStep, setActiveStep] = useState('property')
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -149,10 +357,24 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
     bondAttorney: '',
   })
   const [form, setForm] = useState({
-    propertyMode: 'private',
+    propertyMode: PROPERTY_MODE_PRIVATE,
     privateListingId: '',
     developmentId: initialDevelopmentId || '',
     unitId: '',
+    financeType: 'unknown',
+    importPropertyAddress: '',
+    importSuburb: '',
+    importCity: '',
+    importProvince: '',
+    importSellerName: '',
+    importSellerEmail: '',
+    importSellerPhone: '',
+    importCurrentStage: 'Offer Accepted',
+    importMandateUploaded: false,
+    importOtpUploaded: false,
+    importCommissionStructure: '',
+    importProperty24Link: '',
+    importNotes: '',
     pipelineLeadId: '',
     clientName: '',
     clientSurname: '',
@@ -197,15 +419,35 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
     setLoading(true)
     setPreferredPartners([])
     setPartnerSearch({ transferAttorney: '', bondOriginator: '', bondAttorney: '' })
-    setPrivateListings(readAgentPrivateListings().filter((listing) => isAgentListingReadyForDeal(listing)))
+    const localListings = mergeListings(readAgentPrivateListings())
+    setPrivateListings(localListings)
     setPipelineRows(readPipelineRows())
 
     ;(async () => {
       try {
-        const [partnerRows, developmentRows] = await Promise.all([
+        const settingsPromise = isSupabaseConfigured
+          ? fetchOrganisationSettings().catch(() => null)
+          : Promise.resolve(null)
+        const [settingsContext, partnerRows, developmentRows] = await Promise.all([
+          settingsPromise,
           listOrganisationPreferredPartners(),
           isSupabaseConfigured ? fetchDevelopmentOptions() : Promise.resolve([]),
         ])
+        const organisationId = normalizeText(settingsContext?.organisation?.id || workspace?.id)
+        const membershipRole = normalizeKey(settingsContext?.membershipRole || currentMembership?.workspaceRole || currentMembership?.role)
+        const hasOrganisationScope = Boolean(organisationId && organisationId !== 'all')
+        const includeAllOrganisationListings = hasOrganisationScope || agencyWorkflowMode === 'principal' || ['principal', 'owner', 'admin', 'hq'].includes(membershipRole)
+        const remoteListings =
+          isSupabaseConfigured
+            ? await getAgentPrivateListings(profile?.id, {
+                organisationId,
+                includeAllOrganisationListings,
+              }).catch((error) => {
+                console.warn('[Transactions] Active listing lookup failed; using local listing cache.', error)
+                return []
+              })
+            : []
+        setPrivateListings(mergeListings(localListings, remoteListings))
         setPreferredPartners(Array.isArray(partnerRows) ? partnerRows : [])
 
         const email = String(profile?.email || '').trim().toLowerCase()
@@ -223,10 +465,10 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
         setLoading(false)
       }
     })()
-  }, [open, profile?.email, initialDevelopmentId])
+  }, [agencyWorkflowMode, currentMembership?.role, currentMembership?.workspaceRole, open, profile?.email, profile?.id, initialDevelopmentId, workspace?.id])
 
   useEffect(() => {
-    if (!open || form.propertyMode !== 'development' || !form.developmentId || !isSupabaseConfigured) {
+    if (!open || form.propertyMode !== PROPERTY_MODE_DEVELOPMENT || !form.developmentId || !isSupabaseConfigured) {
       setDevelopmentUnits([])
       return
     }
@@ -308,7 +550,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
   const defaultAttorney = useMemo(() => {
     const privateAttorneyOptions = normalizeListingAttorneyOptions(selectedPrivateListing)
     const developmentAttorneyOptions = getDevelopmentTeamMembers(selectedDevelopment?.stakeholder_teams, 'conveyancers')
-    return form.propertyMode === 'private'
+    return form.propertyMode === PROPERTY_MODE_PRIVATE
       ? privateAttorneyOptions[0] || null
       : developmentAttorneyOptions[0] || null
   }, [form.propertyMode, selectedDevelopment?.stakeholder_teams, selectedPrivateListing])
@@ -334,12 +576,12 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
         changed = true
       }
 
-      if (defaultBondOriginatorPartner && previous.bondOriginatorMode === PARTNER_MODE_NONE) {
+      if (requiresBondRolePlayers(previous.financeType) && defaultBondOriginatorPartner && previous.bondOriginatorMode === PARTNER_MODE_NONE) {
         next.bondOriginatorMode = PARTNER_MODE_AGENCY
         next.bondOriginatorPreferredPartnerId = defaultBondOriginatorPartner.id
         changed = true
       }
-      if (defaultBondAttorneyPartner && previous.bondAttorneyMode === PARTNER_MODE_NONE) {
+      if (requiresBondRolePlayers(previous.financeType) && defaultBondAttorneyPartner && previous.bondAttorneyMode === PARTNER_MODE_NONE) {
         next.bondAttorneyMode = PARTNER_MODE_AGENCY
         next.bondAttorneyPreferredPartnerId = defaultBondAttorneyPartner.id
         changed = true
@@ -364,7 +606,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
   }, [selectedLead])
 
   useEffect(() => {
-    if (form.propertyMode === 'private' && selectedPrivateListing) {
+    if (form.propertyMode === PROPERTY_MODE_PRIVATE && selectedPrivateListing) {
       const price = String(selectedPrivateListing?.askingPrice || '').trim()
       setForm((previous) => ({
         ...previous,
@@ -388,7 +630,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
   }, [selectedPrivateListing, defaultAttorney?.email, defaultAttorney?.name, defaultAttorney?.phone, form.propertyMode])
 
   useEffect(() => {
-    if (form.propertyMode === 'development' && selectedUnit) {
+    if (form.propertyMode === PROPERTY_MODE_DEVELOPMENT && selectedUnit) {
       const reservationEnabled = Boolean(selectedDevelopment?.reservation_deposit_enabled_by_default)
       const reservationAmount = reservationEnabled ? String(selectedDevelopment?.reservation_deposit_amount || '') : ''
       setForm((previous) => ({
@@ -451,6 +693,31 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
     setForm((previous) => ({ ...previous, [key]: value }))
   }
 
+  function updatePropertyMode(nextMode) {
+    setForm((previous) => ({
+      ...previous,
+      propertyMode: nextMode,
+      privateListingId: '',
+      developmentId: nextMode === PROPERTY_MODE_DEVELOPMENT ? previous.developmentId || initialDevelopmentId || '' : '',
+      unitId: '',
+    }))
+  }
+
+  function updateFinanceType(value) {
+    setForm((previous) => ({
+      ...previous,
+      financeType: value,
+      ...(requiresBondRolePlayers(value)
+        ? {}
+        : {
+            bondOriginatorMode: PARTNER_MODE_NONE,
+            bondOriginatorPreferredPartnerId: '',
+            bondAttorneyMode: PARTNER_MODE_NONE,
+            bondAttorneyPreferredPartnerId: '',
+          }),
+    }))
+  }
+
   function updatePartnerSearchField(key, value) {
     setPartnerSearch((previous) => ({
       ...previous,
@@ -462,11 +729,17 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
     const nextErrors = {}
 
     if (stepKey === 'property') {
-      if (form.propertyMode === 'private') {
+      if (form.propertyMode === PROPERTY_MODE_PRIVATE) {
         if (!form.privateListingId) nextErrors.privateListingId = 'Select an active listing.'
-      } else {
+      } else if (form.propertyMode === PROPERTY_MODE_DEVELOPMENT) {
         if (!form.developmentId) nextErrors.developmentId = 'Select a development.'
         if (!form.unitId) nextErrors.unitId = 'Select an available unit.'
+      } else {
+        if (!normalizeText(form.importPropertyAddress)) nextErrors.importPropertyAddress = 'Property address is required.'
+        if (!normalizeText(form.importSellerName)) nextErrors.importSellerName = 'Seller name is required.'
+        if (!normalizeText(form.importSellerEmail)) nextErrors.importSellerEmail = 'Seller email is required.'
+        if (!normalizeText(form.importSellerPhone)) nextErrors.importSellerPhone = 'Seller phone is required.'
+        if (!normalizeText(form.importCurrentStage)) nextErrors.importCurrentStage = 'Current stage is required.'
       }
     }
 
@@ -479,10 +752,11 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
 
     if (stepKey === 'terms') {
       if (!String(form.salesPrice || '').trim() || Number(form.salesPrice) <= 0) nextErrors.salesPrice = 'Enter a valid deal value.'
+      if (!normalizeFinanceTypeForApi(form.financeType)) nextErrors.financeType = 'Select a finance type.'
       if (!String(form.grossCommissionPercentage || '').trim() || Number(form.grossCommissionPercentage) < 0) {
         nextErrors.grossCommissionPercentage = 'Enter a valid gross commission percentage.'
       }
-      if (form.reservationRequired && (!String(form.reservationAmount || '').trim() || Number(form.reservationAmount) <= 0)) {
+      if (form.propertyMode === PROPERTY_MODE_DEVELOPMENT && form.reservationRequired && (!String(form.reservationAmount || '').trim() || Number(form.reservationAmount) <= 0)) {
         nextErrors.reservationAmount = 'Enter a valid reservation deposit amount.'
       }
     }
@@ -501,22 +775,24 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
         if (!String(form.transferBuyerPhone || '').trim()) nextErrors.transferBuyerPhone = 'Phone is required.'
       }
 
-      if (form.bondOriginatorMode === PARTNER_MODE_AGENCY && !String(form.bondOriginatorPreferredPartnerId || '').trim()) {
-        nextErrors.bondOriginatorPreferredPartnerId = 'Select a bond originator partner or change mode.'
-      }
+      if (requiresBondRolePlayers(form.financeType)) {
+        if (form.bondOriginatorMode === PARTNER_MODE_AGENCY && !String(form.bondOriginatorPreferredPartnerId || '').trim()) {
+          nextErrors.bondOriginatorPreferredPartnerId = 'Select a bond originator partner or change mode.'
+        }
 
-      if (form.bondOriginatorMode === PARTNER_MODE_BUYER) {
-        if (!String(form.bondOriginatorBuyerCompanyName || '').trim()) nextErrors.bondOriginatorBuyerCompanyName = 'Company name is required.'
-        if (!String(form.bondOriginatorBuyerContactPerson || '').trim()) nextErrors.bondOriginatorBuyerContactPerson = 'Contact person is required.'
-      }
+        if (form.bondOriginatorMode === PARTNER_MODE_BUYER) {
+          if (!String(form.bondOriginatorBuyerCompanyName || '').trim()) nextErrors.bondOriginatorBuyerCompanyName = 'Company name is required.'
+          if (!String(form.bondOriginatorBuyerContactPerson || '').trim()) nextErrors.bondOriginatorBuyerContactPerson = 'Contact person is required.'
+        }
 
-      if (form.bondAttorneyMode === PARTNER_MODE_AGENCY && !String(form.bondAttorneyPreferredPartnerId || '').trim()) {
-        nextErrors.bondAttorneyPreferredPartnerId = 'Select a bond attorney partner or change mode.'
-      }
+        if (form.bondAttorneyMode === PARTNER_MODE_AGENCY && !String(form.bondAttorneyPreferredPartnerId || '').trim()) {
+          nextErrors.bondAttorneyPreferredPartnerId = 'Select a bond attorney partner or change mode.'
+        }
 
-      if (form.bondAttorneyMode === PARTNER_MODE_BUYER) {
-        if (!String(form.bondAttorneyBuyerCompanyName || '').trim()) nextErrors.bondAttorneyBuyerCompanyName = 'Company name is required.'
-        if (!String(form.bondAttorneyBuyerContactPerson || '').trim()) nextErrors.bondAttorneyBuyerContactPerson = 'Contact person is required.'
+        if (form.bondAttorneyMode === PARTNER_MODE_BUYER) {
+          if (!String(form.bondAttorneyBuyerCompanyName || '').trim()) nextErrors.bondAttorneyBuyerCompanyName = 'Company name is required.'
+          if (!String(form.bondAttorneyBuyerContactPerson || '').trim()) nextErrors.bondAttorneyBuyerContactPerson = 'Contact person is required.'
+        }
       }
     }
 
@@ -550,6 +826,29 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
 
     const privateListing = selectedPrivateListing
     const buyerName = `${form.clientName} ${form.clientSurname}`.trim()
+    const propertyMode = form.propertyMode
+    const financeType = normalizeFinanceTypeForApi(form.financeType)
+    const bondRolePlayersRequired = requiresBondRolePlayers(form.financeType)
+    const listingSeller = getListingSeller(privateListing)
+    const importAddressParts = [
+      normalizeText(form.importPropertyAddress),
+      normalizeText(form.importSuburb),
+      normalizeText(form.importCity),
+    ].filter(Boolean)
+    const resolvedPropertyAddress =
+      propertyMode === PROPERTY_MODE_IMPORT
+        ? normalizeText(form.importPropertyAddress)
+        : propertyMode === PROPERTY_MODE_PRIVATE
+          ? getListingAddress(privateListing)
+          : ''
+    const resolvedCity =
+      propertyMode === PROPERTY_MODE_IMPORT
+        ? normalizeText(form.importCity || form.importSuburb || 'Not captured')
+        : propertyMode === PROPERTY_MODE_PRIVATE
+          ? getListingCity(privateListing) || 'Not captured'
+          : ''
+    const completeness = buildCompletenessSnapshot({ form, listing: privateListing, propertyMode })
+    const creationOrigin = getCreationOrigin(propertyMode)
 
     const transferSelection =
       form.transferPartnerMode === PARTNER_MODE_AGENCY
@@ -579,7 +878,9 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
           }
 
     const bondOriginatorSelection =
-      form.bondOriginatorMode === PARTNER_MODE_AGENCY
+      !bondRolePlayersRequired
+        ? null
+        : form.bondOriginatorMode === PARTNER_MODE_AGENCY
         ? {
             mode: PARTNER_MODE_AGENCY,
             partnerId: selectedBondOriginatorPartner?.id || null,
@@ -608,7 +909,9 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
           : null
 
     const bondAttorneySelection =
-      form.bondAttorneyMode === PARTNER_MODE_AGENCY
+      !bondRolePlayersRequired
+        ? null
+        : form.bondAttorneyMode === PARTNER_MODE_AGENCY
         ? {
             mode: PARTNER_MODE_AGENCY,
             partnerId: selectedBondAttorneyPartner?.id || null,
@@ -658,29 +961,32 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
       })
       const result = await createTransactionFromWizard({
         setup: {
-          transactionType: form.propertyMode === 'private' ? 'private_property' : 'developer_sale',
+          transactionType: propertyMode === PROPERTY_MODE_DEVELOPMENT ? 'developer_sale' : 'private_property',
           propertyType:
-            form.propertyMode === 'private'
+            propertyMode === PROPERTY_MODE_DEVELOPMENT
+              ? ''
+              : propertyMode === PROPERTY_MODE_PRIVATE
               ? mapPrivateListingToTransactionPropertyCategory(privateListing)
-              : '',
-          developmentId: form.propertyMode === 'development' ? form.developmentId : '',
-          unitId: form.propertyMode === 'development' ? form.unitId : '',
-          propertyAddressLine1: form.propertyMode === 'private' ? privateListing?.propertyDetails?.addressLine1 || privateListing?.addressLine1 || privateListing?.listingTitle || '' : '',
+              : 'residential',
+          developmentId: propertyMode === PROPERTY_MODE_DEVELOPMENT ? form.developmentId : '',
+          unitId: propertyMode === PROPERTY_MODE_DEVELOPMENT ? form.unitId : '',
+          propertyAddressLine1: resolvedPropertyAddress || importAddressParts.join(', '),
           propertyAddressLine2: '',
-          suburb: form.propertyMode === 'private' ? privateListing?.propertyDetails?.suburb || privateListing?.suburb || '' : '',
-          city: form.propertyMode === 'private' ? privateListing?.propertyDetails?.city || privateListing?.city || '' : '',
-          province: form.propertyMode === 'private' ? privateListing?.propertyDetails?.province || privateListing?.province || '' : '',
+          suburb: propertyMode === PROPERTY_MODE_IMPORT ? form.importSuburb : propertyMode === PROPERTY_MODE_PRIVATE ? privateListing?.propertyDetails?.suburb || privateListing?.suburb || '' : '',
+          city: resolvedCity,
+          province: propertyMode === PROPERTY_MODE_IMPORT ? form.importProvince : propertyMode === PROPERTY_MODE_PRIVATE ? privateListing?.propertyDetails?.province || privateListing?.province || '' : '',
           postalCode: '',
-          propertyDescription: form.propertyMode === 'private' ? privateListing?.propertyDetails?.description || privateListing?.marketing?.description || '' : '',
+          propertyDescription: propertyMode === PROPERTY_MODE_IMPORT ? form.importNotes : propertyMode === PROPERTY_MODE_PRIVATE ? privateListing?.propertyDetails?.description || privateListing?.marketing?.description || '' : '',
           buyerFirstName: form.clientName,
           buyerLastName: form.clientSurname,
           buyerName: `${String(form.clientName || '').trim()} ${String(form.clientSurname || '').trim()}`.trim(),
           buyerPhone: form.clientPhone,
           buyerEmail: form.clientEmail,
-          sellerName: form.propertyMode === 'private' ? privateListing?.seller?.name || '' : '',
-          sellerPhone: form.propertyMode === 'private' ? privateListing?.seller?.phone || '' : '',
-          sellerEmail: form.propertyMode === 'private' ? privateListing?.seller?.email || '' : '',
+          sellerName: propertyMode === PROPERTY_MODE_IMPORT ? form.importSellerName : propertyMode === PROPERTY_MODE_PRIVATE ? listingSeller.name : '',
+          sellerPhone: propertyMode === PROPERTY_MODE_IMPORT ? form.importSellerPhone : propertyMode === PROPERTY_MODE_PRIVATE ? listingSeller.phone : '',
+          sellerEmail: propertyMode === PROPERTY_MODE_IMPORT ? form.importSellerEmail : propertyMode === PROPERTY_MODE_PRIVATE ? listingSeller.email : '',
           salesPrice: form.salesPrice,
+          financeType,
           purchaserType: 'individual',
           saleDate: form.saleDate || todayIso(),
           assignedAgent: String(profile?.fullName || profile?.name || profile?.email || 'Agent').trim(),
@@ -698,14 +1004,39 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
           bondOriginatorEmail,
         },
         status: {
-          stage: form.propertyMode === 'development' && form.reservationRequired ? 'Reserved' : 'Offer Accepted',
+          stage: propertyMode === PROPERTY_MODE_IMPORT
+            ? form.importCurrentStage
+            : propertyMode === PROPERTY_MODE_DEVELOPMENT && form.reservationRequired
+              ? 'Reserved'
+              : 'Offer Accepted',
           nextAction,
-          notes: hasBuyerSelectedRolePlayer
-            ? 'Buyer-appointed role player captured for at least one assignment.'
-            : '',
+          notes: [
+            hasBuyerSelectedRolePlayer ? 'Buyer-appointed role player captured for at least one assignment.' : '',
+            form.importNotes ? `Import notes: ${form.importNotes}` : '',
+            completeness.missingItems.length ? `Missing follow-up items: ${completeness.missingItems.join(', ')}` : '',
+          ].filter(Boolean).join('\n'),
         },
         options: {
-          deferFinanceType: true,
+          allowIncomplete: true,
+          deferFinanceType: !financeType,
+          creationOrigin,
+          sourceContext: {
+            originLabel: getOriginLabel(propertyMode),
+            branchId: normalizeText(currentMembership?.branchId || currentMembership?.branch_id),
+            workspaceId: normalizeText(workspace?.id),
+            organisationId: normalizeText(privateListing?.organisationId || workspace?.id),
+            agentUserId: normalizeText(profile?.id),
+            listingId: propertyMode === PROPERTY_MODE_PRIVATE ? normalizeText(privateListing?.id) : null,
+            listingSource: propertyMode === PROPERTY_MODE_PRIVATE ? normalizeText(privateListing?.listingSource || privateListing?.marketing?.source) : null,
+            mandateStatus: propertyMode === PROPERTY_MODE_PRIVATE ? normalizeText(privateListing?.mandateStatus || privateListing?.mandate_status) : null,
+            commissionStructure: propertyMode === PROPERTY_MODE_IMPORT ? normalizeText(form.importCommissionStructure) : privateListing?.commission || null,
+            developmentId: propertyMode === PROPERTY_MODE_DEVELOPMENT ? normalizeText(form.developmentId) : null,
+            unitId: propertyMode === PROPERTY_MODE_DEVELOPMENT ? normalizeText(form.unitId) : null,
+            unitStatus: propertyMode === PROPERTY_MODE_DEVELOPMENT ? normalizeText(selectedUnit?.status) : null,
+            importedProperty24Link: propertyMode === PROPERTY_MODE_IMPORT ? normalizeText(form.importProperty24Link) : null,
+          },
+          completeness,
+          canonicalStructure: CANONICAL_TRANSACTION_STRUCTURE,
           rolePlayers: [
             {
               roleType: 'transfer_attorney',
@@ -738,7 +1069,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
         },
       })
 
-      if (form.propertyMode === 'private' && privateListing) {
+      if (form.propertyMode === PROPERTY_MODE_PRIVATE && privateListing) {
         const rows = readAgentPrivateListings().map((listing) =>
           String(listing.id) === String(privateListing.id)
             ? {
@@ -807,7 +1138,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
       </Button>
       {activeStep === 'review' ? (
         <Button onClick={handleCreateDeal} disabled={saving || loading}>
-          Create Deal & Trigger Onboarding
+          Create Deal
         </Button>
       ) : (
         <Button onClick={goNext} disabled={saving || loading}>
@@ -821,8 +1152,8 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
     <Modal
       open={open}
       onClose={saving ? undefined : onClose}
-      title="New Deal"
-      subtitle="Create a clean transaction shell from a valid active listing or available development unit."
+      title="Create Deal"
+      subtitle="Create a transaction from an active listing, development unit, or imported deal."
       className="max-w-[1040px]"
       footer={footer}
     >
@@ -858,13 +1189,14 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
               <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
                 <div className="mb-5 flex flex-wrap gap-3">
                   {[
-                    { key: 'private', label: 'Private Listing' },
-                    { key: 'development', label: 'Development Listing' },
+                    { key: PROPERTY_MODE_PRIVATE, label: 'Existing Listing' },
+                    { key: PROPERTY_MODE_DEVELOPMENT, label: 'Development Unit' },
+                    { key: PROPERTY_MODE_IMPORT, label: 'Import Deal' },
                   ].map((item) => (
                     <button
                       key={item.key}
                       type="button"
-                      onClick={() => setForm((previous) => ({ ...previous, propertyMode: item.key, privateListingId: '', developmentId: '', unitId: '' }))}
+                      onClick={() => updatePropertyMode(item.key)}
                       className={`rounded-full border px-4 py-2 text-sm font-semibold ${form.propertyMode === item.key ? 'border-[#1f4f78] bg-[#2b5577] text-white' : 'border-[#dbe6f2] bg-white text-[#47627c]'}`}
                     >
                       {item.label}
@@ -873,18 +1205,18 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
-                  {form.propertyMode === 'private' ? (
-                    <Field label="Active Private Listing" error={errors.privateListingId} fullWidth>
+                  {form.propertyMode === PROPERTY_MODE_PRIVATE ? (
+                    <Field label="Active Listing" error={errors.privateListingId} fullWidth>
                       <select className={fieldClass()} value={form.privateListingId} onChange={(event) => updateField('privateListingId', event.target.value)}>
                         <option value="">Select active listing</option>
                         {privateListings.map((listing) => (
                           <option key={listing.id} value={listing.id}>
-                            {listing.listingTitle} • {listing.suburb || 'Location pending'} • {formatCurrency(listing.askingPrice)}
+                            {formatListingDealOption(listing)}
                           </option>
                         ))}
                       </select>
                     </Field>
-                  ) : (
+                  ) : form.propertyMode === PROPERTY_MODE_DEVELOPMENT ? (
                     <>
                       <Field label="Assigned Development" error={errors.developmentId}>
                         <select className={fieldClass()} value={form.developmentId} onChange={(event) => updateField('developmentId', event.target.value)}>
@@ -904,6 +1236,56 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
                           ))}
                         </select>
                       </Field>
+                    </>
+                  ) : (
+                    <>
+                      <Field label="Property Address" error={errors.importPropertyAddress} fullWidth>
+                        <input className={fieldClass()} value={form.importPropertyAddress} onChange={(event) => updateField('importPropertyAddress', event.target.value)} />
+                      </Field>
+                      <Field label="Suburb">
+                        <input className={fieldClass()} value={form.importSuburb} onChange={(event) => updateField('importSuburb', event.target.value)} />
+                      </Field>
+                      <Field label="City">
+                        <input className={fieldClass()} value={form.importCity} onChange={(event) => updateField('importCity', event.target.value)} />
+                      </Field>
+                      <Field label="Province">
+                        <input className={fieldClass()} value={form.importProvince} onChange={(event) => updateField('importProvince', event.target.value)} />
+                      </Field>
+                      <Field label="Current Stage" error={errors.importCurrentStage}>
+                        <select className={fieldClass()} value={form.importCurrentStage} onChange={(event) => updateField('importCurrentStage', event.target.value)}>
+                          {['Offer Accepted', 'Deposit', 'Finance', 'Transfer', 'Registration'].map((stage) => (
+                            <option key={stage} value={stage}>{stage}</option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label="Seller Name" error={errors.importSellerName}>
+                        <input className={fieldClass()} value={form.importSellerName} onChange={(event) => updateField('importSellerName', event.target.value)} />
+                      </Field>
+                      <Field label="Seller Email" error={errors.importSellerEmail}>
+                        <input className={fieldClass()} type="email" value={form.importSellerEmail} onChange={(event) => updateField('importSellerEmail', event.target.value)} />
+                      </Field>
+                      <Field label="Seller Phone" error={errors.importSellerPhone}>
+                        <input className={fieldClass()} value={form.importSellerPhone} onChange={(event) => updateField('importSellerPhone', normalizePhoneInput(event.target.value))} />
+                      </Field>
+                      <Field label="Property24 Link">
+                        <input className={fieldClass()} value={form.importProperty24Link} onChange={(event) => updateField('importProperty24Link', event.target.value)} />
+                      </Field>
+                      <Field label="Commission Structure" fullWidth>
+                        <input className={fieldClass()} value={form.importCommissionStructure} onChange={(event) => updateField('importCommissionStructure', event.target.value)} />
+                      </Field>
+                      <Field label="Notes" fullWidth>
+                        <textarea className={fieldClass()} rows={3} value={form.importNotes} onChange={(event) => updateField('importNotes', event.target.value)} />
+                      </Field>
+                      <div className="md:col-span-2 grid gap-3 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4 text-sm text-[#48627f] sm:grid-cols-2">
+                        <label className="flex items-center gap-2 font-semibold">
+                          <input type="checkbox" checked={form.importMandateUploaded} onChange={(event) => updateField('importMandateUploaded', event.target.checked)} />
+                          Mandate uploaded
+                        </label>
+                        <label className="flex items-center gap-2 font-semibold">
+                          <input type="checkbox" checked={form.importOtpUploaded} onChange={(event) => updateField('importOtpUploaded', event.target.checked)} />
+                          OTP uploaded
+                        </label>
+                      </div>
                     </>
                   )}
                 </div>
@@ -958,14 +1340,22 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
                   <Field label="Sale Date">
                     <input className={fieldClass()} type="date" value={form.saleDate} onChange={(event) => updateField('saleDate', event.target.value)} />
                   </Field>
-                  {form.propertyMode === 'development' && form.reservationRequired ? (
+                  <Field label="Finance Type" error={errors.financeType}>
+                    <select className={fieldClass()} value={form.financeType} onChange={(event) => updateFinanceType(event.target.value)}>
+                      <option value="unknown">Select finance type</option>
+                      <option value="cash">Cash</option>
+                      <option value="bond">Bond</option>
+                      <option value="combination">Hybrid</option>
+                    </select>
+                  </Field>
+                  {form.propertyMode === PROPERTY_MODE_DEVELOPMENT && form.reservationRequired ? (
                     <Field label="Reservation Deposit" error={errors.reservationAmount} hint="Shown only when the development requires a reservation deposit.">
                       <input className={fieldClass()} type="number" min="0" step="1000" value={form.reservationAmount} onChange={(event) => updateField('reservationAmount', event.target.value)} />
                     </Field>
                   ) : null}
                 </div>
                 <div className="mt-5 rounded-[16px] border border-[#dbe6f2] bg-[#f7fbff] px-4 py-3 text-sm text-[#48627f]">
-                  Finance details and bond requirements will be captured during client onboarding.
+                  The deal can start now. Any missing documents and follow-up items are recorded against transaction completeness.
                 </div>
                 <div className="mt-4 rounded-[16px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm text-[#48627f]">
                   <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#6f8298]">Commission Projection</p>
@@ -1058,6 +1448,8 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
                     )}
                   </article>
 
+                  {requiresBondRolePlayers(form.financeType) ? (
+                    <>
                   <article className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                       <strong className="text-sm text-[#22374d]">Bond Originator</strong>
@@ -1183,6 +1575,8 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
                       </div>
                     ) : null}
                   </article>
+                    </>
+                  ) : null}
                 </div>
               </section>
             ) : null}
@@ -1192,11 +1586,25 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
                 <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
                   <h4 className="text-[1.04rem] font-semibold text-[#142132]">Review Deal Setup</h4>
                   <div className="mt-5 space-y-4 text-sm text-[#48627f]">
+                    {(() => {
+                      const completeness = buildCompletenessSnapshot({ form, listing: selectedPrivateListing, propertyMode: form.propertyMode })
+                      return (
+                        <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Transaction Completeness</p>
+                          <p className="mt-2 text-2xl font-semibold text-[#142132]">{completeness.score}%</p>
+                          <p className="mt-1 text-[#5f748c]">
+                            {completeness.missingItems.length ? `Missing: ${completeness.missingItems.join(', ')}` : 'No immediate follow-up items.'}
+                          </p>
+                        </div>
+                      )
+                    })()}
                     <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Property</p>
                       <p className="mt-2 font-semibold text-[#22374d]">
-                        {form.propertyMode === 'private'
-                          ? selectedPrivateListing?.listingTitle || 'Listing pending'
+                        {form.propertyMode === PROPERTY_MODE_PRIVATE
+                          ? formatListingDealOption(selectedPrivateListing || {})
+                          : form.propertyMode === PROPERTY_MODE_IMPORT
+                            ? form.importPropertyAddress || 'Imported property pending'
                           : selectedDevelopment && selectedUnit
                             ? `${selectedDevelopment.name} • Unit ${selectedUnit.unit_number}`
                             : 'Development selection pending'}
@@ -1209,6 +1617,10 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
                       <p className="mt-1">{form.clientEmail} • {form.clientPhone}</p>
                     </div>
                     <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Finance</p>
+                      <p className="mt-2 font-semibold capitalize text-[#22374d]">{form.financeType === 'combination' ? 'Hybrid' : form.financeType}</p>
+                    </div>
+                    <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Transfer Attorney</p>
                       <p className="mt-2 font-semibold text-[#22374d]">
                         {form.transferPartnerMode === PARTNER_MODE_AGENCY
@@ -1219,26 +1631,30 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
                         {form.transferPartnerMode === PARTNER_MODE_AGENCY ? 'Agency preferred partner' : 'Buyer appointed partner'}
                       </p>
                     </div>
-                    <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Bond Originator</p>
-                      <p className="mt-2 font-semibold text-[#22374d]">
-                        {form.bondOriginatorMode === PARTNER_MODE_NONE
-                          ? 'Not assigned yet'
-                          : form.bondOriginatorMode === PARTNER_MODE_AGENCY
-                            ? selectedBondOriginatorPartner?.companyName || selectedBondOriginatorPartner?.contactPerson || 'Pending selection'
-                            : form.bondOriginatorBuyerCompanyName || form.bondOriginatorBuyerContactPerson || 'Buyer-appointed partner pending'}
-                      </p>
-                    </div>
-                    <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Bond Attorney</p>
-                      <p className="mt-2 font-semibold text-[#22374d]">
-                        {form.bondAttorneyMode === PARTNER_MODE_NONE
-                          ? 'Not assigned yet'
-                          : form.bondAttorneyMode === PARTNER_MODE_AGENCY
-                            ? selectedBondAttorneyPartner?.companyName || selectedBondAttorneyPartner?.contactPerson || 'Pending selection'
-                            : form.bondAttorneyBuyerCompanyName || form.bondAttorneyBuyerContactPerson || 'Buyer-appointed partner pending'}
-                      </p>
-                    </div>
+                    {requiresBondRolePlayers(form.financeType) ? (
+                      <>
+                        <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Bond Originator</p>
+                          <p className="mt-2 font-semibold text-[#22374d]">
+                            {form.bondOriginatorMode === PARTNER_MODE_NONE
+                              ? 'Not assigned yet'
+                              : form.bondOriginatorMode === PARTNER_MODE_AGENCY
+                                ? selectedBondOriginatorPartner?.companyName || selectedBondOriginatorPartner?.contactPerson || 'Pending selection'
+                                : form.bondOriginatorBuyerCompanyName || form.bondOriginatorBuyerContactPerson || 'Buyer-appointed partner pending'}
+                          </p>
+                        </div>
+                        <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Bond Attorney</p>
+                          <p className="mt-2 font-semibold text-[#22374d]">
+                            {form.bondAttorneyMode === PARTNER_MODE_NONE
+                              ? 'Not assigned yet'
+                              : form.bondAttorneyMode === PARTNER_MODE_AGENCY
+                                ? selectedBondAttorneyPartner?.companyName || selectedBondAttorneyPartner?.contactPerson || 'Pending selection'
+                                : form.bondAttorneyBuyerCompanyName || form.bondAttorneyBuyerContactPerson || 'Buyer-appointed partner pending'}
+                          </p>
+                        </div>
+                      </>
+                    ) : null}
                     <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Commission Projection</p>
                       <p className="mt-2 font-semibold text-[#22374d]">
@@ -1256,11 +1672,14 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
                   <div className="mt-4 space-y-3">
                     {[
                       'Transaction will be created and linked to the selected property.',
-                      'Client onboarding will be triggered immediately.',
+                      `${getOriginLabel(form.propertyMode)} will be logged on the activity timeline.`,
+                      'Completeness follow-ups will be captured without blocking creation.',
                       'Transfer attorney will be notified.',
-                      form.propertyMode === 'private'
+                      form.propertyMode === PROPERTY_MODE_PRIVATE
                         ? 'Listing will move into an in-progress state.'
-                        : 'Unit will move out of available status once the transaction is active.',
+                        : form.propertyMode === PROPERTY_MODE_DEVELOPMENT
+                          ? 'Unit will move out of available status once the transaction is active.'
+                          : 'Imported deal will use the same transaction workspace as every other deal.',
                     ].map((item) => (
                       <div key={item} className="flex gap-3 rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-2.5">
                         <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-[#1f7d44]" />
@@ -1278,7 +1697,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
               <CheckCircle2 size={22} className="mt-0.5 text-[#1f7d44]" />
               <div className="space-y-2">
                 <h4 className="text-[1.08rem] font-semibold text-[#142132]">Deal created successfully</h4>
-                <p className="text-sm text-[#607387]">The transaction shell is live, the client onboarding flow has been triggered, and the transfer lane can now progress cleanly.</p>
+                <p className="text-sm text-[#607387]">The transaction shell is live, the origin path has been logged, and any missing follow-up items are tracked against completeness.</p>
                 {createdDeal.onboardingUrl ? (
                   <a href={createdDeal.onboardingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f4f78]">
                     <ExternalLink size={14} />
