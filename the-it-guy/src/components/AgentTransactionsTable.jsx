@@ -1,7 +1,6 @@
 import { ArrowRight, ArrowUpRight, BriefcaseBusiness, CheckCircle2, MoreHorizontal, Plus, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
-import { getFinanceReadinessSummary, shouldShowBondReadinessCta } from '../core/finance/financeReadinessSelectors'
 import { calculateApprovalProbability, calculateOperationalRisk, calculateTransactionVelocity } from '../services/financeIntelligenceService'
 import Button from './ui/Button'
 import DataTable, { DataTableInner } from './ui/DataTable'
@@ -61,25 +60,6 @@ function formatMainStage(row) {
     key: normalized,
     label: MAIN_STAGE_LABELS[normalized] || normalized,
     tone,
-  }
-}
-
-function formatFinanceStage(row) {
-  const financeType = String(row?.transaction?.finance_type || '').trim().toLowerCase()
-  const nextAction = String(row?.transaction?.next_action || '').trim()
-  if (!financeType && !nextAction) return { label: 'Not set', detail: 'No finance workflow yet' }
-
-  const label = financeType === 'bond'
-    ? 'Bond'
-    : financeType === 'cash'
-      ? 'Cash'
-      : financeType === 'combination'
-        ? 'Combination'
-        : financeType || 'Finance'
-
-  return {
-    label,
-    detail: nextAction || 'Awaiting finance update',
   }
 }
 
@@ -211,7 +191,6 @@ function AgentTransactionsTable({
   const currentPage = Math.min(page, totalPages)
   const metrics = useMemo(() => getTableMetrics(rows || []), [rows])
   const hasAnyRows = Boolean((rows || []).length)
-  const hasActiveFilter = quickFilter !== 'all'
 
   const visibleRows = useMemo(() => {
     const start = (currentPage - 1) * pageSize
@@ -335,7 +314,6 @@ function AgentTransactionsTable({
               <th>Client</th>
               <th>Progress</th>
               <th>Health</th>
-              <th>Finance Type</th>
               <th>Last Updated</th>
               <th>Actions</th>
             </tr>
@@ -345,7 +323,6 @@ function AgentTransactionsTable({
             const updatedAt = row?.transaction?.updated_at || row?.transaction?.created_at || null
             const canOpenRow = Boolean(row?.transaction?.id || row?.unit?.id)
             const mainStage = formatMainStage(row)
-            const financeStage = formatFinanceStage(row)
             const health = getHealth(row, mainStage.key)
             const progressPercent = getProgressPercent(row, mainStage.key)
             const approvalConfidence = calculateApprovalProbability(row)
@@ -394,21 +371,10 @@ function AgentTransactionsTable({
                     <div className="transaction-progress-track" aria-hidden="true">
                       <span style={{ width: `${Math.max(progressPercent > 0 ? 8 : 0, progressPercent)}%` }} />
                     </div>
-                    <span className="transaction-progress-stage">{mainStage.label}</span>
                   </div>
                 </td>
                 <td data-label="Health">
                   <StatusBadge className={`transaction-workflow-chip transaction-health-chip ${health.className}`}>{health.label}</StatusBadge>
-                </td>
-                <td data-label="Finance Type">
-                  <StatusBadge className="transaction-workflow-chip transaction-chip-info">{financeStage.label}</StatusBadge>
-                  {shouldShowBondReadinessCta(row) ? (
-                    <small className="transaction-cell-secondary">
-                      {getFinanceReadinessSummary(row).readinessScore.score}% buyer readiness · {approvalConfidence.probabilityBand}
-                    </small>
-                  ) : (
-                    <small className="transaction-cell-secondary">Proof of funds readiness</small>
-                  )}
                 </td>
                 <td data-label="Last Updated">
                   <span className="transaction-cell-secondary">{formatRelativeDate(updatedAt)}</span>

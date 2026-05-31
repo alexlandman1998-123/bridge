@@ -1764,7 +1764,15 @@
     background: transparent;
   }
 
-  .agent-transactions-panel .table-wrap,
+  .agent-transactions-panel .table-wrap {
+    max-height: none;
+    border: 1px solid #e3ebf5;
+    border-radius: 24px;
+    background: #ffffff;
+    box-shadow: 0 16px 50px rgba(18, 38, 63, 0.06);
+    overflow: visible;
+  }
+
   .attorney-transfers-panel .table-wrap {
     max-height: min(70vh, 820px);
     border: 1px solid #e3ebf5;
@@ -1777,21 +1785,23 @@
   .agent-transactions-metrics {
     display: grid;
     grid-auto-flow: column;
-    grid-auto-columns: minmax(96px, 1fr);
+    grid-auto-columns: minmax(112px, 1fr);
     align-items: center;
     justify-content: end;
     gap: 0;
-    min-width: min(100%, 520px);
-    border: 1px solid #e1e9f3;
-    border-radius: 20px;
-    background: #ffffff;
-    padding: 1.3rem 1.5rem;
-    box-shadow: 0 16px 42px rgba(16, 35, 56, 0.07);
+    min-width: min(100%, 560px);
+    border: 1px solid #dce8f4;
+    border-radius: 22px;
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(247, 251, 255, 0.96) 100%);
+    padding: 1.15rem 1.3rem;
+    box-shadow: 0 18px 48px rgba(16, 35, 56, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.85);
   }
 
   .agent-transaction-metric {
+    position: relative;
     min-width: 0;
-    padding: 0 1.2rem;
+    padding: 0.12rem 1.15rem 0;
     border-left: 1px solid #e6edf5;
   }
 
@@ -1804,22 +1814,33 @@
     padding-right: 0;
   }
 
+  .agent-transaction-metric::before {
+    content: '';
+    display: block;
+    width: 1.45rem;
+    height: 0.16rem;
+    margin-bottom: 0.65rem;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #0f4f9f 0%, #38bdf8 100%);
+    opacity: 0.82;
+  }
+
   .agent-transaction-metric strong {
     display: block;
     color: #111827;
-    font-size: 1.75rem;
-    font-weight: 750;
+    font-size: 1.85rem;
+    font-weight: 800;
     line-height: 1;
-    letter-spacing: -0.03em;
+    letter-spacing: -0.02em;
   }
 
   .agent-transaction-metric span {
     display: block;
-    margin-top: 0.55rem;
-    color: #64748b;
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.035em;
+    margin-top: 0.5rem;
+    color: #60738d;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
   }
 
@@ -1851,9 +1872,7 @@
   }
 
   .transaction-ops-filter-bar {
-    position: sticky;
-    top: 0;
-    z-index: 6;
+    position: static;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -2007,7 +2026,8 @@
   }
 
   .ui-data-table.agent-transactions-table {
-    min-width: 1080px;
+    width: 100%;
+    min-width: 0;
     table-layout: fixed;
   }
 
@@ -2030,7 +2050,7 @@
 
   .ui-data-table.agent-transactions-table th,
   .ui-data-table.agent-transactions-table td {
-    padding: 1.15rem 1rem;
+    padding: 1rem 0.9rem;
   }
 
   .ui-data-table.agent-transactions-table th,
@@ -2046,6 +2066,11 @@
     letter-spacing: 0.08em;
   }
 
+  .ui-data-table.agent-transactions-table th {
+    position: static;
+    top: auto;
+  }
+
   .ui-data-table.operations-compact-table th {
     top: 0;
   }
@@ -2059,7 +2084,7 @@
   }
 
   .ui-data-table.agent-transactions-table tbody tr {
-    height: 92px;
+    height: 86px;
   }
 
   .ui-data-table.agent-transactions-table tbody tr:hover td,
@@ -2078,16 +2103,14 @@
   }
 
   .ui-data-table.agent-transactions-table .agent-transactions-sticky-first {
-    position: sticky;
-    left: 0;
-    z-index: 3;
-    width: 230px;
-    min-width: 230px;
-    box-shadow: 1px 0 0 #eef3f8;
+    position: static;
+    width: 24%;
+    min-width: 0;
+    box-shadow: none;
   }
 
   .ui-data-table.agent-transactions-table th.agent-transactions-sticky-first {
-    z-index: 5;
+    z-index: 4;
   }
 
   .ui-data-table.agent-transactions-table th:nth-child(2),
@@ -2101,8 +2124,8 @@
 
   .ui-data-table.agent-transactions-table th:nth-child(2),
   .ui-data-table.agent-transactions-table td:nth-child(2) {
-    width: 200px;
-    min-width: 200px;
+    width: 18%;
+    min-width: 0;
   }
 
   .ui-data-table.agent-transactions-table th:nth-child(3),
@@ -2116,23 +2139,20 @@
 
   .ui-data-table.agent-transactions-table th:nth-child(3),
   .ui-data-table.agent-transactions-table td:nth-child(3) {
-    width: 200px;
-    min-width: 200px;
+    width: 22%;
+    min-width: 150px;
   }
 
   .ui-data-table.agent-transactions-table th:nth-child(4),
   .ui-data-table.agent-transactions-table td:nth-child(4) {
-    width: 105px;
+    width: 12%;
+    min-width: 96px;
   }
 
   .ui-data-table.agent-transactions-table th:nth-child(5),
   .ui-data-table.agent-transactions-table td:nth-child(5) {
-    width: 115px;
-  }
-
-  .ui-data-table.agent-transactions-table th:nth-child(6),
-  .ui-data-table.agent-transactions-table td:nth-child(6) {
-    width: 115px;
+    width: 12%;
+    min-width: 92px;
   }
 
   .ui-data-table.agent-transactions-table th:last-child,
@@ -2147,8 +2167,8 @@
 
   .ui-data-table.agent-transactions-table th:last-child,
   .ui-data-table.agent-transactions-table td:last-child {
-    width: 140px;
-    min-width: 140px;
+    width: 12%;
+    min-width: 118px;
   }
 
   .ui-data-table.agent-transactions-table .transaction-list-cell,
@@ -2187,16 +2207,17 @@
 
   .transaction-progress-cell {
     display: grid;
-    width: min(240px, 100%);
-    min-width: 190px;
-    gap: 0.45rem;
+    width: 100%;
+    min-width: 0;
+    gap: 0.5rem;
   }
 
   .transaction-progress-summary {
     display: flex;
     align-items: baseline;
     justify-content: flex-start;
-    gap: 0.75rem;
+    gap: 0.65rem;
+    min-width: 0;
   }
 
   .transaction-progress-summary strong {
@@ -2204,6 +2225,16 @@
     font-size: 0.92rem;
     font-weight: 750;
     line-height: 1;
+  }
+
+  .transaction-progress-summary small {
+    min-width: 0;
+    overflow: hidden;
+    color: #708199;
+    font-size: 0.76rem;
+    font-weight: 550;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .transaction-progress-stage {

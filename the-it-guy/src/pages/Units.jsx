@@ -1554,9 +1554,10 @@ function Units() {
         </>
       ) : null}
 
-      <section className="rounded-[24px] border border-borderDefault bg-surface p-4 shadow-panel no-print">
-        <div className="flex flex-col gap-3">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      {!isAgentRole ? (
+        <section className="rounded-[24px] border border-borderDefault bg-surface p-4 shadow-panel no-print">
+          <div className="flex flex-col gap-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {!isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
                 <span className="text-label font-semibold uppercase text-textMuted">Development</span>
@@ -1832,9 +1833,10 @@ function Units() {
                 }
               />
             </label>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
       {error ? (
         <p className="rounded-[16px] border border-danger bg-dangerSoft px-5 py-4 text-sm text-danger">{error}</p>
