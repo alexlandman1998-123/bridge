@@ -1600,6 +1600,115 @@
     padding: 1.25rem;
   }
 
+  .bond-regional-pipeline-panel {
+    border-radius: 24px;
+    border-color: #e5edf6;
+    background: #ffffff;
+    box-shadow: 0 18px 55px rgba(18, 38, 63, 0.08);
+  }
+
+  .bond-regional-pipeline-panel .ui-table-card-head {
+    padding: 1.35rem 1.45rem 1rem;
+    align-items: flex-start;
+  }
+
+  .bond-regional-pipeline-panel .ui-table-shell {
+    padding: 0.5rem 0.75rem 0.85rem;
+  }
+
+  .bond-regional-pipeline-panel .table-wrap {
+    max-height: min(68vh, 820px);
+    border: 1px solid #dfe8f3;
+    border-radius: 18px;
+    background: linear-gradient(180deg, #fbfdff 0%, #ffffff 100%);
+  }
+
+  .ui-data-table.bond-regional-pipeline-table {
+    min-width: 1620px;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .bond-regional-pipeline-table th,
+  .bond-regional-pipeline-table td {
+    padding: 1rem 1.05rem;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+
+  .bond-regional-pipeline-table th {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    border-bottom: 1px solid #dce6f2;
+    background: #f7faff;
+    color: #5d6f86;
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+  }
+
+  .bond-regional-pipeline-table td {
+    border-bottom: 1px solid #edf2f8;
+    color: #1c2b3d;
+  }
+
+  .bond-regional-pipeline-table tbody tr:hover td,
+  .bond-regional-pipeline-table tbody tr:focus-within td {
+    background: #f4f8fd;
+  }
+
+  .bond-regional-pipeline-table .bond-pipeline-sticky-first {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    width: 230px;
+    min-width: 230px;
+    box-shadow: 1px 0 0 #e6edf7;
+  }
+
+  .bond-regional-pipeline-table th.bond-pipeline-sticky-first {
+    z-index: 5;
+  }
+
+  .bond-pipeline-row-even td {
+    background: #ffffff;
+  }
+
+  .bond-pipeline-row-odd td {
+    background: #fbfdff;
+  }
+
+  .bond-regional-pipeline-table th:nth-child(2),
+  .bond-regional-pipeline-table td:nth-child(2) {
+    width: 240px;
+  }
+
+  .bond-regional-pipeline-table th:nth-child(3),
+  .bond-regional-pipeline-table td:nth-child(3),
+  .bond-regional-pipeline-table th:nth-child(4),
+  .bond-regional-pipeline-table td:nth-child(4) {
+    width: 220px;
+  }
+
+  .bond-regional-pipeline-table th:nth-child(5),
+  .bond-regional-pipeline-table td:nth-child(5),
+  .bond-regional-pipeline-table th:nth-child(7),
+  .bond-regional-pipeline-table td:nth-child(7) {
+    width: 190px;
+  }
+
+  .bond-regional-pipeline-table th:nth-child(6),
+  .bond-regional-pipeline-table td:nth-child(6),
+  .bond-regional-pipeline-table th:nth-child(8),
+  .bond-regional-pipeline-table td:nth-child(8),
+  .bond-regional-pipeline-table th:nth-child(9),
+  .bond-regional-pipeline-table td:nth-child(9),
+  .bond-regional-pipeline-table th:last-child,
+  .bond-regional-pipeline-table td:last-child {
+    width: 140px;
+  }
+
   .ui-data-table .transaction-list-cell {
     @apply grid gap-1.5;
   }

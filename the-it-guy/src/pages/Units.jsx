@@ -978,7 +978,11 @@ function Units() {
               return accumulator
             }, [])
         } else {
-          const agentTransactions = await fetchTransactionsByParticipantSummary({ userId: profile.id, roleType: participantScopedRole })
+          const agentTransactions = await fetchTransactionsByParticipantSummary({
+            userId: profile.id,
+            roleType: participantScopedRole,
+            organisationId: isBondRole && workspace.id && workspace.id !== 'all' ? workspace.id : '',
+          })
           unitsData = isAttorneyRole
             ? buildAttorneyDemoRows(agentTransactions || [])
             : isAgentRole

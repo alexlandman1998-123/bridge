@@ -62,6 +62,7 @@ import {
   fetchUnitWorkspaceShell,
   parseWorkflowStepComment,
   getOrCreateTransactionOnboarding,
+  getOrCreateClientPortalLink,
   saveTransaction,
   saveTransactionClientInformation,
   sendReservationDepositRequest,
@@ -2197,7 +2198,9 @@ function UnitDetail() {
   const [deferredLoading, setDeferredLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [sendingOnboardingEmail, setSendingOnboardingEmail] = useState(false)
+  const [sendingClientPortalLink, setSendingClientPortalLink] = useState(false)
   const [onboardingLinkCopied, setOnboardingLinkCopied] = useState(false)
+  const [clientPortalLinkCopied, setClientPortalLinkCopied] = useState(false)
   const [deletingTransaction, setDeletingTransaction] = useState(false)
   const [deleteTransactionConfirmOpen, setDeleteTransactionConfirmOpen] = useState(false)
   const [error, setError] = useState('')
@@ -3414,6 +3417,43 @@ function UnitDetail() {
     }
   }
 
+  async function ensureClientPortalLink() {
+    if (clientPortalLink?.token) {
+      return clientPortalLink
+    }
+
+    if (!detail?.transaction?.id) {
+      throw new Error('Transaction data is missing.')
+    }
+
+    const record = await getOrCreateClientPortalLink({
+      developmentId: detail.transaction.development_id || detail.unit?.development_id || detail.unit?.development?.id || '',
+      unitId: detail.transaction.unit_id || detail.unit?.id || '',
+      transactionId: detail.transaction.id,
+      buyerId: detail.transaction.buyer_id || detail.buyer?.id || null,
+    })
+
+    if (record?.token) {
+      setClientPortalLink(record)
+      return record
+    }
+
+    throw new Error('Unable to generate client portal link right now.')
+  }
+
+  async function handleCopyClientPortalLink() {
+    try {
+      setError('')
+      const record = await ensureClientPortalLink()
+      const url = `${window.location.origin}/client/${record.token}`
+      await copyTextToClipboard(url)
+      setClientPortalLinkCopied(true)
+      window.setTimeout(() => setClientPortalLinkCopied(false), 1400)
+    } catch (copyError) {
+      setError(copyError?.message || 'Unable to copy client portal link. Please copy it manually from your browser.')
+    }
+  }
+
   function openPrintDocument(content, popupErrorMessage) {
     const blob = new Blob([content], { type: 'text/html;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -3538,6 +3578,53 @@ function UnitDetail() {
       setError(resolvedError)
     } finally {
       setSendingOnboardingEmail(false)
+    }
+  }
+
+  async function handleSendClientPortalLinkEmail() {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for client portal email.')
+      return
+    }
+
+    if (!buyer?.email) {
+      setError('Capture buyer email before sending the client portal link.')
+      return
+    }
+
+    if (!supabase) {
+      setError('Supabase is not configured in this environment.')
+      return
+    }
+
+    try {
+      setSendingClientPortalLink(true)
+      setError('')
+      await ensureClientPortalLink()
+
+      const result = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'client_portal_link',
+          transactionId: transaction.id,
+          resend: true,
+        },
+      })
+
+      if (result.error || result.data?.error) {
+        throw result.error || result.data?.error
+      }
+
+      if (result.data?.sent === false) {
+        throw new Error(result.data?.error || 'Client portal link email could not be sent.')
+      }
+
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (sendError) {
+      const resolvedError = await parseEdgeFunctionError(sendError, 'Unable to send client portal link right now.')
+      setError(resolvedError)
+    } finally {
+      setSendingClientPortalLink(false)
     }
   }
 
@@ -5303,12 +5390,34 @@ function UnitDetail() {
           hidden: !canEditSalesWorkflow,
         }]
       : []),
-    ...((onboardingEmailSent || onboardingComplete)
+    ...(onboardingComplete
+      ? [{
+          id: 'resend-client-portal-link',
+          label: sendingClientPortalLink ? 'Sending…' : 'Resend Portal Link',
+          icon: 'portal',
+          variant: 'primary',
+          className: 'min-w-[206px]',
+          onClick: () => void handleSendClientPortalLinkEmail(),
+          disabled: !canEditSalesWorkflow || sendingClientPortalLink || !transaction?.id || !buyer?.email,
+          hidden: !canEditSalesWorkflow,
+        },
+        {
+          id: 'copy-client-portal-link',
+          label: clientPortalLinkCopied ? 'Copied Portal Link' : 'Copy Portal Link',
+          icon: 'portal',
+          variant: 'secondary',
+          className: 'min-w-[206px]',
+          onClick: handleCopyClientPortalLink,
+          disabled: !transaction?.id || !canEditSalesWorkflow,
+          hidden: !canEditSalesWorkflow,
+        }]
+      : []),
+    ...((onboardingEmailSent && !onboardingComplete)
       ? [{
           id: 'copy-onboarding-link',
           label: onboardingLinkCopied ? 'Copied Onboarding Link' : 'Copy Onboarding Link',
           icon: 'onboarding_link',
-          variant: onboardingComplete ? 'secondary' : 'ghost',
+          variant: 'ghost',
           className: 'min-w-[206px]',
           onClick: handleCopyOnboardingLink,
           disabled: !transaction?.id || !canEditSalesWorkflow,
@@ -5510,9 +5619,9 @@ function UnitDetail() {
           },
         )
         addAction(
-          'copy_onboarding_link',
-          onboardingLinkCopied ? 'Copied Onboarding Link' : 'Copy Onboarding Link',
-          handleCopyOnboardingLink,
+          'copy_client_portal_link',
+          clientPortalLinkCopied ? 'Copied Portal Link' : 'Copy Portal Link',
+          handleCopyClientPortalLink,
           {
             disabled: !transaction?.id,
           },

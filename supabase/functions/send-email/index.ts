@@ -160,7 +160,13 @@ Deno.serve(async (req: Request) => {
     }
 
     if (
-      ["onboarding_submitted", "client_onboarding_submitted"].includes(type)
+      [
+        "onboarding_submitted",
+        "client_onboarding_submitted",
+        "client_portal_link",
+        "client_portal",
+        "portal_link",
+      ].includes(type)
     ) {
       console.log("[send-email] routing template", {
         route: "onboarding_submitted",

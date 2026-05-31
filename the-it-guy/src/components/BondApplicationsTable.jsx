@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, Bell, CheckCircle2, FilePlus2, UserPlus, XCircle } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, Bell, CheckCircle2, FilePlus2, UserPlus, XCircle } from 'lucide-react'
 import {
   BOND_OPERATIONAL_QUEUE_KEYS,
   buildBondNewApplicationViewModel,
@@ -13,6 +13,8 @@ import BondEmptyState from './bond/BondEmptyState'
 import BondRiskBadge from './bond/BondRiskBadge'
 import BondSectionCard from './bond/BondSectionCard'
 import BondStatusBadge from './bond/BondStatusBadge'
+import Button from './ui/Button'
+import DataTable, { DataTableInner } from './ui/DataTable'
 import {
   BOND_INTAKE_DECLINE_REASONS,
   acceptBondIntakeApplication,
@@ -135,17 +137,33 @@ function resolveBondValue(row) {
 
 function resolveTeamAssignment(row) {
   const assignment = resolveEffectiveBondAssignment(row?.transaction || {})
+  const consultantName =
+    assignment.primaryConsultantName ||
+    row?.transaction?.primary_bond_consultant_name ||
+    row?.transaction?.bond_originator ||
+    'Unassigned consultant'
+  const consultantDetail =
+    assignment.primaryConsultantEmail ||
+    row?.transaction?.assigned_bond_originator_email ||
+    (consultantName === 'Unassigned consultant' ? 'Awaiting allocation' : 'Allocated consultant')
+  const processorName =
+    assignment.processorName ||
+    row?.transaction?.assigned_bond_processor_name ||
+    row?.transaction?.processor_name ||
+    row?.transaction?.processor ||
+    'Processor pending'
+  const processorDetail =
+    assignment.processorEmail ||
+    row?.transaction?.assigned_bond_processor_email ||
+    (processorName === 'Processor pending' ? 'Not assigned' : 'Processing desk')
+
   return {
-    consultant:
-      assignment.primaryConsultantName ||
-      assignment.primaryConsultantEmail ||
-      row?.transaction?.bond_originator ||
-      'Unassigned consultant',
-    processor:
-      assignment.processorName ||
-      assignment.processorEmail ||
-      row?.transaction?.processor ||
-      'Processor pending',
+    consultantName,
+    consultantDetail,
+    processorName,
+    processorDetail,
+    managerName: assignment.managerName || assignment.managerEmail || row?.transaction?.assigned_bond_manager_name || '',
+    source: assignment.source || 'none',
   }
 }
 
@@ -658,21 +676,17 @@ function NewApplicationsInbox({ rows = [], onRowClick, currentUser = {}, onActio
   )
 }
 
-function HeaderCell({ children, className = '' }) {
-  return (
-    <th className={`bg-[#f8fbff] px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.16em] text-[#7d90a5] ${className}`.trim()}>
-      {children}
-    </th>
-  )
-}
-
-function ApplicationRow({ row, onRowClick }) {
+function ApplicationRow({ row, onRowClick, index = 0 }) {
   const stageKey = getBondApplicationStage(row)
   const updatedAt = getUpdatedAt(row)
   const risk = getRiskMeta(row)
   const financeReadiness = getFinanceReadinessSummary(row)
   const team = resolveTeamAssignment(row)
   const canOpenRow = Boolean(row?.unit?.id || row?.transaction?.id)
+  const buyerLabel = getBuyerLabel(row)
+  const propertyLabel = getPropertyLabel(row)
+  const readinessScore = financeReadiness.readinessScore?.score || 0
+  const readinessLabel = financeReadiness.readinessScore?.label || 'Incomplete'
 
   const openRow = () => {
     if (!canOpenRow) return
@@ -681,7 +695,7 @@ function ApplicationRow({ row, onRowClick }) {
 
   return (
     <tr
-      className={canOpenRow ? 'cursor-pointer border-t border-[#edf2f7] transition hover:bg-[#fbfdff]' : 'border-t border-[#edf2f7]'}
+      className={`${canOpenRow ? 'ui-data-row-clickable' : ''} ${index % 2 === 0 ? 'bond-pipeline-row-even' : 'bond-pipeline-row-odd'}`.trim()}
       onClick={openRow}
       onKeyDown={(event) => {
         if ((event.key === 'Enter' || event.key === ' ') && canOpenRow) {
@@ -692,53 +706,78 @@ function ApplicationRow({ row, onRowClick }) {
       tabIndex={canOpenRow ? 0 : -1}
       role={canOpenRow ? 'button' : undefined}
     >
-      <td className="px-4 py-4 align-top">
-        <p className="text-sm font-semibold text-[#142132]">{getBuyerLabel(row)}</p>
-        <p className="mt-1 text-xs text-[#71869d]">{row?.buyer?.email || row?.buyer?.phone || 'Client details pending'}</p>
+      <td className="bond-pipeline-sticky-first" data-label="Application / Client">
+        <div className="transaction-list-cell">
+          <strong className="transaction-cell-primary" title={buyerLabel}>{buyerLabel}</strong>
+          <small className="transaction-cell-secondary" title={row?.buyer?.email || row?.buyer?.phone || ''}>
+            {row?.buyer?.email || row?.buyer?.phone || 'Client details pending'}
+          </small>
+        </div>
       </td>
-      <td className="px-4 py-4 align-top">
-        <p className="text-sm font-semibold text-[#142132]">{getPropertyLabel(row)}</p>
-        <p className="mt-1 text-xs text-[#71869d]">{row?.development?.suburb || row?.transaction?.suburb || row?.transaction?.city || 'Property context loading'}</p>
+      <td data-label="Property / Source">
+        <div className="transaction-list-cell">
+          <strong className="transaction-cell-primary" title={propertyLabel}>{propertyLabel}</strong>
+          <small className="transaction-cell-secondary" title={row?.development?.suburb || row?.transaction?.suburb || row?.transaction?.city || ''}>
+            {row?.development?.suburb || row?.transaction?.suburb || row?.transaction?.city || 'Property context loading'}
+          </small>
+        </div>
       </td>
-      <td className="px-4 py-4 align-top">
-        <p className="text-sm font-semibold text-[#142132]">{team.consultant}</p>
-        <p className="mt-1 text-xs text-[#71869d]">Owner</p>
+      <td data-label="Allocated Consultant">
+        <div className="transaction-list-cell">
+          <strong className="transaction-cell-primary" title={team.consultantName}>{team.consultantName}</strong>
+          <small className="transaction-cell-secondary" title={team.consultantDetail}>{team.consultantDetail}</small>
+          {team.managerName ? <small className="transaction-cell-secondary" title={team.managerName}>Manager: {team.managerName}</small> : null}
+        </div>
       </td>
-      <td className="px-4 py-4 align-top">
-        <p className="text-sm font-semibold text-[#142132]">{team.processor}</p>
-        <p className="mt-1 text-xs text-[#71869d]">Processor</p>
+      <td data-label="Processor">
+        <div className="transaction-list-cell">
+          <strong className="transaction-cell-primary" title={team.processorName}>{team.processorName}</strong>
+          <small className="transaction-cell-secondary" title={team.processorDetail}>{team.processorDetail}</small>
+        </div>
       </td>
-      <td className="px-4 py-4 align-top">
-        <p className="text-sm font-semibold text-[#142132]">{resolveBankLabel(row)}</p>
-        <p className="mt-1 text-xs text-[#71869d]">{resolveBondValue(row)}</p>
+      <td data-label="Bank / Value">
+        <div className="transaction-list-cell">
+          <strong className="transaction-cell-primary" title={resolveBankLabel(row)}>{resolveBankLabel(row)}</strong>
+          <small className="transaction-cell-secondary">{resolveBondValue(row)}</small>
+        </div>
       </td>
-      <td className="px-4 py-4 align-top">
+      <td data-label="Stage">
         <BondStatusBadge status={stageKey} label={stageLabelFromKey(stageKey)} />
       </td>
-      <td className="px-4 py-4 align-top">
-        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${readinessToneClass(financeReadiness.readinessScore?.tone)}`}>
-          {financeReadiness.readinessScore?.score || 0}% · {financeReadiness.readinessScore?.label || 'Incomplete'}
-        </span>
-        <p className="mt-1 text-xs text-[#71869d]">
-          {formatCurrency(financeReadiness.affordabilityEstimate?.estimatedPurchaseRangeMin)} - {formatCurrency(financeReadiness.affordabilityEstimate?.estimatedPurchaseRangeMax)}
-        </p>
+      <td data-label="Readiness / Docs">
+        <div className="transaction-progress-cell">
+          <div className="transaction-progress-summary">
+            <strong>{readinessScore}%</strong>
+            <small>{readinessLabel}</small>
+          </div>
+          <div className="transaction-progress-track" aria-hidden="true">
+            <span style={{ width: `${Math.max(readinessScore > 0 ? 8 : 0, readinessScore)}%` }} />
+          </div>
+          <span className={`transaction-workflow-chip ${readinessToneClass(financeReadiness.readinessScore?.tone)}`}>
+            {getMissingDocumentCount(row)} docs missing
+          </span>
+        </div>
       </td>
-      <td className="px-4 py-4 align-top text-sm text-[#17324d]">{formatDate(updatedAt)}</td>
-      <td className="px-4 py-4 align-top">
+      <td data-label="Last Activity">
+        <span className="transaction-cell-secondary">{formatDate(updatedAt)}</span>
+      </td>
+      <td data-label="Risk">
         <BondRiskBadge status={risk.status} label={risk.label} />
       </td>
-      <td className="px-4 py-4 align-top text-right">
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation()
-            openRow()
-          }}
-          className="inline-flex h-9 items-center justify-center gap-1 rounded-[12px] border border-[#dbe5f0] bg-[#f8fbff] px-3 text-sm font-semibold text-[#17324d] transition hover:border-[#c5d5e6]"
-        >
-          Open
-          <ArrowRight size={14} />
-        </button>
+      <td data-label="Action" onClick={(event) => event.stopPropagation()}>
+        <div className="transaction-row-actions">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="table-action-button transaction-row-action-primary"
+            disabled={!canOpenRow}
+            onClick={openRow}
+          >
+            <ArrowUpRight size={14} />
+            Open
+          </Button>
+        </div>
       </td>
     </tr>
   )
@@ -767,57 +806,54 @@ function BondApplicationsTable({
   }
 
   return (
-    <BondSectionCard
-      eyebrow="Applications"
+    <DataTable
       title={title}
-      description={description}
-      action={<span className="rounded-full border border-[#dbe5f0] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#516a83]">{rows.length} applications</span>}
-      padded={false}
-      contentClassName="mt-0"
+      copy={description}
+      className="bond-applications-panel bond-regional-pipeline-panel"
+      actions={<span className="rounded-full border border-[#dbe5f0] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#516a83]">{rows.length} applications</span>}
     >
-      <div className="overflow-x-auto">
-        <table className="min-w-full border-collapse">
-          <thead className="sticky top-0 z-[1]">
-            <tr>
-              <HeaderCell>Client</HeaderCell>
-              <HeaderCell>Property</HeaderCell>
-              <HeaderCell>Consultant</HeaderCell>
-              <HeaderCell>Processor</HeaderCell>
-              <HeaderCell>Bank / Value</HeaderCell>
-              <HeaderCell>Stage</HeaderCell>
-              <HeaderCell>Finance Readiness</HeaderCell>
-              <HeaderCell>Last Activity</HeaderCell>
-              <HeaderCell>Risk</HeaderCell>
-              <HeaderCell className="text-right">Action</HeaderCell>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <ApplicationRow
-                key={row?.transaction?.id || row?.unit?.id || `bond-row-${row?.buyer?.id || 'buyer'}`}
-                row={row}
-                onRowClick={onRowClick}
-              />
-            ))}
+      <DataTableInner className="bond-applications-table bond-regional-pipeline-table">
+        <thead>
+          <tr>
+            <th className="bond-pipeline-sticky-first">Application / Client</th>
+            <th>Property / Source</th>
+            <th>Allocated Consultant</th>
+            <th>Processor</th>
+            <th>Bank / Value</th>
+            <th>Stage</th>
+            <th>Readiness / Docs</th>
+            <th>Last Activity</th>
+            <th>Risk</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <ApplicationRow
+              key={row?.transaction?.id || row?.unit?.id || `bond-row-${row?.buyer?.id || 'buyer'}`}
+              row={row}
+              index={index}
+              onRowClick={onRowClick}
+            />
+          ))}
 
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={10} className="px-4 py-6">
-                  <BondEmptyState
-                    compact
-                    title={emptyTitle}
-                    description={emptyDescription}
-                  />
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={10}>
+                <BondEmptyState
+                  compact
+                  title={emptyTitle}
+                  description={emptyDescription}
+                />
+              </td>
+            </tr>
+          ) : null}
+        </tbody>
+      </DataTableInner>
       <p className="border-t border-[#edf2f7] px-4 py-3 text-xs leading-5 text-[#60758d]">
         {FINANCE_READINESS_DISCLAIMER}
       </p>
-    </BondSectionCard>
+    </DataTable>
   )
 }
 

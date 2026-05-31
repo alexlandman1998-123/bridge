@@ -103,7 +103,7 @@ function TransactionBondHybridFinanceWorkflowPanel({
   const approvedQuote = summary.approvedQuote || null
   const isCompleted = workflow?.status === 'completed'
   const isBondOriginatorView = variant === 'originator'
-  const currentStageIndex = Math.max(0, BOND_HYBRID_FINANCE_STAGES.indexOf(workflow.currentStage))
+  const currentStageIndex = Math.max(0, BOND_HYBRID_FINANCE_STAGES.indexOf(workflow?.currentStage || workflow?.current_stage || summary.currentStage))
 
   if (!workflowData || !workflow) {
     return (

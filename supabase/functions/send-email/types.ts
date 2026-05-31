@@ -8,7 +8,7 @@ export type SendClientOnboardingPayload = {
 };
 
 export type SendOnboardingSubmittedPayload = {
-  type: "onboarding_submitted";
+  type: "onboarding_submitted" | "client_portal_link";
   transactionId: string;
   resend?: boolean;
 };
