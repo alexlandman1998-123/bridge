@@ -1010,7 +1010,7 @@ function AgentListings({ initialTab = null } = {}) {
           assignedAgentId: resolvedAssignedAgentId || null,
           listingStatus: resolveQuickListingStatus(form),
           sellerOnboardingStatus: 'completed',
-          mandateStatus: mandateStatus === 'signed_uploaded' ? 'signed' : 'not_started',
+          mandateStatus: 'not_started',
           listingVisibility: resolveQuickListingVisibility(form.visibility),
           title: listingTitle,
           propertyCategory: normalizePropertyCategory(form.propertyCategory, { fallback: 'residential' }),
@@ -1041,17 +1041,22 @@ function AgentListings({ initialTab = null } = {}) {
         createdListingId = created.listing.id
         createdListingTitle = created.listing.listingTitle || created.listing.title || listingTitle
         if (mandateUploaded && form.manualMandateFile) {
-          await uploadPrivateListingDocument(created.listing.id, form.manualMandateFile, {
+          const uploadedMandate = await uploadPrivateListingDocument(created.listing.id, form.manualMandateFile, {
             documentType: normalizeDocumentCategoryKey(form.mandateDocumentCategory),
             documentCategory: form.mandateDocumentCategory,
             documentName: form.manualMandateFileName,
             visibility: 'internal',
             status: 'uploaded',
           }).catch((uploadError) => {
-            console.warn('[Listings] quick add mandate upload skipped', uploadError)
+            console.warn('[Listings] quick add mandate upload failed', uploadError)
             return null
           })
-          await updatePrivateListing(created.listing.id, { mandateStatus: 'signed' }, { includeRequirementsAndDocuments: false }).catch(() => null)
+          if (!uploadedMandate) {
+            setError('Listing was created, but the signed mandate upload failed. Open the listing and upload the mandate again.')
+            window.dispatchEvent(new Event('itg:listings-updated'))
+            return
+          }
+          await updatePrivateListing(created.listing.id, { mandateStatus: 'signed' }, { includeRequirementsAndDocuments: false })
         }
         await createPrivateListingActivity({
           privateListingId: created.listing.id,

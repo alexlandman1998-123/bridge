@@ -1836,6 +1836,19 @@ function AgentListingDetail() {
 
   const mandateWorkspace = useMemo(() => {
     const mandate = listingRecord?.mandate || {}
+    const mandateDocument = (Array.isArray(listingRecord?.documents) ? listingRecord.documents : []).find((document) => {
+      const searchable = [
+        document?.document_type,
+        document?.documentType,
+        document?.category,
+        document?.document_name,
+        document?.documentName,
+        document?.fileName,
+        document?.name,
+      ].map((value) => normalizeKey(value)).join(' ')
+      const hasUrl = Boolean(document?.url || document?.fileUrl || document?.file_url || document?.signedUrl || document?.signed_url)
+      return searchable.includes('mandate') && hasUrl
+    }) || null
     const status = String(
       listingRecord?.mandateStatus ||
         mandate?.status ||
@@ -1855,12 +1868,22 @@ function AgentListingDetail() {
         mandate?.signedDocumentUrl ||
         listingRecord?.signedMandateUrl ||
         listingRecord?.mandateSignedUrl ||
+        mandateDocument?.url ||
+        mandateDocument?.fileUrl ||
+        mandateDocument?.file_url ||
+        mandateDocument?.signedUrl ||
+        mandateDocument?.signed_url ||
         '',
     ).trim()
     const viewUrl = String(
       mandate?.url ||
         mandate?.documentUrl ||
         listingRecord?.mandateUrl ||
+        mandateDocument?.url ||
+        mandateDocument?.fileUrl ||
+        mandateDocument?.file_url ||
+        mandateDocument?.signedUrl ||
+        mandateDocument?.signed_url ||
         listingRecord?.mandateSigningLink ||
         (listingRecord?.sellerOnboarding?.link ? `${listingRecord.sellerOnboarding.link}/mandate` : '') ||
         '',

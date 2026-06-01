@@ -630,6 +630,45 @@ async function enrichPrivateListingDocumentRows(client, rows = []) {
   )
 }
 
+const PRIVATE_LISTING_DOCUMENT_INSERT_OPTIONAL_COLUMNS = [
+  'category',
+  'file_url',
+  'uploaded_by',
+  'visibility',
+  'canonical_requirement_instance_id',
+  'requirement_id',
+  'storage_path',
+]
+
+function getMissingPrivateListingDocumentInsertColumn(error = {}, payload = {}) {
+  for (const columnName of PRIVATE_LISTING_DOCUMENT_INSERT_OPTIONAL_COLUMNS) {
+    if (columnName in payload && isMissingColumnError(error, columnName)) return columnName
+  }
+  const summary = querySummary(error)
+  return (summary.columns || []).find((columnName) => columnName in payload) || ''
+}
+
+async function insertPrivateListingDocumentRow(client, payload = {}) {
+  let nextPayload = { ...(payload || {}) }
+  const removedColumns = new Set()
+
+  while (true) {
+    const inserted = await client
+      .from('private_listing_documents')
+      .insert(nextPayload)
+
+    if (!inserted.error) {
+      return { data: nextPayload, error: null, removedColumns: [...removedColumns] }
+    }
+
+    const missingColumn = getMissingPrivateListingDocumentInsertColumn(inserted.error, nextPayload)
+    if (!missingColumn) return { data: null, error: inserted.error, removedColumns: [...removedColumns] }
+
+    delete nextPayload[missingColumn]
+    removedColumns.add(missingColumn)
+  }
+}
+
 function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByListingId = null, documentsByListingId = null) {
   if (!row) return null
   const onboarding = onboardingByListingId ? onboardingByListingId.get(String(row.id || '')) || null : null
@@ -2691,32 +2730,11 @@ export async function uploadSellerClientPortalDocument({
       uploaded_at: new Date().toISOString(),
       ...(canonicalRequirementInstanceId ? { canonical_requirement_instance_id: canonicalRequirementInstanceId } : {}),
     }
-    let inserted = await runSelectWithFallback(
-      (selectFields) => client
-        .from('private_listing_documents')
-        .insert(insertPayload)
-        .select(selectFields)
-        .single(),
-      PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS,
-      'private_listing_documents',
-    )
-    if (inserted.error && canonicalRequirementInstanceId && isMissingColumnError(inserted.error, 'canonical_requirement_instance_id')) {
-      const fallbackInsertPayload = { ...insertPayload }
-      delete fallbackInsertPayload.canonical_requirement_instance_id
-      inserted = await runSelectWithFallback(
-        (selectFields) => client
-          .from('private_listing_documents')
-          .insert(fallbackInsertPayload)
-          .select(selectFields)
-          .single(),
-        PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS,
-        'private_listing_documents',
-      )
-    }
+    const inserted = await insertPrivateListingDocumentRow(client, insertPayload)
     if (inserted.error && !isMissingColumnError(inserted.error) && !isMissingTableError(inserted.error, 'private_listing_documents')) {
       throw inserted.error
     }
-    documentRow = normalizeDocumentRows(inserted.data ? [inserted.data] : [insertPayload])[0] || null
+    documentRow = normalizeDocumentRows(inserted.data ? [{ ...insertPayload, ...inserted.data }] : [insertPayload])[0] || null
 
     if (matchedRequirement?.id) {
       await updatePrivateListingRequirementStatus(matchedRequirement.id, 'uploaded').catch(() => null)
@@ -2804,32 +2822,11 @@ export async function uploadPrivateListingDocument(listingId, file, {
     uploaded_at: new Date().toISOString(),
   }
 
-  let inserted = await runSelectWithFallback(
-    (selectFields) => client
-      .from('private_listing_documents')
-      .insert(insertPayload)
-      .select(selectFields)
-      .single(),
-    PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS,
-    'private_listing_documents',
-  )
-  if (inserted.error && isMissingColumnError(inserted.error, 'category')) {
-    const insertPayloadWithoutCategory = { ...insertPayload }
-    delete insertPayloadWithoutCategory.category
-    inserted = await runSelectWithFallback(
-      (selectFields) => client
-        .from('private_listing_documents')
-        .insert(insertPayloadWithoutCategory)
-        .select(selectFields)
-        .single(),
-      PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS,
-      'private_listing_documents',
-    )
-  }
+  const inserted = await insertPrivateListingDocumentRow(client, insertPayload)
   if (inserted.error && !isMissingColumnError(inserted.error) && !isMissingTableError(inserted.error, 'private_listing_documents')) {
     throw inserted.error
   }
-  const documentRow = normalizeDocumentRows(inserted.data ? [inserted.data] : [insertPayload])[0] || null
+  const documentRow = normalizeDocumentRows(inserted.data ? [{ ...insertPayload, ...inserted.data }] : [insertPayload])[0] || null
 
   await createPrivateListingActivity({
     privateListingId: normalizedListingId,
