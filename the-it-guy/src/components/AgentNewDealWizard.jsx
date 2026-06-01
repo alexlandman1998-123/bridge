@@ -7,7 +7,9 @@ import { fetchOrganisationSettings, listOrganisationPreferredPartners, resolveCo
 import {
   filterPreferredPartners,
   getDefaultPreferredPartnerByType,
+  normalizePreferredPartnerType,
 } from '../lib/preferredPartners'
+import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partnersRepository'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { getAgentPrivateListingSummaries, getAgentPrivateListings } from '../services/privateListingService'
@@ -304,6 +306,87 @@ function formatListingDealOption(listing) {
   const address = getListingAddress(listing)
   const propertyLabel = title && address && title !== address ? `${title}, ${address}` : title || address || 'Active listing'
   return `${propertyLabel} · ${getListingSellerLabel(listing)}`
+}
+
+function mapPartnerAssignmentToPreferredPartner(assignment, partnerType) {
+  const partnerName = normalizeText(assignment?.companyName)
+  const partnerEmail = normalizeText(assignment?.email)
+
+  if (!partnerName && !partnerEmail) {
+    return null
+  }
+
+  const partnerId = normalizeText(assignment?.id || assignment?.organisationId)
+  const fallbackId = `${normalizePreferredPartnerType(partnerType)}-${partnerName.toLowerCase().replace(/\s+/g, '-')}-${partnerEmail.toLowerCase()}`
+
+  return {
+    id: partnerId || fallbackId || `fallback-${Date.now()}`,
+    partnerType: normalizePreferredPartnerType(partnerType),
+    companyName: partnerName,
+    contactPerson: normalizeText(assignment?.contactPerson),
+    email: partnerEmail.toLowerCase(),
+    phone: normalizeText(assignment?.phone),
+    website: '',
+    physicalAddress: '',
+    province: '',
+    notes: normalizeText(assignment?.notes) || 'Available from connected partner snapshot',
+    isActive: true,
+    isPreferredDefault: Boolean(assignment?.preferred),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function getFallbackPreferredPartnersFromSnapshot(partnerSnapshot, accessContext) {
+  if (!partnerSnapshot) {
+    return []
+  }
+
+  const roleTypes = ['transfer_attorney', 'bond_originator', 'bond_attorney']
+  const fallbackRows = roleTypes.flatMap((roleType) => {
+    const assignmentRows = getPartnerAssignmentOptions(partnerSnapshot, roleType, accessContext)
+    return assignmentRows
+      .map((assignment) => mapPartnerAssignmentToPreferredPartner(assignment, roleType))
+      .filter(Boolean)
+  })
+
+  return fallbackRows
+}
+
+function buildPreferredPartnerDedupKey(row = {}) {
+  const normalizedType = normalizePreferredPartnerType(row?.partnerType)
+  const rowId = normalizeText(row?.id)
+  const companyName = normalizeText(row?.companyName)
+  const email = normalizeText(row?.email)
+  if (rowId) {
+    return `id:${normalizedType}:${rowId}`
+  }
+  return `identity:${normalizedType}:${companyName}:${email}`
+}
+
+function mergePreferredPartnerOptions(primaryRows = [], fallbackRows = []) {
+  const merged = [...(Array.isArray(primaryRows) ? primaryRows : []), ...(Array.isArray(fallbackRows) ? fallbackRows : [])]
+  const seen = new Set()
+  const unique = []
+
+  merged.forEach((row) => {
+    const key = buildPreferredPartnerDedupKey(row)
+    if (!seen.has(key)) {
+      seen.add(key)
+      unique.push(row)
+    }
+  })
+
+  return unique
+}
+
+function hasActivePartnerType(partners = [], partnerType = '') {
+  const normalizedType = normalizePreferredPartnerType(partnerType)
+  return (Array.isArray(partners) ? partners : []).some(
+    (partner) =>
+      normalizePreferredPartnerType(partner?.partnerType) === normalizedType
+      && partner?.isActive !== false,
+  )
 }
 
 function mergeListings(...groups) {
@@ -622,12 +705,12 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
       const setupPromise = (async () => {
         try {
           let partnerRows = []
+          let partnerRowsLoadFailed = false
           try {
             partnerRows = await listOrganisationPreferredPartners()
-            setPreferredPartnersError('')
           } catch (error) {
+            partnerRowsLoadFailed = true
             console.error('[Transactions] Unable to load agency preferred partners.', error)
-            setPreferredPartnersError('Could not load agency preferred partners. Try refreshing the page.')
           }
           const settingsPromise = isSupabaseConfigured
             ? fetchOrganisationSettings().catch(() => null)
@@ -636,8 +719,56 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
             settingsPromise,
             isSupabaseConfigured ? fetchDevelopmentOptions() : Promise.resolve([]),
           ])
-          setPreferredPartners(Array.isArray(partnerRows) ? partnerRows : [])
           const organisationId = normalizeText(settingsContext?.organisation?.id || workspace?.id)
+          const partnerFallbackContext = {
+            organisationId,
+            role: normalizeKey(currentMembership?.membershipRole || currentMembership?.workspaceRole || currentMembership?.role || profile?.role),
+            profile,
+            currentMembership,
+          }
+          let fallbackRows = []
+
+          if (
+            isSupabaseConfigured
+            && (partnerRowsLoadFailed
+              || !hasActivePartnerType(partnerRows, 'transfer_attorney')
+              || !hasActivePartnerType(partnerRows, 'bond_originator')
+              || !hasActivePartnerType(partnerRows, 'bond_attorney'))
+          ) {
+            try {
+              const partnerSnapshot = await fetchPartnersSnapshot({
+                organisationId,
+                workspaceType: workspace?.type || 'agency',
+                accessContext: partnerFallbackContext,
+              })
+              fallbackRows = getFallbackPreferredPartnersFromSnapshot(partnerSnapshot, partnerFallbackContext)
+              console.debug('[Transactions] Agency preferred partner fallback snapshot rows', {
+                organisationId,
+                fallbackCount: fallbackRows.length,
+              })
+            } catch (error) {
+              console.warn('[Transactions] Could not load partner snapshot fallback.', error)
+            }
+          }
+
+          const mergedPreferredPartners = mergePreferredPartnerOptions(partnerRows, fallbackRows)
+          console.debug('[Transactions] Agency preferred partners loaded', {
+            organisationId,
+            primaryCount: Array.isArray(partnerRows) ? partnerRows.length : 0,
+            fallbackCount: Array.isArray(fallbackRows) ? fallbackRows.length : 0,
+            mergedCount: mergedPreferredPartners.length,
+            transferAttorneyCount: mergedPreferredPartners.filter((partner) => normalizePreferredPartnerType(partner?.partnerType) === 'transfer_attorney').length,
+            bondOriginatorCount: mergedPreferredPartners.filter((partner) => normalizePreferredPartnerType(partner?.partnerType) === 'bond_originator').length,
+            bondAttorneyCount: mergedPreferredPartners.filter((partner) => normalizePreferredPartnerType(partner?.partnerType) === 'bond_attorney').length,
+          })
+
+          if (!mergedPreferredPartners.length && partnerRowsLoadFailed) {
+            setPreferredPartnersError('Could not load agency preferred partners. Try refreshing the page.')
+          } else if (mergedPreferredPartners.length) {
+            setPreferredPartnersError('')
+          }
+
+          setPreferredPartners(mergedPreferredPartners)
           const membershipRole = normalizeKey(settingsContext?.membershipRole || currentMembership?.workspaceRole || currentMembership?.role)
           const hasOrganisationScope = Boolean(organisationId && organisationId !== 'all')
           const includeAllOrganisationListings = hasOrganisationScope || agencyWorkflowMode === 'principal' || ['principal', 'owner', 'admin', 'hq'].includes(membershipRole)
