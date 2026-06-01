@@ -63,6 +63,17 @@ alter table if exists public.transactions
   add column if not exists agent_commission_amount numeric,
   add column if not exists agency_commission_amount numeric;
 
+alter table if exists public.organisations
+  add column if not exists workspace_kind text;
+
+alter table if exists public.organisation_users
+  add column if not exists workspace_role text,
+  add column if not exists scope_level text,
+  add column if not exists region_id uuid,
+  add column if not exists workspace_unit_id uuid,
+  add column if not exists scope_metadata jsonb not null default '{}'::jsonb,
+  add column if not exists is_primary_owner boolean not null default false;
+
 create table if not exists public.demo_canvassing_records (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid not null references public.organisations(id) on delete cascade,
@@ -418,16 +429,16 @@ create temporary table bridge9_demo_staff (
 
 insert into bridge9_demo_staff (sort_order, email, full_name, workspace_role, profile_role, phone, branch_key)
 values
-  (1, 'principal.demo@bridgenine.co.za', 'Maya Pillay', 'principal', 'agent', '+27 82 440 1001', 'hq'),
-  (2, 'lerato.mokoena@bridgenine.co.za', 'Lerato Mokoena', 'agent', 'agent', '+27 82 440 1002', 'hq'),
-  (3, 'daniel.vandermerwe@bridgenine.co.za', 'Daniel van der Merwe', 'agent', 'agent', '+27 82 440 1003', 'pretoria'),
-  (4, 'aisha.patel@bridgenine.co.za', 'Aisha Patel', 'agent', 'agent', '+27 82 440 1004', 'waterfall'),
-  (5, 'thabo.ndlovu@bridgenine.co.za', 'Thabo Ndlovu', 'agent', 'agent', '+27 82 440 1005', 'pretoria'),
-  (6, 'bianca.meyer@bridgenine.co.za', 'Bianca Meyer', 'agent', 'agent', '+27 82 440 1006', 'hq'),
-  (7, 'zanele.mabaso@bridgenine.co.za', 'Zanele Mabaso', 'agent', 'agent', '+27 82 440 1007', 'east-rand'),
-  (8, 'nandi.khumalo@bridgenine.co.za', 'Nandi Khumalo', 'admin', 'agent', '+27 82 440 1008', 'hq'),
-  (9, 'keagan.botha@bridgenine.co.za', 'Keagan Botha', 'admin', 'agent', '+27 82 440 1009', 'waterfall'),
-  (10, 'sihle.dlamini@bridgenine.co.za', 'Sihle Dlamini', 'agent', 'agent', '+27 82 440 1010', 'pretoria')
+  (1, 'bond.demo@bridgenine.co.za', 'Maya Pillay', 'principal', 'agent', '+27 82 440 1001', 'hq'),
+  (2, 'lerato.mokoena@bridgenine.co.za', 'Lerato Mokoena', 'consultant', 'agent', '+27 82 440 1002', 'hq'),
+  (3, 'daniel.vandermerwe@bridgenine.co.za', 'Daniel van der Merwe', 'regional_manager', 'agent', '+27 82 440 1003', 'pretoria'),
+  (4, 'aisha.patel@bridgenine.co.za', 'Aisha Patel', 'branch_manager', 'agent', '+27 82 440 1004', 'waterfall'),
+  (5, 'thabo.ndlovu@bridgenine.co.za', 'Thabo Ndlovu', 'consultant', 'agent', '+27 82 440 1005', 'pretoria'),
+  (6, 'bianca.meyer@bridgenine.co.za', 'Bianca Meyer', 'consultant', 'agent', '+27 82 440 1006', 'hq'),
+  (7, 'zanele.mabaso@bridgenine.co.za', 'Zanele Mabaso', 'branch_manager', 'agent', '+27 82 440 1007', 'east-rand'),
+  (8, 'nandi.khumalo@bridgenine.co.za', 'Nandi Khumalo', 'bond_hq_manager', 'agent', '+27 82 440 1008', 'hq'),
+  (9, 'keagan.botha@bridgenine.co.za', 'Keagan Botha', 'admin_staff', 'agent', '+27 82 440 1009', 'waterfall'),
+  (10, 'sihle.dlamini@bridgenine.co.za', 'Sihle Dlamini', 'consultant', 'agent', '+27 82 440 1010', 'pretoria')
 on conflict (sort_order) do nothing;
 
 do $$
@@ -438,6 +449,9 @@ declare
   v_pretoria_branch_id uuid := pg_temp.bridge9_demo_uuid('branch:pretoria');
   v_waterfall_branch_id uuid := pg_temp.bridge9_demo_uuid('branch:waterfall');
   v_east_branch_id uuid := pg_temp.bridge9_demo_uuid('branch:east-rand');
+  v_central_region_id uuid := pg_temp.bridge9_demo_uuid('region:gauteng-central');
+  v_tshwane_region_id uuid := pg_temp.bridge9_demo_uuid('region:tshwane');
+  v_east_region_id uuid := pg_temp.bridge9_demo_uuid('region:east-rand');
   v_principal_id uuid;
   v_suburbs text[] := array['Waterkloof Ridge', 'Menlyn', 'Midstream Estate', 'Irene', 'Waterfall', 'Kyalami', 'Sandton', 'Morningside', 'Bryanston', 'Boksburg', 'Parkrand', 'Centurion'];
   v_sources text[] := array['Property24', 'Private Property', 'Facebook', 'Website', 'Referral', 'Walk-in', 'WhatsApp'];
@@ -459,6 +473,7 @@ declare
   v_i integer;
   v_agent_id uuid;
   v_branch_id uuid;
+  v_region_id uuid;
   v_contact_id uuid;
   v_lead_id uuid;
   v_listing_id uuid;
@@ -479,7 +494,7 @@ begin
     into v_org_id
   from public.organisation_users ou
   left join public.profiles p on p.id = ou.user_id
-  where lower(coalesce(ou.email, p.email, '')) = lower('principal.demo@bridgenine.co.za')
+  where lower(coalesce(ou.email, p.email, '')) in (lower('bond.demo@bridgenine.co.za'), lower('principal.demo@bridgenine.co.za'))
     and lower(coalesce(ou.status, 'active')) = 'active'
   order by
     case when lower(coalesce(ou.role, ou.workspace_role, ou.organisation_role, '')) = 'principal' then 0 else 1 end,
@@ -491,7 +506,7 @@ begin
     select o.id
       into v_org_id
     from public.organisations o
-    where lower(coalesce(o.company_email, '')) = lower('principal.demo@bridgenine.co.za')
+    where lower(coalesce(o.company_email, '')) in (lower('bond.demo@bridgenine.co.za'), lower('principal.demo@bridgenine.co.za'))
        or lower(o.name) = lower('Bridge9 Realty')
     order by o.created_at desc nulls last
     limit 1;
@@ -577,17 +592,23 @@ begin
   if to_regclass('public.organisation_preferred_partners') is not null then
     delete from public.organisation_preferred_partners where is_demo_data = true and organisation_id = v_org_id;
   end if;
+  if to_regclass('public.workspace_units') is not null then
+    delete from public.workspace_units where workspace_id = v_org_id;
+  end if;
+  if to_regclass('public.workspace_regions') is not null then
+    delete from public.workspace_regions where workspace_id = v_org_id;
+  end if;
   delete from public.organisation_users where is_demo_data = true and organisation_id = v_org_id;
   delete from public.organisation_branches where is_demo_data = true and organisation_id = v_org_id;
   delete from public.organisation_settings where is_demo_data = true and organisation_id = v_org_id;
 
   insert into public.organisations (
-    id, name, display_name, company_email, company_phone, website, address_line_1, city, province, country,
+    id, name, display_name, company_email, company_phone, website, address_line_1, city, province, country, workspace_kind,
     support_email, support_phone, primary_contact_person, is_demo_data, created_at, updated_at
   )
   values (
-    v_org_id, 'Bridge9 Realty', 'Bridge9 Realty', 'principal.demo@bridgenine.co.za', '+27 12 555 0199',
-    'https://bridgenine.co.za', 'Suite 4, Bridge9 House, 138 West Street', 'Sandton', 'Gauteng', 'South Africa',
+    v_org_id, 'Bridge9 Realty', 'Bridge9 Realty', 'bond.demo@bridgenine.co.za', '+27 12 555 0199',
+    'https://bridgenine.co.za', 'Suite 4, Bridge9 House, 138 West Street', 'Sandton', 'Gauteng', 'South Africa', 'bond_company',
     'support.demo@bridgenine.co.za', '+27 12 555 0198', 'Maya Pillay', true, v_now - interval '190 days', v_now
   )
   on conflict (id) do update set
@@ -599,6 +620,7 @@ begin
     address_line_1 = excluded.address_line_1,
     city = excluded.city,
     province = excluded.province,
+    workspace_kind = excluded.workspace_kind,
     primary_contact_person = excluded.primary_contact_person,
     is_demo_data = true,
     updated_at = excluded.updated_at;
@@ -642,6 +664,37 @@ begin
     is_demo_data = true,
     updated_at = excluded.updated_at;
 
+  if to_regclass('public.workspace_regions') is not null then
+    insert into public.workspace_regions (id, workspace_id, name, code, description, manager_user_id, active, created_at, updated_at)
+    values
+      (v_central_region_id, v_org_id, 'Gauteng Central', 'GAU-CENTRAL', 'Sandton and Waterfall operating region', null, true, v_now - interval '185 days', v_now),
+      (v_tshwane_region_id, v_org_id, 'Tshwane', 'TSH', 'Pretoria and Centurion operating region', null, true, v_now - interval '170 days', v_now),
+      (v_east_region_id, v_org_id, 'East Rand', 'EAST-RAND', 'East Rand operating region', null, true, v_now - interval '120 days', v_now)
+    on conflict (id) do update set
+      name = excluded.name,
+      code = excluded.code,
+      description = excluded.description,
+      active = true,
+      updated_at = excluded.updated_at;
+  end if;
+
+  if to_regclass('public.workspace_units') is not null then
+    insert into public.workspace_units (id, workspace_id, region_id, parent_unit_id, unit_type, name, code, description, manager_user_id, active, created_at, updated_at)
+    values
+      (v_hq_branch_id, v_org_id, v_central_region_id, null, 'branch', 'Bridge9 Sandton HQ', 'SANDTON-HQ', 'HQ branch workspace', null, true, v_now - interval '185 days', v_now),
+      (v_pretoria_branch_id, v_org_id, v_tshwane_region_id, null, 'branch', 'Pretoria & Centurion Office', 'TSH-PRETORIA', 'Pretoria branch workspace', null, true, v_now - interval '170 days', v_now),
+      (v_waterfall_branch_id, v_org_id, v_central_region_id, null, 'branch', 'Waterfall Desk', 'GAU-WATERFALL', 'Waterfall branch workspace', null, true, v_now - interval '145 days', v_now),
+      (v_east_branch_id, v_org_id, v_east_region_id, null, 'branch', 'East Rand Desk', 'EAST-RAND', 'East Rand branch workspace', null, true, v_now - interval '120 days', v_now)
+    on conflict (id) do update set
+      region_id = excluded.region_id,
+      unit_type = excluded.unit_type,
+      name = excluded.name,
+      code = excluded.code,
+      description = excluded.description,
+      active = true,
+      updated_at = excluded.updated_at;
+  end if;
+
   for v_staff in select * from bridge9_demo_staff order by sort_order loop
     select p.id
       into v_agent_id
@@ -663,6 +716,12 @@ begin
       when 'pretoria' then v_pretoria_branch_id
       when 'waterfall' then v_waterfall_branch_id
       else v_east_branch_id
+    end;
+    v_region_id := case v_staff.branch_key
+      when 'hq' then v_central_region_id
+      when 'pretoria' then v_tshwane_region_id
+      when 'waterfall' then v_central_region_id
+      else v_east_region_id
     end;
 
     insert into auth.users (
@@ -713,7 +772,8 @@ begin
       updated_at = excluded.updated_at;
 
     insert into public.organisation_users (
-      organisation_id, user_id, branch_id, first_name, last_name, email, role, status, permissions_json,
+      organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, status, permissions_json,
+      scope_level, region_id, workspace_unit_id, scope_metadata, is_primary_owner,
       accepted_at, joined_at, last_active_at, is_demo_data, created_at, updated_at
     )
     values (
@@ -724,8 +784,19 @@ begin
       nullif(regexp_replace(v_staff.full_name, '^[^ ]+ ?', ''), ''),
       lower(v_staff.email),
       v_staff.workspace_role,
+      v_staff.workspace_role,
       'active',
-      jsonb_build_object('demoPersona', true, 'scope', case when v_staff.workspace_role = 'principal' then 'all_branches' else 'assigned_branch' end),
+      jsonb_build_object('demoPersona', true, 'scope', case when v_staff.workspace_role in ('principal', 'bond_hq_manager') then 'all_branches' else 'assigned_branch' end),
+      case
+        when v_staff.workspace_role in ('principal', 'bond_hq_manager') then 'workspace_hq'
+        when v_staff.workspace_role = 'regional_manager' then 'region'
+        when v_staff.workspace_role in ('branch_manager', 'admin_staff') then 'branch'
+        else 'assigned'
+      end,
+      case when v_staff.workspace_role in ('principal', 'bond_hq_manager') then null when v_staff.workspace_role = 'regional_manager' then v_region_id else v_region_id end,
+      case when v_staff.workspace_role in ('principal', 'bond_hq_manager') then null else v_branch_id end,
+      jsonb_build_object('demoPersona', true, 'branchKey', v_staff.branch_key),
+      v_staff.workspace_role = 'principal',
       v_now - interval '175 days',
       v_now - interval '175 days',
       v_now - ((v_staff.sort_order || ' hours')::interval),
@@ -737,8 +808,14 @@ begin
       user_id = excluded.user_id,
       branch_id = excluded.branch_id,
       role = excluded.role,
+      workspace_role = excluded.workspace_role,
       status = 'active',
       permissions_json = excluded.permissions_json,
+      scope_level = excluded.scope_level,
+      region_id = excluded.region_id,
+      workspace_unit_id = excluded.workspace_unit_id,
+      scope_metadata = excluded.scope_metadata,
+      is_primary_owner = excluded.is_primary_owner,
       last_active_at = excluded.last_active_at,
       is_demo_data = true,
       updated_at = excluded.updated_at;
@@ -747,11 +824,36 @@ begin
   select p.id
     into v_principal_id
   from public.profiles p
-  where lower(p.email) = lower('principal.demo@bridgenine.co.za')
+  where lower(p.email) = lower('bond.demo@bridgenine.co.za')
   limit 1;
 
   if v_principal_id is null then
-    raise exception 'Bridge9 principal demo seed aborted: profile principal.demo@bridgenine.co.za was not found after demo user setup.';
+    raise exception 'Bridge9 principal demo seed aborted: profile bond.demo@bridgenine.co.za was not found after demo user setup.';
+  end if;
+
+  if to_regclass('public.workspace_regions') is not null then
+    update public.workspace_regions
+    set manager_user_id = case
+      when id = v_central_region_id then v_principal_id
+      when id = v_tshwane_region_id then (select id from public.profiles where lower(email) = lower('daniel.vandermerwe@bridgenine.co.za') limit 1)
+      when id = v_east_region_id then (select id from public.profiles where lower(email) = lower('zanele.mabaso@bridgenine.co.za') limit 1)
+      else manager_user_id
+    end,
+    updated_at = v_now
+    where workspace_id = v_org_id;
+  end if;
+
+  if to_regclass('public.workspace_units') is not null then
+    update public.workspace_units
+    set manager_user_id = case
+      when id = v_hq_branch_id then v_principal_id
+      when id = v_pretoria_branch_id then (select id from public.profiles where lower(email) = lower('daniel.vandermerwe@bridgenine.co.za') limit 1)
+      when id = v_waterfall_branch_id then (select id from public.profiles where lower(email) = lower('aisha.patel@bridgenine.co.za') limit 1)
+      when id = v_east_branch_id then (select id from public.profiles where lower(email) = lower('zanele.mabaso@bridgenine.co.za') limit 1)
+      else manager_user_id
+    end,
+    updated_at = v_now
+    where workspace_id = v_org_id;
   end if;
 
   insert into public.organisation_preferred_partners (organisation_id, partner_type, company_name, contact_person, email_address, phone_number, website, physical_address, province, notes, is_active, is_preferred_default, is_demo_data, created_at, updated_at)
@@ -1360,9 +1462,9 @@ begin
   values (
     'demo',
     'bridge9_principal_demo',
-    'agency',
+    'bond_originator',
     'principal',
-    'principal.demo@bridgenine.co.za',
+    'bond.demo@bridgenine.co.za',
     jsonb_build_object(
       'users', 10,
       'canvassingRecords', 120,

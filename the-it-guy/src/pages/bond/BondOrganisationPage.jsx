@@ -1,4 +1,19 @@
-import { AlertTriangle, ArrowRight, Building2, Clock3, FileText, Network, Plus, Search, Settings, ShieldCheck, SlidersHorizontal, UserPlus, Users } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  Building2,
+  Clock3,
+  FileText,
+  Network,
+  Plus,
+  Search,
+  Settings,
+  ShieldCheck,
+  SlidersHorizontal,
+  UserPlus,
+  Users,
+} from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import BondEmptyState from '../../components/bond/BondEmptyState'
@@ -14,6 +29,9 @@ import {
 
 const FALLBACK_ORGANISATION_TABS = Object.freeze([
   { key: 'overview', label: 'Overview' },
+  { key: 'regions', label: 'Regions' },
+  { key: 'branches', label: 'Branches' },
+  { key: 'consultants', label: 'Consultants' },
   { key: 'applications', label: 'Applications' },
 ])
 
@@ -42,14 +60,6 @@ function formatApplicationReference(row = {}) {
   return numeric ? `APP-${numeric}` : `APP-${raw}`.toUpperCase()
 }
 
-function HeaderCell({ children, className = '' }) {
-  return (
-    <th className={`bg-[#f8fbff] px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.16em] text-[#7d90a5] ${className}`.trim()}>
-      {children}
-    </th>
-  )
-}
-
 function formatLeadTime(value) {
   const number = Number(value || 0)
   if (!number) return 'Tracking'
@@ -62,6 +72,21 @@ function formatPercent(value) {
 
 function scopeCanManage(snapshot = {}) {
   return Boolean(snapshot?.visibleScope?.canManageOrganisation)
+}
+
+function resolveRouteView(location, tabs = []) {
+  if (location.pathname.endsWith('/applications')) return 'applications'
+  const params = new URLSearchParams(location.search)
+  const requestedView = normalizeText(params.get('view') || params.get('tab') || 'overview')
+  return tabs.some((tab) => tab.key === requestedView) ? requestedView : 'overview'
+}
+
+function HeaderCell({ children, className = '' }) {
+  return (
+    <th className={`bg-[#f8fbff] px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.16em] text-[#7d90a5] ${className}`.trim()}>
+      {children}
+    </th>
+  )
 }
 
 function StatusPill({ status = 'Healthy' }) {
@@ -78,35 +103,123 @@ function StatusPill({ status = 'Healthy' }) {
   )
 }
 
-function CommandButton({ children, icon: Icon, variant = 'secondary' }) {
+function CommandButton({ children, icon: Icon, variant = 'secondary', onClick = () => {} }) {
   const className = variant === 'primary'
     ? 'border-[#143250] bg-[#143250] text-white hover:bg-[#183b5e]'
     : 'border-[#d9e4ef] bg-white text-[#24384d] hover:border-[#bfd0e1] hover:bg-[#fbfdff]'
   return (
-    <button type="button" className={`inline-flex h-10 items-center gap-2 rounded-[12px] border px-3.5 text-sm font-semibold shadow-[0_6px_16px_rgba(15,23,42,0.035)] transition ${className}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex h-10 items-center gap-2 rounded-[12px] border px-3.5 text-sm font-semibold shadow-[0_6px_16px_rgba(15,23,42,0.035)] transition ${className}`}
+    >
       {Icon ? <Icon size={16} strokeWidth={2.1} /> : null}
       {children}
     </button>
   )
 }
 
-function OrganisationCommandHeader({ snapshot = null }) {
+function SectionShell({ eyebrow = '', title = '', description = '', action = null, children = null, className = '' }) {
+  return (
+    <section className={`rounded-[24px] border border-[#dbe5f0] bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.035)] ${className}`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          {eyebrow ? <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7d90a5]">{eyebrow}</p> : null}
+          {title ? <h2 className="mt-2 text-[1.15rem] font-semibold text-[#142132]">{title}</h2> : null}
+          {description ? <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">{description}</p> : null}
+        </div>
+        {action ? <div className="shrink-0">{action}</div> : null}
+      </div>
+      <div className="mt-5">{children}</div>
+    </section>
+  )
+}
+
+function BreadcrumbButton({ children, onClick = () => {} }) {
+  return (
+    <button type="button" onClick={onClick} className="inline-flex items-center gap-2 text-sm font-semibold text-[#24518a] transition hover:text-[#17324d]">
+      <ArrowLeft size={15} />
+      {children}
+    </button>
+  )
+}
+
+function buildCommandActions({ view, canManage, navigate, regionSelected = false, branchSelected = false }) {
+  if (!canManage) return []
+
+  const settingsRoute = '/settings/organisation'
+  if (view === 'regions') {
+    return [
+      { label: 'Add Region', icon: Plus, to: `${settingsRoute}?intent=add-bond-region` },
+      { label: 'Assign Regional Manager', icon: UserPlus, to: `${settingsRoute}?intent=assign-bond-regional-manager` },
+      { label: regionSelected ? 'Add Branch To Region' : 'Add Branch', icon: Building2, to: `${settingsRoute}?intent=add-bond-branch`, variant: 'primary' },
+    ]
+  }
+  if (view === 'branches') {
+    return [
+      { label: 'Add Branch', icon: Plus, to: `${settingsRoute}?intent=add-bond-branch`, variant: 'primary' },
+      { label: 'Assign Branch Manager', icon: UserPlus, to: `${settingsRoute}?intent=assign-bond-branch-manager` },
+      { label: branchSelected ? 'Invite Consultant' : 'Invite Team Member', icon: Users, to: `${settingsRoute}?intent=invite-bond-user` },
+    ]
+  }
+  if (view === 'consultants') {
+    return [
+      { label: 'Invite Consultant', icon: UserPlus, to: `${settingsRoute}?intent=invite-bond-user`, variant: 'primary' },
+      { label: 'Assign Branch', icon: Building2, to: `${settingsRoute}?intent=assign-bond-user-branch` },
+      { label: 'Scope Permissions', icon: Settings, to: `${settingsRoute}?intent=review-bond-scopes` },
+    ]
+  }
+  return [
+    { label: 'Add Branch', icon: Plus, to: `${settingsRoute}?intent=add-bond-branch` },
+    { label: 'Invite User', icon: UserPlus, to: `${settingsRoute}?intent=invite-bond-user`, variant: 'primary' },
+    { label: 'Organisation Settings', icon: Settings, to: settingsRoute },
+  ].map((item) => ({ ...item, onClick: () => navigate(item.to) }))
+}
+
+function OrganisationCommandHeader({
+  snapshot = null,
+  view = 'overview',
+  regionTitle = '',
+  branchTitle = '',
+  navigate = () => {},
+}) {
   const canManage = scopeCanManage(snapshot)
+  const actions = buildCommandActions({
+    view,
+    canManage,
+    navigate,
+    regionSelected: Boolean(regionTitle),
+    branchSelected: Boolean(branchTitle),
+  })
+  const title = branchTitle || regionTitle || 'Organisation'
+  const subtitle = branchTitle
+    ? 'Review branch pressure, the consultant roster, and file flow for this branch.'
+    : regionTitle
+      ? 'Monitor the region structure, branch coverage, and high-level performance.'
+      : view === 'consultants'
+        ? 'Monitor consultant workload, branch alignment, and operational activity.'
+        : 'Manage your national structure, branch performance, and operational activity.'
+
   return (
     <section className="rounded-[26px] border border-[#dbe5f0] bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.04)]">
       <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#75879b]">{snapshot?.visibleScope?.label || 'Organisation'}</p>
-          <h1 className="mt-2 text-[1.75rem] font-semibold tracking-[-0.03em] text-[#142132]">Organisation</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5f7287]">
-            Manage your national structure, branch performance, and operational activity.
-          </p>
+          <h1 className="mt-2 text-[1.75rem] font-semibold tracking-[-0.03em] text-[#142132]">{title}</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5f7287]">{subtitle}</p>
         </div>
-        {canManage ? (
+        {actions.length ? (
           <div className="flex flex-wrap items-center gap-3">
-            <CommandButton icon={Plus}>Add Branch</CommandButton>
-            <CommandButton icon={UserPlus} variant="primary">Invite User</CommandButton>
-            <CommandButton icon={Settings}>Organisation Settings</CommandButton>
+            {actions.map((action) => (
+              <CommandButton
+                key={action.label}
+                icon={action.icon}
+                variant={action.variant}
+                onClick={action.onClick || (() => navigate(action.to))}
+              >
+                {action.label}
+              </CommandButton>
+            ))}
           </div>
         ) : null}
       </div>
@@ -142,19 +255,89 @@ function OrganisationKpiStrip({ kpis = {} }) {
   )
 }
 
-function SectionShell({ eyebrow = '', title = '', description = '', action = null, children = null, className = '' }) {
+function FilterBar({
+  searchPlaceholder = 'Search organisation...',
+  searchValue = '',
+  onSearchChange = () => {},
+  filters = [],
+  action = null,
+}) {
   return (
-    <section className={`rounded-[24px] border border-[#dbe5f0] bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.035)] ${className}`}>
+    <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+      <div className="relative min-w-0 xl:w-80">
+        <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8aa0b6]" />
+        <input
+          type="search"
+          placeholder={searchPlaceholder}
+          value={searchValue}
+          onChange={(event) => onSearchChange(event.target.value)}
+          className="h-10 w-full rounded-[12px] border border-[#d9e4ef] bg-white pl-9 pr-3 text-sm text-[#142132] outline-none transition placeholder:text-[#91a3b5] focus:border-[#9fb8d1]"
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {filters.map((filter) => (
+          <label key={filter.key} className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm font-semibold text-[#31475d]">
+            {filter.icon || <SlidersHorizontal size={15} />}
+            {filter.label}
+            <select value={filter.value} onChange={(event) => filter.onChange(event.target.value)} className="bg-transparent text-sm font-semibold outline-none">
+              {filter.options.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+        ))}
+        {action}
+      </div>
+    </div>
+  )
+}
+
+function SummaryMetric({ label = '', value = '', emphasis = false }) {
+  return (
+    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
+      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d90a5]">{label}</p>
+      <p className={`mt-2 text-sm ${emphasis ? 'font-semibold text-[#142132]' : 'text-[#5f7287]'}`}>{value}</p>
+    </div>
+  )
+}
+
+function SummaryCard({
+  title = '',
+  eyebrow = '',
+  status = '',
+  detail = '',
+  stats = [],
+  onClick = null,
+  ctaLabel = 'Open',
+}) {
+  const clickable = typeof onClick === 'function'
+  return (
+    <article
+      className={`rounded-[20px] border border-[#dbe5f0] bg-white p-5 shadow-[0_10px_26px_rgba(15,23,42,0.035)] transition ${clickable ? 'cursor-pointer hover:border-[#bfd0e1] hover:bg-[#fbfdff]' : ''}`.trim()}
+      onClick={clickable ? onClick : undefined}
+    >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
-          {eyebrow ? <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7d90a5]">{eyebrow}</p> : null}
-          {title ? <h2 className="mt-2 text-[1.15rem] font-semibold text-[#142132]">{title}</h2> : null}
-          {description ? <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">{description}</p> : null}
+          {eyebrow ? <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d90a5]">{eyebrow}</p> : null}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <h3 className="text-lg font-semibold text-[#142132]">{title}</h3>
+            {status ? <StatusPill status={status} /> : null}
+          </div>
+          {detail ? <p className="mt-2 text-sm leading-6 text-[#60758d]">{detail}</p> : null}
         </div>
-        {action ? <div className="shrink-0">{action}</div> : null}
+        {clickable ? (
+          <button type="button" className="inline-flex items-center gap-2 text-sm font-semibold text-[#24518a]">
+            {ctaLabel}
+            <ArrowRight size={15} />
+          </button>
+        ) : null}
       </div>
-      <div className="mt-5">{children}</div>
-    </section>
+      {stats.length ? (
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {stats.map((stat) => <SummaryMetric key={stat.label} label={stat.label} value={stat.value} emphasis={stat.emphasis} />)}
+        </div>
+      ) : null}
+    </article>
   )
 }
 
@@ -222,50 +405,27 @@ function OrganisationApplicationsTable({ rows = [], showBranchColumn = false, sh
   )
 }
 
-function FilterBar({
-  searchPlaceholder = 'Search organisation...',
-  searchValue = '',
-  onSearchChange = () => {},
-  statusValue = 'all',
-  onStatusChange = () => {},
-  sortValue = 'activeApplications',
-  onSortChange = () => {},
-  statusOptions = ['Healthy', 'Needs Attention', 'Overloaded', 'Inactive'],
-  sortOptions = [
-    { value: 'activeApplications', label: 'Active files' },
-    { value: 'approvalRate', label: 'Approval rate' },
-    { value: 'avgLeadTime', label: 'Lead time' },
-  ],
-}) {
+function OperationalHealth({ items = [] }) {
+  const toneMap = {
+    amber: 'border-[#fed7aa] bg-[#fff7ed] text-[#d97706]',
+    blue: 'border-[#cfe2f7] bg-[#eef6ff] text-[#2368b3]',
+    green: 'border-[#cdeed9] bg-[#eefbf3] text-[#20814f]',
+  }
   return (
-    <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-      <div className="relative min-w-0 lg:w-80">
-        <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8aa0b6]" />
-        <input
-          type="search"
-          placeholder={searchPlaceholder}
-          value={searchValue}
-          onChange={(event) => onSearchChange(event.target.value)}
-          className="h-10 w-full rounded-[12px] border border-[#d9e4ef] bg-white pl-9 pr-3 text-sm text-[#142132] outline-none transition placeholder:text-[#91a3b5] focus:border-[#9fb8d1]"
-        />
+    <SectionShell eyebrow="Intelligence" title="Operational Health" description="Organisation-wide pressure points and performance signals.">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {items.map((item) => (
+          <article key={item.key} className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+            <span className={`inline-flex h-10 w-10 items-center justify-center rounded-full border ${toneMap[item.tone] || toneMap.blue}`}>
+              {item.tone === 'green' ? <ShieldCheck size={18} /> : <AlertTriangle size={18} />}
+            </span>
+            <p className="mt-4 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d90a5]">{item.label}</p>
+            <p className="mt-2 text-base font-semibold text-[#142132]">{item.title}</p>
+            <p className="mt-1 text-sm leading-5 text-[#60758d]">{item.detail}</p>
+          </article>
+        ))}
       </div>
-      <div className="flex flex-wrap gap-2">
-        <label className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm font-semibold text-[#31475d]">
-          Status
-          <select value={statusValue} onChange={(event) => onStatusChange(event.target.value)} className="bg-transparent text-sm font-semibold outline-none">
-            <option value="all">All</option>
-            {statusOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-          </select>
-        </label>
-        <label className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm font-semibold text-[#31475d]">
-          <SlidersHorizontal size={15} />
-          Sort
-          <select value={sortValue} onChange={(event) => onSortChange(event.target.value)} className="bg-transparent text-sm font-semibold outline-none">
-            {sortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
-        </label>
-      </div>
-    </div>
+    </SectionShell>
   )
 }
 
@@ -314,150 +474,6 @@ function OrganisationHierarchy({ tree = null, canManage = false }) {
   )
 }
 
-function BranchPerformance({ rows = [] }) {
-  const [search, setSearch] = useState('')
-  const [status, setStatus] = useState('all')
-  const [sort, setSort] = useState('activeApplications')
-  const visibleRows = useMemo(() => {
-    const query = normalizeText(search).toLowerCase()
-    const filtered = rows.filter((row) => {
-      const matchesSearch = !query || [row.branch, row.region, row.manager, row.bottleneck].some((value) => normalizeText(value).toLowerCase().includes(query))
-      const matchesStatus = status === 'all' || normalizeText(row.status) === status
-      return matchesSearch && matchesStatus
-    })
-    return [...filtered].sort((left, right) => Number(right[sort] || 0) - Number(left[sort] || 0))
-  }, [rows, search, sort, status])
-
-  return (
-    <SectionShell eyebrow="Operational Heartbeat" title="Branch Performance" description="Branch-level pressure, capacity, and approval performance across the visible organisation.">
-      <FilterBar
-        searchPlaceholder="Search branches..."
-        searchValue={search}
-        onSearchChange={setSearch}
-        statusValue={status}
-        onStatusChange={setStatus}
-        sortValue={sort}
-        onSortChange={setSort}
-      />
-      <div className="overflow-x-auto">
-        <table className="min-w-[1180px] border-collapse">
-          <thead>
-            <tr>
-              {['Branch', 'Region', 'Manager', 'Consultants', 'Active Applications', 'Pending Docs', 'Avg Lead Time', 'Approval Rate', 'Bottleneck', 'Status'].map((header) => (
-                <HeaderCell key={header}>{header}</HeaderCell>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {visibleRows.map((row) => (
-              <tr key={row.id || row.branch} className="border-t border-[#edf2f7]">
-                <td className="px-4 py-4 text-sm font-semibold text-[#142132]">{row.branch}</td>
-                <td className="px-4 py-4 text-sm text-[#17324d]">{row.region}</td>
-                <td className="px-4 py-4 text-sm text-[#17324d]">{row.manager}</td>
-                <td className="px-4 py-4 text-sm text-[#17324d]">{row.consultants}</td>
-                <td className="px-4 py-4 text-sm font-semibold text-[#142132]">{row.activeApplications}</td>
-                <td className="px-4 py-4 text-sm text-[#b45309]">{row.pendingDocs}</td>
-                <td className="px-4 py-4 text-sm text-[#17324d]">{formatLeadTime(row.avgLeadTime)}</td>
-                <td className="px-4 py-4 text-sm font-semibold text-[#142132]">{formatPercent(row.approvalRate)}</td>
-                <td className="px-4 py-4 text-sm text-[#17324d]">{row.bottleneck}</td>
-                <td className="px-4 py-4"><StatusPill status={row.status} /></td>
-              </tr>
-            ))}
-            {!visibleRows.length ? (
-              <tr><td colSpan={10} className="px-4 py-6"><BondEmptyState compact title="No branches yet." description="Add your first branch to start building your organisation structure." /></td></tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-    </SectionShell>
-  )
-}
-
-function ConsultantPerformance({ rows = [] }) {
-  const [search, setSearch] = useState('')
-  const [status, setStatus] = useState('all')
-  const [sort, setSort] = useState('activeApplications')
-  const visibleRows = useMemo(() => {
-    const query = normalizeText(search).toLowerCase()
-    const filtered = rows.filter((row) => {
-      const matchesSearch = !query || [row.consultant, row.email, row.branch, row.status].some((value) => normalizeText(value).toLowerCase().includes(query))
-      const matchesStatus = status === 'all' || normalizeText(row.status) === status
-      return matchesSearch && matchesStatus
-    })
-    return [...filtered].sort((left, right) => Number(right[sort] || 0) - Number(left[sort] || 0))
-  }, [rows, search, sort, status])
-
-  return (
-    <SectionShell eyebrow="Team Performance" title="Consultant Performance" description="Consultant workload, activity, and bottleneck signals inside the visible scope.">
-      <FilterBar
-        searchPlaceholder="Search consultants..."
-        searchValue={search}
-        onSearchChange={setSearch}
-        statusValue={status}
-        onStatusChange={setStatus}
-        sortValue={sort}
-        onSortChange={setSort}
-      />
-      <div className="overflow-x-auto">
-        <table className="min-w-[1040px] border-collapse">
-          <thead>
-            <tr>
-              {['Consultant', 'Branch', 'Active Applications', 'New This Month', 'Pending Docs', 'Avg Lead Time', 'Approval Rate', 'Last Activity', 'Status'].map((header) => (
-                <HeaderCell key={header}>{header}</HeaderCell>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {visibleRows.map((row) => (
-              <tr key={row.id || row.email || row.consultant} className="border-t border-[#edf2f7]">
-                <td className="px-4 py-4">
-                  <p className="text-sm font-semibold text-[#142132]">{row.consultant}</p>
-                  {row.email ? <p className="mt-1 text-xs text-[#71869d]">{row.email}</p> : null}
-                </td>
-                <td className="px-4 py-4 text-sm text-[#17324d]">{row.branch}</td>
-                <td className="px-4 py-4 text-sm font-semibold text-[#142132]">{row.activeApplications}</td>
-                <td className="px-4 py-4 text-sm text-[#17324d]">{row.newThisMonth}</td>
-                <td className="px-4 py-4 text-sm text-[#b45309]">{row.pendingDocs}</td>
-                <td className="px-4 py-4 text-sm text-[#17324d]">{formatLeadTime(row.avgLeadTime)}</td>
-                <td className="px-4 py-4 text-sm font-semibold text-[#142132]">{formatPercent(row.approvalRate)}</td>
-                <td className="px-4 py-4 text-sm text-[#60758d]">{row.lastActivity}</td>
-                <td className="px-4 py-4"><StatusPill status={row.status} /></td>
-              </tr>
-            ))}
-            {!visibleRows.length ? (
-              <tr><td colSpan={9} className="px-4 py-6"><BondEmptyState compact title="No consultants visible." description="Consultants in your allowed scope will appear here." /></td></tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-    </SectionShell>
-  )
-}
-
-function OperationalHealth({ items = [] }) {
-  const toneMap = {
-    amber: 'border-[#fed7aa] bg-[#fff7ed] text-[#d97706]',
-    blue: 'border-[#cfe2f7] bg-[#eef6ff] text-[#2368b3]',
-    green: 'border-[#cdeed9] bg-[#eefbf3] text-[#20814f]',
-  }
-  return (
-    <SectionShell eyebrow="Intelligence" title="Operational Health" description="Organisation-wide pressure points and performance signals.">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {items.map((item) => (
-          <article key={item.key} className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
-            <span className={`inline-flex h-10 w-10 items-center justify-center rounded-full border ${toneMap[item.tone] || toneMap.blue}`}>
-              {item.tone === 'green' ? <ShieldCheck size={18} /> : <AlertTriangle size={18} />}
-            </span>
-            <p className="mt-4 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d90a5]">{item.label}</p>
-            <p className="mt-2 text-base font-semibold text-[#142132]">{item.title}</p>
-            <p className="mt-1 text-sm leading-5 text-[#60758d]">{item.detail}</p>
-          </article>
-        ))}
-      </div>
-    </SectionShell>
-  )
-}
-
 function RecentActivity({ rows = [] }) {
   return (
     <SectionShell eyebrow="Live Activity" title="Recent Activity" description="Latest scoped movement across branches, consultants, documents, and applications.">
@@ -501,7 +517,7 @@ function PermissionsTable({ rows = [], showRegionColumn = false, showBranchColum
                   <p className="mt-1 text-xs text-[#71869d]">{row.email}</p>
                 </td>
                 <td className="px-4 py-4 text-sm text-[#17324d]">{row.workspaceRole || row.role || 'Viewer'}</td>
-                <td className="px-4 py-4 text-sm text-[#17324d]">{row.scope_level || row.scopeLevel || 'Assigned'}</td>
+                <td className="px-4 py-4 text-sm text-[#17324d]">{row.scope_level || row.scopeLevel || row.scope || 'Assigned'}</td>
                 {showRegionColumn ? <td className="px-4 py-4 text-sm text-[#17324d]">{row.region || row.regionId || 'Scoped'}</td> : null}
                 {showBranchColumn ? <td className="px-4 py-4 text-sm text-[#17324d]">{row.branch || row.workspaceUnitId || 'Scoped'}</td> : null}
                 <td className="px-4 py-4 text-sm text-[#60758d]">{row.workspaceRole === 'consultant' ? 'Own applications only' : 'Scoped management'}</td>
@@ -515,7 +531,7 @@ function PermissionsTable({ rows = [], showRegionColumn = false, showBranchColum
   )
 }
 
-function OrganisationSettingsPanel({ canManage = false }) {
+function OrganisationSettingsPanel({ canManage = false, onOpenSettings = () => {} }) {
   if (!canManage) {
     return (
       <SectionShell eyebrow="Settings" title="Organisation Settings">
@@ -530,11 +546,274 @@ function OrganisationSettingsPanel({ canManage = false }) {
           <article key={label} className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
             <p className="text-sm font-semibold text-[#142132]">{label}</p>
             <p className="mt-2 text-sm leading-5 text-[#60758d]">Manage this workspace control from the command centre.</p>
-            <button type="button" className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#24518a]">
+            <button type="button" onClick={onOpenSettings} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#24518a]">
               Open <ArrowRight size={15} />
             </button>
           </article>
         ))}
+      </div>
+    </SectionShell>
+  )
+}
+
+function RegionsWorkspace({
+  rows = [],
+  selectedRegion = null,
+  branchRows = [],
+  onSelectRegion = () => {},
+  onSelectBranch = () => {},
+  onBack = () => {},
+}) {
+  if (!rows.length) {
+    return (
+      <SectionShell eyebrow="Regions" title="Regional Footprint" description="Regions will appear here once the hierarchy has been configured.">
+        <BondEmptyState compact title="No regions configured yet." description="Add a region and assign a regional manager to start building a national structure." />
+      </SectionShell>
+    )
+  }
+
+  if (selectedRegion) {
+    return (
+      <SectionShell
+        eyebrow="Region Workspace"
+        title={selectedRegion.region}
+        description="High-level stats for the selected region, followed by every branch inside that region."
+        action={<BreadcrumbButton onClick={onBack}>Back to all regions</BreadcrumbButton>}
+      >
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <SummaryMetric label="Regional Manager" value={selectedRegion.manager || 'Unassigned'} emphasis />
+          <SummaryMetric label="Branches" value={selectedRegion.branches} emphasis />
+          <SummaryMetric label="Consultants" value={selectedRegion.consultants} emphasis />
+          <SummaryMetric label="Active Files" value={selectedRegion.activeApplications} emphasis />
+          <SummaryMetric label="Lead Time" value={formatLeadTime(selectedRegion.avgLeadTime)} emphasis />
+        </div>
+        <div className="mt-5 space-y-4">
+          {branchRows.map((branch) => (
+            <SummaryCard
+              key={branch.id}
+              eyebrow="Branch"
+              title={branch.branch}
+              status={branch.status}
+              detail={`${branch.manager || 'Unassigned'} leads this branch. ${branch.bottleneck} is the main operational bottleneck.`}
+              stats={[
+                { label: 'Consultants', value: branch.consultants, emphasis: true },
+                { label: 'Active Files', value: branch.activeApplications, emphasis: true },
+                { label: 'Approval', value: formatPercent(branch.approvalRate), emphasis: true },
+                { label: 'Lead Time', value: formatLeadTime(branch.avgLeadTime), emphasis: true },
+              ]}
+              onClick={() => onSelectBranch(branch)}
+              ctaLabel="Open branch"
+            />
+          ))}
+        </div>
+      </SectionShell>
+    )
+  }
+
+  return (
+    <SectionShell eyebrow="Regions" title="Regional Footprint" description="Each region shows the manager, branch spread, consultant coverage, and top-line operating health.">
+      <div className="space-y-4">
+        {rows.map((row) => (
+          <SummaryCard
+            key={row.id}
+            eyebrow="Region"
+            title={row.region}
+            status={row.status}
+            detail={`${row.manager || 'Unassigned'} manages this region. ${row.bottleneck} is the current hotspot.`}
+            stats={[
+              { label: 'Branches', value: row.branches, emphasis: true },
+              { label: 'Consultants', value: row.consultants, emphasis: true },
+              { label: 'Active Files', value: row.activeApplications, emphasis: true },
+              { label: 'Approval', value: formatPercent(row.approvalRate), emphasis: true },
+            ]}
+            onClick={() => onSelectRegion(row)}
+            ctaLabel="Open region"
+          />
+        ))}
+      </div>
+    </SectionShell>
+  )
+}
+
+function BranchesWorkspace({
+  rows = [],
+  selectedBranch = null,
+  consultantRows = [],
+  applicationRows = [],
+  showRegionColumn = false,
+  onSelectBranch = () => {},
+  onBack = () => {},
+}) {
+  if (!rows.length) {
+    return (
+      <SectionShell eyebrow="Branches" title="Branch Footprint" description="Branches will appear here once the hierarchy has been configured.">
+        <BondEmptyState compact title="No branches configured yet." description="Add a branch and assign a manager to bring this workspace structure to life." />
+      </SectionShell>
+    )
+  }
+
+  if (selectedBranch) {
+    return (
+      <div className="space-y-6">
+        <SectionShell
+          eyebrow="Branch Workspace"
+          title={selectedBranch.branch}
+          description="A branch detail view showing the manager, consultant roster, and file activity for this branch."
+          action={<BreadcrumbButton onClick={onBack}>Back to all branches</BreadcrumbButton>}
+        >
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            {showRegionColumn ? <SummaryMetric label="Region" value={selectedBranch.region || 'Unassigned'} emphasis /> : null}
+            <SummaryMetric label="Manager" value={selectedBranch.manager || 'Unassigned'} emphasis />
+            <SummaryMetric label="Consultants" value={selectedBranch.consultants} emphasis />
+            <SummaryMetric label="Active Files" value={selectedBranch.activeApplications} emphasis />
+            <SummaryMetric label="Approval" value={formatPercent(selectedBranch.approvalRate)} emphasis />
+          </div>
+        </SectionShell>
+
+        <SectionShell eyebrow="Consultant Roster" title="Branch Consultants" description="Everyone currently aligned to this branch.">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {consultantRows.map((consultant) => (
+              <article key={consultant.id} className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-[#142132]">{consultant.consultant}</p>
+                    <p className="mt-1 text-xs text-[#71869d]">{consultant.email || 'No email captured'}</p>
+                  </div>
+                  <StatusPill status={consultant.status} />
+                </div>
+                <div className="mt-4 grid gap-2">
+                  <SummaryMetric label="Active Files" value={consultant.activeApplications} emphasis />
+                  <SummaryMetric label="Approval" value={formatPercent(consultant.approvalRate)} emphasis />
+                  <SummaryMetric label="Lead Time" value={formatLeadTime(consultant.avgLeadTime)} />
+                </div>
+              </article>
+            ))}
+            {!consultantRows.length ? <BondEmptyState compact title="No consultants assigned yet." description="Invite or assign consultants to start managing branch flow here." /> : null}
+          </div>
+        </SectionShell>
+
+        <OrganisationApplicationsTable rows={applicationRows} showBranchColumn showRegionColumn={showRegionColumn} />
+      </div>
+    )
+  }
+
+  return (
+    <SectionShell eyebrow="Branches" title="Branch Network" description="Branches show operational load, branch manager ownership, and the state of the current book.">
+      <div className="space-y-4">
+        {rows.map((row) => (
+          <SummaryCard
+            key={row.id}
+            eyebrow={showRegionColumn ? row.region || 'Branch' : 'Branch'}
+            title={row.branch}
+            status={row.status}
+            detail={`${row.manager || 'Unassigned'} leads this branch. ${row.bottleneck} is the biggest current pressure point.`}
+            stats={[
+              { label: 'Consultants', value: row.consultants, emphasis: true },
+              { label: 'Active Files', value: row.activeApplications, emphasis: true },
+              { label: 'Pending Docs', value: row.pendingDocs, emphasis: true },
+              { label: 'Lead Time', value: formatLeadTime(row.avgLeadTime), emphasis: true },
+            ]}
+            onClick={() => onSelectBranch(row)}
+            ctaLabel="Open branch"
+          />
+        ))}
+      </div>
+    </SectionShell>
+  )
+}
+
+function ConsultantsWorkspace({ rows = [], branches = [], regions = [] }) {
+  const [search, setSearch] = useState('')
+  const [status, setStatus] = useState('all')
+  const [regionId, setRegionId] = useState('all')
+  const [branchId, setBranchId] = useState('all')
+
+  const filteredRows = useMemo(() => {
+    const query = normalizeText(search).toLowerCase()
+    return rows.filter((row) => {
+      const matchesSearch = !query || [
+        row.consultant,
+        row.email,
+        row.branch,
+        row.region,
+        row.role,
+      ].some((value) => normalizeText(value).toLowerCase().includes(query))
+      const matchesStatus = status === 'all' || normalizeText(row.status) === status
+      const matchesRegion = regionId === 'all' || normalizeText(row.regionId) === regionId
+      const matchesBranch = branchId === 'all' || normalizeText(row.branchId) === branchId
+      return matchesSearch && matchesStatus && matchesRegion && matchesBranch
+    })
+  }, [branchId, regionId, rows, search, status])
+
+  const regionOptions = useMemo(
+    () => [{ value: 'all', label: 'All Regions' }, ...regions.map((region) => ({ value: normalizeText(region.id), label: region.name || region.region || 'Region' }))],
+    [regions],
+  )
+  const branchOptions = useMemo(
+    () => [{ value: 'all', label: 'All Branches' }, ...branches.map((branch) => ({ value: normalizeText(branch.id), label: branch.name || branch.branch || 'Branch' }))],
+    [branches],
+  )
+
+  return (
+    <SectionShell eyebrow="Consultants" title="Consultant Directory" description="Card view with quick filtering by region, branch, and workload state.">
+      <FilterBar
+        searchPlaceholder="Search consultants..."
+        searchValue={search}
+        onSearchChange={setSearch}
+        filters={[
+          {
+            key: 'status',
+            label: 'Status',
+            value: status,
+            onChange: setStatus,
+            options: [
+              { value: 'all', label: 'All Statuses' },
+              { value: 'Healthy', label: 'Healthy' },
+              { value: 'Needs Attention', label: 'Needs Attention' },
+              { value: 'Inactive', label: 'Inactive' },
+            ],
+          },
+          {
+            key: 'region',
+            label: 'Region',
+            value: regionId,
+            onChange: setRegionId,
+            options: regionOptions,
+          },
+          {
+            key: 'branch',
+            label: 'Branch',
+            value: branchId,
+            onChange: setBranchId,
+            options: branchOptions,
+          },
+        ]}
+      />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {filteredRows.map((row) => (
+          <article key={row.id} className="rounded-[20px] border border-[#dbe5f0] bg-white p-5 shadow-[0_10px_26px_rgba(15,23,42,0.035)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-base font-semibold text-[#142132]">{row.consultant}</p>
+                <p className="mt-1 text-sm text-[#60758d]">{row.email || 'No email captured'}</p>
+              </div>
+              <StatusPill status={row.status} />
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#7d90a5]">
+              <span className="rounded-full border border-[#d9e4ef] bg-[#fbfdff] px-2.5 py-1">{row.region || 'Unassigned region'}</span>
+              <span className="rounded-full border border-[#d9e4ef] bg-[#fbfdff] px-2.5 py-1">{row.branch || 'Unassigned branch'}</span>
+              <span className="rounded-full border border-[#d9e4ef] bg-[#fbfdff] px-2.5 py-1">{row.role || 'Consultant'}</span>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <SummaryMetric label="Active Files" value={row.activeApplications} emphasis />
+              <SummaryMetric label="New This Month" value={row.newThisMonth} emphasis />
+              <SummaryMetric label="Pending Docs" value={row.pendingDocs} emphasis />
+              <SummaryMetric label="Approval" value={formatPercent(row.approvalRate)} emphasis />
+            </div>
+            <p className="mt-4 text-sm text-[#60758d]">Last activity: {row.lastActivity}</p>
+          </article>
+        ))}
+        {!filteredRows.length ? <BondEmptyState compact title="No consultants match these filters." description="Try a wider region or branch filter." /> : null}
       </div>
     </SectionShell>
   )
@@ -547,9 +826,6 @@ export default function BondOrganisationPage({
   const workspaceId = resolveWorkspaceId(workspaceContext)
   const location = useLocation()
   const navigate = useNavigate()
-  const routeTab = location.pathname.endsWith('/applications')
-    ? 'applications'
-    : normalizeText(new URLSearchParams(location.search).get('tab')) || 'overview'
   const [state, setState] = useState({
     loading: true,
     error: '',
@@ -581,14 +857,47 @@ export default function BondOrganisationPage({
 
   const snapshot = state.snapshot
   const tabs = snapshot?.tabs || FALLBACK_ORGANISATION_TABS
-  const selectedTab = useMemo(
-    () => tabs.some((tab) => tab.key === routeTab) ? routeTab : 'overview',
-    [routeTab, tabs],
-  )
+  const selectedView = resolveRouteView(location, tabs)
+  const params = useMemo(() => new URLSearchParams(location.search), [location.search])
+  const selectedRegionId = normalizeText(params.get('regionId'))
+  const selectedBranchId = normalizeText(params.get('branchId'))
   const canManageOrganisation = scopeCanManage(snapshot)
 
-  function handleTabChange(nextTab) {
-    navigate(getBondOrganisationRouteForTab(nextTab))
+  const selectedRegion = useMemo(
+    () => (snapshot?.regionPerformance || []).find((row) => normalizeText(row.id) === selectedRegionId) || null,
+    [selectedRegionId, snapshot?.regionPerformance],
+  )
+  const selectedBranch = useMemo(
+    () => (snapshot?.branchPerformance || []).find((row) => normalizeText(row.id) === selectedBranchId) || null,
+    [selectedBranchId, snapshot?.branchPerformance],
+  )
+  const regionBranches = useMemo(
+    () => (!selectedRegion ? [] : (snapshot?.branchPerformance || []).filter((row) => normalizeText(row.regionId) === normalizeText(selectedRegion.id))),
+    [selectedRegion, snapshot?.branchPerformance],
+  )
+  const branchConsultants = useMemo(
+    () => (!selectedBranch ? [] : (snapshot?.consultantPerformance || []).filter((row) => normalizeText(row.branchId) === normalizeText(selectedBranch.id))),
+    [selectedBranch, snapshot?.consultantPerformance],
+  )
+  const branchApplications = useMemo(
+    () => (!selectedBranch ? [] : (snapshot?.applications || []).filter((row) => normalizeText(row.branchId || row.workspaceUnitId) === normalizeText(selectedBranch.id))),
+    [selectedBranch, snapshot?.applications],
+  )
+
+  function handleViewChange(nextView) {
+    navigate(getBondOrganisationRouteForTab(nextView))
+  }
+
+  function openRegion(region) {
+    navigate(getBondOrganisationRouteForTab('regions', { regionId: region.id }))
+  }
+
+  function openBranch(branch) {
+    navigate(getBondOrganisationRouteForTab('branches', { branchId: branch.id }))
+  }
+
+  function openSettings() {
+    navigate('/settings/organisation')
   }
 
   if (!workspaceId) {
@@ -611,32 +920,59 @@ export default function BondOrganisationPage({
 
   return (
     <BondPageShell>
-      <OrganisationCommandHeader snapshot={snapshot} />
+      <OrganisationCommandHeader
+        snapshot={snapshot}
+        view={selectedView}
+        regionTitle={selectedView === 'regions' ? selectedRegion?.region || '' : ''}
+        branchTitle={selectedView === 'branches' ? selectedBranch?.branch || '' : ''}
+        navigate={navigate}
+      />
 
       {snapshot ? (
         <>
           <OrganisationKpiStrip kpis={snapshot.kpis} />
-          <BondViewTabs tabs={tabs} value={selectedTab} counts={snapshot?.counts || {}} onChange={handleTabChange} />
+          <BondViewTabs tabs={tabs} value={selectedView} counts={snapshot?.counts || {}} onChange={handleViewChange} />
 
-          {selectedTab === 'overview' ? (
+          {selectedView === 'overview' ? (
             <>
               <OperationalHealth items={snapshot.operationalHealth} />
               <OrganisationHierarchy tree={snapshot.hierarchyTree} canManage={canManageOrganisation} />
-              {snapshot.visibleScope?.canViewNetwork ? <BranchPerformance rows={snapshot.branchPerformance} /> : null}
-              {snapshot.visibleScope?.canViewNetwork ? <ConsultantPerformance rows={snapshot.consultantPerformance} /> : null}
               <RecentActivity rows={snapshot.recentActivity} />
             </>
           ) : null}
 
-          {selectedTab === 'branches' ? (
-            <BranchPerformance rows={snapshot.branchPerformance} />
+          {selectedView === 'regions' ? (
+            <RegionsWorkspace
+              rows={snapshot.regionPerformance || []}
+              selectedRegion={selectedRegion}
+              branchRows={regionBranches}
+              onSelectRegion={openRegion}
+              onSelectBranch={openBranch}
+              onBack={() => handleViewChange('regions')}
+            />
           ) : null}
 
-          {selectedTab === 'consultants' ? (
-            <ConsultantPerformance rows={snapshot.consultantPerformance} />
+          {selectedView === 'branches' ? (
+            <BranchesWorkspace
+              rows={snapshot.branchPerformance || []}
+              selectedBranch={selectedBranch}
+              consultantRows={branchConsultants}
+              applicationRows={branchApplications}
+              showRegionColumn={snapshot.showRegionColumn}
+              onSelectBranch={openBranch}
+              onBack={() => handleViewChange('branches')}
+            />
           ) : null}
 
-          {selectedTab === 'applications' ? (
+          {selectedView === 'consultants' ? (
+            <ConsultantsWorkspace
+              rows={snapshot.consultantPerformance || []}
+              branches={snapshot.branches || []}
+              regions={snapshot.regions || []}
+            />
+          ) : null}
+
+          {selectedView === 'applications' ? (
             <OrganisationApplicationsTable
               rows={snapshot.applications}
               showBranchColumn={snapshot.showBranchColumn}
@@ -644,7 +980,7 @@ export default function BondOrganisationPage({
             />
           ) : null}
 
-          {selectedTab === 'permissions' ? (
+          {selectedView === 'permissions' ? (
             <PermissionsTable
               rows={snapshot.consultants}
               showBranchColumn={snapshot.showBranchColumn}
@@ -652,8 +988,8 @@ export default function BondOrganisationPage({
             />
           ) : null}
 
-          {selectedTab === 'settings' ? (
-            <OrganisationSettingsPanel canManage={canManageOrganisation} />
+          {selectedView === 'settings' ? (
+            <OrganisationSettingsPanel canManage={canManageOrganisation} onOpenSettings={openSettings} />
           ) : null}
         </>
       ) : null}

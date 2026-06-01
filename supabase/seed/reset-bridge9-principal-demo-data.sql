@@ -17,7 +17,7 @@ begin
     into v_org_id
   from public.organisation_users ou
   left join public.profiles p on p.id = ou.user_id
-  where lower(coalesce(ou.email, p.email, '')) = lower('principal.demo@bridgenine.co.za')
+  where lower(coalesce(ou.email, p.email, '')) in (lower('bond.demo@bridgenine.co.za'), lower('principal.demo@bridgenine.co.za'))
     and lower(coalesce(ou.status, 'active')) = 'active'
   order by
     case when lower(coalesce(ou.role, ou.workspace_role, ou.organisation_role, '')) = 'principal' then 0 else 1 end,
@@ -29,7 +29,7 @@ begin
     select o.id
       into v_org_id
     from public.organisations o
-    where lower(coalesce(o.company_email, '')) = lower('principal.demo@bridgenine.co.za')
+    where lower(coalesce(o.company_email, '')) in (lower('bond.demo@bridgenine.co.za'), lower('principal.demo@bridgenine.co.za'))
        or lower(o.name) = lower('Bridge9 Realty')
     order by o.created_at desc nulls last
     limit 1;
@@ -176,6 +176,12 @@ begin
   end if;
   if to_regclass('public.organisation_preferred_partners') is not null then
     delete from public.organisation_preferred_partners where organisation_id = v_org_id and is_demo_data = true;
+  end if;
+  if to_regclass('public.workspace_units') is not null then
+    delete from public.workspace_units where workspace_id = v_org_id;
+  end if;
+  if to_regclass('public.workspace_regions') is not null then
+    delete from public.workspace_regions where workspace_id = v_org_id;
   end if;
   if to_regclass('public.organisation_users') is not null then
     delete from public.organisation_users where organisation_id = v_org_id and is_demo_data = true;

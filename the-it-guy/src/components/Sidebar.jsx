@@ -188,12 +188,13 @@ function targetMatchesLocation(location, target = '') {
   return normalizeQuery(location.search) === normalizeQuery(targetSearch)
 }
 
-function isParentNavActive(item, pathname) {
+function isParentNavActive(item, location) {
   if (!Array.isArray(item?.children) || !item.children.length) {
     return false
   }
 
-  const childActive = item.children.some((child) => routeMatches(pathname, child.to))
+  const pathname = location?.pathname || ''
+  const childActive = item.children.some((child) => targetMatchesLocation(location, child.to))
   const customActive = Array.isArray(item.activeMatch)
     ? item.activeMatch.some((path) => routeMatches(pathname, path))
     : false
@@ -277,7 +278,7 @@ function Sidebar() {
   const renderNavItem = (item, { child = false } = {}) => {
     const Icon = ICON_BY_KEY[item.key] || LayoutDashboard
     const hasChildren = item.key !== 'clients' && Array.isArray(item.children) && item.children.length > 0
-    const isParentActive = hasChildren ? isParentNavActive(item, location.pathname) : false
+    const isParentActive = hasChildren ? isParentNavActive(item, location) : false
     const menuExpanded = Boolean(expandedMenus[item.key] ?? isParentActive)
 
     if (!hasChildren) {
@@ -287,13 +288,14 @@ function Sidebar() {
           )
         : false
       const matchesTarget = targetMatchesLocation(location, item.to)
+      const targetHasQuery = String(item.to || '').includes('?')
       return (
         <NavLink
           key={item.label}
           to={item.to}
           end={item.to === '/dashboard'}
           className={({ isActive }) =>
-            `ui-sidebar-link ${child ? 'ui-sidebar-link-child' : ''} ${isActive || matchesCustomActive || matchesTarget ? 'ui-sidebar-link-active' : ''}`.trim()
+            `ui-sidebar-link ${child ? 'ui-sidebar-link-child' : ''} ${((targetHasQuery ? matchesTarget : isActive) || matchesCustomActive || matchesTarget) ? 'ui-sidebar-link-active' : ''}`.trim()
           }
         >
           <Icon size={child ? 13 : 15} />
@@ -353,7 +355,7 @@ function Sidebar() {
 
         for (const item of roleNavItems) {
           if (!Array.isArray(item.children) || !item.children.length) continue
-          const isActive = isParentNavActive(item, location.pathname)
+          const isActive = isParentNavActive(item, location)
           if (isActive) {
             next[item.key] = true
           }
@@ -374,7 +376,7 @@ function Sidebar() {
     return () => {
       active = false
     }
-  }, [location.pathname, roleNavItems])
+  }, [location, roleNavItems])
 
   return (
     <aside className={`ui-sidebar no-print ${role === 'bond_originator' ? 'ui-sidebar-bond' : ''}`.trim()}>

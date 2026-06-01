@@ -267,6 +267,40 @@ function buildDerivedBranchesFromApplications(applications = [], regions = []) {
   return [...branchesByName.values()]
 }
 
+function buildDerivedRegionsFromScope(branches = [], applications = []) {
+  const regionRows = []
+  branches.forEach((branch) => {
+    regionRows.push({
+      id: normalizeText(branch.regionId || branch.region_id),
+      name: normalizeText(branch.region),
+    })
+  })
+  applications.forEach((row) => {
+    regionRows.push({
+      id: normalizeText(row.regionId || row.region_id),
+      name: normalizeText(row.region),
+    })
+  })
+
+  const regionsByKey = new Map()
+  regionRows.forEach((row) => {
+    const name = normalizeText(row.name && row.name !== 'Unassigned' ? row.name : '')
+    const id = normalizeText(row.id)
+    const key = normalizeLower(id || name)
+    if (!key || regionsByKey.has(key)) return
+    regionsByKey.set(key, {
+      id: id || `derived-region-${key.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'visible-scope'}`,
+      name: name || 'Visible Scope',
+      code: '',
+      manager_user_id: '',
+      active: true,
+      derived: true,
+    })
+  })
+
+  return [...regionsByKey.values()]
+}
+
 function buildDerivedConsultantsFromApplications(applications = [], branches = []) {
   if (!applications.length) return []
   const defaultBranch = branches[0] || null
@@ -302,6 +336,7 @@ function buildTabs({
 } = {}) {
   const tabs = [
     { key: 'overview', label: 'Overview', alwaysShow: true },
+    { key: 'regions', label: 'Regions', showIf: capabilities.canViewRegions },
     { key: 'branches', label: capabilities.scopeLevel === BOND_SCOPE_LEVELS.branch ? 'My Branch' : 'Branches', showIf: capabilities.canViewBranches },
     { key: 'consultants', label: 'Consultants', showIf: capabilities.canViewConsultants },
     { key: 'applications', label: 'Applications', alwaysShow: true },
@@ -378,6 +413,15 @@ function getManagerName(managerId = '', users = []) {
   return manager?.name || 'Unassigned'
 }
 
+function getScopedRegionBranchRows(region = {}, branches = []) {
+  const regionId = normalizeText(region.id || region.regionId || region.region_id)
+  const regionName = normalizeText(region.name)
+  return (branches || []).filter((branch) => (
+    normalizeText(branch.regionId || branch.region_id) === regionId ||
+    normalizeText(branch.region) === regionName
+  ))
+}
+
 export function getVisibleOrganisationScope({ capabilities = {}, regions = [], branches = [], consultants = [], applications = [] } = {}) {
   const scopeLevel = capabilities.scopeLevel || BOND_SCOPE_LEVELS.assigned
   return {
@@ -410,7 +454,7 @@ export function getBranchPerformance(scope = {}) {
       branch: branch.name,
       regionId: normalizeText(branch.region_id || branch.regionId),
       region: branch.region || 'Unassigned',
-      manager: getManagerName(branch.manager_user_id || branch.managerUserId, scope.consultants),
+      manager: normalizeText(branch.manager_name || branch.managerName) || getManagerName(branch.manager_user_id || branch.managerUserId, scope.consultants),
       consultants: (scope.consultants || []).filter((user) => getUserUnitId(user) === normalizeText(branch.id)).length,
       activeApplications: rows.length,
       pendingDocs,
@@ -418,6 +462,41 @@ export function getBranchPerformance(scope = {}) {
       approvalRate: percent(approved, rows.length),
       bottleneck,
       status: getStatusFromPressure({ activeApplications: rows.length, pendingDocs, avgLeadTime: leadTime, lastActivityAt: rows[0]?.lastActivityAt }),
+    }
+  })
+}
+
+export function getRegionPerformance(scope = {}, branchPerformance = []) {
+  const effectiveBranchPerformance = branchPerformance.length ? branchPerformance : getBranchPerformance(scope)
+  return (scope.regions || []).map((region) => {
+    const regionBranches = getScopedRegionBranchRows(region, scope.branches)
+    const regionBranchIds = new Set(regionBranches.map((branch) => normalizeText(branch.id)).filter(Boolean))
+    const regionRows = (scope.applications || []).filter((row) => (
+      normalizeText(row.regionId || row.region_id) === normalizeText(region.id) ||
+      regionBranchIds.has(normalizeText(row.branchId || row.workspaceUnitId))
+    ))
+    const approved = regionRows.filter(isApplicationApproved).length
+    const pendingDocs = regionRows.filter(isPendingDocs).length
+    const leadTime = averageNumber(regionRows.map(getApplicationLeadDays))
+    const consultants = (scope.consultants || []).filter((user) => (
+      normalizeText(user.regionId || user.region_id) === normalizeText(region.id) ||
+      regionBranchIds.has(getUserUnitId(user))
+    )).length
+    return {
+      id: region.id,
+      region: region.name,
+      manager: normalizeText(region.manager_name || region.managerName) || getManagerName(region.manager_user_id || region.managerUserId, scope.consultants),
+      branches: regionBranches.length,
+      consultants,
+      activeApplications: regionRows.length,
+      pendingDocs,
+      avgLeadTime: leadTime,
+      approvalRate: percent(approved, regionRows.length),
+      bottleneck:
+        getMostCommon(regionRows.map(getApplicationBottleneck)) ||
+        effectiveBranchPerformance.find((branch) => normalizeText(branch.regionId) === normalizeText(region.id))?.bottleneck ||
+        'Clear',
+      status: getStatusFromPressure({ activeApplications: regionRows.length, pendingDocs, avgLeadTime: leadTime, lastActivityAt: regionRows[0]?.lastActivityAt }),
     }
   })
 }
@@ -438,6 +517,9 @@ export function getConsultantPerformance(scope = {}) {
       id: consultant.id || consultant.user_id || consultant.email,
       consultant: consultant.name,
       email: consultant.email,
+      regionId: normalizeText(consultant.regionId || consultant.region_id || branch?.regionId || branch?.region_id),
+      region: branch?.region || consultant.region || 'Unassigned',
+      branchId: normalizeText(branch?.id || consultant.workspaceUnitId || consultant.workspace_unit_id),
       branch: branch?.name || consultant.branch || 'Unassigned',
       activeApplications: rows.length,
       newThisMonth,
@@ -576,7 +658,7 @@ async function fetchOrganisationUsers(workspaceId = '') {
 
   const { data, error } = await supabase
     .from('organisation_users')
-    .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, region_id, workspace_unit_id, branch_id, primary_branch_id, created_at, updated_at')
+    .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, scope_level, region_id, workspace_unit_id, branch_id, primary_branch_id, scope_metadata, created_at, updated_at')
     .eq('organisation_id', safeWorkspaceId)
 
   if (error) {
@@ -670,6 +752,10 @@ export async function getBondOrganisationSnapshot(context = {}, workspaceId = ''
       }
     })
   }
+  let visibleRegions = scopedRegions
+  if (!visibleRegions.length && capabilities.canViewRegions) {
+    visibleRegions = buildDerivedRegionsFromScope(scopedBranchesWithRegions, scopedApplications)
+  }
   let visibleConsultants = scopedUsers
   if (!visibleConsultants.length && scopedApplications.length && capabilities.canViewConsultants) {
     visibleConsultants = buildDerivedConsultantsFromApplications(scopedApplications, scopedBranchesWithRegions)
@@ -678,12 +764,13 @@ export async function getBondOrganisationSnapshot(context = {}, workspaceId = ''
   const tabs = buildTabs({ capabilities })
   const visibleScope = getVisibleOrganisationScope({
     capabilities,
-    regions: scopedRegions,
+    regions: visibleRegions,
     branches: scopedBranchesWithRegions,
     consultants: visibleConsultants,
     applications: scopedApplications,
   })
   const branchPerformance = getBranchPerformance(visibleScope)
+  const regionPerformance = getRegionPerformance(visibleScope, branchPerformance)
   const consultantPerformance = getConsultantPerformance(visibleScope)
   const hierarchyTree = getHierarchyTree(visibleScope)
   const operationalHealth = getOperationalHealth(visibleScope, branchPerformance)
@@ -698,13 +785,14 @@ export async function getBondOrganisationSnapshot(context = {}, workspaceId = ''
     isIndependentWorkspace: structureType === BOND_ORGANISATION_STRUCTURE_TYPES.independent && !hasMultipleUsers,
     capabilities,
     tabs,
-    regions: scopedRegions,
+    regions: visibleRegions,
     branches: scopedBranchesWithRegions,
     teams: scopedTeams,
     consultants: visibleConsultants,
     applications: scopedApplications,
     visibleScope,
     kpis,
+    regionPerformance,
     hierarchyTree,
     branchPerformance,
     consultantPerformance,
@@ -715,17 +803,24 @@ export async function getBondOrganisationSnapshot(context = {}, workspaceId = ''
       rows: scopedApplications,
     },
     counts: {
-      regions: scopedRegions.length,
+      regions: visibleRegions.length,
       branches: scopedBranchesWithRegions.length,
       teams: scopedTeams.length,
       consultants: visibleConsultants.length,
       applications: scopedApplications.length,
     },
-    showRegionColumn: allRegions.length > 0,
-    showBranchColumn: allBranches.length > 0,
+    showRegionColumn: allRegions.length > 0 || visibleRegions.length > 0,
+    showBranchColumn: allBranches.length > 0 || scopedBranchesWithRegions.length > 0,
   }
 }
 
-export function getBondOrganisationRouteForTab(tabKey = 'overview') {
-  return tabKey === 'applications' ? '/bond/organisation/applications' : `/bond/organisation?tab=${encodeURIComponent(tabKey || 'overview')}`
+export function getBondOrganisationRouteForTab(tabKey = 'overview', options = {}) {
+  if (tabKey === 'applications') return '/bond/organisation/applications'
+
+  const params = new URLSearchParams()
+  params.set('view', normalizeText(tabKey || 'overview'))
+  if (normalizeText(options.regionId)) params.set('regionId', normalizeText(options.regionId))
+  if (normalizeText(options.branchId)) params.set('branchId', normalizeText(options.branchId))
+
+  return `/bond/organisation?${params.toString()}`
 }
