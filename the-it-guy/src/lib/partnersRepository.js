@@ -7,6 +7,8 @@ const PARTNERS_DEMO_MODE = Boolean(
   MOCK_DATA_ENABLED ||
     (importMetaEnv.DEV && String(importMetaEnv.VITE_ENABLE_MOCK_DATA || '').trim().toLowerCase() === 'true'),
 )
+const ORGANISATION_DIRECTORY_SELECT =
+  'id, name, display_name, legal_name, type, logo_url, city, province, specialties, active_areas, discovery_visibility, verification_status, partner_rating, settings_json'
 
 function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())
@@ -1172,6 +1174,46 @@ async function fetchRelationshipRows(scopedOrganisationId) {
   return legacyResult.data || []
 }
 
+async function fetchOrganisationsByIds(ids = []) {
+  const uniqueIds = [...new Set((ids || []).map(normalizeText).filter(Boolean))]
+  if (!uniqueIds.length) return []
+
+  const result = await supabase
+    .from('organisations')
+    .select(ORGANISATION_DIRECTORY_SELECT)
+    .in('id', uniqueIds)
+    .order('display_name', { ascending: true })
+
+  if (result.error) throw result.error
+  return result.data || []
+}
+
+export async function fetchDiscoverablePartnerDirectory({ organisationId = '', workspaceType = 'agency' } = {}) {
+  const scopedOrganisationId = normalizeText(organisationId)
+  if (PARTNERS_DEMO_MODE || !isSupabaseConfigured || !supabase || !scopedOrganisationId) {
+    const currentType = normalizeOrganisationType(workspaceType)
+    return DEMO_ORGANISATIONS
+      .filter((item) => item.type !== currentType || item.id !== scopedOrganisationId)
+      .map(mapOrganisation)
+  }
+
+  const result = await supabase
+    .from('organisations')
+    .select(ORGANISATION_DIRECTORY_SELECT)
+    .neq('id', scopedOrganisationId)
+    .neq('discovery_visibility', 'hidden')
+    .order('display_name', { ascending: true })
+
+  if (result.error) {
+    if (isRecoverablePartnerSchemaError(result.error)) {
+      return buildDemoSnapshot(scopedOrganisationId, workspaceType).organisations || []
+    }
+    throw result.error
+  }
+
+  return (result.data || []).map(mapOrganisation)
+}
+
 function buildInvitePayloadBase({
   scopedOrganisationId,
   recipientEmail,
@@ -1215,11 +1257,14 @@ function buildInvitePayloadBase({
 export async function fetchPartnersSnapshot({ organisationId = '', workspaceType = 'agency', accessContext = {} } = {}) {
   const scopedOrganisationId = normalizeText(organisationId)
   if (PARTNERS_DEMO_MODE || !isSupabaseConfigured || !supabase || !scopedOrganisationId) {
-    return buildDemoSnapshot(scopedOrganisationId, workspaceType, accessContext)
+    return {
+      ...buildDemoSnapshot(scopedOrganisationId, workspaceType, accessContext),
+      directoryHydrated: true,
+    }
   }
 
   try {
-    const [relationshipResult, invitationResult, referralResult, organisationsResult] = await Promise.all([
+    const [relationshipResult, invitationResult, referralResult] = await Promise.all([
       fetchRelationshipRows(scopedOrganisationId),
       fetchInvitationRows(scopedOrganisationId),
       supabase
@@ -1227,20 +1272,15 @@ export async function fetchPartnersSnapshot({ organisationId = '', workspaceType
         .select('id, referring_organisation_id, referred_organisation_id, transaction_id, referral_status, referral_date, referral_value')
         .or(`referring_organisation_id.eq.${scopedOrganisationId},referred_organisation_id.eq.${scopedOrganisationId}`)
         .order('referral_date', { ascending: false }),
-      supabase
-        .from('organisations')
-        .select(
-          'id, name, display_name, legal_name, type, logo_url, city, province, specialties, active_areas, discovery_visibility, verification_status, partner_rating, settings_json',
-        )
-        .neq('id', scopedOrganisationId)
-        .neq('discovery_visibility', 'hidden')
-        .order('display_name', { ascending: true }),
     ])
 
-    const firstError = [referralResult, organisationsResult].find((result) => result.error)?.error
+    const firstError = [referralResult].find((result) => result.error)?.error
     if (firstError) {
       if (isRecoverablePartnerSchemaError(firstError)) {
-        return buildDemoSnapshot(scopedOrganisationId, workspaceType, accessContext)
+        return {
+          ...buildDemoSnapshot(scopedOrganisationId, workspaceType, accessContext),
+          directoryHydrated: true,
+        }
       }
       throw firstError
     }
@@ -1249,7 +1289,15 @@ export async function fetchPartnersSnapshot({ organisationId = '', workspaceType
       throw invitationResult
     }
 
-    const organisations = (organisationsResult.data || []).map(mapOrganisation)
+    const referralRows = referralResult.data || []
+    const relatedOrganisationIds = [
+      ...(relationshipResult || []).flatMap((row) => [row.organisation_id || row.organisationId, row.partner_organisation_id || row.partnerOrganisationId]),
+      ...(invitationResult || []).flatMap((row) => [row.sender_organisation_id || row.senderOrganisationId, row.recipient_organisation_id || row.recipientOrganisationId]),
+      ...referralRows.flatMap((row) => [row.referring_organisation_id || row.referringOrganisationId, row.referred_organisation_id || row.referredOrganisationId]),
+    ]
+    const organisations = (await fetchOrganisationsByIds(relatedOrganisationIds))
+      .filter((row) => normalizeText(row.id) !== scopedOrganisationId)
+      .map(mapOrganisation)
     const invitations = enrichInvitations(invitationResult || [], organisations)
     const relationships = enrichRelationships(
       filterPartnerRelationshipsByScope(
@@ -1262,7 +1310,7 @@ export async function fetchPartnersSnapshot({ organisationId = '', workspaceType
       ),
       organisations,
     )
-    const referrals = (referralResult.data || []).map(mapReferral)
+    const referrals = referralRows.map(mapReferral)
 
     return {
       source: 'supabase',
@@ -1272,10 +1320,14 @@ export async function fetchPartnersSnapshot({ organisationId = '', workspaceType
       invitations,
       referrals,
       metrics: buildMetrics({ relationships, referrals }),
+      directoryHydrated: false,
     }
   } catch (error) {
     if (isRecoverablePartnerSchemaError(error)) {
-      return buildDemoSnapshot(scopedOrganisationId, workspaceType, accessContext)
+      return {
+        ...buildDemoSnapshot(scopedOrganisationId, workspaceType, accessContext),
+        directoryHydrated: true,
+      }
     }
     throw error
   }

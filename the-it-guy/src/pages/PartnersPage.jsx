@@ -29,6 +29,7 @@ import {
   PARTNER_SCOPE_TYPES,
   PARTNER_TYPES,
   fetchPartnersSnapshot,
+  fetchDiscoverablePartnerDirectory,
   updatePartnerRelationshipStatus,
 } from '../lib/partnersRepository'
 import { recordWorkspaceAuditEvent } from '../services/auditLogService'
@@ -518,6 +519,8 @@ export default function PartnersPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
+  const [discoverDirectory, setDiscoverDirectory] = useState([])
+  const [discoverDirectoryLoading, setDiscoverDirectoryLoading] = useState(false)
 
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteOrganisationQuery, setInviteOrganisationQuery] = useState('')
@@ -583,6 +586,7 @@ export default function PartnersPage() {
     try {
       setLoading(true)
       setError('')
+      setDiscoverDirectory([])
       const nextSnapshot = await fetchPartnersSnapshot({
         organisationId,
         workspaceType: resolvedWorkspaceType,
@@ -596,9 +600,32 @@ export default function PartnersPage() {
     }
   }, [accessContext, organisationId, resolvedWorkspaceType])
 
+  const loadDiscoverDirectory = useCallback(async () => {
+    if (!organisationId || discoverDirectoryLoading || snapshot?.directoryHydrated) return
+    try {
+      setDiscoverDirectoryLoading(true)
+      const organisations = await fetchDiscoverablePartnerDirectory({
+        organisationId,
+        workspaceType: resolvedWorkspaceType,
+      })
+      setDiscoverDirectory(organisations)
+      setSnapshot((previous) => (previous ? { ...previous, directoryHydrated: true } : previous))
+    } catch (loadError) {
+      setError(loadError?.message || 'Unable to load discoverable partners.')
+    } finally {
+      setDiscoverDirectoryLoading(false)
+    }
+  }, [discoverDirectoryLoading, organisationId, resolvedWorkspaceType, snapshot?.directoryHydrated])
+
   useEffect(() => {
     void loadSnapshot()
   }, [loadSnapshot])
+
+  useEffect(() => {
+    if (activeTab !== 'discover' && !isInviteModalOpen) return
+    if (snapshot?.directoryHydrated) return
+    void loadDiscoverDirectory()
+  }, [activeTab, isInviteModalOpen, loadDiscoverDirectory, snapshot?.directoryHydrated])
 
   useEffect(() => {
     if (inviteScopeValue && allowedScopes.some((scope) => scope.value === inviteScopeValue)) return
@@ -648,46 +675,52 @@ export default function PartnersPage() {
 
   const metrics = snapshot?.metrics || {}
   const currentType = resolvedWorkspaceType
+  const relatedOrganisations = snapshot?.organisations || []
+  const availableOrganisations = snapshot?.directoryHydrated
+    ? discoverDirectory.length
+      ? discoverDirectory
+      : relatedOrganisations
+    : relatedOrganisations
   const discoverablePartners = useMemo(() => {
     const connectedIds = new Set(relationships.map((item) => item.counterpartOrganisationId || item.partner?.id))
-    return filterDiscoverablePartners(snapshot?.organisations || [], discoverFilters).filter((partner) => {
+    return filterDiscoverablePartners(availableOrganisations, discoverFilters).filter((partner) => {
       if (!canConnectPartnerTypes(currentType, partner.type)) return false
       if (discoverFilters.preferredOnly && !(partner.preferred || partner.relationshipType === 'preferred')) return false
       return !connectedIds.has(partner.id)
     })
-  }, [currentType, discoverFilters, relationships, snapshot?.organisations])
+  }, [availableOrganisations, currentType, discoverFilters, relationships])
 
   const selectedInviteOrganisation = useMemo(() => {
     if (selectedInviteOrganisationId) {
-      return (snapshot?.organisations || []).find((item) => item.id === selectedInviteOrganisationId) || null
+      return availableOrganisations.find((item) => item.id === selectedInviteOrganisationId) || null
     }
 
     const email = normalizeLower(inviteEmail)
     if (!email) return null
 
     return (
-      (snapshot?.organisations || []).find((organisation) =>
+      availableOrganisations.find((organisation) =>
         (organisation.contactEmails || []).some((candidate) => normalizeLower(candidate) === email),
       ) || null
     )
-  }, [inviteEmail, selectedInviteOrganisationId, snapshot?.organisations])
+  }, [availableOrganisations, inviteEmail, selectedInviteOrganisationId])
 
   const inviteOrganisationResults = useMemo(() => {
     const query = normalizeLower(inviteOrganisationQuery)
     if (!query) return []
-    return (snapshot?.organisations || [])
+    return availableOrganisations
       .filter((item) => normalizeLower(item.name).includes(query))
       .slice(0, 5)
-  }, [inviteOrganisationQuery, snapshot?.organisations])
+  }, [availableOrganisations, inviteOrganisationQuery])
 
   const selectedPartner = useMemo(() => {
     if (!partnerId) return connectedRelationships[0]?.partner || discoverablePartners[0] || null
     return (
-      (snapshot?.organisations || []).find((item) => item.id === partnerId) ||
+      availableOrganisations.find((item) => item.id === partnerId) ||
       connectedRelationships.find((item) => item.partner?.id === partnerId)?.partner ||
       null
     )
-  }, [connectedRelationships, discoverablePartners, partnerId, snapshot?.organisations])
+  }, [availableOrganisations, connectedRelationships, discoverablePartners, partnerId])
 
   const selectedRelationship = useMemo(
     () => connectedRelationships.find((item) => item.partner?.id === selectedPartner?.id) || null,
@@ -707,7 +740,7 @@ export default function PartnersPage() {
     const maxDays = { all: Number.POSITIVE_INFINITY, '7d': 7, '30d': 30, '90d': 90 }[referralFilters.dateRange] || Number.POSITIVE_INFINITY
 
     return (snapshot?.referrals || []).filter((referral) => {
-      const partner = (snapshot?.organisations || []).find((item) => [referral.referringOrganisationId, referral.referredOrganisationId].includes(item.id))
+      const partner = relatedOrganisations.find((item) => [referral.referringOrganisationId, referral.referredOrganisationId].includes(item.id))
       const partnerName = normalizeLower(partner?.name || '')
       const status = normalizeLower(referral.referralStatus)
       const matchQuery = !referralFilters.query || partnerName.includes(normalizeLower(referralFilters.query))
@@ -716,7 +749,7 @@ export default function PartnersPage() {
       const ageOk = Number.isNaN(date.getTime()) ? true : date.getTime() >= now - maxDays * 24 * 60 * 60 * 1000
       return matchQuery && statusMatch && ageOk
     })
-  }, [referralFilters.dateRange, referralFilters.query, referralFilters.status, snapshot?.organisations, snapshot?.referrals])
+  }, [referralFilters.dateRange, referralFilters.query, referralFilters.status, relatedOrganisations, snapshot?.referrals])
 
   async function handleInvite(event) {
     event.preventDefault()
@@ -1165,7 +1198,10 @@ export default function PartnersPage() {
                     <PartnerCard key={partner.id} partner={partner} action={() => handleConnect(partner)} actionLabel="Connect" />
                   ))}
                 </div>
-                {!discoverablePartners.length ? (
+                {discoverDirectoryLoading && !snapshot?.directoryHydrated ? (
+                  <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">Loading discoverable partners...</div>
+                ) : null}
+                {!discoverDirectoryLoading && !discoverablePartners.length ? (
                   <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">No organisations found</div>
                 ) : null}
               </section>
