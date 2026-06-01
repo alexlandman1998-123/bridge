@@ -43,6 +43,9 @@ const ACTIVE_FILTERS = [
   { key: 'approved', label: 'Approved' },
 ]
 
+const DEFAULT_RANGE_KEY = 'last_30_days'
+const DEFAULT_RANGE_LABEL = 'Last 30 Days'
+
 function getBankVisual(bank = '') {
   return BANK_VISUALS[bank] || BANK_VISUALS.Others
 }
@@ -54,7 +57,7 @@ export default function BondDashboard({
   initialState = null,
 }) {
   const safeWorkspaceId = normalizeText(workspaceId)
-  const [rangeKey] = useState('this_month')
+  const [rangeKey] = useState(DEFAULT_RANGE_KEY)
   const developmentId = 'all'
   const [state, setState] = useState(
     initialState || {
@@ -179,7 +182,7 @@ export default function BondDashboard({
                   eyebrow="Primary Analytics"
                   title="Bank Approval Breakdown"
                   description="Real-time view of approvals across all banks."
-                  action={<AnalyticsRangeButton label="This Month" />}
+                  action={<AnalyticsRangeButton label={DEFAULT_RANGE_LABEL} />}
                   className="flex min-h-[500px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
                   headerClassName="gap-3"
                   contentClassName="mt-6 min-h-0 flex-1"
@@ -190,7 +193,7 @@ export default function BondDashboard({
                   eyebrow="Primary Analytics"
                   title="Bank Lead Times"
                   description="Average lead time by lender from submission to movement."
-                  action={<AnalyticsRangeButton label="This Month" />}
+                  action={<AnalyticsRangeButton label={DEFAULT_RANGE_LABEL} />}
                   className="flex min-h-[500px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
                   headerClassName="gap-3"
                   contentClassName="mt-6 min-h-0 flex-1"
@@ -805,7 +808,7 @@ function ApplicationMeta({ icon, label = '', value = '' }) {
   )
 }
 
-function AnalyticsRangeButton({ label = 'This Month' }) {
+function AnalyticsRangeButton({ label = DEFAULT_RANGE_LABEL }) {
   return (
     <button
       type="button"
@@ -1087,7 +1090,7 @@ function PipelineHeader() {
         </p>
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-3 lg:justify-end">
-        <AnalyticsRangeButton label="This Month" />
+        <AnalyticsRangeButton label={DEFAULT_RANGE_LABEL} />
         <span className="inline-flex h-10 items-center gap-2 rounded-[13px] border border-[#d9efe4] bg-[#edfdf4] px-3.5 text-sm font-semibold text-[#237a4d]">
           <span className="h-2 w-2 rounded-full bg-[#22a15d]" />
           Live Pipeline

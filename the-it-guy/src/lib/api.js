@@ -21645,14 +21645,21 @@ async function fetchDirectTransactionIdsForUser(
   if (userId && normalizedRole === 'bond_originator') {
     let membershipsQuery = await client
       .from('organisation_users')
-      .select('organisation_id, status')
+      .select('organisation_id, status, role, workspace_role, organisation_role, scope_level, region_id, workspace_unit_id, branch_id, primary_branch_id, team_id')
       .eq('user_id', userId)
       .eq('status', 'active')
 
-    if (membershipsQuery.error && isMissingColumnError(membershipsQuery.error, 'status')) {
+    if (
+      membershipsQuery.error &&
+      (isMissingColumnError(membershipsQuery.error, 'status') ||
+        isMissingColumnError(membershipsQuery.error, 'scope_level') ||
+        isMissingColumnError(membershipsQuery.error, 'region_id') ||
+        isMissingColumnError(membershipsQuery.error, 'workspace_unit_id') ||
+        isMissingColumnError(membershipsQuery.error, 'team_id'))
+    ) {
       membershipsQuery = await client
         .from('organisation_users')
-        .select('organisation_id')
+        .select('organisation_id, status, role, workspace_role, organisation_role, branch_id, primary_branch_id')
         .eq('user_id', userId)
     }
 
@@ -21732,6 +21739,72 @@ async function fetchDirectTransactionIdsForUser(
         if (['removed', 'declined', 'rejected'].includes(status)) continue
         if (row?.transaction_id) transactionIds.add(row.transaction_id)
       }
+
+      let bondApplicationQuery = await client
+        .from('transaction_bond_applications')
+        .select('transaction_id, assigned_organisation_id, assigned_region_id, assigned_workspace_unit_id, assigned_branch_id, assigned_team_id, assigned_user_id, assignment_status, status')
+        .in('assigned_organisation_id', organisationIds)
+
+      if (
+        bondApplicationQuery.error &&
+        (isMissingColumnError(bondApplicationQuery.error, 'assigned_region_id') ||
+          isMissingColumnError(bondApplicationQuery.error, 'assigned_workspace_unit_id') ||
+          isMissingColumnError(bondApplicationQuery.error, 'assigned_branch_id') ||
+          isMissingColumnError(bondApplicationQuery.error, 'assigned_team_id') ||
+          isMissingColumnError(bondApplicationQuery.error, 'assigned_user_id') ||
+          isMissingColumnError(bondApplicationQuery.error, 'assignment_status'))
+      ) {
+        bondApplicationQuery = await client
+          .from('transaction_bond_applications')
+          .select('transaction_id, assigned_organisation_id, status')
+          .in('assigned_organisation_id', organisationIds)
+      }
+
+      if (
+        bondApplicationQuery.error &&
+        !isMissingColumnError(bondApplicationQuery.error, 'assigned_organisation_id') &&
+        !isMissingSchemaError(bondApplicationQuery.error) &&
+        !isMissingTableError(bondApplicationQuery.error, 'transaction_bond_applications') &&
+        !isPermissionDeniedError(bondApplicationQuery.error)
+      ) {
+        throw bondApplicationQuery.error
+      }
+
+      const activeMemberships = membershipsQuery.data || []
+      for (const row of bondApplicationQuery.data || []) {
+        const status = normalizeTextValue(row?.assignment_status || row?.status || '').toLowerCase()
+        if (['removed', 'declined', 'rejected', 'inactive', 'suspended'].includes(status)) continue
+        if (!bondApplicationScopeMatchesMembership(row, activeMemberships, userId)) continue
+        if (row?.transaction_id) transactionIds.add(row.transaction_id)
+      }
+    }
+
+    let assignedApplicationQuery = await client
+      .from('transaction_bond_applications')
+      .select('transaction_id, assigned_user_id, assignment_status, status')
+      .eq('assigned_user_id', userId)
+
+    if (assignedApplicationQuery.error && isMissingColumnError(assignedApplicationQuery.error, 'assignment_status')) {
+      assignedApplicationQuery = await client
+        .from('transaction_bond_applications')
+        .select('transaction_id, assigned_user_id, status')
+        .eq('assigned_user_id', userId)
+    }
+
+    if (
+      assignedApplicationQuery.error &&
+      !isMissingColumnError(assignedApplicationQuery.error, 'assigned_user_id') &&
+      !isMissingSchemaError(assignedApplicationQuery.error) &&
+      !isMissingTableError(assignedApplicationQuery.error, 'transaction_bond_applications') &&
+      !isPermissionDeniedError(assignedApplicationQuery.error)
+    ) {
+      throw assignedApplicationQuery.error
+    }
+
+    for (const row of assignedApplicationQuery.data || []) {
+      const status = normalizeTextValue(row?.assignment_status || row?.status || '').toLowerCase()
+      if (['removed', 'declined', 'rejected', 'inactive', 'suspended'].includes(status)) continue
+      if (row?.transaction_id) transactionIds.add(row.transaction_id)
     }
   }
 
@@ -21769,6 +21842,74 @@ async function fetchDirectTransactionIdsForUser(
   }
 
   return transactionIds
+}
+
+function normalizeBondMembershipScopeLevel(membership = {}) {
+  const explicit = normalizeTextValue(membership?.scope_level || membership?.scopeLevel || membership?.scope).toLowerCase()
+  if (['workspace_hq', 'organisation', 'organization', 'hq', 'all_branches'].includes(explicit)) return 'workspace_hq'
+  if (['region', 'regional'].includes(explicit)) return 'region'
+  if (['branch', 'branch_only', 'assigned_branch'].includes(explicit)) return 'branch'
+  if (['team', 'team_only'].includes(explicit)) return 'team'
+  if (['assigned', 'assigned_only', 'user', 'own', 'independent'].includes(explicit)) return 'assigned'
+
+  const role = normalizeTextValue(
+    membership?.workspace_role ||
+      membership?.workspaceRole ||
+      membership?.organisation_role ||
+      membership?.organisationRole ||
+      membership?.role,
+  ).toLowerCase()
+  if (['owner', 'principal', 'director', 'partner', 'hq_manager', 'manager', 'admin', 'admin_staff'].includes(role)) return 'workspace_hq'
+  if (['regional_manager', 'bond_regional_manager'].includes(role)) return 'region'
+  if (['branch_manager', 'bond_branch_manager'].includes(role)) return 'branch'
+  if (['team_lead', 'bond_team_lead'].includes(role)) return 'team'
+  return 'assigned'
+}
+
+function bondApplicationScopeMatchesMembership(application = {}, memberships = [], userId = '') {
+  const applicationOrganisationId = normalizeTextValue(application?.assigned_organisation_id)
+  const assignedUserId = normalizeTextValue(application?.assigned_user_id)
+  const actorUserId = normalizeTextValue(userId)
+  if (actorUserId && assignedUserId && actorUserId === assignedUserId) return true
+
+  const matchingMemberships = (Array.isArray(memberships) ? memberships : []).filter((membership) => {
+    const membershipOrganisationId = normalizeTextValue(membership?.organisation_id || membership?.organisationId)
+    return applicationOrganisationId && membershipOrganisationId && applicationOrganisationId === membershipOrganisationId
+  })
+  if (!matchingMemberships.length) return false
+
+  const applicationRegionId = normalizeTextValue(application?.assigned_region_id)
+  const applicationUnitIds = [
+    application?.assigned_workspace_unit_id,
+    application?.assigned_branch_id,
+    application?.assigned_team_id,
+  ].map((value) => normalizeTextValue(value)).filter(Boolean)
+
+  return matchingMemberships.some((membership) => {
+    const scopeLevel = normalizeBondMembershipScopeLevel(membership)
+    if (scopeLevel === 'workspace_hq') return true
+
+    if (scopeLevel === 'region') {
+      const membershipRegionId = normalizeTextValue(membership?.region_id || membership?.regionId)
+      return Boolean(applicationRegionId && membershipRegionId && applicationRegionId === membershipRegionId)
+    }
+
+    if (scopeLevel === 'branch' || scopeLevel === 'team') {
+      const membershipUnitIds = [
+        membership?.workspace_unit_id,
+        membership?.workspaceUnitId,
+        membership?.branch_id,
+        membership?.branchId,
+        membership?.primary_branch_id,
+        membership?.primaryBranchId,
+        membership?.team_id,
+        membership?.teamId,
+      ].map((value) => normalizeTextValue(value)).filter(Boolean)
+      return applicationUnitIds.some((unitId) => membershipUnitIds.includes(unitId))
+    }
+
+    return false
+  })
 }
 
 async function fetchInheritedDevelopmentTransactionIdsForUser(
@@ -23040,18 +23181,19 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = [], { o
   const normalizedOrganisationId = String(organisationId || '').trim()
   const normalizedRoleType = normalizeRoleType(roleType)
   const workspaceScopeColumn = normalizedRoleType === 'bond_originator' ? 'bond_workspace_id' : 'organisation_id'
+  const filterWorkspaceInDatabase = Boolean(normalizedOrganisationId && normalizedRoleType !== 'bond_originator')
 
   let transactionsBuilder = client
     .from('transactions')
     .select(selectWithoutKnownMissingColumns(TRANSACTION_SUMMARY_SELECT_CLAUSE))
     .in('id', ids)
-  if (normalizedOrganisationId) {
+  if (filterWorkspaceInDatabase) {
     transactionsBuilder = transactionsBuilder.eq(workspaceScopeColumn, normalizedOrganisationId)
   }
   let transactionsQuery = await transactionsBuilder
 
   if (transactionsQuery.error && isMissingColumnError(transactionsQuery.error)) {
-    if (normalizedOrganisationId && isMissingColumnError(transactionsQuery.error, workspaceScopeColumn)) {
+    if (filterWorkspaceInDatabase && isMissingColumnError(transactionsQuery.error, workspaceScopeColumn)) {
       return []
     }
     registerKnownMissingColumns(transactionsQuery.error, [
@@ -23126,11 +23268,11 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = [], { o
       .from('transactions')
       .select(selectWithoutKnownMissingColumns(TRANSACTION_SUMMARY_FALLBACK_SELECT_CLAUSE))
       .in('id', ids)
-    if (normalizedOrganisationId) {
+    if (filterWorkspaceInDatabase) {
       fallbackBuilder = fallbackBuilder.eq(workspaceScopeColumn, normalizedOrganisationId)
     }
     transactionsQuery = await fallbackBuilder
-    if (transactionsQuery.error && normalizedOrganisationId && isMissingColumnError(transactionsQuery.error, workspaceScopeColumn)) {
+    if (transactionsQuery.error && filterWorkspaceInDatabase && isMissingColumnError(transactionsQuery.error, workspaceScopeColumn)) {
       return []
     }
   }
@@ -23141,7 +23283,7 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = [], { o
 
   const transactionRows = (transactionsQuery.data || [])
     .filter((item) => item?.is_active !== false)
-    .filter((item) => !normalizedOrganisationId || String(item?.[workspaceScopeColumn] || '').trim() === normalizedOrganisationId)
+    .filter((item) => !filterWorkspaceInDatabase || String(item?.[workspaceScopeColumn] || '').trim() === normalizedOrganisationId)
   if (!transactionRows.length) {
     return []
   }
@@ -23231,7 +23373,10 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = [], { o
     .sort((a, b) => new Date(latestTimestamp(b) || 0) - new Date(latestTimestamp(a) || 0))
 
   const commissionRows = await hydrateRowsWithCommissionSnapshots(client, rows)
-  return enrichRowsWithBondIntakeContext(commissionRows)
+  const enrichedRows = await enrichRowsWithBondIntakeContext(commissionRows)
+  return normalizedOrganisationId && normalizedRoleType === 'bond_originator'
+    ? enrichedRows.filter((row) => rowMatchesBondWorkspaceScope(row, normalizedOrganisationId))
+    : enrichedRows
 }
 
 export async function fetchTransactionsByParticipantSummary({ userId, roleType = null, organisationId = '' } = {}) {
@@ -23249,6 +23394,115 @@ export async function fetchTransactionsByParticipantSummary({ userId, roleType =
   const rows = await fetchTransactionSummaryRowsByIds(client, transactionIds, { organisationId: normalizedOrganisationId, roleType })
   timer.end({ rowCount: rows.length })
   return rows
+}
+
+async function loadBondApplicationScopesByTransactionIds(client, transactionIds = []) {
+  const ids = [...new Set((transactionIds || []).filter(Boolean))]
+  if (!ids.length) return {}
+
+  let query = await client
+    .from('transaction_bond_applications')
+    .select(
+      'id, transaction_id, application_type, bank_name, assigned_organisation_id, assigned_region_id, assigned_workspace_unit_id, assigned_branch_id, assigned_team_id, assigned_user_id, scope_level, scope_metadata, assignment_status, assignment_source, status, updated_at, created_at',
+    )
+    .in('transaction_id', ids)
+
+  if (
+    query.error &&
+    (isMissingColumnError(query.error, 'application_type') ||
+      isMissingColumnError(query.error, 'bank_name') ||
+      isMissingColumnError(query.error, 'assigned_organisation_id') ||
+      isMissingColumnError(query.error, 'assigned_region_id') ||
+      isMissingColumnError(query.error, 'assigned_workspace_unit_id') ||
+      isMissingColumnError(query.error, 'assigned_branch_id') ||
+      isMissingColumnError(query.error, 'assigned_team_id') ||
+      isMissingColumnError(query.error, 'assigned_user_id') ||
+      isMissingColumnError(query.error, 'scope_level') ||
+      isMissingColumnError(query.error, 'scope_metadata') ||
+      isMissingColumnError(query.error, 'assignment_status') ||
+      isMissingColumnError(query.error, 'assignment_source'))
+  ) {
+    query = await client
+      .from('transaction_bond_applications')
+      .select('id, transaction_id, status, updated_at, created_at')
+      .in('transaction_id', ids)
+  }
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'transaction_bond_applications') || isMissingSchemaError(query.error) || isPermissionDeniedError(query.error)) {
+      return {}
+    }
+    throw query.error
+  }
+
+  return (query.data || []).reduce((accumulator, row) => {
+    if (!row?.transaction_id) return accumulator
+    if (!accumulator[row.transaction_id]) accumulator[row.transaction_id] = []
+    accumulator[row.transaction_id].push(row)
+    return accumulator
+  }, {})
+}
+
+function scoreBondApplicationScopeRow(row = {}) {
+  let score = 0
+  const status = normalizeTextValue(row?.assignment_status || row?.status || '').toLowerCase()
+  if (!['removed', 'declined', 'rejected', 'inactive', 'suspended'].includes(status)) score += 20
+  if (normalizeTextValue(row?.application_type).toLowerCase() === 'originator_intake') score += 10
+  if (normalizeTextValue(row?.bank_name).toLowerCase() === 'bond originator intake') score += 10
+  if (normalizeTextValue(row?.assigned_organisation_id)) score += 5
+  if (normalizeTextValue(row?.assigned_user_id)) score += 3
+  if (normalizeTextValue(row?.assigned_workspace_unit_id || row?.assigned_branch_id || row?.assigned_team_id)) score += 2
+  if (normalizeTextValue(row?.assigned_region_id)) score += 1
+  return score
+}
+
+function pickPrimaryBondApplicationScope(applicationRows = []) {
+  const rows = (Array.isArray(applicationRows) ? applicationRows : []).filter(Boolean)
+  if (!rows.length) return null
+  return [...rows].sort((left, right) => {
+    const scoreDelta = scoreBondApplicationScopeRow(right) - scoreBondApplicationScopeRow(left)
+    if (scoreDelta) return scoreDelta
+    return new Date(right?.updated_at || right?.created_at || 0) - new Date(left?.updated_at || left?.created_at || 0)
+  })[0]
+}
+
+function mergeTransactionBondApplicationScope(transaction = {}, applicationScope = null) {
+  if (!applicationScope) return transaction
+  return {
+    ...transaction,
+    assigned_organisation_id: transaction.assigned_organisation_id || applicationScope.assigned_organisation_id || null,
+    assigned_region_id: transaction.assigned_region_id || applicationScope.assigned_region_id || null,
+    assigned_workspace_unit_id: transaction.assigned_workspace_unit_id || applicationScope.assigned_workspace_unit_id || null,
+    assigned_branch_id: transaction.assigned_branch_id || applicationScope.assigned_branch_id || null,
+    assigned_team_id: transaction.assigned_team_id || applicationScope.assigned_team_id || null,
+    assigned_user_id: transaction.assigned_user_id || applicationScope.assigned_user_id || null,
+    bond_workspace_id: transaction.bond_workspace_id || applicationScope.assigned_organisation_id || null,
+    bond_region_id: transaction.bond_region_id || applicationScope.assigned_region_id || null,
+    bond_workspace_unit_id:
+      transaction.bond_workspace_unit_id ||
+      applicationScope.assigned_workspace_unit_id ||
+      applicationScope.assigned_branch_id ||
+      applicationScope.assigned_team_id ||
+      null,
+    bond_assignment_status: transaction.bond_assignment_status || applicationScope.assignment_status || applicationScope.status || null,
+    bond_assignment_source: transaction.bond_assignment_source || applicationScope.assignment_source || null,
+    scope_level: transaction.scope_level || applicationScope.scope_level || null,
+    scope_metadata: transaction.scope_metadata || applicationScope.scope_metadata || null,
+  }
+}
+
+function rowMatchesBondWorkspaceScope(row = {}, organisationId = '') {
+  const target = normalizeTextValue(organisationId)
+  if (!target) return true
+  const transaction = row?.transaction || {}
+  return [
+    transaction.assigned_organisation_id,
+    transaction.assignedOrganisationId,
+    transaction.bond_workspace_id,
+    transaction.bondWorkspaceId,
+    transaction.workspace_id,
+    transaction.workspaceId,
+  ].map((value) => normalizeTextValue(value)).includes(target)
 }
 
 export async function enrichRowsWithBondIntakeContext(rows = []) {
@@ -23347,11 +23601,14 @@ export async function enrichRowsWithBondIntakeContext(rows = []) {
     }, {})
   })()
 
-  const [onboardingByTransactionId, documentsByTransactionId, documentRequestsByTransactionId, rolePlayersByTransactionId] = await Promise.all([
+  const bondApplicationsPromise = loadBondApplicationScopesByTransactionIds(client, transactionIds)
+
+  const [onboardingByTransactionId, documentsByTransactionId, documentRequestsByTransactionId, rolePlayersByTransactionId, bondApplicationsByTransactionId] = await Promise.all([
     onboardingPromise,
     documentsPromise,
     documentRequestsPromise,
     rolePlayersPromise,
+    bondApplicationsPromise,
   ])
 
   return safeRows.map((row) => {
@@ -23359,9 +23616,14 @@ export async function enrichRowsWithBondIntakeContext(rows = []) {
     if (!transactionId) return row
     const documentRequests = documentRequestsByTransactionId[transactionId] || []
     const documents = documentsByTransactionId[transactionId] || []
+    const bondApplications = bondApplicationsByTransactionId[transactionId] || []
+    const primaryBondApplication = pickPrimaryBondApplicationScope(bondApplications)
     return {
       ...row,
+      transaction: mergeTransactionBondApplicationScope(row.transaction, primaryBondApplication),
       onboardingFormData: onboardingByTransactionId[transactionId] || null,
+      bondApplications,
+      primaryBondApplication,
       documentRequests,
       documents,
       rolePlayers: rolePlayersByTransactionId[transactionId] || [],

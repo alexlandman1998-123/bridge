@@ -109,6 +109,8 @@ const DATE_RANGE_FILTERS = Object.freeze({
   all_time: () => null,
 })
 
+const DEFAULT_DASHBOARD_RANGE_KEY = 'last_30_days'
+
 const DASHBOARD_ROLE_FOCUS = Object.freeze({
   consultant: {
     attentionText: 'Personal finance applications to move today.',
@@ -421,8 +423,8 @@ function uniqueByTransaction(rows = []) {
   return [...byId.values()]
 }
 
-function filterRowsByDateRange(rows = [], rangeKey = 'this_month') {
-  const thresholdResolver = DATE_RANGE_FILTERS[rangeKey] || DATE_RANGE_FILTERS.this_month
+function filterRowsByDateRange(rows = [], rangeKey = DEFAULT_DASHBOARD_RANGE_KEY) {
+  const thresholdResolver = DATE_RANGE_FILTERS[rangeKey] || DATE_RANGE_FILTERS[DEFAULT_DASHBOARD_RANGE_KEY]
   const threshold = thresholdResolver()
   if (!threshold) return rows
   return rows.filter((row) => {
@@ -1989,7 +1991,8 @@ export async function getBondDevelopmentsWorkspaceSnapshot(user = {}, workspaceI
 export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', options = {}) {
   const reportingScope = options.reportingScope || (await getBondDashboardReportingScope(user, workspaceId, options))
   const allRows = await resolveBondRows(user, workspaceId, options)
-  const dateRows = filterRowsByDateRange(allRows, options.rangeKey || 'this_month')
+  const rangeKey = options.rangeKey || DEFAULT_DASHBOARD_RANGE_KEY
+  const dateRows = filterRowsByDateRange(allRows, rangeKey)
   const filteredRows = filterRowsByDevelopment(dateRows, options.developmentId)
   const transactions = filteredRows.map((row) => row.transaction).filter(Boolean)
   const queues = resolveBondOperationalQueues(user, transactions)
@@ -2003,7 +2006,7 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
   const buyerDemographics = buildBuyerDemographics(filteredRows)
   const operationalRisk = buildOperationalRisk(filteredRows)
   const operationalHeatmap = buildOperationalHeatmap(filteredRows)
-  const financeIntelligence = getCachedFinanceIntelligence(filteredRows, `bond-command-center:${workspaceId}:${options.rangeKey || 'this_month'}`)
+  const financeIntelligence = getCachedFinanceIntelligence(filteredRows, `bond-command-center:${workspaceId}:${rangeKey}`)
   const approvalConfidenceDistribution = buildApprovalConfidenceDistribution(filteredRows)
   const operationalRiskMatrix = buildOperationalRiskMatrix(filteredRows)
   const teamPerformance = buildTeamPerformance(filteredRows)
@@ -2046,8 +2049,8 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
     totalApplications: filteredRows.length,
     emptyState: buildCompactEmptyState(reportingScope),
     availableRanges: [
-      { key: 'this_month', label: 'This Month' },
       { key: 'last_30_days', label: 'Last 30 Days' },
+      { key: 'this_month', label: 'This Month' },
       { key: 'quarter_to_date', label: 'Quarter to Date' },
       { key: 'all_time', label: 'All Time' },
     ],

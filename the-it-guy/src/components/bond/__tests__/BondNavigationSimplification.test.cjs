@@ -52,23 +52,25 @@ async function main() {
     )
     assert.deepEqual(
       hqBondNav.map((item) => item.label),
-      ['Dashboard', 'Regions', 'Branches', 'Consultants', 'Applications', 'Partners', 'Reports', 'Settings'],
+      ['Dashboard', 'Applications', 'Organisation', 'Partners', 'Reports', 'Settings'],
     )
     assert.equal(consultantNav.some((item) => item.key === 'settings'), false)
     assert.deepEqual(
       hqBondNav.filter((item) => item.navSection !== 'secondary').map((item) => item.label),
-      ['Dashboard', 'Regions', 'Branches', 'Consultants', 'Applications', 'Partners', 'Reports'],
+      ['Dashboard', 'Applications', 'Organisation', 'Partners', 'Reports'],
     )
     assert.deepEqual(
       hqBondNav.filter((item) => item.navSection === 'secondary').map((item) => item.label),
       ['Settings'],
     )
     assert.equal(hqBondNav.find((item) => item.key === 'applications')?.to, '/bond/applications')
-    assert.equal(hqBondNav.find((item) => item.key === 'bond_regions')?.to, '/bond/organisation?view=regions')
-    assert.equal(hqBondNav.find((item) => item.key === 'bond_branches')?.to, '/bond/organisation?view=branches')
-    assert.equal(hqBondNav.find((item) => item.key === 'bond_consultants')?.to, '/bond/organisation?view=consultants')
+    const organisationNav = hqBondNav.find((item) => item.key === 'bond_organisation')
+    assert.equal(organisationNav?.to, '/bond/organisation?view=regions')
+    assert.deepEqual(organisationNav?.children.map((item) => item.label), ['Regions', 'Branches', 'Consultants'])
+    assert.equal(organisationNav?.children.find((item) => item.key === 'bond_regions')?.to, '/bond/organisation?view=regions')
+    assert.equal(organisationNav?.children.find((item) => item.key === 'bond_branches')?.to, '/bond/organisation?view=branches')
+    assert.equal(organisationNav?.children.find((item) => item.key === 'bond_consultants')?.to, '/bond/organisation?view=consultants')
     assert.equal(hqBondNav.some((item) => item.key === 'documents' || item.key === 'tasks' || item.key === 'bond_calendar'), false)
-    assert.ok(hqBondNav.every((item) => !Array.isArray(item.children) || item.children.length === 0))
     assert.equal(hqBondNav.some((item) => item.key === 'banks' || item.key === 'teams' || item.key === 'performance'), false)
 
     const appSource = require('node:fs').readFileSync(path.join(PROJECT_ROOT, 'src/App.jsx'), 'utf8')
