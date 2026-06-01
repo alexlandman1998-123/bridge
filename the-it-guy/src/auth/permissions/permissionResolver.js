@@ -174,6 +174,18 @@ function getRecordAssignedUserId(record = {}) {
   return normalizeText(
     record?.assigned_user_id ||
       record?.assignedUserId ||
+      record?.assigned_bond_user_id ||
+      record?.assignedBondUserId ||
+      record?.assigned_bond_originator_user_id ||
+      record?.assignedBondOriginatorUserId ||
+      record?.primary_bond_consultant_user_id ||
+      record?.primaryBondConsultantUserId ||
+      record?.assigned_bond_processor_user_id ||
+      record?.assignedBondProcessorUserId ||
+      record?.assigned_bond_manager_user_id ||
+      record?.assignedBondManagerUserId ||
+      record?.assigned_bond_compliance_user_id ||
+      record?.assignedBondComplianceUserId ||
       record?.owner_user_id ||
       record?.ownerUserId ||
       record?.created_by ||
@@ -185,7 +197,13 @@ function getRecordAssignedUserId(record = {}) {
 
 function getRecordWorkspaceUnitId(record = {}) {
   return normalizeText(
-    record?.workspace_unit_id ||
+    record?.assigned_branch_id ||
+      record?.assignedBranchId ||
+      record?.assigned_team_id ||
+      record?.assignedTeamId ||
+      record?.assigned_workspace_unit_id ||
+      record?.assignedWorkspaceUnitId ||
+      record?.workspace_unit_id ||
       record?.workspaceUnitId ||
       record?.branch_id ||
       record?.branchId ||
@@ -197,7 +215,7 @@ function getRecordWorkspaceUnitId(record = {}) {
 }
 
 function getRecordRegionId(record = {}) {
-  return normalizeText(record?.region_id || record?.regionId)
+  return normalizeText(record?.assigned_region_id || record?.assignedRegionId || record?.region_id || record?.regionId)
 }
 
 function normalizeBondAssignTarget(target = {}) {
@@ -209,7 +227,22 @@ function normalizeBondAssignTarget(target = {}) {
       BOND_SCOPE_LEVELS.assigned,
     ),
     regionId: normalizeText(target.regionId || target.region_id || target.region),
-    workspaceUnitId: normalizeText(target.workspaceUnitId || target.workspace_unit_id || target.unitId || target.unit_id),
+    workspaceUnitId: normalizeText(
+      target.workspaceUnitId ||
+        target.workspace_unit_id ||
+        target.assignedWorkspaceUnitId ||
+        target.assigned_workspace_unit_id ||
+        target.branchId ||
+        target.branch_id ||
+        target.assignedBranchId ||
+        target.assigned_branch_id ||
+        target.teamId ||
+        target.team_id ||
+        target.assignedTeamId ||
+        target.assigned_team_id ||
+        target.unitId ||
+        target.unit_id,
+    ),
     assignedUserId: normalizeText(target.assignedUserId || target.assigned_user_id || target.userId || target.user_id),
   }
 }

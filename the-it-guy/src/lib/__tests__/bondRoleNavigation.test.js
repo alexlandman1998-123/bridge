@@ -15,29 +15,38 @@ try {
 
   try {
     const roles = await server.ssrLoadModule('/src/lib/roles.js')
-    const items = roles.getRoleNavItems('bond_originator')
+    const hqItems = roles.getRoleNavItems('bond_originator', { membershipRole: 'bond_hq_manager' })
 
-    const pipelineItem = items.find((item) => item.key === 'bond_pipeline')
-    assert.ok(pipelineItem)
-    assert.equal(pipelineItem.label, 'Pipeline')
-    assert.equal(pipelineItem.to, '/bond/pipeline')
+    assert.deepEqual(
+      hqItems.map((item) => item.label),
+      ['Dashboard', 'Regions', 'Branches', 'Consultants', 'Applications', 'Partners', 'Reports', 'Settings'],
+    )
 
-    const applicationItem = items.find((item) => item.key === 'applications')
-    assert.ok(applicationItem)
-    assert.equal(applicationItem.label, 'Applications')
-    assert.equal(applicationItem.to, '/bond/applications')
+    const regionalItems = roles.getRoleNavItems('bond_originator', { membershipRole: 'bond_regional_manager' })
+    assert.deepEqual(
+      regionalItems.map((item) => item.label),
+      ['Dashboard', 'Branches', 'Consultants', 'Applications', 'Partners', 'Reports'],
+    )
 
-    const organisationItem = items.find((item) => item.key === 'bond_organisation')
-    assert.ok(organisationItem)
-    assert.equal(organisationItem.label, 'Organisation')
-    assert.equal(organisationItem.to, '/bond/organisation')
+    const branchItems = roles.getRoleNavItems('bond_originator', { membershipRole: 'bond_branch_manager' })
+    assert.deepEqual(
+      branchItems.map((item) => item.label),
+      ['Dashboard', 'Consultants', 'Applications', 'Partners'],
+    )
 
-    assert.equal(items.some((item) => item.key === 'documents'), false)
-    assert.equal(items.some((item) => item.key === 'tasks'), false)
-    assert.equal(items.some((item) => item.key === 'bond_calendar'), false)
-    assert.equal(items.some((item) => item.key === 'settings'), true)
-    assert.equal(items.find((item) => item.key === 'dashboard')?.navSection, 'main')
-    assert.equal(items.find((item) => item.key === 'settings')?.navSection, 'secondary')
+    const consultantItems = roles.getRoleNavItems('bond_originator', { membershipRole: 'bond_consultant' })
+    assert.deepEqual(
+      consultantItems.map((item) => item.label),
+      ['Dashboard', 'My Applications', 'Clients', 'Tasks'],
+    )
+
+    const independentItems = roles.getRoleNavItems('bond_originator', { membershipRole: 'bond_independent_consultant' })
+    assert.deepEqual(
+      independentItems.map((item) => item.label),
+      ['Dashboard', 'My Applications', 'Clients', 'Tasks', 'Settings'],
+    )
+    assert.equal(independentItems.some((item) => item.key === 'bond_regions'), false)
+    assert.equal(independentItems.some((item) => item.key === 'bond_branches'), false)
 
     console.log('bond role navigation tests passed')
   } finally {

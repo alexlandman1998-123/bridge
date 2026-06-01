@@ -4,17 +4,8 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import BondEmptyState from '../../components/bond/BondEmptyState'
 import BondPageHeader from '../../components/bond/BondPageHeader'
 import BondPageShell from '../../components/bond/BondPageShell'
-import BondReportingScopeBanner from '../../components/bond/BondReportingScopeBanner'
-import BondSectionCard from '../../components/bond/BondSectionCard'
-import BondTransactionStatusBadge from '../../components/bond/BondTransactionStatusBadge'
-import BondTransactionTable from '../../components/bond/BondTransactionTable'
-import BondViewTabs from '../../components/bond/BondViewTabs'
-import {
-  BOND_TRANSACTION_VIEW_PARAM,
-  bondViews,
-  getBondTransactionView,
-  getBondTransactionViewFromStatus,
-} from '../../config/bondViews'
+import BondTransactionTable, { APPLICATION_PROGRESS_STAGE_OPTIONS, resolveBondProgressStage } from '../../components/bond/BondTransactionTable'
+import { BOND_TRANSACTION_VIEW_PARAM, bondViews, getBondTransactionView, getBondTransactionViewFromStatus } from '../../config/bondViews'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import * as bondCommandCenterService from '../../services/bondCommandCenterService'
 
@@ -31,6 +22,44 @@ function resolveWorkspaceId(workspaceContext = {}) {
       workspaceContext.currentMembership?.organisation_id ||
       workspaceContext.currentMembership?.organisationId,
   )
+}
+
+function normalizeStatusFilter(value) {
+  const normalized = normalizeText(value).toLowerCase().replace(/_/g, '-')
+  if (['all', 'active', 'needs-action', 'at-risk', 'completed'].includes(normalized)) {
+    return normalized
+  }
+  return ''
+}
+
+function statusFilterFromLegacyStatus(status = 'all') {
+  const normalized = normalizeText(status).toLowerCase()
+  if (['at_risk', 'at-risk'].includes(normalized)) return 'at-risk'
+  if (normalized === 'registered') return 'completed'
+  if (normalized === 'declined') return 'completed'
+  if (normalized === 'cancelled') return 'completed'
+  if (normalized === 'all') return 'all'
+  if (normalized === 'active') return 'active'
+  return 'active'
+}
+
+function normalizeSortMode(value) {
+  const normalized = normalizeText(value).toLowerCase().replace(/_/g, '-')
+  if (normalized === 'last_activity' || normalized === 'last-activity') return 'last_activity'
+  return 'last_activity'
+}
+
+function parseRowsForQuery(rows = []) {
+  return Array.isArray(rows) ? rows : []
+}
+
+function parseActivityAt(row = {}) {
+  const date = new Date(row?.lastActivityAt || 0)
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime()
+}
+
+function getDefaultSortRows(rows = []) {
+  return [...parseRowsForQuery(rows)].sort((left, right) => parseActivityAt(right) - parseActivityAt(left))
 }
 
 function matchesSearch(row = {}, query = '') {
@@ -55,6 +84,38 @@ function matchesSearch(row = {}, query = '') {
     .join(' ')
   return haystack.includes(normalizedQuery)
 }
+
+function matchesStatusFilter(row = {}, filter = 'all') {
+  const status = normalizeText(row?.status).toLowerCase()
+  const nextAction = normalizeText(row?.nextAction).toLowerCase()
+
+  if (filter === 'active') {
+    return !['registered', 'at_risk', 'cancelled'].includes(status)
+  }
+  if (filter === 'needs-action') {
+    return !['registered', 'cancelled'].includes(status) && nextAction && nextAction !== 'no next action set'
+  }
+  if (filter === 'at-risk') {
+    return status === 'at_risk'
+  }
+  if (filter === 'completed') {
+    return status === 'registered'
+  }
+  return true
+}
+
+function matchesStageFilter(row = {}, filter = 'all') {
+  if (filter === 'all') return true
+  return resolveBondProgressStage(row) === filter
+}
+
+const STATUS_FILTER_OPTIONS = [
+  { key: 'all', label: 'All' },
+  { key: 'active', label: 'Active' },
+  { key: 'needs-action', label: 'Needs Action' },
+  { key: 'at-risk', label: 'At Risk' },
+  { key: 'completed', label: 'Completed' },
+]
 
 export default function BondTransactionsPage({
   service = bondCommandCenterService,
@@ -84,6 +145,21 @@ export default function BondTransactionsPage({
   const selectedDevelopmentId = useMemo(() => {
     const params = new URLSearchParams(location.search)
     return normalizeText(params.get('developmentId')) || 'all'
+  }, [location.search])
+  const selectedStatusFilter = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    const explicit = normalizeStatusFilter(params.get('filter'))
+    if (explicit) return explicit
+    return statusFilterFromLegacyStatus(selectedView.status)
+  }, [location.search, selectedView.status])
+  const selectedStageFilter = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    const stage = normalizeText(params.get('stage') || 'all')
+    return APPLICATION_PROGRESS_STAGE_OPTIONS.some((option) => option.key === stage) ? stage : 'all'
+  }, [location.search])
+  const selectedSortMode = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    return normalizeSortMode(params.get('sort'))
   }, [location.search])
 
   const loadTransactions = useCallback(async () => {
@@ -122,27 +198,35 @@ export default function BondTransactionsPage({
     void loadTransactions()
   }, [loadTransactions])
 
-  const filteredRows = useMemo(
-    () => (state.snapshot?.rows || []).filter((row) => matchesSearch(row, search)),
-    [search, state.snapshot?.rows],
-  )
-  const tabCounts = useMemo(() => {
-    const cardsByStatus = new Map((state.snapshot?.statusCards || []).map((card) => [card.key, card.count]))
-    return bondViews.transactions.tabs.reduce((accumulator, tab) => {
-      accumulator[tab.key] = Number(cardsByStatus.get(tab.status) || 0)
-      return accumulator
-    }, {})
-  }, [state.snapshot?.statusCards])
+  const filteredRows = useMemo(() => {
+    const baselineRows = getDefaultSortRows(state.snapshot?.rows).filter((row) => matchesSearch(row, search))
+    const statusFilteredRows = baselineRows.filter((row) => matchesStatusFilter(row, selectedStatusFilter))
+    return statusFilteredRows.filter((row) => matchesStageFilter(row, selectedStageFilter))
+  }, [search, selectedStageFilter, selectedStatusFilter, state.snapshot?.rows, selectedSortMode])
 
-  const handleViewChange = useCallback(
-    (viewKey) => {
-      const tab = getBondTransactionView(viewKey)
+  const handleStatusFilterChange = useCallback(
+    (nextFilter) => {
       const params = new URLSearchParams(location.search)
-      params.set(BOND_TRANSACTION_VIEW_PARAM, tab.key)
-      params.delete('status')
+      if (nextFilter === 'all') params.delete('filter')
+      else params.set('filter', nextFilter)
+      if (selectedDevelopmentId && selectedDevelopmentId !== 'all') {
+        params.set('developmentId', selectedDevelopmentId)
+      } else {
+        params.delete('developmentId')
+      }
+      if (selectedSortMode && selectedSortMode !== 'last_activity') {
+        params.set('sort', selectedSortMode)
+      } else {
+        params.delete('sort')
+      }
+      if (selectedStageFilter !== 'all') {
+        params.set('stage', selectedStageFilter)
+      } else {
+        params.delete('stage')
+      }
       navigate(`${bondViews.transactions.basePath}?${params.toString()}`)
     },
-    [location.search, navigate],
+    [location.search, navigate, selectedDevelopmentId, selectedSortMode, selectedStageFilter],
   )
 
   const handleDevelopmentChange = useCallback(
@@ -151,6 +235,17 @@ export default function BondTransactionsPage({
       const params = new URLSearchParams(location.search)
       if (nextDevelopmentId === 'all') params.delete('developmentId')
       else params.set('developmentId', nextDevelopmentId)
+      navigate(`${bondViews.transactions.basePath}?${params.toString()}`)
+    },
+    [location.search, navigate],
+  )
+
+  const handleStageFilterChange = useCallback(
+    (event) => {
+      const nextStage = event.target.value
+      const params = new URLSearchParams(location.search)
+      if (nextStage === 'all') params.delete('stage')
+      else params.set('stage', nextStage)
       navigate(`${bondViews.transactions.basePath}?${params.toString()}`)
     },
     [location.search, navigate],
@@ -185,56 +280,75 @@ export default function BondTransactionsPage({
         secondaryLabel={bondViews.transactions.secondaryActionLabel}
         onPrimary={() => navigate('/bond/pipeline?view=new')}
       />
-      <BondViewTabs
-        tabs={bondViews.transactions.tabs}
-        value={selectedView.key}
-        counts={tabCounts}
-        onChange={handleViewChange}
-      />
 
-      <BondSectionCard
-        className="bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)]"
-        eyebrow="Search"
-        title="Search active applications"
-        description="Search across buyer, property, bank, agent, attorney, consultant, stage, next action, and application references."
-        action={(
-          <div className="flex w-full flex-col gap-3 sm:flex-row xl:max-w-[620px]">
-            <select
-              value={selectedDevelopmentId}
-              onChange={handleDevelopmentChange}
-              className="h-12 rounded-[16px] border border-[#dbe5f0] bg-white px-4 text-sm font-medium text-[#17324d] outline-none transition focus:border-[#bbcbdd]"
-            >
-              {(state.snapshot?.developmentOptions || [{ id: 'all', label: 'All Developments' }]).map((option) => (
-                <option key={option.id || option.value} value={option.value || option.id}>
-                  {option.label || option.name}
-                </option>
-              ))}
-            </select>
-            <label className="relative min-w-0 flex-1">
-              <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#89a0b5]" />
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search applications..."
-                className="h-12 w-full rounded-[16px] border border-[#dbe5f0] bg-white pl-11 pr-4 text-sm text-[#17324d] outline-none transition focus:border-[#bbcbdd]"
-              />
-            </label>
-          </div>
-        )}
-      />
-
-      <BondReportingScopeBanner reportingScope={snapshot?.reportingScope || null} />
-
-      {snapshot ? (
-        <div className="flex flex-wrap items-center gap-3">
-          <BondTransactionStatusBadge status={snapshot.selectedStatus === 'all' ? 'active' : snapshot.selectedStatus} label={snapshot.statusLabel} />
-          <p className="text-sm text-[#60758d]">{filteredRows.length} applications in view</p>
+      <div className="rounded-[18px] border border-[#dce6f2] bg-white px-4 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+        <div className="mb-3 flex flex-wrap gap-2">
+          {STATUS_FILTER_OPTIONS.map((option) => {
+            const active = option.key === selectedStatusFilter
+            return (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => handleStatusFilterChange(option.key)}
+                className={`inline-flex h-10 items-center rounded-full px-3 text-sm font-semibold transition ${
+                  active
+                    ? 'bg-[#102448] text-white shadow-[0_10px_20px_rgba(16,36,72,0.16)]'
+                    : 'text-[#536d87] hover:bg-[#f2f7fd] hover:text-[#17324b]'
+                }`}
+              >
+                {option.label}
+              </button>
+            )
+          })}
         </div>
-      ) : null}
 
-      {!state.loading && snapshot?.totalRows === 0 ? (
-        <BondEmptyState title={snapshot.emptyState.title} description={snapshot.emptyState.description} />
-      ) : null}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+          <label className="relative">
+            <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#89a0b5]" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search applications..."
+              className="h-11 w-full rounded-[14px] border border-[#dbe5f0] bg-[#f9fbff] pl-11 pr-4 text-sm text-[#17324d] outline-none transition focus:border-[#bbcbdd]"
+            />
+          </label>
+
+          <select
+            value={selectedDevelopmentId}
+            onChange={handleDevelopmentChange}
+            className="h-11 rounded-[14px] border border-[#dbe5f0] bg-[#f9fbff] px-4 text-sm font-medium text-[#17324d] outline-none transition focus:border-[#bbcbdd]"
+          >
+            {(snapshot?.developmentOptions || [{ id: 'all', label: 'All Developments' }]).map((option) => (
+              <option key={option.id || option.value} value={option.value || option.id}>
+                {option.label || option.name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={selectedStageFilter}
+            onChange={handleStageFilterChange}
+            className="h-11 rounded-[14px] border border-[#dbe5f0] bg-[#f9fbff] px-4 text-sm font-medium text-[#17324d] outline-none transition focus:border-[#bbcbdd]"
+          >
+            {APPLICATION_PROGRESS_STAGE_OPTIONS.map((option) => (
+              <option key={option.key} value={option.key}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-[#72869b]">Sort</label>
+            <select
+              value={selectedSortMode}
+              disabled
+              className="h-11 w-full rounded-[14px] border border-[#dbe5f0] bg-[#f9fbff] px-4 text-sm font-medium text-[#17324d] outline-none"
+            >
+              <option value="last_activity">Last activity</option>
+            </select>
+          </div>
+        </div>
+      </div>
 
       {snapshot ? <BondTransactionTable rows={filteredRows} /> : null}
 

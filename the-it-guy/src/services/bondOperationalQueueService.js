@@ -296,6 +296,17 @@ export function getNewApplicationsQueue(rows = []) {
     .map(buildBondNewApplicationViewModel)
 }
 
+function getQueueRowTransaction(row = {}) {
+  return row?.transaction && typeof row.transaction === 'object' ? row.transaction : row
+}
+
+export function getVisibleNewApplicationsQueue(user = {}, rows = []) {
+  return (Array.isArray(rows) ? rows : [])
+    .filter((row) => canViewFinanceWorkflow(user, getQueueRowTransaction(row)))
+    .filter(isNewBondApplicationRow)
+    .map(buildBondNewApplicationViewModel)
+}
+
 function hasMissingDocuments(transaction = {}) {
   return (
     normalizeBool(transaction.documents_missing) ||
@@ -468,7 +479,7 @@ export function getManagerEscalationsQueue(user = {}, transactions = []) {
 export function resolveBondOperationalQueues(user = {}, transactions = []) {
   const transactionRows = (Array.isArray(transactions) ? transactions : []).map((transaction) => ({ transaction }))
   return {
-    [BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS]: getNewApplicationsQueue(transactionRows),
+    [BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS]: getVisibleNewApplicationsQueue(user, transactionRows),
     my_applications: getMyApplicationsQueue(user, transactions),
     processing_queue: getProcessingQueue(user, transactions),
     missing_documents: getMissingDocumentsQueue(user, transactions),

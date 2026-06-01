@@ -164,12 +164,25 @@ function pickRole(row = null) {
 function resolveCanonicalAssignment(transaction = null) {
   const candidate = {
     bondWorkspaceId: normalizeUuid(
-      pickText(transaction, ['bond_workspace_id', 'bondWorkspaceId', 'organisation_id', 'organisationId', 'organization_id', 'organizationId']),
+      pickText(transaction, ['assigned_organisation_id', 'assignedOrganisationId', 'bond_workspace_id', 'bondWorkspaceId', 'organisation_id', 'organisationId', 'organization_id', 'organizationId']),
     ),
-    bondRegionId: normalizeUuid(pickText(transaction, ['bond_region_id', 'bondRegionId'])),
-    bondWorkspaceUnitId: normalizeUuid(pickText(transaction, ['bond_workspace_unit_id', 'bondWorkspaceUnitId', 'workspace_unit_id', 'workspaceUnitId'])),
+    bondRegionId: normalizeUuid(pickText(transaction, ['assigned_region_id', 'assignedRegionId', 'bond_region_id', 'bondRegionId'])),
+    bondWorkspaceUnitId: normalizeUuid(
+      pickText(transaction, [
+        'assigned_workspace_unit_id',
+        'assignedWorkspaceUnitId',
+        'assigned_branch_id',
+        'assignedBranchId',
+        'assigned_team_id',
+        'assignedTeamId',
+        'bond_workspace_unit_id',
+        'bondWorkspaceUnitId',
+        'workspace_unit_id',
+        'workspaceUnitId',
+      ]),
+    ),
     primaryConsultantUserId: normalizeUuid(
-      pickText(transaction, ['primary_bond_consultant_user_id', 'primaryBondConsultantUserId', 'bond_originator_user_id', 'bondOriginatorUserId']),
+      pickText(transaction, ['assigned_user_id', 'assignedUserId', 'primary_bond_consultant_user_id', 'primaryBondConsultantUserId', 'bond_originator_user_id', 'bondOriginatorUserId']),
     ),
     processorUserId: normalizeUuid(
       pickText(transaction, ['assigned_bond_processor_user_id', 'assignedBondProcessorUserId', 'processor_user_id', 'processorUserId']),
@@ -180,8 +193,8 @@ function resolveCanonicalAssignment(transaction = null) {
     complianceUserId: normalizeUuid(
       pickText(transaction, ['assigned_bond_compliance_user_id', 'assignedBondComplianceUserId', 'compliance_user_id', 'complianceUserId']),
     ),
-    status: normalizeText(pickText(transaction, ['bond_assignment_status', 'bondAssignmentStatus'])).toLowerCase(),
-    source: normalizeText(pickText(transaction, ['bond_assignment_source', 'bondAssignmentSource', 'assignmentSource'])).toLowerCase(),
+    status: normalizeText(pickText(transaction, ['assignment_status', 'assignmentStatus', 'bond_assignment_status', 'bondAssignmentStatus'])).toLowerCase(),
+    source: normalizeText(pickText(transaction, ['assignment_source', 'assignmentSource', 'bond_assignment_source', 'bondAssignmentSource'])).toLowerCase(),
     workspaceIdFromLegacy: normalizeUuid(transaction?.organisation_id || transaction?.organisationId || transaction?.organization_id || transaction?.organizationId),
   }
 

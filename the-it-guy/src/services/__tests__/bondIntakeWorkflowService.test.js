@@ -128,6 +128,10 @@ function createMockClient() {
             },
             then(resolve) {
               calls.push({ table, action: 'select', columns, filters: query.filters })
+              if (table === 'transaction_bond_applications') {
+                resolve({ data: [{ id: 'bond-application-1' }], error: null })
+                return
+              }
               resolve({ data: [], error: null })
             },
           }
@@ -165,6 +169,13 @@ try {
   const acceptTransactionUpdate = acceptClient.calls.find((call) => call.table === 'transactions' && call.action === 'update')
   assert.equal(acceptTransactionUpdate.payload.bond_assignment_status, 'consultant_assigned')
   assert.equal(acceptTransactionUpdate.payload.primary_bond_consultant_user_id, 'user-consultant-1')
+  const acceptBondApplicationUpdate = acceptClient.calls.find((call) => call.table === 'transaction_bond_applications' && call.action === 'update')
+  assert.equal(acceptBondApplicationUpdate.payload.assigned_organisation_id, 'bond-org-1')
+  assert.equal(acceptBondApplicationUpdate.payload.assigned_user_id, 'user-consultant-1')
+  assert.equal(acceptBondApplicationUpdate.payload.assigned_workspace_unit_id, null)
+  assert.equal(acceptBondApplicationUpdate.payload.scope_level, 'independent')
+  assert.equal(acceptBondApplicationUpdate.payload.scope_metadata.source, 'accepted_from_intake')
+  assert.equal(acceptBondApplicationUpdate.payload.assignment_source, 'accepted_from_intake')
 
   await assert.rejects(
     () => acceptBondIntakeApplication({
@@ -197,7 +208,19 @@ try {
   assert.equal(getNewApplicationsQueue([acceptedRow]).length, 0)
   assert.equal(getBondIntakeStatus({ transaction: acceptedRow.transaction }), BOND_INTAKE_STATUSES.ACCEPTED)
 
-  const manager = makeUser({ workspaceRole: 'branch_manager' })
+  const manager = makeUser({
+    workspaceRole: 'branch_manager',
+    currentMembership: {
+      organisation_id: 'bond-org-1',
+      workspaceRole: 'branch_manager',
+      workspace_role: 'branch_manager',
+      scopeLevel: 'branch',
+      scope_level: 'branch',
+      region_id: 'region-1',
+      workspace_unit_id: 'branch-1',
+      branch_id: 'branch-1',
+    },
+  })
   assert.equal(canAssignBondIntake(manager), true)
   const assignClient = createMockClient()
   await assignBondIntakeApplication({
@@ -207,12 +230,21 @@ try {
       id: 'user-consultant-2',
       name: 'Jason P.',
       email: 'jason@bond.test',
+      regionId: 'region-1',
+      branchId: 'branch-1',
     },
     note: 'Manager assignment',
     client: assignClient,
   })
   const assignUpdate = assignClient.calls.find((call) => call.table === 'transactions' && call.action === 'update')
   assert.equal(assignUpdate.payload.primary_bond_consultant_user_id, 'user-consultant-2')
+  const assignBondApplicationUpdate = assignClient.calls.find((call) => call.table === 'transaction_bond_applications' && call.action === 'update')
+  assert.equal(assignBondApplicationUpdate.payload.assigned_user_id, 'user-consultant-2')
+  assert.equal(assignBondApplicationUpdate.payload.assigned_region_id, 'region-1')
+  assert.equal(assignBondApplicationUpdate.payload.assigned_workspace_unit_id, 'branch-1')
+  assert.equal(assignBondApplicationUpdate.payload.assigned_branch_id, 'branch-1')
+  assert.equal(assignBondApplicationUpdate.payload.scope_level, 'user')
+  assert.equal(assignBondApplicationUpdate.payload.assignment_source, 'assigned_from_intake')
   assert.equal(assignClient.calls.some((call) => call.table === 'transaction_events' && call.payload?.event_type === 'BOND_APPLICATION_ASSIGNED'), true)
 
   await assert.rejects(

@@ -152,6 +152,31 @@ const personalOriginatorTransactions = [
   },
 ]
 
+const applicationAssignmentRows = [
+  {
+    id: 'app-org',
+    transaction_id: 'tx-app-org',
+    assigned_organisation_id: 'workspace-1',
+    assigned_region_id: 'region-1',
+    assigned_branch_id: 'unit-1',
+    assigned_user_id: '11111111-1111-4111-8111-111111111111',
+    assignment_status: 'consultant_assigned',
+    finance_status: 'application_in_progress',
+    updated_at: '2026-05-21T10:00:00.000Z',
+  },
+  {
+    id: 'app-other-branch',
+    transaction_id: 'tx-app-other',
+    assigned_organisation_id: 'workspace-1',
+    assigned_region_id: 'region-2',
+    assigned_branch_id: 'unit-2',
+    assigned_user_id: '55555555-5555-4555-8555-555555555555',
+    assignment_status: 'consultant_assigned',
+    finance_status: 'application_in_progress',
+    updated_at: '2026-05-22T10:00:00.000Z',
+  },
+]
+
 try {
   const dashboardService = await server.ssrLoadModule('/src/services/bondDashboardService.js')
 
@@ -206,6 +231,11 @@ try {
   assert.equal(branchSummary.totalApplications >= 2, true)
   assert.equal(branchSummary.totalApplications < 6, true)
 
+  const branchApplicationSummary = await dashboardService.getBondDashboardSummary(branchManager, 'workspace-1', {
+    transactions: applicationAssignmentRows,
+  })
+  assert.equal(branchApplicationSummary.totalApplications, 1)
+
   const regionalManager = makeContext({
     userId: 'regional-manager-1',
     workspaceRole: 'regional_manager',
@@ -215,6 +245,17 @@ try {
   const regionalSummary = await dashboardService.getBondDashboardSummary(regionalManager, 'workspace-1', { transactions })
   assert.equal(regionalSummary.totalApplications >= 3, true)
   assert.equal(regionalSummary.totalApplications < 6, true)
+
+  const bondAliasRegionalManager = makeContext({
+    userId: 'regional-manager-1',
+    workspaceRole: 'bond_regional_manager',
+    scopeLevel: 'region',
+    regionId: 'region-1',
+  })
+  const aliasRegionalSummary = await dashboardService.getBondDashboardSummary(bondAliasRegionalManager, 'workspace-1', {
+    transactions: applicationAssignmentRows,
+  })
+  assert.equal(aliasRegionalSummary.totalApplications, 1)
 
   const hqManager = makeContext({
     userId: 'hq-manager-1',

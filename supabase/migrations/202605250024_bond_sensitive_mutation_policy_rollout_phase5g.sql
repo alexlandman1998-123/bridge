@@ -1,5 +1,15 @@
 begin;
 
+create or replace function public.bridge_can_override_bond_assignment_scope_phase5f(transaction_id uuid)
+returns boolean
+language sql
+stable
+as $$
+  select
+    public.bridge_is_bond_transaction_canonical_ready(transaction_id)
+    and public.bridge_can_manage_bond_assignment_phase5d(transaction_id)
+$$;
+
 create or replace function public.bridge_can_submit_bond_to_banks_phase5g(transaction_id uuid)
 returns boolean
 language sql
@@ -201,6 +211,7 @@ grant execute on function public.bridge_can_assign_bond_compliance_phase5g(uuid)
 grant execute on function public.bridge_can_clear_bond_assignment_phase5g(uuid) to authenticated;
 grant execute on function public.bridge_can_transfer_bond_application_workspace_phase5g(uuid) to authenticated;
 grant execute on function public.bridge_can_override_bond_assignment_scope_phase5g(uuid) to authenticated;
+grant execute on function public.bridge_can_override_bond_assignment_scope_phase5f(uuid) to authenticated;
 grant execute on function public.bridge_can_mutate_bond_assignment_phase5g(uuid) to authenticated;
 grant execute on function public.bridge_can_mutate_bond_sensitive_transaction_phase5g(uuid) to authenticated;
 

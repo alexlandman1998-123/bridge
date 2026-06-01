@@ -3,6 +3,9 @@ import {
   buildOnboardingSubmittedEmailHtml,
   buildOnboardingSubmittedEmailText,
   buildOnboardingSubmittedSubject,
+  buildClientPortalLinkEmailHtml,
+  buildClientPortalLinkEmailText,
+  buildClientPortalLinkSubject,
 } from "../content/onboardingSubmitted.ts";
 import {
   logOnboardingSubmittedEmailSideEffects,
@@ -30,6 +33,8 @@ export async function handleOnboardingSubmittedEmail(
   req: Request,
   payload: SendOnboardingSubmittedPayload,
 ) {
+  const requestedType = normalizeText(payload.type).toLowerCase();
+  const isClientPortalLinkEmail = requestedType === "client_portal_link";
   const transactionId = normalizeText(payload.transactionId);
   if (!transactionId) {
     return jsonResponse(400, { error: "Missing required field: transactionId" });
@@ -233,6 +238,18 @@ export async function handleOnboardingSubmittedEmail(
     clientPortalLink,
   });
 
+  const emailSubject = isClientPortalLinkEmail
+    ? buildClientPortalLinkSubject()
+    : buildOnboardingSubmittedSubject();
+
+  const emailHtml = isClientPortalLinkEmail
+    ? buildClientPortalLinkEmailHtml(payloadModel)
+    : buildOnboardingSubmittedEmailHtml(payloadModel);
+
+  const emailText = isClientPortalLinkEmail
+    ? buildClientPortalLinkEmailText(payloadModel)
+    : buildOnboardingSubmittedEmailText(payloadModel);
+
   let authProfileExists = false;
   const authProfileQuery = await supabase
     .from("profiles")
@@ -256,9 +273,9 @@ export async function handleOnboardingSubmittedEmail(
     apiKey: resendApiKey,
     from: sender,
     to: buyerEmail,
-    subject: buildOnboardingSubmittedSubject(),
-    html: buildOnboardingSubmittedEmailHtml(payloadModel),
-    text: buildOnboardingSubmittedEmailText(payloadModel),
+    subject: emailSubject,
+    html: emailHtml,
+    text: emailText,
   });
 
   if (!emailResult.ok) {
@@ -287,7 +304,7 @@ export async function handleOnboardingSubmittedEmail(
 
   return jsonResponse(200, {
     ok: true,
-    type: "onboarding_submitted",
+    type: isClientPortalLinkEmail ? "client_portal_link" : "onboarding_submitted",
     sent: true,
     reason: payload.resend ? "resent" : "sent",
     transactionId: transaction.id,

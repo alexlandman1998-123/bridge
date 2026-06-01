@@ -1,4 +1,4 @@
-import { ArrowRight, Building2, FolderKanban, Loader2, Plus, Search, Trash2 } from 'lucide-react'
+import { ArrowRight, Building2, CheckCircle2, CircleAlert, FolderKanban, Loader2, Plus, Search, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -11,7 +11,7 @@ import {
   fetchDevelopmentOptions,
   fetchTransactionsByParticipantSummary,
 } from '../lib/api'
-import { fetchOrganisationSettings } from '../lib/settingsApi'
+import { fetchOrganisationSettings, listOrganisationUsers } from '../lib/settingsApi'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
@@ -26,6 +26,7 @@ import {
   readAgentPrivateListings,
   readDeletedListingIds,
   SELLER_ONBOARDING_STATUS,
+  writeAgentPrivateListings,
 } from '../lib/agentListingStorage'
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
@@ -35,7 +36,7 @@ import {
   getPrivateListingLifecycleState,
   getPrivateListingStatusGroup,
 } from '../lib/privateListingLifecycle'
-import { createPrivateListing, deletePrivateListing, getAgentPrivateListings } from '../services/privateListingService'
+import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListings, updatePrivateListing, uploadPrivateListingDocument } from '../services/privateListingService'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 import {
   getPropertyCategoryLabel,
@@ -50,6 +51,20 @@ import {
 const LISTINGS_VIEW_STORAGE_KEY = 'itg:agent-listings:view-mode:v1'
 const ACTIVE_LISTING_TABS = ['residential', 'developments']
 const MANUAL_LISTING_STATUSES = ['draft', 'active', 'under_offer', 'sold', 'archived']
+const QUICK_ADD_STEPS = ['property', 'seller', 'mandate', 'assignment']
+const QUICK_LISTING_METADATA_PREFIX = 'BRIDGE_QUICK_ADD_METADATA:'
+const LISTING_ORIGINS = ['quick_add', 'guided_onboarding', 'imported_property24', 'manual_admin_capture', 'developer_unit']
+const LISTING_DOCUMENT_CATEGORIES = ['Mandate', 'Seller ID', 'Proof of Address', 'Property Photos', 'Rates and Taxes', 'Bond Statement', 'Title Deed', 'Other']
+const CANONICAL_LISTING_STRUCTURE = [
+  'listing',
+  'property',
+  'seller_party',
+  'mandate',
+  'commission_terms',
+  'agent_assignment',
+  'documents',
+  'transaction_events',
+]
 const TRANSFER_ATTORNEY_OPTIONS = ['Tuckers Attorneys', 'Van Breda Conveyancers', 'Ndlovu Legal Transfers']
 const BOND_ATTORNEY_OPTIONS = ['Bond & Co Attorneys', 'HomeLoan Legal Desk', 'Mokoena Bond Attorneys']
 const BOND_ORIGINATOR_OPTIONS = ['Bridge Bond Desk', 'Prime Originators', 'Urban Finance Originators']
@@ -62,6 +77,28 @@ function formatCurrency(value) {
     currency: 'ZAR',
     maximumFractionDigits: 0,
   }).format(amount)
+}
+
+function normalizeText(value) {
+  return String(value || '').trim()
+}
+
+function normalizeKey(value) {
+  return normalizeText(value).toLowerCase()
+}
+
+function normalizeComparable(value) {
+  return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function normalizeContact(value) {
+  return normalizeText(value).toLowerCase().replace(/[^\da-z@.+-]/g, '')
+}
+
+function normalizeDocumentCategoryKey(value) {
+  const normalized = normalizeText(value)
+  const supported = LISTING_DOCUMENT_CATEGORIES.find((category) => normalizeKey(category) === normalizeKey(normalized))
+  return (supported || 'Other').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
 }
 
 function isUuidLike(value) {
@@ -188,6 +225,19 @@ function resolveListingTypeLabel(listing = {}) {
   return 'Private Sale'
 }
 
+function getListingOriginLabel(listing = {}) {
+  const embedded = parseQuickListingMetadata(listing?.internalListingNotes || listing?.internal_listing_notes || listing?.description) || {}
+  const origin = normalizeKey(listing.origin || listing.source || embedded.origin || embedded.source || 'guided_onboarding')
+  const labels = {
+    quick_add: 'Quick Add',
+    guided_onboarding: 'Guided',
+    imported_property24: 'Property24 Import',
+    manual_admin_capture: 'Admin Capture',
+    developer_unit: 'Developer Unit',
+  }
+  return labels[origin] || origin.replace(/_/g, ' ') || 'Guided'
+}
+
 function getMandateStatus(listing) {
   const explicit = String(listing?.mandateStatus || listing?.mandate_status || '').trim().toLowerCase()
   if (explicit) {
@@ -198,6 +248,68 @@ function getMandateStatus(listing) {
   const parsed = new Date(endDate)
   if (Number.isNaN(parsed.getTime())) return 'Active'
   return parsed.getTime() < Date.now() ? 'Expired' : 'Active'
+}
+
+function getListingSeller(listing = {}) {
+  const facts = listing?.sellerCanonicalFacts || listing?.sellerOnboarding?.canonicalFacts || listing?.sellerOnboarding?.formData || {}
+  const seller = listing?.seller || {}
+  const firstName = normalizeText(facts.firstName || facts.sellerFirstName || facts.name)
+  const lastName = normalizeText(facts.lastName || facts.sellerLastName || facts.surname)
+  return {
+    name: normalizeText(seller.name || facts.sellerName || facts.fullName || facts.registeredName || [firstName, lastName].filter(Boolean).join(' ')),
+    email: normalizeText(seller.email || facts.email || facts.sellerEmail),
+    phone: normalizeText(seller.phone || facts.phone || facts.mobile || facts.sellerPhone),
+    registrationNumber: normalizeText(seller.registrationNumber || facts.idNumber || facts.registrationNumber || facts.companyRegistrationNumber || facts.trustRegistrationNumber),
+  }
+}
+
+function getListingAddress(listing = {}) {
+  return normalizeText(
+    listing.propertyAddress ||
+      listing.addressLine1 ||
+      listing.address_line_1 ||
+      listing.propertyDetails?.addressLine1 ||
+      listing.listingTitle ||
+      listing.title,
+  )
+}
+
+function getListingDocuments(listing = {}) {
+  return [
+    ...(Array.isArray(listing.documents) ? listing.documents : []),
+    ...(Array.isArray(listing.requiredDocuments) ? listing.requiredDocuments : []),
+    ...(Array.isArray(listing.documentRequirements) ? listing.documentRequirements : []),
+  ]
+}
+
+function listingHasDocumentSignal(listing, matchers = []) {
+  const normalizedMatchers = matchers.map(normalizeKey)
+  return getListingDocuments(listing).some((document) => {
+    const key = normalizeKey([document.key, document.documentType, document.document_type, document.documentCategory, document.category, document.name, document.document_name].filter(Boolean).join(' '))
+    const status = normalizeKey(document.status || document.documentStatus || document.document_status)
+    const statusReady = !status || ['uploaded', 'approved', 'verified', 'completed', 'signed'].includes(status)
+    return statusReady && normalizedMatchers.some((matcher) => key.includes(matcher))
+  })
+}
+
+function getListingComplianceWarnings(listing = {}, completeness = null) {
+  const embedded = parseQuickListingMetadata(listing?.internalListingNotes || listing?.internal_listing_notes || listing?.description) || {}
+  const seller = getListingSeller(listing)
+  const commission = listing.commission || embedded.commission || {}
+  const property = embedded.property || {}
+  const mandateStatus = normalizeKey(listing.mandateStatus || listing.mandate_status || embedded.mandateStatus)
+  const missingItems = new Set([...(completeness?.missingItems || []), ...(listing.missingFollowUpItems || [])].map(normalizeKey))
+  const hasCommission = Boolean(normalizeText(commission.value || commission.amount || commission.percentage || embedded.commissionStatus) || normalizeText(embedded?.commission?.value))
+  const hasPhotos = listingHasDocumentSignal(listing, ['property photo', 'property photos', 'photos']) || Boolean(Array.isArray(listing.images) && listing.images.length)
+  const hasMandate = ['signed', 'signed_uploaded', 'approved', 'verified', 'completed'].includes(mandateStatus) || listingHasDocumentSignal(listing, ['mandate', 'signed_mandate'])
+  const warnings = []
+  if (!hasMandate || missingItems.has('signed mandate')) warnings.push('Mandate missing')
+  if (!seller.registrationNumber && !listingHasDocumentSignal(listing, ['seller id', 'fica'])) warnings.push('Seller FICA missing')
+  if (!seller.email || !seller.phone) warnings.push('Seller contact incomplete')
+  if (!hasCommission || missingItems.has('commission structure')) warnings.push('Commission missing')
+  if (!hasPhotos || missingItems.has('property photos')) warnings.push('Photos missing')
+  if (!normalizeText(listing.property24ListingUrl || listing.property24_listing_url || property.externalListingLink)) warnings.push('External listing link missing')
+  return [...new Set(warnings)]
 }
 
 function statusPillClass(statusKey) {
@@ -287,17 +399,26 @@ function formatRelativeDate(value) {
 
 function buildInitialListingLeadForm(profile, workspace) {
   return {
+    quickStep: 'property',
     sellerName: '',
     sellerSurname: '',
     sellerEmail: '',
     sellerPhone: '',
+    sellerType: 'individual',
+    sellerRegistrationNumber: '',
     propertyAddress: '',
     suburb: '',
     propertyType: 'House',
+    listingType: 'sale',
     propertyStructureType: 'full_title',
     leadSource: 'Referral',
     assignedAgent: String(profile?.fullName || profile?.name || profile?.email || '').trim(),
+    assignedAgentId: String(profile?.id || '').trim(),
+    assignedAgentEmail: String(profile?.email || '').trim(),
     agencyOrganisation: String(profile?.agencyName || profile?.company || workspace?.name || '').trim(),
+    branchId: '',
+    branchName: '',
+    visibility: 'agent',
     propertyCategory: 'residential',
     listingSource: 'private_listing',
     listingCategory: 'private_sale',
@@ -314,26 +435,25 @@ function buildInitialListingLeadForm(profile, workspace) {
     commissionPercentage: '',
     commissionAmount: '',
     mandateType: 'sole',
+    mandateSigned: false,
+    mandateStatusCaptured: false,
     mandateStartDate: '',
     mandateEndDate: '',
+    commissionType: 'percentage',
+    commissionValue: '',
+    mandateDocumentCategory: 'Mandate',
+    supportingDocumentCategory: 'Other',
     coAgents: '',
     listingStatus: 'draft',
+    externalListingLink: '',
     transferAttorney: '',
     bondAttorney: '',
     bondOriginator: '',
     notes: '',
+    manualMandateFile: null,
     manualMandateFileName: '',
     supportingDocumentNames: [],
   }
-}
-
-function resolveListingStatusFromManualSelection(value) {
-  const normalized = String(value || '').trim().toLowerCase()
-  if (normalized === 'active') return 'active'
-  if (normalized === 'under_offer') return 'under_offer'
-  if (normalized === 'sold') return 'sold'
-  if (normalized === 'archived') return 'withdrawn'
-  return 'listing_review'
 }
 
 function getStatusLabelFromManualSelection(value) {
@@ -345,10 +465,216 @@ function getStatusLabelFromManualSelection(value) {
   return 'Draft'
 }
 
+function serializeQuickListingMetadata(metadata = {}) {
+  return `${QUICK_LISTING_METADATA_PREFIX}${JSON.stringify(metadata)}`
+}
+
+function parseQuickListingMetadata(value = '') {
+  const text = String(value || '')
+  const markerIndex = text.indexOf(QUICK_LISTING_METADATA_PREFIX)
+  if (markerIndex < 0) return null
+  const raw = text.slice(markerIndex + QUICK_LISTING_METADATA_PREFIX.length).trim()
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function buildListingCompleteness({ form, mandateUploaded = false } = {}) {
+  const mandateSigned = Boolean(form?.mandateSigned)
+  const sellerHasContact = Boolean(normalizeText(form?.sellerEmail) || normalizeText(form?.sellerPhone))
+  const commissionCaptured = Boolean(
+    normalizeText(form?.commissionValue) ||
+      normalizeText(form?.commissionPercentage) ||
+      normalizeText(form?.commissionAmount),
+  )
+  const checks = [
+    { label: 'Property address', complete: Boolean(normalizeText(form?.propertyAddress)) },
+    { label: 'Listing price', complete: Number(form?.listingPrice || form?.estimatedAskingPrice || 0) > 0 },
+    { label: 'Seller name', complete: Boolean(normalizeText(form?.sellerName)) },
+    { label: 'Seller contact details', complete: sellerHasContact },
+    { label: 'Signed mandate', complete: mandateSigned && mandateUploaded },
+    { label: 'Seller FICA', complete: Boolean(normalizeText(form?.sellerRegistrationNumber)) },
+    { label: 'Commission structure', complete: commissionCaptured },
+    { label: 'Property photos', complete: false },
+    { label: 'External listing link', complete: Boolean(normalizeText(form?.externalListingLink)) },
+  ]
+  const completedItems = checks.filter((item) => item.complete).map((item) => item.label)
+  const missingItems = checks.filter((item) => !item.complete).map((item) => item.label)
+  return {
+    score: Math.round((completedItems.length / checks.length) * 100),
+    completedItems,
+    missingItems,
+  }
+}
+
+function getListingCompleteness(listing = {}) {
+  const embedded = parseQuickListingMetadata(listing?.internalListingNotes || listing?.internal_listing_notes || listing?.description)
+  if (embedded?.completeness) return embedded.completeness
+  if (listing?.listingCompleteness) return listing.listingCompleteness
+  const readinessPct = Number(listing?.readinessSummary?.requirementCompletionPct || 0)
+  const missingCount = Number(listing?.readinessSummary?.missingRequirementsCount || 0)
+  return {
+    score: Number.isFinite(readinessPct) ? readinessPct : 0,
+    missingItems: missingCount > 0 ? [`${missingCount} requirement${missingCount === 1 ? '' : 's'}`] : [],
+    completedItems: [],
+  }
+}
+
+function buildQuickListingNotes(form, completeness, mandateStatus) {
+  const humanNotes = [
+    normalizeText(form.notes),
+    `Seller Contact: ${normalizeText(form.sellerName)} · ${normalizeText(form.sellerEmail)} · ${normalizeText(form.sellerPhone)}`,
+    `Quick Add Meta: Beds ${form.bedrooms || '-'} · Baths ${form.bathrooms || '-'} · Parking ${form.parkingCount || '-'} · Erf ${form.erfSize || '-'} · Floor ${form.floorSize || '-'}`,
+    `Mandate: ${mandateStatus} · ${form.mandateType || 'sole'} · ${form.mandateStartDate || '-'} → ${form.mandateEndDate || '-'}`,
+    `Commission: ${form.commissionType || 'percentage'} · ${form.commissionValue || 'Not captured'}`,
+    `External link: ${normalizeText(form.externalListingLink) || 'None'}`,
+  ].filter(Boolean)
+  const metadata = {
+    origin: 'quick_add',
+    canonicalStructure: CANONICAL_LISTING_STRUCTURE,
+    mandateStatus,
+    completeness,
+    source: 'quick_add',
+    allowedOrigins: LISTING_ORIGINS,
+    complianceWarnings: Array.isArray(form.complianceWarnings) ? form.complianceWarnings : [],
+    property: {
+      listingType: normalizeText(form.listingType),
+      bedrooms: normalizeText(form.bedrooms),
+      bathrooms: normalizeText(form.bathrooms),
+      parkingCount: normalizeText(form.parkingCount),
+      erfSize: normalizeText(form.erfSize),
+      propertySize: normalizeText(form.floorSize),
+      externalListingLink: normalizeText(form.externalListingLink),
+    },
+    commission: {
+      type: normalizeText(form.commissionType),
+      value: normalizeText(form.commissionValue),
+      status: normalizeText(form.commissionValue) ? 'captured' : 'missing',
+    },
+    assignment: {
+      assignedAgentId: normalizeText(form.assignedAgentId),
+      assignedAgent: normalizeText(form.assignedAgent),
+      assignedAgentEmail: normalizeText(form.assignedAgentEmail),
+      branchId: normalizeText(form.branchId),
+      branchName: normalizeText(form.branchName),
+      visibility: normalizeText(form.visibility),
+    },
+  }
+  return [...humanNotes, serializeQuickListingMetadata(metadata)].join('\n')
+}
+
+function resolveQuickListingStatus(form) {
+  return normalizeKey(form.listingStatus) === 'active' ? 'active' : 'listing_review'
+}
+
+function resolveQuickListingVisibility(value) {
+  const normalized = normalizeKey(value)
+  if (normalized === 'organisation') return 'active_market'
+  return 'internal'
+}
+
+function extractBranchOptions(settingsContext = null) {
+  const onboarding = settingsContext?.organisationSettings?.agencyOnboarding || {}
+  const branchStructure = onboarding?.branchStructure || settingsContext?.organisationSettings?.branchStructure || {}
+  const branches = Array.isArray(branchStructure?.branches) ? branchStructure.branches : []
+  return branches
+    .map((branch) => ({
+      id: normalizeText(branch.id || branch.branchId),
+      name: normalizeText(branch.branchName || branch.name || branch.label),
+    }))
+    .filter((branch) => branch.id || branch.name)
+}
+
+function getTransactionAddress(row = {}) {
+  return normalizeText(
+    row.propertyAddress ||
+      row.property_address ||
+      row.property_address_line_1 ||
+      row.propertyAddressLine1 ||
+      row.property_description ||
+      row.unit?.propertyAddress ||
+      row.unit?.address ||
+      row.listing?.propertyAddress,
+  )
+}
+
+function findQuickListingDuplicates({ form = {}, listings = [], transactions = [] } = {}) {
+  const targetAddress = normalizeComparable(form.propertyAddress)
+  const targetSellerEmail = normalizeContact(form.sellerEmail)
+  const targetSellerPhone = normalizeContact(form.sellerPhone)
+  const matches = []
+  const seen = new Set()
+
+  ;(Array.isArray(listings) ? listings : []).forEach((listing) => {
+    const id = normalizeText(listing.id || listing.listingId || listing.listingCode || getListingAddress(listing))
+    if (!id || seen.has(`listing:${id}`) || isDeletedListingRecord(listing)) return
+    const seller = getListingSeller(listing)
+    const addressMatch = targetAddress && normalizeComparable(getListingAddress(listing)) === targetAddress
+    const emailMatch = targetSellerEmail && normalizeContact(seller.email) === targetSellerEmail
+    const phoneMatch = targetSellerPhone && normalizeContact(seller.phone) === targetSellerPhone
+    const status = getPrivateListingStatus(listing)
+    if (addressMatch || emailMatch || phoneMatch) {
+      seen.add(`listing:${id}`)
+      matches.push({
+        id,
+        type: 'listing',
+        title: listing.listingTitle || listing.title || getListingAddress(listing) || 'Existing listing',
+        label: listing.listingTitle || listing.title || getListingAddress(listing) || 'Existing listing',
+        reason: [
+          addressMatch ? ['active', 'mandate_signed', 'under_offer', 'listing_review', 'mandate_ready'].includes(status) ? 'Existing listing on same property' : 'Same property address' : '',
+          emailMatch ? 'Seller email matches' : '',
+          phoneMatch ? 'Seller phone matches' : '',
+        ].filter(Boolean).join(' · '),
+        path: `/agent/listings/${encodeURIComponent(id)}`,
+      })
+    }
+  })
+
+  ;(Array.isArray(transactions) ? transactions : []).forEach((transaction) => {
+    const address = getTransactionAddress(transaction)
+    const addressMatch = targetAddress && normalizeComparable(address) === targetAddress
+    if (!addressMatch) return
+    const id = normalizeText(transaction.id || transaction.transactionId || transaction.transaction_id || address)
+    if (!id || seen.has(`transaction:${id}`)) return
+    seen.add(`transaction:${id}`)
+    matches.push({
+      id,
+      type: 'transaction',
+      title: transaction.transactionName || transaction.name || address || 'Existing transaction',
+      label: transaction.transactionName || transaction.name || address || 'Existing transaction',
+      reason: 'Existing transaction on same property',
+      path: id ? `/transactions/${encodeURIComponent(id)}` : '/transactions',
+    })
+  })
+
+  return matches
+}
+
+function validateQuickListingMinimumFields({ form, assignedAgentKey }) {
+  const errors = []
+  if (!normalizeText(form.propertyAddress)) errors.push('Property address is required.')
+  if (!normalizeText(form.sellerName)) errors.push('Seller name is required.')
+  if (!normalizeText(form.sellerEmail) && !normalizeText(form.sellerPhone)) errors.push('Seller email or phone is required.')
+  if (!form.listingPrice || Number(form.listingPrice) <= 0) errors.push('Listing price is required.')
+  if (!normalizeText(assignedAgentKey)) errors.push('Assigned agent is required.')
+  if (!['draft', 'active'].includes(normalizeKey(form.listingStatus))) errors.push('Listing status must be Draft or Active.')
+  return errors
+}
+
+function validateQuickListingActiveRules({ form, assignedAgentKey }) {
+  if (normalizeKey(form.listingStatus) !== 'active') return []
+  const errors = validateQuickListingMinimumFields({ form, assignedAgentKey })
+  if (!form.mandateStatusCaptured) errors.push('Capture whether the mandate is signed before marking the listing Active.')
+  if (!normalizeText(form.commissionValue)) errors.push('Capture the commission structure before marking the listing Active.')
+  return [...new Set(errors)]
+}
+
 function AgentListings({ initialTab = null } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { workspace, profile, agencyWorkflowMode } = useWorkspace()
+  const { workspace, profile, agencyWorkflowMode, currentMembership } = useWorkspace()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -362,8 +688,11 @@ function AgentListings({ initialTab = null } = {}) {
   const [listingModalMode, setListingModalMode] = useState('agent')
   const [listingModalFlow, setListingModalFlow] = useState('seller_lead')
   const [developmentRows, setDevelopmentRows] = useState([])
+  const [transactionRows, setTransactionRows] = useState([])
   const [developmentOptions, setDevelopmentOptions] = useState([])
   const [assignedDevelopmentIds, setAssignedDevelopmentIds] = useState([])
+  const [organisationUsers, setOrganisationUsers] = useState([])
+  const [branchOptions, setBranchOptions] = useState([])
   const [privateListings, setPrivateListings] = useState([])
   const [deletedListingIds, setDeletedListingIds] = useState(() => readDeletedListingIds())
   const [organisationId, setOrganisationId] = useState('')
@@ -372,6 +701,9 @@ function AgentListings({ initialTab = null } = {}) {
     statusGroup: 'all',
     search: '',
   })
+  const [quickAddDuplicateMatches, setQuickAddDuplicateMatches] = useState([])
+  const [quickAddDuplicateOverride, setQuickAddDuplicateOverride] = useState(false)
+  const [quickAddSuccess, setQuickAddSuccess] = useState(null)
 
   const [form, setForm] = useState(() => buildInitialListingLeadForm(profile, workspace))
 
@@ -382,13 +714,15 @@ function AgentListings({ initialTab = null } = {}) {
       let participantRows = []
       let options = []
       let assignedIds = []
+      let userRows = []
+      let branchRows = []
       const locallyDeletedIds = readDeletedListingIds()
       setDeletedListingIds(locallyDeletedIds)
       const runtimeListings = readAgentPrivateListings()
       let dbPrivateListings = []
       let resolvedOrganisationId = ''
       if (isSupabaseConfigured) {
-        const [organisationContext, participantRowsResult, assignedIdsResult] = await Promise.all([
+        const [organisationContext, participantRowsResult, assignedIdsResult, organisationUsersResult] = await Promise.all([
           fetchOrganisationSettings().catch(() => null),
           profile?.id
             ? fetchTransactionsByParticipantSummary({ userId: profile.id, roleType: 'agent' })
@@ -398,9 +732,12 @@ function AgentListings({ initialTab = null } = {}) {
             participantEmail: profile?.email || '',
             roleType: 'agent',
           }),
+          listOrganisationUsers().catch(() => []),
         ])
         participantRows = participantRowsResult
         assignedIds = assignedIdsResult
+        userRows = Array.isArray(organisationUsersResult) ? organisationUsersResult : []
+        branchRows = extractBranchOptions(organisationContext)
         resolvedOrganisationId = String(organisationContext?.organisation?.id || '').trim()
 
         options = assignedIds.length
@@ -409,27 +746,40 @@ function AgentListings({ initialTab = null } = {}) {
 
         const canUseDbFirstPrivateListings = !MOCK_DATA_ENABLED && Boolean(resolvedOrganisationId && profile?.id)
         if (canUseDbFirstPrivateListings) {
-          dbPrivateListings = await getAgentPrivateListings(profile.id, { organisationId: resolvedOrganisationId })
+          dbPrivateListings = await getAgentPrivateListings(profile.id, {
+            organisationId: resolvedOrganisationId,
+            includeAllOrganisationListings:
+              agencyWorkflowMode === 'principal' ||
+              ['principal', 'owner', 'admin', 'hq', 'branch_manager', 'manager', 'team_lead'].includes(
+                normalizeKey(currentMembership?.workspaceRole || currentMembership?.role || currentMembership?.organisationRole || currentMembership?.organisation_role),
+              ),
+          })
         }
       }
       const agentRows = Array.isArray(participantRows) ? participantRows.filter(Boolean) : []
+      setTransactionRows(agentRows)
       setDevelopmentRows(agentRows.filter((row) => getTransactionScopeForRow(row) === 'development'))
       setDevelopmentOptions(Array.isArray(options) ? options : [])
       setAssignedDevelopmentIds(Array.isArray(assignedIds) ? assignedIds : [])
+      setOrganisationUsers(userRows)
+      setBranchOptions(branchRows)
       setOrganisationId(resolvedOrganisationId)
       setPrivateListings(mergePrivateListingRows(dbPrivateListings, runtimeListings, locallyDeletedIds))
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load listings at the moment.')
       setDevelopmentRows([])
+      setTransactionRows([])
       setDevelopmentOptions([])
       setAssignedDevelopmentIds([])
+      setOrganisationUsers([])
+      setBranchOptions([])
       const locallyDeletedIds = readDeletedListingIds()
       setDeletedListingIds(locallyDeletedIds)
       setPrivateListings(mergePrivateListingRows([], readAgentPrivateListings(), locallyDeletedIds))
     } finally {
       if (showLoading) setLoading(false)
     }
-  }, [profile?.email, profile?.id])
+  }, [agencyWorkflowMode, currentMembership?.organisationRole, currentMembership?.organisation_role, currentMembership?.role, currentMembership?.workspaceRole, profile?.email, profile?.id])
 
   useEffect(() => {
     void loadData()
@@ -466,7 +816,7 @@ function AgentListings({ initialTab = null } = {}) {
       .toLowerCase()
     const requestedFlow = String(location.state?.listingModalFlow || 'seller_lead').trim().toLowerCase()
     setListingModalMode(requestedMode === 'principal' ? 'principal' : 'agent')
-    setListingModalFlow(requestedFlow === 'manual' ? 'manual' : 'seller_lead')
+    setListingModalFlow(requestedFlow === 'manual' || requestedFlow === 'quick_add' ? 'quick_add' : 'seller_lead')
     setShowNewListingModal(true)
     navigate(location.pathname, { replace: true, state: {} })
   }, [agencyWorkflowMode, location.pathname, location.state, navigate])
@@ -480,6 +830,10 @@ function AgentListings({ initialTab = null } = {}) {
 
   function updateForm(key, value) {
     setForm((previous) => ({ ...previous, [key]: value }))
+    if (['propertyAddress', 'sellerEmail', 'sellerPhone', 'listingStatus'].includes(key)) {
+      setQuickAddDuplicateMatches([])
+      setQuickAddDuplicateOverride(false)
+    }
   }
 
   function resetForm() {
@@ -487,20 +841,74 @@ function AgentListings({ initialTab = null } = {}) {
   }
 
   const isPrincipalListingMode = listingModalMode === 'principal'
-  const isManualListingFlow = listingModalFlow === 'manual'
+  const isQuickAddListingFlow = listingModalFlow === 'quick_add' || listingModalFlow === 'manual'
+  const isManualListingFlow = isQuickAddListingFlow
+
+  const currentBranchId = normalizeText(currentMembership?.branchId || currentMembership?.branch_id)
+  const currentMembershipRole = normalizeKey(currentMembership?.workspaceRole || currentMembership?.role || currentMembership?.organisationRole || currentMembership?.organisation_role)
+  const canAssignAcrossOrganisation = agencyWorkflowMode === 'principal' || ['principal', 'owner', 'admin', 'hq'].includes(currentMembershipRole)
+  const canAssignWithinBranch = canAssignAcrossOrganisation || ['branch_manager', 'manager', 'team_lead'].includes(currentMembershipRole)
+  const assignableAgents = useMemo(() => {
+    const selfOption = {
+      id: normalizeText(profile?.id),
+      userId: normalizeText(profile?.id),
+      branchId: currentBranchId,
+      fullName: normalizeText(profile?.fullName || profile?.name || profile?.email || 'Current Agent'),
+      email: normalizeText(profile?.email),
+      role: 'agent',
+      status: 'active',
+    }
+    const rows = (Array.isArray(organisationUsers) && organisationUsers.length ? organisationUsers : [selfOption])
+      .filter((user) => ['active', 'invited', ''].includes(normalizeKey(user.status)))
+      .filter((user) => {
+        const role = normalizeKey(user.role)
+        return !role || ['agent', 'principal', 'branch_manager', 'manager'].includes(role)
+      })
+      .filter((user) => {
+        if (canAssignAcrossOrganisation) return true
+        if (canAssignWithinBranch) return normalizeText(user.branchId) === currentBranchId || !currentBranchId
+        return normalizeText(user.userId || user.id || user.email) === normalizeText(profile?.id || profile?.email)
+      })
+    const map = new Map()
+    ;[selfOption, ...rows].forEach((user) => {
+      const key = normalizeText(user.userId || user.id || user.email)
+      if (!key || map.has(key)) return
+      map.set(key, user)
+    })
+    return Array.from(map.values())
+  }, [canAssignAcrossOrganisation, canAssignWithinBranch, currentBranchId, organisationUsers, profile?.email, profile?.fullName, profile?.id, profile?.name])
+
+  const effectiveBranchOptions = useMemo(() => {
+    const options = Array.isArray(branchOptions) ? branchOptions : []
+    if (options.length) return options
+    if (!currentBranchId) return []
+    return [{ id: currentBranchId, name: 'Current branch' }]
+  }, [branchOptions, currentBranchId])
 
   function openSellerLeadModal() {
     setListingModalMode(agencyWorkflowMode === 'principal' ? 'principal' : 'agent')
     setListingModalFlow('seller_lead')
+    setForm((previous) => ({ ...buildInitialListingLeadForm(profile, workspace), branchId: currentBranchId || previous.branchId }))
     setShowNewListingModal(true)
+    setQuickAddDuplicateMatches([])
+    setQuickAddDuplicateOverride(false)
+    setQuickAddSuccess(null)
+    setError('')
+  }
+
+  function openQuickAddListingModal() {
+    setListingModalMode(agencyWorkflowMode === 'principal' ? 'principal' : 'agent')
+    setListingModalFlow('quick_add')
+    setForm((previous) => ({ ...buildInitialListingLeadForm(profile, workspace), branchId: currentBranchId || previous.branchId }))
+    setShowNewListingModal(true)
+    setQuickAddDuplicateMatches([])
+    setQuickAddDuplicateOverride(false)
+    setQuickAddSuccess(null)
     setError('')
   }
 
   function openManualListingModal() {
-    setListingModalMode(agencyWorkflowMode === 'principal' ? 'principal' : 'agent')
-    setListingModalFlow('manual')
-    setShowNewListingModal(true)
-    setError('')
+    openQuickAddListingModal()
   }
 
   async function handleSaveListing(event) {
@@ -516,46 +924,80 @@ function AgentListings({ initialTab = null } = {}) {
     const estimatedPrice = Number(form.estimatedAskingPrice || form.listingPrice || 0)
     const useDbFirstListingPersistence = Boolean(isSupabaseConfigured && !MOCK_DATA_ENABLED)
 
-    if (!sellerName || !sellerSurname || !sellerEmail || !sellerPhone || !propertyAddress || !propertyType) {
-      setError('Seller name, surname, email, phone, property address, and property type are required.')
+    if (!isQuickAddListingFlow && (!sellerName || !sellerSurname || !sellerEmail || !sellerPhone || !propertyAddress || !propertyType)) {
+      setError(
+        'Seller name, surname, email, phone, property address, and property type are required.',
+      )
       return
     }
 
     if (isManualListingFlow) {
-      const normalizedStatus = String(form.listingStatus || 'draft').trim().toLowerCase()
-      if (!MANUAL_LISTING_STATUSES.includes(normalizedStatus)) {
-        setError('Select a valid listing status.')
+      const normalizedStatus = normalizeKey(form.listingStatus || 'draft')
+      const mandateUploaded = Boolean(normalizeText(form.manualMandateFileName))
+      const mandateSigned = Boolean(form.mandateSigned)
+      const mandateStatus = mandateSigned && mandateUploaded ? 'signed_uploaded' : 'missing'
+      const selectedAgent =
+        assignableAgents.find((agent) => normalizeText(agent.userId || agent.id || agent.email) === normalizeText(form.assignedAgentId || form.assignedAgentEmail)) ||
+        assignableAgents[0] ||
+        null
+      const selectedBranch =
+        effectiveBranchOptions.find((branch) => normalizeText(branch.id || branch.name) === normalizeText(form.branchId || form.branchName)) ||
+        null
+      const resolvedAssignedAgentId = normalizeText(selectedAgent?.userId || selectedAgent?.id || profile?.id)
+      const resolvedAssignedAgentName = normalizeText(selectedAgent?.fullName || form.assignedAgent || profile?.fullName || profile?.name || profile?.email)
+      const resolvedAssignedAgentEmail = normalizeText(selectedAgent?.email || form.assignedAgentEmail || profile?.email)
+      const resolvedAssignedAgentKey = normalizeText(resolvedAssignedAgentId || resolvedAssignedAgentEmail)
+      const resolvedBranchId = normalizeText(selectedBranch?.id || form.branchId || currentBranchId)
+      const resolvedBranchName = normalizeText(selectedBranch?.name || form.branchName)
+
+      const minimumErrors = validateQuickListingMinimumFields({ form, assignedAgentKey: resolvedAssignedAgentKey })
+      if (minimumErrors.length) {
+        setError(minimumErrors[0])
         return
       }
-      if (normalizedStatus === 'active' && !form.manualMandateFileName.trim()) {
-        setError('Upload the signed mandate before setting this listing to Active.')
+      const activeErrors = validateQuickListingActiveRules({ form, assignedAgentKey: resolvedAssignedAgentKey })
+      if (activeErrors.length) {
+        setError(activeErrors[0])
         return
       }
-      if (!form.listingPrice && normalizedStatus !== 'draft') {
-        setError('Capture the listing price before using a live status.')
+      if (!resolvedAssignedAgentId && useDbFirstListingPersistence) {
+        setError('Select an assigned agent.')
+        return
+      }
+      const duplicateMatches = findQuickListingDuplicates({
+        form,
+        listings: privateListings,
+        transactions: transactionRows,
+      })
+      if (duplicateMatches.length && !quickAddDuplicateOverride) {
+        setQuickAddDuplicateMatches(duplicateMatches)
+        setError('Possible duplicate found. Review the existing record before creating a new listing.')
         return
       }
 
-      const commissionSummary = [
-        form.commissionPercentage ? `${form.commissionPercentage}%` : '',
-        form.commissionAmount ? `R ${Number(form.commissionAmount || 0).toLocaleString('en-ZA')}` : '',
-      ]
-        .filter(Boolean)
-        .join(' | ')
-
-      const detailsNotes = [
-        form.notes.trim(),
-        `Seller Contact: ${sellerName} ${sellerSurname} · ${sellerEmail} · ${sellerPhone}`,
-        `Manual Listing Meta: Beds ${form.bedrooms || '-'} · Baths ${form.bathrooms || '-'} · Parking ${form.parkingCount || '-'} · Erf ${form.erfSize || '-'} · Floor ${form.floorSize || '-'}`,
-        `Commission: ${commissionSummary || 'Not provided'}`,
-        `Mandate: ${String(form.mandateType || 'sole').replace(/_/g, ' ')} · ${form.mandateStartDate || '-'} → ${form.mandateEndDate || '-'}`,
-        `Co-agents: ${form.coAgents.trim() || 'None'}`,
-        `Manual docs: Mandate ${form.manualMandateFileName || 'Not uploaded'}${
-          form.supportingDocumentNames.length ? ` | Supporting: ${form.supportingDocumentNames.join(', ')}` : ''
-        }`,
-      ]
-        .filter(Boolean)
-        .join('\n')
+      const completeness = buildListingCompleteness({ form, mandateUploaded })
+      const complianceWarnings = getListingComplianceWarnings({
+        mandateStatus,
+        seller: { name: sellerName, email: sellerEmail, phone: sellerPhone, registrationNumber: form.sellerRegistrationNumber },
+        commission: { type: form.commissionType, value: form.commissionValue },
+        property24ListingUrl: form.externalListingLink,
+        documents: mandateUploaded ? [{ document_type: normalizeDocumentCategoryKey(form.mandateDocumentCategory), status: 'uploaded' }] : [],
+      }, completeness)
+      const quickNotes = buildQuickListingNotes(
+        {
+          ...form,
+          assignedAgentId: resolvedAssignedAgentId,
+          assignedAgent: resolvedAssignedAgentName,
+          assignedAgentEmail: resolvedAssignedAgentEmail,
+          branchId: resolvedBranchId,
+          branchName: resolvedBranchName,
+          complianceWarnings,
+        },
+        completeness,
+        mandateStatus,
+      )
+      let createdListingId = ''
+      let createdListingTitle = listingTitle
 
       if (useDbFirstListingPersistence) {
         if (!organisationId) {
@@ -564,95 +1006,177 @@ function AgentListings({ initialTab = null } = {}) {
         }
         const created = await createPrivateListing({
           organisationId,
-          assignedAgentId: String(profile?.id || '').trim() || null,
-          listingStatus: resolveListingStatusFromManualSelection(normalizedStatus),
+          branchId: resolvedBranchId || null,
+          assignedAgentId: resolvedAssignedAgentId || null,
+          listingStatus: resolveQuickListingStatus(form),
           sellerOnboardingStatus: 'completed',
-          mandateStatus: form.manualMandateFileName.trim() ? 'signed' : 'not_started',
-          listingVisibility: normalizedStatus === 'archived' ? 'archived' : 'internal',
+          mandateStatus: mandateStatus === 'signed_uploaded' ? 'signed' : 'not_started',
+          listingVisibility: resolveQuickListingVisibility(form.visibility),
           title: listingTitle,
           propertyCategory: normalizePropertyCategory(form.propertyCategory, { fallback: 'residential' }),
           listingSource: 'private_listing',
           propertyStructureType: normalizePropertyStructureType(form.propertyStructureType, { fallback: 'other' }),
           propertyType: form.propertyType,
-          listingCategory: form.listingCategory,
+          listingCategory: form.listingType === 'rental' ? 'rental' : 'private_sale',
           askingPrice: Number(form.listingPrice || 0) || estimatedPrice,
           estimatedValue: Number(form.listingPrice || 0) || estimatedPrice,
           addressLine1: propertyAddress,
           suburb: form.suburb.trim(),
           city: form.city.trim(),
           province: form.province.trim(),
-          description: detailsNotes,
-          sellerType: 'individual',
+          description: quickNotes,
+          internalListingNotes: quickNotes,
+          listingPreviewDescription: form.notes.trim(),
+          sellerType: form.sellerType,
           mandateType: form.mandateType.trim() || 'sole',
-          source: 'listings_manual_add_listing',
+          property24ListingUrl: form.externalListingLink,
+          source: 'quick_add',
+          origin: 'quick_add',
+          completeness,
+          canonicalStructure: CANONICAL_LISTING_STRUCTURE,
         })
         if (!created?.listing?.id) {
-          throw new Error('Unable to create the manual listing record.')
+          throw new Error('Unable to create the quick listing record.')
         }
+        createdListingId = created.listing.id
+        createdListingTitle = created.listing.listingTitle || created.listing.title || listingTitle
+        if (mandateUploaded && form.manualMandateFile) {
+          await uploadPrivateListingDocument(created.listing.id, form.manualMandateFile, {
+            documentType: normalizeDocumentCategoryKey(form.mandateDocumentCategory),
+            documentCategory: form.mandateDocumentCategory,
+            documentName: form.manualMandateFileName,
+            visibility: 'internal',
+            status: 'uploaded',
+          }).catch((uploadError) => {
+            console.warn('[Listings] quick add mandate upload skipped', uploadError)
+            return null
+          })
+          await updatePrivateListing(created.listing.id, { mandateStatus: 'signed' }, { includeRequirementsAndDocuments: false }).catch(() => null)
+        }
+        await createPrivateListingActivity({
+          privateListingId: created.listing.id,
+          activityType: 'quick_add_listing_created',
+          activityTitle: 'Listing created via Quick Add',
+          activityDescription: 'Listing created from manual quick capture.',
+          performedBy: profile?.id || null,
+          visibility: 'internal',
+          metadata: {
+            origin: 'quick_add',
+            assignedAgentId: resolvedAssignedAgentId,
+            assignedAgent: resolvedAssignedAgentName,
+            assignedAgentEmail: resolvedAssignedAgentEmail,
+            branchId: resolvedBranchId,
+            workspaceId: workspace?.id || null,
+            mandateStatus,
+            documentUploaded: mandateUploaded,
+            duplicateOverride: quickAddDuplicateOverride,
+            documentsUploaded: mandateUploaded ? [{ category: form.mandateDocumentCategory, name: form.manualMandateFileName }] : [],
+            missingComplianceItems: complianceWarnings,
+            missingFollowUpItems: completeness.missingItems,
+            canonicalStructure: CANONICAL_LISTING_STRUCTURE,
+            createdAt: new Date().toISOString(),
+          },
+        }).catch(() => null)
       } else {
-        const manualLead = createAgentSellerLead({
-          id: generateId('seller_lead'),
-          sellerName,
-          sellerSurname,
-          sellerEmail,
-          sellerPhone,
-          propertyAddress: [propertyAddress, form.suburb.trim(), form.city.trim()].filter(Boolean).join(', '),
+        const quickListing = {
+          id: generateId('listing'),
+          listingCode: `QL-${Date.now().toString().slice(-6)}`,
+          origin: 'quick_add',
+          source: 'quick_add',
+          canonicalStructure: CANONICAL_LISTING_STRUCTURE,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          activatedAt: normalizedStatus === 'active' ? new Date().toISOString() : null,
+          listingTitle,
           propertyType: form.propertyType,
-          estimatedPrice: Number(form.listingPrice || 0) || estimatedPrice,
-          leadSource: form.leadSource.trim() || 'Manual',
-          agentId: String(profile?.email || profile?.id || '').trim().toLowerCase(),
-          assignedAgentName: form.assignedAgent.trim() || String(profile?.fullName || profile?.name || profile?.email || '').trim(),
-          assignedAgentEmail: String(profile?.email || '').trim(),
-          agencyId: profile?.agencyId || '',
-          assignedAgent: form.assignedAgent.trim() || String(profile?.fullName || profile?.name || profile?.email || '').trim(),
-          agencyOrganisation: form.agencyOrganisation.trim() || String(profile?.agencyName || profile?.company || workspace?.name || '').trim(),
-          listingCategory: form.listingCategory,
           propertyCategory: form.propertyCategory,
           listingSource: 'private_listing',
+          listingCategory: form.listingType === 'rental' ? 'rental' : 'private_sale',
           propertyStructureType: form.propertyStructureType,
-          propertyData: {
-            listingTitle,
-            propertyAddress,
-            suburb: form.suburb.trim(),
-            city: form.city.trim(),
-            province: form.province.trim(),
+          propertyAddress: [propertyAddress, form.suburb.trim(), form.city.trim()].filter(Boolean).join(', '),
+          addressLine1: propertyAddress,
+          suburb: form.suburb.trim(),
+          city: form.city.trim(),
+          province: form.province.trim(),
+          askingPrice: Number(form.listingPrice || 0) || estimatedPrice,
+          bedrooms: Number(form.bedrooms || 0) || 0,
+          bathrooms: Number(form.bathrooms || 0) || 0,
+          parkingCount: Number(form.parkingCount || 0) || 0,
+          erfSize: Number(form.erfSize || 0) || null,
+          floorSize: Number(form.floorSize || 0) || null,
+          property24ListingUrl: form.externalListingLink,
+          mandateType: form.mandateType,
+          mandateStatus,
+          mandateStartDate: form.mandateStartDate || null,
+          mandateEndDate: form.mandateEndDate || null,
+          sellerType: form.sellerType,
+          seller: {
+            name: [sellerName, sellerSurname].filter(Boolean).join(' ').trim() || sellerName,
+            email: sellerEmail,
+            phone: sellerPhone,
+            registrationNumber: form.sellerRegistrationNumber,
           },
           commission: {
-            commission_percentage: Number(form.commissionPercentage || 0) || null,
-            commission_amount: Number(form.commissionAmount || 0) || null,
+            type: form.commissionType,
+            value: Number(form.commissionValue || 0) || null,
           },
-          mandate: {
-            type: form.mandateType,
-            startDate: form.mandateStartDate || null,
-            endDate: form.mandateEndDate || null,
-            signed: Boolean(form.manualMandateFileName.trim()),
-            signedAt: form.manualMandateFileName.trim() ? new Date().toISOString() : null,
-          },
-          notes: detailsNotes,
-          listingStatus: resolveListingStatusFromManualSelection(normalizedStatus),
           sellerOnboarding: {
-            token: '',
-            link: '',
             status: SELLER_ONBOARDING_STATUS.COMPLETED,
-            startedAt: null,
-            submittedAt: new Date().toISOString(),
             completedAt: new Date().toISOString(),
-            reviewedAt: null,
-            formData: {},
           },
-        })
-        const stage = normalizedStatus === 'draft' ? LISTING_STATUS.MANDATE_READY : LISTING_STATUS.MANDATE_SIGNED
-        createListingDraftFromSellerLead(manualLead, { stage })
+          documents: mandateUploaded
+            ? [{ id: generateId('document'), category: form.mandateDocumentCategory, document_type: normalizeDocumentCategoryKey(form.mandateDocumentCategory), document_name: form.manualMandateFileName, status: 'uploaded', uploaded_at: new Date().toISOString() }]
+            : [],
+          requiredDocuments: [],
+          listingCompleteness: completeness,
+          missingFollowUpItems: completeness.missingItems,
+          complianceWarnings,
+          internalListingNotes: quickNotes,
+          notes: quickNotes,
+          assignedAgentId: resolvedAssignedAgentId,
+          assignedAgentName: resolvedAssignedAgentName,
+          assignedAgentEmail: resolvedAssignedAgentEmail,
+          branchId: resolvedBranchId,
+          branchName: resolvedBranchName,
+          visibility: form.visibility,
+          activityLog: [
+            {
+              type: 'quick_add_listing_created',
+              title: 'Listing created via Quick Add',
+              createdBy: profile?.id || null,
+              assignedAgent: resolvedAssignedAgentName,
+              mandateStatus,
+              documentUploaded: mandateUploaded,
+              duplicateOverride: quickAddDuplicateOverride,
+              documentsUploaded: mandateUploaded ? [{ category: form.mandateDocumentCategory, name: form.manualMandateFileName }] : [],
+              missingComplianceItems: complianceWarnings,
+              missingFollowUpItems: completeness.missingItems,
+              createdAt: new Date().toISOString(),
+            },
+          ],
+          status: normalizedStatus === 'active' ? LISTING_STATUS.LISTING_ACTIVE : LISTING_STATUS.MANDATE_READY,
+          listingStatus: normalizedStatus === 'active' ? LISTING_STATUS.LISTING_ACTIVE : LISTING_STATUS.MANDATE_READY,
+        }
+        createdListingId = quickListing.id
+        createdListingTitle = quickListing.listingTitle
+        writeAgentPrivateListings([quickListing, ...readAgentPrivateListings()])
       }
 
       setShowNewListingModal(false)
       resetForm()
       setError('')
+      setQuickAddDuplicateMatches([])
+      setQuickAddDuplicateOverride(false)
+      setQuickAddSuccess({
+        id: createdListingId,
+        title: createdListingTitle,
+        completeness: completeness.score,
+        mandateStatus,
+        complianceWarnings,
+      })
       setWorkflowMessage(
-        `Manual listing created in ${getStatusLabelFromManualSelection(normalizedStatus)} status.${
-          form.manualMandateFileName.trim()
-            ? ' Signed mandate captured for verification.'
-            : ' Signed mandate still missing, so keep this in draft/review until upload is completed.'
+        `Quick Add Listing created in ${getStatusLabelFromManualSelection(normalizedStatus)} status. Completeness ${completeness.score}%${
+          mandateStatus === 'missing' ? ' with mandate follow-up still required.' : ' with signed mandate captured.'
         }`,
       )
       window.dispatchEvent(new Event('itg:listings-updated'))
@@ -687,7 +1211,8 @@ function AgentListings({ initialTab = null } = {}) {
         province: form.province.trim(),
         description: form.notes.trim(),
         sellerType: 'individual',
-        source: 'listings_new_listing',
+        source: 'guided_onboarding',
+        origin: 'guided_onboarding',
       })
       if (!created?.listing?.id) {
         throw new Error('Unable to create private listing intake record.')
@@ -728,6 +1253,7 @@ function AgentListings({ initialTab = null } = {}) {
           bondOriginator: form.bondOriginator.trim(),
         },
         notes: form.notes.trim(),
+        origin: 'guided_onboarding',
         listingStatus: LISTING_STATUS.SELLER_ONBOARDING_SENT,
         sellerOnboarding: {
           token,
@@ -860,6 +1386,9 @@ function AgentListings({ initialTab = null } = {}) {
       const propertyStructureType = resolvePropertyStructureType(listing)
       const lifecycleGroup = getPrivateListingStatusGroup(statusKey)
       const lifecycleNextAction = getPrivateListingLifecycleNextAction(listing)
+      const completeness = getListingCompleteness(listing)
+      const quickMetadata = parseQuickListingMetadata(listing?.internalListingNotes || listing?.internal_listing_notes || listing?.description)
+      const complianceWarnings = getListingComplianceWarnings(listing, completeness)
       const lifecycleBlockers = evaluatePrivateListingTransitionGuards(
         listing,
         statusKey === 'seller_lead'
@@ -878,15 +1407,16 @@ function AgentListings({ initialTab = null } = {}) {
         propertyCategoryLabel: getPropertyCategoryLabel(propertyCategory),
         listingSource,
         listingSourceLabel: listingSource === 'development' ? 'Development' : 'Private Listing',
+        originLabel: getListingOriginLabel(listing),
         propertyStructureType,
         propertyStructureTypeLabel: getPropertyStructureTypeLabel(propertyStructureType),
         title: listing.listingTitle || 'Untitled listing',
         suburb: [listing.suburb, listing.city].filter(Boolean).join(', ') || 'Location pending',
         address: [listing.addressLine1 || listing.propertyAddress, listing.suburb, listing.city].filter(Boolean).join(', ') || 'Address pending',
         price: Number(listing.askingPrice || 0),
-        bedroomsText: `${Number(listing.bedrooms || listing.bedroomCount || 0) || 0} bed`,
-        bathroomsText: `${Number(listing.bathrooms || listing.bathroomCount || 0) || 0} bath`,
-        parkingText: `${Number(listing.parkingCount || listing.parking_count || listing.garages || 0) || 0} parking`,
+        bedroomsText: `${Number(listing.bedrooms || listing.bedroomCount || quickMetadata?.property?.bedrooms || 0) || 0} bed`,
+        bathroomsText: `${Number(listing.bathrooms || listing.bathroomCount || quickMetadata?.property?.bathrooms || 0) || 0} bath`,
+        parkingText: `${Number(listing.parkingCount || listing.parking_count || listing.garages || quickMetadata?.property?.parkingCount || 0) || 0} parking`,
         listingStatusKey: statusKey,
         listingStatusLabel: getListingStatusLabel(statusKey),
         lifecycleGroup,
@@ -894,6 +1424,9 @@ function AgentListings({ initialTab = null } = {}) {
         lifecycleNextAction,
         lifecycleBlockers,
         mandateStatusLabel: getMandateStatus(listing),
+        completenessScore: completeness.score,
+        missingCompletenessItems: completeness.missingItems || [],
+        complianceWarnings,
         sellerTypeLabel: String(listing?.sellerType || listing?.seller_type || 'individual').replace(/_/g, ' '),
         requirementCompletionPct: Number(listing?.readinessSummary?.requirementCompletionPct || 0),
         missingRequirementsCount: Number(listing?.readinessSummary?.missingRequirementsCount || 0),
@@ -918,8 +1451,8 @@ function AgentListings({ initialTab = null } = {}) {
     return privateListingCards.filter((card) => {
       const categoryMatch = targetCategories.has(String(card.propertyCategory || 'residential').toLowerCase())
       const statusMatch = filters.statusGroup === 'all' ? true : card.lifecycleGroup === filters.statusGroup
-      const searchMatch = query
-        ? [card.title, card.suburb, card.typeLabel, card.agentName].join(' ').toLowerCase().includes(query)
+	      const searchMatch = query
+	        ? [card.title, card.suburb, card.typeLabel, card.agentName, card.originLabel].join(' ').toLowerCase().includes(query)
         : true
       return categoryMatch && statusMatch && searchMatch
     })
@@ -1126,10 +1659,39 @@ function AgentListings({ initialTab = null } = {}) {
             </label>
           </div>
 
+          {listingsTab !== 'developments' ? (
+            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+              <Button type="button" onClick={openQuickAddListingModal}>
+                <Plus size={16} />
+                Quick Add Listing
+              </Button>
+              <Button type="button" variant="secondary" onClick={openSellerLeadModal}>
+                <Plus size={16} />
+                Guided Listing
+              </Button>
+            </div>
+          ) : null}
         </div>
 
         {error ? <p className="mt-3 rounded-[14px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-2 text-sm text-[#b42318]">{error}</p> : null}
         {workflowMessage ? <p className="mt-3 rounded-[14px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-2 text-sm text-[#1f7d44]">{workflowMessage}</p> : null}
+        {quickAddSuccess ? (
+          <div className="mt-3 rounded-[18px] border border-[#d8ecdf] bg-[#f3fbf6] p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-[#1f7d44]">Listing created successfully. What would you like to do next?</p>
+                <p className="mt-1 text-xs text-[#4d6a59]">{quickAddSuccess.title} · {quickAddSuccess.completeness}% complete</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" size="sm" onClick={() => navigate(`/agent/listings/${encodeURIComponent(quickAddSuccess.id)}`)}>Open Listing</Button>
+                <Button type="button" size="sm" variant="secondary" onClick={() => setWorkflowMessage('Mandate generation will be available from the listing workspace.')}>Generate Mandate</Button>
+                <Button type="button" size="sm" variant="secondary" onClick={() => navigate(`/agent/listings/${encodeURIComponent(quickAddSuccess.id)}`)}>Add Photos</Button>
+                <Button type="button" size="sm" variant="secondary" onClick={() => navigate(`/agent/listings/${encodeURIComponent(quickAddSuccess.id)}`)}>Add Seller Documents</Button>
+                <Button type="button" size="sm" variant="secondary" onClick={() => window.dispatchEvent(new CustomEvent('itg:open-new-transaction', { detail: { listingId: quickAddSuccess.id } }))}>Create Deal</Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
@@ -1217,13 +1779,37 @@ function AgentListings({ initialTab = null } = {}) {
                       <p className="mt-1 text-sm text-[#607387]">{card.address}</p>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
+	                    <div className="flex flex-wrap gap-2">
                       <span className={`inline-flex rounded-full border px-3 py-1 text-[0.74rem] font-semibold ${statusPillClass(card.listingStatusKey)}`}>
                         {card.listingStatusLabel}
                       </span>
-                    </div>
+                      <span className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1 text-[0.74rem] font-semibold text-[#35546c]">
+                        Mandate: {card.mandateStatusLabel}
+                      </span>
+	                      <span className="inline-flex rounded-full border border-[#d8ecdf] bg-[#eefbf3] px-3 py-1 text-[0.74rem] font-semibold text-[#1f7d44]">
+	                        {card.completenessScore}% complete
+	                      </span>
+	                      <span className="inline-flex rounded-full border border-[#e1e8f0] bg-[#f7fbff] px-3 py-1 text-[0.74rem] font-semibold text-[#607387]">
+	                        {card.originLabel}
+	                      </span>
+	                    </div>
 
-                    <div className="grid grid-cols-3 gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#f9fbfe] px-3 py-2 text-[0.76rem] font-semibold text-[#35546c]">
+	                    {card.complianceWarnings?.length ? (
+	                      <div className="flex flex-wrap gap-1.5">
+	                        {card.complianceWarnings.slice(0, 3).map((warning) => (
+	                          <span key={warning} className="inline-flex rounded-full border border-[#f2dfbf] bg-[#fff8ea] px-2.5 py-1 text-[0.68rem] font-semibold text-[#8a5b16]">
+	                            {warning}
+	                          </span>
+	                        ))}
+	                        {card.complianceWarnings.length > 3 ? (
+	                          <span className="inline-flex rounded-full border border-[#e1e8f0] bg-[#f7fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
+	                            +{card.complianceWarnings.length - 3} more
+	                          </span>
+	                        ) : null}
+	                      </div>
+	                    ) : null}
+
+	                    <div className="grid grid-cols-3 gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#f9fbfe] px-3 py-2 text-[0.76rem] font-semibold text-[#35546c]">
                       <span>{card.bedroomsText}</span>
                       <span>{card.bathroomsText}</span>
                       <span>{card.parkingText}</span>
@@ -1270,11 +1856,11 @@ function AgentListings({ initialTab = null } = {}) {
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                 <Button type="button" variant="secondary" onClick={openSellerLeadModal}>
                   <Plus size={16} />
-                  New Seller Lead
+                  Guided Listing
                 </Button>
                 <Button type="button" onClick={openManualListingModal}>
                   <Plus size={16} />
-                  Add Listing
+                  Quick Add Listing
                 </Button>
               </div>
             </div>
@@ -1367,31 +1953,103 @@ function AgentListings({ initialTab = null } = {}) {
             <SectionHeader
               title={
                 isManualListingFlow
-                  ? isPrincipalListingMode
-                    ? 'Add Residential Listing (Principal)'
-                    : 'Add Residential Listing'
+                  ? 'Quick Add Listing'
                   : isPrincipalListingMode
                     ? 'New Seller Lead (Principal)'
                     : 'New Seller Lead'
               }
               copy={
                 isManualListingFlow
-                  ? 'Capture a manual listing when stock is sourced outside the seller onboarding workflow. Upload the signed mandate and confirm commission details.'
+                  ? 'Create a listing quickly from the key information you already have.'
                   : isPrincipalListingMode
                     ? 'Capture lead setup, assign role players, and push onboarding through the agency workflow.'
                     : 'Capture core seller details and trigger onboarding quickly. The principal team can enrich the listing later.'
               }
             />
 
+            {isManualListingFlow ? (
+              <div className="mt-5 grid gap-2 md:grid-cols-4">
+                {[
+                  { key: 'property', label: 'Property Details' },
+                  { key: 'seller', label: 'Seller Details' },
+                  { key: 'mandate', label: 'Mandate & Commission' },
+                  { key: 'assignment', label: 'Assignment' },
+                ].map((step, index) => {
+                  const active = form.quickStep === step.key
+                  return (
+                    <button
+                      key={step.key}
+                      type="button"
+                      onClick={() => updateForm('quickStep', step.key)}
+                      className={`rounded-[14px] border px-3 py-2 text-left text-sm font-semibold transition ${
+                        active
+                          ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_10px_20px_rgba(31,79,120,0.18)]'
+                          : 'border-[#dce6f2] bg-[#fbfdff] text-[#35546c] hover:border-[#b7c8db]'
+                      }`}
+                    >
+                      <span className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-full border border-current/30 text-[0.75rem]">{index + 1}</span>
+                      {step.label}
+                    </button>
+                  )
+                })}
+              </div>
+            ) : null}
+
+            {isManualListingFlow && quickAddDuplicateMatches.length ? (
+              <div className="mt-5 rounded-[18px] border border-[#f0d7a7] bg-[#fff8ea] p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-[#8a5b16]">Possible duplicate found</p>
+                    <div className="mt-2 space-y-1 text-sm text-[#6f4a15]">
+                      {quickAddDuplicateMatches.slice(0, 3).map((match) => (
+                        <p key={`${match.type}:${match.id}`}>
+                          <span className="font-semibold">{match.label}</span> · {match.reason}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" variant="secondary" onClick={() => {
+                      setShowNewListingModal(false)
+                      navigate(quickAddDuplicateMatches[0]?.path || '/listings')
+                    }}>
+                      View existing record
+                    </Button>
+                    {quickAddDuplicateMatches.some((match) => match.type === 'listing') ? (
+                      <Button type="button" size="sm" variant="secondary" onClick={() => {
+                        const listingMatch = quickAddDuplicateMatches.find((match) => match.type === 'listing')
+                        setShowNewListingModal(false)
+                        navigate(listingMatch?.path || '/listings')
+                      }}>
+                        Link to existing listing
+                      </Button>
+                    ) : null}
+                    <Button type="button" size="sm" onClick={() => {
+                      setQuickAddDuplicateOverride(true)
+                      setQuickAddDuplicateMatches([])
+                      setError('')
+                      setWorkflowMessage('Duplicate override noted. Click Create Listing again to continue.')
+                    }}>
+                      Continue anyway
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             <form className="mt-5 space-y-6" onSubmit={handleSaveListing}>
-              <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+              <section className={`${isManualListingFlow && form.quickStep !== 'seller' ? 'hidden' : ''} space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4`}>
                 <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Seller</h4>
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <label className="grid gap-2">
                     <span className="text-sm font-semibold text-[#2d445e]">Seller name</span>
-                    <Field value={form.sellerName} onChange={(event) => updateForm('sellerName', event.target.value)} placeholder="First name" />
+                    <Field
+                      value={form.sellerName}
+                      onChange={(event) => updateForm('sellerName', event.target.value)}
+                      placeholder={isManualListingFlow ? 'Seller full name' : 'First name'}
+                    />
                   </label>
-                  <label className="grid gap-2">
+                  <label className={`${isManualListingFlow ? 'hidden' : ''} grid gap-2`}>
                     <span className="text-sm font-semibold text-[#2d445e]">Seller surname</span>
                     <Field value={form.sellerSurname} onChange={(event) => updateForm('sellerSurname', event.target.value)} placeholder="Surname" />
                   </label>
@@ -1403,10 +2061,27 @@ function AgentListings({ initialTab = null } = {}) {
                     <span className="text-sm font-semibold text-[#2d445e]">Seller phone</span>
                     <Field value={form.sellerPhone} onChange={(event) => updateForm('sellerPhone', event.target.value)} placeholder="082..." />
                   </label>
+                  {isManualListingFlow ? (
+                    <>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Seller type</span>
+                        <Field as="select" value={form.sellerType} onChange={(event) => updateForm('sellerType', event.target.value)}>
+                          <option value="individual">Individual</option>
+                          <option value="company">Company</option>
+                          <option value="trust">Trust</option>
+                          <option value="deceased_estate">Deceased Estate</option>
+                        </Field>
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">ID / registration number</span>
+                        <Field value={form.sellerRegistrationNumber} onChange={(event) => updateForm('sellerRegistrationNumber', event.target.value)} placeholder="Optional" />
+                      </label>
+                    </>
+                  ) : null}
                 </div>
               </section>
 
-              <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+              <section className={`${isManualListingFlow && form.quickStep !== 'property' ? 'hidden' : ''} space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4`}>
                 <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Property</h4>
                 <div className={`grid gap-4 md:grid-cols-2 ${isManualListingFlow ? 'xl:grid-cols-4' : 'xl:grid-cols-4'}`}>
                   {isManualListingFlow ? (
@@ -1440,6 +2115,21 @@ function AgentListings({ initialTab = null } = {}) {
                       <option>Sectional Title</option>
                     </Field>
                   </label>
+                  {isManualListingFlow ? (
+                    <>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Listing type</span>
+                        <Field as="select" value={form.listingType} onChange={(event) => updateForm('listingType', event.target.value)}>
+                          <option value="sale">Sale</option>
+                          <option value="rental">Rental</option>
+                        </Field>
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Listing price</span>
+                        <Field type="number" value={form.listingPrice} onChange={(event) => updateForm('listingPrice', event.target.value)} placeholder="2500000" min="0" step="1000" />
+                      </label>
+                    </>
+                  ) : null}
                   <label className="grid gap-2">
                     <span className="text-sm font-semibold text-[#2d445e]">Property category</span>
                     <Field as="select" value={form.propertyCategory} onChange={(event) => updateForm('propertyCategory', event.target.value)}>
@@ -1479,20 +2169,28 @@ function AgentListings({ initialTab = null } = {}) {
                         <Field type="number" min="0" value={form.erfSize} onChange={(event) => updateForm('erfSize', event.target.value)} />
                       </label>
                       <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-[#2d445e]">Floor size (sqm)</span>
+                        <span className="text-sm font-semibold text-[#2d445e]">Property size (sqm)</span>
                         <Field type="number" min="0" value={form.floorSize} onChange={(event) => updateForm('floorSize', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 xl:col-span-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Property24 / external listing link</span>
+                        <Field value={form.externalListingLink} onChange={(event) => updateForm('externalListingLink', event.target.value)} placeholder="https://..." />
+                      </label>
+                      <label className="grid gap-2 xl:col-span-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Notes</span>
+                        <Field as="textarea" value={form.notes} onChange={(event) => updateForm('notes', event.target.value)} placeholder="Internal notes" />
                       </label>
                     </>
                   ) : null}
                 </div>
               </section>
 
-              <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+              <section className={`${isManualListingFlow && form.quickStep !== 'mandate' ? 'hidden' : ''} space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4`}>
                 <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">
-                  {isManualListingFlow ? 'Commercial Terms & Assignment' : 'Lead Routing'}
+                  {isManualListingFlow ? 'Mandate & Commission' : 'Lead Routing'}
                 </h4>
                 <div className={`grid gap-4 md:grid-cols-2 ${isManualListingFlow ? 'xl:grid-cols-4' : 'xl:grid-cols-4'}`}>
-                  <label className="grid gap-2">
+                  <label className={`${isManualListingFlow ? 'hidden' : ''} grid gap-2`}>
                     <span className="text-sm font-semibold text-[#2d445e]">Lead source</span>
                     <Field as="select" value={form.leadSource} onChange={(event) => updateForm('leadSource', event.target.value)}>
                       <option value="Referral">Referral</option>
@@ -1503,17 +2201,17 @@ function AgentListings({ initialTab = null } = {}) {
                       <option value="Canvassing">Canvassing</option>
                     </Field>
                   </label>
-                  <label className="grid gap-2">
+                  <label className={`${isManualListingFlow ? 'hidden' : ''} grid gap-2`}>
                     <span className="text-sm font-semibold text-[#2d445e]">Assigned agent</span>
                     <Field value={form.assignedAgent} onChange={(event) => updateForm('assignedAgent', event.target.value)} placeholder="Assigned agent" />
                   </label>
-                  {isPrincipalListingMode ? (
+                  {isPrincipalListingMode && !isManualListingFlow ? (
                     <label className="grid gap-2">
                       <span className="text-sm font-semibold text-[#2d445e]">Branch / agency</span>
                       <Field value={form.agencyOrganisation} onChange={(event) => updateForm('agencyOrganisation', event.target.value)} placeholder="Agency / organisation" />
                     </label>
                   ) : null}
-                  <label className="grid gap-2">
+                  <label className={`${isManualListingFlow ? 'hidden' : ''} grid gap-2`}>
                     <span className="text-sm font-semibold text-[#2d445e]">Listing type</span>
                     <Field as="select" value={form.listingCategory} onChange={(event) => updateForm('listingCategory', event.target.value)}>
                       <option value="private_sale">Private sale</option>
@@ -1525,19 +2223,22 @@ function AgentListings({ initialTab = null } = {}) {
 
                   {isManualListingFlow ? (
                     <>
-                      <label className="grid gap-2">
+                      <label className="hidden gap-2">
                         <span className="text-sm font-semibold text-[#2d445e]">Listing price</span>
                         <Field type="number" value={form.listingPrice} onChange={(event) => updateForm('listingPrice', event.target.value)} placeholder="2500000" min="0" step="1000" />
                       </label>
                       <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-[#2d445e]">Commission %</span>
-                        <Field type="number" min="0" step="0.01" value={form.commissionPercentage} onChange={(event) => updateForm('commissionPercentage', event.target.value)} placeholder="5.00" />
+                        <span className="text-sm font-semibold text-[#2d445e]">Commission type</span>
+                        <Field as="select" value={form.commissionType} onChange={(event) => updateForm('commissionType', event.target.value)}>
+                          <option value="percentage">Percentage</option>
+                          <option value="fixed">Fixed</option>
+                        </Field>
                       </label>
                       <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-[#2d445e]">Commission amount</span>
-                        <Field type="number" min="0" step="100" value={form.commissionAmount} onChange={(event) => updateForm('commissionAmount', event.target.value)} placeholder="50000" />
+                        <span className="text-sm font-semibold text-[#2d445e]">Commission value</span>
+                        <Field type="number" min="0" step={form.commissionType === 'percentage' ? '0.01' : '100'} value={form.commissionValue} onChange={(event) => updateForm('commissionValue', event.target.value)} placeholder={form.commissionType === 'percentage' ? '5.00' : '50000'} />
                       </label>
-                      <label className="grid gap-2">
+                      <label className="hidden gap-2">
                         <span className="text-sm font-semibold text-[#2d445e]">Status</span>
                         <Field as="select" value={form.listingStatus} onChange={(event) => updateForm('listingStatus', event.target.value)}>
                           {MANUAL_LISTING_STATUSES.map((status) => (
@@ -1546,6 +2247,17 @@ function AgentListings({ initialTab = null } = {}) {
                             </option>
                           ))}
                         </Field>
+                      </label>
+	                      <label className="grid gap-2">
+	                        <span className="text-sm font-semibold text-[#2d445e]">Mandate signed?</span>
+	                        <Field as="select" value={form.mandateSigned ? 'yes' : form.mandateStatusCaptured ? 'no' : ''} onChange={(event) => {
+	                          updateForm('mandateSigned', event.target.value === 'yes')
+	                          updateForm('mandateStatusCaptured', Boolean(event.target.value))
+	                        }}>
+	                          <option value="">Capture status</option>
+	                          <option value="yes">Yes</option>
+	                          <option value="no">No</option>
+	                        </Field>
                       </label>
                       <label className="grid gap-2">
                         <span className="text-sm font-semibold text-[#2d445e]">Mandate type</span>
@@ -1610,27 +2322,56 @@ function AgentListings({ initialTab = null } = {}) {
                 </div>
               </section>
 
-              {isManualListingFlow ? (
+              {isManualListingFlow && form.quickStep === 'mandate' ? (
                 <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                   <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Mandate & Documents</h4>
                   <p className="rounded-[12px] border border-[#f3d7a8] bg-[#fff8ea] px-3 py-2 text-xs text-[#88531a]">
-                    Because this listing is being added manually, please upload the signed mandate and confirm the commission details. Draft save is allowed without mandate upload.
+                    Missing mandates do not block listing creation. They are added to listing completeness as a follow-up item.
                   </p>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label className="grid gap-2">
-                      <span className="text-sm font-semibold text-[#2d445e]">Signed mandate document</span>
-                      <Field
-                        type="file"
-                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                        onChange={(event) => {
-                          const file = event.target.files?.[0] || null
-                          updateForm('manualMandateFileName', file?.name || '')
-                        }}
-                      />
-                      <span className="text-xs text-[#6b7d93]">{form.manualMandateFileName ? `Selected: ${form.manualMandateFileName}` : 'No signed mandate uploaded yet.'}</span>
-                    </label>
-                    <label className="grid gap-2">
-                      <span className="text-sm font-semibold text-[#2d445e]">Supporting documents (optional)</span>
+	                  <div className="grid gap-4 md:grid-cols-2">
+	                    {form.mandateSigned ? (
+	                      <>
+	                        <label className="grid gap-2">
+	                          <span className="text-sm font-semibold text-[#2d445e]">Document category</span>
+	                          <Field as="select" value={form.mandateDocumentCategory} onChange={(event) => updateForm('mandateDocumentCategory', event.target.value)}>
+	                            {LISTING_DOCUMENT_CATEGORIES.map((category) => (
+	                              <option key={category} value={category}>{category}</option>
+	                            ))}
+	                          </Field>
+	                        </label>
+	                        <label className="grid gap-2">
+	                          <span className="text-sm font-semibold text-[#2d445e]">Signed mandate document</span>
+	                          <Field
+	                            type="file"
+	                            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+	                            onChange={(event) => {
+	                              const file = event.target.files?.[0] || null
+	                              updateForm('manualMandateFile', file)
+	                              updateForm('manualMandateFileName', file?.name || '')
+	                            }}
+	                          />
+	                          <span className="text-xs text-[#6b7d93]">{form.manualMandateFileName ? `Selected: ${form.manualMandateFileName}` : 'Upload now if you have it, or leave it as a follow-up warning.'}</span>
+	                        </label>
+	                      </>
+	                    ) : (
+	                      <div className="rounded-[14px] border border-[#dbe6f2] bg-white p-4">
+                        <p className="text-sm font-semibold text-[#2d445e]">Mandate missing</p>
+                        <p className="mt-1 text-xs text-[#6b7d93]">Create now and generate the mandate later from the listing workspace.</p>
+                        <Button type="button" variant="secondary" className="mt-3" onClick={() => setWorkflowMessage('Mandate generation will be available from the listing workspace after save.')}>
+                          Generate Mandate
+                        </Button>
+                      </div>
+	                    )}
+	                    <label className="grid gap-2">
+	                      <span className="text-sm font-semibold text-[#2d445e]">Supporting document category</span>
+	                      <Field as="select" value={form.supportingDocumentCategory} onChange={(event) => updateForm('supportingDocumentCategory', event.target.value)}>
+	                        {LISTING_DOCUMENT_CATEGORIES.map((category) => (
+	                          <option key={category} value={category}>{category}</option>
+	                        ))}
+	                      </Field>
+	                    </label>
+	                    <label className="grid gap-2">
+	                      <span className="text-sm font-semibold text-[#2d445e]">Supporting documents (optional)</span>
                       <Field
                         type="file"
                         multiple
@@ -1649,7 +2390,95 @@ function AgentListings({ initialTab = null } = {}) {
                 </section>
               ) : null}
 
-              <div className="grid gap-4">
+              {isManualListingFlow && form.quickStep === 'assignment' ? (
+                <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                  <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Assignment</h4>
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <label className="grid gap-2 xl:col-span-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Assigned agent</span>
+                      <Field
+                        as="select"
+                        value={form.assignedAgentId || form.assignedAgentEmail}
+                        onChange={(event) => {
+                          const selected = assignableAgents.find((agent) => normalizeText(agent.userId || agent.id || agent.email) === event.target.value)
+                          updateForm('assignedAgentId', normalizeText(selected?.userId || selected?.id || event.target.value))
+                          updateForm('assignedAgent', normalizeText(selected?.fullName || selected?.email))
+                          updateForm('assignedAgentEmail', normalizeText(selected?.email))
+                          if (selected?.branchId && !form.branchId) updateForm('branchId', selected.branchId)
+                        }}
+                      >
+                        {assignableAgents.map((agent) => {
+                          const value = normalizeText(agent.userId || agent.id || agent.email)
+                          return (
+                            <option key={value} value={value}>
+                              {agent.fullName || agent.email || 'Agent'}{agent.email ? ` — ${agent.email}` : ''}
+                            </option>
+                          )
+                        })}
+                      </Field>
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Branch</span>
+                      <Field
+                        as="select"
+                        value={form.branchId}
+                        onChange={(event) => {
+                          const selected = effectiveBranchOptions.find((branch) => normalizeText(branch.id) === event.target.value)
+                          updateForm('branchId', event.target.value)
+                          updateForm('branchName', selected?.name || '')
+                        }}
+                      >
+                        <option value="">No branch selected</option>
+                        {effectiveBranchOptions.map((branch) => (
+                          <option key={branch.id || branch.name} value={branch.id}>
+                            {branch.name || branch.id}
+                          </option>
+                        ))}
+                      </Field>
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Visibility</span>
+                      <Field as="select" value={form.visibility} onChange={(event) => updateForm('visibility', event.target.value)}>
+                        <option value="agent">Agent only</option>
+                        {canAssignWithinBranch ? <option value="branch">Branch</option> : null}
+                        {canAssignAcrossOrganisation ? <option value="organisation">Organisation</option> : null}
+                      </Field>
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Listing status</span>
+                      <Field as="select" value={form.listingStatus} onChange={(event) => updateForm('listingStatus', event.target.value)}>
+                        <option value="draft">Draft</option>
+                        <option value="active">Active</option>
+                      </Field>
+                    </label>
+                  </div>
+	                  {(() => {
+	                    const mandateUploaded = Boolean(normalizeText(form.manualMandateFileName))
+	                    const completeness = buildListingCompleteness({ form, mandateUploaded })
+	                    const activeWarnings = normalizeKey(form.listingStatus) === 'active' && form.mandateStatusCaptured && !mandateUploaded
+	                      ? ['Mandate not uploaded. This listing can be Active, but the warning remains visible until uploaded.']
+	                      : []
+	                    return (
+	                      <div className="rounded-[14px] border border-[#dbe6f2] bg-white p-4">
+	                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-[#22374d]">Listing completeness: {completeness.score}%</p>
+	                            <p className="mt-1 text-xs text-[#6b7d93]">
+	                              {completeness.missingItems.length ? `Missing: ${completeness.missingItems.join(', ')}` : 'No immediate follow-up items.'}
+	                            </p>
+	                            {activeWarnings.map((warning) => (
+	                              <p key={warning} className="mt-2 text-xs font-semibold text-[#9a5b13]">{warning}</p>
+	                            ))}
+	                          </div>
+                          {completeness.missingItems.length ? <CircleAlert className="text-[#9a5b13]" size={20} /> : <CheckCircle2 className="text-[#1f7d44]" size={20} />}
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </section>
+              ) : null}
+
+              <div className={`${isManualListingFlow ? 'hidden' : ''} grid gap-4`}>
                 <label className="grid gap-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Notes (optional)</span>
                   <Field
@@ -1669,9 +2498,20 @@ function AgentListings({ initialTab = null } = {}) {
                 <Button type="button" variant="secondary" onClick={() => setShowNewListingModal(false)}>
                   Cancel
                 </Button>
-                <Button type="submit">
-                  {isManualListingFlow ? 'Save Manual Listing' : 'Save Seller Lead & Send Onboarding'}
-                </Button>
+                {isManualListingFlow && QUICK_ADD_STEPS.indexOf(form.quickStep) > 0 ? (
+                  <Button type="button" variant="secondary" onClick={() => updateForm('quickStep', QUICK_ADD_STEPS[Math.max(0, QUICK_ADD_STEPS.indexOf(form.quickStep) - 1)])}>
+                    Back
+                  </Button>
+                ) : null}
+                {isManualListingFlow && form.quickStep !== 'assignment' ? (
+                  <Button type="button" onClick={() => updateForm('quickStep', QUICK_ADD_STEPS[Math.min(QUICK_ADD_STEPS.length - 1, QUICK_ADD_STEPS.indexOf(form.quickStep) + 1)])}>
+                    Continue
+                  </Button>
+                ) : (
+                  <Button type="submit">
+                    {isManualListingFlow ? 'Create Listing' : 'Save Seller Lead & Send Onboarding'}
+                  </Button>
+                )}
               </div>
             </form>
           </div>

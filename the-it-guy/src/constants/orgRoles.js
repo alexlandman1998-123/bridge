@@ -54,6 +54,14 @@ export function normalizeOrgRole(value, { appRole = '', workspaceType = '' } = {
   if (normalized === 'hq manager') return ORG_ROLES.hqManager
   if (normalized === 'regional manager') return ORG_ROLES.regionalManager
   if (normalized === 'team lead') return ORG_ROLES.teamLead
+  if (normalized === 'bond_hq_admin' || normalized === 'bond hq admin' || normalized === 'national_admin') return ORG_ROLES.hqManager
+  if (normalized === 'bond_hq_manager' || normalized === 'bond hq manager' || normalized === 'national_manager') return ORG_ROLES.hqManager
+  if (normalized === 'bond_regional_manager' || normalized === 'bond regional manager') return ORG_ROLES.regionalManager
+  if (normalized === 'bond_branch_manager' || normalized === 'bond branch manager') return ORG_ROLES.branchManager
+  if (normalized === 'bond_team_lead' || normalized === 'bond team lead') return ORG_ROLES.teamLead
+  if (normalized === 'bond_consultant' || normalized === 'bond consultant') return ORG_ROLES.consultant
+  if (normalized === 'bond_processor' || normalized === 'bond processor') return ORG_ROLES.processor
+  if (normalized === 'bond_independent_consultant' || normalized === 'independent_consultant' || normalized === 'independent originator') return ORG_ROLES.consultant
   if (normalized === 'firm_admin') return ORG_ROLES.owner
   if (normalized === 'director_partner') return ORG_ROLES.partner
   if (normalized === 'compliance') return ORG_ROLES.compliance

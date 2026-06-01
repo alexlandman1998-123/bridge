@@ -50,18 +50,22 @@ function buildScopeRecord(transaction = {}, owners = {}) {
   return {
     organisation_id:
       owners.bondWorkspaceId ||
+      normalizeText(transaction.assigned_organisation_id || transaction.assignedOrganisationId) ||
       normalizeText(transaction.bond_workspace_id || transaction.organisation_id || transaction.workspace_id),
     region_id:
       owners.bondRegionId ||
+      normalizeText(transaction.assigned_region_id || transaction.assignedRegionId) ||
       normalizeText(transaction.bond_region_id || transaction.region_id),
     workspace_unit_id:
       owners.bondWorkspaceUnitId ||
+      normalizeText(transaction.assigned_workspace_unit_id || transaction.assignedWorkspaceUnitId || transaction.assigned_branch_id || transaction.assignedBranchId || transaction.assigned_team_id || transaction.assignedTeamId) ||
       normalizeText(transaction.bond_workspace_unit_id || transaction.workspace_unit_id || transaction.branch_id || transaction.team_id),
     assigned_user_id:
       owners.primaryConsultantUserId ||
       owners.processorUserId ||
       owners.managerUserId ||
       owners.complianceUserId ||
+      normalizeText(transaction.assigned_user_id || transaction.assignedUserId) ||
       null,
     owner_user_id:
       owners.primaryConsultantUserId ||
@@ -153,18 +157,22 @@ export function resolveFinanceWorkflowOwners(transaction = {}) {
     warnings,
     bondWorkspaceId:
       effective.bondWorkspaceId ||
+      normalizeText(transaction.assigned_organisation_id || transaction.assignedOrganisationId) ||
       normalizeText(transaction.bond_workspace_id || transaction.organisation_id || transaction.workspace_id) ||
       null,
     bondRegionId:
       effective.bondRegionId ||
+      normalizeText(transaction.assigned_region_id || transaction.assignedRegionId) ||
       normalizeText(transaction.bond_region_id || transaction.region_id) ||
       null,
     bondWorkspaceUnitId:
       effective.bondWorkspaceUnitId ||
+      normalizeText(transaction.assigned_workspace_unit_id || transaction.assignedWorkspaceUnitId || transaction.assigned_branch_id || transaction.assignedBranchId || transaction.assigned_team_id || transaction.assignedTeamId) ||
       normalizeText(transaction.bond_workspace_unit_id || transaction.workspace_unit_id || transaction.branch_id || transaction.team_id) ||
       null,
     primaryConsultantUserId:
       effective.primaryConsultantUserId ||
+      normalizeText(transaction.assigned_user_id || transaction.assignedUserId) ||
       participant.primaryConsultantUserId ||
       rolePlayer.primaryConsultantUserId ||
       null,

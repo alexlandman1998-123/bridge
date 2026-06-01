@@ -259,6 +259,7 @@ function AppLayout({ onLogout, session = null, user }) {
   const [sessionWarningOpen, setSessionWarningOpen] = useState(false)
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardInitialDevelopmentId, setWizardInitialDevelopmentId] = useState('')
+  const [wizardInitialListingId, setWizardInitialListingId] = useState('')
   const [developmentModalOpen, setDevelopmentModalOpen] = useState(false)
   const isLegalWorkspaceRoute =
     /^\/transactions\/[^/]+\/legal\/[^/]+/.test(location.pathname) ||
@@ -363,7 +364,9 @@ function AppLayout({ onLogout, session = null, user }) {
   useEffect(() => {
     function openNewTransaction(event) {
       const requestedDevelopmentId = event?.detail?.initialDevelopmentId
+      const requestedListingId = event?.detail?.listingId
       setWizardInitialDevelopmentId(requestedDevelopmentId ?? defaultDevelopmentId)
+      setWizardInitialListingId(requestedListingId || '')
       setWizardOpen(true)
     }
 
@@ -444,12 +447,14 @@ function AppLayout({ onLogout, session = null, user }) {
 
   function handleOpenNewTransaction(initialDevelopmentId = defaultDevelopmentId) {
     setWizardInitialDevelopmentId(initialDevelopmentId)
+    setWizardInitialListingId('')
     setWizardOpen(true)
   }
 
   function handleCloseNewTransaction() {
     setWizardOpen(false)
     setWizardInitialDevelopmentId(defaultDevelopmentId)
+    setWizardInitialListingId('')
   }
 
   const sessionTimeoutWarning = sessionWarningOpen ? (
@@ -516,8 +521,9 @@ function AppLayout({ onLogout, session = null, user }) {
             <AgentNewDealWizard
               open={wizardOpen}
               onClose={handleCloseNewTransaction}
-              initialDevelopmentId={wizardInitialDevelopmentId}
-            />
+	              initialDevelopmentId={wizardInitialDevelopmentId}
+	              initialPrivateListingId={wizardInitialListingId}
+	            />
           ) : (
             <NewTransactionWizard
               open={wizardOpen}

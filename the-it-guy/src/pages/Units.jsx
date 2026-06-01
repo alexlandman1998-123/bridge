@@ -615,6 +615,7 @@ function Units() {
   const isAttorneyRole = role === 'attorney'
   const isClientRole = role === 'client'
   const isDeveloperWorkspaceRole = role === 'developer' || role === 'internal_admin'
+  const isTransactionsRoute = location.pathname === '/transactions' || location.pathname === '/transactions/'
   const canToggleUnitsView = !isBondRole && !isAttorneyRole
   const canDeleteTransactions = role === 'developer' || role === 'internal_admin' || role === 'agent'
   const isDeveloperRole = role === 'developer'
@@ -1905,7 +1906,11 @@ function Units() {
           <AgentTransactionsTable
             rows={rows}
             title="Transactions"
+            description="Manage active deals, transfer progress, registrations, and blocked transactions."
             isPrincipalView={isPrincipalAgentView}
+            compactLayout={isTransactionsRoute}
+            searchValue={deferredSearch}
+            onSearchChange={(nextValue) => setFilters((previous) => ({ ...previous, search: nextValue }))}
             onRowClick={handleOpenAgentTransaction}
             onCreateTransaction={() => window.dispatchEvent(new CustomEvent('itg:open-new-transaction'))}
             onOpenPipeline={() => navigate('/pipeline')}

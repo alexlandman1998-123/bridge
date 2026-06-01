@@ -91,7 +91,7 @@ function toMemberScopeRecord(member = null, workspaceId = '') {
 }
 
 function matchesRegionScope(record = {}, candidate = {}) {
-  const targetRegionId = normalizeId(record.region_id || record.regionId || record.regionIdLegacy)
+  const targetRegionId = normalizeId(record.assigned_region_id || record.assignedRegionId || record.region_id || record.regionId || record.regionIdLegacy)
   const memberRegionId = normalizeId(candidate.regionId)
   if (!targetRegionId || !memberRegionId) return false
   return targetRegionId === memberRegionId
@@ -99,7 +99,13 @@ function matchesRegionScope(record = {}, candidate = {}) {
 
 function matchesUnitScope(record = {}, candidate = {}) {
   const targetUnitId = normalizeId(
-    record.workspace_unit_id ||
+    record.assigned_workspace_unit_id ||
+      record.assignedWorkspaceUnitId ||
+      record.assigned_branch_id ||
+      record.assignedBranchId ||
+      record.assigned_team_id ||
+      record.assignedTeamId ||
+      record.workspace_unit_id ||
       record.workspaceUnitId ||
       record.branch_id ||
       record.branchId ||
@@ -115,9 +121,20 @@ function matchesUnitScope(record = {}, candidate = {}) {
 function matchesAssignedScope(record = {}, candidate = {}, fallbackUserId = null) {
   const resolvedUserId = normalizeText(candidate.userId || fallbackUserId)
   if (!resolvedUserId) return false
-  const assignedUserId = normalizeText(record.assigned_user_id || record.assignedUserId || '')
+  const assignedUserIds = [
+    record.assigned_user_id,
+    record.assignedUserId,
+    record.primary_bond_consultant_user_id,
+    record.primaryBondConsultantUserId,
+    record.assigned_bond_processor_user_id,
+    record.assignedBondProcessorUserId,
+    record.assigned_bond_manager_user_id,
+    record.assignedBondManagerUserId,
+    record.assigned_bond_compliance_user_id,
+    record.assignedBondComplianceUserId,
+  ].map(normalizeText)
   const ownerUserId = normalizeText(record.owner_user_id || record.ownerUserId || '')
-  return assignedUserId === resolvedUserId || ownerUserId === resolvedUserId
+  return assignedUserIds.includes(resolvedUserId) || ownerUserId === resolvedUserId
 }
 
 export function getWorkspaceHierarchy(workspaceId = '') {

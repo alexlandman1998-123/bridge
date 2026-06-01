@@ -159,14 +159,24 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    if ("client_portal_link" === type || "client_portal" === type || "portal_link" === type) {
+      console.log("[send-email] routing template", {
+        route: "client_portal_link",
+        recipient: recipient || null,
+        transactionId: transactionId || null,
+      });
+      return await handleOnboardingSubmittedEmail(
+        req,
+        {
+          ...(payload as SendOnboardingSubmittedPayload),
+          type: "client_portal_link",
+          transactionId,
+        },
+      );
+    }
+
     if (
-      [
-        "onboarding_submitted",
-        "client_onboarding_submitted",
-        "client_portal_link",
-        "client_portal",
-        "portal_link",
-      ].includes(type)
+      ["onboarding_submitted", "client_onboarding_submitted"].includes(type)
     ) {
       console.log("[send-email] routing template", {
         route: "onboarding_submitted",
@@ -406,6 +416,9 @@ Deno.serve(async (req: Request) => {
           "Missing email type. The send-email function requires an explicit template type.",
         supportedTypes: [
           "client_onboarding",
+          "client_portal_link",
+          "client_portal",
+          "portal_link",
           "onboarding_submitted",
           "reservation_deposit",
           "reservation_deposit_received",
@@ -443,6 +456,9 @@ Deno.serve(async (req: Request) => {
       receivedType: type,
       supportedTypes: [
         "client_onboarding",
+        "client_portal_link",
+        "client_portal",
+        "portal_link",
         "onboarding_submitted",
         "reservation_deposit",
         "reservation_deposit_received",

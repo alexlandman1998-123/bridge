@@ -103,3 +103,86 @@ export function buildOnboardingSubmittedEmailText(
     .filter(Boolean)
     .join("\n");
 }
+
+export function buildClientPortalLinkSubject() {
+  return "Your client portal link is ready";
+}
+
+export function buildClientPortalLinkPreview() {
+  return "Click here to access your client portal link.";
+}
+
+export function buildClientPortalLinkEmailHtml(
+  payload: OnboardingSubmittedEmailPayload,
+) {
+  const propertyLine = resolvePropertyLine(payload);
+  const greetingName = payload.buyerName || "there";
+  const previewText = buildClientPortalLinkPreview();
+
+  return `
+    <div style="font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1f2937; background: #f8fafc; padding: 24px;">
+      <div style="display: none; max-height: 0; overflow: hidden; opacity: 0; color: transparent;">
+        ${previewText}
+      </div>
+      <div style="max-width: 640px; margin: 0 auto; background: #ffffff; border: 1px solid #dbe4ef; border-radius: 16px; overflow: hidden;">
+        <div style="padding: 20px 24px; background: #0f2f4f; color: #ffffff;">
+          <p style="margin: 0; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.8;">BRIDGE</p>
+          <h1 style="margin: 10px 0 0; font-size: 24px; line-height: 1.2;">Client Portal Access</h1>
+        </div>
+        <div style="padding: 24px;">
+          <p style="margin: 0 0 14px; font-size: 15px;">Hi ${greetingName},</p>
+          <p style="margin: 0 0 14px; font-size: 15px; line-height: 1.6;">
+            Your onboarding has been completed and your client portal is ready.
+          </p>
+          <p style="margin: 0 0 14px; font-size: 15px; line-height: 1.6;">
+            Click here to access your client portal link and continue where you left off.
+          </p>
+          ${
+    propertyLine
+      ? `<p style="margin: 0 0 14px; font-size: 15px; line-height: 1.6;"><strong>Property:</strong> ${propertyLine}</p>`
+      : ""
+  }
+          ${
+    payload.transactionReference
+      ? `<p style="margin: 0 0 14px; font-size: 15px; line-height: 1.6;"><strong>Transaction Reference:</strong> ${payload.transactionReference}</p>`
+      : ""
+  }
+
+          <p style="margin: 0 0 22px;">
+            <a href="${payload.clientPortalLink}" style="display: inline-block; padding: 12px 18px; background: #0f4c81; color: #ffffff; text-decoration: none; border-radius: 10px; font-weight: 600;">
+              Click here to access client portal link
+            </a>
+          </p>
+
+          <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #64748b;">
+            If the button does not work, copy and paste this URL into your browser:<br />
+            <a href="${payload.clientPortalLink}" style="color: #0f4c81;">${payload.clientPortalLink}</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+export function buildClientPortalLinkEmailText(payload: OnboardingSubmittedEmailPayload) {
+  const propertyLine = resolvePropertyLine(payload);
+  const previewText = buildClientPortalLinkPreview();
+
+  return [
+    `Hi ${payload.buyerName || "there"},`,
+    "",
+    "Your onboarding has been completed and your client portal is ready.",
+    "Click here to access your client portal link:",
+    payload.clientPortalLink,
+    propertyLine ? `Property: ${propertyLine}` : null,
+    payload.transactionReference
+      ? `Transaction Reference: ${payload.transactionReference}`
+      : null,
+    "",
+    previewText,
+    "",
+    "Bridge",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}

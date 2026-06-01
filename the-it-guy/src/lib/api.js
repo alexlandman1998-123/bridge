@@ -90,6 +90,7 @@ import {
 import {
   ATTORNEY_OPERATIONAL_STAGE_SEQUENCE,
   buildDefaultChecklistItemsForStage,
+  deriveAttorneyOperationalStateForRow,
   normalizeChecklistItemStatus,
   normalizeDocumentRequestPriority,
   normalizeDocumentRequestStatus,
@@ -236,6 +237,14 @@ export const TRANSACTION_EVENT_TYPES = [
   'BondHybridFinanceApplicationUpdated',
   'BondHybridFinanceQuoteUpdated',
   'BondHybridFinanceInstructionSent',
+  'transaction_created',
+  'transfer_attorney_assigned',
+  'bond_originator_assigned',
+  'cancellation_attorney_assigned',
+  'attorney_assignment_created',
+  'bond_application_created',
+  'roleplayer_visibility_granted',
+  'roleplayer_reassigned',
 ]
 export const TRANSACTION_NOTIFICATION_TYPES = [
   'participant_assigned',
@@ -684,7 +693,8 @@ function isMissingTableError(error, tableName) {
     status === 404 ||
     message.includes('relation does not exist') ||
     message.includes('schema cache') ||
-    (message.includes('table') && message.includes(String(tableName || '').toLowerCase()))
+    message.includes(`could not find the table '${String(tableName || '').toLowerCase()}'`) ||
+    message.includes(`could not find the '${String(tableName || '').toLowerCase()}' table`)
   )
 }
 
@@ -8315,6 +8325,7 @@ async function resolveActiveProfileContext(client) {
       .from('profiles')
       .select('id, role, firm_id, firm_role')
       .eq('id', user.id)
+      .limit(1)
       .maybeSingle()
     if (profileQuery.error) {
       if (isMissingSchemaError(profileQuery.error)) {
@@ -16673,6 +16684,8 @@ async function findOrCreateBuyer(client, { name, phone, email }) {
       .from('buyers')
       .select('id, name, phone, email')
       .ilike('email', normalizedEmail)
+      .order('id', { ascending: true })
+      .limit(1)
       .maybeSingle()
 
     if (error) {
@@ -16687,6 +16700,8 @@ async function findOrCreateBuyer(client, { name, phone, email }) {
       .from('buyers')
       .select('id, name, phone, email')
       .eq('phone', normalizedPhone)
+      .order('id', { ascending: true })
+      .limit(1)
       .maybeSingle()
 
     if (error) {
@@ -17894,7 +17909,7 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = []) {
     return []
   }
 
-  const allowedRoleTypes = new Set(['transfer_attorney', 'bond_originator', 'bond_attorney'])
+  const allowedRoleTypes = new Set(['transfer_attorney', 'bond_originator', 'bond_attorney', 'cancellation_attorney'])
   const allowedSources = new Set(['agency_preferred', 'buyer_appointed', 'manual', 'connected_partner', 'preferred_partner'])
 
   return rolePlayers
@@ -17918,7 +17933,19 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = []) {
         selectionSource: normalizedSource,
         preferredPartnerId: normalizeNullableUuid(item?.preferredPartnerId || partner.partnerId),
         partnerRelationshipId: normalizeNullableUuid(item?.partnerRelationshipId || partner.partnerRelationshipId),
-        partnerOrganisationId: normalizeNullableUuid(item?.partnerOrganisationId || partner.partnerOrganisationId),
+        partnerOrganisationId: normalizeNullableUuid(
+          item?.partnerOrganisationId ||
+            item?.organisationId ||
+            item?.organisation_id ||
+            partner.partnerOrganisationId ||
+            partner.organisationId ||
+            partner.organisation_id,
+        ),
+        userId: normalizeNullableUuid(item?.userId || item?.user_id || partner.userId || partner.user_id),
+        regionId: normalizeNullableUuid(item?.regionId || item?.region_id || partner.regionId || partner.region_id),
+        workspaceUnitId: normalizeNullableUuid(item?.workspaceUnitId || item?.workspace_unit_id || partner.workspaceUnitId || partner.workspace_unit_id),
+        branchId: normalizeNullableUuid(item?.branchId || item?.branch_id || partner.branchId || partner.branch_id),
+        teamId: normalizeNullableUuid(item?.teamId || item?.team_id || partner.teamId || partner.team_id),
         partnerName: partnerName || null,
         contactPerson: normalizeNullableText(partner.contactPerson),
         email: normalizeNullableText(partner.email)?.toLowerCase() || null,
@@ -17932,7 +17959,19 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = []) {
           selectionSource: normalizedSource,
           preferredPartnerId: normalizeNullableUuid(item?.preferredPartnerId || partner.partnerId),
           partnerRelationshipId: normalizeNullableUuid(item?.partnerRelationshipId || partner.partnerRelationshipId),
-          partnerOrganisationId: normalizeNullableUuid(item?.partnerOrganisationId || partner.partnerOrganisationId),
+          partnerOrganisationId: normalizeNullableUuid(
+            item?.partnerOrganisationId ||
+              item?.organisationId ||
+              item?.organisation_id ||
+              partner.partnerOrganisationId ||
+              partner.organisationId ||
+              partner.organisation_id,
+          ),
+          userId: normalizeNullableUuid(item?.userId || item?.user_id || partner.userId || partner.user_id),
+          regionId: normalizeNullableUuid(item?.regionId || item?.region_id || partner.regionId || partner.region_id),
+          workspaceUnitId: normalizeNullableUuid(item?.workspaceUnitId || item?.workspace_unit_id || partner.workspaceUnitId || partner.workspace_unit_id),
+          branchId: normalizeNullableUuid(item?.branchId || item?.branch_id || partner.branchId || partner.branch_id),
+          teamId: normalizeNullableUuid(item?.teamId || item?.team_id || partner.teamId || partner.team_id),
           partner: {
             companyName: normalizeNullableText(partner.companyName),
             contactPerson: normalizeNullableText(partner.contactPerson),
@@ -17949,63 +17988,647 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = []) {
     .filter(Boolean)
 }
 
-async function persistTransactionRolePlayersIfPossible(client, { transactionId, rolePlayers = [] } = {}) {
+async function insertRecordWithMissingColumnFallback(client, table, payload = {}, select = 'id') {
+  let currentPayload = { ...(payload || {}) }
+  let result = await client.from(table).insert(currentPayload).select(select).limit(1)
+  let attempts = 0
+
+  while (result.error && attempts < 12) {
+    const missingKey = Object.keys(currentPayload).find((key) => isMissingColumnError(result.error, key))
+    if (!missingKey) break
+    delete currentPayload[missingKey]
+    result = await client.from(table).insert(currentPayload).select(select).limit(1)
+    attempts += 1
+  }
+
+  if (result.error) {
+    if (isMissingTableError(result.error, table) || isPermissionDeniedError(result.error)) return null
+    throw result.error
+  }
+  return result.data || null
+}
+
+async function persistTransactionRolePlayersIfPossible(client, { transactionId, rolePlayers = [], actorProfile = null } = {}) {
   if (!transactionId || !rolePlayers.length) {
     return []
   }
 
   const nowIso = new Date().toISOString()
-  const richRows = rolePlayers.map((item) => ({
-    transaction_id: transactionId,
-    role_type: item.roleType,
-    selection_source: item.selectionSource,
-    preferred_partner_id: item.preferredPartnerId || null,
-    partner_name: item.partnerName || null,
-    contact_person: item.contactPerson || null,
-    email_address: item.email || null,
-    phone_number: item.phone || null,
-    website: item.website || null,
-    physical_address: item.physicalAddress || null,
-    province: item.province || null,
-    notes: item.notes || null,
-    snapshot_json: item.snapshot || {},
-    created_at: nowIso,
-    updated_at: nowIso,
-  }))
+  const profileIdByEmail = await resolveProfileIdsByEmail(
+    client,
+    rolePlayers.map((item) => item.email).filter(Boolean),
+  )
 
-  let insertResult = await client.from('transaction_role_players').insert(richRows)
-  if (!insertResult.error) {
-    return rolePlayers
-  }
+  for (const item of rolePlayers) {
+    const resolvedUserId = item.userId || (item.email ? profileIdByEmail[item.email] || null : null)
+    const payload = {
+      transaction_id: transactionId,
+      role_type: item.roleType,
+      selection_source: item.selectionSource,
+      preferred_partner_id: item.preferredPartnerId || null,
+      partner_relationship_id: item.partnerRelationshipId || null,
+      organisation_id: item.partnerOrganisationId || null,
+      workspace_unit_id: item.workspaceUnitId || null,
+      branch_id: item.branchId || null,
+      user_id: resolvedUserId,
+      partner_name: item.partnerName || null,
+      contact_person: item.contactPerson || null,
+      email_address: item.email || null,
+      phone_number: item.phone || null,
+      website: item.website || null,
+      physical_address: item.physicalAddress || null,
+      province: item.province || null,
+      notes: item.notes || null,
+      status: 'active',
+      assignment_status: 'active',
+      activation_trigger: 'immediate',
+      activated_at: nowIso,
+      assigned_by: actorProfile?.userId || null,
+      removed_at: null,
+      snapshot_json: {
+        ...(item.snapshot || {}),
+        canonicalTransactionId: transactionId,
+        roleplayerStatus: 'assigned',
+        userId: resolvedUserId,
+        organisationId: item.partnerOrganisationId || null,
+        workspaceUnitId: item.workspaceUnitId || null,
+        branchId: item.branchId || null,
+      },
+      updated_at: nowIso,
+    }
 
-  if (
-    !isMissingTableError(insertResult.error, 'transaction_role_players') &&
-    !isMissingColumnError(insertResult.error, 'selection_source') &&
-    !isMissingColumnError(insertResult.error, 'preferred_partner_id') &&
-    !isMissingColumnError(insertResult.error, 'snapshot_json')
-  ) {
-    throw insertResult.error
-  }
+    let existing = await client
+      .from('transaction_role_players')
+      .select('id')
+      .eq('transaction_id', transactionId)
+      .eq('role_type', item.roleType)
+      .is('removed_at', null)
+      .limit(1)
 
-  const fallbackRows = rolePlayers.map((item) => ({
-    transaction_id: transactionId,
-    role_type: item.roleType,
-    partner_name: item.partnerName || null,
-    email_address: item.email || null,
-    phone_number: item.phone || null,
-  }))
-  insertResult = await client.from('transaction_role_players').insert(fallbackRows)
+    if (existing.error && isMissingColumnError(existing.error, 'removed_at')) {
+      existing = await client
+        .from('transaction_role_players')
+        .select('id')
+        .eq('transaction_id', transactionId)
+        .eq('role_type', item.roleType)
+        .limit(1)
+    }
 
-  if (
-    insertResult.error &&
-    !isMissingTableError(insertResult.error, 'transaction_role_players') &&
-    !isMissingColumnError(insertResult.error, 'role_type') &&
-    !isMissingColumnError(insertResult.error, 'partner_name')
-  ) {
-    throw insertResult.error
+    if (existing.error) {
+      if (isMissingTableError(existing.error, 'transaction_role_players') || isPermissionDeniedError(existing.error)) return rolePlayers
+      throw existing.error
+    }
+
+    if (existing.data?.[0]?.id) {
+      await updateRecordByIdWithMissingColumnFallback(
+        client,
+        'transaction_role_players',
+        existing.data[0].id,
+        payload,
+        'id',
+      )
+      continue
+    }
+
+    const insertPayload = {
+      ...payload,
+      created_at: nowIso,
+    }
+    await insertRecordWithMissingColumnFallback(client, 'transaction_role_players', insertPayload, 'id')
   }
 
   return rolePlayers
+}
+
+function roleplayerParticipantShape(selection = {}) {
+  if (selection.roleType === 'transfer_attorney') {
+    return { roleType: 'attorney', legalRole: 'transfer' }
+  }
+  if (selection.roleType === 'bond_attorney') {
+    return { roleType: 'attorney', legalRole: 'bond' }
+  }
+  if (selection.roleType === 'cancellation_attorney') {
+    return { roleType: 'attorney', legalRole: 'cancellation' }
+  }
+  return { roleType: selection.roleType, legalRole: 'none' }
+}
+
+function resolveRoleplayerSelectionScope(selection = {}, assignedUserId = null) {
+  const organisationId = normalizeNullableUuid(selection.partnerOrganisationId || selection.organisationId)
+  const regionId = normalizeNullableUuid(selection.regionId)
+  const teamId = normalizeNullableUuid(selection.teamId)
+  const workspaceUnitId = normalizeNullableUuid(selection.workspaceUnitId || selection.branchId)
+  const branchId = normalizeNullableUuid(selection.branchId || selection.workspaceUnitId)
+  const userId = normalizeNullableUuid(assignedUserId || selection.userId)
+  const hasUnitScope = Boolean(teamId || workspaceUnitId || branchId)
+  const scopeLevel = userId && !regionId && !hasUnitScope
+    ? 'independent'
+    : userId
+      ? 'user'
+      : teamId
+        ? 'team'
+        : workspaceUnitId || branchId
+          ? 'branch'
+          : regionId
+            ? 'region'
+            : organisationId
+              ? 'organisation'
+              : null
+  const assignmentStatus = userId
+    ? 'consultant_assigned'
+    : teamId
+      ? 'team_queue'
+      : workspaceUnitId || branchId
+        ? 'branch_queue'
+        : regionId
+          ? 'region_queue'
+          : 'organisation_queue'
+
+  return {
+    organisationId,
+    regionId,
+    teamId,
+    workspaceUnitId,
+    branchId,
+    userId,
+    scopeLevel,
+    assignmentStatus,
+  }
+}
+
+async function ensureRoleplayerTransactionParticipant(client, { transactionId, selection, actorProfile, financeManagedBy = 'bond_originator' } = {}) {
+  const { roleType, legalRole } = roleplayerParticipantShape(selection)
+  if (!transactionId || !roleType) return null
+
+  const profileIdByEmail = selection?.email ? await resolveProfileIdsByEmail(client, [selection.email]) : {}
+  const resolvedUserId = selection?.userId || (selection?.email ? profileIdByEmail[selection.email] || null : null)
+  const scope = resolveRoleplayerSelectionScope(selection, resolvedUserId)
+  const nowIso = new Date().toISOString()
+  const payload = {
+    transaction_id: transactionId,
+    role_type: roleType,
+    legal_role: roleType === 'attorney' ? legalRole : 'none',
+    transaction_role: selection.roleType,
+    status: 'active',
+    user_id: resolvedUserId,
+    assigned_organisation_id: scope.organisationId,
+    assigned_workspace_unit_id: scope.workspaceUnitId,
+    assigned_branch_id: scope.branchId,
+    assigned_region_id: scope.regionId,
+    assigned_team_id: scope.teamId,
+    assigned_user_id: resolvedUserId,
+    scope_level: scope.scopeLevel,
+    scope_metadata: {
+      source: 'transaction_roleplayer_participant',
+      canonicalRoleType: selection.roleType,
+    },
+    participant_name: selection.partnerName || selection.contactPerson || null,
+    participant_email: selection.email || null,
+    invited_by_user_id: actorProfile?.userId || null,
+    invited_at: nowIso,
+    accepted_at: nowIso,
+    removed_at: null,
+    visibility_scope: 'shared',
+    is_internal: isInternalStakeholderRole(roleType),
+    participant_scope: 'transaction',
+    assignment_source: 'transaction_direct',
+    ...buildStakeholderPermissionPayload(roleType, financeManagedBy),
+  }
+
+  const rowSelect = 'id, transaction_id, user_id, role_type, legal_role, status, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at'
+  let upsertResult = await upsertTransactionParticipantsRowsWithFallback(client, {
+    rows: [payload],
+    onConflict: 'transaction_id,role_type,legal_role',
+    rowSelect,
+    matchOnLegalRole: true,
+  })
+
+  if (
+    upsertResult.error &&
+    (isMissingColumnError(upsertResult.error, 'legal_role') ||
+      isMissingColumnError(upsertResult.error, 'transaction_role') ||
+      isMissingColumnError(upsertResult.error, 'status') ||
+      isMissingColumnError(upsertResult.error, 'invited_by_user_id') ||
+      isMissingColumnError(upsertResult.error, 'invited_at') ||
+      isMissingColumnError(upsertResult.error, 'accepted_at') ||
+      isMissingColumnError(upsertResult.error, 'removed_at') ||
+      isMissingColumnError(upsertResult.error, 'assigned_organisation_id') ||
+      isMissingColumnError(upsertResult.error, 'assigned_workspace_unit_id') ||
+      isMissingColumnError(upsertResult.error, 'assigned_branch_id') ||
+      isMissingColumnError(upsertResult.error, 'assigned_region_id') ||
+      isMissingColumnError(upsertResult.error, 'assigned_team_id') ||
+      isMissingColumnError(upsertResult.error, 'assigned_user_id') ||
+      isMissingColumnError(upsertResult.error, 'scope_level') ||
+      isMissingColumnError(upsertResult.error, 'scope_metadata') ||
+      isMissingColumnError(upsertResult.error, 'visibility_scope') ||
+      isMissingColumnError(upsertResult.error, 'is_internal') ||
+      isMissingColumnError(upsertResult.error, 'participant_scope') ||
+      isMissingColumnError(upsertResult.error, 'assignment_source') ||
+      isMissingColumnError(upsertResult.error, 'can_edit_core_transaction'))
+  ) {
+    const fallbackPayload = { ...payload }
+    for (const key of Object.keys(fallbackPayload)) {
+      if (isMissingColumnError(upsertResult.error, key)) delete fallbackPayload[key]
+    }
+    upsertResult = await upsertTransactionParticipantsRowsWithFallback(client, {
+      rows: [fallbackPayload],
+      onConflict: fallbackPayload.legal_role ? 'transaction_id,role_type,legal_role' : 'transaction_id,role_type',
+      rowSelect: fallbackPayload.legal_role
+        ? 'id, transaction_id, user_id, role_type, legal_role, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, created_at, updated_at'
+        : 'id, transaction_id, user_id, role_type, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, created_at, updated_at',
+      matchOnLegalRole: Boolean(fallbackPayload.legal_role),
+    })
+  }
+
+  if (upsertResult.error) {
+    if (isMissingTableError(upsertResult.error, 'transaction_participants') || isMissingSchemaError(upsertResult.error) || isPermissionDeniedError(upsertResult.error)) return null
+    throw upsertResult.error
+  }
+
+  return Array.isArray(upsertResult.data) ? upsertResult.data[0] || null : upsertResult.data || null
+}
+
+function attorneyAssignmentTypeForRoleplayer(roleType = '') {
+  if (roleType === 'cancellation_attorney') return 'cancellation'
+  if (roleType === 'bond_attorney') return 'bond'
+  return 'transfer'
+}
+
+async function resolveAttorneyFirmIdForCreationRoleplayer(client, selection = {}) {
+  const organisationId = normalizeNullableUuid(selection.partnerOrganisationId || selection.organisationId)
+  if (organisationId) {
+    let query = await client
+      .from('attorney_firms')
+      .select('id, organisation_id')
+      .eq('organisation_id', organisationId)
+      .eq('is_active', true)
+      .limit(1)
+    if (query.error && isMissingColumnError(query.error, 'organisation_id')) {
+      query = { data: [], error: null }
+    }
+    if (query.error && !isMissingTableError(query.error, 'attorney_firms') && !isPermissionDeniedError(query.error)) {
+      throw query.error
+    }
+    if (query.data?.[0]?.id) return query.data[0].id
+  }
+
+  const email = normalizeEmailAddress(selection.email)
+  if (email) {
+    const byEmail = await client
+      .from('attorney_firms')
+      .select('id, email')
+      .eq('email', email)
+      .eq('is_active', true)
+      .limit(1)
+    if (byEmail.error && !isMissingTableError(byEmail.error, 'attorney_firms') && !isMissingColumnError(byEmail.error, 'email') && !isPermissionDeniedError(byEmail.error)) {
+      throw byEmail.error
+    }
+    if (byEmail.data?.[0]?.id) return byEmail.data[0].id
+  }
+
+  const name = normalizeTextValue(selection.partnerName)
+  if (name) {
+    const byName = await client
+      .from('attorney_firms')
+      .select('id, name')
+      .eq('name', name)
+      .eq('is_active', true)
+      .limit(1)
+    if (byName.error && !isMissingTableError(byName.error, 'attorney_firms') && !isMissingColumnError(byName.error, 'name') && !isPermissionDeniedError(byName.error)) {
+      throw byName.error
+    }
+    if (byName.data?.[0]?.id) return byName.data[0].id
+  }
+
+  return null
+}
+
+async function resolveAttorneyFirmPrimaryUserId(client, { firmId, selection }) {
+  if (selection?.userId) return selection.userId
+  const profileIdByEmail = selection?.email ? await resolveProfileIdsByEmail(client, [selection.email]) : {}
+  const userIdFromEmail = selection?.email ? profileIdByEmail[selection.email] || null : null
+  if (userIdFromEmail) return userIdFromEmail
+  if (!firmId) return null
+
+  let memberQuery = await client
+    .from('attorney_firm_members')
+    .select('user_id, role, status')
+    .eq('firm_id', firmId)
+    .eq('status', 'active')
+    .in('role', ['transfer_attorney', 'director_partner', 'firm_admin'])
+    .limit(1)
+
+  if (memberQuery.error && !isMissingTableError(memberQuery.error, 'attorney_firm_members') && !isPermissionDeniedError(memberQuery.error)) {
+    throw memberQuery.error
+  }
+  return memberQuery.data?.[0]?.user_id || null
+}
+
+async function ensureAttorneyMatterAssignment(client, { transactionId, selection, actorProfile }) {
+  if (!['transfer_attorney', 'bond_attorney', 'cancellation_attorney'].includes(selection?.roleType)) return null
+
+  const firmId = await resolveAttorneyFirmIdForCreationRoleplayer(client, selection)
+  if (!firmId) return null
+
+  const assignmentType = attorneyAssignmentTypeForRoleplayer(selection.roleType)
+  const attorneyRole = selection.roleType
+  const attorneyUserId = await resolveAttorneyFirmPrimaryUserId(client, { firmId, selection })
+  const scope = resolveRoleplayerSelectionScope(selection, attorneyUserId)
+  const nowIso = new Date().toISOString()
+
+  let existingQuery = await client
+    .from('transaction_attorney_assignments')
+    .select('id')
+    .eq('transaction_id', transactionId)
+    .eq('attorney_role', attorneyRole)
+    .eq('assignment_status', 'active')
+    .limit(1)
+
+  if (
+    existingQuery.error &&
+    (isMissingColumnError(existingQuery.error, 'attorney_role') || isMissingColumnError(existingQuery.error, 'assignment_status'))
+  ) {
+    existingQuery = await client
+      .from('transaction_attorney_assignments')
+      .select('id')
+      .eq('transaction_id', transactionId)
+      .eq('assignment_type', assignmentType)
+      .eq('status', 'active')
+      .limit(1)
+  }
+
+  if (existingQuery.error) {
+    if (isMissingTableError(existingQuery.error, 'transaction_attorney_assignments') || isPermissionDeniedError(existingQuery.error)) return null
+    throw existingQuery.error
+  }
+
+  const payload = {
+    transaction_id: transactionId,
+    firm_id: firmId,
+    attorney_firm_id: firmId,
+    assignment_type: assignmentType,
+    attorney_role: attorneyRole,
+    matter_type: assignmentType,
+    instruction_status: 'new_instruction',
+    assigned_organisation_id: scope.organisationId,
+    assigned_workspace_unit_id: scope.workspaceUnitId,
+    assigned_branch_id: scope.branchId,
+    assigned_region_id: scope.regionId,
+    assigned_team_id: scope.teamId,
+    assigned_user_id: attorneyUserId,
+    scope_level: attorneyUserId ? 'user' : scope.scopeLevel,
+    scope_metadata: {
+      source: 'transaction_roleplayer_propagation',
+      roleType: selection.roleType,
+    },
+    primary_attorney_id: attorneyUserId,
+    attorney_user_id: attorneyUserId,
+    status: 'active',
+    assignment_status: 'active',
+    is_primary: true,
+    visibility_scope: 'assigned_matter',
+    can_edit: true,
+    can_manage_documents: true,
+    can_manage_signing: true,
+    can_add_internal_notes: true,
+    can_add_shared_updates: true,
+    can_update_workflow_lane: true,
+    assigned_by: actorProfile?.userId || null,
+    assigned_at: nowIso,
+    updated_at: nowIso,
+  }
+
+  if (existingQuery.data?.[0]?.id) {
+    const updated = await updateRecordByIdWithMissingColumnFallback(
+      client,
+      'transaction_attorney_assignments',
+      existingQuery.data[0].id,
+      payload,
+      'id',
+    )
+    return updated?.[0] || null
+  }
+
+  const inserted = await insertRecordWithMissingColumnFallback(
+    client,
+    'transaction_attorney_assignments',
+    {
+      ...payload,
+      created_at: nowIso,
+    },
+    'id',
+  )
+  return inserted?.[0] || null
+}
+
+async function ensureBondApplicationWorkspaceRecord(client, { transactionId, buyerId, selection, actorProfile }) {
+  if (selection?.roleType !== 'bond_originator') return null
+
+  const workflow = await fetchRawBondHybridWorkflow(client, transactionId, { createIfMissing: true })
+  if (!workflow?.id) return null
+
+  let existingQuery = await client
+    .from('transaction_bond_applications')
+    .select('id')
+    .eq('transaction_id', transactionId)
+    .eq('workflow_id', workflow.id)
+    .eq('bank_name', 'Bond Originator Intake')
+    .limit(1)
+
+  if (existingQuery.error && isMissingColumnError(existingQuery.error, 'bank_name')) {
+    existingQuery = await client
+      .from('transaction_bond_applications')
+      .select('id')
+      .eq('transaction_id', transactionId)
+      .eq('workflow_id', workflow.id)
+      .limit(1)
+  }
+
+  if (existingQuery.error) {
+    if (isMissingTableError(existingQuery.error, 'transaction_bond_applications') || isMissingSchemaError(existingQuery.error) || isPermissionDeniedError(existingQuery.error)) return null
+    throw existingQuery.error
+  }
+
+  const profileIdByEmail = !selection?.userId && selection?.email ? await resolveProfileIdsByEmail(client, [selection.email]) : {}
+  const resolvedUserId = selection?.userId || (selection?.email ? profileIdByEmail[selection.email] || null : null)
+  const nowIso = new Date().toISOString()
+  const scope = resolveRoleplayerSelectionScope(selection, resolvedUserId)
+  const payload = {
+    transaction_id: transactionId,
+    workflow_id: workflow.id,
+    buyer_party_id: buyerId || null,
+    application_type: 'originator_intake',
+    assigned_organisation_id: scope.organisationId,
+    assigned_region_id: scope.regionId,
+    assigned_workspace_unit_id: scope.workspaceUnitId,
+    assigned_branch_id: scope.branchId,
+    assigned_team_id: scope.teamId,
+    assigned_user_id: scope.userId,
+    scope_level: scope.scopeLevel,
+    scope_metadata: {
+      source: 'transaction_roleplayer_propagation',
+      roleType: selection.roleType,
+    },
+    assignment_status: scope.assignmentStatus,
+    assignment_source: 'transaction_roleplayer_propagation',
+    bank_name: 'Bond Originator Intake',
+    status: 'pending',
+    notes: 'New bond application workspace created from transaction roleplayer assignment.',
+    created_by: actorProfile?.userId || null,
+    updated_by: actorProfile?.userId || null,
+    metadata: {
+      source: 'transaction_roleplayer_propagation',
+      canonicalStatus: 'new_application',
+      buyerPartyId: buyerId || null,
+      assignedOrganisationId: scope.organisationId,
+      assignedRegionId: scope.regionId,
+      assignedWorkspaceUnitId: scope.workspaceUnitId,
+      assignedBranchId: scope.branchId,
+      assignedTeamId: scope.teamId,
+      assignedUserId: scope.userId,
+    },
+    updated_at: nowIso,
+  }
+
+  if (existingQuery.data?.[0]?.id) {
+    const updated = await updateRecordByIdWithMissingColumnFallback(
+      client,
+      'transaction_bond_applications',
+      existingQuery.data[0].id,
+      payload,
+      'id, transaction_id, workflow_id, bank_name, status, updated_at',
+    )
+    return updated?.[0] || null
+  }
+
+  const inserted = await insertRecordWithMissingColumnFallback(
+    client,
+    'transaction_bond_applications',
+    {
+      ...payload,
+      created_at: nowIso,
+    },
+    'id, transaction_id, workflow_id, bank_name, status, created_at, updated_at',
+  )
+  return inserted?.[0] || null
+}
+
+async function propagateTransactionRoleplayersIfPossible(
+  client,
+  {
+    transactionId,
+    transaction,
+    rolePlayers = [],
+    actorProfile = null,
+    actorRole = null,
+    buyerId = null,
+    financeType = 'cash',
+  } = {},
+) {
+  if (!transactionId || !rolePlayers.length) return { participants: [], attorneyAssignments: [], bondApplications: [] }
+
+  const normalizedFinanceType = normalizeFinanceType(financeType || transaction?.finance_type || 'cash', { allowUnknown: true })
+  const bondFinanceRequired = isBondFinanceType(normalizedFinanceType)
+  const results = {
+    participants: [],
+    attorneyAssignments: [],
+    bondApplications: [],
+  }
+
+  for (const selection of rolePlayers) {
+    const participant = await ensureRoleplayerTransactionParticipant(client, {
+      transactionId,
+      selection,
+      actorProfile,
+      financeManagedBy: transaction?.finance_managed_by || 'bond_originator',
+    })
+    if (participant) results.participants.push(participant)
+
+    if (['transfer_attorney', 'cancellation_attorney'].includes(selection.roleType)) {
+      const assignment = await ensureAttorneyMatterAssignment(client, { transactionId, selection, actorProfile })
+      if (assignment) {
+        results.attorneyAssignments.push(assignment)
+        await logTransactionEventIfPossible(client, {
+          transactionId,
+          eventType: 'attorney_assignment_created',
+          createdBy: actorProfile?.userId || null,
+          createdByRole: actorRole || actorProfile?.role || null,
+          eventData: {
+            source: 'transaction_roleplayer_propagation',
+            roleType: selection.roleType,
+            assignmentId: assignment.id || null,
+            canonicalRecord: 'transaction_attorney_assignments',
+            canonicalTransactionId: transactionId,
+          },
+        })
+      }
+    }
+
+    if (selection.roleType === 'bond_originator' && bondFinanceRequired) {
+      const application = await ensureBondApplicationWorkspaceRecord(client, {
+        transactionId,
+        buyerId,
+        selection,
+        actorProfile,
+      })
+      if (application) {
+        results.bondApplications.push(application)
+        await logTransactionEventIfPossible(client, {
+          transactionId,
+          eventType: 'bond_application_created',
+          createdBy: actorProfile?.userId || null,
+          createdByRole: actorRole || actorProfile?.role || null,
+          eventData: {
+            source: 'transaction_roleplayer_propagation',
+            roleType: 'bond_originator',
+            applicationId: application.id || null,
+            canonicalRecord: 'transaction_bond_applications',
+            canonicalStatus: 'new_application',
+            canonicalTransactionId: transactionId,
+          },
+        })
+      }
+    }
+
+    await logTransactionEventIfPossible(client, {
+      transactionId,
+      eventType: selection.roleType === 'bond_originator'
+        ? 'bond_originator_assigned'
+        : selection.roleType === 'cancellation_attorney'
+          ? 'cancellation_attorney_assigned'
+          : selection.roleType === 'transfer_attorney'
+            ? 'transfer_attorney_assigned'
+            : 'roleplayer_visibility_granted',
+      createdBy: actorProfile?.userId || null,
+      createdByRole: actorRole || actorProfile?.role || null,
+      eventData: {
+        source: 'transaction_roleplayer_propagation',
+        roleType: selection.roleType,
+        partnerName: selection.partnerName || null,
+        partnerOrganisationId: selection.partnerOrganisationId || null,
+        userId: selection.userId || null,
+        visibilityGranted: true,
+        canonicalTransactionId: transactionId,
+      },
+    })
+    await logTransactionEventIfPossible(client, {
+      transactionId,
+      eventType: 'roleplayer_visibility_granted',
+      createdBy: actorProfile?.userId || null,
+      createdByRole: actorRole || actorProfile?.role || null,
+      eventData: {
+        source: 'transaction_roleplayer_propagation',
+        roleType: selection.roleType,
+        partnerName: selection.partnerName || null,
+        partnerOrganisationId: selection.partnerOrganisationId || null,
+        userId: selection.userId || null,
+        visibilityGranted: true,
+        canonicalTransactionId: transactionId,
+      },
+    })
+  }
+
+  return results
 }
 
 function normalizeTransactionRoleplayerRoleType(value) {
@@ -18013,7 +18636,7 @@ function normalizeTransactionRoleplayerRoleType(value) {
     .trim()
     .toLowerCase()
     .replace(/[\s-]+/g, '_')
-  if (['transfer_attorney', 'bond_originator', 'bond_attorney', 'developer_contact', 'agent'].includes(normalized)) {
+  if (['transfer_attorney', 'bond_originator', 'bond_attorney', 'cancellation_attorney', 'developer_contact', 'agent'].includes(normalized)) {
     return normalized
   }
   return normalizeRoleType(normalized)
@@ -18021,12 +18644,17 @@ function normalizeTransactionRoleplayerRoleType(value) {
 
 function normalizeTransactionRoleplayerSelection(item = {}) {
   const roleType = normalizeTransactionRoleplayerRoleType(item.roleType || item.role_type || '')
-  const allowedRoleTypes = new Set(['transfer_attorney', 'bond_originator', 'bond_attorney', 'developer_contact', 'agent'])
+  const allowedRoleTypes = new Set(['transfer_attorney', 'bond_originator', 'bond_attorney', 'cancellation_attorney', 'developer_contact', 'agent'])
   if (!allowedRoleTypes.has(roleType)) return null
 
   const partner = item.partner && typeof item.partner === 'object' ? item.partner : item
   const organisationId = normalizeNullableUuid(item.organisationId || item.organisation_id || partner.organisationId || partner.organisation_id)
   const relationshipId = normalizeNullableUuid(item.relationshipId || item.relationship_id || partner.relationshipId || partner.relationship_id)
+  const userId = normalizeNullableUuid(item.userId || item.user_id || partner.userId || partner.user_id)
+  const workspaceUnitId = normalizeNullableUuid(item.workspaceUnitId || item.workspace_unit_id || partner.workspaceUnitId || partner.workspace_unit_id)
+  const regionId = normalizeNullableUuid(item.regionId || item.region_id || partner.regionId || partner.region_id)
+  const branchId = normalizeNullableUuid(item.branchId || item.branch_id || partner.branchId || partner.branch_id)
+  const teamId = normalizeNullableUuid(item.teamId || item.team_id || partner.teamId || partner.team_id)
   const companyName = normalizeNullableText(partner.companyName || partner.organisationName || partner.partnerName || partner.name)
   const contactPerson = normalizeNullableText(partner.contactPerson || partner.contactName || partner.name || companyName)
   const email = normalizeNullableText(partner.email || partner.emailAddress || partner.email_address)?.toLowerCase() || null
@@ -18048,6 +18676,11 @@ function normalizeTransactionRoleplayerSelection(item = {}) {
     roleType,
     organisationId,
     relationshipId,
+    userId,
+    regionId,
+    workspaceUnitId,
+    branchId,
+    teamId,
     companyName,
     contactPerson,
     email,
@@ -18059,6 +18692,11 @@ function normalizeTransactionRoleplayerSelection(item = {}) {
       roleType,
       organisationId,
       relationshipId,
+      userId,
+      regionId,
+      workspaceUnitId,
+      branchId,
+      teamId,
       scopeType: normalizeNullableText(item.scopeType || item.scope_type || partner.scopeType),
       scopeId: normalizeNullableText(item.scopeId || item.scope_id || partner.scopeId),
       scopeLabel: normalizeNullableText(item.scopeLabel || item.scope_label || partner.scopeLabel),
@@ -18076,7 +18714,7 @@ function normalizeTransactionRolePlayerRow(row = {}) {
   return {
     id: normalizeTextValue(row.id),
     transactionId: normalizeTextValue(row.transaction_id || row.transactionId),
-    roleType: normalizeRoleType(row.role_type || row.roleType),
+    roleType: normalizeTransactionRoleplayerRoleType(row.role_type || row.roleType),
     selectionSource: normalizeTextValue(row.selection_source || row.selectionSource || snapshot.selectionSource),
     preferredPartnerId: normalizeTextValue(row.preferred_partner_id || row.preferredPartnerId),
     partnerRelationshipId: normalizeTextValue(row.partner_relationship_id || row.partnerRelationshipId || snapshot.relationshipId),
@@ -18154,12 +18792,29 @@ async function updateRecordByIdWithMissingColumnFallback(client, table, id, payl
 
 async function upsertTransactionRoleplayerSelection(client, { transactionId, selection, actorProfile }) {
   const now = new Date().toISOString()
+  const profileIdByEmail = !selection.userId && selection.email ? await resolveProfileIdsByEmail(client, [selection.email]) : {}
+  const resolvedUserId = selection.userId || (selection.email ? profileIdByEmail[selection.email] || null : null)
+  const scope = resolveRoleplayerSelectionScope(selection, resolvedUserId)
   const payload = {
     transaction_id: transactionId,
     role_type: selection.roleType,
     selection_source: selection.selectionSource || 'connected_partner',
     partner_relationship_id: selection.relationshipId || null,
-    organisation_id: selection.organisationId || null,
+    organisation_id: scope.organisationId,
+    workspace_unit_id: scope.workspaceUnitId,
+    branch_id: scope.branchId,
+    user_id: resolvedUserId,
+    assigned_organisation_id: scope.organisationId,
+    assigned_workspace_unit_id: scope.workspaceUnitId,
+    assigned_branch_id: scope.branchId,
+    assigned_region_id: scope.regionId,
+    assigned_team_id: scope.teamId,
+    assigned_user_id: resolvedUserId,
+    scope_level: scope.scopeLevel,
+    scope_metadata: {
+      source: 'transaction_roleplayer_selection',
+      roleType: selection.roleType,
+    },
     partner_name: selection.companyName || selection.contactPerson || null,
     contact_person: selection.contactPerson || selection.companyName || null,
     email_address: selection.email || null,
@@ -18167,8 +18822,17 @@ async function upsertTransactionRoleplayerSelection(client, { transactionId, sel
     status: selection.assignmentStatus || 'selected',
     assignment_status: selection.assignmentStatus || 'selected',
     activation_trigger: selection.activationTrigger || null,
+    activated_at: selection.assignmentStatus === 'active' ? now : null,
     assigned_by: actorProfile?.userId || null,
-    snapshot_json: selection.snapshot || {},
+    snapshot_json: {
+      ...(selection.snapshot || {}),
+      userId: resolvedUserId,
+      organisationId: scope.organisationId,
+      workspaceUnitId: scope.workspaceUnitId,
+      branchId: scope.branchId,
+      regionId: scope.regionId,
+      teamId: scope.teamId,
+    },
     updated_at: now,
   }
 
@@ -18223,9 +18887,21 @@ async function upsertTransactionRoleplayerSelection(client, { transactionId, sel
     result.error &&
     (isMissingColumnError(result.error, 'partner_relationship_id') ||
       isMissingColumnError(result.error, 'organisation_id') ||
+      isMissingColumnError(result.error, 'workspace_unit_id') ||
+      isMissingColumnError(result.error, 'branch_id') ||
+      isMissingColumnError(result.error, 'user_id') ||
+      isMissingColumnError(result.error, 'assigned_organisation_id') ||
+      isMissingColumnError(result.error, 'assigned_workspace_unit_id') ||
+      isMissingColumnError(result.error, 'assigned_branch_id') ||
+      isMissingColumnError(result.error, 'assigned_region_id') ||
+      isMissingColumnError(result.error, 'assigned_team_id') ||
+      isMissingColumnError(result.error, 'assigned_user_id') ||
+      isMissingColumnError(result.error, 'scope_level') ||
+      isMissingColumnError(result.error, 'scope_metadata') ||
       isMissingColumnError(result.error, 'status') ||
       isMissingColumnError(result.error, 'assignment_status') ||
       isMissingColumnError(result.error, 'activation_trigger') ||
+      isMissingColumnError(result.error, 'activated_at') ||
       isMissingColumnError(result.error, 'assigned_by') ||
       isMissingColumnError(result.error, 'removed_at'))
   ) {
@@ -18436,7 +19112,19 @@ export async function saveTransactionRoleplayerSelections({
     throw new Error('Your role does not have permission to manage transaction roleplayers.')
   }
 
-  const selections = roleplayers.map(normalizeTransactionRoleplayerSelection).filter(Boolean)
+  const selections = roleplayers
+    .map(normalizeTransactionRoleplayerSelection)
+    .filter(Boolean)
+    .map((selection) => ({
+      ...selection,
+      assignmentStatus: 'active',
+      activationTrigger: 'immediate',
+      snapshot: {
+        ...(selection.snapshot || {}),
+        assignmentStatus: 'active',
+        activationTrigger: 'immediate',
+      },
+    }))
   const transferAttorney = selections.find((item) => item.roleType === 'transfer_attorney')
   if (!transferAttorney) {
     throw new Error('Transfer Attorney is required before buyer onboarding can be sent.')
@@ -18473,9 +19161,40 @@ export async function saveTransactionRoleplayerSelections({
     'id, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, updated_at',
   )
 
+  await propagateTransactionRoleplayersIfPossible(client, {
+    transactionId,
+    transaction: {
+      ...transaction,
+      attorney: transferAttorney.companyName || transferAttorney.contactPerson || null,
+      assigned_attorney_email: transferAttorney.email || null,
+      bond_originator: bondOriginator?.companyName || bondOriginator?.contactPerson || null,
+      assigned_bond_originator_email: bondOriginator?.email || null,
+    },
+    rolePlayers: selections.map((selection) => ({
+      roleType: selection.roleType,
+      selectionSource: selection.selectionSource,
+      partnerOrganisationId: selection.organisationId || null,
+      partnerRelationshipId: selection.relationshipId || null,
+      partnerName: selection.companyName || selection.contactPerson || null,
+      contactPerson: selection.contactPerson || selection.companyName || null,
+      email: selection.email || null,
+      phone: selection.phone || null,
+      userId: selection.userId || null,
+      workspaceUnitId: selection.workspaceUnitId || null,
+      branchId: selection.branchId || null,
+      regionId: selection.regionId || null,
+      teamId: selection.teamId || null,
+      snapshot: selection.snapshot || {},
+    })),
+    actorProfile,
+    actorRole: normalizedActorRole,
+    buyerId: transaction.buyer_id || null,
+    financeType: transaction.finance_type || 'cash',
+  })
+
   await logTransactionEventIfPossible(client, {
     transactionId,
-    eventType: 'roleplayers_selected',
+    eventType: 'roleplayer_reassigned',
     createdBy: actorProfile.userId || null,
     createdByRole: normalizedActorRole,
     eventData: {
@@ -18495,11 +19214,13 @@ export async function saveTransactionRoleplayerSelections({
   for (const selection of selections) {
     const eventType =
       selection.roleType === 'transfer_attorney'
-        ? 'transfer_attorney_selected'
+        ? 'transfer_attorney_assigned'
         : selection.roleType === 'bond_originator'
-          ? 'bond_originator_selected'
-          : selection.roleType === 'bond_attorney'
-            ? 'bond_attorney_selected'
+          ? 'bond_originator_assigned'
+        : selection.roleType === 'bond_attorney'
+            ? 'roleplayer_visibility_granted'
+            : selection.roleType === 'cancellation_attorney'
+              ? 'cancellation_attorney_assigned'
             : null
     if (!eventType) continue
     await logTransactionEventIfPossible(client, {
@@ -19722,6 +20443,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     .from('transactions')
     .insert(insertTransactionPayload)
     .select('id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, created_at, updated_at')
+    .limit(1)
     .single()
 
   if (transactionResult.error && isFinanceTypeConstraintError(transactionResult.error) && insertLegacyTransactionPayload) {
@@ -19729,6 +20451,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       .from('transactions')
       .insert(insertLegacyTransactionPayload)
       .select('id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, created_at, updated_at')
+      .limit(1)
       .single()
   }
 
@@ -19812,6 +20535,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       .from('transactions')
       .insert(fallbackPayload)
       .select('id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, created_at, updated_at')
+      .limit(1)
       .single()
   }
 
@@ -19847,6 +20571,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       .update(richConflictPayload)
       .eq('id', existingTransaction.id)
       .select('id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, created_at, updated_at')
+      .limit(1)
       .single()
 
     if (transactionResult.error && isFinanceTypeConstraintError(transactionResult.error) && legacyRichConflictPayload) {
@@ -19855,6 +20580,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         .update(legacyRichConflictPayload)
         .eq('id', existingTransaction.id)
         .select('id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, created_at, updated_at')
+        .limit(1)
         .single()
     }
 
@@ -19941,6 +20667,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         .update(fallbackPayload)
         .eq('id', existingTransaction.id)
         .select('id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, created_at, updated_at')
+        .limit(1)
         .single()
     }
 
@@ -20026,6 +20753,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         .update(fallbackPayload)
         .eq('id', existingTransaction.id)
         .select('id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, created_at, updated_at')
+        .limit(1)
         .single()
     }
   }
@@ -20054,56 +20782,56 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
 
   await logTransactionEventIfPossible(client, {
     transactionId: transaction.id,
-    eventType: 'TransactionCreated',
+    eventType: 'transaction_created',
     createdBy: actorProfile.userId || null,
     createdByRole: actorRole,
-      eventData: {
-        stage: resolvedDetailedStage,
-        mainStage: resolvedMainStage,
-        financeType: transactionPayload.finance_type,
-        financeManagedBy: transactionPayload.finance_managed_by,
-        purchasePrice: transactionPayload.purchase_price,
-        cashAmount: transactionPayload.cash_amount,
-        bondAmount: transactionPayload.bond_amount,
-        reservationRequired: transactionPayload.reservation_required,
-        reservationStatus: transactionPayload.reservation_status,
-        purchaserType,
-        buyerId: buyer?.id || null,
-        unitId: setup.unitId || null,
-        developmentId: setup.developmentId || null,
-        transactionType,
-        propertyType: transactionPayload.property_type || null,
-        propertyAddressLine1: transactionPayload.property_address_line_1 || null,
-        originPath: options?.creationOrigin || null,
-        originLabel: options?.sourceContext?.originLabel || null,
-        createdByUserId: actorProfile.userId || null,
-        branchId: options?.sourceContext?.branchId || setup?.assignedBranchId || null,
-        workspaceId: options?.sourceContext?.workspaceId || options?.sourceContext?.organisationId || null,
-        sourceContext: options?.sourceContext || null,
-        completeness: options?.completeness || null,
-        missingFollowUpItems: Array.isArray(options?.completeness?.missingItems) ? options.completeness.missingItems : [],
-        canonicalStructure: Array.isArray(options?.canonicalStructure)
-          ? options.canonicalStructure
-          : [
-              'transaction',
-              'property',
-              'seller_party',
-              'buyer_party',
-              'agent_assignment',
-              'deal_terms',
-              'finance_profile',
-              'roleplayers',
-              'documents',
-              'activity_log',
-            ],
-        rolePlayers: rolePlayerSelections.map((item) => ({
-          roleType: item.roleType,
-          selectionSource: item.selectionSource,
-          preferredPartnerId: item.preferredPartnerId || null,
-          partnerName: item.partnerName || null,
-          email: item.email || null,
-          phone: item.phone || null,
-        })),
+    eventData: {
+      stage: resolvedDetailedStage,
+      mainStage: resolvedMainStage,
+      financeType: transactionPayload.finance_type,
+      financeManagedBy: transactionPayload.finance_managed_by,
+      purchasePrice: transactionPayload.purchase_price,
+      cashAmount: transactionPayload.cash_amount,
+      bondAmount: transactionPayload.bond_amount,
+      reservationRequired: transactionPayload.reservation_required,
+      reservationStatus: transactionPayload.reservation_status,
+      purchaserType,
+      buyerId: buyer?.id || null,
+      unitId: setup.unitId || null,
+      developmentId: setup.developmentId || null,
+      transactionType,
+      propertyType: transactionPayload.property_type || null,
+      propertyAddressLine1: transactionPayload.property_address_line_1 || null,
+      originPath: options?.creationOrigin || null,
+      originLabel: options?.sourceContext?.originLabel || null,
+      createdByUserId: actorProfile.userId || null,
+      branchId: options?.sourceContext?.branchId || setup?.assignedBranchId || null,
+      workspaceId: options?.sourceContext?.workspaceId || options?.sourceContext?.organisationId || null,
+      sourceContext: options?.sourceContext || null,
+      completeness: options?.completeness || null,
+      missingFollowUpItems: Array.isArray(options?.completeness?.missingItems) ? options.completeness.missingItems : [],
+      canonicalStructure: Array.isArray(options?.canonicalStructure)
+        ? options.canonicalStructure
+        : [
+            'transaction',
+            'property',
+            'seller_party',
+            'buyer_party',
+            'agent_assignment',
+            'deal_terms',
+            'finance_profile',
+            'roleplayers',
+            'documents',
+            'transaction_events',
+          ],
+      rolePlayers: rolePlayerSelections.map((item) => ({
+        roleType: item.roleType,
+        selectionSource: item.selectionSource,
+        preferredPartnerId: item.preferredPartnerId || null,
+        partnerName: item.partnerName || null,
+        email: item.email || null,
+        phone: item.phone || null,
+      })),
     },
   })
 
@@ -20111,6 +20839,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     await persistTransactionRolePlayersIfPossible(client, {
       transactionId: transaction.id,
       rolePlayers: rolePlayerSelections,
+      actorProfile,
     })
   } catch (error) {
     if (!isMissingSchemaError(error)) {
@@ -20172,6 +20901,29 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         buyerName: buyer?.name || null,
       },
     })
+
+    const propagationResult = await propagateTransactionRoleplayersIfPossible(client, {
+      transactionId: transaction.id,
+      transaction: {
+        ...transactionPayload,
+        id: transaction.id,
+        finance_type: normalizedFinanceType,
+      },
+      rolePlayers: rolePlayerSelections,
+      actorProfile,
+      actorRole,
+      buyerId: buyer?.id || null,
+      financeType: normalizedFinanceType,
+    })
+    if (propagationResult.participants?.length) {
+      const participantIds = new Set(participantRows.map((item) => item.id).filter(Boolean))
+      participantRows = [
+        ...participantRows,
+        ...propagationResult.participants
+          .map((item) => normalizeTransactionParticipantRow(item))
+          .filter((item) => item?.id && !participantIds.has(item.id)),
+      ]
+    }
 
     onboardingRecord = await getOrCreateTransactionOnboardingRecord(client, {
       transactionId: transaction.id,

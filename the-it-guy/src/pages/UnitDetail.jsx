@@ -63,6 +63,7 @@ import {
   parseWorkflowStepComment,
   getOrCreateTransactionOnboarding,
   getOrCreateClientPortalLink,
+  archiveTransactionLifecycle,
   saveTransaction,
   saveTransactionClientInformation,
   sendReservationDepositRequest,
@@ -242,6 +243,34 @@ function normalizeDocumentMatcher(value) {
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function normalizeDisplayName(value) {
+  const normalized = normalizeText(value)
+  if (!normalized) {
+    return ''
+  }
+
+  const lowered = normalized.toLowerCase()
+  if (['buyer', 'buyer pending'].includes(lowered)) {
+    return ''
+  }
+
+  return toTitleLabel(normalized)
+}
+
+function isDevelopmentTransactionWorkspace(transaction = {}, unit = {}) {
+  const normalizedType = normalizeText(transaction?.transaction_type).toLowerCase()
+
+  if (normalizedType === 'private' || normalizedType === 'private_property') {
+    return false
+  }
+
+  if (normalizedType === 'development' || normalizedType === 'developer_sale' || normalizedType === 'developer') {
+    return true
+  }
+
+  return Boolean(transaction?.development_id || transaction?.developmentId || unit?.development_id || unit?.development?.id)
 }
 
 function isUuidLike(value) {
@@ -2203,6 +2232,8 @@ function UnitDetail() {
   const [clientPortalLinkCopied, setClientPortalLinkCopied] = useState(false)
   const [deletingTransaction, setDeletingTransaction] = useState(false)
   const [deleteTransactionConfirmOpen, setDeleteTransactionConfirmOpen] = useState(false)
+  const [archivingTransaction, setArchivingTransaction] = useState(false)
+  const [archiveTransactionConfirmOpen, setArchiveTransactionConfirmOpen] = useState(false)
   const [error, setError] = useState('')
   const [creatingAlteration, setCreatingAlteration] = useState(false)
   const [alterationCreationError, setAlterationCreationError] = useState('')
@@ -4459,6 +4490,30 @@ function UnitDetail() {
     }
   }
 
+  function handleArchiveTransactionFromWorkspace() {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for archiving.')
+      return
+    }
+
+    setArchiveTransactionConfirmOpen(true)
+  }
+
+  async function confirmArchiveTransactionFromWorkspace() {
+    try {
+      setError('')
+      setArchivingTransaction(true)
+      await archiveTransactionLifecycle(transaction.id)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (archiveError) {
+      setError(archiveError.message || 'Unable to archive this transaction.')
+    } finally {
+      setArchivingTransaction(false)
+      setArchiveTransactionConfirmOpen(false)
+    }
+  }
+
   async function handleSignOffIssue(issueId) {
     if (!transaction?.id) {
       throw new Error('Save the transaction before signing off on snags.')
@@ -4744,6 +4799,7 @@ function UnitDetail() {
   const buyerRequirementActions = Array.isArray(detail?.requiredTransactionActions)
     ? detail.requiredTransactionActions.filter((action) => action && String(action.severity || '').toLowerCase() === 'critical')
     : []
+  const isDevelopmentTransaction = isDevelopmentTransactionWorkspace(transaction, unit)
   const reservationRequired = Boolean(transaction?.reservation_required)
   const reservationStatusRaw = String(transaction?.reservation_status || '').trim().toLowerCase()
   const reservationStatusLabel =
@@ -4757,6 +4813,7 @@ function UnitDetail() {
           ? 'Requested'
           : 'Not Required'
   const showReservationDepositOverviewCard =
+    isDevelopmentTransaction &&
     reservationRequired &&
     reservationStatusRaw !== 'verified' &&
     reservationStatusRaw !== 'not_required'
@@ -5191,11 +5248,13 @@ function UnitDetail() {
         { label: 'Approved Bank', value: bondHybridFinanceSummary?.approvedBank || 'Not approved yet', subtext: 'Buyer-selected quote', icon: CheckCircle2 },
         { label: 'Instruction Sent', value: bondHybridFinanceSummary?.instructionSent ? 'Yes' : 'No', subtext: bondHybridFinanceSummary?.instructionSent ? 'Ready for attorney workflow' : 'Pending instruction', icon: Send },
       ]
-    : [
+      : [
         { label: 'Purchase Price', value: displayPurchasePriceLabel, subtext: hasCapturedFinancials ? 'Transaction value' : 'Awaiting onboarding', icon: CircleDollarSign },
         { label: 'Finance Type', value: displayFinanceTypeLabel, subtext: hasCapturedFinanceType && stageForm.finance_managed_by ? toTitleLabel(stageForm.finance_managed_by) : 'Awaiting onboarding', icon: Landmark },
         { label: 'Bond Amount', value: bondAmountLabel, subtext: hasCapturedFinanceType && activeFinanceType === 'cash' ? 'Cash transaction' : 'Awaiting onboarding', icon: BadgeDollarSign },
-        { label: 'Deposit', value: depositAmountLabel, subtext: hasCapturedFinancials && reservationRequired ? reservationStatusLabel : 'Awaiting onboarding', icon: Building2 },
+        ...(isDevelopmentTransaction
+          ? [{ label: 'Deposit', value: depositAmountLabel, subtext: hasCapturedFinancials && reservationRequired ? reservationStatusLabel : 'Awaiting onboarding', icon: Building2 }]
+          : []),
         { label: 'Target Registration', value: targetRegistrationLabel, subtext: formatTransactionAge(transaction?.created_at || transaction?.updated_at), icon: CalendarClock },
       ]
   const agentQuickActions = [
@@ -5322,12 +5381,14 @@ function UnitDetail() {
   const workspaceHeaderRole = ['developer', 'attorney', 'agent', 'bond_originator'].includes(effectiveEditorRole)
     ? effectiveEditorRole
     : 'developer'
+  const resolvedBuyerDisplayName = normalizeDisplayName(buyer?.name)
+  const resolvedDevelopmentName = normalizeDisplayName(unit?.development?.name)
   const workspaceHeaderConfig = buildWorkspaceHeaderConfigForRole({
     role: workspaceHeaderRole,
-    title: unit.development?.name || 'Property Transaction',
+    title: resolvedDevelopmentName || resolvedBuyerDisplayName || 'Property Transaction',
     unitLabel: `Unit ${unit.unit_number}`,
-    subtitle: buyer?.name ? `Buyer: ${buyer.name}` : 'Buyer: Pending assignment',
-    buyerLabel: buyer?.name || '',
+    subtitle: resolvedBuyerDisplayName ? `Buyer: ${resolvedBuyerDisplayName}` : 'Buyer: Pending assignment',
+    buyerLabel: resolvedBuyerDisplayName,
     currentStageLabel: mainStageLabel,
     mainStageLabel,
     onboardingLabel: onboardingHeaderLabel,
@@ -5338,13 +5399,13 @@ function UnitDetail() {
     timeInStageMeta: `Updated ${formatDate(transaction?.updated_at || transaction?.created_at)}`,
     unitStatusLabel: unit?.status ? toTitleLabel(unit.status) : 'Unit active',
   })
-  const workspaceHeaderActions = [
+  const workspaceTransactionLifecycleState = String(transaction?.lifecycle_state || '').toLowerCase()
+  const canArchiveTransaction = ['registered', 'completed'].includes(workspaceTransactionLifecycleState)
+  const workspaceHeaderActionItems = [
     {
       id: 'print-report',
       label: 'Print Report',
       icon: 'print',
-      variant: 'secondary',
-      className: 'min-w-[158px]',
       onClick: handlePrintTransactionReport,
       disabled: false,
     },
@@ -5352,35 +5413,88 @@ function UnitDetail() {
       id: 'client-portal',
       label: 'Client Portal',
       icon: 'portal',
-      variant: 'secondary',
-      className: 'min-w-[198px]',
       onClick: handleOpenClientPortalLink,
       disabled: !clientPortalLink?.token,
     },
-    ...(!onboardingComplete && !onboardingEmailSent
-      ? [{
-          id: 'send-onboarding',
-          label: sendingOnboardingEmail ? 'Sending…' : 'Send Onboarding',
-          icon: 'onboarding_link',
-          variant: 'primary',
-          className: 'min-w-[206px]',
-          onClick: () => void handleSendOnboardingEmail({ resend: false }),
-          disabled: !canEditSalesWorkflow || sendingOnboardingEmail || !transaction?.id || !buyer?.email,
-          hidden: !canEditSalesWorkflow,
-        }]
-      : []),
-    ...(onboardingEmailSent && !onboardingComplete
-      ? [{
-          id: 'resend-onboarding',
-          label: sendingOnboardingEmail ? 'Sending…' : 'Resend Onboarding',
-          icon: 'onboarding_link',
-          variant: 'secondary',
-          className: 'min-w-[206px]',
-          onClick: () => void handleSendOnboardingEmail({ resend: true }),
-          disabled: !canEditSalesWorkflow || sendingOnboardingEmail || !transaction?.id || !buyer?.email,
-          hidden: !canEditSalesWorkflow,
-        }]
-      : []),
+    {
+      id: 'copy-client-portal-link',
+      label: clientPortalLinkCopied ? 'Copied Portal Link' : 'Copy Portal Link',
+      icon: 'portal',
+      onClick: handleCopyClientPortalLink,
+      disabled: !transaction?.id || !canEditSalesWorkflow,
+      hidden: !canEditSalesWorkflow,
+    },
+  ]
+
+  if (!onboardingComplete && !onboardingEmailSent) {
+    workspaceHeaderActionItems.push({
+      id: 'send-onboarding',
+      label: sendingOnboardingEmail ? 'Sending…' : 'Send Onboarding',
+      icon: 'onboarding_link',
+      variant: 'primary',
+      onClick: () => void handleSendOnboardingEmail({ resend: false }),
+      disabled: !canEditSalesWorkflow || sendingOnboardingEmail || !transaction?.id || !buyer?.email,
+      hidden: !canEditSalesWorkflow,
+    })
+  } else if (onboardingEmailSent && !onboardingComplete) {
+    workspaceHeaderActionItems.push({
+      id: 'resend-onboarding',
+      label: sendingOnboardingEmail ? 'Sending…' : 'Resend Onboarding',
+      icon: 'onboarding_link',
+      variant: 'secondary',
+      onClick: () => void handleSendOnboardingEmail({ resend: true }),
+      disabled: !canEditSalesWorkflow || sendingOnboardingEmail || !transaction?.id || !buyer?.email,
+      hidden: !canEditSalesWorkflow,
+    })
+  }
+
+  if (onboardingComplete) {
+    workspaceHeaderActionItems.push({
+      id: 'resend-client-portal-link',
+      label: sendingClientPortalLink ? 'Sending…' : 'Resend Portal Link',
+      icon: 'portal',
+      variant: 'primary',
+      onClick: () => void handleSendClientPortalLinkEmail(),
+      disabled: !canEditSalesWorkflow || sendingClientPortalLink || !transaction?.id || !buyer?.email,
+      hidden: !canEditSalesWorkflow,
+    })
+  } else if (onboardingEmailSent) {
+    workspaceHeaderActionItems.push({
+      id: 'copy-onboarding-link',
+      label: onboardingLinkCopied ? 'Copied Onboarding Link' : 'Copy Onboarding Link',
+      icon: 'onboarding_link',
+      variant: 'ghost',
+      onClick: handleCopyOnboardingLink,
+      disabled: !transaction?.id || !canEditSalesWorkflow,
+      hidden: !canEditSalesWorkflow,
+    })
+  }
+
+  if (workspaceHeaderRole === 'developer') {
+    workspaceHeaderActionItems.push({
+      id: 'archive-transaction',
+      label: archivingTransaction ? 'Archiving…' : 'Archive Transaction',
+      icon: 'archive',
+      variant: 'destructive',
+      tone: 'danger',
+      onClick: () => void handleArchiveTransactionFromWorkspace(),
+      disabled: !transaction?.id || archivingTransaction || !canArchiveTransaction,
+      hidden: false,
+    })
+
+    workspaceHeaderActionItems.push({
+      id: 'delete-transaction',
+      label: deletingTransaction ? 'Deleting…' : 'Delete Transaction',
+      icon: 'delete',
+      tone: 'danger',
+      variant: 'destructive',
+      onClick: () => void handleDeleteTransactionFromWorkspace(),
+      disabled: !transaction?.id || deletingTransaction,
+      hidden: false,
+    })
+  }
+
+  const workspaceHeaderActions = [
     ...(onboardingComplete
       ? [{
           id: 'onboarding-complete',
@@ -5390,49 +5504,13 @@ function UnitDetail() {
           hidden: !canEditSalesWorkflow,
         }]
       : []),
-    ...(onboardingComplete
-      ? [{
-          id: 'resend-client-portal-link',
-          label: sendingClientPortalLink ? 'Sending…' : 'Resend Portal Link',
-          icon: 'portal',
-          variant: 'primary',
-          className: 'min-w-[206px]',
-          onClick: () => void handleSendClientPortalLinkEmail(),
-          disabled: !canEditSalesWorkflow || sendingClientPortalLink || !transaction?.id || !buyer?.email,
-          hidden: !canEditSalesWorkflow,
-        },
-        {
-          id: 'copy-client-portal-link',
-          label: clientPortalLinkCopied ? 'Copied Portal Link' : 'Copy Portal Link',
-          icon: 'portal',
-          variant: 'secondary',
-          className: 'min-w-[206px]',
-          onClick: handleCopyClientPortalLink,
-          disabled: !transaction?.id || !canEditSalesWorkflow,
-          hidden: !canEditSalesWorkflow,
-        }]
-      : []),
-    ...((onboardingEmailSent && !onboardingComplete)
-      ? [{
-          id: 'copy-onboarding-link',
-          label: onboardingLinkCopied ? 'Copied Onboarding Link' : 'Copy Onboarding Link',
-          icon: 'onboarding_link',
-          variant: 'ghost',
-          className: 'min-w-[206px]',
-          onClick: handleCopyOnboardingLink,
-          disabled: !transaction?.id || !canEditSalesWorkflow,
-          hidden: !canEditSalesWorkflow,
-        }]
-      : []),
     {
-      id: 'delete-transaction',
-      label: deletingTransaction ? 'Deleting…' : 'Delete Transaction',
-      icon: 'delete',
-      variant: 'ghost',
-      className: 'min-w-[192px] text-[#b42318] hover:bg-[#fff1f1]',
-      onClick: () => void handleDeleteTransactionFromWorkspace(),
-      disabled: !transaction?.id || deletingTransaction || workspaceHeaderRole !== 'developer',
-      hidden: workspaceHeaderRole !== 'developer',
+      id: 'workspace-actions',
+      label: 'Actions',
+      icon: 'menu',
+      type: 'menu',
+      className: 'min-w-[156px]',
+      items: workspaceHeaderActionItems.filter((item) => item && !item.hidden),
     },
   ]
   const visibleWorkspaceHeaderActions = workspaceHeaderActions.filter((action) => action && !action.hidden)
@@ -8719,6 +8797,18 @@ function UnitDetail() {
       confirming={deletingTransaction}
       onCancel={() => !deletingTransaction && setDeleteTransactionConfirmOpen(false)}
       onConfirm={() => void confirmDeleteTransactionFromWorkspace()}
+    />
+    <ConfirmDialog
+      open={archiveTransactionConfirmOpen}
+      title="Archive Transaction"
+      description={`Are you sure you want to archive this transaction for Unit ${unit?.unit_number || 'this unit'}?`
+        + ' It will be marked as archived and removed from active workflow lists.'}
+      confirmLabel="Archive Transaction"
+      cancelLabel="Cancel"
+      variant="destructive"
+      confirming={archivingTransaction}
+      onCancel={() => !archivingTransaction && setArchiveTransactionConfirmOpen(false)}
+      onConfirm={() => void confirmArchiveTransactionFromWorkspace()}
     />
     </>
     )

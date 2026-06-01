@@ -4,6 +4,7 @@ import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { calculateApprovalProbability, calculateOperationalRisk, calculateTransactionVelocity } from '../services/financeIntelligenceService'
 import Button from './ui/Button'
 import DataTable, { DataTableInner } from './ui/DataTable'
+import SearchInput from './ui/SearchInput'
 import StatusBadge from './ui/StatusBadge'
 
 const MAIN_STAGE_PROGRESS = {
@@ -144,7 +145,7 @@ function getTableMetrics(rows = []) {
   )
 }
 
-function rowMatchesQuickFilter(row, filterKey) {
+function rowMatchesQuickFilter(row, filterKey, searchTerm = '') {
   if (filterKey === 'all') return true
   const transaction = row?.transaction || {}
   const financeType = String(transaction.finance_type || '').trim().toLowerCase()
@@ -158,6 +159,29 @@ function rowMatchesQuickFilter(row, filterKey) {
   const stage = String(row?.stage || transaction.lifecycle_state || '').toLowerCase()
   const mainStage = formatMainStage(row).key
   const health = getHealth(row, mainStage).label.toLowerCase()
+  const developmentName = String(row?.development?.name || '').trim().toLowerCase()
+  const buyerName = String(row?.buyer?.name || '').trim().toLowerCase()
+  const searchHaystack = [
+    buyerName,
+    row?.buyer?.email,
+    row?.buyer?.phone,
+    developmentName,
+    row?.unit?.unit_number,
+    row?.transaction?.property_address_line_1,
+    transaction.transaction_reference,
+    transaction.reference,
+    transaction.property_description,
+    financeType,
+    stage,
+    mainStage,
+    health,
+  ]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean)
+    .join(' ')
+
+  const normalizedSearch = String(searchTerm || '').trim().toLowerCase()
+  if (normalizedSearch && !searchHaystack.includes(normalizedSearch)) return false
 
   if (filterKey === 'development') return Boolean(row?.development?.id) || typeText.includes('development')
   if (filterKey === 'second_hand') return typeText.includes('second') || typeText.includes('private') || (!row?.development?.id && !typeText.includes('commercial'))
@@ -179,13 +203,20 @@ function AgentTransactionsTable({
   isPrincipalView = false,
   onCreateTransaction = null,
   onOpenPipeline = null,
+  description = '',
+  compactLayout = false,
+  searchValue = '',
+  onSearchChange = null,
 }) {
   const [page, setPage] = useState(1)
   const [quickFilter, setQuickFilter] = useState('all')
+  const [localSearch, setLocalSearch] = useState('')
   const pageSize = 20
+  const searchFilter = onSearchChange ? String(searchValue || '') : localSearch
+
   const filteredRows = useMemo(
-    () => (rows || []).filter((row) => rowMatchesQuickFilter(row, quickFilter)),
-    [quickFilter, rows],
+    () => (rows || []).filter((row) => rowMatchesQuickFilter(row, quickFilter, searchFilter)),
+    [searchFilter, quickFilter, rows],
   )
   const totalPages = Math.max(1, Math.ceil((filteredRows?.length || 0) / pageSize))
   const currentPage = Math.min(page, totalPages)
@@ -200,37 +231,48 @@ function AgentTransactionsTable({
   const pageStart = filteredRows.length ? (currentPage - 1) * pageSize + 1 : 0
   const pageEnd = Math.min(filteredRows.length, currentPage * pageSize)
 
+  function handleSearchChange(nextValue) {
+    if (onSearchChange) {
+      onSearchChange(nextValue)
+    } else {
+      setLocalSearch(nextValue)
+    }
+    setPage(1)
+  }
+
   return (
     <DataTable
       title={title}
-      copy=""
+      copy={description}
       actions={
         <div className="agent-transactions-header-actions">
-          {hasAnyRows ? (
-            <div className="agent-transactions-metrics">
-              <div className="agent-transaction-metric">
-                <strong>{metrics.total}</strong>
-                <span>Transactions</span>
+          <div className="agent-transactions-metrics">
+            {hasAnyRows ? (
+              <>
+                <div className="agent-transaction-metric">
+                  <strong>{metrics.total}</strong>
+                  <span>Transactions</span>
+                </div>
+                <div className="agent-transaction-metric">
+                  <strong>{metrics.active}</strong>
+                  <span>Active</span>
+                </div>
+                <div className="agent-transaction-metric">
+                  <strong>{metrics.transfer}</strong>
+                  <span>Transfer</span>
+                </div>
+                <div className="agent-transaction-metric">
+                  <strong>{metrics.registered}</strong>
+                  <span>Registered</span>
+                </div>
+              </>
+            ) : (
+              <div className="agent-transactions-empty-summary">
+                <span>Waiting for first deal</span>
+                <strong>0 live transactions</strong>
               </div>
-              <div className="agent-transaction-metric">
-                <strong>{metrics.active}</strong>
-                <span>Active</span>
-              </div>
-              <div className="agent-transaction-metric">
-                <strong>{metrics.transfer}</strong>
-                <span>Transfer</span>
-              </div>
-              <div className="agent-transaction-metric">
-                <strong>{metrics.registered}</strong>
-                <span>Registered</span>
-              </div>
-            </div>
-          ) : (
-            <div className="agent-transactions-empty-summary">
-              <span>Waiting for first deal</span>
-              <strong>0 live transactions</strong>
-            </div>
-          )}
+            )}
+          </div>
           {onCreateTransaction ? (
             <Button type="button" className="agent-transactions-create-button" onClick={onCreateTransaction}>
               <Plus size={16} />
@@ -239,28 +281,36 @@ function AgentTransactionsTable({
           ) : null}
         </div>
       }
-      className="table-panel agent-transactions-panel"
+      className={`table-panel agent-transactions-panel${compactLayout ? ' transactions-page-compact' : ''}`}
     >
       {hasAnyRows ? (
         <div className="transaction-ops-filter-bar" aria-label="Transaction quick filters">
-          <div className="transaction-ops-filter-list">
-            {QUICK_FILTERS.map((filter) => (
-              <button
-                key={filter.key}
-                type="button"
-                className={`transaction-ops-filter ${quickFilter === filter.key ? 'is-active' : ''}`.trim()}
-                onClick={() => {
-                  setQuickFilter(filter.key)
-                  setPage(1)
-                }}
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
-          {filteredRows.length > pageSize ? (
+          <div className="transaction-ops-filter-toolbar">
+            <div className="transaction-ops-filter-list">
+              {QUICK_FILTERS.map((filter) => (
+                <button
+                  key={filter.key}
+                  type="button"
+                  className={`transaction-ops-filter ${quickFilter === filter.key ? 'is-active' : ''}`.trim()}
+                  onClick={() => {
+                    setQuickFilter(filter.key)
+                    setPage(1)
+                  }}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+            {compactLayout ? (
+              <SearchInput
+                className="agent-transactions-search"
+                value={searchFilter}
+                onChange={(event) => handleSearchChange(event.target.value)}
+                placeholder="Search transactions…"
+              />
+            ) : null}
             <span className="transaction-ops-count">Showing {pageStart}-{pageEnd}</span>
-          ) : null}
+          </div>
         </div>
       ) : null}
 
@@ -315,7 +365,7 @@ function AgentTransactionsTable({
           )}
         </div>
       ) : (
-        <DataTableInner className="units-table agent-transactions-table transaction-ops-table">
+        <DataTableInner className={`units-table agent-transactions-table transaction-ops-table${compactLayout ? ' agent-transactions-compact-table' : ''}`.trim()}>
           <thead>
             <tr>
               <th className="agent-transactions-sticky-first">Listing / Development</th>
@@ -328,98 +378,103 @@ function AgentTransactionsTable({
           </thead>
           <tbody>
             {visibleRows.map((row, index) => {
-            const updatedAt = row?.transaction?.updated_at || row?.transaction?.created_at || null
-            const canOpenRow = Boolean(row?.transaction?.id || row?.unit?.id)
-            const mainStage = formatMainStage(row)
-            const health = getHealth(row, mainStage.key)
-            const progressPercent = getProgressPercent(row, mainStage.key)
-            const approvalConfidence = calculateApprovalProbability(row)
-            const operationalRisk = calculateOperationalRisk(row)
-            const velocity = calculateTransactionVelocity(row)
-            const transactionConfidence = Math.round((approvalConfidence.score * 0.55) + ((100 - operationalRisk.riskScore) * 0.25) + (velocity.velocityScore * 0.2))
-            const buyerName = row?.buyer?.name || 'Buyer pending'
-            const propertyLabel = getPropertyLabel(row)
-            const developmentLabel = getDevelopmentLabel(row)
+              const updatedAt = row?.transaction?.updated_at || row?.transaction?.created_at || null
+              const canOpenRow = Boolean(row?.transaction?.id || row?.unit?.id)
+              const mainStage = formatMainStage(row)
+              const health = getHealth(row, mainStage.key)
+              const progressPercent = getProgressPercent(row, mainStage.key)
+              const approvalConfidence = calculateApprovalProbability(row)
+              const operationalRisk = calculateOperationalRisk(row)
+              const velocity = calculateTransactionVelocity(row)
+              const transactionConfidence = Math.round((approvalConfidence.score * 0.55) + ((100 - operationalRisk.riskScore) * 0.25) + (velocity.velocityScore * 0.2))
+              const buyerName = row?.buyer?.name || 'Buyer pending'
+              const propertyLabel = getPropertyLabel(row)
+              const developmentLabel = getDevelopmentLabel(row)
+              const transactionReference = row?.transaction?.transaction_reference || row?.transaction?.reference || ''
 
-            return (
-              <tr
-                key={row?.transaction?.id || row?.unit?.id || `${row?.buyer?.id || 'row'}-${row?.stage || 'stage'}`}
-                className={`${canOpenRow ? 'ui-data-row-clickable' : ''} ${index % 2 === 0 ? 'agent-transactions-row-even' : 'agent-transactions-row-odd'}`.trim()}
-                onClick={() => {
-                  if (!canOpenRow) return
-                  onRowClick(row)
-                }}
-                onKeyDown={(event) => {
-                  if ((event.key === 'Enter' || event.key === ' ') && canOpenRow) {
-                    event.preventDefault()
+              return (
+                <tr
+                  key={row?.transaction?.id || row?.unit?.id || `${row?.buyer?.id || 'row'}-${row?.stage || 'stage'}`}
+                  className={`${canOpenRow ? 'ui-data-row-clickable' : ''} ${index % 2 === 0 ? 'agent-transactions-row-even' : 'agent-transactions-row-odd'}`.trim()}
+                  onClick={() => {
+                    if (!canOpenRow) return
                     onRowClick(row)
-                  }
-                }}
-                tabIndex={canOpenRow ? 0 : -1}
-                role={canOpenRow ? 'button' : undefined}
-              >
-                <td className="agent-transactions-sticky-first" data-label="Listing / Development">
-                  <div className="transaction-list-cell">
-                    <strong className="transaction-cell-primary" title={developmentLabel}>{developmentLabel}</strong>
-                    <small className="transaction-cell-secondary" title={propertyLabel}>{propertyLabel}</small>
-                  </div>
-                </td>
-                <td data-label="Client">
-                  <div className="transaction-list-cell">
-                    <strong className="transaction-cell-primary" title={buyerName}>{buyerName}</strong>
-                    <small className="transaction-cell-secondary" title={row?.buyer?.email || ''}>{row?.buyer?.email || row?.buyer?.phone || 'No contact details'}</small>
-                  </div>
-                </td>
-                <td data-label="Progress">
-                  <div className="transaction-progress-cell">
-                    <div className="transaction-progress-summary">
-                    <strong>{progressPercent}%</strong>
-                    <small>{transactionConfidence}% confidence</small>
-                  </div>
-                    <div className="transaction-progress-track" aria-hidden="true">
-                      <span style={{ width: `${Math.max(progressPercent > 0 ? 8 : 0, progressPercent)}%` }} />
+                  }}
+                  onKeyDown={(event) => {
+                    if ((event.key === 'Enter' || event.key === ' ') && canOpenRow) {
+                      event.preventDefault()
+                      onRowClick(row)
+                    }
+                  }}
+                  tabIndex={canOpenRow ? 0 : -1}
+                  role={canOpenRow ? 'button' : undefined}
+                >
+                  <td className="agent-transactions-sticky-first" data-label="Listing / Development">
+                    <div className="transaction-list-cell">
+                      <strong className="transaction-cell-primary" title={developmentLabel}>{developmentLabel}</strong>
+                      <small className="transaction-cell-secondary" title={propertyLabel}>{propertyLabel}</small>
+                      {transactionReference ? (
+                        <small className="transaction-cell-meta" title={transactionReference}>Ref {transactionReference}</small>
+                      ) : null}
                     </div>
-                  </div>
-                </td>
-                <td data-label="Health">
-                  <StatusBadge className={`transaction-workflow-chip transaction-health-chip ${health.className}`}>{health.label}</StatusBadge>
-                </td>
-                <td data-label="Last Updated">
-                  <span className="transaction-cell-secondary">{formatRelativeDate(updatedAt)}</span>
-                </td>
-                <td data-label="Actions" onClick={(event) => event.stopPropagation()}>
-                  <div className="transaction-row-actions">
-                    {row?.transaction?.id ? (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        className="table-action-button transaction-row-action-primary"
-                        onClick={() => onRowClick(row)}
-                      >
-                        <ArrowUpRight size={14} />
-                        Open
-                      </Button>
-                    ) : null}
-                    {onDeleteTransaction && row?.transaction?.id ? (
-                      <details className="transaction-row-menu">
-                        <summary aria-label="More transaction actions">
-                          <MoreHorizontal size={16} />
-                        </summary>
-                        <button
-                          type="button"
-                          className="transaction-row-menu-item danger"
-                          onClick={() => onDeleteTransaction(row)}
-                          disabled={deletingTransactionId === row.transaction.id}
+                  </td>
+                  <td data-label="Client">
+                    <div className="transaction-list-cell">
+                      <strong className="transaction-cell-primary" title={buyerName}>{buyerName}</strong>
+                      <small className="transaction-cell-secondary" title={row?.buyer?.email || ''}>{row?.buyer?.email || row?.buyer?.phone || 'No contact details'}</small>
+                    </div>
+                  </td>
+                  <td data-label="Progress">
+                    <div className="transaction-progress-cell">
+                      <div className="transaction-progress-summary">
+                        <strong>{progressPercent}%</strong>
+                        <small>{transactionConfidence}% confidence</small>
+                      </div>
+                      <span className="transaction-progress-stage">{mainStage.label}</span>
+                      <div className="transaction-progress-track" aria-hidden="true">
+                        <span style={{ width: `${Math.max(progressPercent > 0 ? 8 : 0, progressPercent)}%` }} />
+                      </div>
+                    </div>
+                  </td>
+                  <td data-label="Health">
+                    <StatusBadge className={`transaction-workflow-chip transaction-health-chip ${health.className}`}>{health.label}</StatusBadge>
+                  </td>
+                  <td data-label="Last Updated">
+                    <span className="transaction-cell-secondary">{formatRelativeDate(updatedAt)}</span>
+                  </td>
+                  <td data-label="Actions" onClick={(event) => event.stopPropagation()}>
+                    <div className="transaction-row-actions">
+                      {row?.transaction?.id ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="table-action-button transaction-row-action-primary"
+                          onClick={() => onRowClick(row)}
                         >
-                          {deletingTransactionId === row.transaction.id ? 'Deleting...' : 'Delete'}
-                        </button>
-                      </details>
-                    ) : null}
-                  </div>
-                </td>
-              </tr>
-            )
-          })}
+                          <ArrowUpRight size={14} />
+                          Open
+                        </Button>
+                      ) : null}
+                      {onDeleteTransaction && row?.transaction?.id ? (
+                        <details className="transaction-row-menu">
+                          <summary aria-label="More transaction actions">
+                            <MoreHorizontal size={16} />
+                          </summary>
+                          <button
+                            type="button"
+                            className="transaction-row-menu-item danger"
+                            onClick={() => onDeleteTransaction(row)}
+                            disabled={deletingTransactionId === row.transaction.id}
+                          >
+                            {deletingTransactionId === row.transaction.id ? 'Deleting...' : 'Delete'}
+                          </button>
+                        </details>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </DataTableInner>
       )}

@@ -61,6 +61,9 @@ const BOND_SCOPE_FALLBACK_BY_ROLE = Object.freeze({
 })
 
 export const LEGACY_SCOPE_TO_BOND_SCOPE = Object.freeze({
+  organisation: BOND_SCOPE_LEVELS.workspaceHq,
+  organization: BOND_SCOPE_LEVELS.workspaceHq,
+  hq: BOND_SCOPE_LEVELS.workspaceHq,
   all_branches: BOND_SCOPE_LEVELS.workspaceHq,
   allBranches: BOND_SCOPE_LEVELS.workspaceHq,
   branch_only: BOND_SCOPE_LEVELS.branch,
@@ -69,6 +72,8 @@ export const LEGACY_SCOPE_TO_BOND_SCOPE = Object.freeze({
   assignedBranch: BOND_SCOPE_LEVELS.branch,
   team_only: BOND_SCOPE_LEVELS.team,
   teamOnly: BOND_SCOPE_LEVELS.team,
+  user: BOND_SCOPE_LEVELS.assigned,
+  independent: BOND_SCOPE_LEVELS.assigned,
   assigned_only: BOND_SCOPE_LEVELS.assigned,
   assignedOnly: BOND_SCOPE_LEVELS.assigned,
   own: BOND_SCOPE_LEVELS.assigned,

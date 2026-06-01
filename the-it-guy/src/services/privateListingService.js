@@ -631,6 +631,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   const mapped = {
     id: row.id,
     organisationId: row.organisation_id || null,
+    branchId: row.branch_id || null,
     assignedAgentId: row.assigned_agent_id || null,
     sellerLeadId: row.seller_lead_id || null,
     originatingCrmLeadId: row.originating_crm_lead_id || null,
@@ -1105,6 +1106,7 @@ function buildPrivateListingPayload(payload = {}, userId = null) {
 
   return {
     organisation_id: organisationId,
+    branch_id: normalizeUuid(payload.branchId || payload.branch_id),
     assigned_agent_id: normalizeUuid(payload.assignedAgentId),
     seller_lead_id: normalizeLeadLink(payload.sellerLeadId),
     originating_crm_lead_id: normalizeLeadLink(payload.originatingCrmLeadId),
@@ -1178,6 +1180,7 @@ export async function createPrivateListing(payload = {}, options = {}) {
   const listingPayload = buildPrivateListingPayload(payload, user.id)
   let insert = await client.from('private_listings').insert(listingPayload).select('*').single()
   if (insert.error && (
+    isMissingColumnError(insert.error, 'branch_id') ||
     isMissingColumnError(insert.error, 'property_category') ||
     isMissingColumnError(insert.error, 'listing_source') ||
     isMissingColumnError(insert.error, 'property_structure_type') ||
@@ -1185,7 +1188,7 @@ export async function createPrivateListing(payload = {}, options = {}) {
   )) {
     insert = await client
       .from('private_listings')
-      .insert(stripUnsupportedPortalColumns(stripUnsupportedTaxonomyColumns(listingPayload)))
+      .insert(stripUnsupportedPortalColumns(stripUnsupportedTaxonomyColumns(Object.fromEntries(Object.entries(listingPayload).filter(([key]) => key !== 'branch_id')))))
       .select('*')
       .single()
   }
@@ -1218,15 +1221,25 @@ export async function createPrivateListing(payload = {}, options = {}) {
 
   await createPrivateListingActivity({
     privateListingId: insert.data.id,
-    activityType: 'seller_lead_created',
-    activityTitle: 'Seller lead captured',
-    activityDescription: 'Private listing intake shell created.',
+    activityType: normalizeKey(payload.origin || payload.source) === 'quick_add' ? 'quick_add_listing_created' : 'seller_lead_created',
+    activityTitle: normalizeKey(payload.origin || payload.source) === 'quick_add' ? 'Listing created via Quick Add' : 'Seller lead captured',
+    activityDescription: normalizeKey(payload.origin || payload.source) === 'quick_add' ? 'Private listing created from quick capture.' : 'Private listing intake shell created.',
     performedBy: user.id,
     visibility: 'internal',
     metadata: {
+      origin: normalizeText(payload.origin || payload.source || 'manual'),
       source: normalizeText(payload.source || 'manual'),
       originatingCrmLeadId: listingWithRequirements.originatingCrmLeadId,
       sellerLeadId: listingWithRequirements.sellerLeadId,
+      assignedAgentId: normalizeText(payload.assignedAgentId),
+      mandateStatus: normalizeText(payload.mandateStatus),
+      completeness: payload.completeness || null,
+      missingFollowUpItems: Array.isArray(payload.completeness?.missingItems) ? payload.completeness.missingItems : [],
+      canonicalStructure: Array.isArray(payload.canonicalStructure)
+        ? payload.canonicalStructure
+        : normalizeKey(payload.origin || payload.source) === 'quick_add'
+          ? ['listing', 'property', 'seller_party', 'mandate', 'commission_terms', 'agent_assignment', 'documents', 'private_listing_activity']
+          : null,
     },
   }).catch(() => {})
 
@@ -2659,6 +2672,100 @@ export async function uploadSellerClientPortalDocument({
     requirementId: documentRow?.requirement_id || matchedRequirement?.id || null,
     requirementKey: normalizedRequirementKey || matchedRequirement?.requirement_key || null,
     canonicalRequirementInstanceId: canonicalRequirementInstanceId || null,
+  }
+}
+
+export async function uploadPrivateListingDocument(listingId, file, {
+  documentType = 'listing_document',
+  documentCategory = '',
+  documentName = '',
+  visibility = 'internal',
+  status = 'uploaded',
+} = {}) {
+  const client = requireClient()
+  const user = await getCurrentUser(client).catch(() => null)
+  const normalizedListingId = normalizeUuid(listingId)
+  if (!normalizedListingId) throw new Error('Listing id is required.')
+  if (!file) throw new Error('A file is required.')
+
+  const safeOriginalName = normalizeText(documentName || file.name || 'listing-document')
+    .replace(/[^a-zA-Z0-9._-]/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 140) || 'listing-document'
+  const filePath = `private-listings/${normalizedListingId}/documents/${Date.now()}-${safeOriginalName}`
+
+  await uploadToPrivateListingDocumentsBucket(client, filePath, file, {
+    upsert: false,
+    contentType: file.type || undefined,
+  })
+
+  const insertPayload = {
+    private_listing_id: normalizedListingId,
+    requirement_id: null,
+    document_type: normalizeText(documentType) || 'listing_document',
+    category: normalizeText(documentCategory || documentType) || 'Other',
+    document_name: documentName || file.name || safeOriginalName,
+    storage_path: filePath,
+    file_url: null,
+    uploaded_by: user?.id || null,
+    status: normalizeText(status) || 'uploaded',
+    visibility: normalizeText(visibility) || 'internal',
+    uploaded_at: new Date().toISOString(),
+  }
+
+  let inserted = await runSelectWithFallback(
+    (selectFields) => client
+      .from('private_listing_documents')
+      .insert(insertPayload)
+      .select(selectFields)
+      .single(),
+    PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS,
+    'private_listing_documents',
+  )
+  if (inserted.error && isMissingColumnError(inserted.error, 'category')) {
+    const insertPayloadWithoutCategory = { ...insertPayload }
+    delete insertPayloadWithoutCategory.category
+    inserted = await runSelectWithFallback(
+      (selectFields) => client
+        .from('private_listing_documents')
+        .insert(insertPayloadWithoutCategory)
+        .select(selectFields)
+        .single(),
+      PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS,
+      'private_listing_documents',
+    )
+  }
+  if (inserted.error && !isMissingColumnError(inserted.error) && !isMissingTableError(inserted.error, 'private_listing_documents')) {
+    throw inserted.error
+  }
+  const documentRow = normalizeDocumentRows(inserted.data ? [inserted.data] : [insertPayload])[0] || null
+
+  await createPrivateListingActivity({
+    privateListingId: normalizedListingId,
+    activityType: 'listing_document_uploaded',
+    activityTitle: 'Listing document uploaded',
+    activityDescription: `${insertPayload.document_name} uploaded.`,
+    performedBy: user?.id || null,
+    visibility: 'internal',
+    metadata: {
+      documentType: insertPayload.document_type,
+      documentCategory: insertPayload.category,
+      documentName: insertPayload.document_name,
+      storagePath: filePath,
+      source: 'quick_add',
+    },
+  }).catch(() => null)
+
+  return {
+    id: documentRow?.id || filePath,
+    document_name: documentRow?.document_name || insertPayload.document_name,
+    document_type: documentRow?.document_type || insertPayload.document_type,
+    category: documentRow?.category || insertPayload.category,
+    status: documentRow?.status || insertPayload.status,
+    storage_path: documentRow?.storage_path || filePath,
+    uploaded_at: documentRow?.uploaded_at || insertPayload.uploaded_at,
+    url: await createPrivateListingDocumentSignedUrl(client, documentRow?.storage_path || filePath),
+    privateListingId: normalizedListingId,
   }
 }
 

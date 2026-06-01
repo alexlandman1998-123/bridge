@@ -2387,6 +2387,206 @@
     color: #a53f36;
   }
 
+  .transactions-page-compact.agent-transactions-panel .ui-table-card-head {
+    padding: 1.05rem 1.15rem 0.8rem;
+    gap: 0.9rem;
+    align-items: center;
+  }
+
+  .transactions-page-compact.agent-transactions-panel .ui-section-title {
+    font-size: 1.9rem;
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+    font-weight: 700;
+  }
+
+  .transactions-page-compact.agent-transactions-panel .ui-section-copy {
+    margin-top: 0.25rem;
+    max-width: 760px;
+    color: #617287;
+    font-size: 0.9rem;
+  }
+
+  .transactions-page-compact.agent-transactions-panel .ui-table-shell {
+    margin-top: 0;
+    padding: 0.25rem 0.8rem 0.85rem;
+  }
+
+  .transactions-page-compact.agent-transactions-panel .table-wrap {
+    max-height: min(76vh, 860px);
+  }
+
+  .transactions-page-compact .agent-transactions-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.7rem;
+    flex-wrap: wrap;
+  }
+
+  .transactions-page-compact .agent-transactions-metrics {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: auto;
+    min-width: 0;
+    border: 1px solid #dce8f4;
+    border-radius: 16px;
+    background: #ffffff;
+    padding: 0.6rem 0.78rem;
+    box-shadow: none;
+  }
+
+  .transactions-page-compact .agent-transaction-metric {
+    min-width: 0;
+    padding: 0;
+    border-left: 1px solid #e6edf5;
+    min-width: 118px;
+    text-align: left;
+  }
+
+  .transactions-page-compact .agent-transaction-metric:first-child {
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .transactions-page-compact .agent-transaction-metric strong {
+    color: #111827;
+    font-size: 1.45rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+
+  .transactions-page-compact .agent-transaction-metric span {
+    margin-top: 0.3rem;
+    color: #60738d;
+    font-size: 0.64rem;
+    font-weight: 750;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .transactions-page-compact .agent-transactions-create-button {
+    min-height: 40px;
+    border-radius: 12px;
+    padding-inline: 0.95rem;
+    box-shadow: 0 12px 26px rgba(31, 79, 120, 0.16);
+  }
+
+  .transactions-page-compact .agent-transactions-search {
+    width: min(320px, 100%);
+    min-width: 180px;
+  }
+
+  .transactions-page-compact .transaction-ops-filter-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.85rem;
+  }
+
+  .transactions-page-compact .transaction-ops-filter-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .transactions-page-compact .transaction-ops-filter-list {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    min-width: 0;
+    width: min(100%, 1px);
+    scrollbar-width: thin;
+  }
+
+  .transactions-page-compact .transaction-ops-filter {
+    min-height: 33px;
+    padding: 0.36rem 0.82rem;
+    border-radius: 999px;
+    font-size: 0.74rem;
+  }
+
+  .transactions-page-compact .transaction-ops-count {
+    margin-left: auto;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .transactions-page-compact .ui-data-table.agent-transactions-table {
+    min-width: 1120px;
+  }
+
+  .transactions-page-compact .ui-data-table.agent-transactions-table th,
+  .transactions-page-compact .ui-data-table.agent-transactions-table td {
+    padding: 0.85rem 0.75rem;
+    font-size: 0.82rem;
+  }
+
+  .transactions-page-compact .ui-data-table.agent-transactions-table th {
+    font-size: 0.68rem;
+    color: #536986;
+    letter-spacing: 0.06em;
+    background: #f8fbff;
+  }
+
+  .transactions-page-compact .ui-data-table.agent-transactions-table .agent-transactions-sticky-first {
+    width: 24%;
+    min-width: 250px;
+  }
+
+  .transactions-page-compact .ui-data-table.agent-transactions-table th:nth-child(2),
+  .transactions-page-compact .ui-data-table.agent-transactions-table td:nth-child(2) {
+    width: 19%;
+    min-width: 0;
+  }
+
+  .transactions-page-compact .ui-data-table.agent-transactions-table th:nth-child(3),
+  .transactions-page-compact .ui-data-table.agent-transactions-table td:nth-child(3) {
+    width: 19%;
+    min-width: 160px;
+  }
+
+  .transactions-page-compact .ui-data-table.agent-transactions-table th:nth-child(4),
+  .transactions-page-compact .ui-data-table.agent-transactions-table td:nth-child(4),
+  .transactions-page-compact .ui-data-table.agent-transactions-table th:nth-child(5),
+  .transactions-page-compact .ui-data-table.agent-transactions-table td:nth-child(5) {
+    width: 11%;
+    min-width: 112px;
+  }
+
+  .transactions-page-compact .ui-data-table.agent-transactions-table th:last-child,
+  .transactions-page-compact .ui-data-table.agent-transactions-table td:last-child {
+    width: 12%;
+    min-width: 126px;
+  }
+
+  .transactions-page-compact .ui-data-table .transaction-cell-meta {
+    color: #6b7f96;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: none;
+  }
+
+  .transactions-page-compact .transaction-progress-track {
+    height: 0.34rem;
+  }
+
+  .transactions-page-compact .ui-data-table .transaction-row-actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.4rem;
+    flex-wrap: nowrap;
+  }
+
   .ui-data-table .transaction-list-stage {
     @apply grid gap-2;
   }
@@ -2412,6 +2612,78 @@
   }
 
   @media (max-width: 860px) {
+    .transactions-page-compact.agent-transactions-panel .ui-table-card-head {
+      padding: 1rem;
+      gap: 0.8rem;
+      grid-template-columns: 1fr;
+    }
+
+    .transactions-page-compact.agent-transactions-panel .ui-section-title {
+      font-size: 1.65rem;
+    }
+
+    .transactions-page-compact .agent-transactions-header-actions {
+      flex-direction: column-reverse;
+      align-items: stretch;
+      width: 100%;
+    }
+
+    .transactions-page-compact .agent-transactions-metrics {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      width: 100%;
+    }
+
+    .transactions-page-compact .transaction-ops-filter-toolbar {
+      align-items: stretch;
+    }
+
+    .transactions-page-compact .transaction-ops-filter-list {
+      width: 100%;
+    }
+
+    .transactions-page-compact .agent-transactions-search {
+      width: 100%;
+    }
+
+    .transactions-page-compact .transaction-ops-count {
+      margin-left: 0;
+    }
+
+    .transactions-page-compact .ui-data-table.agent-transactions-table {
+      min-width: 0;
+      display: block;
+    }
+
+    .transactions-page-compact .ui-data-table.agent-transactions-table thead,
+    .transactions-page-compact .ui-data-table.agent-transactions-table tbody,
+    .transactions-page-compact .ui-data-table.agent-transactions-table tr,
+    .transactions-page-compact .ui-data-table.agent-transactions-table td {
+      display: block;
+      width: 100%;
+    }
+
+    .transactions-page-compact .ui-data-table.agent-transactions-table tr {
+      margin-bottom: 0.9rem;
+      height: auto;
+      border: 1px solid #dfe8f3;
+      border-radius: 18px;
+      background: #ffffff;
+      overflow: hidden;
+    }
+
+    .transactions-page-compact .ui-data-table.agent-transactions-table td {
+      display: grid;
+      grid-template-columns: minmax(7rem, 38%) minmax(0, 1fr);
+      gap: 0.8rem;
+      padding: 0.75rem 0.9rem;
+      border-bottom: 1px solid #eef2f7;
+      white-space: normal;
+    }
+
+    .transactions-page-compact .ui-data-table.agent-transactions-table td:last-child {
+      border-bottom: 0;
+    }
+
     .agent-transactions-panel .ui-table-card-head,
     .attorney-transfers-panel .ui-table-card-head {
       padding: 1.1rem;

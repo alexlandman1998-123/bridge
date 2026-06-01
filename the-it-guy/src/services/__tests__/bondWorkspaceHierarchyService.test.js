@@ -45,6 +45,19 @@ try {
   assert.equal(resolveBondScopeForMembership(personalAssigned), BOND_SCOPE_LEVELS.assigned)
   assert.equal(canUserAccessBondScope({ currentMembership: personalAssigned }, { scopeLevel: BOND_SCOPE_LEVELS.assigned, assignedUserId: 'user-personal' }), true)
 
+  const independentConsultant = {
+    id: 'membership-independent-consultant',
+    workspaceId: 'workspace-independent',
+    workspaceRole: 'bond_independent_consultant',
+    scopeLevel: 'independent',
+    userId: 'independent-user',
+    status: 'active',
+    workspace_type: 'bond_originator',
+  }
+  assert.equal(resolveBondScopeForMembership(independentConsultant), BOND_SCOPE_LEVELS.assigned)
+  assert.equal(canUserAccessBondScope({ currentMembership: independentConsultant }, { scopeLevel: 'user', assignedUserId: 'independent-user' }), true)
+  assert.equal(canUserAccessBondScope({ currentMembership: independentConsultant }, { scopeLevel: 'branch', workspaceUnitId: 'branch-1' }), false)
+
   const legacyOriginatorRole = {
     id: 'membership-legacy-originator',
     workspaceId: 'workspace-personal',
@@ -69,6 +82,7 @@ try {
   }
   assert.equal(resolveBondScopeForMembership(regionalManager), BOND_SCOPE_LEVELS.region)
   assert.equal(canUserAccessBondScope({ currentMembership: regionalManager }, { scopeLevel: BOND_SCOPE_LEVELS.region, regionId: 'region-cpt' }), true)
+  assert.equal(canUserAccessBondScope({ currentMembership: regionalManager }, { scopeLevel: BOND_SCOPE_LEVELS.region, assigned_region_id: 'region-cpt' }), true)
   assert.equal(canUserAccessBondScope({ currentMembership: regionalManager }, { scopeLevel: BOND_SCOPE_LEVELS.region, regionId: 'region-gau' }), false)
   assert.equal(getAccessibleBondRegions({ currentMembership: regionalManager }, 'workspace-company')[0], 'region-cpt')
 
@@ -85,6 +99,7 @@ try {
   assert.equal(resolveBondScopeForMembership(branchManager), BOND_SCOPE_LEVELS.branch)
   assert.equal(isBranchBondManager({ currentMembership: branchManager }, 'workspace-company', 'branch-1'), true)
   assert.equal(canUserAccessBondScope({ currentMembership: branchManager }, { scopeLevel: BOND_SCOPE_LEVELS.branch, workspaceUnitId: 'branch-1' }), true)
+  assert.equal(canUserAccessBondScope({ currentMembership: branchManager }, { scopeLevel: BOND_SCOPE_LEVELS.branch, assigned_branch_id: 'branch-1' }), true)
   assert.equal(canUserAccessBondScope({ currentMembership: branchManager }, { scopeLevel: BOND_SCOPE_LEVELS.branch, workspaceUnitId: 'branch-2' }), false)
   assert.equal(getAccessibleBondUnits({ currentMembership: branchManager }, 'workspace-company')[0], 'branch-1')
 

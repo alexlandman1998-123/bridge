@@ -1083,12 +1083,16 @@ create table if not exists transactions (
   assigned_attorney_email text,
   bond_originator text,
   assigned_bond_originator_email text,
+  onboarding_status text not null default 'awaiting_client_onboarding',
+  onboarding_completed_at timestamptz,
+  external_onboarding_submitted_at timestamptz,
   finance_managed_by text not null default 'bond_originator',
   bank text,
   finance_status text,
   expected_transfer_date date,
   next_action text,
   owner_user_id uuid references profiles(id) on delete set null,
+  created_by uuid references profiles(id) on delete set null,
   access_level text not null default 'shared',
   is_active boolean not null default true,
   lifecycle_state text not null default 'active',
@@ -1162,11 +1166,13 @@ alter table if exists transactions add column if not exists assigned_agent text;
 alter table if exists transactions add column if not exists assigned_agent_email text;
 alter table if exists transactions add column if not exists assigned_attorney_email text;
 alter table if exists transactions add column if not exists assigned_bond_originator_email text;
+alter table if exists transactions add column if not exists external_onboarding_submitted_at timestamptz;
 alter table if exists transactions add column if not exists finance_managed_by text not null default 'bond_originator';
 alter table if exists transactions add column if not exists bank text;
 alter table if exists transactions add column if not exists finance_status text;
 alter table if exists transactions add column if not exists expected_transfer_date date;
 alter table if exists transactions add column if not exists owner_user_id uuid references profiles(id) on delete set null;
+alter table if exists transactions add column if not exists created_by uuid references profiles(id) on delete set null;
 alter table if exists transactions add column if not exists access_level text not null default 'shared';
 alter table if exists transactions add column if not exists is_active boolean not null default true;
 alter table if exists transactions add column if not exists lifecycle_state text not null default 'active';
@@ -1441,6 +1447,24 @@ alter table if exists transaction_role_players add column if not exists partner_
 alter table if exists transaction_role_players add column if not exists contact_person text;
 alter table if exists transaction_role_players add column if not exists email_address text;
 alter table if exists transaction_role_players add column if not exists phone_number text;
+alter table if exists transaction_role_players add column if not exists organisation_id uuid;
+alter table if exists transaction_role_players add column if not exists workspace_unit_id uuid;
+alter table if exists transaction_role_players add column if not exists branch_id uuid;
+alter table if exists transaction_role_players add column if not exists user_id uuid;
+alter table if exists transaction_role_players add column if not exists assigned_organisation_id uuid;
+alter table if exists transaction_role_players add column if not exists assigned_workspace_unit_id uuid;
+alter table if exists transaction_role_players add column if not exists assigned_branch_id uuid;
+alter table if exists transaction_role_players add column if not exists assigned_region_id uuid;
+alter table if exists transaction_role_players add column if not exists assigned_team_id uuid;
+alter table if exists transaction_role_players add column if not exists assigned_user_id uuid;
+alter table if exists transaction_role_players add column if not exists scope_level text;
+alter table if exists transaction_role_players add column if not exists scope_metadata jsonb not null default '{}'::jsonb;
+alter table if exists transaction_role_players add column if not exists status text not null default 'selected';
+alter table if exists transaction_role_players add column if not exists assignment_status text not null default 'selected';
+alter table if exists transaction_role_players add column if not exists activation_trigger text;
+alter table if exists transaction_role_players add column if not exists activated_at timestamptz;
+alter table if exists transaction_role_players add column if not exists assigned_by uuid;
+alter table if exists transaction_role_players add column if not exists removed_at timestamptz;
 alter table if exists transaction_role_players add column if not exists website text;
 alter table if exists transaction_role_players add column if not exists physical_address text;
 alter table if exists transaction_role_players add column if not exists province text;
@@ -1452,15 +1476,19 @@ alter table if exists transaction_role_players add column if not exists updated_
 alter table if exists transaction_role_players drop constraint if exists transaction_role_players_role_type_check;
 alter table if exists transaction_role_players
   add constraint transaction_role_players_role_type_check
-  check (role_type in ('bond_originator', 'bond_attorney', 'transfer_attorney'));
+  check (role_type in ('bond_originator', 'bond_attorney', 'transfer_attorney', 'cancellation_attorney', 'developer_contact', 'agent'));
 
 alter table if exists transaction_role_players drop constraint if exists transaction_role_players_selection_source_check;
 alter table if exists transaction_role_players
   add constraint transaction_role_players_selection_source_check
-  check (selection_source in ('agency_preferred', 'buyer_appointed', 'manual'));
+  check (selection_source in ('agency_preferred', 'buyer_appointed', 'manual', 'connected_partner', 'preferred_partner', 'recently_used'));
 
 create index if not exists transaction_role_players_transaction_idx
   on transaction_role_players (transaction_id);
+create index if not exists transaction_role_players_scope_idx
+  on transaction_role_players (organisation_id, workspace_unit_id, branch_id, user_id);
+create index if not exists transaction_role_players_assignment_scope_idx
+  on transaction_role_players (assigned_organisation_id, assigned_region_id, assigned_branch_id, assigned_team_id, assigned_user_id);
 
 create table if not exists transaction_subprocesses (
   id uuid primary key default gen_random_uuid(),
@@ -2468,6 +2496,14 @@ alter table if exists transaction_participants add column if not exists can_uplo
 alter table if exists transaction_participants add column if not exists can_edit_finance_workflow boolean not null default false;
 alter table if exists transaction_participants add column if not exists can_edit_attorney_workflow boolean not null default false;
 alter table if exists transaction_participants add column if not exists can_edit_core_transaction boolean not null default false;
+alter table if exists transaction_participants add column if not exists assigned_organisation_id uuid;
+alter table if exists transaction_participants add column if not exists assigned_workspace_unit_id uuid;
+alter table if exists transaction_participants add column if not exists assigned_branch_id uuid;
+alter table if exists transaction_participants add column if not exists assigned_region_id uuid;
+alter table if exists transaction_participants add column if not exists assigned_team_id uuid;
+alter table if exists transaction_participants add column if not exists assigned_user_id uuid;
+alter table if exists transaction_participants add column if not exists scope_level text;
+alter table if exists transaction_participants add column if not exists scope_metadata jsonb not null default '{}'::jsonb;
 alter table if exists transaction_participants add column if not exists updated_at timestamptz not null default now();
 update transaction_participants set can_view = true where can_view is null;
 update transaction_participants set can_comment = true where can_comment is null;
@@ -2662,7 +2698,27 @@ alter table transaction_events
       'CommentAdded',
       'ParticipantAssigned',
       'WorkflowStepUpdated',
-      'StatusLinkCreated'
+      'StatusLinkCreated',
+      'OccupationalRentUpdated',
+      'BondHybridFinanceWorkflowUpdated',
+      'BondHybridFinanceApplicationUpdated',
+      'BondHybridFinanceQuoteUpdated',
+      'BondHybridFinanceInstructionSent',
+      'AttorneyCriticalBlockerCreated',
+      'AttorneyDocumentUploaded',
+      'AttorneyLaneBlocked',
+      'AttorneyLaneCompleted',
+      'AttorneyLaneCreated',
+      'AttorneyLaneStageUpdated',
+      'AttorneyUnauthorizedAccessAttempt',
+      'transaction_created',
+      'transfer_attorney_assigned',
+      'bond_originator_assigned',
+      'cancellation_attorney_assigned',
+      'attorney_assignment_created',
+      'bond_application_created',
+      'roleplayer_visibility_granted',
+      'roleplayer_reassigned'
     )
   );
 
@@ -3219,6 +3275,8 @@ create index if not exists transaction_participants_user_id_idx on transaction_p
 create index if not exists transaction_participants_status_idx on transaction_participants (transaction_id, status);
 create index if not exists transaction_participants_legal_role_idx on transaction_participants (transaction_id, legal_role);
 create index if not exists transaction_participants_invitation_token_idx on transaction_participants (invitation_token);
+create index if not exists transaction_participants_assignment_scope_idx
+  on transaction_participants (assigned_organisation_id, assigned_region_id, assigned_branch_id, assigned_team_id, assigned_user_id);
 create index if not exists transactions_owner_user_id_idx on transactions (owner_user_id);
 create index if not exists transactions_access_level_idx on transactions (access_level);
 create index if not exists profiles_firm_id_idx on profiles (firm_id);
@@ -4246,6 +4304,16 @@ create table if not exists public.transaction_attorney_assignments (
   primary_attorney_id uuid references auth.users(id) on delete set null,
   secretary_id uuid references auth.users(id) on delete set null,
   admin_handler_id uuid references auth.users(id) on delete set null,
+  matter_type text,
+  instruction_status text not null default 'new_instruction',
+  assigned_organisation_id uuid,
+  assigned_workspace_unit_id uuid,
+  assigned_branch_id uuid,
+  assigned_region_id uuid,
+  assigned_team_id uuid,
+  assigned_user_id uuid,
+  scope_level text,
+  scope_metadata jsonb not null default '{}'::jsonb,
   status text not null default 'active',
   assigned_by uuid references auth.users(id) on delete set null,
   assigned_at timestamptz not null default now(),
@@ -4257,7 +4325,7 @@ alter table if exists public.transaction_attorney_assignments
   drop constraint if exists transaction_attorney_assignments_assignment_type_check;
 alter table if exists public.transaction_attorney_assignments
   add constraint transaction_attorney_assignments_assignment_type_check
-  check (assignment_type in ('transfer', 'bond', 'transfer_and_bond'));
+  check (assignment_type in ('transfer', 'bond', 'transfer_and_bond', 'cancellation'));
 
 alter table if exists public.transaction_attorney_assignments
   drop constraint if exists transaction_attorney_assignments_status_check;
@@ -4286,6 +4354,10 @@ create index if not exists transaction_attorney_assignments_admin_handler_idx
 
 create index if not exists transaction_attorney_assignments_department_idx
   on public.transaction_attorney_assignments (department_id, status);
+create index if not exists transaction_attorney_assignments_scope_idx
+  on public.transaction_attorney_assignments (assigned_organisation_id, assigned_workspace_unit_id, assigned_branch_id, assigned_user_id);
+create index if not exists transaction_attorney_assignments_assignment_scope_idx
+  on public.transaction_attorney_assignments (assigned_organisation_id, assigned_region_id, assigned_branch_id, assigned_team_id, assigned_user_id);
 
 drop trigger if exists trg_transaction_attorney_assignments_updated_at on public.transaction_attorney_assignments;
 create trigger trg_transaction_attorney_assignments_updated_at
@@ -4345,3 +4417,98 @@ with check (
 );
 
 grant select, insert, update, delete on public.transaction_attorney_assignments to authenticated;
+
+create table if not exists public.workspace_regions (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.organisations(id) on delete cascade,
+  name text not null,
+  code text not null,
+  description text,
+  manager_user_id uuid references public.profiles(id) on delete set null,
+  active boolean not null default true,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.workspace_units (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.organisations(id) on delete cascade,
+  region_id uuid references public.workspace_regions(id) on delete set null,
+  parent_unit_id uuid references public.workspace_units(id) on delete set null,
+  unit_type text not null,
+  name text not null,
+  code text not null,
+  description text,
+  manager_user_id uuid references public.profiles(id) on delete set null,
+  active boolean not null default true,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table if exists public.organisation_users
+  add column if not exists workspace_role text,
+  add column if not exists organisation_role text,
+  add column if not exists workspace_type text,
+  add column if not exists scope_level text,
+  add column if not exists region_id uuid references public.workspace_regions(id) on delete set null,
+  add column if not exists workspace_unit_id uuid references public.workspace_units(id) on delete set null,
+  add column if not exists scope_metadata jsonb not null default '{}'::jsonb;
+
+create index if not exists workspace_regions_workspace_idx
+  on public.workspace_regions (workspace_id, active);
+create index if not exists workspace_units_workspace_idx
+  on public.workspace_units (workspace_id, region_id, parent_unit_id, unit_type, active);
+create index if not exists organisation_users_bond_scope_idx
+  on public.organisation_users (organisation_id, scope_level, region_id, workspace_unit_id, user_id)
+  where workspace_type = 'bond_originator' or role = 'bond_originator';
+
+create table if not exists public.transaction_finance_workflows (
+  id uuid primary key default gen_random_uuid(),
+  transaction_id uuid not null references public.transactions(id) on delete cascade,
+  workflow_type text not null,
+  current_stage text not null default 'documents_received',
+  status text not null default 'active',
+  last_updated_by uuid references public.profiles(id) on delete set null,
+  last_updated_at timestamptz not null default now(),
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint transaction_finance_workflows_unique_type unique (transaction_id, workflow_type)
+);
+
+create table if not exists public.transaction_bond_applications (
+  id uuid primary key default gen_random_uuid(),
+  transaction_id uuid not null references public.transactions(id) on delete cascade,
+  workflow_id uuid references public.transaction_finance_workflows(id) on delete cascade,
+  buyer_party_id uuid references public.buyers(id) on delete set null,
+  application_type text default 'originator_intake',
+  bank_name text not null default 'Bond Originator Intake',
+  status text not null default 'pending',
+  assigned_organisation_id uuid references public.organisations(id) on delete set null,
+  assigned_region_id uuid references public.workspace_regions(id) on delete set null,
+  assigned_branch_id uuid references public.workspace_units(id) on delete set null,
+  assigned_team_id uuid references public.workspace_units(id) on delete set null,
+  assigned_workspace_unit_id uuid references public.workspace_units(id) on delete set null,
+  assigned_user_id uuid references public.profiles(id) on delete set null,
+  scope_level text,
+  scope_metadata jsonb not null default '{}'::jsonb,
+  assignment_status text not null default 'organisation_queue',
+  assignment_source text not null default 'transaction_roleplayer_propagation',
+  submitted_at timestamptz,
+  feedback_received_at timestamptz,
+  reference_number text,
+  notes text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_by uuid references public.profiles(id) on delete set null,
+  updated_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists transaction_bond_applications_originator_intake_uidx
+  on public.transaction_bond_applications (transaction_id, coalesce(application_type, 'originator_intake'))
+  where coalesce(application_type, 'originator_intake') = 'originator_intake';
+create index if not exists transaction_bond_applications_assignment_scope_idx
+  on public.transaction_bond_applications (assigned_organisation_id, assigned_region_id, assigned_branch_id, assigned_team_id, assigned_user_id, assignment_status);

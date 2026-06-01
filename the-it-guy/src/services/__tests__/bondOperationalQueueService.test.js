@@ -163,6 +163,56 @@ try {
   assert.equal(Array.isArray(queues.processing_queue), true)
   assert.equal(queues.manager_escalations.length >= 1, true)
 
+  const intakeRows = [
+    {
+      id: 'tx-org-intake',
+      organisation_id: 'workspace-1',
+      assigned_organisation_id: 'workspace-1',
+      finance_type: 'bond',
+      updated_at: '2026-05-23T10:00:00.000Z',
+    },
+    {
+      id: 'tx-branch-intake',
+      organisation_id: 'workspace-1',
+      assigned_organisation_id: 'workspace-1',
+      assigned_branch_id: 'unit-1',
+      finance_type: 'bond',
+      updated_at: '2026-05-24T10:00:00.000Z',
+    },
+    {
+      id: 'tx-consultant-intake',
+      organisation_id: 'workspace-1',
+      assigned_organisation_id: 'workspace-1',
+      assigned_user_id: '11111111-1111-4111-8111-111111111111',
+      finance_type: 'bond',
+      updated_at: '2026-05-25T10:00:00.000Z',
+    },
+    {
+      id: 'tx-other-consultant-intake',
+      organisation_id: 'workspace-1',
+      assigned_organisation_id: 'workspace-1',
+      assigned_user_id: '99999999-9999-4999-8999-999999999999',
+      finance_type: 'bond',
+      updated_at: '2026-05-26T10:00:00.000Z',
+    },
+  ]
+  const scopedQueuesForConsultant = queueService.resolveBondOperationalQueues(consultant, intakeRows)
+  assert.deepEqual(scopedQueuesForConsultant.new_applications.map((item) => item.transactionId), ['tx-consultant-intake'])
+
+  const scopedQueuesForBranch = queueService.resolveBondOperationalQueues(
+    makeContext({
+      userId: 'branch-manager-1',
+      workspaceRole: 'branch_manager',
+      scopeLevel: 'branch',
+      unitId: 'unit-1',
+    }),
+    intakeRows,
+  )
+  assert.deepEqual(scopedQueuesForBranch.new_applications.map((item) => item.transactionId), ['tx-branch-intake'])
+
+  const scopedQueuesForHq = queueService.resolveBondOperationalQueues(manager, intakeRows)
+  assert.equal(scopedQueuesForHq.new_applications.length, 4)
+
   console.log('bondOperationalQueueService tests passed')
 } finally {
   await server.close()

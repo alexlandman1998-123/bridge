@@ -216,6 +216,11 @@ export function getNavItemsForRole(role) {
 
 const AGENT_LEADERSHIP_KEYWORDS = ['principal', 'headquarters', 'hq', 'admin', 'branch manager', 'office manager']
 const MANAGEMENT_MEMBERSHIP_ROLES = new Set(['super_admin', 'principal', 'admin', 'branch_manager'])
+const BOND_HQ_ROLES = new Set(['owner', 'principal', 'director', 'partner', 'hq_manager', 'manager', 'admin', 'admin_staff', 'bond_hq_admin', 'bond_hq_manager'])
+const BOND_REGIONAL_ROLES = new Set(['regional_manager', 'bond_regional_manager'])
+const BOND_BRANCH_ROLES = new Set(['branch_manager', 'bond_branch_manager', 'team_lead', 'bond_team_lead'])
+const BOND_CONSULTANT_ROLES = new Set(['bond_originator', 'consultant', 'bond_consultant', 'processor', 'bond_processor'])
+const BOND_INDEPENDENT_ROLES = new Set(['bond_independent_consultant', 'independent_consultant', 'independent_originator'])
 
 function normalizeMembershipRole(value) {
   const normalized = String(value || '').trim().toLowerCase()
@@ -270,7 +275,68 @@ export function canManageAgentOrganisations({ role, baseRole = null, profile = n
 
 export function getRoleNavItems(role, { baseRole = null, profile = null, membershipRole = null } = {}) {
   const items = getNavItemsForRole(role)
-  if (normalizeAppRole(role || baseRole || '') !== 'agent') {
+  const normalizedRole = normalizeAppRole(role || baseRole || '')
+  if (normalizedRole === 'bond_originator') {
+    const normalizedMembershipRole = normalizeMembershipRole(membershipRole || profile?.workspaceRole || profile?.workspace_role || profile?.organisationRole || profile?.organisation_role)
+    const workspaceKind = String(profile?.workspaceKind || profile?.workspace_kind || profile?.currentWorkspace?.workspace_kind || '').trim().toLowerCase()
+    const independent = workspaceKind === 'personal_originator' || BOND_INDEPENDENT_ROLES.has(normalizedMembershipRole)
+
+    if (independent) {
+      return [
+        { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
+        { key: 'applications', label: 'My Applications', to: '/bond/applications?scope=mine', navSection: 'main', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
+        { key: 'clients', label: 'Clients', to: '/bond/clients', navSection: 'main', activeMatch: ['/bond/clients', '/clients'] },
+        { key: 'tasks', label: 'Tasks', to: '/bond/tasks', navSection: 'main', activeMatch: ['/bond/tasks'] },
+        { key: 'settings', label: 'Settings', to: '/settings', navSection: 'secondary' },
+      ]
+    }
+
+    if (BOND_HQ_ROLES.has(normalizedMembershipRole)) {
+      return [
+        { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
+        { key: 'bond_regions', label: 'Regions', to: '/bond/organisation?view=regions', navSection: 'main', activeMatch: ['/bond/organisation'] },
+        { key: 'bond_branches', label: 'Branches', to: '/bond/organisation?view=branches', navSection: 'main', activeMatch: ['/bond/organisation'] },
+        { key: 'bond_consultants', label: 'Consultants', to: '/bond/organisation?view=consultants', navSection: 'main', activeMatch: ['/bond/organisation'] },
+        { key: 'applications', label: 'Applications', to: '/bond/applications', navSection: 'main', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
+        { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners'] },
+        { key: 'bond_reports', label: 'Reports', to: '/bond/reports', navSection: 'main', activeMatch: ['/bond/reports', '/reports'] },
+        { key: 'settings', label: 'Settings', to: '/settings', navSection: 'secondary' },
+      ]
+    }
+
+    if (BOND_REGIONAL_ROLES.has(normalizedMembershipRole)) {
+      return [
+        { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
+        { key: 'bond_branches', label: 'Branches', to: '/bond/organisation?view=branches', navSection: 'main', activeMatch: ['/bond/organisation'] },
+        { key: 'bond_consultants', label: 'Consultants', to: '/bond/organisation?view=consultants', navSection: 'main', activeMatch: ['/bond/organisation'] },
+        { key: 'applications', label: 'Applications', to: '/bond/applications', navSection: 'main', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
+        { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners'] },
+        { key: 'bond_reports', label: 'Reports', to: '/bond/reports', navSection: 'main', activeMatch: ['/bond/reports', '/reports'] },
+      ]
+    }
+
+    if (BOND_BRANCH_ROLES.has(normalizedMembershipRole)) {
+      return [
+        { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
+        { key: 'bond_consultants', label: 'Consultants', to: '/bond/organisation?view=consultants', navSection: 'main', activeMatch: ['/bond/organisation'] },
+        { key: 'applications', label: 'Applications', to: '/bond/applications', navSection: 'main', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
+        { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners'] },
+      ]
+    }
+
+    if (BOND_CONSULTANT_ROLES.has(normalizedMembershipRole) || !normalizedMembershipRole || normalizedMembershipRole === 'viewer') {
+      return [
+        { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
+        { key: 'applications', label: 'My Applications', to: '/bond/applications?scope=mine', navSection: 'main', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
+        { key: 'clients', label: 'Clients', to: '/bond/clients', navSection: 'main', activeMatch: ['/bond/clients', '/clients'] },
+        { key: 'tasks', label: 'Tasks', to: '/bond/tasks', navSection: 'main', activeMatch: ['/bond/tasks'] },
+      ]
+    }
+
+    return items
+  }
+
+  if (normalizedRole !== 'agent') {
     return items
   }
 

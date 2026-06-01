@@ -31,8 +31,10 @@ const MUTATING_ROLE_KEYS = new Set([
   ...MANAGER_ROLE_KEYS,
   'bond_originator',
   'consultant',
-  'processor',
   'bond_consultant',
+  'bond_independent_consultant',
+  'independent_consultant',
+  'processor',
   'bond_processor',
 ])
 
@@ -119,6 +121,13 @@ function resolveCurrentUser(user = {}) {
       'Bond originator',
     roleKey: normalizeRoleKey(workspaceRole),
     appRole: normalizeRoleKey(user.role || profile?.role),
+    scopeLevel: normalizeRoleKey(currentMembership?.scopeLevel || currentMembership?.scope_level || user.scopeLevel || user.scope_level),
+    regionId: normalizeText(currentMembership?.regionId || currentMembership?.region_id || user.regionId || user.region_id) || null,
+    workspaceUnitId: normalizeText(currentMembership?.workspaceUnitId || currentMembership?.workspace_unit_id || user.workspaceUnitId || user.workspace_unit_id) || null,
+    branchId:
+      normalizeText(currentMembership?.branchId || currentMembership?.branch_id || currentMembership?.primaryBranchId || currentMembership?.primary_branch_id || user.branchId || user.branch_id) ||
+      null,
+    teamId: normalizeText(currentMembership?.teamId || currentMembership?.team_id || user.teamId || user.team_id) || null,
   }
 }
 
@@ -156,7 +165,7 @@ export async function fetchBondConsultantOptions({ user = {}, client = null } = 
     const db = getClient({ client })
     let query = await db
       .from('organisation_users')
-      .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status')
+      .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, scope_level, region_id, workspace_unit_id, branch_id, primary_branch_id, team_id')
       .eq('organisation_id', actor.workspaceId)
       .in('status', ['active', 'approved'])
 
@@ -164,6 +173,12 @@ export async function fetchBondConsultantOptions({ user = {}, client = null } = 
       query.error &&
       (isMissingColumnError(query.error, 'workspace_role') ||
         isMissingColumnError(query.error, 'organisation_role') ||
+        isMissingColumnError(query.error, 'scope_level') ||
+        isMissingColumnError(query.error, 'region_id') ||
+        isMissingColumnError(query.error, 'workspace_unit_id') ||
+        isMissingColumnError(query.error, 'branch_id') ||
+        isMissingColumnError(query.error, 'primary_branch_id') ||
+        isMissingColumnError(query.error, 'team_id') ||
         isMissingColumnError(query.error, 'status'))
     ) {
       query = await db
@@ -179,11 +194,25 @@ export async function fetchBondConsultantOptions({ user = {}, client = null } = 
       throw query.error
     }
 
-    const allowedRoles = new Set(['consultant', 'processor', 'branch_manager', 'team_lead', 'manager', 'bond_originator'])
+    const allowedRoles = new Set(['consultant', 'bond_consultant', 'bond_independent_consultant', 'processor', 'bond_processor', 'branch_manager', 'bond_branch_manager', 'team_lead', 'bond_team_lead', 'manager', 'bond_originator'])
     const options = (query.data || [])
       .filter((row) => {
         const roleKey = normalizeRoleKey(row.workspace_role || row.organisation_role || row.role)
-        return !roleKey || allowedRoles.has(roleKey)
+        if (roleKey && !allowedRoles.has(roleKey)) return false
+
+        if (actor.scopeLevel === 'region') {
+          return !actor.regionId || normalizeText(row.region_id) === actor.regionId
+        }
+        if (['branch', 'team'].includes(actor.scopeLevel)) {
+          const rowUnitId = normalizeText(row.team_id || row.workspace_unit_id || row.branch_id || row.primary_branch_id)
+          const actorUnitId = normalizeText(actor.teamId || actor.workspaceUnitId || actor.branchId)
+          return !actorUnitId || rowUnitId === actorUnitId
+        }
+        if (['assigned', 'user', 'independent'].includes(actor.scopeLevel)) {
+          const rowUserId = normalizeText(row.user_id || row.id)
+          return Boolean(actor.id && rowUserId === actor.id)
+        }
+        return true
       })
       .map((row) => {
         const name = normalizeText([row.first_name, row.last_name].filter(Boolean).join(' ')) || normalizeEmail(row.email) || 'Team member'
@@ -236,10 +265,49 @@ function getBondIntakeInput(row = {}, user = {}) {
 
 function resolveAssignee({ user = {}, assignee = {} } = {}) {
   const actor = resolveCurrentUser(user)
+  const currentMembership = user.currentMembership || user.authState?.currentMembership || {}
   return {
     id: normalizeText(assignee.id || assignee.userId) || actor.id || null,
     name: normalizeText(assignee.name || assignee.fullName || assignee.label) || actor.name,
     email: normalizeEmail(assignee.email) || actor.email || null,
+    organisationId: normalizeText(assignee.organisationId || assignee.organisation_id || actor.workspaceId) || null,
+    regionId: normalizeText(assignee.regionId || assignee.region_id || currentMembership.regionId || currentMembership.region_id) || null,
+    branchId: normalizeText(assignee.branchId || assignee.branch_id || currentMembership.branchId || currentMembership.branch_id || currentMembership.primaryBranchId || currentMembership.primary_branch_id) || null,
+    teamId: normalizeText(assignee.teamId || assignee.team_id || currentMembership.teamId || currentMembership.team_id) || null,
+    workspaceUnitId: normalizeText(assignee.workspaceUnitId || assignee.workspace_unit_id || currentMembership.workspaceUnitId || currentMembership.workspace_unit_id) || null,
+  }
+}
+
+function resolveAssignmentScope({ actor = {}, assignee = {} } = {}) {
+  const organisationId = assignee.organisationId || actor.workspaceId || null
+  const regionId = assignee.regionId || null
+  const workspaceUnitId = assignee.teamId || assignee.workspaceUnitId || assignee.branchId || null
+  const branchId = assignee.branchId || assignee.workspaceUnitId || null
+  const teamId = assignee.teamId || null
+  const userId = assignee.id || actor.id || null
+  const scopeLevel =
+    userId && !regionId && !workspaceUnitId && !branchId && !teamId
+      ? 'independent'
+      : userId
+        ? 'user'
+        : teamId
+          ? 'team'
+          : branchId || workspaceUnitId
+            ? 'branch'
+            : regionId
+              ? 'region'
+              : organisationId
+                ? 'organisation'
+                : null
+
+  return {
+    organisationId,
+    regionId,
+    workspaceUnitId,
+    branchId,
+    teamId,
+    userId,
+    scopeLevel,
   }
 }
 
@@ -356,6 +424,7 @@ async function upsertRolePlayerMarker(client, {
 async function persistAcceptedAssignment(client, { transactionId, actor, assignee, action }) {
   const now = new Date().toISOString()
   const source = action === 'assign' ? 'assigned_from_intake' : 'accepted_from_intake'
+  const scope = resolveAssignmentScope({ actor, assignee })
   return updateByIdWithMissingColumnFallback(
     client,
     'transactions',
@@ -363,7 +432,10 @@ async function persistAcceptedAssignment(client, { transactionId, actor, assigne
     {
       assigned_bond_originator_email: assignee.email || actor.email || null,
       bond_originator: assignee.name || actor.name || null,
-      primary_bond_consultant_user_id: assignee.id || actor.id || null,
+      bond_workspace_id: scope.organisationId,
+      bond_region_id: scope.regionId,
+      bond_workspace_unit_id: scope.workspaceUnitId,
+      primary_bond_consultant_user_id: scope.userId,
       finance_managed_by: 'bond_originator',
       bond_assignment_status: 'consultant_assigned',
       bond_assignment_source: source,
@@ -373,6 +445,52 @@ async function persistAcceptedAssignment(client, { transactionId, actor, assigne
     },
     'id, assigned_bond_originator_email, bond_originator, primary_bond_consultant_user_id, bond_assignment_status, bond_assignment_source, finance_status, updated_at',
   )
+}
+
+async function persistBondApplicationAssignment(client, { transactionId, actor, assignee, action }) {
+  const now = new Date().toISOString()
+  const source = action === 'assign' ? 'assigned_from_intake' : 'accepted_from_intake'
+  const scope = resolveAssignmentScope({ actor, assignee })
+  const lookup = await client
+    .from('transaction_bond_applications')
+    .select('id')
+    .eq('transaction_id', transactionId)
+    .limit(10)
+
+  if (lookup.error) {
+    if (isMissingTableError(lookup.error, 'transaction_bond_applications') || isPermissionDeniedError(lookup.error)) return []
+    throw lookup.error
+  }
+
+  const updates = []
+  for (const row of lookup.data || []) {
+    updates.push(await updateByIdWithMissingColumnFallback(
+      client,
+      'transaction_bond_applications',
+      row.id,
+      {
+        assigned_organisation_id: scope.organisationId,
+        assigned_region_id: scope.regionId,
+        assigned_workspace_unit_id: scope.workspaceUnitId,
+        assigned_branch_id: scope.branchId,
+        assigned_team_id: scope.teamId,
+        assigned_user_id: scope.userId,
+        scope_level: scope.scopeLevel,
+        scope_metadata: {
+          source,
+          action,
+          assignedBy: actor.id || null,
+          assignedAt: now,
+        },
+        assignment_status: scope.userId ? 'consultant_assigned' : 'organisation_queue',
+        assignment_source: source,
+        updated_by: actor.id || null,
+        updated_at: now,
+      },
+      'id',
+    ))
+  }
+  return updates
 }
 
 async function persistDecline(client, { transactionId, reason }) {
@@ -420,6 +538,7 @@ export async function acceptBondIntakeApplication({ row = {}, transactionId = ''
 
   await upsertRolePlayerMarker(db, { transactionId: id, actor, assignee: resolvedAssignee, action: 'accept', note })
   const transaction = await persistAcceptedAssignment(db, { transactionId: id, actor, assignee: resolvedAssignee, action: 'accept' })
+  await persistBondApplicationAssignment(db, { transactionId: id, actor, assignee: resolvedAssignee, action: 'accept' })
   const notification = await notifyBondIntakeEvent({
     eventType: BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_ACCEPTED,
     transaction: { ...(row?.transaction || row || {}), ...(transaction || {}), id },
@@ -449,6 +568,7 @@ export async function assignBondIntakeApplication({ row = {}, transactionId = ''
 
   await upsertRolePlayerMarker(db, { transactionId: id, actor, assignee: resolvedAssignee, action: 'assign', note })
   const transaction = await persistAcceptedAssignment(db, { transactionId: id, actor, assignee: resolvedAssignee, action: 'assign' })
+  await persistBondApplicationAssignment(db, { transactionId: id, actor, assignee: resolvedAssignee, action: 'assign' })
   const notification = await notifyBondIntakeEvent({
     eventType: BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_ASSIGNED,
     transaction: { ...(row?.transaction || row || {}), ...(transaction || {}), id },

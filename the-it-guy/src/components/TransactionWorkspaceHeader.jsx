@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import {
   Building2,
   CircleDollarSign,
@@ -5,8 +6,10 @@ import {
   ExternalLink,
   FileText,
   Link2,
+  MoreHorizontal,
   Printer,
   RefreshCw,
+  Archive,
   Trash2,
   UserRound,
 } from 'lucide-react'
@@ -33,6 +36,8 @@ const ICON_BY_KEY = {
   print: Printer,
   portal: ExternalLink,
   onboarding_link: Link2,
+  menu: MoreHorizontal,
+  archive: Archive,
   refresh: RefreshCw,
   report: FileText,
   delete: Trash2,
@@ -72,6 +77,26 @@ function TransactionWorkspaceHeader({
   stats = [],
   actions = [],
 }) {
+  const [openMenuActionId, setOpenMenuActionId] = useState(null)
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return undefined
+    }
+
+    function handlePointerDown(event) {
+      const target = event.target
+      if (target instanceof Element && target.closest('[data-tx-action-menu-root]')) {
+        return
+      }
+
+      setOpenMenuActionId(null)
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [])
+
   const visibleActions = (actions || []).filter((item) => item && !item.hidden)
   const visiblePills = (pills || []).filter((item) => item?.label)
   const visibleStats = (stats || []).filter((item) => item?.label)
@@ -112,23 +137,89 @@ function TransactionWorkspaceHeader({
 
           {visibleActions.length ? (
             <div className="no-print flex flex-wrap items-center gap-3 2xl:justify-end">
-              {visibleActions.map((action) => {
-                if (action.as === 'badge') {
-                  return (
-                    <span
-                      key={action.id || action.label}
-                      className={`inline-flex min-h-[44px] items-center rounded-full border px-4 text-sm font-semibold ${
-                        action.className || ACTION_BADGE_TONE_CLASS[action.tone] || ACTION_BADGE_TONE_CLASS.neutral
-                      }`}
-                    >
-                      {renderWithOptionalIcon({ icon: action.icon, label: action.label })}
-                    </span>
-                  )
-                }
+          {visibleActions.map((action) => {
+            if (action.as === 'badge') {
+              return (
+                <span
+                  key={action.id || action.label}
+                  className={`inline-flex min-h-[44px] items-center rounded-full border px-4 text-sm font-semibold ${
+                    action.className || ACTION_BADGE_TONE_CLASS[action.tone] || ACTION_BADGE_TONE_CLASS.neutral
+                  }`}
+                >
+                  {renderWithOptionalIcon({ icon: action.icon, label: action.label })}
+                </span>
+              )
+            }
 
-                const variant = action.variant || 'secondary'
-                const className = action.className || ''
-                return (
+            if (action.type === 'menu') {
+              const menuItems = (action.items || []).filter((item) => item && !item.hidden)
+              const menuId = action.id || `action-menu-${action.label}`
+              const isOpen = openMenuActionId === menuId
+              const isMenuDisabled = Boolean(action.disabled)
+
+              return (
+                <div
+                  key={action.id || action.label}
+                  data-tx-action-menu-root
+                  className="relative"
+                >
+                  <Button
+                    variant={action.variant || 'secondary'}
+                    className={action.className || ''}
+                    onClick={() => {
+                      if (isMenuDisabled) {
+                        return
+                      }
+                      setOpenMenuActionId((previous) => (previous === menuId ? null : menuId))
+                    }}
+                    disabled={isMenuDisabled}
+                    type="button"
+                  >
+                    {renderWithOptionalIcon({ icon: action.icon, label: action.label })}
+                  </Button>
+
+                  {isOpen ? (
+                    <div className="no-print absolute right-0 top-full z-20 mt-2 min-w-[242px] overflow-hidden rounded-[14px] border border-[#d9e4ef] bg-white py-1 text-sm shadow-[0_18px_36px_rgba(15,23,42,0.12)]">
+                      {menuItems.map((item) => {
+                        const itemDisabled = Boolean(item.disabled)
+                        const menuLabel = item.label
+                        const itemIsDanger = item.tone === 'danger' || item.variant === 'destructive'
+                        const itemClassName = [
+                          'flex w-full items-center gap-2 rounded-[10px] border border-transparent px-3 py-2.5 font-semibold transition',
+                          itemIsDanger
+                            ? 'text-[#b42318] hover:border-[#f4c1bf] hover:bg-[#fff5f5]'
+                            : 'text-[#1f2937] hover:border-[#dbe4ef] hover:bg-[#f4f8fd]',
+                          itemDisabled ? 'pointer-events-none opacity-50' : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' ')
+
+                        return (
+                          <button
+                            key={item.id || item.label}
+                            type="button"
+                            onClick={() => {
+                              if (itemDisabled) {
+                                return
+                              }
+                              setOpenMenuActionId(null)
+                              item.onClick?.()
+                            }}
+                            className={itemClassName}
+                          >
+                            {renderWithOptionalIcon({ icon: item.icon, label: menuLabel })}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              )
+            }
+
+            const variant = action.variant || 'secondary'
+            const className = action.className || ''
+            return (
                   <Button
                     key={action.id || action.label}
                     variant={variant}

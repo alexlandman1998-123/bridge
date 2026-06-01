@@ -30,7 +30,9 @@ function normalizeBool(value) {
 
 function normalizeWorkspaceId(transaction = {}) {
   return normalizeText(
-    transaction.bond_workspace_id ||
+    transaction.assigned_organisation_id ||
+      transaction.assignedOrganisationId ||
+      transaction.bond_workspace_id ||
       transaction.organisation_id ||
       transaction.workspace_id ||
       transaction.workspaceId,
@@ -38,12 +40,18 @@ function normalizeWorkspaceId(transaction = {}) {
 }
 
 function normalizeRegionId(transaction = {}) {
-  return normalizeText(transaction.bond_region_id || transaction.region_id || transaction.regionId)
+  return normalizeText(transaction.assigned_region_id || transaction.assignedRegionId || transaction.bond_region_id || transaction.region_id || transaction.regionId)
 }
 
 function normalizeUnitId(transaction = {}) {
   return normalizeText(
-    transaction.bond_workspace_unit_id ||
+    transaction.assigned_team_id ||
+      transaction.assignedTeamId ||
+      transaction.assigned_branch_id ||
+      transaction.assignedBranchId ||
+      transaction.assigned_workspace_unit_id ||
+      transaction.assignedWorkspaceUnitId ||
+      transaction.bond_workspace_unit_id ||
       transaction.workspace_unit_id ||
       transaction.workspaceUnitId ||
       transaction.branch_id ||
