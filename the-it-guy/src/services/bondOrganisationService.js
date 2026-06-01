@@ -5,7 +5,7 @@ import { isMissingTableError } from './attorneyFirmServiceShared'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { getWorkspaceHierarchy } from './bondWorkspaceHierarchyService'
-import { getBondTransactionTrackerSnapshot } from './bondCommandCenterService'
+import { filterDemoBondApplications, getBondTransactionTrackerSnapshot } from './bondCommandCenterService'
 
 export const BOND_ORGANISATION_STRUCTURE_TYPES = Object.freeze({
   independent: 'independent',
@@ -688,19 +688,18 @@ async function fetchHierarchy(workspaceId = '') {
   }
 }
 
-export async function getBondOrganisationSnapshot(context = {}, workspaceId = '', options = {}) {
+export function buildBondOrganisationSnapshot({
+  context = {},
+  workspaceId = '',
+  settingsContext = {},
+  hierarchy = {},
+  users = [],
+  applicationSnapshot = {},
+  options = {},
+} = {}) {
   const safeWorkspaceId = normalizeText(workspaceId)
+  const includeDemoRows = options.includeDemoRows !== false
   const capabilities = resolveCapabilities({ ...context, workspaceId: safeWorkspaceId })
-  const [settingsContext, hierarchy, users, applicationSnapshot] = await Promise.all([
-    fetchSettings(),
-    fetchHierarchy(safeWorkspaceId),
-    fetchOrganisationUsers(safeWorkspaceId),
-    getBondTransactionTrackerSnapshot(context, safeWorkspaceId, {
-      ...options,
-      status: 'all',
-      developmentId: options.developmentId || 'all',
-    }),
-  ])
 
   const allRegions = (hierarchy.regions || []).filter(isActiveRecord)
   const allUnits = (hierarchy.units || []).filter(isActiveRecord)
@@ -726,18 +725,22 @@ export async function getBondOrganisationSnapshot(context = {}, workspaceId = ''
     teams: allTeams,
     users,
   })
-  const enrichedApplicationRows = enrichApplicationRows(applicationSnapshot.rows || [], {
+  const filteredApplicationRows = filterDemoBondApplications(applicationSnapshot.rows || [], {
+    includeDemoRows,
+  })
+  const enrichedApplicationRows = enrichApplicationRows(filteredApplicationRows, {
     regions: allRegions,
     branches: allBranches,
     teams: allTeams,
   })
   let scopedApplications = scopeApplicationRows(enrichedApplicationRows, capabilities)
   const regionById = buildLookup(allRegions)
+  const usedDerivedBranches = !scopedBranches.length && scopedApplications.length && capabilities.canViewBranches
   let scopedBranchesWithRegions = scopedBranches.map((branch) => ({
     ...branch,
     region: normalizeText(branch.region || regionById.get(normalizeText(branch.region_id || branch.regionId))?.name) || 'Unassigned',
   }))
-  if (!scopedBranchesWithRegions.length && scopedApplications.length && capabilities.canViewBranches) {
+  if (usedDerivedBranches) {
     scopedBranchesWithRegions = buildDerivedBranchesFromApplications(scopedApplications, scopedRegions)
     scopedApplications = scopedApplications.map((row) => {
       if (normalizeText(row.branchId || row.workspaceUnitId) || normalizeText(row.branch) !== 'Unassigned') return row
@@ -752,12 +755,14 @@ export async function getBondOrganisationSnapshot(context = {}, workspaceId = ''
       }
     })
   }
+  const usedDerivedRegions = !scopedRegions.length && capabilities.canViewRegions
   let visibleRegions = scopedRegions
-  if (!visibleRegions.length && capabilities.canViewRegions) {
+  if (usedDerivedRegions) {
     visibleRegions = buildDerivedRegionsFromScope(scopedBranchesWithRegions, scopedApplications)
   }
+  const usedDerivedConsultants = !scopedUsers.length && scopedApplications.length && capabilities.canViewConsultants
   let visibleConsultants = scopedUsers
-  if (!visibleConsultants.length && scopedApplications.length && capabilities.canViewConsultants) {
+  if (usedDerivedConsultants) {
     visibleConsultants = buildDerivedConsultantsFromApplications(scopedApplications, scopedBranchesWithRegions)
   }
   const hasMultipleUsers = scopedUsers.length > 1 || users.length > 1
@@ -809,9 +814,38 @@ export async function getBondOrganisationSnapshot(context = {}, workspaceId = ''
       consultants: visibleConsultants.length,
       applications: scopedApplications.length,
     },
+    derivedSources: {
+      regions: usedDerivedRegions && visibleRegions.length > 0,
+      branches: usedDerivedBranches && scopedBranchesWithRegions.length > 0,
+      consultants: usedDerivedConsultants && visibleConsultants.length > 0,
+    },
     showRegionColumn: allRegions.length > 0 || visibleRegions.length > 0,
     showBranchColumn: allBranches.length > 0 || scopedBranchesWithRegions.length > 0,
   }
+}
+
+export async function getBondOrganisationSnapshot(context = {}, workspaceId = '', options = {}) {
+  const safeWorkspaceId = normalizeText(workspaceId)
+  const [settingsContext, hierarchy, users, applicationSnapshot] = await Promise.all([
+    fetchSettings(),
+    fetchHierarchy(safeWorkspaceId),
+    fetchOrganisationUsers(safeWorkspaceId),
+    getBondTransactionTrackerSnapshot(context, safeWorkspaceId, {
+      ...options,
+      status: 'all',
+      developmentId: options.developmentId || 'all',
+    }),
+  ])
+
+  return buildBondOrganisationSnapshot({
+    context,
+    workspaceId: safeWorkspaceId,
+    settingsContext,
+    hierarchy,
+    users,
+    applicationSnapshot,
+    options,
+  })
 }
 
 export function getBondOrganisationRouteForTab(tabKey = 'overview', options = {}) {
@@ -821,6 +855,7 @@ export function getBondOrganisationRouteForTab(tabKey = 'overview', options = {}
   params.set('view', normalizeText(tabKey || 'overview'))
   if (normalizeText(options.regionId)) params.set('regionId', normalizeText(options.regionId))
   if (normalizeText(options.branchId)) params.set('branchId', normalizeText(options.branchId))
+  if (normalizeText(options.consultantId)) params.set('consultantId', normalizeText(options.consultantId))
 
   return `/bond/organisation?${params.toString()}`
 }

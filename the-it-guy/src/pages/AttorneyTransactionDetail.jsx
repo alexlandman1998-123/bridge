@@ -9,7 +9,6 @@ import {
   Clock3,
   Copy,
   FileText,
-  GaugeCircle,
   MessageSquarePlus,
   MoreHorizontal,
   Paperclip,
@@ -23,6 +22,7 @@ import {
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
+import ProgressTimeline from '../components/ProgressTimeline'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
 import TransactionBondHybridFinanceWorkflowPanel from '../components/TransactionBondHybridFinanceWorkflowPanel'
@@ -33,6 +33,7 @@ import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import { getAttorneyTransferStage, stageLabelFromAttorneyKey } from '../core/transactions/attorneySelectors'
 import { isBondFinanceType, normalizeFinanceType } from '../core/transactions/financeType'
+import { TRANSACTION_LIFECYCLE_STAGE_LABELS, TRANSACTION_LIFECYCLE_STAGE_ORDER } from '../core/transactions/transactionLifecycle'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import {
@@ -220,12 +221,15 @@ const DISCUSSION_TYPES = [
 ]
 const DISCUSSION_VISIBILITY_OPTIONS = [
   { key: 'internal', label: 'Internal Only' },
-  { key: 'shared', label: 'Shared with Matter Team' },
-  { key: 'client_visible', label: 'Client Visible' },
+  { key: 'shared', label: 'Shared with Roleplayers' },
+  { key: 'client_visible', label: 'Buyer and Seller Visible' },
 ]
 
 const EMPTY_ARRAY = []
 const LIFECYCLE_STATES = ['active', 'registered', 'completed', 'archived', 'cancelled']
+const PLACEHOLDER_PARTY_NAMES = new Set(['buyer', 'seller', 'client', 'purchaser'])
+const APPROVED_WORKFLOW_DOCUMENT_STATUSES = new Set(['approved', 'accepted', 'completed', 'verified'])
+const PRESENT_WORKFLOW_DOCUMENT_STATUSES = new Set(['approved', 'accepted', 'completed', 'verified', 'uploaded', 'under_review'])
 
 function normalizeTransactionKind(transaction) {
   const normalized = String(transaction?.transaction_type || '')
@@ -248,6 +252,17 @@ function buildDisplayName(...parts) {
   return parts.map((value) => cleanDetailText(value)).filter(Boolean).join(' ').trim()
 }
 
+function normalizeDetailKey(value = '') {
+  return cleanDetailText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+function isPlaceholderPartyName(value = '') {
+  return PLACEHOLDER_PARTY_NAMES.has(normalizeDetailKey(value))
+}
+
 function resolveBuyerDisplayName({ buyer = null, transaction = null, onboardingFormData = null, participants = [] } = {}) {
   const buyerParticipant = Array.isArray(participants) ? participants.find((participant) => participant?.roleType === 'buyer') : null
   const candidateNames = [
@@ -262,7 +277,8 @@ function resolveBuyerDisplayName({ buyer = null, transaction = null, onboardingF
     buildDisplayName(onboardingFormData?.firstName, onboardingFormData?.lastName),
     cleanDetailText(buyerParticipant?.participantName),
   ].filter(Boolean)
-  return candidateNames[0] || 'Buyer details pending'
+  const resolvedName = candidateNames.find((value) => !isPlaceholderPartyName(value))
+  return resolvedName || 'Buyer details pending'
 }
 
 function isBuyerDocumentRequirement(requirement = {}) {
@@ -893,15 +909,15 @@ function getRequirementStatusLabel(status) {
 }
 
 function getRequirementDocumentId(requirement = {}) {
-  return requirement.uploadedDocumentId || requirement.uploaded_document_id || requirement.matchedDocument?.id || null
+  return requirement?.uploadedDocumentId || requirement?.uploaded_document_id || requirement?.matchedDocument?.id || null
 }
 
 function getRequirementCanonicalId(requirement = {}) {
-  return requirement.canonicalRequirementInstanceId || requirement.canonical_requirement_instance_id || null
+  return requirement?.canonicalRequirementInstanceId || requirement?.canonical_requirement_instance_id || null
 }
 
 function getDocumentCanonicalId(document = {}) {
-  return document.canonicalRequirementInstanceId || document.canonical_requirement_instance_id || null
+  return document?.canonicalRequirementInstanceId || document?.canonical_requirement_instance_id || null
 }
 
 function canReviewDocumentRequirement(requirement = {}, document = {}) {
@@ -1138,6 +1154,14 @@ function humanizeTransactionEvent(event = {}) {
   }
 
   const meta = getActivityCategoryMeta(category)
+  let messageType = 'system_update'
+  if (lowerType.includes('document') && lowerType.includes('request')) messageType = 'document_request'
+  else if (lowerType.includes('document') && (lowerType.includes('upload') || lowerType.includes('approved') || lowerType.includes('completed'))) messageType = 'document_uploaded'
+  else if (lowerType.includes('portal') || lowerType.includes('onboarding') || lowerType.includes('intro') || lowerType.includes('handoff')) messageType = 'portal_event'
+  else if (lowerType.includes('finance') || lowerType.includes('bond')) messageType = 'finance_update'
+  else if (lowerType.includes('registration') || lowerType.includes('registered')) messageType = 'registration_update'
+  else if (lowerType.includes('stage')) messageType = 'stage_change'
+  else if (laneCategory === 'transfer' || lowerType.includes('lodg')) messageType = 'transfer_update'
   return {
     id: `event-${event.id || `${eventType}-${event.createdAt || event.created_at}`}`,
     title,
@@ -1152,6 +1176,8 @@ function humanizeTransactionEvent(event = {}) {
     filterKeys: buildActivityFilterKeys(category, [laneCategory]),
     attachmentName: category === 'documents' ? attachmentName : '',
     meta,
+    messageType,
+    visibility: category === 'system' ? 'system' : 'shared',
   }
 }
 
@@ -1175,6 +1201,16 @@ function humanizeDiscussionActivity(comment = {}) {
     client_update: 'Client update published',
   }
   const meta = getActivityCategoryMeta(category)
+  const messageType =
+    discussionType === 'document'
+      ? 'document_request'
+      : discussionType === 'workflow'
+        ? 'stage_change'
+        : discussionType === 'reminder'
+          ? 'question'
+          : discussionType === 'client_update'
+            ? 'feedback'
+            : 'comment'
   return {
     id: `comment-${comment.id}`,
     title: isInternal ? 'Internal note added' : isClient ? 'Client update published' : titleByType[discussionType] || 'Matter update added',
@@ -1189,6 +1225,8 @@ function humanizeDiscussionActivity(comment = {}) {
     filterKeys: buildActivityFilterKeys(category, [isInternal ? 'internal' : 'notes']),
     attachmentName: '',
     meta,
+    messageType,
+    visibility,
   }
 }
 
@@ -1216,6 +1254,460 @@ function groupActivityByDate(entries = []) {
     }
   }
   return groups
+}
+
+function normalizeWorkflowDocumentStatus(value = '') {
+  const normalized = normalizeDetailKey(value)
+  if (normalized === 'under_review') return 'under_review'
+  if (normalized === 'reupload_required') return 'rejected'
+  if (normalized === 'not_required') return 'not_applicable'
+  if (normalized === 'accepted') return 'approved'
+  return normalized || 'required'
+}
+
+function matchesSignalText(source = '', patterns = []) {
+  const signal = String(source || '').trim().toLowerCase()
+  if (!signal) return false
+  return patterns.some((pattern) => {
+    if (!pattern) return false
+    if (pattern instanceof RegExp) return pattern.test(signal)
+    return signal.includes(String(pattern).trim().toLowerCase())
+  })
+}
+
+function buildEventSignal(event = {}) {
+  const eventData = getActivityEventData(event)
+  const parts = [getActivityEventType(event)]
+  for (const value of Object.values(eventData || {})) {
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      parts.push(String(value))
+    }
+  }
+  return parts.join(' ').toLowerCase()
+}
+
+function hasTransactionEvent(events = [], patterns = []) {
+  return (events || []).some((event) => matchesSignalText(buildEventSignal(event), patterns))
+}
+
+function getRequirementEntriesByKeywords(requirements = [], keywords = []) {
+  return (requirements || []).filter((requirement) => {
+    const signal = [
+      requirement?.key,
+      requirement?.document_key,
+      requirement?.label,
+      requirement?.document_label,
+      requirement?.name,
+      requirement?.groupKey,
+      requirement?.group,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+    return matchesSignalText(signal, keywords)
+  })
+}
+
+function hasRequirementStatus(requirements = [], keywords = [], statuses = APPROVED_WORKFLOW_DOCUMENT_STATUSES) {
+  return getRequirementEntriesByKeywords(requirements, keywords).some((requirement) =>
+    statuses.has(normalizeWorkflowDocumentStatus(requirement?.status || requirement?.requiredDocumentStatus)),
+  )
+}
+
+function countOutstandingRequirements(requirements = [], keywords = []) {
+  return getRequirementEntriesByKeywords(requirements, keywords).filter((requirement) => {
+    const status = normalizeWorkflowDocumentStatus(requirement?.status || requirement?.requiredDocumentStatus)
+    return !APPROVED_WORKFLOW_DOCUMENT_STATUSES.has(status) && status !== 'not_applicable'
+  }).length
+}
+
+function hasDocumentWithKeywords(documents = [], keywords = [], statuses = PRESENT_WORKFLOW_DOCUMENT_STATUSES) {
+  return (documents || []).some((document) => {
+    const signal = [document?.name, document?.category, document?.document_type, document?.stage_key].filter(Boolean).join(' ').toLowerCase()
+    if (!matchesSignalText(signal, keywords)) return false
+    return statuses.has(normalizeWorkflowDocumentStatus(document?.status || document?.review_status))
+  })
+}
+
+function resolveProgressBlockerReason({
+  currentStage = 'confirmed',
+  financeType = 'unknown',
+  buyerOnboardingComplete = false,
+  sellerOnboardingComplete = false,
+  isPrivateMatter = false,
+  otpSigned = false,
+  proofOfFundsVerified = false,
+  bondOfferAccepted = false,
+  transferAttorneyAssigned = false,
+  transferReady = false,
+  registrationComplete = false,
+} = {}) {
+  if (currentStage === 'confirmed') {
+    if (!buyerOnboardingComplete) return 'Buyer onboarding still needs to be completed.'
+    if (isPrivateMatter && !sellerOnboardingComplete) return 'Seller onboarding is still outstanding.'
+    return 'Accepted offer or reservation confirmation is still outstanding.'
+  }
+  if (currentStage === 'otp') {
+    return otpSigned ? '' : 'OTP must be signed before the matter can move into finance.'
+  }
+  if (currentStage === 'finance') {
+    if (financeType === 'cash') {
+      return proofOfFundsVerified ? '' : 'Proof of funds still needs to be verified.'
+    }
+    if (financeType === 'bond') {
+      return bondOfferAccepted ? '' : 'Bond offer acceptance is still outstanding.'
+    }
+    if (financeType === 'combination') {
+      if (!bondOfferAccepted && !proofOfFundsVerified) return 'Bond approval and proof of funds verification are both still outstanding.'
+      if (!bondOfferAccepted) return 'Bond offer acceptance is still outstanding.'
+      return 'Proof of funds verification is still outstanding.'
+    }
+    return 'Finance readiness still needs confirmation.'
+  }
+  if (currentStage === 'transfer') {
+    if (!transferAttorneyAssigned) return 'Transfer attorney still needs to be assigned.'
+    if (!transferReady) return 'Transfer documents and lodgement readiness are still outstanding.'
+    return 'Transfer workflow still needs final registration capture.'
+  }
+  if (currentStage === 'registration') {
+    return registrationComplete ? '' : 'Registration has not been captured yet.'
+  }
+  return ''
+}
+
+function resolveTransactionProgress({
+  transaction = null,
+  requiredDocumentChecklist = [],
+  documents = [],
+  transactionFinanceWorkflow = null,
+  transactionEvents = [],
+  transferStageKey = '',
+  onboardingCompleted = false,
+  isPrivateMatter = false,
+} = {}) {
+  const financeType = normalizeFinanceType(transaction?.finance_type, { allowUnknown: true })
+  const mainStage = String(transaction?.current_main_stage || '').trim().toUpperCase()
+  const stageSignal = [
+    transaction?.stage,
+    transaction?.current_main_stage,
+    transaction?.current_sub_stage_summary,
+    transaction?.attorney_stage,
+    transaction?.operational_state,
+    transaction?.lifecycle_state,
+    transaction?.finance_status,
+    transferStageKey,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  const reservationStatus = normalizeWorkflowDocumentStatus(transaction?.reservation_status)
+  const sellerOnboardingSent = hasTransactionEvent(transactionEvents, ['seller_onboarding_sent', 'seller portal link sent'])
+  const sellerOnboardingComplete = hasTransactionEvent(transactionEvents, ['seller_onboarding_completed', 'seller onboarding completed'])
+  const confirmedComplete =
+    Boolean(transaction?.id) &&
+    (Boolean(transaction?.offer_accepted_at || transaction?.confirmed_at || transaction?.sale_date) ||
+      ['reserved', 'paid', 'verified', 'accepted', 'completed'].includes(reservationStatus) ||
+      !['', 'AVAIL', 'NEW'].includes(mainStage) ||
+      matchesSignalText(stageSignal, ['confirmed', 'reserved', 'otp', 'finance', 'transfer', 'registration']))
+  const otpSigned =
+    hasTransactionEvent(transactionEvents, ['otp_signed', 'sale agreement signed', 'offer to purchase signed']) ||
+    hasRequirementStatus(requiredDocumentChecklist, ['signed_otp', 'otp_signed', 'sale_agreement_signed']) ||
+    hasDocumentWithKeywords(documents, ['signed otp', 'signed sale agreement', 'signed offer to purchase']) ||
+    ['FIN', 'ATTY', 'XFER', 'REG'].includes(mainStage)
+  const proofOfFundsVerified =
+    hasRequirementStatus(requiredDocumentChecklist, ['proof_of_funds', 'proof_of_funds_cash_component'], APPROVED_WORKFLOW_DOCUMENT_STATUSES) ||
+    hasDocumentWithKeywords(documents, ['proof_of_funds', 'cash proof'], APPROVED_WORKFLOW_DOCUMENT_STATUSES) ||
+    hasTransactionEvent(transactionEvents, ['proof_of_funds_received', 'proof of funds verified', 'proof of funds approved', 'document_approved proof_of_funds'])
+  const bondOfferAccepted =
+    Boolean(transactionFinanceWorkflow?.summary?.approvedQuote || transactionFinanceWorkflow?.summary?.instructionSent) ||
+    (Array.isArray(transactionFinanceWorkflow?.quotes) &&
+      transactionFinanceWorkflow.quotes.some((quote) => normalizeDetailKey(quote?.quote_status) === 'approved_by_buyer')) ||
+    (Array.isArray(transactionFinanceWorkflow?.applications) &&
+      transactionFinanceWorkflow.applications.some((application) =>
+        ['approved', 'buyer_approved'].includes(normalizeDetailKey(application?.status)),
+      )) ||
+    hasDocumentWithKeywords(documents, ['bond offer', 'bond grant', 'grant letter'], APPROVED_WORKFLOW_DOCUMENT_STATUSES) ||
+    hasTransactionEvent(transactionEvents, ['finance_approved', 'quote_approved', 'bond offer accepted', 'bond grant accepted']) ||
+    matchesSignalText(stageSignal, ['bond approved', 'finance approved', 'grant accepted'])
+  const financeComplete =
+    financeType === 'cash'
+      ? proofOfFundsVerified
+      : financeType === 'bond'
+        ? bondOfferAccepted
+        : financeType === 'combination'
+          ? proofOfFundsVerified && bondOfferAccepted
+          : proofOfFundsVerified || bondOfferAccepted
+  const transferAttorneyAssigned = Boolean(transaction?.assigned_attorney_email || transaction?.attorney)
+  const transferReady =
+    ['ready_for_lodgement', 'lodged_at_deeds_office', 'registered'].includes(transferStageKey) ||
+    matchesSignalText(stageSignal, ['ready for lodgement', 'registration preparation', 'lodgement ready']) ||
+    hasTransactionEvent(transactionEvents, ['lodgement_ready', 'registration_ready', 'lodgement submitted'])
+  const registrationComplete =
+    Boolean(transaction?.registered_at || transaction?.registration_date || transaction?.title_deed_number) ||
+    transferStageKey === 'registered' ||
+    matchesSignalText(stageSignal, ['registered', 'registration confirmed']) ||
+    hasTransactionEvent(transactionEvents, ['registration_completed', 'transaction registered'])
+
+  const completedStages = []
+  let currentStage = 'confirmed'
+
+  if (confirmedComplete) {
+    completedStages.push('confirmed')
+    currentStage = 'otp'
+  }
+  if (completedStages.length === 1 && otpSigned) {
+    completedStages.push('otp')
+    currentStage = 'finance'
+  }
+  if (completedStages.length === 2 && financeComplete) {
+    completedStages.push('finance')
+    currentStage = 'transfer'
+  }
+  if (completedStages.length === 3 && transferReady) {
+    completedStages.push('transfer')
+    currentStage = 'registration'
+  }
+  if (completedStages.length === 4 && registrationComplete) {
+    completedStages.push('registration')
+    currentStage = 'registration'
+  }
+
+  const progressPercent =
+    completedStages.length >= TRANSACTION_LIFECYCLE_STAGE_ORDER.length
+      ? 100
+      : Math.round((completedStages.length / TRANSACTION_LIFECYCLE_STAGE_ORDER.length) * 100)
+  const nextMilestone =
+    TRANSACTION_LIFECYCLE_STAGE_LABELS[currentStage] ||
+    TRANSACTION_LIFECYCLE_STAGE_LABELS[TRANSACTION_LIFECYCLE_STAGE_ORDER.at(-1)] ||
+    'Registration'
+  const blockerReason = resolveProgressBlockerReason({
+    currentStage,
+    financeType,
+    buyerOnboardingComplete: onboardingCompleted,
+    sellerOnboardingComplete: isPrivateMatter ? sellerOnboardingComplete : true,
+    isPrivateMatter,
+    otpSigned,
+    proofOfFundsVerified,
+    bondOfferAccepted,
+    transferAttorneyAssigned,
+    transferReady,
+    registrationComplete,
+  })
+
+  return {
+    currentStage,
+    completedStages,
+    progressPercent,
+    nextMilestone,
+    blockerReason,
+    lastUpdatedAt: transaction?.updated_at || transaction?.created_at || null,
+    blockersByStage: {
+      confirmed: confirmedComplete ? [] : [blockerReason],
+      otp: otpSigned ? [] : ['OTP signature outstanding'],
+      finance: financeComplete ? [] : [resolveProgressBlockerReason({ currentStage: 'finance', financeType, proofOfFundsVerified, bondOfferAccepted })],
+      transfer: transferReady ? [] : [resolveProgressBlockerReason({ currentStage: 'transfer', transferAttorneyAssigned, transferReady })],
+      registration: registrationComplete ? [] : ['Registration capture outstanding'],
+    },
+    flags: {
+      financeType,
+      buyerOnboardingComplete: onboardingCompleted,
+      sellerOnboardingSent,
+      sellerOnboardingComplete,
+      confirmedComplete,
+      otpSigned,
+      proofOfFundsVerified,
+      bondOfferAccepted,
+      financeComplete,
+      transferAttorneyAssigned,
+      transferReady,
+      registrationComplete,
+      openTransferRequirementCount: countOutstandingRequirements(requiredDocumentChecklist, ['transfer_signature', 'signed_transfer', 'transfer_document']),
+    },
+  }
+}
+
+function resolveTransactionNextAction({
+  transaction = null,
+  progressState = null,
+  buyerEmail = '',
+  sellerEmail = '',
+  onboardingCompleted = false,
+  isPrivateMatter = false,
+  transferAttorney = null,
+  documentRequests = [],
+} = {}) {
+  const financeType = progressState?.flags?.financeType || normalizeFinanceType(transaction?.finance_type, { allowUnknown: true })
+  const hasOpenDocumentRequest = (documentRequests || []).some((request) => {
+    const status = normalizeWorkflowDocumentStatus(request?.status)
+    return !['completed', 'cancelled', 'approved', 'rejected'].includes(status)
+  })
+
+  if (!onboardingCompleted) {
+    return {
+      title: 'Buyer onboarding pending',
+      description: buyerEmail
+        ? 'Buyer onboarding still needs to be completed before the matter can move forward cleanly.'
+        : 'Buyer onboarding cannot be sent until a buyer email address is captured.',
+      status: buyerEmail ? 'pending' : 'blocked',
+      priority: 'high',
+      dueDate: transaction?.updated_at || transaction?.created_at || null,
+      primaryActionLabel: buyerEmail ? 'Resend Buyer Portal Link' : 'Update Buyer Email',
+      primaryActionTarget: buyerEmail ? 'buyer_portal' : 'roleplayers',
+      secondaryActionLabel: 'Open Documents',
+      secondaryActionTarget: 'documents',
+    }
+  }
+
+  if (isPrivateMatter && !progressState?.flags?.sellerOnboardingComplete) {
+    return {
+      title: 'Seller onboarding pending',
+      description: sellerEmail
+        ? 'Seller onboarding still needs attention so the transfer side can progress without gaps.'
+        : 'Capture the seller email address before sending the seller portal link.',
+      status: sellerEmail ? 'pending' : 'blocked',
+      priority: 'high',
+      dueDate: transaction?.updated_at || transaction?.created_at || null,
+      primaryActionLabel: sellerEmail ? 'Send Seller Portal Link' : 'Update Seller Email',
+      primaryActionTarget: sellerEmail ? 'seller_portal' : 'roleplayers',
+      secondaryActionLabel: 'Open Roleplayers',
+      secondaryActionTarget: 'stakeholders',
+    }
+  }
+
+  if (!progressState?.flags?.otpSigned) {
+    return {
+      title: 'OTP signature outstanding',
+      description: 'The Offer to Purchase must be signed before the matter can move into finance.',
+      status: 'pending',
+      priority: 'high',
+      dueDate: transaction?.expected_transfer_date || transaction?.target_registration_date || null,
+      primaryActionLabel: 'Open Documents',
+      primaryActionTarget: 'documents',
+      secondaryActionLabel: 'Generate Sales Agreement',
+      secondaryActionTarget: 'sales_agreement',
+    }
+  }
+
+  if (!progressState?.flags?.financeComplete) {
+    const cashOrHybridNeedsProof = ['cash', 'combination'].includes(financeType) && !progressState?.flags?.proofOfFundsVerified
+    if (cashOrHybridNeedsProof) {
+      return {
+        title: 'Proof of funds required',
+        description: 'Finance cannot complete until proof of funds has been uploaded and verified.',
+        status: 'pending',
+        priority: 'high',
+        dueDate: transaction?.finance_due_at || transaction?.expected_transfer_date || null,
+        primaryActionLabel: hasOpenDocumentRequest ? 'Open Documents' : 'Request Documents',
+        primaryActionTarget: 'documents',
+        secondaryActionLabel: 'Open Finance',
+        secondaryActionTarget: 'finance',
+      }
+    }
+
+    return {
+      title: 'Bond offer acceptance pending',
+      description: 'The matter stays in finance until the bond offer has been accepted.',
+      status: 'pending',
+      priority: 'high',
+      dueDate: transaction?.finance_due_at || transaction?.expected_transfer_date || null,
+      primaryActionLabel: 'Open Finance',
+      primaryActionTarget: 'finance',
+      secondaryActionLabel: 'Open Documents',
+      secondaryActionTarget: 'documents',
+    }
+  }
+
+  if (!progressState?.flags?.transferAttorneyAssigned && !transferAttorney) {
+    return {
+      title: 'Transfer attorney not assigned',
+      description: 'Assign the transfer attorney so the transfer workflow can move past finance.',
+      status: 'blocked',
+      priority: 'high',
+      dueDate: transaction?.expected_transfer_date || transaction?.target_registration_date || null,
+      primaryActionLabel: 'Assign Roleplayer',
+      primaryActionTarget: 'stakeholders',
+      secondaryActionLabel: 'Open Transfer',
+      secondaryActionTarget: 'transfer',
+    }
+  }
+
+  if (!progressState?.flags?.transferReady) {
+    return {
+      title: 'Transfer documents outstanding',
+      description: 'The transfer pack is not ready for lodgement yet.',
+      status: 'pending',
+      priority: progressState?.flags?.openTransferRequirementCount ? 'high' : 'normal',
+      dueDate: transaction?.expected_transfer_date || transaction?.target_registration_date || null,
+      primaryActionLabel: progressState?.flags?.openTransferRequirementCount ? 'Open Documents' : 'Open Transfer',
+      primaryActionTarget: progressState?.flags?.openTransferRequirementCount ? 'documents' : 'transfer',
+      secondaryActionLabel: 'Add Note',
+      secondaryActionTarget: 'activity',
+    }
+  }
+
+  if (!progressState?.flags?.registrationComplete) {
+    return {
+      title: 'Ready for registration',
+      description: 'The matter is ready for final registration capture and close-out follow-through.',
+      status: 'ready',
+      priority: 'normal',
+      dueDate: transaction?.target_registration_date || transaction?.expected_transfer_date || null,
+      primaryActionLabel: 'Open Transfer',
+      primaryActionTarget: 'transfer',
+      secondaryActionLabel: 'View Summary',
+      secondaryActionTarget: 'overview',
+    }
+  }
+
+  return {
+    title: 'Transaction registered',
+    description: 'Registration has been captured and the transaction is in close-out.',
+    status: 'complete',
+    priority: 'informational',
+    dueDate: transaction?.registered_at || transaction?.registration_date || null,
+    primaryActionLabel: 'View Summary',
+    primaryActionTarget: 'overview',
+    secondaryActionLabel: 'Open Activity',
+    secondaryActionTarget: 'activity',
+  }
+}
+
+function getConversationVisibilityLabel(value = '') {
+  const normalized = normalizeDetailKey(value)
+  if (normalized === 'internal') return 'Internal only'
+  if (normalized === 'client_visible' || normalized === 'client_safe') return 'Buyer and seller visible'
+  if (normalized === 'system') return 'System'
+  return 'Shared with roleplayers'
+}
+
+function getConversationVisibilityClasses(value = '') {
+  const normalized = normalizeDetailKey(value)
+  if (normalized === 'internal') return 'border-amber-200 bg-amber-50 text-amber-700'
+  if (normalized === 'client_visible' || normalized === 'client_safe') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  if (normalized === 'system') return 'border-borderSoft bg-surfaceAlt text-textMuted'
+  return 'border-sky-200 bg-sky-50 text-sky-700'
+}
+
+function getConversationTypeLabel(value = '') {
+  const normalized = normalizeDetailKey(value)
+  if (normalized === 'document_request') return 'Document request'
+  if (normalized === 'document_uploaded') return 'Document uploaded'
+  if (normalized === 'portal_event') return 'Portal event'
+  if (normalized === 'finance_update') return 'Finance update'
+  if (normalized === 'transfer_update') return 'Transfer update'
+  if (normalized === 'registration_update') return 'Registration update'
+  if (normalized === 'stage_change') return 'Stage change'
+  if (normalized === 'feedback') return 'Feedback'
+  if (normalized === 'question') return 'Question'
+  return 'Comment'
+}
+
+function getNextActionStatusClasses(status = '') {
+  const normalized = normalizeDetailKey(status)
+  if (normalized === 'blocked') return 'border-danger/20 bg-dangerSoft text-danger'
+  if (normalized === 'ready') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  if (normalized === 'complete') return 'border-borderSoft bg-surfaceAlt text-textMuted'
+  return 'border-warning/25 bg-warningSoft text-warning'
 }
 
 function buildMatterPreviewShell(matterPreview, transactionId) {
@@ -1339,7 +1831,6 @@ function MatterOverviewHeader({
   propertyLabel,
   subtitle,
   clientTitle = '',
-  transactionReference = '',
   transactionStageLabel = '',
   transaction = null,
   mainStage = '',
@@ -1354,40 +1845,36 @@ function MatterOverviewHeader({
   updatedLabel = '',
   actionButtons = [],
   isAgentView = false,
+  lifecycleProgress = null,
 }) {
   const currentStage = MATTER_STAGE_MILESTONES[Math.min(progressIndex, MATTER_STAGE_MILESTONES.length - 1)] || MATTER_STAGE_MILESTONES[0]
 
   if (isAgentView) {
+    const metricGridClass =
+      metrics.length >= 5
+        ? 'grid gap-3 sm:grid-cols-2 xl:grid-cols-5'
+        : metrics.length === 4
+          ? 'grid gap-3 sm:grid-cols-2 xl:grid-cols-4'
+          : metrics.length === 3
+            ? 'grid gap-3 sm:grid-cols-2 xl:grid-cols-3'
+            : 'grid gap-3 sm:grid-cols-2'
+
     return (
       <div className="space-y-4">
         <section className="rounded-[26px] border border-borderDefault bg-white px-6 py-6 shadow-[0_18px_42px_rgba(15,23,42,0.065)] lg:px-7">
-          <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusClassName}`}>
-                  {statusLabel}
-                </span>
-                <span className="inline-flex items-center rounded-full border border-success/25 bg-successSoft px-2.5 py-1 text-[0.72rem] font-semibold text-success">
-                  {matterHealthLabel}
-                </span>
-              </div>
-              <h1 className="mt-4 truncate text-[2rem] font-bold tracking-[-0.04em] text-textStrong md:text-[2.45rem]">
-                {clientTitle || buyerName || 'Client'}
+              <h1 className="truncate text-[2rem] font-bold tracking-[-0.04em] text-textStrong md:text-[2.45rem]">
+                {clientTitle || buyerName || 'Buyer details pending'}
               </h1>
               <p className="mt-1.5 max-w-4xl text-base leading-7 text-textMuted">
                 {propertyLabel || subtitle || 'Property details pending'}
               </p>
-              <div className="mt-5 flex flex-wrap gap-2.5 text-sm">
-                <span className="rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1.5 text-textBody">
-                  <span className="font-semibold text-textStrong">Transaction:</span> {transactionReference || title}
-                </span>
-                <span className="rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1.5 text-textBody">
-                  <span className="font-semibold text-textStrong">Status:</span> {statusLabel}
-                </span>
-                <span className="rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1.5 text-textBody">
-                  <span className="font-semibold text-textStrong">Stage:</span> {transactionStageLabel || currentStage.label}
-                </span>
-              </div>
+              {daysActiveLabel || updatedLabel ? (
+                <p className="mt-3 text-sm text-textMuted">
+                  {[daysActiveLabel || '', updatedLabel ? `Updated ${updatedLabel}` : ''].filter(Boolean).join(' • ')}
+                </p>
+              ) : null}
             </div>
             <div className="flex shrink-0 flex-wrap gap-2 xl:justify-end">
               {actionButtons.map((action) => (
@@ -1400,7 +1887,7 @@ function MatterOverviewHeader({
           </div>
         </section>
 
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <section className={metricGridClass}>
           {metrics.map((item) => {
             const Icon = item.icon || FileText
             return (
@@ -1417,13 +1904,29 @@ function MatterOverviewHeader({
           })}
         </section>
 
-        <TransactionLifecycleProgress
-          transaction={transaction}
-          mainStage={mainStage}
-          framed
-          premium
-          helperText={`Transfer status: ${transactionStageLabel || currentStage.label}`}
-        />
+        <section className="rounded-[22px] border border-borderDefault bg-white px-4 py-4 shadow-[0_12px_26px_rgba(15,23,42,0.04)] md:px-5">
+          <ProgressTimeline
+            currentStage={lifecycleProgress?.currentStage || 'confirmed'}
+            stages={TRANSACTION_LIFECYCLE_STAGE_ORDER}
+            stageLabelMap={TRANSACTION_LIFECYCLE_STAGE_LABELS}
+            framed={false}
+            compact
+            premium
+            showCurrentSummary={false}
+            progressPercent={lifecycleProgress?.progressPercent ?? 0}
+            blockersByStage={lifecycleProgress?.blockersByStage || null}
+            helperText={
+              lifecycleProgress?.blockerReason
+                ? lifecycleProgress.blockerReason
+                : `Next milestone: ${lifecycleProgress?.nextMilestone || transactionStageLabel || currentStage.label}`
+            }
+            lastUpdatedLabel={
+              lifecycleProgress?.lastUpdatedAt
+                ? `Updated ${new Date(lifecycleProgress.lastUpdatedAt).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' })}`
+                : ''
+            }
+          />
+        </section>
       </div>
     )
   }
@@ -2155,7 +2658,7 @@ function AttorneyTransactionDetail() {
   const development = data?.development || null
   const unit = data?.unit || null
   const documents = data?.documents ?? EMPTY_ARRAY
-  const requiredDocumentChecklist = data?.requiredDocumentChecklist || []
+  const requiredDocumentChecklist = useMemo(() => data?.requiredDocumentChecklist || EMPTY_ARRAY, [data?.requiredDocumentChecklist])
   const requiredDocumentsByDocumentId = useMemo(() => {
     const map = new Map()
     for (const requirement of requiredDocumentChecklist) {
@@ -2194,6 +2697,16 @@ function AttorneyTransactionDetail() {
     workspaceRole !== 'attorney' || attorneyPermissionState.hasPermission('can_comment_internal')
   const canPublishClientVisibleDiscussion =
     workspaceRole !== 'attorney' || attorneyPermissionState.hasPermission('can_publish_client_visible_updates')
+  const availableDiscussionVisibilityOptions = useMemo(
+    () =>
+      DISCUSSION_VISIBILITY_OPTIONS.filter((item) => {
+        if (item.key === 'internal') return canPostInternalDiscussion
+        if (item.key === 'shared') return canPostSharedDiscussion
+        if (item.key === 'client_visible') return canPublishClientVisibleDiscussion
+        return true
+      }),
+    [canPostInternalDiscussion, canPostSharedDiscussion, canPublishClientVisibleDiscussion],
+  )
   const visibleTransactionDiscussion = useMemo(
     () =>
       transactionDiscussion.filter((comment) => {
@@ -2204,6 +2717,7 @@ function AttorneyTransactionDetail() {
     [canViewInternalDiscussion, transactionDiscussion],
   )
   const transactionEvents = data?.transactionEvents ?? EMPTY_ARRAY
+  const documentRequests = data?.documentRequests ?? EMPTY_ARRAY
   const transactionFinanceWorkflow = data?.transactionFinanceWorkflow || null
   const transactionParticipants = data?.transactionParticipants ?? EMPTY_ARRAY
   const rawTransactionRolePlayers = data?.transactionRolePlayers || data?.rolePlayers || data?.transaction_role_players
@@ -2236,6 +2750,12 @@ function AttorneyTransactionDetail() {
   }, [isAgentTransactionView, workspaceMenu])
   const availableWorkspaceTabs = isAgentTransactionView ? AGENT_WORKSPACE_TABS : ATTORNEY_WORKSPACE_TABS
   const activeWorkspaceMenu = availableWorkspaceTabs.some((tab) => tab.id === requestedWorkspaceMenu) ? requestedWorkspaceMenu : 'overview'
+
+  useEffect(() => {
+    if (!availableDiscussionVisibilityOptions.length) return
+    if (availableDiscussionVisibilityOptions.some((item) => item.key === discussionVisibility)) return
+    setDiscussionVisibility(availableDiscussionVisibilityOptions[0].key)
+  }, [availableDiscussionVisibilityOptions, discussionVisibility])
 
   useEffect(() => {
     let active = true
@@ -2350,14 +2870,43 @@ function AttorneyTransactionDetail() {
   const onboardingCompleted =
     onboardingLifecycleStatus === 'client_onboarding_complete' ||
     Boolean(transaction?.onboarding_completed_at) ||
-    ['submitted', 'reviewed', 'approved'].includes(onboardingRecordStatus)
+    ['submitted', 'reviewed', 'approved', 'completed'].includes(onboardingRecordStatus)
   const normalizedFinanceType = normalizeFinanceType(transaction?.finance_type, { allowUnknown: true })
-  const hasCapturedFinancials = onboardingCompleted
+  const hasCapturedFinancials =
+    onboardingCompleted ||
+    Boolean(
+      transaction?.purchase_price ||
+      transaction?.sales_price ||
+      transaction?.bond_amount ||
+      transaction?.deposit_amount ||
+      transaction?.reservation_amount ||
+      transaction?.reservation_deposit_amount ||
+      transaction?.target_registration_date ||
+      transaction?.expected_transfer_date ||
+      normalizedFinanceType !== 'unknown',
+    )
   const shouldShowDepositCard = useMemo(() => {
-    const reservationAmount = Number(transaction?.reservation_amount || 0)
-    const reservationRequired = Boolean(transaction?.reservation_required)
+    const reservationAmount = Number(
+      transaction?.reservation_amount ||
+      transaction?.reservation_deposit_amount ||
+      transaction?.deposit_amount ||
+      0,
+    )
+    const reservationRequired = Boolean(
+      transaction?.reservation_required ||
+      transaction?.reservation_deposit_required ||
+      transaction?.deposit_required,
+    )
     return transactionKind === 'development' && (reservationRequired || reservationAmount > 0)
-  }, [transaction?.reservation_amount, transaction?.reservation_required, transactionKind])
+  }, [
+    transaction?.deposit_amount,
+    transaction?.deposit_required,
+    transaction?.reservation_amount,
+    transaction?.reservation_deposit_amount,
+    transaction?.reservation_deposit_required,
+    transaction?.reservation_required,
+    transactionKind,
+  ])
   const hasCapturedFinanceType = hasCapturedFinancials && normalizedFinanceType !== 'unknown'
   const financeTypeLabel = hasCapturedFinanceType ? toTitle(normalizedFinanceType) : 'Not captured'
   const isBondOrHybridFinance = hasCapturedFinanceType && isBondFinanceType(normalizedFinanceType)
@@ -2665,6 +3214,53 @@ function AttorneyTransactionDetail() {
         ...visibleTransactionDiscussion.map((comment) => humanizeDiscussionActivity(comment)),
       ].sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime()),
     [transactionEvents, visibleTransactionDiscussion],
+  )
+  const overviewConversationEntries = useMemo(() => activityFeed.slice(0, 8), [activityFeed])
+  const lifecycleProgressState = useMemo(
+    () =>
+      resolveTransactionProgress({
+        transaction,
+        requiredDocumentChecklist,
+        documents,
+        transactionFinanceWorkflow,
+        transactionEvents,
+        transferStageKey,
+        onboardingCompleted,
+        isPrivateMatter,
+      }),
+    [
+      documents,
+      isPrivateMatter,
+      onboardingCompleted,
+      requiredDocumentChecklist,
+      transaction,
+      transactionEvents,
+      transactionFinanceWorkflow,
+      transferStageKey,
+    ],
+  )
+  const overviewPrimaryNextAction = useMemo(
+    () =>
+      resolveTransactionNextAction({
+        transaction,
+        progressState: lifecycleProgressState,
+        buyerEmail,
+        sellerEmail,
+        onboardingCompleted,
+        isPrivateMatter,
+        transferAttorney,
+        documentRequests,
+      }),
+    [
+      buyerEmail,
+      documentRequests,
+      isPrivateMatter,
+      lifecycleProgressState,
+      onboardingCompleted,
+      sellerEmail,
+      transaction,
+      transferAttorney,
+    ],
   )
   const roleplayerIntroEvents = useMemo(
     () =>
@@ -3203,7 +3799,7 @@ function AttorneyTransactionDetail() {
     }
   }
 
-  function handleQuickRequestDocuments() {
+  const handleQuickRequestDocuments = useCallback(() => {
     const lane = workflowLanes[0]
     if (!lane) {
       setWorkspaceMenu('documents')
@@ -3216,9 +3812,9 @@ function AttorneyTransactionDetail() {
       description: '',
       requestedFrom: 'client',
     })
-  }
+  }, [workflowLanes])
 
-  function handleQuickAddWorkflowNote() {
+  const handleQuickAddWorkflowNote = useCallback(() => {
     const lane = workflowLanes[0]
     if (!lane) {
       setWorkspaceMenu('activity')
@@ -3230,9 +3826,9 @@ function AttorneyTransactionDetail() {
       visibility: 'internal',
       message: '',
     })
-  }
+  }, [workflowLanes])
 
-  function handleQuickScheduleSigning() {
+  const handleQuickScheduleSigning = useCallback(() => {
     const lane = workflowLanes.find((item) => item.laneKey === 'transfer') || workflowLanes[0]
     if (!lane) {
       setWorkspaceMenu('activity')
@@ -3244,9 +3840,9 @@ function AttorneyTransactionDetail() {
       visibility: 'internal',
       message: 'Signing appointment to be scheduled.',
     })
-  }
+  }, [workflowLanes])
 
-  function openAgentSalesAgreementWorkspace() {
+  const openAgentSalesAgreementWorkspace = useCallback(() => {
     if (!transaction?.id) {
       setError('Transaction data is not available for sales agreement generation.')
       return
@@ -3256,6 +3852,43 @@ function AttorneyTransactionDetail() {
     params.set('mode', 'generate')
     params.set('returnTo', `${location.pathname}${location.search || ''}`)
     navigate(`/transactions/${transaction.id}/legal/otp?${params.toString()}`)
+  }, [location.pathname, location.search, navigate, transaction?.id])
+
+  function handleOverviewActionTarget(target = 'overview') {
+    const normalizedTarget = normalizeDetailKey(target)
+    if (normalizedTarget === 'buyer_portal') {
+      void handleAgentHeaderOnboardingAction()
+      return
+    }
+    if (normalizedTarget === 'seller_portal') {
+      void handleSendSellerPortalLink()
+      return
+    }
+    if (normalizedTarget === 'sales_agreement') {
+      openAgentSalesAgreementWorkspace()
+      return
+    }
+    if (normalizedTarget === 'documents') {
+      setWorkspaceMenu('documents')
+      return
+    }
+    if (normalizedTarget === 'finance') {
+      setWorkspaceMenu('finance')
+      return
+    }
+    if (normalizedTarget === 'activity') {
+      setWorkspaceMenu('activity')
+      return
+    }
+    if (normalizedTarget === 'stakeholders' || normalizedTarget === 'roleplayers') {
+      setWorkspaceMenu('stakeholders')
+      return
+    }
+    if (normalizedTarget === 'overview') {
+      setWorkspaceMenu('overview')
+      return
+    }
+    setWorkspaceMenu('transfer')
   }
 
   const matterHeaderMetrics = useMemo(
@@ -3269,7 +3902,12 @@ function AttorneyTransactionDetail() {
       if (shouldShowDepositCard) {
         metrics.splice(3, 0, {
           label: 'Deposit',
-          value: formatCurrencyValue(hasCapturedFinancials ? transaction?.deposit_amount : 0, 'Not captured'),
+          value: formatCurrencyValue(
+            hasCapturedFinancials
+              ? transaction?.reservation_amount || transaction?.reservation_deposit_amount || transaction?.deposit_amount
+              : 0,
+            'Not captured',
+          ),
           icon: CircleDollarSign,
           tone: 'bg-amber-50 text-amber-700',
         })
@@ -3285,6 +3923,8 @@ function AttorneyTransactionDetail() {
       transaction?.bond_amount,
       transaction?.deposit_amount,
       transaction?.expected_transfer_date,
+      transaction?.reservation_amount,
+      transaction?.reservation_deposit_amount,
       transaction?.target_registration_date,
     ],
   )
@@ -3303,74 +3943,54 @@ function AttorneyTransactionDetail() {
     development?.name || null,
     propertyAddress || null,
   ].filter(Boolean).join(' • ')
-  const overviewKeyDates = [
-    { label: 'Offer accepted', value: formatDate(transaction?.offer_accepted_at || transaction?.created_at), complete: true },
-    { label: 'Transfer duty paid', value: formatDate(transaction?.transfer_duty_paid_at), complete: Boolean(transaction?.transfer_duty_paid_at) },
-    { label: 'Target registration', value: formatDate(transaction?.target_registration_date || transaction?.expected_transfer_date), emphasis: true },
-    { label: 'Estimated registration', value: formatDate(transaction?.estimated_registration_date || transaction?.target_registration_date || transaction?.expected_transfer_date) },
-  ]
   const overviewNextActions = useMemo(() => {
-    const rows = []
-    const blockedLane = workflowLanes.find((lane) => normalizeWorkspaceStatus(lane?.laneStatus || lane?.summary?.status) === 'blocked')
-    const waitingLane = workflowLanes.find((lane) => lane?.documentSummary?.missing || lane?.documentSummary?.requested)
-    if (transaction?.next_action) {
-      rows.push({
-        title: transaction.next_action,
-        description: 'Matter-level next action',
-        dueDate: transaction?.target_registration_date || transaction?.expected_transfer_date,
-        workflow: 'Overview',
-        action: isAgentTransactionView ? 'View transaction' : 'View matter',
-      })
-    }
-    if (blockedLane) {
-      rows.push({
-        title: `${getWorkflowLaneTitle(blockedLane)} blocked`,
-        description: blockedLane.summary?.blocked?.comment || 'A workflow step needs attention.',
-        dueDate: blockedLane.dueDate,
-        workflow: getWorkflowLaneTitle(blockedLane),
-        action: 'View workflow',
-      })
-    }
-    if (waitingLane) {
-      rows.push({
-        title: 'Documents outstanding',
-        description: `${waitingLane.documentSummary?.missing || waitingLane.documentSummary?.requested || 0} document item(s) need follow-up.`,
-        dueDate: waitingLane.dueDate,
-        workflow: getWorkflowLaneTitle(waitingLane),
-        action: 'Upload Document',
-      })
-    }
-    if (!rows.length) {
-      rows.push({
-        title: 'Review latest activity',
-        description: 'No urgent action is currently flagged.',
-        dueDate: transaction?.updated_at,
-        workflow: 'Activity',
-        action: 'Open Activity',
-      })
-    }
-    return rows.slice(0, 4)
-  }, [isAgentTransactionView, transaction?.expected_transfer_date, transaction?.next_action, transaction?.target_registration_date, transaction?.updated_at, workflowLanes])
+    return [
+      {
+        title: overviewPrimaryNextAction.title,
+        description: overviewPrimaryNextAction.description,
+        dueDate: overviewPrimaryNextAction.dueDate,
+        workflow: TRANSACTION_LIFECYCLE_STAGE_LABELS[lifecycleProgressState.currentStage] || 'Overview',
+        action: overviewPrimaryNextAction.primaryActionLabel || 'Open',
+        actionTarget: overviewPrimaryNextAction.primaryActionTarget || 'overview',
+        secondaryAction: overviewPrimaryNextAction.secondaryActionLabel || '',
+        secondaryActionTarget: overviewPrimaryNextAction.secondaryActionTarget || 'overview',
+        priority: overviewPrimaryNextAction.priority || 'normal',
+        status: overviewPrimaryNextAction.status || 'pending',
+      },
+    ]
+  }, [lifecycleProgressState.currentStage, overviewPrimaryNextAction])
   const getWorkspaceMenuForTask = useCallback((item) => {
-    const workflowLabel = `${item?.workflow || ''} ${item?.action || ''}`.toLowerCase()
-    if (workflowLabel.includes('document') || workflowLabel.includes('upload')) return 'documents'
-    if (workflowLabel.includes('bond') || workflowLabel.includes('finance') || workflowLabel.includes('guarantee')) return 'finance'
-    if (workflowLabel.includes('activity') || workflowLabel.includes('note')) return 'activity'
+    const target = normalizeDetailKey(item?.actionTarget || item?.primaryActionTarget || item?.secondaryActionTarget)
+    if (target === 'documents' || target === 'sales_agreement') return 'documents'
+    if (target === 'finance') return 'finance'
+    if (target === 'activity') return 'activity'
+    if (target === 'stakeholders' || target === 'roleplayers') return 'stakeholders'
+    if (target === 'overview' || target === 'buyer_portal' || target === 'seller_portal') return 'overview'
     return 'transfer'
   }, [])
-  const assignedTeamRows = useMemo(
-    () => [
-      { role: 'Transfer Attorney', participant: transferAttorney, lane: 'transfer' },
-      { role: 'Bond Attorney', participant: bondAttorney, lane: 'bond' },
-      { role: 'Cancellation Attorney', participant: cancellationAttorney, lane: 'cancellation' },
-      {
-        role: 'Conveyancer / Secretary',
-        participant: activeStakeholders.find((item) => /secretary|conveyancer|admin/i.test(`${item?.roleLabel || ''} ${item?.participantName || ''}`)),
-        lane: 'support',
-      },
-    ],
-    [activeStakeholders, bondAttorney, cancellationAttorney, transferAttorney],
-  )
+  const overviewQuickActions = useMemo(() => {
+    const actions = [
+      { label: 'Request Documents', icon: FileText, onClick: handleQuickRequestDocuments },
+      { label: 'Upload Document', icon: Upload, onClick: () => setWorkspaceMenu('documents') },
+      { label: 'Add Note', icon: MessageSquarePlus, onClick: handleQuickAddWorkflowNote },
+    ]
+
+    if (!lifecycleProgressState?.flags?.registrationComplete) {
+      actions.push({ label: 'Schedule Signing', icon: CalendarDays, onClick: handleQuickScheduleSigning })
+    }
+    if (!lifecycleProgressState?.flags?.otpSigned) {
+      actions.push({ label: 'Generate Sales Agreement', icon: FileText, onClick: openAgentSalesAgreementWorkspace })
+    }
+
+    return actions
+  }, [
+    lifecycleProgressState?.flags?.otpSigned,
+    lifecycleProgressState?.flags?.registrationComplete,
+    openAgentSalesAgreementWorkspace,
+    handleQuickAddWorkflowNote,
+    handleQuickRequestDocuments,
+    handleQuickScheduleSigning,
+  ])
   const agents = useMemo(
     () => activeStakeholders.filter((item) => item?.roleType === 'agent'),
     [activeStakeholders],
@@ -3964,19 +4584,15 @@ function AttorneyTransactionDetail() {
       setOnboardingActionBusy(true)
       setError('')
       setOnboardingActionMessage('')
-      const result = await sendBuyerOnboardingViaResend({
+      await sendBuyerOnboardingViaResend({
         resend: onboardingCompleted,
         source: onboardingCompleted ? 'agent_transaction_header_client_portal_resend' : 'agent_transaction_header_buyer_onboarding',
       })
-      setOnboardingActionMessage(
-        onboardingCompleted
-          ? 'Buyer portal link sent.'
-          : `Buyer onboarding sent to ${result?.recipientEmail || recipient.email}.`,
-      )
+      setOnboardingActionMessage('Buyer portal link sent.')
       await loadData({ background: true })
       window.dispatchEvent(new Event('itg:transaction-updated'))
     } catch (sendError) {
-      setOnboardingActionMessage(sendError?.message || 'Could not send buyer portal link. Try again.')
+      setOnboardingActionMessage(sendError?.message || 'Could not send buyer portal link.')
     } finally {
       setOnboardingActionBusy(false)
     }
@@ -4008,10 +4624,10 @@ function AttorneyTransactionDetail() {
       const responseError = response?.error || response?.data?.error
       if (responseError) {
         const parsedMessage = response?.error
-          ? await parseEdgeFunctionError(response.error, 'Could not send seller portal link. Try again.')
+          ? await parseEdgeFunctionError(response.error, 'Could not send seller portal link.')
           : typeof responseError === 'string'
             ? responseError
-            : responseError?.message || 'Could not send seller portal link. Try again.'
+            : responseError?.message || 'Could not send seller portal link.'
         throw new Error(parsedMessage)
       }
 
@@ -4276,11 +4892,6 @@ function AttorneyTransactionDetail() {
     registrationDraft.titleDeedNumber,
     transaction?.id,
   ])
-
-  async function handleOpenRegistrationFlow() {
-    setRegistrationModalOpen(true)
-    await refreshRegistrationValidation()
-  }
 
   async function handleRunRegistration() {
     if (!transaction?.id) {
@@ -4700,7 +5311,6 @@ function AttorneyTransactionDetail() {
             <MatterOverviewHeader
               title={workspaceReference}
               clientTitle={buyerDisplayName}
-              transactionReference={workspaceReference}
               transactionStageLabel={transferStageLabel}
               transaction={transaction}
               mainStage={mainStage}
@@ -4717,12 +5327,13 @@ function AttorneyTransactionDetail() {
               matterHealthLabel={matterHealthLabel}
               daysActiveLabel={daysBetween(transaction?.created_at)}
               updatedLabel={formatShortDayMonth(transaction?.updated_at || transaction?.created_at)}
+              lifecycleProgress={lifecycleProgressState}
               actionButtons={
                 isAgentTransactionView
                   ? [
                       {
                         label: 'Resend Buyer Portal Link',
-                        busyLabel: 'Sending buyer link...',
+                        busyLabel: 'Sending buyer portal link...',
                         busy: onboardingActionBusy,
                         disabled: onboardingActionBusy || !buyerEmail,
                         onClick: () => void handleAgentHeaderOnboardingAction(),
@@ -4730,7 +5341,7 @@ function AttorneyTransactionDetail() {
                       },
                       {
                         label: 'Send Seller Portal Link',
-                        busyLabel: 'Sending seller link...',
+                        busyLabel: 'Sending seller portal link...',
                         busy: sellerPortalBusy,
                         disabled: sellerPortalBusy || !sellerEmail,
                         onClick: () => void handleSendSellerPortalLink(),
@@ -4762,22 +5373,21 @@ function AttorneyTransactionDetail() {
                       <div>
                         <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Next Action</span>
                         <h2 className="mt-2 text-lg font-semibold tracking-[-0.025em] text-textStrong">
-                          {overviewNextActions[0]?.title || 'Review latest activity'}
+                          {overviewPrimaryNextAction.title}
                         </h2>
                         <p className="mt-1 max-w-2xl text-sm leading-6 text-textMuted">
-                          {overviewNextActions[0]?.description || 'No urgent action is currently flagged.'}
+                          {overviewPrimaryNextAction.description}
                         </p>
                       </div>
-                      <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${matterHealthMeta.border} ${matterHealthMeta.bg} ${matterHealthMeta.text}`}>
-                        <span className={`h-2 w-2 rounded-full ${matterHealthMeta.dot}`} />
-                        {matterHealthLabel}
+                      <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getNextActionStatusClasses(overviewPrimaryNextAction.status)}`}>
+                        {toTitle(overviewPrimaryNextAction.status || 'pending')}
                       </span>
                     </div>
                     <div className="mt-4 grid gap-3 sm:grid-cols-3">
                       {[
-                        ['Due Date', formatDate(overviewNextActions[0]?.dueDate)],
-                        ['Priority', matterHealthLabel === 'Blocked' ? 'High' : matterHealthLabel === 'On Track' ? 'Normal' : 'Medium'],
-                        ['Status', matterHealthLabel],
+                        ['Due Date', formatDate(overviewPrimaryNextAction.dueDate)],
+                        ['Priority', toTitle(overviewPrimaryNextAction.priority || 'normal')],
+                        ['Stage', TRANSACTION_LIFECYCLE_STAGE_LABELS[lifecycleProgressState.currentStage] || 'Overview'],
                       ].map(([label, value]) => (
                         <article key={label} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2.5">
                           <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
@@ -4786,12 +5396,21 @@ function AttorneyTransactionDetail() {
                       ))}
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
-                      <Button type="button" size="sm" onClick={() => setWorkspaceMenu('transfer')}>
-                        View Action
-                      </Button>
-                      <Button type="button" variant="secondary" size="sm" onClick={() => setWorkspaceMenu('documents')}>
-                        Open Documents
-                      </Button>
+                      {overviewPrimaryNextAction.primaryActionLabel ? (
+                        <Button type="button" size="sm" onClick={() => handleOverviewActionTarget(overviewPrimaryNextAction.primaryActionTarget)}>
+                          {overviewPrimaryNextAction.primaryActionLabel}
+                        </Button>
+                      ) : null}
+                      {overviewPrimaryNextAction.secondaryActionLabel ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleOverviewActionTarget(overviewPrimaryNextAction.secondaryActionTarget)}
+                        >
+                          {overviewPrimaryNextAction.secondaryActionLabel}
+                        </Button>
+                      ) : null}
                     </div>
                   </section>
                 ) : (
@@ -4839,10 +5458,10 @@ function AttorneyTransactionDetail() {
                 <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <h3 className="text-sm font-semibold text-textStrong">{isAgentTransactionView ? 'Transaction Feed' : 'Matter Feed'}</h3>
+                      <h3 className="text-sm font-semibold text-textStrong">{isAgentTransactionView ? 'Transaction Conversation' : 'Matter Conversation'}</h3>
                       <p className="mt-1 text-sm text-textMuted">
                         {isAgentTransactionView
-                          ? 'Client, property, document, and transfer updates for this transaction.'
+                          ? 'System updates, document flow, portal events, finance movement, and human collaboration in one workspace thread.'
                           : 'Collaborative matter updates, notes, documents, and workflow movement.'}
                       </p>
                     </div>
@@ -4850,172 +5469,119 @@ function AttorneyTransactionDetail() {
                       View all activity
                     </Button>
                   </div>
-                  {activeWorkspaceMenu !== 'overview' ? (
-                    <form onSubmit={handleAddDiscussion} className="mb-3 rounded-[14px] border border-borderSoft bg-surfaceAlt p-3">
-                      <Field
-                        as="textarea"
-                        rows={3}
-                        value={discussionBody}
-                        onChange={(event) => setDiscussionBody(event.target.value)}
-                        placeholder="Post a matter update..."
-                      />
-                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex gap-2">
-                          <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)} className="min-h-9 text-xs">
-                            {DISCUSSION_TYPES.map((item) => (
-                              <option key={item.key} value={item.key}>{item.label}</option>
-                            ))}
-                          </Field>
-                          <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)} className="min-h-9 text-xs">
-                            {DISCUSSION_VISIBILITY_OPTIONS.map((item) => (
-                              <option
-                                key={item.key}
-                                value={item.key}
-                                disabled={
-                                  (item.key === 'internal' && !canPostInternalDiscussion) ||
-                                  (item.key === 'shared' && !canPostSharedDiscussion) ||
-                                  (item.key === 'client_visible' && !canPublishClientVisibleDiscussion)
-                                }
-                              >
-                                {item.label}
-                              </option>
-                            ))}
-                          </Field>
-                        </div>
-                        <Button
-                          type="submit"
-                          size="sm"
-                          disabled={
-                            saving ||
-                            !discussionBody.trim() ||
-                            (discussionVisibility === 'internal' && !canPostInternalDiscussion) ||
-                            (discussionVisibility === 'shared' && !canPostSharedDiscussion) ||
-                            (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion)
-                          }
+                  <form onSubmit={handleAddDiscussion} className="mb-4 rounded-[14px] border border-borderSoft bg-surfaceAlt p-3">
+                    <Field
+                      as="textarea"
+                      rows={3}
+                      value={discussionBody}
+                      onChange={(event) => setDiscussionBody(event.target.value)}
+                      placeholder="Write a message or update..."
+                    />
+                    <div className="mt-3 flex flex-wrap items-end gap-2">
+                      <label className="min-w-[160px] flex-1 text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
+                        Update Type
+                        <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)} className="mt-1 min-h-9 text-xs">
+                          {DISCUSSION_TYPES.map((item) => (
+                            <option key={item.key} value={item.key}>{item.label}</option>
+                          ))}
+                        </Field>
+                      </label>
+                      <label className="min-w-[200px] flex-1 text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
+                        Visibility
+                        <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)} className="mt-1 min-h-9 text-xs">
+                          {availableDiscussionVisibilityOptions.map((item) => (
+                            <option key={item.key} value={item.key}>
+                              {item.label}
+                            </option>
+                          ))}
+                        </Field>
+                      </label>
+                      <Button type="button" variant="secondary" size="sm" onClick={() => setWorkspaceMenu('documents')}>
+                        <Paperclip size={14} />
+                        Upload Document
+                      </Button>
+                      <Button
+                        type="submit"
+                        size="sm"
+                        disabled={
+                          saving ||
+                          !discussionBody.trim() ||
+                          (discussionVisibility === 'internal' && !canPostInternalDiscussion) ||
+                          (discussionVisibility === 'shared' && !canPostSharedDiscussion) ||
+                          (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion)
+                        }
+                      >
+                        <Send size={14} />
+                        {saving ? 'Sending...' : 'Send'}
+                      </Button>
+                    </div>
+                  </form>
+                  <div className="space-y-3">
+                    {overviewConversationEntries.map((entry) => {
+                      const meta = entry.meta || getActivityCategoryMeta(entry.category)
+                      const isSystemEntry = entry.kind === 'system'
+                      return (
+                        <article
+                          key={entry.id}
+                          className={`rounded-[15px] border px-4 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)] ${
+                            isSystemEntry ? 'border-borderSoft bg-surfaceAlt/70' : `${meta.card} bg-white`
+                          }`}
                         >
-                          <Send size={14} />
-                          {saving ? 'Posting...' : 'Post'}
-                        </Button>
-                      </div>
-                    </form>
-                  ) : null}
-                  <div className="divide-y divide-borderSoft">
-                    {activityFeed.slice(0, 4).map((entry) => (
-                      <article key={entry.id} className="py-3 first:pt-0 last:pb-0">
-                        <div className="flex items-start gap-3">
-                          <span className={`mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-[10px] ${entry.kind === 'comment' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                            {entry.kind === 'comment' ? <MessageSquarePlus size={15} /> : <Activity size={15} />}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <strong className="truncate text-sm text-textStrong">{entry.title}</strong>
-                              <span className="rounded-full bg-surfaceAlt px-2 py-0.5 text-[0.65rem] font-semibold text-textMuted">{entry.commentType}</span>
+                          <div className="flex items-start gap-3">
+                            <span className={`mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-[12px] ring-1 ${meta.icon}`}>
+                              {createElement(meta.Icon, { size: 16 })}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <strong className="truncate text-sm text-textStrong">{entry.authorName}</strong>
+                                    <span className="text-xs text-textMuted">{entry.roleLabel}</span>
+                                  </div>
+                                  <p className="mt-1 text-sm font-semibold text-textStrong">{entry.title}</p>
+                                  <p className="mt-1 text-[0.72rem] text-textMuted">{formatDateTime(entry.createdAt)}</p>
+                                </div>
+                                <div className="flex shrink-0 flex-wrap gap-2">
+                                  <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${meta.badge}`}>
+                                    {getConversationTypeLabel(entry.messageType)}
+                                  </span>
+                                  <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getConversationVisibilityClasses(entry.visibility)}`}>
+                                    {getConversationVisibilityLabel(entry.visibility)}
+                                  </span>
+                                </div>
+                              </div>
+                              <p className={`mt-2 whitespace-pre-wrap text-sm leading-6 ${isSystemEntry ? 'text-textMuted' : 'text-textBody'}`}>
+                                {entry.body}
+                              </p>
+                              {entry.attachmentName ? (
+                                <div className="mt-3 inline-flex max-w-full items-center gap-2 rounded-[10px] border border-borderSoft bg-surfaceAlt px-3 py-2 text-xs font-semibold text-textStrong">
+                                  <Paperclip size={13} className="shrink-0 text-textMuted" />
+                                  <span className="truncate">{entry.attachmentName}</span>
+                                </div>
+                              ) : null}
                             </div>
-                            <p className="mt-1 line-clamp-2 text-xs leading-5 text-textMuted">{entry.body}</p>
-                            <p className="mt-1 text-[0.68rem] font-medium text-textMuted">
-                              {entry.authorName} • {entry.roleLabel}
-                            </p>
                           </div>
-                          <span className="shrink-0 text-xs text-textMuted">{formatShortDayMonth(entry.createdAt)}</span>
-                        </div>
-                      </article>
-                    ))}
-                    {!activityFeed.length ? (
-                      <p className="py-3 text-sm text-textMuted">Activity will appear here as the matter progresses.</p>
+                        </article>
+                      )
+                    })}
+                    {!overviewConversationEntries.length ? (
+                      <p className="rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm text-textMuted">
+                        Conversation updates will appear here as the transaction progresses.
+                      </p>
                     ) : null}
                   </div>
                 </section>
               </div>
 
               <aside className="space-y-4 xl:sticky xl:top-4">
-                <OverviewSidePanel title="Next Actions">
-                  <div className="space-y-3">
-                    {overviewNextActions.map((item) => (
-                      <article key={`${item.title}-${item.workflow}`} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3">
-                        <div className="flex items-start gap-2">
-                          <Clock3 size={15} className="mt-0.5 shrink-0 text-primary" />
-                          <div className="min-w-0 flex-1">
-                            <strong className="block text-sm text-textStrong">{item.title}</strong>
-                            <p className="mt-1 text-xs leading-5 text-textMuted">{item.description}</p>
-                            <p className="mt-1 text-xs font-semibold text-warning">{formatDate(item.dueDate)}</p>
-                          </div>
-                        </div>
-                        <Button type="button" variant="secondary" size="sm" className="mt-2 w-full justify-center" onClick={() => setWorkspaceMenu(getWorkspaceMenuForTask(item))}>
-                          {item.action}
-                        </Button>
-                      </article>
-                    ))}
-                  </div>
-                </OverviewSidePanel>
-
                 <OverviewSidePanel title="Quick Actions">
                   <div className="grid gap-2">
-                    {[
-                      ['Request Documents', FileText, handleQuickRequestDocuments],
-                      ['Upload Document', Upload, () => setWorkspaceMenu('documents')],
-                      ['Add Note', MessageSquarePlus, handleQuickAddWorkflowNote],
-                      ['Schedule Signing', CalendarDays, handleQuickScheduleSigning],
-                      ['Generate Sales Agreement', FileText, openAgentSalesAgreementWorkspace],
-                    ].map(([label, Icon, action]) => (
-                      <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
-                        {createElement(Icon, { size: 14 })}
-                        {label}
+                    {overviewQuickActions.map((action) => (
+                      <Button key={action.label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action.onClick}>
+                        {createElement(action.icon, { size: 14 })}
+                        {action.label}
                       </Button>
                     ))}
-                  </div>
-                </OverviewSidePanel>
-
-                <OverviewSidePanel title={isAgentTransactionView ? 'Health Summary' : 'Matter Health'}>
-                  <div className="space-y-3">
-                    {[
-                      ['Workflow Health', matterHealthLabel, GaugeCircle],
-                      ['Documents Missing', `${workflowLanes.reduce((total, lane) => total + Number(lane.documentSummary?.missing || 0), 0)}`, FileText],
-                      ['Active Blockers', `${workflowBlockedCount}`, AlertTriangle],
-                    ].map(([label, value, Icon]) => (
-                      <div key={label} className="flex items-center justify-between gap-3 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2">
-                        <span className="inline-flex items-center gap-2 text-sm text-textMuted">
-                          {createElement(Icon, { size: 14 })}
-                          {label}
-                        </span>
-                        <strong className="text-sm text-textStrong">{value}</strong>
-                      </div>
-                    ))}
-                  </div>
-                </OverviewSidePanel>
-
-                <OverviewSidePanel title="Key Dates">
-                  <div className="space-y-2">
-                    {overviewKeyDates.map((item) => (
-                      <div key={item.label} className="flex items-center justify-between gap-3 rounded-[10px] px-1 py-1.5">
-                        <span className="text-sm text-textMuted">{item.label}</span>
-                        <span className={`text-right text-sm font-semibold ${item.emphasis ? 'text-primary' : 'text-textStrong'}`}>
-                          {item.value}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </OverviewSidePanel>
-
-                <OverviewSidePanel title="Assigned Team">
-                  <div className="space-y-3">
-                    {assignedTeamRows.map((row) => {
-                      const isCurrentUser = row.participant?.userId && row.participant.userId === profile?.id
-                      return (
-                        <article key={row.role} className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <span className="block text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">{row.role}</span>
-                            <strong className="mt-1 block truncate text-sm text-textStrong">
-                              {row.participant?.participantName || row.participant?.organisationName || row.participant?.participantEmail || 'Not assigned'}
-                            </strong>
-                          </div>
-                          {isCurrentUser ? (
-                            <span className="rounded-full border border-primary/20 bg-primarySoft px-2 py-0.5 text-[0.68rem] font-semibold text-primary">
-                              You
-                            </span>
-                          ) : null}
-                        </article>
-                      )
-                    })}
                   </div>
                 </OverviewSidePanel>
               </aside>
@@ -5652,7 +6218,7 @@ function AttorneyTransactionDetail() {
               <div className="mt-5 divide-y divide-borderSoft overflow-hidden rounded-[16px] border border-borderDefault bg-white">
                 {overviewNextActions.map((item) => {
                   const targetMenu = getWorkspaceMenuForTask(item)
-                  const priority = matterHealthLabel === 'Blocked' ? 'High' : matterHealthLabel === 'On Track' ? 'Normal' : 'Medium'
+                  const priority = toTitle(item.priority || 'normal')
                   const responsibleParty = targetMenu === 'finance'
                     ? getParticipantDisplayName(bondAttorney) || 'Finance team'
                     : targetMenu === 'documents'
@@ -5673,7 +6239,13 @@ function AttorneyTransactionDetail() {
                           </div>
                           <p className="mt-1 max-w-3xl text-sm leading-6 text-textMuted">{item.description}</p>
                         </div>
-                        <Button type="button" size="sm" variant="secondary" className="shrink-0 justify-center" onClick={() => setWorkspaceMenu(targetMenu)}>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="shrink-0 justify-center"
+                          onClick={() => handleOverviewActionTarget(item.actionTarget)}
+                        >
                           {item.action}
                         </Button>
                       </div>
@@ -5745,7 +6317,7 @@ function AttorneyTransactionDetail() {
                 <div className="border-b border-borderSoft px-4 py-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
-                      <h3 className="text-base font-semibold text-textStrong">Matter Conversation</h3>
+                      <h3 className="text-base font-semibold text-textStrong">{isAgentTransactionView ? 'Transaction Conversation' : 'Matter Conversation'}</h3>
                       <p className="mt-1 text-sm text-textMuted">Human updates, workflow movement, documents, and operational alerts in one place.</p>
                     </div>
                     <div className="flex gap-2 overflow-x-auto pb-1">
@@ -5853,16 +6425,8 @@ function AttorneyTransactionDetail() {
                     <label className="grid gap-1.5 text-sm font-medium text-[#35546c]">
                       <span>Visibility</span>
                       <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)}>
-                        {DISCUSSION_VISIBILITY_OPTIONS.map((item) => (
-                          <option
-                            key={item.key}
-                            value={item.key}
-                            disabled={
-                              (item.key === 'internal' && !canPostInternalDiscussion) ||
-                              (item.key === 'shared' && !canPostSharedDiscussion) ||
-                              (item.key === 'client_visible' && !canPublishClientVisibleDiscussion)
-                            }
-                          >
+                        {availableDiscussionVisibilityOptions.map((item) => (
+                          <option key={item.key} value={item.key}>
                             {item.label}
                           </option>
                         ))}

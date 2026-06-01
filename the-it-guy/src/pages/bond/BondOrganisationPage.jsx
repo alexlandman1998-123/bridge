@@ -35,10 +35,25 @@ const FALLBACK_ORGANISATION_TABS = Object.freeze([
   { key: 'applications', label: 'Applications' },
 ])
 
+const VALID_ORGANISATION_VIEWS = Object.freeze([
+  'overview',
+  'regions',
+  'branches',
+  'consultants',
+  'applications',
+])
+
 const DEFAULT_BOND_ORGANISATION_SERVICE = Object.freeze({ getBondOrganisationSnapshot })
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function toRouteSlug(value = '') {
+  return normalizeText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
 }
 
 function resolveWorkspaceId(workspaceContext = {}) {
@@ -74,11 +89,92 @@ function scopeCanManage(snapshot = {}) {
   return Boolean(snapshot?.visibleScope?.canManageOrganisation)
 }
 
-function resolveRouteView(location, tabs = []) {
+export function resolveRouteView(location) {
   if (location.pathname.endsWith('/applications')) return 'applications'
   const params = new URLSearchParams(location.search)
   const requestedView = normalizeText(params.get('view') || params.get('tab') || 'overview')
-  return tabs.some((tab) => tab.key === requestedView) ? requestedView : 'overview'
+  return VALID_ORGANISATION_VIEWS.includes(requestedView) ? requestedView : 'overview'
+}
+
+export function canAccessOrganisationView(view = 'overview', snapshot = null) {
+  if (!snapshot) return false
+  if (view === 'overview') return true
+  if (view === 'applications') return true
+  if (view === 'regions') return Boolean(snapshot?.capabilities?.canViewRegions)
+  if (view === 'branches') return Boolean(snapshot?.capabilities?.canViewBranches)
+  if (view === 'consultants') return Boolean(snapshot?.capabilities?.canViewConsultants)
+  return false
+}
+
+function getUnavailableStateCopy(view = 'overview') {
+  if (view === 'regions') {
+    return {
+      title: 'Regions unavailable',
+      description: 'Your current workspace scope does not include region management access.',
+    }
+  }
+  if (view === 'branches') {
+    return {
+      title: 'Branches unavailable',
+      description: 'Your current workspace scope does not include branch management access.',
+    }
+  }
+  if (view === 'consultants') {
+    return {
+      title: 'Consultants unavailable',
+      description: 'Your current workspace scope does not include consultant management access.',
+    }
+  }
+  return {
+    title: 'This view is unavailable',
+    description: 'Your current workspace scope does not include access to this organisation workspace.',
+  }
+}
+
+function getConsultantApplicationMatches(consultant = null, rows = []) {
+  if (!consultant) return { rows: [], inferred: false }
+
+  const consultantId = normalizeText(consultant.id)
+  const consultantEmail = normalizeText(consultant.email).toLowerCase()
+  const consultantName = normalizeText(consultant.consultant || consultant.name).toLowerCase()
+  let inferred = false
+
+  const matchedRows = rows.filter((row) => {
+    const assignedUserId = normalizeText(row.assignedUserId || row.assigned_user_id)
+    const assignedEmail = normalizeText(row.assignedUserEmail || row.assigned_user_email || row.assignedBondOriginatorEmail).toLowerCase()
+    const assignedConsultant = normalizeText(row.consultant).toLowerCase()
+    const exactMatch =
+      (consultantId && assignedUserId === consultantId) ||
+      (consultantEmail && assignedEmail === consultantEmail)
+    const nameMatch = Boolean(consultantName && assignedConsultant === consultantName)
+    if (nameMatch && !exactMatch) inferred = true
+    return exactMatch || nameMatch
+  })
+
+  return { rows: matchedRows, inferred }
+}
+
+export function resolveSelectedHierarchyRow(selectedId = '', rows = [], candidateKeys = []) {
+  const normalizedSelectedId = normalizeText(selectedId)
+  if (!normalizedSelectedId) return null
+
+  const exactMatch = rows.find((row) => normalizeText(row?.id) === normalizedSelectedId)
+  if (exactMatch) return exactMatch
+
+  const derivedMatch = rows.find((row) =>
+    candidateKeys.some((key) => {
+      const value = row?.[key]
+      return value && normalizedSelectedId.endsWith(toRouteSlug(value))
+    }),
+  )
+  if (derivedMatch) return derivedMatch
+
+  if (rows.length === 1) return rows[0]
+  return null
+}
+
+export function hasStaleHierarchySelection(selectedId = '', selectedRow = null) {
+  return Boolean(normalizeText(selectedId) && !selectedRow)
 }
 
 function HeaderCell({ children, className = '' }) {
@@ -181,6 +277,7 @@ function OrganisationCommandHeader({
   view = 'overview',
   regionTitle = '',
   branchTitle = '',
+  consultantTitle = '',
   navigate = () => {},
 }) {
   const canManage = scopeCanManage(snapshot)
@@ -191,13 +288,27 @@ function OrganisationCommandHeader({
     regionSelected: Boolean(regionTitle),
     branchSelected: Boolean(branchTitle),
   })
-  const title = branchTitle || regionTitle || 'Organisation'
-  const subtitle = branchTitle
+  const title = consultantTitle || branchTitle || regionTitle || (
+    view === 'regions'
+      ? 'Regions'
+      : view === 'branches'
+        ? 'Branches'
+        : view === 'consultants'
+          ? 'Consultants'
+          : 'Organisation'
+  )
+  const subtitle = consultantTitle
+    ? 'Review this consultant’s workload, assigned applications, and current operating momentum.'
+    : branchTitle
     ? 'Review branch pressure, the consultant roster, and file flow for this branch.'
     : regionTitle
       ? 'Monitor the region structure, branch coverage, and high-level performance.'
       : view === 'consultants'
-        ? 'Monitor consultant workload, branch alignment, and operational activity.'
+        ? 'Manage consultant workload, application ownership, and performance.'
+        : view === 'branches'
+          ? 'Manage branch capacity, consultant allocation, and branch application performance.'
+          : view === 'regions'
+            ? 'Manage regional coverage, branch grouping, and regional application performance.'
         : 'Manage your national structure, branch performance, and operational activity.'
 
   return (
@@ -228,14 +339,7 @@ function OrganisationCommandHeader({
 }
 
 function OrganisationKpiStrip({ kpis = {} }) {
-  const items = [
-    { key: 'regions', label: 'Regions', value: kpis.regions || 0, icon: Network },
-    { key: 'branches', label: 'Branches', value: kpis.branches || 0, icon: Building2 },
-    { key: 'consultants', label: 'Consultants', value: kpis.consultants || 0, icon: Users },
-    { key: 'activeApplications', label: 'Active Applications', value: kpis.activeApplications || 0, icon: FileText },
-    { key: 'approvalRate', label: 'Approval Rate', value: formatPercent(kpis.approvalRate), icon: ShieldCheck },
-    { key: 'avgLeadTime', label: 'Avg Lead Time', value: formatLeadTime(kpis.avgLeadTime), icon: Clock3 },
-  ]
+  const items = kpis.items || []
 
   return (
     <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
@@ -252,6 +356,23 @@ function OrganisationKpiStrip({ kpis = {} }) {
         )
       })}
     </section>
+  )
+}
+
+function OrganisationViewUnavailable({ view = 'overview' }) {
+  const copy = getUnavailableStateCopy(view)
+  return (
+    <SectionShell eyebrow="Organisation Scope" title={copy.title} description={copy.description}>
+      <BondEmptyState compact title={copy.title} description={copy.description} />
+    </SectionShell>
+  )
+}
+
+function HierarchySelectionUnavailable({ title = '', description = '', onBack = () => {}, backLabel = 'Back' }) {
+  return (
+    <SectionShell eyebrow="Selection unavailable" title={title} description={description} action={<BreadcrumbButton onClick={onBack}>{backLabel}</BreadcrumbButton>}>
+      <BondEmptyState compact title={title} description={description} />
+    </SectionShell>
   )
 }
 
@@ -559,11 +680,24 @@ function OrganisationSettingsPanel({ canManage = false, onOpenSettings = () => {
 function RegionsWorkspace({
   rows = [],
   selectedRegion = null,
+  staleSelection = false,
   branchRows = [],
+  derived = false,
   onSelectRegion = () => {},
   onSelectBranch = () => {},
   onBack = () => {},
 }) {
+  if (staleSelection) {
+    return (
+      <HierarchySelectionUnavailable
+        title="Region no longer available."
+        description="This region could not be found in the current organisation scope."
+        onBack={onBack}
+        backLabel="Back to Regions"
+      />
+    )
+  }
+
   if (!rows.length) {
     return (
       <SectionShell eyebrow="Regions" title="Regional Footprint" description="Regions will appear here once the hierarchy has been configured.">
@@ -580,6 +714,11 @@ function RegionsWorkspace({
         description="High-level stats for the selected region, followed by every branch inside that region."
         action={<BreadcrumbButton onClick={onBack}>Back to all regions</BreadcrumbButton>}
       >
+        {derived ? (
+          <p className="mb-4 rounded-[16px] border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]">
+            No configured regions found. Showing regions inferred from current applications.
+          </p>
+        ) : null}
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <SummaryMetric label="Regional Manager" value={selectedRegion.manager || 'Unassigned'} emphasis />
           <SummaryMetric label="Branches" value={selectedRegion.branches} emphasis />
@@ -612,6 +751,11 @@ function RegionsWorkspace({
 
   return (
     <SectionShell eyebrow="Regions" title="Regional Footprint" description="Each region shows the manager, branch spread, consultant coverage, and top-line operating health.">
+      {derived ? (
+        <p className="mb-4 rounded-[16px] border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]">
+          No configured regions found. Showing regions inferred from current applications.
+        </p>
+      ) : null}
       <div className="space-y-4">
         {rows.map((row) => (
           <SummaryCard
@@ -638,12 +782,25 @@ function RegionsWorkspace({
 function BranchesWorkspace({
   rows = [],
   selectedBranch = null,
+  staleSelection = false,
   consultantRows = [],
   applicationRows = [],
+  derived = false,
   showRegionColumn = false,
   onSelectBranch = () => {},
   onBack = () => {},
 }) {
+  if (staleSelection) {
+    return (
+      <HierarchySelectionUnavailable
+        title="Branch no longer available."
+        description="This branch could not be found in the current organisation scope."
+        onBack={onBack}
+        backLabel="Back to Branches"
+      />
+    )
+  }
+
   if (!rows.length) {
     return (
       <SectionShell eyebrow="Branches" title="Branch Footprint" description="Branches will appear here once the hierarchy has been configured.">
@@ -661,6 +818,11 @@ function BranchesWorkspace({
           description="A branch detail view showing the manager, consultant roster, and file activity for this branch."
           action={<BreadcrumbButton onClick={onBack}>Back to all branches</BreadcrumbButton>}
         >
+          {derived ? (
+            <p className="mb-4 rounded-[16px] border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]">
+              No configured branches found. Showing branches inferred from current applications.
+            </p>
+          ) : null}
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             {showRegionColumn ? <SummaryMetric label="Region" value={selectedBranch.region || 'Unassigned'} emphasis /> : null}
             <SummaryMetric label="Manager" value={selectedBranch.manager || 'Unassigned'} emphasis />
@@ -699,6 +861,11 @@ function BranchesWorkspace({
 
   return (
     <SectionShell eyebrow="Branches" title="Branch Network" description="Branches show operational load, branch manager ownership, and the state of the current book.">
+      {derived ? (
+        <p className="mb-4 rounded-[16px] border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]">
+          No configured branches found. Showing branches inferred from current applications.
+        </p>
+      ) : null}
       <div className="space-y-4">
         {rows.map((row) => (
           <SummaryCard
@@ -722,7 +889,18 @@ function BranchesWorkspace({
   )
 }
 
-function ConsultantsWorkspace({ rows = [], branches = [], regions = [] }) {
+function ConsultantsWorkspace({
+  rows = [],
+  branches = [],
+  regions = [],
+  selectedConsultant = null,
+  staleSelection = false,
+  applicationRows = [],
+  inferredOwnership = false,
+  derived = false,
+  onSelectConsultant = () => {},
+  onBack = () => {},
+}) {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [regionId, setRegionId] = useState('all')
@@ -754,8 +932,53 @@ function ConsultantsWorkspace({ rows = [], branches = [], regions = [] }) {
     [branches],
   )
 
+  if (staleSelection) {
+    return (
+      <HierarchySelectionUnavailable
+        title="Consultant no longer available."
+        description="This consultant could not be found in the current organisation scope."
+        onBack={onBack}
+        backLabel="Back to Consultants"
+      />
+    )
+  }
+
+  if (selectedConsultant) {
+    return (
+      <div className="space-y-6">
+        <SectionShell
+          eyebrow="Consultant Workspace"
+          title={selectedConsultant.consultant}
+          description="Assigned applications, workload, and the current performance pulse for this consultant."
+          action={<BreadcrumbButton onClick={onBack}>Back to all consultants</BreadcrumbButton>}
+        >
+          {inferredOwnership ? (
+            <p className="mb-4 rounded-[16px] border border-[#dbeafe] bg-[#eff6ff] px-4 py-3 text-sm text-[#1d4ed8]">
+              Application ownership is partially inferred from current assignment data.
+            </p>
+          ) : null}
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <SummaryMetric label="Region" value={selectedConsultant.region || 'Unassigned'} emphasis />
+            <SummaryMetric label="Branch" value={selectedConsultant.branch || 'Unassigned'} emphasis />
+            <SummaryMetric label="Active Applications" value={selectedConsultant.activeApplications} emphasis />
+            <SummaryMetric label="Approval Rate" value={formatPercent(selectedConsultant.approvalRate)} emphasis />
+            <SummaryMetric label="Avg Lead Time" value={formatLeadTime(selectedConsultant.avgLeadTime)} emphasis />
+            <SummaryMetric label="Current Workload" value={selectedConsultant.pendingDocs} emphasis />
+          </div>
+        </SectionShell>
+
+        <OrganisationApplicationsTable rows={applicationRows} showBranchColumn showRegionColumn />
+      </div>
+    )
+  }
+
   return (
     <SectionShell eyebrow="Consultants" title="Consultant Directory" description="Card view with quick filtering by region, branch, and workload state.">
+      {derived ? (
+        <p className="mb-4 rounded-[16px] border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]">
+          No configured consultants found. Showing consultants inferred from current applications.
+        </p>
+      ) : null}
       <FilterBar
         searchPlaceholder="Search consultants..."
         searchValue={search}
@@ -811,6 +1034,14 @@ function ConsultantsWorkspace({ rows = [], branches = [], regions = [] }) {
               <SummaryMetric label="Approval" value={formatPercent(row.approvalRate)} emphasis />
             </div>
             <p className="mt-4 text-sm text-[#60758d]">Last activity: {row.lastActivity}</p>
+            <button
+              type="button"
+              onClick={() => onSelectConsultant(row)}
+              className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#24518a] transition hover:text-[#17324d]"
+            >
+              Open consultant
+              <ArrowRight size={14} />
+            </button>
           </article>
         ))}
         {!filteredRows.length ? <BondEmptyState compact title="No consultants match these filters." description="Try a wider region or branch filter." /> : null}
@@ -839,7 +1070,7 @@ export default function BondOrganisationPage({
     }
     setState((previous) => ({ ...previous, loading: true, error: '' }))
     try {
-      const snapshot = await service.getBondOrganisationSnapshot(workspaceContext, workspaceId)
+      const snapshot = await service.getBondOrganisationSnapshot(workspaceContext, workspaceId, { includeDemoRows: false })
       setState({ loading: false, error: '', snapshot })
     } catch (error) {
       setState({
@@ -857,20 +1088,29 @@ export default function BondOrganisationPage({
 
   const snapshot = state.snapshot
   const tabs = snapshot?.tabs || FALLBACK_ORGANISATION_TABS
-  const selectedView = resolveRouteView(location, tabs)
+  const selectedView = resolveRouteView(location)
   const params = useMemo(() => new URLSearchParams(location.search), [location.search])
   const selectedRegionId = normalizeText(params.get('regionId'))
   const selectedBranchId = normalizeText(params.get('branchId'))
+  const selectedConsultantId = normalizeText(params.get('consultantId'))
   const canManageOrganisation = scopeCanManage(snapshot)
+  const canRenderSelectedView = canAccessOrganisationView(selectedView, snapshot)
 
   const selectedRegion = useMemo(
-    () => (snapshot?.regionPerformance || []).find((row) => normalizeText(row.id) === selectedRegionId) || null,
+    () => resolveSelectedHierarchyRow(selectedRegionId, snapshot?.regionPerformance || [], ['region', 'name']),
     [selectedRegionId, snapshot?.regionPerformance],
   )
   const selectedBranch = useMemo(
-    () => (snapshot?.branchPerformance || []).find((row) => normalizeText(row.id) === selectedBranchId) || null,
+    () => resolveSelectedHierarchyRow(selectedBranchId, snapshot?.branchPerformance || [], ['branch', 'name']),
     [selectedBranchId, snapshot?.branchPerformance],
   )
+  const selectedConsultant = useMemo(
+    () => resolveSelectedHierarchyRow(selectedConsultantId, snapshot?.consultantPerformance || [], ['consultant', 'name', 'email']),
+    [selectedConsultantId, snapshot?.consultantPerformance],
+  )
+  const selectedRegionMissing = hasStaleHierarchySelection(selectedRegionId, selectedRegion)
+  const selectedBranchMissing = hasStaleHierarchySelection(selectedBranchId, selectedBranch)
+  const selectedConsultantMissing = hasStaleHierarchySelection(selectedConsultantId, selectedConsultant)
   const regionBranches = useMemo(
     () => (!selectedRegion ? [] : (snapshot?.branchPerformance || []).filter((row) => normalizeText(row.regionId) === normalizeText(selectedRegion.id))),
     [selectedRegion, snapshot?.branchPerformance],
@@ -883,6 +1123,56 @@ export default function BondOrganisationPage({
     () => (!selectedBranch ? [] : (snapshot?.applications || []).filter((row) => normalizeText(row.branchId || row.workspaceUnitId) === normalizeText(selectedBranch.id))),
     [selectedBranch, snapshot?.applications],
   )
+  const consultantApplicationMatches = useMemo(
+    () => getConsultantApplicationMatches(selectedConsultant, snapshot?.applications || []),
+    [selectedConsultant, snapshot?.applications],
+  )
+  const viewKpis = useMemo(() => {
+    if (!snapshot) return { items: [] }
+    if (selectedView === 'regions') {
+      const subject = selectedRegion || snapshot?.kpis || {}
+      return {
+        items: [
+          { key: 'regions', label: 'Regions', value: selectedRegion ? 1 : (snapshot?.kpis?.regions || 0), icon: Network },
+          { key: 'branches', label: 'Branches', value: selectedRegion ? subject.branches || 0 : (snapshot?.kpis?.branches || 0), icon: Building2 },
+          { key: 'consultants', label: 'Consultants', value: selectedRegion ? subject.consultants || 0 : (snapshot?.kpis?.consultants || 0), icon: Users },
+          { key: 'activeApplications', label: 'Active Applications', value: selectedRegion ? subject.activeApplications || 0 : (snapshot?.kpis?.activeApplications || 0), icon: FileText },
+        ],
+      }
+    }
+    if (selectedView === 'branches') {
+      const subject = selectedBranch || snapshot?.kpis || {}
+      return {
+        items: [
+          { key: 'branches', label: 'Branches', value: selectedBranch ? 1 : (snapshot?.kpis?.branches || 0), icon: Building2 },
+          { key: 'consultants', label: 'Consultants', value: selectedBranch ? subject.consultants || 0 : (snapshot?.kpis?.consultants || 0), icon: Users },
+          { key: 'activeApplications', label: 'Active Applications', value: selectedBranch ? subject.activeApplications || 0 : (snapshot?.kpis?.activeApplications || 0), icon: FileText },
+          { key: 'avgLeadTime', label: 'Avg Lead Time', value: formatLeadTime(selectedBranch ? subject.avgLeadTime : snapshot?.kpis?.avgLeadTime), icon: Clock3 },
+        ],
+      }
+    }
+    if (selectedView === 'consultants') {
+      const subject = selectedConsultant || snapshot?.kpis || {}
+      return {
+        items: [
+          { key: 'consultants', label: 'Consultants', value: selectedConsultant ? 1 : (snapshot?.kpis?.consultants || 0), icon: Users },
+          { key: 'activeApplications', label: 'Active Applications', value: selectedConsultant ? subject.activeApplications || 0 : (snapshot?.kpis?.activeApplications || 0), icon: FileText },
+          { key: 'approvalRate', label: 'Approval Rate', value: formatPercent(selectedConsultant ? subject.approvalRate : snapshot?.kpis?.approvalRate), icon: ShieldCheck },
+          { key: 'avgLeadTime', label: 'Avg Lead Time', value: formatLeadTime(selectedConsultant ? subject.avgLeadTime : snapshot?.kpis?.avgLeadTime), icon: Clock3 },
+        ],
+      }
+    }
+    return {
+      items: [
+        { key: 'regions', label: 'Regions', value: snapshot?.kpis?.regions || 0, icon: Network },
+        { key: 'branches', label: 'Branches', value: snapshot?.kpis?.branches || 0, icon: Building2 },
+        { key: 'consultants', label: 'Consultants', value: snapshot?.kpis?.consultants || 0, icon: Users },
+        { key: 'activeApplications', label: 'Active Applications', value: snapshot?.kpis?.activeApplications || 0, icon: FileText },
+        { key: 'approvalRate', label: 'Approval Rate', value: formatPercent(snapshot?.kpis?.approvalRate), icon: ShieldCheck },
+        { key: 'avgLeadTime', label: 'Avg Lead Time', value: formatLeadTime(snapshot?.kpis?.avgLeadTime), icon: Clock3 },
+      ],
+    }
+  }, [selectedBranch, selectedConsultant, selectedRegion, selectedView, snapshot])
 
   function handleViewChange(nextView) {
     navigate(getBondOrganisationRouteForTab(nextView))
@@ -894,6 +1184,10 @@ export default function BondOrganisationPage({
 
   function openBranch(branch) {
     navigate(getBondOrganisationRouteForTab('branches', { branchId: branch.id }))
+  }
+
+  function openConsultant(consultant) {
+    navigate(getBondOrganisationRouteForTab('consultants', { consultantId: consultant.id }))
   }
 
   function openSettings() {
@@ -925,15 +1219,20 @@ export default function BondOrganisationPage({
         view={selectedView}
         regionTitle={selectedView === 'regions' ? selectedRegion?.region || '' : ''}
         branchTitle={selectedView === 'branches' ? selectedBranch?.branch || '' : ''}
+        consultantTitle={selectedView === 'consultants' ? selectedConsultant?.consultant || '' : ''}
         navigate={navigate}
       />
 
       {snapshot ? (
         <>
-          <OrganisationKpiStrip kpis={snapshot.kpis} />
+          {selectedView === 'overview' ? <OrganisationKpiStrip kpis={viewKpis} /> : canRenderSelectedView ? <OrganisationKpiStrip kpis={viewKpis} /> : null}
           <BondViewTabs tabs={tabs} value={selectedView} counts={snapshot?.counts || {}} onChange={handleViewChange} />
 
-          {selectedView === 'overview' ? (
+          {!canRenderSelectedView ? (
+            <OrganisationViewUnavailable view={selectedView} />
+          ) : null}
+
+          {canRenderSelectedView && selectedView === 'overview' ? (
             <>
               <OperationalHealth items={snapshot.operationalHealth} />
               <OrganisationHierarchy tree={snapshot.hierarchyTree} canManage={canManageOrganisation} />
@@ -941,38 +1240,49 @@ export default function BondOrganisationPage({
             </>
           ) : null}
 
-          {selectedView === 'regions' ? (
+          {canRenderSelectedView && selectedView === 'regions' ? (
             <RegionsWorkspace
               rows={snapshot.regionPerformance || []}
               selectedRegion={selectedRegion}
+              staleSelection={selectedRegionMissing}
               branchRows={regionBranches}
+              derived={Boolean(snapshot?.derivedSources?.regions)}
               onSelectRegion={openRegion}
               onSelectBranch={openBranch}
               onBack={() => handleViewChange('regions')}
             />
           ) : null}
 
-          {selectedView === 'branches' ? (
+          {canRenderSelectedView && selectedView === 'branches' ? (
             <BranchesWorkspace
               rows={snapshot.branchPerformance || []}
               selectedBranch={selectedBranch}
+              staleSelection={selectedBranchMissing}
               consultantRows={branchConsultants}
               applicationRows={branchApplications}
+              derived={Boolean(snapshot?.derivedSources?.branches)}
               showRegionColumn={snapshot.showRegionColumn}
               onSelectBranch={openBranch}
               onBack={() => handleViewChange('branches')}
             />
           ) : null}
 
-          {selectedView === 'consultants' ? (
+          {canRenderSelectedView && selectedView === 'consultants' ? (
             <ConsultantsWorkspace
               rows={snapshot.consultantPerformance || []}
               branches={snapshot.branches || []}
               regions={snapshot.regions || []}
+              selectedConsultant={selectedConsultant}
+              staleSelection={selectedConsultantMissing}
+              applicationRows={consultantApplicationMatches.rows}
+              inferredOwnership={consultantApplicationMatches.inferred}
+              derived={Boolean(snapshot?.derivedSources?.consultants)}
+              onSelectConsultant={openConsultant}
+              onBack={() => handleViewChange('consultants')}
             />
           ) : null}
 
-          {selectedView === 'applications' ? (
+          {canRenderSelectedView && selectedView === 'applications' ? (
             <OrganisationApplicationsTable
               rows={snapshot.applications}
               showBranchColumn={snapshot.showBranchColumn}

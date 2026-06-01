@@ -152,6 +152,26 @@ try {
   try {
     const service = await server.ssrLoadModule('/src/services/bondCommandCenterService.js')
 
+    const demoRows = [
+      { transaction: { id: 'demo-1', transaction_reference: 'APP-DEMO-1' }, buyer: { name: 'Buyer A' }, isDemo: true },
+      { transaction: { id: 'real-1', transaction_reference: 'APP-001' }, buyer: { name: 'Buyer B' } },
+      { transaction: { id: 'demo-2', transaction_reference: 'APP-DEMO-2' }, buyer: { name: 'Buyer C' }, source: 'demo' },
+      { transaction: { id: 'demo-3', transaction_reference: 'APP-DEMO-3' }, buyer: { name: 'Buyer D' }, source: 'mock' },
+      { transaction: { id: 'demo-4', transaction_reference: 'APP-DEMO-4' }, buyer: { name: 'Buyer E' }, synthetic: true },
+      { transaction: { id: 'demo-5', transaction_reference: 'APP-DEMO-5' }, buyer: { name: 'Buyer F' }, __demo: true },
+      { transaction: { id: 'real-2', transaction_reference: 'APP-002' }, buyer: { name: 'Demo Buyer Legacy' } },
+    ]
+
+    assert.equal(service.isDemoBondApplication(demoRows[0]), true)
+    assert.equal(service.isDemoBondApplication(demoRows[2]), true)
+    assert.equal(service.isDemoBondApplication(demoRows[3]), true)
+    assert.equal(service.isDemoBondApplication(demoRows[4]), true)
+    assert.equal(service.isDemoBondApplication(demoRows[5]), true)
+    assert.equal(service.isDemoBondApplication(demoRows[6]), true)
+    assert.equal(service.isDemoBondApplication(demoRows[1]), false)
+    assert.equal(service.filterDemoBondApplications(demoRows, { includeDemoRows: false }).map((row) => row.transaction.id).join(','), 'real-1')
+    assert.equal(service.filterDemoBondApplications(demoRows, { includeDemoRows: true }).length, demoRows.length)
+
     const consultant = makeContext({
       userId: '11111111-1111-4111-8111-111111111111',
       workspaceRole: 'consultant',

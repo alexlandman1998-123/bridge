@@ -245,6 +245,36 @@ function formatCurrency(value) {
   }).format(amount)
 }
 
+export function isDemoBondApplication(row = {}) {
+  const transactionId = normalizeLower(row?.transaction?.id || row?.transactionId || row?.id)
+  const transactionReference = normalizeLower(row?.transaction?.transaction_reference || row?.transactionReference || row?.reference)
+  const source = normalizeLower(row?.source || row?.transaction?.source)
+  const buyerName = normalizeLower(row?.buyer?.name || row?.buyerName || row?.client || row?.clientName)
+
+  return Boolean(
+    row?.isDemo ||
+      row?.demo ||
+      row?.__demo ||
+      row?.synthetic ||
+      row?.transaction?.isDemo ||
+      row?.transaction?.demo ||
+      row?.transaction?.__demo ||
+      source === 'demo' ||
+      source === 'mock' ||
+      transactionId.startsWith('demo-') ||
+      transactionId.startsWith('mock-') ||
+      transactionReference.startsWith('demo') ||
+      transactionReference.startsWith('da-') ||
+      buyerName.startsWith('demo buyer'),
+  )
+}
+
+export function filterDemoBondApplications(rows = [], { includeDemoRows = true } = {}) {
+  const normalizedRows = Array.isArray(rows) ? rows.filter(Boolean) : []
+  if (includeDemoRows) return normalizedRows
+  return normalizedRows.filter((row) => !isDemoBondApplication(row))
+}
+
 function getBuyerName(row = {}) {
   return (
     normalizeText(row?.buyer?.name) ||
@@ -523,7 +553,28 @@ function buildExpandedBondRows(rows = [], targetCount = 48) {
       totalRequired,
       missingCount: Math.max(0, totalRequired - uploadedCount),
     }
-    expanded.push(template)
+    expanded.push({
+      ...template,
+      isDemo: true,
+      demo: true,
+      __demo: true,
+      source: 'demo',
+      synthetic: true,
+      transaction: {
+        ...(template.transaction || {}),
+        isDemo: true,
+        demo: true,
+        __demo: true,
+        source: 'demo',
+      },
+      buyer: {
+        ...(template.buyer || {}),
+        isDemo: true,
+        demo: true,
+        __demo: true,
+        source: 'demo',
+      },
+    })
   }
 
   return expanded
@@ -600,7 +651,10 @@ async function resolveBondRows(user = {}, workspaceId = '', options = {}) {
     rows = includeDemoRows ? buildBondDemoRows(fetchedRows || []) : fetchedRows || []
   }
 
-  return uniqueByTransaction(buildExpandedBondRows(getVisibleRows(user, rows, options), 48))
+  const visibleRows = getVisibleRows(user, rows, options)
+  const filteredRows = filterDemoBondApplications(visibleRows, { includeDemoRows })
+  const resolvedRows = includeDemoRows ? buildExpandedBondRows(filteredRows, 48) : filteredRows
+  return uniqueByTransaction(resolvedRows)
 }
 
 function getPriorityRowsByKey(rows = [], key = '') {

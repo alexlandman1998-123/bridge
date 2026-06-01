@@ -600,13 +600,45 @@ function buildMockSubprocess(processType, ownerType, transactionId, steps) {
   }
 }
 
+function markDemoRow(row = {}, overrides = {}) {
+  const source = row?.source || overrides.source || 'demo'
+  return {
+    ...row,
+    ...overrides,
+    isDemo: true,
+    demo: true,
+    __demo: true,
+    source,
+    synthetic: Boolean(overrides.synthetic || row?.synthetic),
+    transaction: row?.transaction
+      ? {
+          ...row.transaction,
+          isDemo: true,
+          demo: true,
+          __demo: true,
+          source: row.transaction.source || source,
+        }
+      : row?.transaction || null,
+    buyer: row?.buyer
+      ? {
+          ...row.buyer,
+          isDemo: true,
+          demo: true,
+          __demo: true,
+          source: row.buyer.source || source,
+        }
+      : row?.buyer || null,
+  }
+}
+
 function mergeDemoRows(liveRows = [], demoRows = [], { minRows = demoRows.length } = {}) {
   const normalizedLiveRows = Array.isArray(liveRows) ? liveRows.filter(Boolean) : []
   if (!MOCK_DATA_ENABLED) {
     return normalizedLiveRows
   }
-  const merged = [...demoRows]
-  const seenIds = new Set(demoRows.map((row) => row?.transaction?.id).filter(Boolean))
+  const normalizedDemoRows = (Array.isArray(demoRows) ? demoRows : []).map((row) => markDemoRow(row))
+  const merged = [...normalizedDemoRows]
+  const seenIds = new Set(normalizedDemoRows.map((row) => row?.transaction?.id).filter(Boolean))
 
   for (const row of normalizedLiveRows) {
     const transactionId = row?.transaction?.id
@@ -621,7 +653,7 @@ function mergeDemoRows(liveRows = [], demoRows = [], { minRows = demoRows.length
     for (const row of ATTORNEY_MOCK_ROWS) {
       const transactionId = row?.transaction?.id
       if (!transactionId || seenIds.has(transactionId)) continue
-      merged.push(row)
+      merged.push(markDemoRow(row))
       seenIds.add(transactionId)
       if (merged.length >= minRows) break
     }
