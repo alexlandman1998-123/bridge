@@ -389,7 +389,7 @@ const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_LEGACY =
 const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_MIN =
   'id, private_listing_id, requirement_key, status, is_required, created_at, updated_at'
 const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS =
-  'id, private_listing_id, requirement_id, document_type, document_name, storage_path, file_url, uploaded_by, status, visibility, canonical_requirement_instance_id, uploaded_at, created_at, updated_at'
+  'id, private_listing_id, requirement_id, document_type, category, document_name, storage_path, file_url, uploaded_by, status, visibility, canonical_requirement_instance_id, uploaded_at, created_at, updated_at'
 const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_LEGACY =
   'id, private_listing_id, requirement_id, document_type, document_name, status, uploaded_at, created_at'
 const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_MIN =
@@ -539,9 +539,12 @@ function normalizeDocumentRows(rows = []) {
       private_listing_id: normalizeText(row?.private_listing_id || row?.privateListingId || ''),
       requirement_id: normalizeText(row?.requirement_id || ''),
       document_type: normalizeText(row?.document_type || row?.documentType || ''),
+      category: normalizeText(row?.category || row?.document_category || ''),
       document_name: normalizeText(row?.document_name || row?.file_name || ''),
+      file_name: normalizeText(row?.document_name || row?.file_name || ''),
       storage_path: normalizeText(row?.storage_path || ''),
       file_url: normalizeText(row?.file_url || ''),
+      fileUrl: normalizeText(row?.file_url || ''),
       uploaded_by: normalizeText(row?.uploaded_by || ''),
       status: normalizeText(row?.status || 'uploaded'),
       visibility: normalizeText(row?.visibility || row?.document_visibility || 'seller_visible'),
@@ -586,6 +589,47 @@ function stripUnsupportedPortalColumns(payload = {}) {
   return next
 }
 
+function extractQuickAddMandateDates(value = '') {
+  const mandateLine = String(value || '')
+    .split('\n')
+    .map((line) => normalizeText(line))
+    .find((line) => line.toLowerCase().startsWith('mandate:'))
+  if (!mandateLine) return { startDate: '', endDate: '' }
+
+  const rangePart = mandateLine.split('·').map((part) => normalizeText(part))[2] || ''
+  const [startRaw = '', endRaw = ''] = rangePart.split('→').map((part) => normalizeText(part))
+  return {
+    startDate: startRaw === '-' ? '' : startRaw,
+    endDate: endRaw === '-' ? '' : endRaw,
+  }
+}
+
+function isMandateDocumentRow(row = {}) {
+  const searchable = [
+    row?.document_type,
+    row?.category,
+    row?.document_name,
+  ].map((value) => normalizeKey(value)).join(' ')
+  return searchable.includes('mandate')
+}
+
+async function enrichPrivateListingDocumentRows(client, rows = []) {
+  const normalizedRows = normalizeDocumentRows(rows)
+  return Promise.all(
+    normalizedRows.map(async (row) => {
+      const signedUrl = row.storage_path ? await createPrivateListingDocumentSignedUrl(client, row.storage_path) : ''
+      const resolvedUrl = row.file_url || signedUrl || ''
+      return {
+        ...row,
+        fileName: row.file_name || row.document_name,
+        fileUrl: resolvedUrl,
+        signedUrl,
+        url: resolvedUrl,
+      }
+    }),
+  )
+}
+
 function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByListingId = null, documentsByListingId = null) {
   if (!row) return null
   const onboarding = onboardingByListingId ? onboardingByListingId.get(String(row.id || '')) || null : null
@@ -627,6 +671,25 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   const onboardingFeatures = Array.isArray(onboardingFormData.features)
     ? onboardingFormData.features.map((item) => normalizeText(item)).filter(Boolean)
     : []
+  const quickAddMandateDates = extractQuickAddMandateDates(row.internal_listing_notes || row.description)
+  const primaryMandateDocument = documentRows.find((documentRow) => isMandateDocumentRow(documentRow)) || null
+  const mandateSignedDate = pickFirstText(
+    onboardingFormData.mandateSignedDate,
+    primaryMandateDocument?.uploaded_at,
+  )
+  const mandateStartDate = pickFirstText(
+    onboardingFormData.listingDate,
+    quickAddMandateDates.startDate,
+  )
+  const mandateEndDate = pickFirstText(
+    onboardingFormData.expiryDate,
+    quickAddMandateDates.endDate,
+  )
+  const mandateDocumentUrl = pickFirstText(
+    primaryMandateDocument?.url,
+    primaryMandateDocument?.fileUrl,
+    primaryMandateDocument?.file_url,
+  )
 
   const mapped = {
     id: row.id,
@@ -747,9 +810,9 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
       notes: onboardingNotes,
       coverImageId,
       floorplans,
-      mandateSignedDate: onboardingFormData.mandateSignedDate || '',
-      listingDate: onboardingFormData.listingDate || '',
-      expiryDate: onboardingFormData.expiryDate || '',
+      mandateSignedDate,
+      listingDate: mandateStartDate,
+      expiryDate: mandateEndDate,
       property24ListingUrl: row.property24_listing_url || onboardingFormData.property24ListingUrl || '',
       property24Reference: row.property24_reference || onboardingFormData.property24Reference || '',
       property24Status: row.property24_status || onboardingFormData.property24Status || 'not_published',
@@ -761,8 +824,21 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     },
     documentRequirements: requirementRows,
     documents: documentRows,
-    mandateStartDate: null,
-    mandateEndDate: null,
+    mandateSignedDate,
+    mandateStartDate: mandateStartDate || null,
+    mandateEndDate: mandateEndDate || null,
+    signedMandateUrl: mandateDocumentUrl,
+    mandateSignedUrl: mandateDocumentUrl,
+    mandateUrl: mandateDocumentUrl,
+    mandate: {
+      status: normalizeStatus(row.mandate_status, MANDATE_STATUSES, 'not_started'),
+      signedAt: mandateSignedDate || null,
+      startDate: mandateStartDate || null,
+      endDate: mandateEndDate || null,
+      signedUrl: mandateDocumentUrl,
+      documentUrl: mandateDocumentUrl,
+      updatedAt: primaryMandateDocument?.uploaded_at || row.updated_at || row.created_at || null,
+    },
     seller: {
       name: '',
       email: '',
@@ -1083,7 +1159,7 @@ async function fetchDocumentRowsForListings(client, listingIds = []) {
   if (query.schemaIncompatible) return new Map()
   if (query.error) throw query.error
 
-  const rows = normalizeDocumentRows(query.data)
+  const rows = await enrichPrivateListingDocumentRows(client, query.data)
   const map = new Map()
   for (const row of rows) {
     const listingId = String(row.private_listing_id || '')
@@ -1647,7 +1723,7 @@ export async function getPrivateListingDocuments(listingId) {
     if (!isMissingColumnError(query.error)) throw query.error
     return []
   }
-  return normalizeDocumentRows(query.data)
+  return enrichPrivateListingDocumentRows(client, query.data)
 }
 
 function hydrateListingWithRequirementData(listing = {}, requirements = [], documents = []) {

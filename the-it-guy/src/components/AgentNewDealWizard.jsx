@@ -99,13 +99,22 @@ function isDealEligibleListing(listing) {
   const status = getListingStatus(listing)
   const visibility = normalizeKey(listing?.listingVisibility || listing?.listing_visibility)
   if (visibility === 'archived') return false
-  if (['withdrawn', 'deleted', 'archived', 'sold', 'cancelled', 'transaction_created'].includes(status)) return false
-  const activeStatus = ['active', 'active_market', 'listing_active', 'live'].includes(status)
-  const hasProperty = Boolean(getListingAddress(listing))
-  const seller = getListingSeller(listing)
-  const hasSeller = Boolean(seller.name || seller.email || seller.phone)
-  const hasAgent = Boolean(getListingAssignedAgent(listing))
-  return activeStatus && hasProperty && hasSeller && hasAgent
+  const inactiveStatuses = ['withdrawn', 'deleted', 'archived', 'sold', 'cancelled', 'transaction_created']
+  if (inactiveStatuses.includes(status)) return false
+  const activeStatuses = [
+    'active',
+    'active_market',
+    'available',
+    'listed',
+    'listing_active',
+    'live',
+    'for_sale',
+    'on_market',
+    'marketed',
+    'published',
+  ]
+  if (!status) return true
+  return activeStatuses.includes(status)
 }
 
 function getListingAddress(listing) {
