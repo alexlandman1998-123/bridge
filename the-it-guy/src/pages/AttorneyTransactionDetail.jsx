@@ -5516,7 +5516,7 @@ function AttorneyTransactionDetail() {
                       </Button>
                     </div>
                   </form>
-                  <div className="space-y-3">
+                  <div className="max-h-[540px] space-y-3 overflow-y-auto pr-2">
                     {overviewConversationEntries.map((entry) => {
                       const meta = entry.meta || getActivityCategoryMeta(entry.category)
                       const isSystemEntry = entry.kind === 'system'
@@ -6339,7 +6339,7 @@ function AttorneyTransactionDetail() {
                   </div>
                 </div>
 
-                <div className="px-4 py-5">
+                <div className="max-h-[72vh] overflow-y-auto px-4 py-5 pr-3">
                   {groupedActivityFeed.map((group) => (
                     <div key={group.label} className="mb-6 last:mb-0">
                       <div className="mb-4 flex items-center gap-3">

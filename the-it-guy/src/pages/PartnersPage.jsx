@@ -904,52 +904,55 @@ export default function PartnersPage() {
         selectInviteOrganisation={selectInviteOrganisation}
       />
 
-      <section className="rounded-[8px] border border-[#d9e4ef] bg-white p-5 shadow-[0_16px_38px_rgba(15,23,42,0.06)] sm:p-6">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#7890aa]">Partners</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] text-[#10243a]">Partners</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">Manage trusted partner organisations, invitations, and referrals.</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsInviteModalOpen(true)}
-            className="inline-flex h-10 items-center gap-2 rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white hover:bg-[#173a5e]"
-          >
-            <InviteIcon size={15} /> Invite Partner
-          </button>
+      {snapshot?.source === 'demo' || error || message ? (
+        <div className="mb-5 space-y-3">
+          {snapshot?.source === 'demo' ? (
+            <p className="rounded-[8px] border border-[#f0dfb8] bg-[#fff9ec] px-4 py-3 text-sm font-semibold text-[#8a5a12]">
+              Demo partner data is shown until the Partners migration is available in this environment.
+            </p>
+          ) : null}
+          {error ? <p className="rounded-[8px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-semibold text-[#b42318]">{error}</p> : null}
+          {message ? <p className="rounded-[8px] border border-[#cfe8dc] bg-[#f1fbf6] px-4 py-3 text-sm font-semibold text-[#17613d]">{message}</p> : null}
         </div>
+      ) : null}
 
-        {snapshot?.source === 'demo' ? (
-          <p className="mt-4 rounded-[8px] border border-[#f0dfb8] bg-[#fff9ec] px-4 py-3 text-sm font-semibold text-[#8a5a12]">
-            Demo partner data is shown until the Partners migration is available in this environment.
-          </p>
-        ) : null}
-        {error ? <p className="mt-4 rounded-[8px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-semibold text-[#b42318]">{error}</p> : null}
-        {message ? <p className="mt-4 rounded-[8px] border border-[#cfe8dc] bg-[#f1fbf6] px-4 py-3 text-sm font-semibold text-[#17613d]">{message}</p> : null}
-      </section>
-
-      <section className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Active Partners" value={formatNumber(metrics.activePartners)} subtext={`${formatNumber(metrics.preferredPartners)} preferred`} />
         <MetricCard label="Invite Acceptance" value={`${formatNumber(metrics.inviteAcceptanceRate)}%`} subtext={`${formatNumber(metrics.newPartnerGrowth)} new in 30 days`} />
         <MetricCard label="Shared Deals" value={formatNumber(metrics.activeSharedDeals)} subtext={`${formatNumber(metrics.completedDeals)} completed registrations`} />
         <MetricCard label="Referral Influence" value={formatCurrency(metrics.revenueInfluenced)} subtext={`${formatNumber(metrics.referralConversionRate)}% conversion`} />
       </section>
 
-      <nav className="mt-5 flex gap-2 overflow-x-auto rounded-[8px] border border-[#dbe5f0] bg-white p-1.5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
-        {TABS.map((tab) => (
+      <section className="mt-5 rounded-[24px] border border-[#d9e3ee] bg-[rgba(248,251,254,0.94)] p-3 shadow-[0_14px_28px_rgba(15,23,42,0.1)] backdrop-blur-md md:p-4">
+        <div className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_220px]">
+          <nav className="grid gap-2 md:grid-cols-2 xl:grid-cols-4" role="tablist" aria-label="Partner workspace sections">
+            {TABS.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`inline-flex min-h-[54px] w-full items-center justify-center rounded-[16px] border px-4 py-2.5 text-center text-sm font-semibold transition duration-150 ease-out ${
+                  activeTab === tab.key
+                    ? 'border-[#c8daef] bg-[#274c69] text-white shadow-[0_10px_22px_rgba(15,23,42,0.14)]'
+                    : 'border-[#e5edf6] bg-white text-[#4f647a] hover:border-[#d2deea] hover:bg-[#f9fbfd]'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+
           <button
-            key={tab.key}
             type="button"
-            onClick={() => setActiveTab(tab.key)}
-            className={`h-10 shrink-0 rounded-[8px] px-3 text-sm font-semibold transition ${
-              activeTab === tab.key ? 'bg-[#10243a] text-white' : 'text-[#52677f] hover:bg-[#f6f8fb] hover:text-[#10243a]'
-            }`}
+            onClick={() => setIsInviteModalOpen(true)}
+            className="inline-flex min-h-[54px] w-full items-center justify-center gap-2 rounded-[16px] border border-[#c8daef] bg-[#10243a] px-5 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(15,23,42,0.14)] transition hover:bg-[#173a5e] xl:min-w-[220px]"
           >
-            {tab.label}
+            <InviteIcon size={16} /> Invite Partner
           </button>
-        ))}
-      </nav>
+        </div>
+      </section>
 
       {loading ? (
         <section className="mt-5 rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm font-semibold text-[#60758d]">

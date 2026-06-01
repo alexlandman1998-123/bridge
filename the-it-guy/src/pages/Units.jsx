@@ -1286,9 +1286,9 @@ function Units() {
 
   async function executeDeleteTransaction(row) {
     const transactionId = row?.transaction?.id
-    const unitId = row?.unit?.id
+    const unitId = row?.unit?.id || row?.transaction?.unit_id || null
 
-    if (!transactionId || !unitId) {
+    if (!transactionId) {
       return false
     }
 
@@ -1297,7 +1297,9 @@ function Units() {
       setDeletingTransactionId(transactionId)
       await deleteTransactionEverywhere({ transactionId, unitId })
       setRows((previous) => previous.filter((item) => item?.transaction?.id !== transactionId))
-      setSelectedUnitIds((previous) => previous.filter((selectedId) => selectedId !== unitId))
+      if (unitId) {
+        setSelectedUnitIds((previous) => previous.filter((selectedId) => selectedId !== unitId))
+      }
       window.dispatchEvent(new Event('itg:transaction-updated'))
       await loadData()
       return true
@@ -1311,8 +1313,7 @@ function Units() {
 
   function requestDeleteTransaction(row, { closeEditorAfterDelete = false } = {}) {
     const transactionId = row?.transaction?.id
-    const unitId = row?.unit?.id
-    if (!transactionId || !unitId) {
+    if (!transactionId) {
       return
     }
 
