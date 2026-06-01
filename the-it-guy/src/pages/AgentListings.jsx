@@ -1004,6 +1004,27 @@ function AgentListings({ initialTab = null } = {}) {
           setError('Organisation context is missing. Reload and try again.')
           return
         }
+        const sellerDisplayName = [sellerName, sellerSurname].filter(Boolean).join(' ').trim()
+        const sellerCanonicalFacts = {
+          sellerName: sellerDisplayName,
+          name: sellerDisplayName,
+          fullName: sellerDisplayName,
+          firstName: sellerName,
+          lastName: sellerSurname,
+          email: sellerEmail,
+          sellerEmail: sellerEmail,
+          phone: sellerPhone,
+          mobile: sellerPhone,
+        }
+        const sellerUpdatePayload = {
+          sellerCanonicalFacts,
+          sellerCanonicalFactReadiness: {
+            sellerName: Boolean(sellerDisplayName),
+            sellerEmail: Boolean(sellerEmail),
+            sellerPhone: Boolean(sellerPhone),
+          },
+          sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
+        }
         const created = await createPrivateListing({
           organisationId,
           branchId: resolvedBranchId || null,
@@ -1052,12 +1073,14 @@ function AgentListings({ initialTab = null } = {}) {
             return null
           })
           if (!uploadedMandate) {
+            await updatePrivateListing(created.listing.id, sellerUpdatePayload, { includeRequirementsAndDocuments: false }).catch(() => null)
             setError('Listing was created, but the signed mandate upload failed. Open the listing and upload the mandate again.')
             window.dispatchEvent(new Event('itg:listings-updated'))
             return
           }
-          await updatePrivateListing(created.listing.id, { mandateStatus: 'signed' }, { includeRequirementsAndDocuments: false })
+          sellerUpdatePayload.mandateStatus = 'signed'
         }
+        await updatePrivateListing(created.listing.id, sellerUpdatePayload, { includeRequirementsAndDocuments: false }).catch(() => null)
         await createPrivateListingActivity({
           privateListingId: created.listing.id,
           activityType: 'quick_add_listing_created',

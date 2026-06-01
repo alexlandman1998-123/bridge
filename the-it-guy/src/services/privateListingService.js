@@ -916,6 +916,110 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   }
 }
 
+function mapPrivateListingSummaryRow(row = {}) {
+  const canonicalSellerFacts =
+    row?.seller_canonical_facts_json && typeof row.seller_canonical_facts_json === 'object'
+      ? row.seller_canonical_facts_json
+      : {}
+  const listingStatus = mapLegacyListingStatusToCanonicalStatus(row.listing_status || row.status)
+  const addressLine1 = row.address_line_1 || ''
+  const addressLine2 = row.address_line_2 || ''
+
+  return {
+    id: row.id,
+    organisationId: row.organisation_id || null,
+    branchId: row.branch_id || null,
+    assignedAgentId: row.assigned_agent_id || null,
+    sellerLeadId: row.seller_lead_id || null,
+    sellerProfileId: row.seller_profile_id || null,
+    propertyProfileId: row.property_profile_id || null,
+    listingReference: row.listing_reference || '',
+    listingStatus,
+    listingVisibility: normalizeStatus(row.listing_visibility, LISTING_VISIBILITY, 'internal'),
+    listingSource: normalizeListingSource(row.listing_source || row.stock_source || row.listing_category, { fallback: 'private_listing' }),
+    propertyCategory: normalizePropertyCategory(row.property_category || row.property_type, { fallback: 'residential' }),
+    propertyStructureType: normalizePropertyStructureType(row.property_structure_type || row.ownership_structure || row.property_type, { fallback: 'other' }),
+    propertyType: row.property_type || '',
+    listingCategory: row.listing_category || 'private_sale',
+    title: row.title || '',
+    description: '',
+    askingPrice: Number(row.asking_price || 0) || 0,
+    estimatedValue: Number(row.estimated_value || 0) || 0,
+    addressLine1,
+    addressLine2,
+    suburb: row.suburb || '',
+    city: row.city || '',
+    province: row.province || '',
+    postalCode: row.postal_code || '',
+    sellerType: row.seller_type || '',
+    financeContext: row.finance_context || '',
+    mandateType: row.mandate_type || 'sole',
+    mandateStatus: normalizeStatus(row.mandate_status, MANDATE_STATUSES, 'not_started'),
+    sellerOnboardingStatus: normalizeStatus(row.seller_onboarding_status, SELLER_ONBOARDING_STATUSES, 'not_started'),
+    isActive: Boolean(row.is_active),
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+    createdBy: row.created_by || null,
+    updatedBy: row.updated_by || null,
+    listingTitle: row.title || row.address_line_1 || 'Untitled listing',
+    propertyAddress: [addressLine1, addressLine2].filter(Boolean).join(', '),
+    status: listingStatus,
+    listingStatusLegacy: listingStatus,
+    lifecycleStatus: listingStatus,
+    lifecycleStatusLabel: getPrivateListingStatusLabel(listingStatus),
+    lifecycleStatusDescription: getPrivateListingStatusDescription(listingStatus),
+    lifecycleStatusGroup: getPrivateListingStatusGroup(listingStatus),
+    lifecycleNextAction: getPrivateListingLifecycleNextAction({ ...row, listingStatus }),
+    property24ListingUrl: row.property24_listing_url || '',
+    property24Reference: row.property24_reference || '',
+    property24Status: row.property24_status || 'not_published',
+    privatePropertyListingUrl: row.private_property_listing_url || '',
+    privatePropertyReference: row.private_property_reference || '',
+    privatePropertyStatus: row.private_property_status || 'not_published',
+    bridgeListingStatus: row.bridge_listing_status || 'not_published',
+    bridgeListingPublicUrl: row.bridge_listing_public_url || '',
+    documents: [],
+    documentRequirements: [],
+    requirements: [],
+    requirementsByType: {},
+    property24StatusRows: [],
+    listingPreviewDescription: row.listing_preview_description || '',
+    internalListingNotes: row.internal_listing_notes || '',
+    activeDeal: null,
+    seller: {
+      name: '',
+      email: '',
+      phone: '',
+    },
+    sellerOnboarding: {
+      status: normalizeStatus(row.seller_onboarding_status, SELLER_ONBOARDING_STATUSES, 'not_started'),
+      canonicalFacts: canonicalSellerFacts,
+      canonicalFactReadiness: row.seller_canonical_fact_readiness_json && typeof row.seller_canonical_fact_readiness_json === 'object'
+        ? row.seller_canonical_fact_readiness_json
+        : {},
+      formData: {},
+    },
+    sellerCanonicalFacts: canonicalSellerFacts,
+    sellerCanonicalFactReadiness:
+      row.seller_canonical_fact_readiness_json && typeof row.seller_canonical_fact_readiness_json === 'object'
+        ? row.seller_canonical_fact_readiness_json
+        : {},
+    completeness: {
+      isDraft: false,
+      hasMandate: ['signed', 'approved', 'verified', 'completed'].includes(normalizeKey(row.mandate_status)),
+      hasSellerDocs: false,
+      hasSellerOnboarding: false,
+    },
+    readinessSummary: {
+      isDraft: false,
+      hasMandate: ['signed', 'approved', 'verified', 'completed'].includes(normalizeKey(row.mandate_status)),
+      hasSellerDocs: false,
+      hasSellerOnboarding: false,
+      missing: [],
+    },
+  }
+}
+
 async function fetchOrganisationBrandingSnapshot(client, organisationId) {
   const normalizedOrganisationId = normalizeUuid(organisationId)
   if (!client || !normalizedOrganisationId) return null
@@ -1372,6 +1476,19 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
   if (payload.sellerLeadId !== undefined) patch.seller_lead_id = normalizeLeadLink(payload.sellerLeadId)
   if (payload.originatingCrmLeadId !== undefined) patch.originating_crm_lead_id = normalizeLeadLink(payload.originatingCrmLeadId)
   if (payload.sellerProfileId !== undefined) patch.seller_profile_id = normalizeUuid(payload.sellerProfileId)
+  if (payload.sellerCanonicalFacts !== undefined) {
+    patch.seller_canonical_facts_json = payload.sellerCanonicalFacts && typeof payload.sellerCanonicalFacts === 'object'
+      ? payload.sellerCanonicalFacts
+      : null
+  }
+  if (payload.sellerCanonicalFactReadiness !== undefined) {
+    patch.seller_canonical_fact_readiness_json = payload.sellerCanonicalFactReadiness && typeof payload.sellerCanonicalFactReadiness === 'object'
+      ? payload.sellerCanonicalFactReadiness
+      : {}
+  }
+  if (payload.sellerCanonicalFactsUpdatedAt !== undefined) {
+    patch.seller_canonical_facts_updated_at = payload.sellerCanonicalFactsUpdatedAt || null
+  }
   if (payload.propertyProfileId !== undefined) patch.property_profile_id = normalizeUuid(payload.propertyProfileId)
   if (payload.listingReference !== undefined) patch.listing_reference = normalizeNullableText(payload.listingReference)
   if (payload.listingStatus !== undefined) patch.listing_status = normalizeStatus(payload.listingStatus, LISTING_STATUSES, 'seller_lead')
@@ -1419,11 +1536,18 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
     isMissingColumnError(updateQuery.error, 'property_category') ||
     isMissingColumnError(updateQuery.error, 'listing_source') ||
     isMissingColumnError(updateQuery.error, 'property_structure_type') ||
+    isMissingColumnError(updateQuery.error, 'seller_canonical_facts_json') ||
+    isMissingColumnError(updateQuery.error, 'seller_canonical_fact_readiness_json') ||
+    isMissingColumnError(updateQuery.error, 'seller_canonical_facts_updated_at') ||
     hasMissingPrivateListingPortalColumn(updateQuery.error)
   )) {
+    const compatiblePatch = { ...patch }
+    delete compatiblePatch.seller_canonical_facts_json
+    delete compatiblePatch.seller_canonical_fact_readiness_json
+    delete compatiblePatch.seller_canonical_facts_updated_at
     updateQuery = await client
       .from('private_listings')
-      .update(stripUnsupportedPortalColumns(stripUnsupportedTaxonomyColumns(patch)))
+      .update(stripUnsupportedPortalColumns(stripUnsupportedTaxonomyColumns(compatiblePatch)))
       .eq('id', normalizedId)
       .select('*')
       .single()
@@ -1672,6 +1796,49 @@ export async function getAgentPrivateListings(
     fetchDocumentRowsForListings(client, listingIds),
   ])
   return rows.map((row) => mapPrivateListingRow(row, onboardingMap, requirementsMap, documentsMap)).filter(Boolean)
+}
+
+export async function getAgentPrivateListingSummaries(
+  agentId,
+  {
+    organisationId = null,
+    includeAllOrganisationListings = false,
+    assignedAgentEmail = '',
+  } = {},
+) {
+  const client = requireClient()
+  const normalizedAgentId = normalizeUuid(agentId)
+  const normalizedOrgId = normalizeUuid(organisationId)
+  const normalizedAgentEmail = normalizeText(assignedAgentEmail).toLowerCase()
+  if (!includeAllOrganisationListings && !normalizedAgentId && !normalizedAgentEmail) return []
+
+  const queryBuilder = applyVisiblePrivateListingFilters(
+    client
+      .from('private_listings')
+      .select('id, listing_reference, listing_status, listing_visibility, seller_onboarding_status, mandate_status, asking_price, estimated_value, title, address_line_1, address_line_2, suburb, city, province, postal_code, seller_type, finance_context, mandate_type, property_category, property_type, property_structure_type, listing_category, listing_source, stock_source, seller_canonical_facts_json, seller_canonical_fact_readiness_json, seller_lead_id, seller_profile_id, property_profile_id, organisation_id, branch_id, assigned_agent_id, created_at, updated_at'),
+  )
+
+  if (normalizedOrgId) {
+    queryBuilder.eq('organisation_id', normalizedOrgId)
+  }
+  if (!includeAllOrganisationListings) {
+    if (normalizedAgentId && normalizedAgentEmail) {
+      const escapedEmail = String(normalizedAgentEmail).replace(/"/g, '\\"')
+      queryBuilder.or(`assigned_agent_id.eq.${normalizedAgentId},assigned_agent_email.eq."${escapedEmail}"`)
+    } else if (normalizedAgentId) {
+      queryBuilder.eq('assigned_agent_id', normalizedAgentId)
+    } else {
+      queryBuilder.eq('assigned_agent_email', normalizedAgentEmail)
+    }
+  }
+
+  const query = await queryBuilder.order('updated_at', { ascending: false })
+  if (query.error) {
+    if (isMissingTableError(query.error, 'private_listings')) return []
+    throw query.error
+  }
+  const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => !isDeletedPrivateListingRow(row))
+  return rows.map((row) => mapPrivateListingSummaryRow(row)).filter(Boolean)
 }
 
 export async function createPrivateListingActivity(payload = {}) {

@@ -1,5 +1,5 @@
 import { CheckCircle2, ExternalLink } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createTransactionFromWizard, fetchDevelopmentOptions, fetchUnitsForTransactionSetup } from '../lib/api'
 import { readAgentPrivateListings, writeAgentPrivateListings } from '../lib/agentListingStorage'
@@ -10,7 +10,7 @@ import {
 } from '../lib/preferredPartners'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
-import { getAgentPrivateListings } from '../services/privateListingService'
+import { getAgentPrivateListingSummaries, getAgentPrivateListings } from '../services/privateListingService'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
 
@@ -124,7 +124,11 @@ function getListingCity(listing) {
 }
 
 function getListingSeller(listing) {
-  const facts = listing?.sellerCanonicalFacts || listing?.sellerOnboarding?.canonicalFacts || listing?.sellerOnboarding?.formData || {}
+  const facts = listing?.sellerCanonicalFacts
+    || listing?.seller_canonical_facts_json
+    || listing?.sellerOnboarding?.canonicalFacts
+    || listing?.sellerOnboarding?.formData
+    || {}
   const seller = listing?.seller || {}
   const firstName = normalizeText(facts.firstName || facts.sellerFirstName || facts.name)
   const lastName = normalizeText(facts.lastName || facts.sellerLastName || facts.surname)
@@ -140,6 +144,13 @@ function getListingSeller(listing) {
     email: normalizeText(seller.email || facts.email || facts.sellerEmail),
     phone: normalizeText(seller.phone || facts.phone || facts.mobile || facts.sellerPhone),
   }
+}
+
+function getListingSellerLabel(listing) {
+  const listingMandateSigned = getListingMandateReady(listing)
+  const seller = getListingSeller(listing)
+  const sellerLabel = seller.name || (listingMandateSigned ? 'Seller details missing' : 'Seller details pending')
+  return `${sellerLabel} · ${listingMandateSigned ? 'Mandate signed' : 'Mandate pending'}`
 }
 
 function getListingMandateReady(listing) {
@@ -291,9 +302,8 @@ function deriveDealTermsFromSelection({ propertyMode, listing = null, unit = nul
 function formatListingDealOption(listing) {
   const title = getListingTitle(listing)
   const address = getListingAddress(listing)
-  const seller = getListingSeller(listing).name || 'Seller pending'
-  const primary = title && address && title !== address ? `${title}, ${address}` : title || address || 'Active listing'
-  return `${primary} — ${seller}`
+  const propertyLabel = title && address && title !== address ? `${title}, ${address}` : title || address || 'Active listing'
+  return `${propertyLabel} · ${getListingSellerLabel(listing)}`
 }
 
 function mergeListings(...groups) {
@@ -458,6 +468,9 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
   const [createdDeal, setCreatedDeal] = useState(null)
   const [commissionPreview, setCommissionPreview] = useState(null)
   const [privateListings, setPrivateListings] = useState([])
+  const [propertyPickerListings, setPropertyPickerListings] = useState([])
+  const [isLoadingPropertyOptions, setIsLoadingPropertyOptions] = useState(false)
+  const [propertyOptionsError, setPropertyOptionsError] = useState('')
   const [pipelineRows, setPipelineRows] = useState([])
   const [developments, setDevelopments] = useState([])
   const [developmentUnits, setDevelopmentUnits] = useState([])
@@ -519,6 +532,65 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     bondAttorneyBuyerNotes: '',
   })
 
+  const loadPropertyPickerListings = useCallback(async () => {
+    const localListings = mergeListings(readAgentPrivateListings())
+    setPropertyPickerListings(localListings)
+    setPrivateListings((previous) => mergeListings(previous, localListings))
+    setPropertyOptionsError('')
+    setIsLoadingPropertyOptions(true)
+
+    if (!isSupabaseConfigured) {
+      setIsLoadingPropertyOptions(false)
+      return
+    }
+
+    const organisationId = normalizeText(workspace?.id)
+    const membershipRole = normalizeKey(currentMembership?.membershipRole || currentMembership?.workspaceRole || currentMembership?.role)
+    const hasOrganisationScope = Boolean(organisationId && organisationId !== 'all')
+    const includeAllOrganisationListings = hasOrganisationScope || agencyWorkflowMode === 'principal' || ['principal', 'owner', 'admin', 'hq'].includes(membershipRole)
+    const listingLookupConfig = {
+      organisationId,
+      includeAllOrganisationListings,
+      assignedAgentEmail: normalizeText(profile?.email),
+    }
+
+    try {
+      let remoteRows = []
+      let loadFailed = false
+      try {
+        remoteRows = await getAgentPrivateListingSummaries(profile?.id, listingLookupConfig)
+      } catch (error) {
+        console.warn('[Transactions] Property picker summary lookup failed.', error)
+        loadFailed = true
+      }
+      if (!remoteRows.length && !includeAllOrganisationListings && hasOrganisationScope) {
+        try {
+          remoteRows = await getAgentPrivateListingSummaries(profile?.id, {
+            ...listingLookupConfig,
+            includeAllOrganisationListings: true,
+          })
+          loadFailed = false
+        } catch (error) {
+          console.warn('[Transactions] Property picker summary fallback lookup failed.', error)
+          loadFailed = true
+        }
+      }
+      if (loadFailed) {
+        setPropertyOptionsError('Could not load properties. Try again.')
+      }
+      const merged = mergeListings(localListings, remoteRows)
+      setPropertyPickerListings(merged)
+      setPrivateListings((previous) => mergeListings(previous, remoteRows))
+      if (merged.length) {
+        setPropertyOptionsError('')
+      }
+    } catch (error) {
+      setPropertyOptionsError('Could not load properties. Try again.')
+    } finally {
+      setIsLoadingPropertyOptions(false)
+    }
+  }, [agencyWorkflowMode, currentMembership?.membershipRole, currentMembership?.workspaceRole, currentMembership?.role, isSupabaseConfigured, profile?.email, profile?.id, workspace?.id])
+
   useEffect(() => {
     if (!open) return
     setActiveStep('property')
@@ -532,6 +604,8 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     setPreferredPartnersError('')
     setPreferredPartners([])
     setPartnerSearch({ transferAttorney: '', bondOriginator: '', bondAttorney: '' })
+    setPropertyOptionsError('')
+    setIsLoadingPropertyOptions(true)
     setForm((previous) => ({
       ...previous,
       propertyMode: initialPrivateListingId ? PROPERTY_MODE_PRIVATE : previous.propertyMode,
@@ -541,66 +615,70 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     }))
     const localListings = mergeListings(readAgentPrivateListings())
     setPrivateListings(localListings)
+    setPropertyPickerListings(localListings)
     setPipelineRows(readPipelineRows())
 
     ;(async () => {
-      try {
-        let partnerRows = []
+      const setupPromise = (async () => {
         try {
-          partnerRows = await listOrganisationPreferredPartners()
-          setPreferredPartnersError('')
-        } catch (error) {
-          console.error('[Transactions] Unable to load agency preferred partners.', error)
-          setPreferredPartnersError('Could not load agency preferred partners. Try refreshing the page.')
-        }
-        const settingsPromise = isSupabaseConfigured
-          ? fetchOrganisationSettings().catch(() => null)
-          : Promise.resolve(null)
-        const [settingsContext, developmentRows] = await Promise.all([
-          settingsPromise,
-          isSupabaseConfigured ? fetchDevelopmentOptions() : Promise.resolve([]),
-        ])
-        setPreferredPartners(Array.isArray(partnerRows) ? partnerRows : [])
-        const organisationId = normalizeText(settingsContext?.organisation?.id || workspace?.id)
-        const membershipRole = normalizeKey(settingsContext?.membershipRole || currentMembership?.workspaceRole || currentMembership?.role)
-        const hasOrganisationScope = Boolean(organisationId && organisationId !== 'all')
-        const includeAllOrganisationListings = hasOrganisationScope || agencyWorkflowMode === 'principal' || ['principal', 'owner', 'admin', 'hq'].includes(membershipRole)
-        let remoteListings = []
-        if (isSupabaseConfigured) {
-          const listingLookupConfig = {
-            organisationId,
-            includeAllOrganisationListings,
-            assignedAgentEmail: normalizeText(profile?.email),
+          let partnerRows = []
+          try {
+            partnerRows = await listOrganisationPreferredPartners()
+            setPreferredPartnersError('')
+          } catch (error) {
+            console.error('[Transactions] Unable to load agency preferred partners.', error)
+            setPreferredPartnersError('Could not load agency preferred partners. Try refreshing the page.')
           }
-          remoteListings = await getAgentPrivateListings(profile?.id, listingLookupConfig).catch((error) => {
-            console.warn('[Transactions] Active listing lookup failed; using local listing cache.', error)
-            return []
+          const settingsPromise = isSupabaseConfigured
+            ? fetchOrganisationSettings().catch(() => null)
+            : Promise.resolve(null)
+          const [settingsContext, developmentRows] = await Promise.all([
+            settingsPromise,
+            isSupabaseConfigured ? fetchDevelopmentOptions() : Promise.resolve([]),
+          ])
+          setPreferredPartners(Array.isArray(partnerRows) ? partnerRows : [])
+          const organisationId = normalizeText(settingsContext?.organisation?.id || workspace?.id)
+          const membershipRole = normalizeKey(settingsContext?.membershipRole || currentMembership?.workspaceRole || currentMembership?.role)
+          const hasOrganisationScope = Boolean(organisationId && organisationId !== 'all')
+          const includeAllOrganisationListings = hasOrganisationScope || agencyWorkflowMode === 'principal' || ['principal', 'owner', 'admin', 'hq'].includes(membershipRole)
+          let remoteListings = []
+          if (isSupabaseConfigured) {
+            const listingLookupConfig = {
+              organisationId,
+              includeAllOrganisationListings,
+              assignedAgentEmail: normalizeText(profile?.email),
+            }
+            remoteListings = await getAgentPrivateListings(profile?.id, listingLookupConfig).catch((error) => {
+              console.warn('[Transactions] Active listing lookup failed; using local listing cache.', error)
+              return []
+            })
+            if (!remoteListings.length && !includeAllOrganisationListings && hasOrganisationScope) {
+              remoteListings = await getAgentPrivateListings(profile?.id, {
+                ...listingLookupConfig,
+                includeAllOrganisationListings: true,
+              }).catch(() => [])
+            }
+          }
+          setPrivateListings(mergeListings(localListings, remoteListings))
+          const email = String(profile?.email || '').trim().toLowerCase()
+          const filtered = (developmentRows || []).filter((row) => {
+            const assignedAgents = getDevelopmentTeamMembers(row?.stakeholder_teams, 'agents')
+            return email ? assignedAgents.some((item) => String(item.email || '').trim().toLowerCase() === email) : true
           })
-          if (!remoteListings.length && !includeAllOrganisationListings && hasOrganisationScope) {
-            remoteListings = await getAgentPrivateListings(profile?.id, {
-              ...listingLookupConfig,
-              includeAllOrganisationListings: true,
-            }).catch(() => [])
+          setDevelopments(filtered)
+          if (!isSupabaseConfigured) {
+            setDevelopmentUnits([])
           }
+        } catch (error) {
+          setSaveError(error?.message || 'Unable to load preferred partners and developments.')
         }
-        setPrivateListings(mergeListings(localListings, remoteListings))
-        const email = String(profile?.email || '').trim().toLowerCase()
-        const filtered = (developmentRows || []).filter((row) => {
-          const assignedAgents = getDevelopmentTeamMembers(row?.stakeholder_teams, 'agents')
-          return email ? assignedAgents.some((item) => String(item.email || '').trim().toLowerCase() === email) : true
-        })
-        setDevelopments(filtered)
-        if (!isSupabaseConfigured) {
-          setDevelopmentUnits([])
-        }
-      } catch (error) {
-        setSaveError(error?.message || 'Unable to load preferred partners and developments.')
-      } finally {
-        setLoading(false)
-        setPreferredPartnersLoading(false)
-      }
+      })()
+      const optionsPromise = loadPropertyPickerListings()
+      await Promise.allSettled([setupPromise, optionsPromise])
+      setLoading(false)
+      setPreferredPartnersLoading(false)
     })()
-  }, [agencyWorkflowMode, currentMembership?.role, currentMembership?.workspaceRole, open, profile?.email, profile?.id, initialDevelopmentId, initialPrivateListingId, workspace?.id])
+  }, [agencyWorkflowMode, currentMembership?.role, currentMembership?.workspaceRole, loadPropertyPickerListings, open, profile?.email, profile?.id, initialDevelopmentId, initialPrivateListingId, workspace?.id])
 
   useEffect(() => {
     if (!open || form.propertyMode !== PROPERTY_MODE_DEVELOPMENT || !form.developmentId || !isSupabaseConfigured) {
@@ -620,8 +698,11 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
   }, [open, form.propertyMode, form.developmentId])
 
   const selectedPrivateListing = useMemo(
-    () => privateListings.find((listing) => String(listing.id) === String(form.privateListingId)) || null,
-    [privateListings, form.privateListingId],
+    () =>
+      privateListings.find((listing) => String(listing.id) === String(form.privateListingId))
+      || propertyPickerListings.find((listing) => String(listing.id) === String(form.privateListingId))
+      || null,
+    [privateListings, propertyPickerListings, form.privateListingId],
   )
 
   const selectedDevelopment = useMemo(
@@ -1300,20 +1381,54 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                 <div className="grid gap-4 md:grid-cols-2">
                   {form.propertyMode === PROPERTY_MODE_PRIVATE ? (
                     <Field label="Active Listing" error={errors.privateListingId} fullWidth>
-	                      <select className={fieldClass()} value={form.privateListingId} onChange={(event) => updateField('privateListingId', event.target.value)}>
-	                        <option value="">Select active listing</option>
-	                        {privateListings.map((listing) => (
-	                          <option key={listing.id} value={listing.id}>
-	                            {formatListingDealOption(listing)}
-	                          </option>
-	                        ))}
-	                      </select>
-	                      {selectedPrivateListing && getListingMandateWarning(selectedPrivateListing) ? (
-	                        <span className="mt-2 block rounded-[12px] border border-[#f0d7a7] bg-[#fff8ea] px-3 py-2 text-xs font-semibold text-[#8a5b16]">
-	                          {getListingMandateWarning(selectedPrivateListing)}
-	                        </span>
-	                      ) : null}
-	                    </Field>
+                      <select
+                        className={fieldClass()}
+                        value={form.privateListingId}
+                        onChange={(event) => updateField('privateListingId', event.target.value)}
+                        disabled={isLoadingPropertyOptions}
+                      >
+                        <option value="">
+                          {isLoadingPropertyOptions
+                            ? 'Loading properties...'
+                            : propertyPickerListings.length
+                              ? 'Select active listing'
+                              : propertyOptionsError
+                                ? 'Unable to load properties'
+                                : 'No eligible properties found'}
+                        </option>
+                        {!isLoadingPropertyOptions &&
+                          !propertyOptionsError &&
+                          propertyPickerListings.map((listing) => (
+                            <option key={listing.id} value={listing.id}>
+                              {formatListingDealOption(listing)}
+                            </option>
+                          ))}
+                      </select>
+                      {propertyOptionsError ? (
+                        <p className="mt-1 text-xs text-[#b42318]">
+                          Could not load properties. Try again.
+                          <button
+                            type="button"
+                            className="ml-1 inline-flex rounded-sm text-[#1f4f78] underline"
+                            onClick={() => loadPropertyPickerListings()}
+                            disabled={isLoadingPropertyOptions}
+                          >
+                            Retry
+                          </button>
+                        </p>
+                      ) : null}
+                      {!propertyOptionsError && isLoadingPropertyOptions ? (
+                        <small className="mt-1 block text-xs text-[#6b7d93]">Refreshing properties...</small>
+                      ) : null}
+                      {selectedPrivateListing && getListingMandateWarning(selectedPrivateListing) ? (
+                        <span className="mt-2 block rounded-[12px] border border-[#f0d7a7] bg-[#fff8ea] px-3 py-2 text-xs font-semibold text-[#8a5b16]">
+                          {getListingMandateWarning(selectedPrivateListing)}
+                        </span>
+                      ) : null}
+                      {!isLoadingPropertyOptions && !propertyPickerListings.length && !propertyOptionsError ? (
+                        <small className="mt-2 block text-xs text-[#6b7d93]">Create a listing with a signed mandate before creating a transaction.</small>
+                      ) : null}
+                    </Field>
                   ) : form.propertyMode === PROPERTY_MODE_DEVELOPMENT ? (
                     <>
                       <Field label="Assigned Development" error={errors.developmentId}>
