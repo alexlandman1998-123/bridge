@@ -99,22 +99,9 @@ function isDealEligibleListing(listing) {
   const status = getListingStatus(listing)
   const visibility = normalizeKey(listing?.listingVisibility || listing?.listing_visibility)
   if (visibility === 'archived') return false
-  const inactiveStatuses = ['withdrawn', 'deleted', 'archived', 'sold', 'cancelled', 'transaction_created']
-  if (inactiveStatuses.includes(status)) return false
-  const activeStatuses = [
-    'active',
-    'active_market',
-    'available',
-    'listed',
-    'listing_active',
-    'live',
-    'for_sale',
-    'on_market',
-    'marketed',
-    'published',
-  ]
-  if (!status) return true
-  return activeStatuses.includes(status)
+  const inactiveStatuses = new Set(['withdrawn', 'deleted', 'archived', 'sold', 'cancelled', 'transaction_created'])
+  if (inactiveStatuses.has(status)) return false
+  return true
 }
 
 function getListingAddress(listing) {

@@ -22,8 +22,9 @@ async function main() {
     const tabsModule = await server.ssrLoadModule('/src/components/bond/BondViewTabs.jsx')
     const serviceModule = await server.ssrLoadModule('/src/services/bondCommandCenterService.js')
 
-    const bondNav = rolesModule.getRoleNavItems('bond_originator')
-    const consultantNav = permissionResolver.filterNavigationItems(bondNav, {
+    const defaultBondNav = rolesModule.getRoleNavItems('bond_originator')
+    const hqBondNav = rolesModule.getRoleNavItems('bond_originator', { membershipRole: 'bond_hq_manager' })
+    const consultantNav = permissionResolver.filterNavigationItems(defaultBondNav, {
       role: 'bond_originator',
       currentWorkspace: { id: 'workspace-1', type: 'bond_originator' },
       currentMembership: {
@@ -46,30 +47,40 @@ async function main() {
       ],
     })
     assert.deepEqual(
-      bondNav.map((item) => item.label),
-      ['Dashboard', 'Pipeline', 'Applications', 'Developments', 'Clients', 'Partners', 'Reports', 'Organisation', 'Settings'],
-    )
-    assert.equal(consultantNav.some((item) => item.key === 'settings'), true)
-    assert.deepEqual(
-      bondNav.filter((item) => item.navSection !== 'secondary').map((item) => item.label),
-      ['Dashboard', 'Pipeline', 'Applications', 'Developments', 'Clients', 'Partners', 'Reports', 'Organisation'],
+      defaultBondNav.map((item) => item.label),
+      ['Dashboard', 'My Applications', 'Clients', 'Tasks'],
     )
     assert.deepEqual(
-      bondNav.filter((item) => item.navSection === 'secondary').map((item) => item.label),
+      hqBondNav.map((item) => item.label),
+      ['Dashboard', 'Regions', 'Branches', 'Consultants', 'Applications', 'Partners', 'Reports', 'Settings'],
+    )
+    assert.equal(consultantNav.some((item) => item.key === 'settings'), false)
+    assert.deepEqual(
+      hqBondNav.filter((item) => item.navSection !== 'secondary').map((item) => item.label),
+      ['Dashboard', 'Regions', 'Branches', 'Consultants', 'Applications', 'Partners', 'Reports'],
+    )
+    assert.deepEqual(
+      hqBondNav.filter((item) => item.navSection === 'secondary').map((item) => item.label),
       ['Settings'],
     )
-    assert.equal(bondNav.find((item) => item.key === 'bond_pipeline')?.to, '/bond/pipeline')
-    assert.equal(bondNav.find((item) => item.key === 'applications')?.to, '/bond/applications')
-    assert.equal(bondNav.find((item) => item.key === 'bond_organisation')?.to, '/bond/organisation')
-    assert.equal(bondNav.some((item) => item.key === 'documents' || item.key === 'tasks' || item.key === 'bond_calendar'), false)
-    assert.equal(Boolean(bondNav.find((item) => item.key === 'clients')?.children?.length), false)
-    assert.ok(bondNav.every((item) => !Array.isArray(item.children) || item.children.length === 0))
-    assert.equal(bondNav.some((item) => item.key === 'banks' || item.key === 'teams' || item.key === 'performance'), false)
+    assert.equal(hqBondNav.find((item) => item.key === 'applications')?.to, '/bond/applications')
+    assert.equal(hqBondNav.find((item) => item.key === 'bond_regions')?.to, '/bond/organisation?view=regions')
+    assert.equal(hqBondNav.find((item) => item.key === 'bond_branches')?.to, '/bond/organisation?view=branches')
+    assert.equal(hqBondNav.find((item) => item.key === 'bond_consultants')?.to, '/bond/organisation?view=consultants')
+    assert.equal(hqBondNav.some((item) => item.key === 'documents' || item.key === 'tasks' || item.key === 'bond_calendar'), false)
+    assert.ok(hqBondNav.every((item) => !Array.isArray(item.children) || item.children.length === 0))
+    assert.equal(hqBondNav.some((item) => item.key === 'banks' || item.key === 'teams' || item.key === 'performance'), false)
 
     const appSource = require('node:fs').readFileSync(path.join(PROJECT_ROOT, 'src/App.jsx'), 'utf8')
     assert.match(appSource, /path="\/bond\/tasks"/)
     assert.match(appSource, /path="\/bond\/calendar"/)
     assert.match(appSource, /path="\/documents"/)
+
+    const sidebarSource = require('node:fs').readFileSync(path.join(PROJECT_ROOT, 'src/components/Sidebar.jsx'), 'utf8')
+    assert.match(sidebarSource, /bond_regions/)
+    assert.match(sidebarSource, /bond_branches/)
+    assert.match(sidebarSource, /bond_consultants/)
+    assert.match(sidebarSource, /'tasks'/)
 
     assert.deepEqual(
       viewsModule.bondViews.pipeline.tabs.map((tab) => tab.key),
