@@ -13,7 +13,8 @@ import { trackAuthMetric } from '../services/observability/monitoring'
 import { setActiveWorkspacePreference } from '../services/workspaceResolutionService'
 import { clearWorkspaceScopedRuntimeCaches } from '../services/workspaceScopedCache'
 
-const AUTH_BOOTSTRAP_TIMEOUT_MS = 15000
+const SESSION_BOOTSTRAP_TIMEOUT_MS = 15000
+const BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS = 45000
 
 const EMPTY_AUTH_STATE = Object.freeze({
   status: 'loading',
@@ -99,14 +100,14 @@ function createDevOnlyAuthState(devAuthRole) {
   }
 }
 
-async function withBootstrapTimeout(task) {
+async function withBootstrapTimeout(task, timeoutMs = SESSION_BOOTSTRAP_TIMEOUT_MS) {
   let timeoutId = null
   const timeoutError = new Error('Authentication bootstrap timed out. Please retry.')
   try {
     return await Promise.race([
       task,
       new Promise((_, reject) => {
-        timeoutId = window.setTimeout(() => reject(timeoutError), AUTH_BOOTSTRAP_TIMEOUT_MS)
+        timeoutId = window.setTimeout(() => reject(timeoutError), timeoutMs)
       }),
     ])
   } finally {
@@ -175,7 +176,7 @@ export function AuthSessionProvider({ children }) {
       setAuthState((previous) => ({ ...previous, status: 'loading', bootError: '' }))
       try {
         console.debug('[AUTH] session-bootstrap:start')
-        const { data, error } = await withBootstrapTimeout(supabase.auth.getSession())
+        const { data, error } = await withBootstrapTimeout(supabase.auth.getSession(), SESSION_BOOTSTRAP_TIMEOUT_MS)
         if (!active) return
         if (error) {
           if (isUnsupportedJwtAlgorithmError(error)) await clearSupabaseLocalAuthState()
@@ -264,10 +265,11 @@ export function AuthSessionProvider({ children }) {
           userId: session.user.id,
           selectedWorkspaceId: selectedWorkspaceId || null,
           attempt: bootAttempt + 1,
+          timeoutMs: BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS,
         })
         const nextState = await measureAsyncOperation(
           'auth_bridge_boot',
-          () => withBootstrapTimeout(loadBridgeAuthState({ session, selectedWorkspaceId })),
+          () => withBootstrapTimeout(loadBridgeAuthState({ session, selectedWorkspaceId }), BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS),
           { userId: session.user.id, route: typeof window !== 'undefined' ? window.location.pathname : '' },
         )
         if (!active) return

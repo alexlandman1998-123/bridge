@@ -20,6 +20,39 @@ function normalizeEmail(value) {
   return normalizeText(value).toLowerCase()
 }
 
+function getNowMs() {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now()
+  }
+  return Date.now()
+}
+
+function roundDuration(durationMs) {
+  return Math.round(Number(durationMs || 0))
+}
+
+async function runAuthBootStep(label, task, metadata = {}) {
+  const startedAt = getNowMs()
+  console.debug('[AUTH][BOOT] step:start', { label, ...metadata })
+  try {
+    const result = await task()
+    console.debug('[AUTH][BOOT] step:success', {
+      label,
+      durationMs: roundDuration(getNowMs() - startedAt),
+      ...metadata,
+    })
+    return result
+  } catch (error) {
+    console.error('[AUTH][BOOT] step:failed', {
+      label,
+      durationMs: roundDuration(getNowMs() - startedAt),
+      ...metadata,
+      error,
+    })
+    throw error
+  }
+}
+
 function isMissingTableError(error, tableName = '') {
   if (!error) return false
   const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
@@ -359,15 +392,28 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     }
   }
 
-  const { data: userData, error: userError } = await supabase.auth.getUser()
+  const { data: userData, error: userError } = await runAuthBootStep(
+    'auth.getUser',
+    () => supabase.auth.getUser(),
+  )
   if (userError) throw userError
   const user = userData?.user || session.user
   if (!user?.id) throw new Error('Authenticated Supabase user could not be resolved.')
 
-  const profile = await getOrCreateUserProfile({ user })
-  const loadedSignupIntent = await loadSignupIntentForUser({ user })
+  const [profile, loadedSignupIntent] = await Promise.all([
+    runAuthBootStep('profile.getOrCreate', () => getOrCreateUserProfile({ user }), {
+      userId: user.id,
+    }),
+    runAuthBootStep('signupIntent.load', () => loadSignupIntentForUser({ user }), {
+      userId: user.id,
+    }),
+  ])
   const signupIntent = loadedSignupIntent
-    ? await markSignupIntentReadyForOnboarding({ user, intent: loadedSignupIntent })
+    ? await runAuthBootStep(
+        'signupIntent.markReady',
+        () => markSignupIntentReadyForOnboarding({ user, intent: loadedSignupIntent }),
+        { userId: user.id },
+      )
     : null
   const appRole = normalizeCanonicalAppRole(profile?.role)
 
@@ -378,12 +424,19 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     })
   }
 
-  const workspaceResolution = await resolveCurrentWorkspace(user.id, {
-    client: supabase,
-    user,
-    profile,
-    requestedWorkspaceId: selectedWorkspaceId,
-  })
+  const workspaceResolution = await runAuthBootStep(
+    'workspace.resolveCurrentWorkspace',
+    () => resolveCurrentWorkspace(user.id, {
+      client: supabase,
+      user,
+      profile,
+      requestedWorkspaceId: selectedWorkspaceId,
+    }),
+    {
+      userId: user.id,
+      requestedWorkspaceId: normalizeText(selectedWorkspaceId) || null,
+    },
+  )
   const memberships = workspaceResolution.memberships
   const activeMemberships = workspaceResolution.activeMemberships
   const pendingMemberships = workspaceResolution.pendingMemberships
@@ -398,26 +451,34 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     activeMemberships,
     currentMembership,
   })
-  const onboardingState = await getOnboardingState(user.id, {
-    session,
-    user,
-    profile,
-    signupIntent,
-    appRole,
-    memberships,
-    activeMemberships,
-    pendingMemberships,
-    suspendedMemberships,
-    currentMembership,
-    currentWorkspace,
-    workspaceType,
-    workspaceRole: workspaceResolution.workspaceRole,
-    permissions: workspaceResolution.permissions,
-    workspaceResolution,
-    workspaceDiagnostics: workspaceResolution.diagnostics,
-    onboardingComplete: onboarding.onboardingComplete,
-    onboardingRequiredReason: onboarding.onboardingRequiredReason,
-  })
+  const onboardingState = await runAuthBootStep(
+    'onboarding.getOnboardingState',
+    () => getOnboardingState(user.id, {
+      session,
+      user,
+      profile,
+      signupIntent,
+      appRole,
+      memberships,
+      activeMemberships,
+      pendingMemberships,
+      suspendedMemberships,
+      currentMembership,
+      currentWorkspace,
+      workspaceType,
+      workspaceRole: workspaceResolution.workspaceRole,
+      permissions: workspaceResolution.permissions,
+      workspaceResolution,
+      workspaceDiagnostics: workspaceResolution.diagnostics,
+      onboardingComplete: onboarding.onboardingComplete,
+      onboardingRequiredReason: onboarding.onboardingRequiredReason,
+    }),
+    {
+      userId: user.id,
+      workspaceId: currentWorkspace?.id || null,
+      workspaceType,
+    },
+  )
   const engineRequiresSetup = Boolean(onboardingState?.recoveryReason) || (
     profile?.onboardingCompleted &&
     onboardingState?.validation &&
