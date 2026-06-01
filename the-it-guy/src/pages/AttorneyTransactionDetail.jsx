@@ -72,11 +72,12 @@ import {
   updateTransactionStakeholderContacts,
   uploadDocument,
 } from '../lib/api'
+import { buildSellerClientPortalLink } from '../lib/agentListingStorage'
 import { canAccessAttorneyMatter } from '../lib/attorneyPermissions'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partnersRepository'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
-import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
+import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 
 const ATTORNEY_WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
@@ -233,6 +234,53 @@ function normalizeTransactionKind(transaction) {
   if (['development', 'developer_sale'].includes(normalized)) return 'development'
   if (['private', 'private_property'].includes(normalized)) return 'private'
   return transaction?.development_id || transaction?.unit_id ? 'development' : 'private'
+}
+
+function cleanDetailText(value = '') {
+  return String(value || '').trim()
+}
+
+function cleanDetailEmail(value = '') {
+  return cleanDetailText(value).toLowerCase()
+}
+
+function buildDisplayName(...parts) {
+  return parts.map((value) => cleanDetailText(value)).filter(Boolean).join(' ').trim()
+}
+
+function resolveBuyerDisplayName({ buyer = null, transaction = null, onboardingFormData = null, participants = [] } = {}) {
+  const buyerParticipant = Array.isArray(participants) ? participants.find((participant) => participant?.roleType === 'buyer') : null
+  const candidateNames = [
+    cleanDetailText(buyer?.name),
+    cleanDetailText(buyer?.fullName),
+    cleanDetailText(transaction?.buyer_name),
+    cleanDetailText(transaction?.buyerName),
+    cleanDetailText(onboardingFormData?.buyerFullName),
+    cleanDetailText(onboardingFormData?.buyerName),
+    cleanDetailText(onboardingFormData?.fullName),
+    buildDisplayName(onboardingFormData?.buyerFirstName, onboardingFormData?.buyerLastName),
+    buildDisplayName(onboardingFormData?.firstName, onboardingFormData?.lastName),
+    cleanDetailText(buyerParticipant?.participantName),
+  ].filter(Boolean)
+  return candidateNames[0] || 'Buyer details pending'
+}
+
+function isBuyerDocumentRequirement(requirement = {}) {
+  const category = getAttorneyCategoryForRequiredDocument(requirement)
+  const groupKey = cleanDetailText(requirement?.groupKey || requirement?.group).toLowerCase()
+  const key = cleanDetailText(requirement?.key).toLowerCase()
+  if (category === 'Buyer FICA / Compliance') return true
+  if (groupKey.includes('buyer')) return true
+  return ['proof_of_funds', 'proof_of_income', 'bank_statements', 'bond_approval', 'grant_letter', 'payslips'].includes(key)
+}
+
+function isSellerDocumentRequirement(requirement = {}) {
+  const category = getAttorneyCategoryForRequiredDocument(requirement)
+  const groupKey = cleanDetailText(requirement?.groupKey || requirement?.group).toLowerCase()
+  const key = cleanDetailText(requirement?.key).toLowerCase()
+  if (category === 'Seller FICA / Compliance' || category === 'Clearance Documents') return true
+  if (groupKey.includes('seller')) return true
+  return key.startsWith('seller_') || key.includes('mandate') || key.includes('title_deed') || key.includes('clearance') || key.includes('rates') || key.includes('levy')
 }
 
 function normalizeLifecycleState(value) {
@@ -1304,11 +1352,8 @@ function MatterOverviewHeader({
   matterHealthLabel = 'On Track',
   daysActiveLabel = '',
   updatedLabel = '',
-  onAction,
+  actionButtons = [],
   isAgentView = false,
-  onboardingActionLabel = '',
-  onboardingActionBusy = false,
-  onOnboardingAction = null,
 }) {
   const currentStage = MATTER_STAGE_MILESTONES[Math.min(progressIndex, MATTER_STAGE_MILESTONES.length - 1)] || MATTER_STAGE_MILESTONES[0]
 
@@ -1345,16 +1390,12 @@ function MatterOverviewHeader({
               </div>
             </div>
             <div className="flex shrink-0 flex-wrap gap-2 xl:justify-end">
-              {onboardingActionLabel ? (
-                <Button type="button" onClick={onOnboardingAction || undefined} disabled={onboardingActionBusy}>
-                  <Send size={14} />
-                  {onboardingActionBusy ? 'Preparing...' : onboardingActionLabel}
+              {actionButtons.map((action) => (
+                <Button key={action.label} type="button" variant={action.variant || 'secondary'} onClick={action.onClick} disabled={action.disabled}>
+                  {action.icon ? createElement(action.icon, { size: 14 }) : null}
+                  {action.busy ? action.busyLabel || 'Preparing...' : action.label}
                 </Button>
-              ) : null}
-              <Button type="button" variant="secondary" onClick={onAction}>
-                <MoreHorizontal size={14} />
-                Actions
-              </Button>
+              ))}
             </div>
           </div>
         </section>
@@ -1431,10 +1472,6 @@ function MatterOverviewHeader({
               <strong className="mt-1 block text-sm text-textStrong">{matterHealthLabel}</strong>
               <span className="mt-1 block text-xs text-textMuted">{daysActiveLabel}{updatedLabel ? ` • Updated ${updatedLabel}` : ''}</span>
             </div>
-            <Button type="button" variant="secondary" onClick={onAction}>
-              <MoreHorizontal size={14} />
-              Actions
-            </Button>
           </div>
         </div>
       </section>
@@ -1950,6 +1987,7 @@ function AttorneyTransactionDetail() {
   const [onboardingModalOpen, setOnboardingModalOpen] = useState(false)
   const [onboardingActionMessage, setOnboardingActionMessage] = useState('')
   const [onboardingActionBusy, setOnboardingActionBusy] = useState(false)
+  const [sellerPortalBusy, setSellerPortalBusy] = useState(false)
   const [roleplayerConfirmOpen, setRoleplayerConfirmOpen] = useState(false)
   const [roleplayerConfirmError, setRoleplayerConfirmError] = useState('')
   const [roleplayerConfirmDraft, setRoleplayerConfirmDraft] = useState({
@@ -2265,6 +2303,46 @@ function AttorneyTransactionDetail() {
   )
   const transactionKind = normalizeTransactionKind(transaction)
   const isPrivateMatter = transactionKind === 'private'
+  const buyerDisplayName = useMemo(
+    () => resolveBuyerDisplayName({
+      buyer,
+      transaction,
+      onboardingFormData: data?.onboardingFormData || null,
+      participants: transactionParticipants,
+    }),
+    [buyer, data?.onboardingFormData, transaction, transactionParticipants],
+  )
+  const buyerEmail = useMemo(() => {
+    const buyerParticipant = transactionParticipants.find((participant) => participant?.roleType === 'buyer')
+    return cleanDetailEmail(
+      buyer?.email ||
+      roleplayerForm.buyerEmail ||
+      transaction?.buyer_email ||
+      transaction?.client_email ||
+      data?.onboardingFormData?.buyerEmail ||
+      data?.onboardingFormData?.email ||
+      buyerParticipant?.participantEmail ||
+      '',
+    )
+  }, [buyer?.email, data?.onboardingFormData, roleplayerForm.buyerEmail, transaction?.buyer_email, transaction?.client_email, transactionParticipants])
+  const sellerDisplayName = useMemo(() => {
+    const sellerParticipant = transactionParticipants.find((participant) => participant?.roleType === 'seller')
+    return (
+      cleanDetailText(transaction?.seller_name) ||
+      cleanDetailText(roleplayerForm.sellerName) ||
+      cleanDetailText(sellerParticipant?.participantName) ||
+      'Seller details pending'
+    )
+  }, [roleplayerForm.sellerName, transaction?.seller_name, transactionParticipants])
+  const sellerEmail = useMemo(() => {
+    const sellerParticipant = transactionParticipants.find((participant) => participant?.roleType === 'seller')
+    return cleanDetailEmail(
+      transaction?.seller_email ||
+      roleplayerForm.sellerEmail ||
+      sellerParticipant?.participantEmail ||
+      '',
+    )
+  }, [roleplayerForm.sellerEmail, transaction?.seller_email, transactionParticipants])
   const mainStageLabel = MAIN_STAGE_LABELS[mainStage] || toTitle(transaction?.stage || 'Available')
   const matterTypeLabel = isPrivateMatter ? 'Private Matter' : 'Development Matter'
   const onboardingLifecycleStatus = String(transaction?.onboarding_status || '').trim().toLowerCase()
@@ -2275,6 +2353,11 @@ function AttorneyTransactionDetail() {
     ['submitted', 'reviewed', 'approved'].includes(onboardingRecordStatus)
   const normalizedFinanceType = normalizeFinanceType(transaction?.finance_type, { allowUnknown: true })
   const hasCapturedFinancials = onboardingCompleted
+  const shouldShowDepositCard = useMemo(() => {
+    const reservationAmount = Number(transaction?.reservation_amount || 0)
+    const reservationRequired = Boolean(transaction?.reservation_required)
+    return transactionKind === 'development' && (reservationRequired || reservationAmount > 0)
+  }, [transaction?.reservation_amount, transaction?.reservation_required, transactionKind])
   const hasCapturedFinanceType = hasCapturedFinancials && normalizedFinanceType !== 'unknown'
   const financeTypeLabel = hasCapturedFinanceType ? toTitle(normalizedFinanceType) : 'Not captured'
   const isBondOrHybridFinance = hasCapturedFinanceType && isBondFinanceType(normalizedFinanceType)
@@ -2376,6 +2459,51 @@ function AttorneyTransactionDetail() {
     [documents],
   )
   const internalAttorneyDocumentCount = Math.max(0, documents.length - sharedAttorneyDocumentCount)
+  const requirementDocumentLookup = useMemo(() => {
+    const byCanonicalId = new Map()
+    const byDocumentId = new Map()
+    for (const document of documents) {
+      const linkedRequirement = getLinkedRequirementForDocument(document)
+      const canonicalId = getRequirementCanonicalId(linkedRequirement)
+      if (canonicalId && !byCanonicalId.has(String(canonicalId))) {
+        byCanonicalId.set(String(canonicalId), document)
+      }
+      if (document?.id && !byDocumentId.has(String(document.id))) {
+        byDocumentId.set(String(document.id), document)
+      }
+    }
+    return { byCanonicalId, byDocumentId }
+  }, [documents, getLinkedRequirementForDocument])
+  const buyerDocumentRows = useMemo(
+    () =>
+      requiredDocumentChecklist
+        .filter((requirement) => isBuyerDocumentRequirement(requirement))
+        .map((requirement) => {
+          const canonicalId = getRequirementCanonicalId(requirement)
+          const uploadedDocumentId = getRequirementDocumentId(requirement)
+          const linkedDocument =
+            (canonicalId ? requirementDocumentLookup.byCanonicalId.get(String(canonicalId)) : null) ||
+            (uploadedDocumentId ? requirementDocumentLookup.byDocumentId.get(String(uploadedDocumentId)) : null) ||
+            null
+          return { requirement, linkedDocument }
+        }),
+    [requiredDocumentChecklist, requirementDocumentLookup],
+  )
+  const sellerDocumentRows = useMemo(
+    () =>
+      requiredDocumentChecklist
+        .filter((requirement) => isSellerDocumentRequirement(requirement))
+        .map((requirement) => {
+          const canonicalId = getRequirementCanonicalId(requirement)
+          const uploadedDocumentId = getRequirementDocumentId(requirement)
+          const linkedDocument =
+            (canonicalId ? requirementDocumentLookup.byCanonicalId.get(String(canonicalId)) : null) ||
+            (uploadedDocumentId ? requirementDocumentLookup.byDocumentId.get(String(uploadedDocumentId)) : null) ||
+            null
+          return { requirement, linkedDocument }
+        }),
+    [requiredDocumentChecklist, requirementDocumentLookup],
+  )
   const uploadedByClientCount = useMemo(
     () => documents.filter((document) => String(document.uploaded_by_role || '').toLowerCase() === 'client').length,
     [documents],
@@ -3131,18 +3259,29 @@ function AttorneyTransactionDetail() {
   }
 
   const matterHeaderMetrics = useMemo(
-    () => [
-      { label: 'Purchase Price', value: formatCurrencyValue(displayPurchasePriceValue, 'Not captured'), icon: CircleDollarSign, tone: 'bg-emerald-50 text-emerald-700' },
-      { label: 'Finance Type', value: financeTypeLabel, icon: FileText, tone: 'bg-blue-50 text-blue-700' },
-      { label: 'Bond Amount', value: formatCurrencyValue(hasCapturedFinancials ? transaction?.bond_amount : 0, bondAmountFallback), icon: Building2, tone: 'bg-violet-50 text-violet-700' },
-      { label: 'Deposit', value: formatCurrencyValue(hasCapturedFinancials ? transaction?.deposit_amount : 0, 'Not captured'), icon: CircleDollarSign, tone: 'bg-amber-50 text-amber-700' },
-      { label: 'Target Registration', value: formatDate(transaction?.target_registration_date || transaction?.expected_transfer_date), icon: CalendarDays, tone: 'bg-sky-50 text-sky-700' },
-    ],
+    () => {
+      const metrics = [
+        { label: 'Purchase Price', value: formatCurrencyValue(displayPurchasePriceValue, 'Not captured'), icon: CircleDollarSign, tone: 'bg-emerald-50 text-emerald-700' },
+        { label: 'Finance Type', value: financeTypeLabel, icon: FileText, tone: 'bg-blue-50 text-blue-700' },
+        { label: 'Bond Amount', value: formatCurrencyValue(hasCapturedFinancials ? transaction?.bond_amount : 0, bondAmountFallback), icon: Building2, tone: 'bg-violet-50 text-violet-700' },
+        { label: 'Target Registration', value: formatDate(transaction?.target_registration_date || transaction?.expected_transfer_date), icon: CalendarDays, tone: 'bg-sky-50 text-sky-700' },
+      ]
+      if (shouldShowDepositCard) {
+        metrics.splice(3, 0, {
+          label: 'Deposit',
+          value: formatCurrencyValue(hasCapturedFinancials ? transaction?.deposit_amount : 0, 'Not captured'),
+          icon: CircleDollarSign,
+          tone: 'bg-amber-50 text-amber-700',
+        })
+      }
+      return metrics
+    },
     [
       bondAmountFallback,
       displayPurchasePriceValue,
       financeTypeLabel,
       hasCapturedFinancials,
+      shouldShowDepositCard,
       transaction?.bond_amount,
       transaction?.deposit_amount,
       transaction?.expected_transfer_date,
@@ -3590,6 +3729,77 @@ function AttorneyTransactionDetail() {
     return `${window.location.origin}/client/onboarding/${record.token}`
   }
 
+  async function resolveSellerPortalInviteContext() {
+    if (!transaction?.id) {
+      throw new Error('Seller portal link could not be generated.')
+    }
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error('Seller portal link could not be generated.')
+    }
+
+    let resolvedSellerEmail = sellerEmail
+    let resolvedSellerName = sellerDisplayName === 'Seller details pending' ? '' : sellerDisplayName
+    let sellerWorkspaceToken = ''
+    let listingId = ''
+
+    const contextQuery = await supabase
+      .from('client_portal_contexts')
+      .select('seller_workspace_token, client_email, listing_id, status, updated_at')
+      .eq('transaction_id', transaction.id)
+      .eq('context_type', 'selling')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (contextQuery.error && String(contextQuery.error?.code || '') !== '42P01') {
+      throw new Error('Seller portal link could not be generated.')
+    }
+
+    const contextRow = contextQuery.data || null
+    sellerWorkspaceToken = cleanDetailText(contextRow?.seller_workspace_token)
+    resolvedSellerEmail = resolvedSellerEmail || cleanDetailEmail(contextRow?.client_email)
+    listingId = cleanDetailText(contextRow?.listing_id)
+
+    if ((!sellerWorkspaceToken || !resolvedSellerEmail) && listingId) {
+      const onboardingQuery = await supabase
+        .from('private_listing_seller_onboarding')
+        .select('token, form_data, updated_at')
+        .eq('private_listing_id', listingId)
+        .maybeSingle()
+
+      if (onboardingQuery.error && String(onboardingQuery.error?.code || '') !== '42P01') {
+        throw new Error('Seller portal link could not be generated.')
+      }
+
+      const onboardingRow = onboardingQuery.data || null
+      const formData = onboardingRow?.form_data && typeof onboardingRow.form_data === 'object' ? onboardingRow.form_data : {}
+      sellerWorkspaceToken = sellerWorkspaceToken || cleanDetailText(onboardingRow?.token)
+      resolvedSellerEmail = resolvedSellerEmail || cleanDetailEmail(formData.sellerEmail || formData.email || formData.contactEmail)
+      resolvedSellerName =
+        resolvedSellerName ||
+        cleanDetailText(
+          buildDisplayName(formData.sellerFirstName || formData.firstName, formData.sellerSurname || formData.lastName) ||
+          formData.sellerName ||
+          formData.fullName,
+        )
+    }
+
+    if (!resolvedSellerEmail) {
+      throw new Error('Seller email is missing.')
+    }
+
+    const onboardingLink = buildSellerClientPortalLink(sellerWorkspaceToken)
+    if (!onboardingLink) {
+      throw new Error('Seller portal link could not be generated.')
+    }
+
+    return {
+      sellerEmail: resolvedSellerEmail,
+      sellerName: resolvedSellerName || 'Seller',
+      onboardingLink,
+    }
+  }
+
   async function sendBuyerOnboardingViaResend({ resend = false, source = 'agent_transaction_workspace' } = {}) {
     if (!transaction?.id) {
       throw new Error('Transaction data is not available for buyer onboarding.')
@@ -3735,12 +3945,12 @@ function AttorneyTransactionDetail() {
   async function handleAgentHeaderOnboardingAction() {
     const recipient = {
       roleLabel: onboardingCompleted ? 'Client portal' : 'Buyer',
-      name: buyer?.name || 'Buyer',
-      email: buyer?.email || '',
+      name: buyerDisplayName || 'Buyer',
+      email: buyerEmail,
     }
 
     if (!recipient.email) {
-      setOnboardingActionMessage('Add a buyer email before sending the onboarding or client portal link.')
+      setOnboardingActionMessage('Buyer email is missing.')
       setOnboardingModalOpen(true)
       return
     }
@@ -3753,21 +3963,63 @@ function AttorneyTransactionDetail() {
     try {
       setOnboardingActionBusy(true)
       setError('')
+      setOnboardingActionMessage('')
       const result = await sendBuyerOnboardingViaResend({
         resend: onboardingCompleted,
         source: onboardingCompleted ? 'agent_transaction_header_client_portal_resend' : 'agent_transaction_header_buyer_onboarding',
       })
       setOnboardingActionMessage(
         onboardingCompleted
-          ? `Client portal email sent to ${result?.recipientEmail || recipient.email}.`
+          ? 'Buyer portal link sent.'
           : `Buyer onboarding sent to ${result?.recipientEmail || recipient.email}.`,
       )
       await loadData({ background: true })
       window.dispatchEvent(new Event('itg:transaction-updated'))
     } catch (sendError) {
-      setError(sendError?.message || 'Unable to send the client link right now.')
+      setOnboardingActionMessage(sendError?.message || 'Could not send buyer portal link. Try again.')
     } finally {
       setOnboardingActionBusy(false)
+    }
+  }
+
+  async function handleSendSellerPortalLink() {
+    if (!sellerEmail) {
+      setOnboardingActionMessage('Seller email is missing.')
+      return
+    }
+
+    try {
+      setSellerPortalBusy(true)
+      setError('')
+      setOnboardingActionMessage('')
+
+      const inviteContext = await resolveSellerPortalInviteContext()
+      const response = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'seller_onboarding_link',
+          to: inviteContext.sellerEmail,
+          organisationId: cleanDetailText(workspaceOrganisationId),
+          sellerName: inviteContext.sellerName,
+          propertyTitle: cleanDetailText(propertyAddress || matterHeadline || 'your property'),
+          onboardingLink: inviteContext.onboardingLink,
+          agentName: cleanDetailText(transaction?.assigned_agent || profile?.fullName || profile?.name || profile?.email || 'Bridge'),
+        },
+      })
+      const responseError = response?.error || response?.data?.error
+      if (responseError) {
+        const parsedMessage = response?.error
+          ? await parseEdgeFunctionError(response.error, 'Could not send seller portal link. Try again.')
+          : typeof responseError === 'string'
+            ? responseError
+            : responseError?.message || 'Could not send seller portal link. Try again.'
+        throw new Error(parsedMessage)
+      }
+
+      setOnboardingActionMessage('Seller portal link sent.')
+    } catch (sendError) {
+      setOnboardingActionMessage(sendError?.message || 'Could not send seller portal link. Try again.')
+    } finally {
+      setSellerPortalBusy(false)
     }
   }
 
@@ -4447,7 +4699,7 @@ function AttorneyTransactionDetail() {
           </Link>
             <MatterOverviewHeader
               title={workspaceReference}
-              clientTitle={buyer?.name || transaction?.buyer_name || 'Client'}
+              clientTitle={buyerDisplayName}
               transactionReference={workspaceReference}
               transactionStageLabel={transferStageLabel}
               transaction={transaction}
@@ -4456,8 +4708,8 @@ function AttorneyTransactionDetail() {
               statusClassName={getLifecycleStateClasses(lifecycleState)}
               propertyLabel={isAgentTransactionView ? (propertyAddress || matterHeadline) : matterHeadline}
               subtitle={matterSubtitle}
-              buyerName={buyer?.name}
-              sellerName={transaction?.seller_name}
+              buyerName={buyerDisplayName}
+              sellerName={sellerDisplayName}
               agentName={transaction?.assigned_agent || getParticipantDisplayName(assignedAgent)}
               assignedFirms={matterAssignedFirms}
               metrics={matterHeaderMetrics}
@@ -4465,13 +4717,37 @@ function AttorneyTransactionDetail() {
               matterHealthLabel={matterHealthLabel}
               daysActiveLabel={daysBetween(transaction?.created_at)}
               updatedLabel={formatShortDayMonth(transaction?.updated_at || transaction?.created_at)}
-              onAction={() => void handleOpenRegistrationFlow()}
+              actionButtons={
+                isAgentTransactionView
+                  ? [
+                      {
+                        label: 'Resend Buyer Portal Link',
+                        busyLabel: 'Sending buyer link...',
+                        busy: onboardingActionBusy,
+                        disabled: onboardingActionBusy || !buyerEmail,
+                        onClick: () => void handleAgentHeaderOnboardingAction(),
+                        icon: Send,
+                      },
+                      {
+                        label: 'Send Seller Portal Link',
+                        busyLabel: 'Sending seller link...',
+                        busy: sellerPortalBusy,
+                        disabled: sellerPortalBusy || !sellerEmail,
+                        onClick: () => void handleSendSellerPortalLink(),
+                        icon: Send,
+                        variant: 'secondary',
+                      },
+                    ]
+                  : []
+              }
               isAgentView={isAgentTransactionView}
-              onboardingActionLabel={isAgentTransactionView ? (onboardingCompleted ? 'Resend Client Portal Link' : 'Send Buyer Onboarding') : ''}
-              onboardingActionBusy={onboardingActionBusy}
-              onOnboardingAction={() => void handleAgentHeaderOnboardingAction()}
             />
           <MatterWorkspaceTabs tabs={workspaceMenuTabs} activeTab={activeWorkspaceMenu} onChange={setWorkspaceMenu} premium={isAgentTransactionView} />
+          {onboardingActionMessage ? (
+            <p className="rounded-[14px] border border-borderDefault bg-surfaceAlt px-4 py-2.5 text-helper text-textMuted">
+              {onboardingActionMessage}
+            </p>
+          ) : null}
         </div>
       )}
     >
@@ -4911,6 +5187,94 @@ function AttorneyTransactionDetail() {
                     </article>
                   ))}
                 </div>
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+              <div className="grid gap-4 xl:grid-cols-2">
+                {[
+                  {
+                    title: 'Buyer Documents',
+                    subtitle: 'Buyer-side compliance, finance, and onboarding requirements.',
+                    rows: buyerDocumentRows,
+                    emptyLabel: 'No buyer document requirements are configured yet.',
+                  },
+                  {
+                    title: 'Seller Documents',
+                    subtitle: 'Seller-side compliance, mandate, and clearance requirements.',
+                    rows: sellerDocumentRows,
+                    emptyLabel: 'No seller document requirements are configured yet.',
+                  },
+                ].map((section) => (
+                  <article key={section.title} className="rounded-[18px] border border-[#dde4ee] bg-[#fbfdff] p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{section.title}</h3>
+                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{section.subtitle}</p>
+                      </div>
+                      <span className="inline-flex items-center rounded-full border border-[#d7e2ee] bg-white px-3 py-1 text-[0.68rem] font-semibold text-[#66758b]">
+                        {section.rows.length} item{section.rows.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      {section.rows.length ? (
+                        section.rows.map(({ requirement, linkedDocument }) => (
+                          <article key={getRequirementCanonicalId(requirement) || `${section.title}-${requirement.key}`} className="rounded-[14px] border border-[#dde4ee] bg-white px-4 py-3.5">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <strong className="block truncate text-sm font-semibold text-[#142132]">
+                                  {requirement.label || requirement.key || 'Document requirement'}
+                                </strong>
+                                <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                                  {linkedDocument?.name || 'No uploaded file yet'}
+                                </p>
+                              </div>
+                              <span className="inline-flex items-center rounded-full border border-[#d7e2ee] bg-[#f8fafc] px-3 py-1 text-[0.68rem] font-semibold text-[#66758b]">
+                                {getRequirementStatusLabel(requirement.status || linkedDocument?.status || 'missing')}
+                              </span>
+                            </div>
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-[#60758d]">
+                              <span>Last updated: {formatDateTime(linkedDocument?.updated_at || linkedDocument?.created_at || requirement?.updated_at || requirement?.created_at)}</span>
+                              <div className="flex flex-wrap gap-2">
+                                {linkedDocument?.url ? (
+                                  <a
+                                    href={linkedDocument.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-2 rounded-full border border-[#dde4ee] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
+                                  >
+                                    <FileText size={13} />
+                                    View
+                                  </a>
+                                ) : null}
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => {
+                                    setUploadDraft((previous) => ({
+                                      ...previous,
+                                      canonicalRequirementInstanceId: String(getRequirementCanonicalId(requirement) || ''),
+                                      requiredDocumentKey: requirement?.key || '',
+                                      category: getAttorneyCategoryForRequiredDocument(requirement),
+                                      file: null,
+                                    }))
+                                  }}
+                                >
+                                  {linkedDocument ? 'Replace' : 'Upload'}
+                                </Button>
+                              </div>
+                            </div>
+                          </article>
+                        ))
+                      ) : (
+                        <p className="rounded-[14px] border border-dashed border-[#d8e2ee] bg-white px-4 py-4 text-sm text-[#6b7d93]">
+                          {section.emptyLabel}
+                        </p>
+                      )}
+                    </div>
+                  </article>
+                ))}
               </div>
             </section>
 
