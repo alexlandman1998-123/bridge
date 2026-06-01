@@ -565,16 +565,24 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
         const membershipRole = normalizeKey(settingsContext?.membershipRole || currentMembership?.workspaceRole || currentMembership?.role)
         const hasOrganisationScope = Boolean(organisationId && organisationId !== 'all')
         const includeAllOrganisationListings = hasOrganisationScope || agencyWorkflowMode === 'principal' || ['principal', 'owner', 'admin', 'hq'].includes(membershipRole)
-        const remoteListings =
-          isSupabaseConfigured
-            ? await getAgentPrivateListings(profile?.id, {
-                organisationId,
-                includeAllOrganisationListings,
-              }).catch((error) => {
-                console.warn('[Transactions] Active listing lookup failed; using local listing cache.', error)
-                return []
-              })
-            : []
+        let remoteListings = []
+        if (isSupabaseConfigured) {
+          const listingLookupConfig = {
+            organisationId,
+            includeAllOrganisationListings,
+            assignedAgentEmail: normalizeText(profile?.email),
+          }
+          remoteListings = await getAgentPrivateListings(profile?.id, listingLookupConfig).catch((error) => {
+            console.warn('[Transactions] Active listing lookup failed; using local listing cache.', error)
+            return []
+          })
+          if (!remoteListings.length && !includeAllOrganisationListings && hasOrganisationScope) {
+            remoteListings = await getAgentPrivateListings(profile?.id, {
+              ...listingLookupConfig,
+              includeAllOrganisationListings: true,
+            }).catch(() => [])
+          }
+        }
         setPrivateListings(mergeListings(localListings, remoteListings))
         const email = String(profile?.email || '').trim().toLowerCase()
         const filtered = (developmentRows || []).filter((row) => {

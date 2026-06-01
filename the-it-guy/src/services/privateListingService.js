@@ -1591,18 +1591,33 @@ export async function getOrganisationPrivateListings(organisationId, options = {
   return rows.map((row) => mapPrivateListingRow(row, onboardingMap, requirementsMap, documentsMap)).filter(Boolean)
 }
 
-export async function getAgentPrivateListings(agentId, { organisationId = null, includeAllOrganisationListings = false } = {}) {
+export async function getAgentPrivateListings(
+  agentId,
+  {
+    organisationId = null,
+    includeAllOrganisationListings = false,
+    assignedAgentEmail = '',
+  } = {},
+) {
   const client = requireClient()
   const normalizedAgentId = normalizeUuid(agentId)
   const normalizedOrgId = normalizeUuid(organisationId)
-  if (!includeAllOrganisationListings && !normalizedAgentId) return []
+  const normalizedAgentEmail = normalizeText(assignedAgentEmail).toLowerCase()
+  if (!includeAllOrganisationListings && !normalizedAgentId && !normalizedAgentEmail) return []
   const queryBuilder = applyVisiblePrivateListingFilters(client.from('private_listings').select('*'))
 
   if (normalizedOrgId) {
     queryBuilder.eq('organisation_id', normalizedOrgId)
   }
-  if (normalizedAgentId && !includeAllOrganisationListings) {
-    queryBuilder.eq('assigned_agent_id', normalizedAgentId)
+  if (!includeAllOrganisationListings) {
+    if (normalizedAgentId && normalizedAgentEmail) {
+      const escapedEmail = String(normalizedAgentEmail).replace(/"/g, '\\"')
+      queryBuilder.or(`assigned_agent_id.eq.${normalizedAgentId},assigned_agent_email.eq."${escapedEmail}"`)
+    } else if (normalizedAgentId) {
+      queryBuilder.eq('assigned_agent_id', normalizedAgentId)
+    } else {
+      queryBuilder.eq('assigned_agent_email', normalizedAgentEmail)
+    }
   }
 
   const query = await queryBuilder.order('updated_at', { ascending: false })

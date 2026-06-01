@@ -294,10 +294,19 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
     if (BOND_HQ_ROLES.has(normalizedMembershipRole)) {
       return [
         { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
-        { key: 'bond_regions', label: 'Regions', to: '/bond/organisation?view=regions', navSection: 'main', activeMatch: ['/bond/organisation'] },
-        { key: 'bond_branches', label: 'Branches', to: '/bond/organisation?view=branches', navSection: 'main', activeMatch: ['/bond/organisation'] },
-        { key: 'bond_consultants', label: 'Consultants', to: '/bond/organisation?view=consultants', navSection: 'main', activeMatch: ['/bond/organisation'] },
         { key: 'applications', label: 'Applications', to: '/bond/applications', navSection: 'main', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
+        {
+          key: 'bond_organisation',
+          label: 'Organisation',
+          to: '/bond/organisation?view=regions',
+          navSection: 'main',
+          activeMatch: ['/bond/organisation'],
+          children: [
+            { key: 'bond_regions', label: 'Regions', to: '/bond/organisation?view=regions' },
+            { key: 'bond_branches', label: 'Branches', to: '/bond/organisation?view=branches' },
+            { key: 'bond_consultants', label: 'Consultants', to: '/bond/organisation?view=consultants' },
+          ],
+        },
         { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners'] },
         { key: 'bond_reports', label: 'Reports', to: '/bond/reports', navSection: 'main', activeMatch: ['/bond/reports', '/reports'] },
         { key: 'settings', label: 'Settings', to: '/settings', navSection: 'secondary' },
@@ -307,9 +316,18 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
     if (BOND_REGIONAL_ROLES.has(normalizedMembershipRole)) {
       return [
         { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
-        { key: 'bond_branches', label: 'Branches', to: '/bond/organisation?view=branches', navSection: 'main', activeMatch: ['/bond/organisation'] },
-        { key: 'bond_consultants', label: 'Consultants', to: '/bond/organisation?view=consultants', navSection: 'main', activeMatch: ['/bond/organisation'] },
         { key: 'applications', label: 'Applications', to: '/bond/applications', navSection: 'main', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
+        {
+          key: 'bond_organisation',
+          label: 'Organisation',
+          to: '/bond/organisation?view=branches',
+          navSection: 'main',
+          activeMatch: ['/bond/organisation'],
+          children: [
+            { key: 'bond_branches', label: 'Branches', to: '/bond/organisation?view=branches' },
+            { key: 'bond_consultants', label: 'Consultants', to: '/bond/organisation?view=consultants' },
+          ],
+        },
         { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners'] },
         { key: 'bond_reports', label: 'Reports', to: '/bond/reports', navSection: 'main', activeMatch: ['/bond/reports', '/reports'] },
       ]
@@ -318,8 +336,17 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
     if (BOND_BRANCH_ROLES.has(normalizedMembershipRole)) {
       return [
         { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
-        { key: 'bond_consultants', label: 'Consultants', to: '/bond/organisation?view=consultants', navSection: 'main', activeMatch: ['/bond/organisation'] },
         { key: 'applications', label: 'Applications', to: '/bond/applications', navSection: 'main', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
+        {
+          key: 'bond_organisation',
+          label: 'Organisation',
+          to: '/bond/organisation?view=consultants',
+          navSection: 'main',
+          activeMatch: ['/bond/organisation'],
+          children: [
+            { key: 'bond_consultants', label: 'Consultants', to: '/bond/organisation?view=consultants' },
+          ],
+        },
         { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners'] },
       ]
     }
