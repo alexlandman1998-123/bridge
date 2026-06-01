@@ -1,4 +1,17 @@
-import { ArrowRight, BadgePercent, Building2, CreditCard, FileSignature, Handshake, Home, Mail, Shield, UserCircle2, Workflow } from 'lucide-react'
+import {
+  ArrowRight,
+  BadgePercent,
+  Building2,
+  CreditCard,
+  FileSignature,
+  Handshake,
+  Home,
+  Mail,
+  Route,
+  Shield,
+  UserCircle2,
+  Workflow,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -24,6 +37,12 @@ const SETTINGS_CARDS = [
     title: 'Preferred Partners',
     description: 'Manage approved bond and legal partners available during deal setup.',
     icon: Handshake,
+  },
+  {
+    to: '/settings/partner-routing-rules',
+    title: 'Partner Routing Rules',
+    description: 'Define source context and assignment routing for consultant and queue assignment.',
+    icon: Route,
   },
   {
     to: '/settings/commission-structures',
@@ -101,7 +120,10 @@ export default function SettingsLanding() {
     membershipRole: normalizeOrganisationMembershipRole(membershipRole),
   })
   const visibleCards = SETTINGS_CARDS.filter((card) => {
-    if (!canManage && ['Users & Permissions', 'Billing', 'Commission Structures', 'Developments'].includes(card.title)) {
+    if (
+      !canManage &&
+      ['Users & Permissions', 'Billing', 'Commission Structures', 'Developments', 'Partner Routing Rules'].includes(card.title)
+    ) {
       return false
     }
     return true

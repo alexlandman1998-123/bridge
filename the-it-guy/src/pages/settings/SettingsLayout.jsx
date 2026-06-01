@@ -1,4 +1,17 @@
-import { BadgePercent, Building2, CreditCard, FileSignature, Handshake, Home, Mail, Settings2, Shield, UserCircle2, Workflow } from 'lucide-react'
+import {
+  BadgePercent,
+  Building2,
+  CreditCard,
+  FileSignature,
+  Handshake,
+  Home,
+  Mail,
+  Route,
+  Settings2,
+  Shield,
+  UserCircle2,
+  Workflow,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -10,6 +23,7 @@ const SETTINGS_NAV = [
   { to: '/settings/account', label: 'Account', icon: UserCircle2 },
   { to: '/settings/organisation', label: 'Organisation', icon: Building2 },
   { to: '/settings/preferred-partners', label: 'Preferred Partners', icon: Handshake },
+  { to: '/settings/partner-routing-rules', label: 'Partner Routing Rules', icon: Route },
   { to: '/settings/commission-structures', label: 'Commission Structures', icon: BadgePercent },
   { to: '/settings/developments', label: 'Developments', icon: Home },
   { to: '/settings/workflows', label: 'Workflows & Rules', icon: Workflow },
@@ -57,7 +71,8 @@ export default function SettingsLayout() {
       (item.to === '/settings/users' ||
         item.to === '/settings/billing' ||
         item.to === '/settings/commission-structures' ||
-        item.to === '/settings/developments')
+        item.to === '/settings/developments' ||
+        item.to === '/settings/partner-routing-rules')
     ) {
       return false
     }

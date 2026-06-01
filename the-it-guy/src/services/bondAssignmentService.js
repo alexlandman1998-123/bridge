@@ -723,6 +723,8 @@ function buildAssignmentPayload(transactionId, values = {}, source = 'manual') {
     assigned_bond_processor_user_id: normalizeId(values?.processorUserId || values?.assigned_bond_processor_user_id),
     assigned_bond_manager_user_id: normalizeId(values?.managerUserId || values?.assigned_bond_manager_user_id),
     assigned_bond_compliance_user_id: normalizeId(values?.complianceUserId || values?.assigned_bond_compliance_user_id),
+    bond_assignment_rule_id: normalizeId(values?.bondAssignmentRuleId || values?.bond_assignment_rule_id || values?.ruleId || null),
+    bond_assignment_method: normalizeText(values?.bondAssignmentMethod || values?.bond_assignment_method || values?.assignmentMethod || values?.method || null),
     bond_assignment_status: KNOWN_BOND_STATUSES.has(status) ? status : 'unassigned',
     bond_assignment_source: KNOWN_BOND_SOURCES.has(canonicalSource) ? canonicalSource : 'manual',
     ...buildAuditPayload(values?.actorId || null, values?.source || source),
@@ -764,6 +766,8 @@ async function safelyDropMissingColumnsAndRetry({ query, payload = {} }) {
       isMissingColumnError(error, 'assigned_bond_compliance_user_id') ||
       isMissingColumnError(error, 'bond_assignment_status') ||
       isMissingColumnError(error, 'bond_assignment_source') ||
+      isMissingColumnError(error, 'bond_assignment_rule_id') ||
+      isMissingColumnError(error, 'bond_assignment_method') ||
       isMissingColumnError(error, 'bond_assignment_updated_at') ||
       isMissingColumnError(error, 'bond_assignment_updated_by')
 
@@ -800,6 +804,14 @@ async function safelyDropMissingColumnsAndRetry({ query, payload = {} }) {
     }
     if (missing.includes('assigned_bond_compliance_user_id')) {
       delete current.assigned_bond_compliance_user_id
+      removed = true
+    }
+    if (missing.includes('bond_assignment_rule_id')) {
+      delete current.bond_assignment_rule_id
+      removed = true
+    }
+    if (missing.includes('bond_assignment_method')) {
+      delete current.bond_assignment_method
       removed = true
     }
     if (missing.includes('bond_assignment_status')) {

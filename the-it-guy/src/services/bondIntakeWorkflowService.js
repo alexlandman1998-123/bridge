@@ -1,5 +1,11 @@
 import { BOND_INTAKE_STATUSES, getBondIntakeSummary } from '../core/transactions/bondIntakeSelectors'
+import {
+  PARTNER_ROUTING_MODES,
+  PARTNER_ROUTING_SOURCE_TYPES,
+  PARTNER_ROUTING_TARGET_TYPES,
+} from '../constants/bondRoutingContract'
 import { supabase } from '../lib/supabaseClient'
+import { listOrganisationPartnerRoutingRules } from '../lib/settingsApi'
 import {
   BOND_NOTIFICATION_EVENTS,
   notifyBondIntakeEvent,
@@ -128,6 +134,255 @@ function resolveCurrentUser(user = {}) {
       normalizeText(currentMembership?.branchId || currentMembership?.branch_id || currentMembership?.primaryBranchId || currentMembership?.primary_branch_id || user.branchId || user.branch_id) ||
       null,
     teamId: normalizeText(currentMembership?.teamId || currentMembership?.team_id || user.teamId || user.team_id) || null,
+  }
+}
+
+function hasExplicitAssigneeInput(assignee = {}) {
+  return Boolean(
+    normalizeText(
+      assignee.id ||
+        assignee.userId ||
+        assignee.user_id ||
+        assignee.email ||
+        assignee.name ||
+        assignee.label ||
+        assignee.organisationId ||
+        assignee.organisation_id ||
+        assignee.regionId ||
+        assignee.region_id ||
+        assignee.branchId ||
+        assignee.branch_id ||
+        assignee.teamId ||
+        assignee.team_id ||
+        assignee.workspaceUnitId ||
+        assignee.workspace_unit_id ||
+        assignee.organisationUnitId ||
+        assignee.organisation_unit_id,
+    ),
+  )
+}
+
+function getBondIntakeRoutingContext(row = {}, actor = {}) {
+  const transaction = row?.transaction || row || {}
+  const onboardingFormData = transaction?.bondOnboardingFormData || row?.onboardingFormData || row?.onboarding_form_data || null
+  const onboardingValues = onboardingFormData || {}
+  return {
+    organisationId:
+      normalizeText(
+        transaction.bond_workspace_id ||
+          transaction.organisation_id ||
+          transaction.organisationId ||
+          transaction?.organisation?.id ||
+          actor.workspaceId,
+      ) || null,
+    developmentId:
+      normalizeText(
+        transaction.development_id ||
+          transaction.developmentId ||
+          row.development?.id ||
+          row.unit?.development_id ||
+          transaction.unit_id ||
+          row.unit?.developmentId,
+      ) || null,
+    agentId:
+      normalizeText(
+        transaction.assigned_agent_id ||
+          transaction.assignedAgentId ||
+          transaction.agent_id ||
+          transaction.agentId ||
+          transaction.created_by ||
+          transaction.createdBy ||
+          onboardingValues.assigned_agent_id ||
+          onboardingValues.assignedAgentId ||
+          onboardingValues.agent_id ||
+          onboardingValues.agentId ||
+          row.agent?.id ||
+          row.assignedAgentId,
+      ) || null,
+    agentEmail:
+      normalizeEmail(
+        transaction.assigned_agent_email ||
+          transaction.assignedAgentEmail ||
+          onboardingValues.assigned_agent_email ||
+          onboardingValues.assignedAgentEmail ||
+          onboardingValues.assigned_agent ||
+          onboardingValues.assignedAgent ||
+          row.agent?.email,
+      ) || null,
+    branchId:
+      normalizeText(
+        transaction.assigned_branch_id ||
+          transaction.assignedBranchId ||
+          transaction.branch_id ||
+          transaction.branchId ||
+          transaction.assigned_workspace_unit_id ||
+          transaction.assignedWorkspaceUnitId ||
+          transaction.workspace_unit_id ||
+          transaction.workspaceUnitId ||
+          transaction.primary_branch_id ||
+          transaction.primaryBranchId ||
+          row.branch?.id,
+      ) || null,
+    teamId:
+      normalizeText(
+        transaction.assigned_team_id ||
+          transaction.assignedTeamId ||
+          transaction.team_id ||
+          transaction.teamId ||
+          transaction.workspace_unit_id ||
+          transaction.workspaceUnitId,
+      ) || null,
+    regionId:
+      normalizeText(
+        transaction.bond_region_id ||
+          transaction.region_id ||
+          transaction.regionId ||
+          onboardingValues.region_id ||
+          onboardingValues.regionId ||
+          row.region?.id,
+      ) || null,
+  }
+}
+
+function resolveRoutingScopeFromRule(rule = {}, actor = {}, context = {}) {
+  const targetScopeType = normalizeText(rule.targetScopeType || rule.target_scope_type)
+  const targetScopeId = normalizeText(rule.targetScopeId || rule.target_scope_id)
+  const targetUserId = normalizeText(
+    rule.targetConsultantUserId ||
+      rule.target_user_id ||
+      rule.targetUserId ||
+      rule.assignedUserId ||
+      rule.assigned_user_id,
+  )
+
+  const assignee = {
+    id: targetScopeType === PARTNER_ROUTING_TARGET_TYPES.consultant ? (targetUserId || targetScopeId) : null,
+    name: normalizeText(rule.targetScopeName || rule.targetName || ''),
+    email: null,
+    organisationId: normalizeText(context.organisationId || actor.workspaceId) || null,
+    regionId: targetScopeType === PARTNER_ROUTING_TARGET_TYPES.region ? targetScopeId || null : null,
+    branchId: targetScopeType === PARTNER_ROUTING_TARGET_TYPES.branch ? targetScopeId || null : null,
+    workspaceUnitId: targetScopeType === PARTNER_ROUTING_TARGET_TYPES.branch || targetScopeType === PARTNER_ROUTING_TARGET_TYPES.team ? targetScopeId || null : null,
+    teamId: targetScopeType === PARTNER_ROUTING_TARGET_TYPES.team ? targetScopeId || null : null,
+  }
+
+  if (![
+    PARTNER_ROUTING_TARGET_TYPES.organisation_queue,
+    PARTNER_ROUTING_TARGET_TYPES.region,
+    PARTNER_ROUTING_TARGET_TYPES.branch,
+    PARTNER_ROUTING_TARGET_TYPES.team,
+    PARTNER_ROUTING_TARGET_TYPES.consultant,
+  ].includes(targetScopeType)) {
+    return null
+  }
+
+  if (
+    targetScopeType !== PARTNER_ROUTING_TARGET_TYPES.organisation_queue &&
+    targetScopeType !== PARTNER_ROUTING_TARGET_TYPES.consultant &&
+    !targetScopeId
+  ) {
+    return null
+  }
+
+  if (targetScopeType === PARTNER_ROUTING_TARGET_TYPES.consultant && !assignee.id) {
+    return null
+  }
+
+  return {
+    assignee,
+    method: normalizeText(
+      rule.assignmentMode || rule.assignmentMethod || rule.assignment_method || rule.method || PARTNER_ROUTING_MODES.manual,
+    ),
+    ruleId: normalizeText(rule.id),
+  }
+}
+
+function resolveRoutingSourceMatch(rule = {}, context = {}) {
+  const sourceScopeType = normalizeText(rule.sourceScopeType || rule.source_scope_type)
+  const sourceScopeId = normalizeText(rule.sourceScopeId || rule.source_scope_id || rule.source_context_id)
+  const sourceUserId = normalizeText(rule.sourceUserId || rule.source_user_id || sourceScopeId)
+
+  if (sourceScopeType === PARTNER_ROUTING_SOURCE_TYPES.organisation) {
+    return true
+  }
+  if (sourceScopeType === PARTNER_ROUTING_SOURCE_TYPES.branch) {
+    return Boolean(sourceScopeId && sourceScopeId === context.branchId)
+  }
+  if (sourceScopeType === PARTNER_ROUTING_SOURCE_TYPES.team) {
+    return Boolean(sourceScopeId && sourceScopeId === context.teamId)
+  }
+  if (sourceScopeType === PARTNER_ROUTING_SOURCE_TYPES.development) {
+    return Boolean(sourceScopeId && sourceScopeId === context.developmentId)
+  }
+  if (sourceScopeType === PARTNER_ROUTING_SOURCE_TYPES.agent) {
+    return Boolean(
+      sourceUserId &&
+        (sourceUserId === context.agentId ||
+          (context.agentEmail && normalizeEmail(sourceUserId) === context.agentEmail)),
+    )
+  }
+  return false
+}
+
+async function resolveRoutingDecision({ row = {}, actor = {} } = {}) {
+  const context = getBondIntakeRoutingContext(row, actor)
+  const rules = await listOrganisationPartnerRoutingRules()
+  if (!Array.isArray(rules) || !rules.length) return null
+
+  const activeRules = rules.filter((rule) => rule?.isActive)
+  if (!activeRules.length) return null
+
+  const matchingRule = activeRules.find((rule) => resolveRoutingSourceMatch(rule, context))
+  const chosenRule = matchingRule || activeRules.find((rule) => rule?.isDefault)
+  if (!chosenRule) return null
+
+  const mapped = resolveRoutingScopeFromRule(chosenRule, actor, context)
+  if (!mapped) return null
+
+  return {
+    source: 'rule',
+    method: mapped.method || PARTNER_ROUTING_MODES.manual,
+    ruleId: mapped.ruleId || null,
+    assignee: mapped.assignee,
+    scope: resolveAssignmentScope({ actor, assignee: mapped.assignee }),
+  }
+}
+
+async function resolveBondIntakeAssignmentDecision({ row = {}, actor = {}, assignee = {} } = {}) {
+  const resolvedAssignee = resolveAssignee({ user: actor, assignee })
+  if (hasExplicitAssigneeInput(assignee)) {
+    return {
+      source: 'manual',
+      method: PARTNER_ROUTING_MODES.manual,
+      ruleId: null,
+      assignee: resolvedAssignee,
+      scope: resolveAssignmentScope({ actor, assignee: resolvedAssignee }),
+    }
+  }
+
+  try {
+    const routed = await resolveRoutingDecision({ row, actor })
+    if (routed?.assignee) {
+      const mergedAssignee = {
+        ...resolvedAssignee,
+        ...routed.assignee,
+      }
+      return {
+        ...routed,
+        assignee: mergedAssignee,
+        scope: resolveAssignmentScope({ actor, assignee: mergedAssignee }),
+      }
+    }
+  } catch {
+    // Keep legacy behaviour when routing configuration is unavailable.
+  }
+
+  return {
+    source: 'manual',
+    method: PARTNER_ROUTING_MODES.manual,
+    ruleId: null,
+    assignee: resolvedAssignee,
+    scope: resolveAssignmentScope({ actor, assignee: resolvedAssignee }),
   }
 }
 
@@ -284,7 +539,9 @@ function resolveAssignmentScope({ actor = {}, assignee = {} } = {}) {
   const workspaceUnitId = assignee.teamId || assignee.workspaceUnitId || assignee.branchId || null
   const branchId = assignee.branchId || assignee.workspaceUnitId || null
   const teamId = assignee.teamId || null
-  const userId = assignee.id || actor.id || null
+  const hasAssigneeId = Object.prototype.hasOwnProperty.call(assignee, 'id')
+  const resolvedAssigneeId = hasAssigneeId ? normalizeText(assignee.id) : null
+  const userId = resolvedAssigneeId || (hasAssigneeId ? null : actor.id || null)
   const scopeLevel =
     userId && !regionId && !workspaceUnitId && !branchId && !teamId
       ? 'independent'
@@ -421,21 +678,36 @@ async function upsertRolePlayerMarker(client, {
   throw result.error
 }
 
-async function persistAcceptedAssignment(client, { transactionId, actor, assignee, action }) {
+async function persistAcceptedAssignment(client, {
+  transactionId,
+  actor,
+  assignee,
+  action,
+  assignmentDecision = {},
+}) {
   const now = new Date().toISOString()
   const source = action === 'assign' ? 'assigned_from_intake' : 'accepted_from_intake'
   const scope = resolveAssignmentScope({ actor, assignee })
+  const decision = assignmentDecision || {}
   return updateByIdWithMissingColumnFallback(
     client,
     'transactions',
     transactionId,
     {
-      assigned_bond_originator_email: assignee.email || actor.email || null,
-      bond_originator: assignee.name || actor.name || null,
+      assigned_bond_originator_email:
+        decision.source === 'rule' && assignee.id && !assignee.email
+          ? null
+          : assignee.email || (decision.source === 'manual' ? actor.email : null) || null,
+      bond_originator:
+        decision.source === 'rule'
+          ? assignee.name || null
+          : assignee.name || actor.name || null,
       bond_workspace_id: scope.organisationId,
       bond_region_id: scope.regionId,
       bond_workspace_unit_id: scope.workspaceUnitId,
       primary_bond_consultant_user_id: scope.userId,
+      bond_assignment_rule_id: decision.ruleId || null,
+      bond_assignment_method: decision.source === 'rule' ? decision.method : null,
       finance_managed_by: 'bond_originator',
       bond_assignment_status: 'consultant_assigned',
       bond_assignment_source: source,
@@ -443,14 +715,21 @@ async function persistAcceptedAssignment(client, { transactionId, actor, assigne
       last_meaningful_activity_at: now,
       updated_at: now,
     },
-    'id, assigned_bond_originator_email, bond_originator, primary_bond_consultant_user_id, bond_assignment_status, bond_assignment_source, finance_status, updated_at',
+    'id, assigned_bond_originator_email, bond_originator, primary_bond_consultant_user_id, bond_assignment_status, bond_assignment_source, bond_assignment_rule_id, bond_assignment_method, finance_status, updated_at',
   )
 }
 
-async function persistBondApplicationAssignment(client, { transactionId, actor, assignee, action }) {
+async function persistBondApplicationAssignment(client, {
+  transactionId,
+  actor,
+  assignee,
+  action,
+  assignmentDecision = {},
+}) {
   const now = new Date().toISOString()
   const source = action === 'assign' ? 'assigned_from_intake' : 'accepted_from_intake'
-  const scope = resolveAssignmentScope({ actor, assignee })
+  const decision = assignmentDecision || {}
+  const scope = decision.scope || resolveAssignmentScope({ actor, assignee })
   const lookup = await client
     .from('transaction_bond_applications')
     .select('id')
@@ -475,13 +754,18 @@ async function persistBondApplicationAssignment(client, { transactionId, actor, 
         assigned_branch_id: scope.branchId,
         assigned_team_id: scope.teamId,
         assigned_user_id: scope.userId,
+        bond_assignment_rule_id: decision.ruleId || null,
+        bond_assignment_method: decision.source === 'rule' ? decision.method : null,
         scope_level: scope.scopeLevel,
-        scope_metadata: {
+        scope_metadata: compactObject({
           source,
           action,
+          sourceType: decision.source || null,
+          ruleId: decision.ruleId || null,
+          method: decision.source === 'rule' ? decision.method : null,
           assignedBy: actor.id || null,
           assignedAt: now,
-        },
+        }),
         assignment_status: scope.userId ? 'consultant_assigned' : 'organisation_queue',
         assignment_source: source,
         updated_by: actor.id || null,
@@ -533,12 +817,25 @@ export async function acceptBondIntakeApplication({ row = {}, transactionId = ''
 
   const db = getClient({ client })
   const actor = resolveCurrentUser(user)
-  const resolvedAssignee = resolveAssignee({ user, assignee })
+  const assignmentDecision = await resolveBondIntakeAssignmentDecision({ row, actor, assignee })
+  const resolvedAssignee = assignmentDecision.assignee
   const id = getTransactionId(row, transactionId)
 
   await upsertRolePlayerMarker(db, { transactionId: id, actor, assignee: resolvedAssignee, action: 'accept', note })
-  const transaction = await persistAcceptedAssignment(db, { transactionId: id, actor, assignee: resolvedAssignee, action: 'accept' })
-  await persistBondApplicationAssignment(db, { transactionId: id, actor, assignee: resolvedAssignee, action: 'accept' })
+  const transaction = await persistAcceptedAssignment(db, {
+    transactionId: id,
+    actor,
+    assignee: resolvedAssignee,
+    action: 'accept',
+    assignmentDecision,
+  })
+  await persistBondApplicationAssignment(db, {
+    transactionId: id,
+    actor,
+    assignee: resolvedAssignee,
+    action: 'accept',
+    assignmentDecision,
+  })
   const notification = await notifyBondIntakeEvent({
     eventType: BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_ACCEPTED,
     transaction: { ...(row?.transaction || row || {}), ...(transaction || {}), id },
@@ -563,12 +860,25 @@ export async function assignBondIntakeApplication({ row = {}, transactionId = ''
 
   const db = getClient({ client })
   const actor = resolveCurrentUser(user)
-  const resolvedAssignee = resolveAssignee({ user, assignee })
+  const assignmentDecision = await resolveBondIntakeAssignmentDecision({ row, actor, assignee })
+  const resolvedAssignee = assignmentDecision.assignee
   const id = getTransactionId(row, transactionId)
 
   await upsertRolePlayerMarker(db, { transactionId: id, actor, assignee: resolvedAssignee, action: 'assign', note })
-  const transaction = await persistAcceptedAssignment(db, { transactionId: id, actor, assignee: resolvedAssignee, action: 'assign' })
-  await persistBondApplicationAssignment(db, { transactionId: id, actor, assignee: resolvedAssignee, action: 'assign' })
+  const transaction = await persistAcceptedAssignment(db, {
+    transactionId: id,
+    actor,
+    assignee: resolvedAssignee,
+    action: 'assign',
+    assignmentDecision,
+  })
+  await persistBondApplicationAssignment(db, {
+    transactionId: id,
+    actor,
+    assignee: resolvedAssignee,
+    action: 'assign',
+    assignmentDecision,
+  })
   const notification = await notifyBondIntakeEvent({
     eventType: BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_ASSIGNED,
     transaction: { ...(row?.transaction || row || {}), ...(transaction || {}), id },
@@ -576,6 +886,7 @@ export async function assignBondIntakeApplication({ row = {}, transactionId = ''
     metadata: {
       assignee: resolvedAssignee,
       assigneeId: resolvedAssignee.id,
+      routingRuleId: assignmentDecision.ruleId || null,
       note,
       source: 'new_applications_queue',
     },

@@ -208,7 +208,7 @@ export default function SettingsPreferredPartnersPage() {
       />
 
       {!canEdit ? (
-        <SettingsBanner tone="warning">Read-only for your role. Only Principal-level administrators can manage organisation preferred partners.</SettingsBanner>
+        <SettingsBanner tone="warning">Read-only for your role. Only organisation administrators can manage organisation preferred partners.</SettingsBanner>
       ) : null}
 
       <SettingsSectionCard title="Partner Directory" description="Search, filter, and maintain your approved organisation partner panel.">

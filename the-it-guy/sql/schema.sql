@@ -299,6 +299,44 @@ create unique index if not exists organisation_preferred_partners_default_unique
 create index if not exists organisation_preferred_partners_org_type_idx
   on organisation_preferred_partners (organisation_id, partner_type);
 
+create table if not exists partner_routing_rules (
+  id uuid primary key default gen_random_uuid(),
+  source_organisation_id uuid not null references organisations(id) on delete cascade,
+  target_organisation_id uuid not null references organisations(id) on delete cascade,
+  rule_name text not null default 'Routing Rule',
+  is_active boolean not null default true,
+  is_default boolean not null default false,
+  assignment_priority integer not null default 500,
+  source_scope text not null,
+  source_context_id uuid,
+  source_user_id uuid references profiles(id) on delete set null,
+  source_scope_name text,
+  target_scope text not null,
+  target_region_id uuid references workspace_regions(id) on delete set null,
+  target_workspace_unit_id uuid references workspace_units(id) on delete set null,
+  target_user_id uuid references profiles(id) on delete set null,
+  assignment_mode text not null default 'manual',
+  target_scope_name text,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint partner_routing_rules_assignment_priority_check
+    check (assignment_priority >= 0),
+  constraint partner_routing_rules_source_scope_check
+    check (source_scope in ('organisation', 'branch', 'team', 'development', 'agent')),
+  constraint partner_routing_rules_target_scope_check
+    check (target_scope in ('organisation_queue', 'region', 'branch', 'team', 'consultant')),
+  constraint partner_routing_rules_assignment_mode_check
+    check (assignment_mode in ('direct_consultant', 'team_queue', 'organisation_queue', 'manual', 'fallback_queue', 'round_robin'))
+);
+
+create index if not exists partner_routing_rules_source_org_idx
+  on partner_routing_rules (source_organisation_id, is_active, is_default, assignment_priority, rule_name);
+
+create index if not exists partner_routing_rules_target_org_idx
+  on partner_routing_rules (target_organisation_id, target_scope, target_region_id, target_workspace_unit_id, target_user_id);
+
+
 create table if not exists organisation_roles (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid not null references organisations(id) on delete cascade,
