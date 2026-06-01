@@ -1770,7 +1770,8 @@
     border-radius: 24px;
     background: #ffffff;
     box-shadow: 0 16px 50px rgba(18, 38, 63, 0.06);
-    overflow: visible;
+    overflow-x: auto;
+    overflow-y: visible;
   }
 
   .attorney-transfers-panel .table-wrap {
@@ -2521,7 +2522,8 @@
   }
 
   .transactions-page-compact .ui-data-table.agent-transactions-table {
-    min-width: 1120px;
+    width: max(100%, 1060px);
+    min-width: 1060px;
   }
 
   .transactions-page-compact .ui-data-table.agent-transactions-table th,
@@ -2538,8 +2540,8 @@
   }
 
   .transactions-page-compact .ui-data-table.agent-transactions-table .agent-transactions-sticky-first {
-    width: 24%;
-    min-width: 250px;
+    width: 23%;
+    min-width: 240px;
   }
 
   .transactions-page-compact .ui-data-table.agent-transactions-table th:nth-child(2),
@@ -2550,22 +2552,22 @@
 
   .transactions-page-compact .ui-data-table.agent-transactions-table th:nth-child(3),
   .transactions-page-compact .ui-data-table.agent-transactions-table td:nth-child(3) {
-    width: 19%;
-    min-width: 160px;
+    width: 20%;
+    min-width: 180px;
   }
 
   .transactions-page-compact .ui-data-table.agent-transactions-table th:nth-child(4),
   .transactions-page-compact .ui-data-table.agent-transactions-table td:nth-child(4),
   .transactions-page-compact .ui-data-table.agent-transactions-table th:nth-child(5),
   .transactions-page-compact .ui-data-table.agent-transactions-table td:nth-child(5) {
-    width: 11%;
-    min-width: 112px;
+    width: 10%;
+    min-width: 104px;
   }
 
   .transactions-page-compact .ui-data-table.agent-transactions-table th:last-child,
   .transactions-page-compact .ui-data-table.agent-transactions-table td:last-child {
-    width: 12%;
-    min-width: 126px;
+    width: 14%;
+    min-width: 148px;
   }
 
   .transactions-page-compact .ui-data-table .transaction-cell-meta {
@@ -2585,6 +2587,14 @@
     justify-content: flex-start;
     gap: 0.4rem;
     flex-wrap: nowrap;
+  }
+
+  .transactions-page-compact .ui-data-table.agent-transactions-table td {
+    overflow: hidden;
+  }
+
+  .transactions-page-compact .ui-data-table.agent-transactions-table td:last-child {
+    overflow: visible;
   }
 
   .ui-data-table .transaction-list-stage {

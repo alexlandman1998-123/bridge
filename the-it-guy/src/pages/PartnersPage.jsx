@@ -1,14 +1,12 @@
 import {
   ArrowUpRight,
-  BarChart3,
   CheckCircle2,
-  Filter,
-  Handshake,
   LockKeyhole,
   Network,
   Search,
   ShieldCheck,
   SlidersHorizontal,
+  X,
   UserPlus as InviteIcon,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -26,10 +24,8 @@ import {
   getPartnerAssignmentOptions,
   getPartnerScopeBadge,
   getPartnerTypeLabel,
-  PARTNER_RELATIONSHIP_STATUSES,
   PARTNER_PROVINCES,
   PARTNER_SCOPE_LABELS,
-  PARTNER_SPECIALTIES,
   PARTNER_SCOPE_TYPES,
   PARTNER_TYPES,
   fetchPartnersSnapshot,
@@ -39,11 +35,22 @@ import { recordWorkspaceAuditEvent } from '../services/auditLogService'
 
 const TABS = [
   { key: 'connected', label: 'Connected Partners' },
-  { key: 'sent', label: 'Sent Invitations' },
-  { key: 'received', label: 'Received Invitations' },
+  { key: 'invitations', label: 'Invitations' },
   { key: 'discover', label: 'Discover Partners' },
   { key: 'referrals', label: 'Referrals & Opportunities' },
-  { key: 'analytics', label: 'Partner Analytics' },
+]
+
+const INVITATION_DIRECTION_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'sent', label: 'Sent' },
+  { value: 'received', label: 'Received' },
+]
+
+const INVITATION_STATUS_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'accepted', label: 'Accepted' },
+  { value: 'declined', label: 'Declined' },
 ]
 
 function formatNumber(value) {
@@ -167,61 +174,50 @@ function PartnerLogo({ partner }) {
 }
 
 function PartnerCard({ partner, relationship, action, actionLabel, muted = false }) {
+  const isPreferred = Boolean(relationship?.preferred || relationship?.relationshipType === 'preferred')
+  const statusLabel = relationship?.relationshipStatus || 'Pending'
+  const typeLabel = getPartnerTypeLabel(partner?.type)
+  const location = [partner?.city, partner?.province].filter(Boolean).join(', ') || 'Location pending'
+
   return (
-    <article className={`rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)] ${muted ? 'opacity-75' : ''}`}>
+    <article className={`rounded-[8px] border border-[#dbe5f0] bg-white p-4 ${muted ? 'opacity-75' : ''}`}>
       <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <PartnerLogo partner={partner} />
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <PartnerLogo partner={partner} />
+            <div className="min-w-0">
               <h3 className="truncate text-base font-semibold tracking-[-0.01em] text-[#10243a]">{partner?.name || 'Partner organisation'}</h3>
-              {partner?.verificationStatus === 'verified' ? (
-                <StatusBadge className="border-[#d8efe4] bg-[#f1fbf6] text-[#17613d]">Verified</StatusBadge>
-              ) : null}
+              <p className="mt-1 text-sm text-[#60758d]">{typeLabel} · {location}</p>
             </div>
-            <p className="mt-1 text-sm text-[#60758d]">
-              {getPartnerTypeLabel(partner?.type)} · {[partner?.city, partner?.province].filter(Boolean).join(', ') || 'Location pending'}
-            </p>
           </div>
-        </div>
-        {relationship ? (
-          <div className="flex shrink-0 flex-wrap justify-end gap-2">
-            <StatusBadge className={statusBadgeClass(relationship.relationshipStatus)}>
-              {relationship.relationshipStatus === 'accepted' ? 'Connected' : relationship.relationshipStatus}
-            </StatusBadge>
-            {relationship.preferred || relationship.relationshipType === 'preferred' ? (
-              <StatusBadge className={relationshipBadgeClass('preferred')}>Preferred</StatusBadge>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {relationship ? (
+              <StatusBadge className={statusBadgeClass(statusLabel)}>{statusLabel === 'accepted' ? 'Connected' : statusLabel}</StatusBadge>
             ) : null}
+            <PartnerScopeBadge relationship={relationship} />
+            {isPreferred ? <StatusBadge className={relationshipBadgeClass('preferred')}>Preferred</StatusBadge> : null}
           </div>
-        ) : null}
-      </div>
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        <StatusBadge className="border-[#e4ebf4] bg-[#f8fafc] text-[#52677f]">{getPartnerTypeLabel(partner?.type)}</StatusBadge>
-        <PartnerScopeBadge relationship={relationship} />
-        {(partner?.specialties || []).slice(0, 4).map((specialty) => (
-          <span key={specialty} className="rounded-full border border-[#e4ebf4] bg-[#f8fafc] px-2.5 py-1 text-xs font-semibold text-[#52677f]">
-            {specialty}
-          </span>
-        ))}
-      </div>
-
-      <div className="mt-4 grid grid-cols-3 gap-2 border-t border-[#edf2f7] pt-4">
-        <div>
-          <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#8ba0b8]">Shared Files</span>
-          <strong className="mt-1 block text-sm text-[#10243a]">{formatNumber(partner?.transactionStats?.activeTransactions)}</strong>
-        </div>
-        <div>
-          <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#8ba0b8]">Avg Response</span>
-          <strong className="mt-1 block text-sm text-[#10243a]">{formatNumber(partner?.transactionStats?.responseTimeHours)}h</strong>
-        </div>
-        <div>
-          <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#8ba0b8]">Completion</span>
-          <strong className="mt-1 block text-sm text-[#10243a]">{formatNumber(partner?.transactionStats?.avgDealSpeedDays)}d</strong>
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3">
+      {relationship ? (
+        <div className="mt-3 grid grid-cols-2 gap-2 text-left sm:grid-cols-3">
+          <div className="rounded-[8px] border border-[#e4ebf4] bg-[#f8fafc] p-2">
+            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8ba0b8]">Shared Deals</span>
+            <strong className="mt-1 block text-sm text-[#10243a]">{formatNumber(partner?.transactionStats?.activeTransactions)}</strong>
+          </div>
+          <div className="rounded-[8px] border border-[#e4ebf4] bg-[#f8fafc] p-2">
+            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8ba0b8]">Avg Response</span>
+            <strong className="mt-1 block text-sm text-[#10243a]">{formatNumber(partner?.transactionStats?.responseTimeHours)}h</strong>
+          </div>
+          <div className="rounded-[8px] border border-[#e4ebf4] bg-[#f8fafc] p-2">
+            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8ba0b8]">Completion</span>
+            <strong className="mt-1 block text-sm text-[#10243a]">{formatNumber(partner?.transactionStats?.avgDealSpeedDays)}d</strong>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-4 flex items-center justify-between gap-3 border-t border-[#edf2f7] pt-3">
         <Link
           to={`/partners/${partner?.id || ''}`}
           className="inline-flex h-9 items-center gap-2 rounded-[8px] border border-[#d9e4ef] bg-white px-3 text-sm font-semibold text-[#264563] transition hover:bg-[#f8fafc]"
@@ -284,14 +280,35 @@ function ProfilePanel({ partner, relationship }) {
         <div className="rounded-[8px] border border-[#e4ebf4] bg-white p-3">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Relationship Controls</p>
           <div className="mt-3 grid gap-2 text-sm text-[#40556c]">
-            <span className="inline-flex items-center gap-2"><LockKeyhole size={14} /> Listing visibility remains permission-gated.</span>
-            <span className="inline-flex items-center gap-2"><ShieldCheck size={14} /> Access is role-based and organisation-scoped.</span>
-            <span className="inline-flex items-center gap-2"><Handshake size={14} /> Status: {relationship?.relationshipStatus || 'Not connected'}</span>
-            {relationship ? <span className="inline-flex items-center gap-2"><Network size={14} /> {getPartnerScopeBadge(relationship).label}</span> : null}
+            <p className="inline-flex items-center gap-2"><LockKeyhole size={15} className="text-[#52677f]" /> Listing visibility remains permission-gated.</p>
+            <p className="inline-flex items-center gap-2"><ShieldCheck size={15} className="text-[#52677f]" /> Access is role-based and organisation-scoped.</p>
+            <p className="inline-flex items-center gap-2"><Network size={15} className="text-[#52677f]" /> Status: {relationship?.relationshipStatus || 'Not connected'}</p>
+            {relationship ? <p className="inline-flex items-center gap-2"><Network size={15} className="text-[#52677f]" /> {getPartnerScopeBadge(relationship).label}</p> : null}
           </div>
         </div>
       </div>
     </aside>
+  )
+}
+
+function ToolbarFilterPills({ value, options, onChange, ariaLabel }) {
+  return (
+    <div role="tablist" aria-label={ariaLabel} className="inline-flex overflow-hidden rounded-[8px] border border-[#dbe5f0] bg-[#f8fafc] p-0.5">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          role="tab"
+          aria-selected={value === option.value}
+          onClick={() => onChange(option.value)}
+          className={`h-8 rounded-[6px] px-3 text-xs font-semibold transition ${
+            value === option.value ? 'bg-[#10243a] text-white' : 'text-[#52677f] hover:bg-white'
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -311,6 +328,183 @@ function invitationPartnerType(invitation, currentOrganisationId) {
   return getPartnerTypeLabel(direction || 'agency')
 }
 
+function PartnerInviteModal({
+  isOpen,
+  onClose,
+  onSubmit,
+  inviteEmail,
+  setInviteEmail,
+  inviteOrganisationQuery,
+  setInviteOrganisationQuery,
+  selectedInviteOrganisation,
+  inviteOrganisationResults,
+  selectedInviteOrganisationId,
+  setSelectedInviteOrganisationId,
+  inviteType,
+  setInviteType,
+  inviteNote,
+  setInviteNote,
+  inviteScopeValue,
+  setInviteScopeValue,
+  inviteScopeTargetId,
+  setInviteScopeTargetId,
+  inviteScopeTargetName,
+  setInviteScopeTargetName,
+  invitePreferred,
+  setInvitePreferred,
+  inviteScopeNeedsTarget,
+  selectedInviteScope,
+  allowedScopes,
+  selectInviteOrganisation,
+}) {
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-auto bg-[#10243a]/50 p-4 py-8 sm:items-center">
+      <div className="w-full max-w-2xl rounded-[8px] border border-[#d9e4ef] bg-white p-4 shadow-[0_24px_60px_rgba(15,23,42,0.15)] sm:p-6">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#10243a]">Invite partner</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-[8px] border border-[#d9e4ef] hover:bg-[#f8fafc]"
+            aria-label="Close invite form"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <form onSubmit={onSubmit} className="mt-4 grid gap-2">
+          <input
+            type="email"
+            value={inviteEmail}
+            onChange={(event) => {
+              setInviteEmail(event.target.value)
+              if (selectedInviteOrganisationId) {
+                setSelectedInviteOrganisationId('')
+              }
+            }}
+            placeholder="Partner email"
+            className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+          />
+          <input
+            type="text"
+            value={inviteOrganisationQuery}
+            onChange={(event) => {
+              setInviteOrganisationQuery(event.target.value)
+              if (selectedInviteOrganisationId) {
+                setSelectedInviteOrganisationId('')
+              }
+            }}
+            placeholder="Search existing organisation by name"
+            className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+          />
+          <textarea
+            value={inviteNote}
+            onChange={(event) => setInviteNote(event.target.value)}
+            placeholder="Optional message"
+            className="min-h-[72px] rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+          />
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <select value={inviteType} onChange={(event) => setInviteType(event.target.value)} className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm">
+              {PARTNER_TYPES.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={inviteScopeValue}
+              onChange={(event) => setInviteScopeValue(event.target.value)}
+              className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
+              aria-label="Partner relationship scope"
+            >
+              {allowedScopes.map((scope) => (
+                <option key={scope.value} value={scope.value}>
+                  {scope.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {inviteScopeNeedsTarget ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input
+                type="text"
+                value={inviteScopeTargetId}
+                onChange={(event) => setInviteScopeTargetId(event.target.value)}
+                placeholder={`${selectedInviteScope.label} target id`}
+                className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+              />
+              <input
+                type="text"
+                value={inviteScopeTargetName}
+                onChange={(event) => setInviteScopeTargetName(event.target.value)}
+                placeholder="Target display name"
+                className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+              />
+            </div>
+          ) : null}
+
+          <label className="inline-flex h-10 items-center gap-2 rounded-[8px] border border-[#d3deea] bg-white px-3 text-sm font-semibold text-[#35546c]">
+            <input
+              type="checkbox"
+              checked={invitePreferred}
+              onChange={(event) => setInvitePreferred(event.target.checked)}
+              className="h-4 w-4 rounded border-[#c8d6e5] text-[#10243a]"
+            />
+            Preferred
+          </label>
+
+          {selectedInviteOrganisation ? (
+            <p className="text-sm text-[#10243a]">
+              Resolved to: <span className="font-semibold">{selectedInviteOrganisation.name}</span> · {getPartnerTypeLabel(selectedInviteOrganisation.type)}
+            </p>
+          ) : inviteEmail ? (
+            <p className="text-sm text-[#10243a]">Resolved to: {normalizeInvitationName('', inviteEmail)}</p>
+          ) : null}
+
+          {!!inviteOrganisationResults.length && !selectedInviteOrganisationId ? (
+            <div className="rounded-[8px] border border-[#e4ebf4] bg-white p-2">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8ba3]">Organisation suggestions</p>
+              <div className="grid gap-2">
+                {inviteOrganisationResults.map((organisation) => (
+                  <button
+                    type="button"
+                    key={organisation.id}
+                    onClick={() => selectInviteOrganisation(organisation.id)}
+                    className="rounded-[8px] border border-[#dbe5f0] bg-white p-2 text-left text-sm text-[#10243a] hover:bg-[#f6f9ff]"
+                  >
+                    <p className="font-semibold">{organisation.name}</p>
+                    <p className="text-xs text-[#60758d]">{getPartnerTypeLabel(organisation.type)} · {organisation.city || 'Unspecified city'}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              type="submit"
+              className="inline-flex h-10 items-center gap-2 rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white"
+            >
+              <InviteIcon size={15} /> Send invite
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-10 items-center rounded-[8px] border border-[#d9e4ef] bg-white px-4 text-sm font-semibold text-[#35546c] hover:bg-[#f8fafc]"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 export default function PartnersPage() {
   const { partnerId = '' } = useParams()
   const { workspace, workspaceType, role, profile, currentMembership } = useWorkspace()
@@ -323,6 +517,7 @@ export default function PartnersPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
 
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteOrganisationQuery, setInviteOrganisationQuery] = useState('')
@@ -334,14 +529,26 @@ export default function PartnersPage() {
   const [inviteScopeTargetName, setInviteScopeTargetName] = useState('')
   const [invitePreferred, setInvitePreferred] = useState(false)
 
-  const [filters, setFilters] = useState({ query: '', type: '', province: '', specialty: '' })
   const [directoryFilters, setDirectoryFilters] = useState({
     scope: 'all',
     type: '',
-    status: 'accepted',
+    preferredOnly: false,
+    query: '',
+  })
+  const [discoverFilters, setDiscoverFilters] = useState({
+    query: '',
+    type: '',
+    province: '',
+    specialty: '',
     preferredOnly: false,
   })
-  const [analyticsScope, setAnalyticsScope] = useState('all')
+  const [invitationFilters, setInvitationFilters] = useState({
+    direction: 'all',
+    status: 'all',
+    query: '',
+    type: '',
+  })
+  const [referralFilters, setReferralFilters] = useState({ query: '', status: 'all', dateRange: 'all' })
 
   const accessContext = useMemo(
     () => ({
@@ -367,8 +574,7 @@ export default function PartnersPage() {
 
   const selectedInviteScope = useMemo(() => {
     const fallback = allowedScopes[0] || { value: `organisation:${organisationId}`, scopeType: 'organisation', scopeId: organisationId, label: 'Organisation-wide' }
-    const selected = allowedScopes.find((scope) => scope.value === inviteScopeValue) || fallback
-    return selected
+    return allowedScopes.find((scope) => scope.value === inviteScopeValue) || fallback
   }, [allowedScopes, inviteScopeValue, organisationId])
 
   const inviteScopeNeedsTarget = Boolean(selectedInviteScope?.requiresTarget)
@@ -404,10 +610,11 @@ export default function PartnersPage() {
     () => filterPartnerRelationshipsByScope(relationships, accessContext).filter((item) => item.relationshipStatus === 'accepted'),
     [accessContext, relationships],
   )
+
   const visibleConnectedRelationships = useMemo(
     () =>
       connectedRelationships.filter((relationship) => {
-        if (directoryFilters.status && relationship.relationshipStatus !== directoryFilters.status) return false
+        if (directoryFilters.query && !normalizeLower(relationship.partner?.name).includes(normalizeLower(directoryFilters.query))) return false
         if (directoryFilters.scope !== 'all' && relationship.scopeType !== directoryFilters.scope) return false
         if (directoryFilters.type && relationship.partner?.type !== directoryFilters.type) return false
         if (directoryFilters.preferredOnly && !relationship.preferred && relationship.relationshipType !== 'preferred') return false
@@ -415,32 +622,40 @@ export default function PartnersPage() {
       }),
     [connectedRelationships, directoryFilters],
   )
+
   const invitations = useMemo(() => snapshot?.invitations || [], [snapshot?.invitations])
+  const filteredInvitations = useMemo(() => {
+    const isReceived = (invitation) => normalizeLower(invitation.toOrganisationId) === normalizeLower(organisationId)
+    const list = invitations.filter((invitation) => {
+      if (invitationFilters.direction === 'all') return true
+      return invitationFilters.direction === 'received' ? isReceived(invitation) : !isReceived(invitation)
+    })
 
-  const sentInvitations = useMemo(
-    () => invitations.filter((item) => item.fromOrganisationId === organisationId),
-    [invitations, organisationId],
-  )
+    const statusFilter = normalizeLower(invitationFilters.status)
+    const listWithStatus = statusFilter === 'all' ? list : list.filter((invitation) => (normalizeLower(invitation.status) || 'pending') === statusFilter)
+    const listWithType = invitationFilters.type
+      ? listWithStatus.filter((invitation) => {
+          const directionType = isReceived(invitation)
+            ? normalizeLower(invitation.fromWorkspaceType)
+            : normalizeLower(invitation.toWorkspaceType)
+          return directionType === invitationFilters.type
+        })
+      : listWithStatus
+    if (!invitationFilters.query) return listWithType
 
-  const receivedInvitations = useMemo(
-    () => invitations.filter((item) => item.toOrganisationId === organisationId),
-    [invitations, organisationId],
-  )
-
-  const pendingReceivedInvitations = useMemo(
-    () => receivedInvitations.filter((item) => (normalizeLower(item.status) || 'pending') === 'pending'),
-    [receivedInvitations],
-  )
+    return listWithType.filter((invitation) => invitationPartnerName(invitation, organisationId).toLowerCase().includes(normalizeLower(invitationFilters.query)))
+  }, [invitationFilters.direction, invitationFilters.query, invitationFilters.status, invitationFilters.type, invitations, organisationId])
 
   const metrics = snapshot?.metrics || {}
   const currentType = resolvedWorkspaceType
   const discoverablePartners = useMemo(() => {
     const connectedIds = new Set(relationships.map((item) => item.counterpartOrganisationId || item.partner?.id))
-    return filterDiscoverablePartners(snapshot?.organisations || [], filters).filter((partner) => {
+    return filterDiscoverablePartners(snapshot?.organisations || [], discoverFilters).filter((partner) => {
       if (!canConnectPartnerTypes(currentType, partner.type)) return false
+      if (discoverFilters.preferredOnly && !(partner.preferred || partner.relationshipType === 'preferred')) return false
       return !connectedIds.has(partner.id)
     })
-  }, [currentType, filters, relationships, snapshot?.organisations])
+  }, [currentType, discoverFilters, relationships, snapshot?.organisations])
 
   const selectedInviteOrganisation = useMemo(() => {
     if (selectedInviteOrganisationId) {
@@ -486,6 +701,22 @@ export default function PartnersPage() {
     }),
     [accessContext, snapshot],
   )
+
+  const filteredReferrals = useMemo(() => {
+    const now = Date.now()
+    const maxDays = { all: Number.POSITIVE_INFINITY, '7d': 7, '30d': 30, '90d': 90 }[referralFilters.dateRange] || Number.POSITIVE_INFINITY
+
+    return (snapshot?.referrals || []).filter((referral) => {
+      const partner = (snapshot?.organisations || []).find((item) => [referral.referringOrganisationId, referral.referredOrganisationId].includes(item.id))
+      const partnerName = normalizeLower(partner?.name || '')
+      const status = normalizeLower(referral.referralStatus)
+      const matchQuery = !referralFilters.query || partnerName.includes(normalizeLower(referralFilters.query))
+      const statusMatch = referralFilters.status === 'all' || status === referralFilters.status
+      const date = new Date(referral.referralDate || referral.createdAt)
+      const ageOk = Number.isNaN(date.getTime()) ? true : date.getTime() >= now - maxDays * 24 * 60 * 60 * 1000
+      return matchQuery && statusMatch && ageOk
+    })
+  }, [referralFilters.dateRange, referralFilters.query, referralFilters.status, snapshot?.organisations, snapshot?.referrals])
 
   async function handleInvite(event) {
     event.preventDefault()
@@ -536,6 +767,7 @@ export default function PartnersPage() {
       setInviteScopeTargetName('')
       setInvitePreferred(false)
       setMessage('Partner invitation sent.')
+      setIsInviteModalOpen(false)
       await loadSnapshot()
     } catch (inviteError) {
       setError(inviteError?.message || 'Unable to send partner invitation.')
@@ -640,158 +872,52 @@ export default function PartnersPage() {
     setInviteOrganisationQuery(nextOrganisation?.name || '')
   }
 
-  function clearInviteOrganisation() {
-    setSelectedInviteOrganisationId('')
-    setInviteOrganisationQuery('')
-  }
-
-  const detectedInviteType = selectedInviteOrganisation?.type
-
   return (
     <div className="min-h-full bg-[#f6f8fb] pb-10 text-[#10243a]">
+      <PartnerInviteModal
+        isOpen={isInviteModalOpen}
+        onClose={() => setIsInviteModalOpen(false)}
+        onSubmit={handleInvite}
+        inviteEmail={inviteEmail}
+        setInviteEmail={setInviteEmail}
+        inviteOrganisationQuery={inviteOrganisationQuery}
+        setInviteOrganisationQuery={setInviteOrganisationQuery}
+        selectedInviteOrganisation={selectedInviteOrganisation}
+        inviteOrganisationResults={inviteOrganisationResults}
+        selectedInviteOrganisationId={selectedInviteOrganisationId}
+        setSelectedInviteOrganisationId={setSelectedInviteOrganisationId}
+        inviteType={inviteType}
+        setInviteType={setInviteType}
+        inviteNote={inviteNote}
+        setInviteNote={setInviteNote}
+        inviteScopeValue={inviteScopeValue}
+        setInviteScopeValue={setInviteScopeValue}
+        inviteScopeTargetId={inviteScopeTargetId}
+        setInviteScopeTargetId={setInviteScopeTargetId}
+        inviteScopeTargetName={inviteScopeTargetName}
+        setInviteScopeTargetName={setInviteScopeTargetName}
+        invitePreferred={invitePreferred}
+        setInvitePreferred={setInvitePreferred}
+        inviteScopeNeedsTarget={inviteScopeNeedsTarget}
+        selectedInviteScope={selectedInviteScope}
+        allowedScopes={allowedScopes}
+        selectInviteOrganisation={selectInviteOrganisation}
+      />
+
       <section className="rounded-[8px] border border-[#d9e4ef] bg-white p-5 shadow-[0_16px_38px_rgba(15,23,42,0.06)] sm:p-6">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#7890aa]">Partners</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] text-[#10243a]">Professional relationship infrastructure</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-[#60758d]">
-              Manage trusted organisations, reusable transaction role players, controlled shared visibility, referrals, and relationship performance.
-            </p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] text-[#10243a]">Partners</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">Manage trusted partner organisations, invitations, and referrals.</p>
           </div>
-          <form onSubmit={handleInvite} className="w-full rounded-[8px] border border-[#e0e8f2] bg-[#f8fafc] p-3 lg:max-w-xl">
-            <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Invite partner</label>
-            <div className="mt-2 grid gap-2">
-              <input
-                type="email"
-                value={inviteEmail}
-                onChange={(event) => {
-                  setInviteEmail(event.target.value)
-                  if (selectedInviteOrganisationId) {
-                    setSelectedInviteOrganisationId('')
-                  }
-                }}
-                placeholder="partner@firm.co.za"
-                className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
-              />
-              <input
-                type="text"
-                value={inviteOrganisationQuery}
-                onChange={(event) => {
-                  setInviteOrganisationQuery(event.target.value)
-                  if (selectedInviteOrganisationId) {
-                    setSelectedInviteOrganisationId('')
-                  }
-                }}
-                placeholder="Search existing organisation by name"
-                className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
-              />
-              <textarea
-                value={inviteNote}
-                onChange={(event) => setInviteNote(event.target.value)}
-                placeholder="Optional message for this invitation"
-                className="min-h-[72px] rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
-              />
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  type="submit"
-                  className="inline-flex h-10 items-center gap-2 rounded-[8px] bg-[#10243a] px-3 text-sm font-semibold text-white"
-                >
-                  <InviteIcon size={15} /> Invite
-                </button>
-                {detectedInviteType ? (
-                  <button
-                    type="button"
-                    onClick={clearInviteOrganisation}
-                    className="inline-flex h-10 items-center rounded-[8px] border border-[#d3deea] bg-white px-3 text-sm font-semibold text-[#35546c] hover:bg-[#f8fafc]"
-                  >
-                    Clear selected
-                  </button>
-                ) : null}
-                <div className="inline-flex h-10 items-center rounded-[8px] border border-[#d3deea] bg-white px-3 text-sm text-[#35546c]">
-                  <span className="inline-block rounded-full border border-[#c3d0e3] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.11em]">
-                    {getPartnerTypeLabel(detectedInviteType || inviteType)}
-                  </span>
-                </div>
-                {!selectedInviteOrganisation && (
-                  <select
-                    value={inviteType}
-                    onChange={(event) => setInviteType(event.target.value)}
-                    className="rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
-                  >
-                    {PARTNER_TYPES.map((type) => (
-                      <option key={type.value} value={type.value}>
-                        {type.label}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <select
-                  value={inviteScopeValue}
-                  onChange={(event) => setInviteScopeValue(event.target.value)}
-                  className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
-                  aria-label="Partner relationship scope"
-                >
-                  {allowedScopes.map((scope) => (
-                    <option key={scope.value} value={scope.value}>
-                      {scope.label}
-                    </option>
-                  ))}
-                </select>
-                <label className="inline-flex h-10 items-center gap-2 rounded-[8px] border border-[#d3deea] bg-white px-3 text-sm font-semibold text-[#35546c]">
-                  <input
-                    type="checkbox"
-                    checked={invitePreferred}
-                    onChange={(event) => setInvitePreferred(event.target.checked)}
-                    className="h-4 w-4 rounded border-[#c8d6e5] text-[#10243a]"
-                  />
-                  Preferred
-                </label>
-              </div>
-              {inviteScopeNeedsTarget ? (
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <input
-                    type="text"
-                    value={inviteScopeTargetId}
-                    onChange={(event) => setInviteScopeTargetId(event.target.value)}
-                    placeholder={`${selectedInviteScope.label} target id`}
-                    className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
-                  />
-                  <input
-                    type="text"
-                    value={inviteScopeTargetName}
-                    onChange={(event) => setInviteScopeTargetName(event.target.value)}
-                    placeholder="Target display name"
-                    className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
-                  />
-                </div>
-              ) : null}
-              {selectedInviteOrganisation ? (
-                <p className="text-sm text-[#10243a]">
-                  Resolved to: <span className="font-semibold">{selectedInviteOrganisation.name}</span> · {getPartnerTypeLabel(selectedInviteOrganisation.type)}
-                </p>
-              ) : inviteEmail ? (
-                <p className="text-sm text-[#10243a]">Resolved to: {normalizeInvitationName('', inviteEmail)}</p>
-              ) : null}
-              {!!inviteOrganisationResults.length && !selectedInviteOrganisationId ? (
-                <div className="rounded-[8px] border border-[#e4ebf4] bg-white p-2">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8ba3]">Organisation suggestions</p>
-                  <div className="grid gap-2">
-                    {inviteOrganisationResults.map((organisation) => (
-                      <button
-                        type="button"
-                        key={organisation.id}
-                        onClick={() => selectInviteOrganisation(organisation.id)}
-                        className="rounded-[8px] border border-[#dbe5f0] bg-white p-2 text-left text-sm text-[#10243a] hover:bg-[#f6f9ff]"
-                      >
-                        <p className="font-semibold">{organisation.name}</p>
-                        <p className="text-xs text-[#60758d]">{getPartnerTypeLabel(organisation.type)} · {organisation.city || 'Unspecified city'}</p>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </form>
+          <button
+            type="button"
+            onClick={() => setIsInviteModalOpen(true)}
+            className="inline-flex h-10 items-center gap-2 rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white hover:bg-[#173a5e]"
+          >
+            <InviteIcon size={15} /> Invite Partner
+          </button>
         </div>
 
         {snapshot?.source === 'demo' ? (
@@ -834,56 +960,51 @@ export default function PartnersPage() {
           <main className="min-w-0">
             {activeTab === 'connected' ? (
               <section>
-                <div className="mb-4 rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-[#10243a]"><SlidersHorizontal size={16} /> Partner directory filters</div>
-                  <div className="mt-3 grid gap-3 md:grid-cols-4">
-                    <select
-                      className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
-                      value={directoryFilters.scope}
-                      onChange={(event) => setDirectoryFilters((previous) => ({ ...previous, scope: event.target.value }))}
-                    >
-                      <option value="all">All Scopes</option>
-                      {PARTNER_SCOPE_TYPES.map((scopeType) => (
-                        <option key={scopeType} value={scopeType}>
-                          {PARTNER_SCOPE_LABELS[scopeType]}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
-                      value={directoryFilters.type}
-                      onChange={(event) => setDirectoryFilters((previous) => ({ ...previous, type: event.target.value }))}
-                    >
-                      <option value="">All partner types</option>
-                      {PARTNER_TYPES.map((type) => (
-                        <option key={type.value} value={type.value}>
-                          {type.label}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
-                      value={directoryFilters.status}
-                      onChange={(event) => setDirectoryFilters((previous) => ({ ...previous, status: event.target.value }))}
-                    >
-                      <option value="">All statuses</option>
-                      {PARTNER_RELATIONSHIP_STATUSES.map((status) => (
-                        <option key={status} value={status}>
-                          {status.charAt(0).toUpperCase() + status.slice(1)}
-                        </option>
-                      ))}
-                    </select>
-                    <label className="inline-flex h-10 items-center gap-2 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm font-semibold text-[#35546c]">
-                      <input
-                        type="checkbox"
-                        checked={directoryFilters.preferredOnly}
-                        onChange={(event) => setDirectoryFilters((previous) => ({ ...previous, preferredOnly: event.target.checked }))}
-                        className="h-4 w-4 rounded border-[#c8d6e5] text-[#10243a]"
-                      />
-                      Preferred only
-                    </label>
-                  </div>
+                <div className="mb-4 flex flex-wrap gap-2">
+                  <label className="relative min-w-0 flex-1">
+                    <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8ba0b8]" />
+                    <input
+                      value={directoryFilters.query}
+                      onChange={(event) => setDirectoryFilters((previous) => ({ ...previous, query: event.target.value }))}
+                      placeholder="Search connected partners"
+                      className="h-10 w-full rounded-[8px] border border-[#d7e2ee] bg-white pl-9 pr-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                    />
+                  </label>
+                  <select
+                    className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
+                    value={directoryFilters.scope}
+                    onChange={(event) => setDirectoryFilters((previous) => ({ ...previous, scope: event.target.value }))}
+                  >
+                    <option value="all">All scopes</option>
+                    {PARTNER_SCOPE_TYPES.map((scopeType) => (
+                      <option key={scopeType} value={scopeType}>
+                        {PARTNER_SCOPE_LABELS[scopeType]}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
+                    value={directoryFilters.type}
+                    onChange={(event) => setDirectoryFilters((previous) => ({ ...previous, type: event.target.value }))}
+                  >
+                    <option value="">All types</option>
+                    {PARTNER_TYPES.map((type) => (
+                      <option key={type.value} value={type.value}>
+                        {type.label}
+                      </option>
+                    ))}
+                  </select>
+                  <label className="inline-flex h-10 items-center gap-2 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm font-semibold text-[#35546c]">
+                    <input
+                      type="checkbox"
+                      checked={directoryFilters.preferredOnly}
+                      onChange={(event) => setDirectoryFilters((previous) => ({ ...previous, preferredOnly: event.target.checked }))}
+                      className="h-4 w-4 rounded border-[#c8d6e5] text-[#10243a]"
+                    />
+                    Preferred only
+                  </label>
                 </div>
+
                 <div className="grid gap-4 md:grid-cols-2">
                   {visibleConnectedRelationships.map((relationship) => (
                     <PartnerCard
@@ -895,61 +1016,58 @@ export default function PartnersPage() {
                     />
                   ))}
                 </div>
-                {!connectedRelationships.length ? (
-                  <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">
-                    No connected partners yet. Invite trusted organisations to collaborate on transactions.
-                  </div>
+                {connectedRelationships.length === 0 ? (
+                  <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">No connected partners yet</div>
                 ) : null}
                 {connectedRelationships.length && !visibleConnectedRelationships.length ? (
-                  <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">
-                    No partners match the selected filters.
-                  </div>
+                  <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">No partners match the selected filters</div>
                 ) : null}
               </section>
             ) : null}
 
-            {activeTab === 'sent' ? (
+            {activeTab === 'invitations' ? (
               <section className="space-y-3">
-                {sentInvitations.map((invitation) => {
+                <div className="mb-4 space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    <ToolbarFilterPills
+                      ariaLabel="Invitation direction filter"
+                      value={invitationFilters.direction}
+                      options={INVITATION_DIRECTION_OPTIONS}
+                      onChange={(value) => setInvitationFilters((previous) => ({ ...previous, direction: value }))}
+                    />
+                    <ToolbarFilterPills
+                      ariaLabel="Invitation status filter"
+                      value={invitationFilters.status}
+                      options={INVITATION_STATUS_OPTIONS}
+                      onChange={(value) => setInvitationFilters((previous) => ({ ...previous, status: value }))}
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <label className="relative min-w-0 flex-1">
+                      <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8ba0b8]" />
+                      <input
+                        value={invitationFilters.query}
+                        onChange={(event) => setInvitationFilters((previous) => ({ ...previous, query: event.target.value }))}
+                        placeholder="Search invitations"
+                        className="h-10 w-full rounded-[8px] border border-[#d7e2ee] bg-white pl-9 pr-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                      />
+                    </label>
+                    <select
+                      className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
+                      value={invitationFilters.type}
+                      onChange={(event) => setInvitationFilters((previous) => ({ ...previous, type: event.target.value }))}
+                    >
+                      <option value="">All partner types</option>
+                      {PARTNER_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {filteredInvitations.map((invitation) => {
+                  const isReceived = normalizeLower(invitation.toOrganisationId) === normalizeLower(organisationId)
+                  const status = normalizeLower(invitation.status) || 'pending'
                   const organisationName = invitationPartnerName(invitation, organisationId)
                   const organisationType = invitationPartnerType(invitation, organisationId)
-                  return (
-                    <div
-                      key={invitation.id}
-                      className="flex flex-col gap-3 rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)] sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="flex items-center gap-3">
-                        <PartnerLogo partner={{ name: organisationName }} />
-                        <div>
-                          <p className="font-semibold text-[#10243a]">{organisationName}</p>
-                          <p className="text-sm text-[#60758d]">{organisationType}</p>
-                          <p className="mt-1 text-sm text-[#60758d]">Status: {invitation.status || 'pending'} · Sent {formatDate(invitation.createdAt)}</p>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <PartnerScopeBadge relationship={invitation} />
-                            {invitation.preferred ? <StatusBadge className={relationshipBadgeClass('preferred')}>Preferred</StatusBadge> : null}
-                          </div>
-                          {invitation.message ? <p className="mt-2 text-sm text-[#40556c]">{invitation.message}</p> : null}
-                          {invitation.invitedByUserId ? <p className="mt-1 text-xs text-[#8a9ab2]">Invited by user {invitation.invitedByUserId}</p> : null}
-                        </div>
-                      </div>
-                      <StatusBadge className={statusBadgeClass(invitation.status)}>
-                        Status: {(normalizeLower(invitation.status) || 'pending').charAt(0).toUpperCase() + (normalizeLower(invitation.status) || 'pending').slice(1)}
-                      </StatusBadge>
-                    </div>
-                  )
-                })}
-                {!sentInvitations.length ? (
-                  <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">No pending invitations sent.</div>
-                ) : null}
-              </section>
-            ) : null}
-
-            {activeTab === 'received' ? (
-              <section className="space-y-3">
-                {pendingReceivedInvitations.map((invitation) => {
-                  const fromName = invitationPartnerName(invitation, organisationId)
-                  const fromType = invitationPartnerType(invitation, organisationId)
-                  const requestMessage = invitation.message || 'Wants to connect with your organisation.'
                   return (
                     <div
                       key={invitation.id}
@@ -957,135 +1075,150 @@ export default function PartnersPage() {
                     >
                       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                         <div className="flex min-w-0 gap-3">
-                          <PartnerLogo partner={{ name: fromName }} />
+                          <PartnerLogo partner={{ name: organisationName }} />
                           <div>
-                            <p className="font-semibold text-[#10243a]">{fromName}</p>
-                            <p className="text-sm text-[#60758d]">{fromType}</p>
+                            <p className="font-semibold text-[#10243a]">{organisationName}</p>
+                            <p className="text-sm text-[#60758d]">{organisationType}</p>
                             <div className="mt-2 flex flex-wrap gap-2">
+                              <StatusBadge className={isReceived ? 'border-[#d9e7ff] bg-[#f3f7ff] text-[#1e4d82]' : 'border-[#e4ebf4] bg-[#f8fafc] text-[#52677f]'}>
+                                {isReceived ? 'Received' : 'Sent'}
+                              </StatusBadge>
                               <PartnerScopeBadge relationship={invitation} />
                               {invitation.preferred ? <StatusBadge className={relationshipBadgeClass('preferred')}>Preferred</StatusBadge> : null}
                             </div>
-                            <p className="mt-2 text-sm text-[#40556c]">{requestMessage}</p>
+                            <p className="mt-2 text-sm text-[#40556c]">{invitation.message || 'Wants to connect with your organisation.'}</p>
                             <p className="mt-1 text-xs text-[#6f7f95]">Sent {formatDate(invitation.createdAt)}</p>
                           </div>
                         </div>
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleAcceptInvitation(invitation)}
-                            className="inline-flex h-10 items-center justify-center rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white transition hover:bg-[#173a5e]"
-                          >
-                            Accept
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeclineInvitation(invitation)}
-                            className="inline-flex h-10 items-center justify-center rounded-[8px] border border-[#d7e2ee] bg-white px-4 text-sm font-semibold text-[#35546c] transition hover:bg-[#f8fafc]"
-                          >
-                            Decline
-                          </button>
+                        <div className="flex flex-col gap-2">
+                          <StatusBadge className={statusBadgeClass(status)}>{status}</StatusBadge>
+                          {isReceived && status === 'pending' ? (
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleAcceptInvitation(invitation)}
+                                className="inline-flex h-10 items-center justify-center rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white transition hover:bg-[#173a5e]"
+                              >
+                                Accept
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeclineInvitation(invitation)}
+                                className="inline-flex h-10 items-center justify-center rounded-[8px] border border-[#d7e2ee] bg-white px-4 text-sm font-semibold text-[#35546c] transition hover:bg-[#f8fafc]"
+                              >
+                                Decline
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     </div>
                   )
                 })}
-                {!pendingReceivedInvitations.length ? (
-                  <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">No partner requests waiting for your response.</div>
-                ) : null}
+                {!filteredInvitations.length ? <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">No invitations found</div> : null}
               </section>
             ) : null}
 
             {activeTab === 'discover' ? (
               <section>
-                <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-[#10243a]"><Filter size={16} /> Discovery filters</div>
-                  <div className="mt-3 grid gap-3 md:grid-cols-4">
-                    <label className="relative md:col-span-1">
-                      <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8ba0b8]" />
-                      <input
-                        value={filters.query}
-                        onChange={(event) => setFilters((previous) => ({ ...previous, query: event.target.value }))}
-                        placeholder="Search firms"
-                        className="h-10 w-full rounded-[8px] border border-[#d7e2ee] bg-white pl-9 pr-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
-                      />
-                    </label>
-                    <select className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm" value={filters.type} onChange={(event) => setFilters((previous) => ({ ...previous, type: event.target.value }))}>
-                      <option value="">All organisation types</option>
-                      {PARTNER_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
-                    </select>
-                    <select className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm" value={filters.province} onChange={(event) => setFilters((previous) => ({ ...previous, province: event.target.value }))}>
-                      <option value="">All provinces</option>
-                      {PARTNER_PROVINCES.map((province) => <option key={province} value={province}>{province}</option>)}
-                    </select>
-                    <select className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm" value={filters.specialty} onChange={(event) => setFilters((previous) => ({ ...previous, specialty: event.target.value }))}>
-                      <option value="">All specialties</option>
-                      {PARTNER_SPECIALTIES.map((specialty) => <option key={specialty} value={specialty}>{specialty}</option>)}
-                    </select>
-                  </div>
+                <div className="mb-4 flex flex-wrap gap-2">
+                  <label className="relative min-w-0 flex-1">
+                    <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8ba0b8]" />
+                    <input
+                      value={discoverFilters.query}
+                      onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, query: event.target.value }))}
+                      placeholder="Search firms"
+                      className="h-10 w-full rounded-[8px] border border-[#d7e2ee] bg-white pl-9 pr-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                    />
+                  </label>
+                  <select
+                    className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
+                    value={discoverFilters.type}
+                    onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, type: event.target.value }))}
+                  >
+                    <option value="">All types</option>
+                    {PARTNER_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+                  </select>
+                  <select
+                    className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
+                    value={discoverFilters.province}
+                    onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, province: event.target.value }))}
+                  >
+                    <option value="">All areas</option>
+                    {PARTNER_PROVINCES.map((province) => <option key={province} value={province}>{province}</option>)}
+                  </select>
+                  <label className="inline-flex h-10 items-center gap-2 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm font-semibold text-[#35546c]">
+                    <input
+                      type="checkbox"
+                      checked={discoverFilters.preferredOnly}
+                      onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, preferredOnly: event.target.checked }))}
+                      className="h-4 w-4 rounded border-[#c8d6e5] text-[#10243a]"
+                    />
+                    Preferred only
+                  </label>
                 </div>
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
                   {discoverablePartners.map((partner) => (
                     <PartnerCard key={partner.id} partner={partner} action={() => handleConnect(partner)} actionLabel="Connect" />
                   ))}
                 </div>
+                {!discoverablePartners.length ? (
+                  <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">No organisations found</div>
+                ) : null}
               </section>
             ) : null}
 
             {activeTab === 'referrals' ? (
-              <section className="space-y-3">
-                {snapshot?.referrals?.map((referral) => {
-                  const partner = (snapshot?.organisations || []).find((item) => [referral.referringOrganisationId, referral.referredOrganisationId].includes(item.id))
-                  return (
-                    <div key={referral.id} className="grid gap-3 rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)] md:grid-cols-[1fr_auto]">
-                      <div>
-                        <p className="font-semibold text-[#10243a]">{partner?.name || 'Referral partner'}</p>
-                        <p className="mt-1 text-sm text-[#60758d]">Transaction {referral.transactionId || 'unlinked'} · {formatDate(referral.referralDate)}</p>
-                      </div>
-                      <div className="text-left md:text-right">
-                        <StatusBadge className="border-[#d9e7ff] bg-[#f3f7ff] text-[#1e4d82]">{referral.referralStatus}</StatusBadge>
-                        <p className="mt-2 text-sm font-semibold text-[#10243a]">{formatCurrency(referral.referralValue)}</p>
-                      </div>
-                    </div>
-                  )
-                })}
-              </section>
-            ) : null}
-
-            {activeTab === 'analytics' ? (
-              <section className="space-y-4">
-                <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-[#10243a]"><BarChart3 size={16} /> Scope-aware analytics</div>
-                    <select
-                      className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
-                      value={analyticsScope}
-                      onChange={(event) => setAnalyticsScope(event.target.value)}
-                    >
-                      <option value="all">All scopes</option>
-                      <option value="partner">Partner organisation</option>
-                      {PARTNER_SCOPE_TYPES.map((scopeType) => (
-                        <option key={scopeType} value={scopeType}>
-                          {PARTNER_SCOPE_LABELS[scopeType]}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+              <section>
+                <div className="mb-4 flex flex-wrap gap-2">
+                  <label className="relative min-w-0 flex-1">
+                    <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8ba0b8]" />
+                    <input
+                      value={referralFilters.query}
+                      onChange={(event) => setReferralFilters((previous) => ({ ...previous, query: event.target.value }))}
+                      placeholder="Search partner"
+                      className="h-10 w-full rounded-[8px] border border-[#d7e2ee] bg-white pl-9 pr-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                    />
+                  </label>
+                  <select
+                    className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
+                    value={referralFilters.status}
+                    onChange={(event) => setReferralFilters((previous) => ({ ...previous, status: event.target.value }))}
+                  >
+                    <option value="all">All statuses</option>
+                    <option value="open">Open</option>
+                    <option value="won">Won</option>
+                    <option value="lost">Lost</option>
+                  </select>
+                  <select
+                    className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
+                    value={referralFilters.dateRange}
+                    onChange={(event) => setReferralFilters((previous) => ({ ...previous, dateRange: event.target.value }))}
+                  >
+                    <option value="all">All time</option>
+                    <option value="7d">Last 7 days</option>
+                    <option value="30d">Last 30 days</option>
+                    <option value="90d">Last 90 days</option>
+                  </select>
                 </div>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <MetricCard label="Avg Response" value={`${formatNumber(metrics.avgResponseTimeHours)}h`} subtext="Connected partner average" />
-                  <MetricCard label="Document Turnaround" value={`${formatNumber(metrics.documentTurnaroundDays)}d`} subtext="Operational signal" />
-                  <MetricCard label="Finance Approval" value={`${formatNumber(metrics.financeApprovalRate)}%`} subtext="Bond collaboration signal" />
-                </div>
-                <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-[#10243a]"><BarChart3 size={16} /> Internal scoring framework</div>
-                  <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    {['Fastest Attorney', 'Highest Bond Approval Rate', 'Most Active Agency', 'Highest Conversion Rate'].map((label, index) => (
-                      <div key={label} className="rounded-[8px] border border-[#e4ebf4] bg-[#f8fafc] p-3">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">{label}</p>
-                        <p className="mt-2 text-sm font-semibold text-[#10243a]">{connectedRelationships[index % Math.max(connectedRelationships.length, 1)]?.partner?.name || 'Benchmark pending'}</p>
+                <div className="space-y-3">
+                  {filteredReferrals.map((referral) => {
+                    const partner = (snapshot?.organisations || []).find((item) => [referral.referringOrganisationId, referral.referredOrganisationId].includes(item.id))
+                    const status = normalizeLower(referral.referralStatus)
+                    return (
+                      <div key={referral.id} className="grid gap-3 rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)] md:grid-cols-[1fr_auto]">
+                        <div>
+                          <p className="font-semibold text-[#10243a]">{partner?.name || 'Referral partner'}</p>
+                          <p className="mt-1 text-sm text-[#60758d]">Transaction {referral.transactionId || 'unlinked'} · {formatDate(referral.referralDate)}</p>
+                        </div>
+                        <div className="text-left md:text-right">
+                          <StatusBadge className="border-[#d9e7ff] bg-[#f3f7ff] text-[#1e4d82]">{status}</StatusBadge>
+                          <p className="mt-2 text-sm font-semibold text-[#10243a]">{formatCurrency(referral.referralValue)}</p>
+                        </div>
                       </div>
-                    ))}
-                  </div>
+                    )
+                  })}
+                  {!filteredReferrals.length ? <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">No referrals or opportunities yet</div> : null}
                 </div>
               </section>
             ) : null}
@@ -1094,7 +1227,9 @@ export default function PartnersPage() {
           <div className="space-y-5">
             <ProfilePanel partner={selectedPartner} relationship={selectedRelationship} />
             <section className="rounded-[8px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
-              <div className="flex items-center gap-2 text-sm font-semibold text-[#10243a]"><SlidersHorizontal size={16} /> Transaction defaults</div>
+              <div className="flex items-center gap-2 text-sm font-semibold text-[#10243a]">
+                <SlidersHorizontal size={16} /> Transaction defaults
+              </div>
               <div className="mt-4 grid gap-3">
                 <div className="rounded-[8px] border border-[#e4ebf4] bg-[#f8fafc] p-3">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Attorney Dropdown</p>
@@ -1107,7 +1242,9 @@ export default function PartnersPage() {
               </div>
             </section>
             <section className="rounded-[8px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
-              <div className="flex items-center gap-2 text-sm font-semibold text-[#10243a]"><Network size={16} /> Shared visibility</div>
+              <div className="flex items-center gap-2 text-sm font-semibold text-[#10243a]">
+                <Network size={16} /> Shared visibility
+              </div>
               <div className="mt-4 space-y-3 text-sm text-[#40556c]">
                 <p className="flex items-center gap-2"><CheckCircle2 size={15} className="text-[#17613d]" /> Listings: connected partners only</p>
                 <p className="flex items-center gap-2"><CheckCircle2 size={15} className="text-[#17613d]" /> Developments: preferred partners only</p>
