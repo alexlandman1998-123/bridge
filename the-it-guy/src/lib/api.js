@@ -33297,6 +33297,22 @@ async function resolveClientPortalOtpPacketSummary(
   })
 }
 
+export async function fetchClientPortalMandatePacketSummaryByToken(
+  token,
+  {
+    mandatePacketId = null,
+    sellerLeadId = null,
+    clientEmail = '',
+  } = {},
+) {
+  const client = requireClientPortalTokenClient(token)
+  return resolveClientPortalMandatePacketSummary(client, {
+    mandatePacketId,
+    sellerLeadId,
+    clientEmail,
+  })
+}
+
 async function resolveClientPortalMandatePacketSummary(
   client,
   {

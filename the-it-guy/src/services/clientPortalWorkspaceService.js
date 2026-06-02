@@ -2,6 +2,7 @@ import {
   fetchClientPortalByToken,
   fetchClientPortalContextsByToken,
   fetchClientPortalCoreByToken,
+  fetchClientPortalMandatePacketSummaryByToken,
 } from '../lib/api'
 import { generateClientPortalNextActions } from '../lib/clientPortalNextActionsEngine'
 import {
@@ -765,24 +766,115 @@ function findUploadedDocumentForRequirement(uploadedDocuments = [], requirement 
   return (uploadedDocuments || []).find((document) => documentMatchesRequirement(document, requirement)) || null
 }
 
-function buildSignedMandateDocumentFromPacket(portalData = {}, workspaceMode = 'buying') {
-  if (workspaceMode !== 'selling') return null
-  const mandatePacket = portalData?.activeSellingContext?.mandatePacket || portalData?.mandate?.packet || null
-  const state = normalizeValue(mandatePacket?.state)
-  const finalSignedFilePath = String(
+function getMandatePacketFinalSignedFilePath(mandatePacket = null) {
+  return String(
     mandatePacket?.finalSignedFilePath ||
+      mandatePacket?.final_signed_file_path ||
       mandatePacket?.version?.final_signed_file_path ||
       mandatePacket?.version?.finalSignedFilePath ||
       '',
   ).trim()
-  const finalSignedUrl = String(
+}
+
+function getMandatePacketFinalSignedUrl(mandatePacket = null) {
+  return String(
     mandatePacket?.finalSignedDownloadUrl ||
       mandatePacket?.finalSignedFileAccessUrl ||
+      mandatePacket?.final_signed_file_url ||
       mandatePacket?.version?.final_signed_file_access_url ||
       mandatePacket?.version?.final_signed_file_url ||
       '',
   ).trim()
-  if (state !== 'fully_signed' || (!finalSignedFilePath && !finalSignedUrl)) return null
+}
+
+function isMandatePacketFinalSigned(mandatePacket = null) {
+  if (!mandatePacket || typeof mandatePacket !== 'object') return false
+  const state = normalizeValue(mandatePacket?.state || mandatePacket?.status || mandatePacket?.packet?.status)
+  const hasFinalArtifact = Boolean(
+    getMandatePacketFinalSignedFilePath(mandatePacket) ||
+      getMandatePacketFinalSignedUrl(mandatePacket),
+  )
+  return hasFinalArtifact && [
+    'fully_signed',
+    'signed',
+    'completed',
+    'complete',
+    'finalised',
+    'finalized',
+    'archived',
+  ].includes(state)
+}
+
+function getPortalSellerEmail(portalData = {}) {
+  return String(
+    portalData?.buyer?.email ||
+      portalData?.activeSellingContext?.clientEmail ||
+      portalData?.activeSellingContext?.client_email ||
+      portalData?.listing?.seller?.email ||
+      '',
+  ).trim()
+}
+
+function getPortalMandatePacketId(portalData = {}) {
+  return String(
+    portalData?.activeSellingContext?.mandatePacketId ||
+      portalData?.activeSellingContext?.mandate_packet_id ||
+      portalData?.activeSellingContext?.mandatePacket?.id ||
+      portalData?.activeSellingContext?.mandatePacket?.packet?.id ||
+      portalData?.listing?.mandatePacketId ||
+      portalData?.listing?.mandate_packet_id ||
+      '',
+  ).trim()
+}
+
+async function hydrateSellerMandatePacketForPortalData(token, portalData = {}, workspaceMode = 'buying') {
+  if (workspaceMode !== 'selling') return portalData
+  const existingPacket = portalData?.activeSellingContext?.mandatePacket || null
+  if (isMandatePacketFinalSigned(existingPacket)) return portalData
+
+  const mandatePacketId = getPortalMandatePacketId(portalData)
+  const sellerLeadId = String(
+    portalData?.activeSellingContext?.sellerLeadId ||
+      portalData?.activeSellingContext?.seller_lead_id ||
+      portalData?.listing?.sellerLeadId ||
+      portalData?.listing?.seller_lead_id ||
+      '',
+  ).trim()
+
+  if (!mandatePacketId && !sellerLeadId) return portalData
+
+  try {
+    const resolvedPacket = await fetchClientPortalMandatePacketSummaryByToken(token, {
+      mandatePacketId,
+      sellerLeadId,
+      clientEmail: getPortalSellerEmail(portalData),
+    })
+    if (!resolvedPacket) return portalData
+    return {
+      ...portalData,
+      activeSellingContext: {
+        ...(portalData?.activeSellingContext || {}),
+        mandatePacketId: mandatePacketId || resolvedPacket?.packet?.id || resolvedPacket?.id || '',
+        mandatePacket: resolvedPacket,
+        mandateStatus: resolvedPacket?.state || portalData?.activeSellingContext?.mandateStatus || '',
+      },
+    }
+  } catch (error) {
+    console.warn('[client-portal-documents] Signed mandate packet unavailable', {
+      mandatePacketId: mandatePacketId || null,
+      sellerLeadId: sellerLeadId || null,
+      error,
+    })
+    return portalData
+  }
+}
+
+function buildSignedMandateDocumentFromPacket(portalData = {}, workspaceMode = 'buying') {
+  if (workspaceMode !== 'selling') return null
+  const mandatePacket = portalData?.activeSellingContext?.mandatePacket || portalData?.mandate?.packet || null
+  const finalSignedFilePath = getMandatePacketFinalSignedFilePath(mandatePacket)
+  const finalSignedUrl = getMandatePacketFinalSignedUrl(mandatePacket)
+  if (!isMandatePacketFinalSigned(mandatePacket)) return null
 
   const packetId = String(mandatePacket?.packet?.id || mandatePacket?.id || '').trim()
   const versionId = String(mandatePacket?.version?.id || '').trim()
@@ -1043,6 +1135,8 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
       },
     }
   }
+
+  portalData = await hydrateSellerMandatePacketForPortalData(token, portalData, workspaceMode)
 
   const canonicalRequirements = await fetchCanonicalDocumentRequirementsForPortal(portalData, workspaceMode)
   const documentCenter = {
