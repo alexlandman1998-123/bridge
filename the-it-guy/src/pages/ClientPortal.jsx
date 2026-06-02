@@ -237,6 +237,35 @@ function normalizeDocumentKey(value = '') {
     .replace(/^_+|_+$/g, '')
 }
 
+function isSignedMandateDocumentLink(requirement = {}, document = {}) {
+  const requirementSource = normalizeDocumentKey([
+    requirement?.key,
+    requirement?.requirement_key,
+    requirement?.label,
+    requirement?.requirement_name,
+    requirement?.name,
+  ].filter(Boolean).join(' '))
+  const documentSource = normalizeDocumentKey([
+    document?.requirementKey,
+    document?.requirement_key,
+    document?.document_type,
+    document?.documentType,
+    document?.category,
+    document?.document_category,
+    document?.name,
+    document?.document_name,
+  ].filter(Boolean).join(' '))
+  const requirementIsSignedMandate =
+    requirementSource.includes('signed_mandate') ||
+    requirementSource.includes('mandate_signature') ||
+    (requirementSource.includes('mandate') && requirementSource.includes('signed'))
+  const documentIsSignedMandate =
+    documentSource.includes('signed_mandate') ||
+    documentSource.includes('mandate_signature') ||
+    (documentSource.includes('mandate') && documentSource.includes('signed'))
+  return requirementIsSignedMandate && documentIsSignedMandate
+}
+
 function hasPersistedPortalDocument(document = null) {
   if (!document) return false
   return Boolean(document.id || document.file_path || document.url)
@@ -4060,7 +4089,23 @@ function ClientPortal() {
   const reservationStatus = normalizePortalStatus(portal?.transaction?.reservation_status || '')
   const groupedPortalRequiredDocuments = groupPortalRequiredDocuments(visiblePortalRequiredDocuments)
   const sharedPortalDocuments = (portal?.documents || []).filter((document) => String(document.uploaded_by_role || '').toLowerCase() !== 'client')
-  const portalDocumentsById = new Map((portal?.documents || []).map((document) => [String(document.id), document]))
+  const portalDocumentLookupRows = [
+    ...(Array.isArray(portal?.documents) ? portal.documents : []),
+    ...(Array.isArray(workspaceData?.documentCenter?.uploadedDocuments) ? workspaceData.documentCenter.uploadedDocuments : []),
+  ]
+  const portalDocumentsById = new Map()
+  portalDocumentLookupRows.forEach((document) => {
+    ;[
+      document?.id,
+      document?.file_path,
+      document?.storage_path,
+      document?.url,
+      document?.file_url,
+    ].forEach((key) => {
+      const normalizedKey = String(key || '').trim()
+      if (normalizedKey) portalDocumentsById.set(normalizedKey, document)
+    })
+  })
   const documentPurchaserType = resolvePurchaserTypeForDocuments(portal)
   const documentTransactionType = resolveTransactionTypeForDocuments(portal)
   const documentMaritalRegime = resolveClientMaritalRegime(portal?.onboardingFormData?.formData || {})
@@ -7904,9 +7949,10 @@ function ClientPortal() {
                 )}
 
                 {salesOtherRequiredDocuments.map((document) => {
-                  const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
+                  const uploadedDocument = document.uploadedDocument || document.uploaded_document || (document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null)
                   const hasUploadedDocument = hasPersistedPortalDocument(uploadedDocument)
-                  const statusLabel = document.complete || hasUploadedDocument ? 'Uploaded' : 'Not uploaded'
+                  const isLinkedSignedMandate = hasUploadedDocument && isSignedMandateDocumentLink(document, uploadedDocument)
+                  const statusLabel = isLinkedSignedMandate ? 'Completed' : document.complete || hasUploadedDocument ? 'Uploaded' : 'Not uploaded'
                   return (
                     <article key={document.key} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -7919,22 +7965,24 @@ function ClientPortal() {
                         </span>
                       </div>
                       <div className="mt-4 flex flex-wrap gap-2">
-                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
-                          <FileSignature size={14} />
-                          {hasUploadedDocument ? 'Replace upload' : 'Upload'}
-                          <input
-                            type="file"
-                            className="hidden"
-                            disabled={uploadingDocumentKey === document.key}
-                            onChange={(event) => {
-                              const file = event.target.files?.[0]
-                              if (file) {
-                                void handleUploadRequiredDocument(document.key, file)
-                              }
-                              event.target.value = ''
-                            }}
-                            />
-                        </label>
+                        {!isLinkedSignedMandate ? (
+                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
+                            <FileSignature size={14} />
+                            {hasUploadedDocument ? 'Replace upload' : 'Upload'}
+                            <input
+                              type="file"
+                              className="hidden"
+                              disabled={uploadingDocumentKey === document.key}
+                              onChange={(event) => {
+                                const file = event.target.files?.[0]
+                                if (file) {
+                                  void handleUploadRequiredDocument(document.key, file)
+                                }
+                                event.target.value = ''
+                              }}
+                              />
+                          </label>
+                        ) : null}
                         {hasUploadedDocument ? (
                           <button
                             type="button"
@@ -7945,7 +7993,7 @@ function ClientPortal() {
                             <Download size={14} />
                             {openingDocumentPath === String(uploadedDocument?.file_path || uploadedDocument?.id || '')
                               ? 'Opening...'
-                              : 'View upload'}
+                              : isLinkedSignedMandate ? 'Download Signed Mandate' : 'View upload'}
                           </button>
                         ) : null}
                       </div>

@@ -715,10 +715,37 @@ function normalizeDocumentMatchKey(value = '') {
     .replace(/^_+|_+$/g, '')
 }
 
+function isSignedMandateRequirement(requirement = {}) {
+  const source = normalizeDocumentMatchKey([
+    requirement?.key,
+    requirement?.requirement_key,
+    requirement?.label,
+    requirement?.requirement_name,
+    requirement?.name,
+  ].filter(Boolean).join(' '))
+  return source.includes('signed_mandate') || source.includes('mandate_signature') || (source.includes('mandate') && source.includes('signed'))
+}
+
+function isSignedMandateDocument(document = {}) {
+  const source = normalizeDocumentMatchKey([
+    document?.requirementKey,
+    document?.requirement_key,
+    document?.document_type,
+    document?.documentType,
+    document?.category,
+    document?.document_category,
+    document?.name,
+    document?.document_name,
+  ].filter(Boolean).join(' '))
+  return source.includes('mandate_signature') || source.includes('signed_mandate') || (source.includes('mandate') && source.includes('signed'))
+}
+
 function documentMatchesRequirement(document = {}, requirement = {}) {
   const requirementId = String(requirement?.id || requirement?.requirement_id || '').trim()
   const documentRequirementId = String(document?.requirementId || document?.requirement_id || '').trim()
   if (requirementId && documentRequirementId && requirementId === documentRequirementId) return true
+
+  if (isSignedMandateRequirement(requirement) && isSignedMandateDocument(document)) return true
 
   const requirementKey = normalizeDocumentMatchKey(requirement?.key || requirement?.requirement_key)
   const documentRequirementKey = normalizeDocumentMatchKey(document?.requirementKey || document?.requirement_key)
@@ -807,6 +834,8 @@ function buildDocumentCenter(portalData, workspaceMode = 'buying') {
         isUploaded: true,
         uploadedDocumentId: uploadedDocument.id || uploadedDocument.file_path || uploadedDocument.storage_path || null,
         uploaded_document_id: uploadedDocument.id || uploadedDocument.file_path || uploadedDocument.storage_path || null,
+        uploadedDocument,
+        uploaded_document: uploadedDocument,
       }
     })
   const additionalRequests = filterAdditionalRequestsByWorkspace(

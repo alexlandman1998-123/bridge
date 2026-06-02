@@ -15,6 +15,7 @@ function ClientDocumentCard({
   const canOpen = Boolean(item?.linkedDocument)
   const openKey = String(item?.linkedDocument?.file_path || item?.linkedDocument?.id || '').trim()
   const opening = Boolean(openKey && openingDocumentPath === openKey)
+  const openLabel = String(item?.openLabel || 'View file').trim()
 
   return (
     <article className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
@@ -51,7 +52,7 @@ function ClientDocumentCard({
               className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
             >
               <Download size={14} />
-              {opening ? 'Opening...' : 'View file'}
+              {opening ? 'Opening...' : openLabel}
             </button>
           ) : null}
         </div>

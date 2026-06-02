@@ -43,6 +43,33 @@ function normalizeDocumentMatchKey(value = '') {
     .replace(/^_+|_+$/g, '')
 }
 
+function isSignedMandateRequirement(requirement = {}) {
+  const source = normalizeDocumentMatchKey([
+    requirement?.key,
+    requirement?.requirement_key,
+    requirement?.label,
+    requirement?.requirement_name,
+    requirement?.name,
+    requirement?.title,
+  ].filter(Boolean).join(' '))
+  return source.includes('signed_mandate') || source.includes('mandate_signature') || (source.includes('mandate') && source.includes('signed'))
+}
+
+function isSignedMandateDocument(document = {}) {
+  const source = normalizeDocumentMatchKey([
+    document?.requirementKey,
+    document?.requirement_key,
+    document?.document_type,
+    document?.documentType,
+    document?.category,
+    document?.document_category,
+    document?.name,
+    document?.document_name,
+    document?.title,
+  ].filter(Boolean).join(' '))
+  return source.includes('mandate_signature') || source.includes('signed_mandate') || (source.includes('mandate') && source.includes('signed'))
+}
+
 function getDocumentLookupKeys(document = {}) {
   return [
     document?.id,
@@ -59,6 +86,8 @@ function documentMatchesRequirement(document = {}, requirement = {}) {
   const requirementId = toText(requirement?.id || requirement?.requirement_id)
   const documentRequirementId = toText(document?.requirementId || document?.requirement_id)
   if (requirementId && documentRequirementId && requirementId === documentRequirementId) return true
+
+  if (isSignedMandateRequirement(requirement) && isSignedMandateDocument(document)) return true
 
   const requirementKey = normalizeDocumentMatchKey(requirement?.key || requirement?.requirement_key)
   const documentRequirementKey = normalizeDocumentMatchKey(document?.requirementKey || document?.requirement_key)
@@ -82,9 +111,17 @@ function normalizeRequiredDocument(requirement = {}, uploadedDocumentsById = new
   const key = toText(requirement?.key || requirement?.requirement_key || requirement?.id || requirement?.label || 'required-document')
   const requirementStatus = resolveRequirementStatus(requirement)
   const uploadedDocumentId = toText(requirement?.uploadedDocumentId || requirement?.uploaded_document_id)
-  const linkedDocument = uploadedDocumentId
-    ? uploadedDocumentsById.get(uploadedDocumentId) || null
-    : findUploadedDocumentForRequirement(uploadedDocuments, requirement)
+  const embeddedLinkedDocument =
+    requirement?.uploadedDocument && typeof requirement.uploadedDocument === 'object'
+      ? requirement.uploadedDocument
+      : requirement?.uploaded_document && typeof requirement.uploaded_document === 'object'
+        ? requirement.uploaded_document
+        : null
+  const linkedDocument = embeddedLinkedDocument || (
+    uploadedDocumentId
+      ? uploadedDocumentsById.get(uploadedDocumentId) || null
+      : findUploadedDocumentForRequirement(uploadedDocuments, requirement)
+  )
   const linkedStatus = linkedDocument ? normalizeDocumentStatus(linkedDocument?.status || 'uploaded') : ''
   const status = linkedDocument && ['required', 'requested'].includes(requirementStatus)
     ? linkedStatus
@@ -101,7 +138,8 @@ function normalizeRequiredDocument(requirement = {}, uploadedDocumentsById = new
     linkedDocument,
     hasUploadedDocument: Boolean(linkedDocument?.id || linkedDocument?.file_path || linkedDocument?.url),
     uploadKey: key,
-    uploadSpec: resolveRequirementUploadSpec(requirement),
+    uploadSpec: isSignedMandateRequirement(requirement) && linkedDocument ? null : resolveRequirementUploadSpec(requirement),
+    openLabel: isSignedMandateRequirement(requirement) && linkedDocument ? 'Download Signed Mandate' : '',
     metaLine: toText(requirement?.requestedBy || requirement?.requested_by_name),
     education: toText(education?.shortExplanation),
   }
