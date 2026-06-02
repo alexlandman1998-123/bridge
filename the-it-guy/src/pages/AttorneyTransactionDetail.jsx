@@ -26,6 +26,7 @@ import ProgressTimeline from '../components/ProgressTimeline'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
 import TransactionBondHybridFinanceWorkflowPanel from '../components/TransactionBondHybridFinanceWorkflowPanel'
+import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Button from '../components/ui/Button'
@@ -59,7 +60,6 @@ import {
   approveBondQuote,
   archiveTransactionLifecycle,
   cancelTransactionLifecycle,
-  archiveTransactionDocument,
   fetchTransactionCoreById,
   fetchTransactionById,
   getCompletionBlockers,
@@ -193,24 +193,15 @@ function getAttorneyCategoryForRequiredDocument(requirement = {}) {
 }
 
 const DOCUMENT_LIBRARY_FILTERS = [
-  { key: 'all', label: 'All Documents' },
+  { key: 'all', label: 'All' },
   { key: 'buyer', label: 'Buyer' },
   { key: 'seller', label: 'Seller' },
   { key: 'finance', label: 'Finance' },
   { key: 'transfer', label: 'Transfer' },
   { key: 'bond', label: 'Bond' },
   { key: 'cancellation', label: 'Cancellation' },
-  { key: 'signed', label: 'Signed' },
   { key: 'generated', label: 'Generated' },
   { key: 'internal', label: 'Internal' },
-]
-
-const DOCUMENT_LIBRARY_STATUS_FILTERS = [
-  { key: 'all', label: 'All' },
-  { key: 'required', label: 'Required' },
-  { key: 'missing', label: 'Missing' },
-  { key: 'pending_review', label: 'Pending Review' },
-  { key: 'approved', label: 'Approved' },
 ]
 
 const DOCUMENT_RELATED_WORKFLOW_OPTIONS = [
@@ -225,12 +216,6 @@ const DOCUMENT_RELATED_WORKFLOW_OPTIONS = [
   { value: 'other', label: 'Other' },
 ]
 
-const DOCUMENT_UPLOAD_VISIBILITY_OPTIONS = [
-  { value: 'client_visible', label: 'Client visible' },
-  { value: 'shared_role_players', label: 'Shared' },
-  { value: 'internal_only', label: 'Internal only' },
-]
-
 const DOCUMENT_VISIBILITY_OPTIONS = [
   { key: 'client_visible', label: 'Client visible' },
   { key: 'shared', label: 'Shared with roleplayers' },
@@ -242,8 +227,8 @@ const LEGAL_WORKFLOW_DETAIL_ROUTE_KEYS = ['transfer', 'bond-registration', 'bond
 function inferLibraryCategoryFromTokens(tokens = '') {
   const haystack = String(tokens || '').toLowerCase()
 
-  if (/(signed|signature|executed|registrat|otp|instruction|lodgement|close.?out|handover)/.test(haystack)) {
-    return 'signed'
+  if (/(internal|commission|working|admin|confidential|private)/.test(haystack)) {
+    return 'internal'
   }
   if (/(generated|auto[_-]?generated|draft|packet)/.test(haystack)) {
     return 'generated'
@@ -251,20 +236,20 @@ function inferLibraryCategoryFromTokens(tokens = '') {
   if (/(cancellation|cancel|annul)/.test(haystack)) {
     return 'cancellation'
   }
-  if (/(bond|guarantee|lender|finance|proof of funds|statement|income|payroll|bank|affordability)/.test(haystack)) {
+  if (/(finance|proof of funds|income|payroll|payslip|bank statement|affordability)/.test(haystack)) {
+    return 'finance'
+  }
+  if (/(bond|guarantee|lender|approval letter|originator)/.test(haystack)) {
     return 'bond'
   }
   if (/(seller)/.test(haystack)) {
     return 'seller'
   }
-  if (/(transfer|title deed|warranty|registration|property)/.test(haystack)) {
+  if (/(transfer|title deed|warranty|registration|property|signed|signature|executed|otp|instruction|lodgement|close.?out|handover)/.test(haystack)) {
     return 'transfer'
   }
   if (/(buyer|offer|sales|purchase agreement|reservation)/.test(haystack)) {
     return 'buyer'
-  }
-  if (/(internal|commission|working|admin|confidential|private)/.test(haystack)) {
-    return 'internal'
   }
 
   return ''
@@ -317,26 +302,10 @@ function resolveRequirementLibraryCategory(requirement = {}) {
   return getAttorneyCategoryForRequiredDocument(requirement).toLowerCase().includes('seller') ? 'seller' : 'buyer'
 }
 
-function resolveDocumentRequestLibraryCategory(documentRequest = {}) {
-  const requestedFrom = String(documentRequest?.requestedFrom || documentRequest?.requested_from || documentRequest?.audience || '').trim().toLowerCase()
-  if (requestedFrom.includes('seller')) return 'seller'
-  if (requestedFrom.includes('attorney') || requestedFrom.includes('conveyancer') || requestedFrom.includes('lawyer')) return 'transfer'
-  if (requestedFrom.includes('bond') || requestedFrom.includes('finance') || requestedFrom.includes('originator') || requestedFrom.includes('lender')) return 'bond'
-  if (requestedFrom.includes('internal') || requestedFrom.includes('agent') || requestedFrom.includes('developer')) return 'internal'
-  return 'buyer'
-}
-
 function resolveDocumentLibraryVisibility(document = {}) {
   const raw = String(document?.visibility_scope || document?.visibility || '').trim().toLowerCase()
   if (raw === 'internal' || raw === 'internal_only') return 'Internal'
   if (raw === 'client_visible' || raw === 'shared' || raw === 'shared_role_players') return 'Shared'
-  return 'Internal'
-}
-
-function resolveDocumentRequestVisibilityLabel(documentRequest = {}) {
-  const visibility = String(documentRequest?.visibility || '').trim().toLowerCase()
-  if (visibility === 'internal_only') return 'Internal'
-  if (visibility === 'client_visible' || visibility === 'shared_role_players' || visibility === 'shared') return 'Shared'
   return 'Internal'
 }
 
@@ -356,46 +325,105 @@ function resolveDocumentWorkflowLabel(document = {}) {
 
 function normalizeLibraryCategory(category = '') {
   const normalized = String(category || '').trim().toLowerCase()
-  if (['all', 'buyer', 'seller', 'finance', 'transfer', 'bond', 'cancellation', 'signed', 'generated', 'internal'].includes(normalized)) {
+  if (['all', 'buyer', 'seller', 'finance', 'transfer', 'bond', 'cancellation', 'generated', 'internal'].includes(normalized)) {
     return normalized
   }
   return ''
 }
 
-function normalizeLibraryStatus(status = '') {
+function normalizeDocumentCommandStatus(status = '', { hasDocument = false } = {}) {
   const normalized = String(status || '').trim().toLowerCase()
-  if (!normalized) return 'uploaded'
-  if (normalized === 'required' || normalized === 'missing') return 'missing'
-  if (normalized === 'requested') return 'requested'
-  if (normalized === 'reviewed' || normalized === 'under_review' || normalized === 'pending_review') return 'under_review'
-  if (normalized === 'verified' || normalized === 'accepted' || normalized === 'approved' || normalized === 'completed') return 'approved'
+  if (normalized === 'expired') return 'expired'
   if (normalized === 'rejected' || normalized === 'reupload_required') return 'rejected'
-  if (normalized === 'superseded') return 'superseded'
-  return normalized
+  if (normalized === 'requested') return hasDocument ? 'uploaded' : 'requested'
+  if (normalized === 'pending') return hasDocument ? 'uploaded' : 'missing'
+  if (normalized === 'under_review' || normalized === 'reviewed' || normalized === 'pending_review') return 'pending_review'
+  if (normalized === 'approved' || normalized === 'accepted' || normalized === 'completed' || normalized === 'verified') return 'verified'
+  if (normalized === 'generated') return 'generated'
+  if (normalized === 'uploaded') return 'uploaded'
+  return hasDocument ? 'uploaded' : 'missing'
 }
 
-function getLibraryStatusTone(status = '') {
-  const normalized = normalizeLibraryStatus(status)
-  if (normalized === 'missing' || normalized === 'requested') {
-    return 'border-[#f1ddd0] bg-[#fff8f3] text-[#a15b31]'
-  }
-  if (normalized === 'under_review') return 'border-[#d8e4ef] bg-[#f4f8fc] text-[#35546c]'
-  if (normalized === 'approved') return 'border-[#cfe3d7] bg-[#eef8f1] text-[#2f7a51]'
-  if (normalized === 'rejected') return 'border-[#f1cbc7] bg-[#fff5f4] text-[#b42318]'
-  if (normalized === 'superseded') return 'border-[#f7eadb] bg-[#fff9f0] text-[#8a5511]'
-  return 'border-[#dde7f1] bg-[#f8fbff] text-[#64748b]'
-}
-
-function formatLibraryStatusLabel(status = '') {
-  const normalized = normalizeLibraryStatus(status)
+function getDocumentCommandStatusLabel(status = '') {
+  const normalized = normalizeDocumentCommandStatus(status)
   if (normalized === 'missing') return 'Missing'
   if (normalized === 'requested') return 'Requested'
   if (normalized === 'uploaded') return 'Uploaded'
-  if (normalized === 'under_review') return 'Pending Review'
-  if (normalized === 'approved') return 'Approved'
+  if (normalized === 'pending_review') return 'Pending Review'
+  if (normalized === 'verified') return 'Verified'
   if (normalized === 'rejected') return 'Rejected'
-  if (normalized === 'superseded') return 'Superseded'
+  if (normalized === 'expired') return 'Expired'
+  if (normalized === 'generated') return 'Generated'
   return toTitle(normalized || 'Unknown')
+}
+
+function getDocumentCommandStatusTone(status = '') {
+  const normalized = normalizeDocumentCommandStatus(status)
+  if (normalized === 'missing' || normalized === 'rejected' || normalized === 'expired') {
+    return 'border-red-100 bg-red-50 text-red-700'
+  }
+  if (normalized === 'requested' || normalized === 'pending_review') {
+    return 'border-orange-100 bg-orange-50 text-orange-700'
+  }
+  if (normalized === 'verified') return 'border-emerald-100 bg-emerald-50 text-emerald-700'
+  if (normalized === 'generated') return 'border-violet-100 bg-violet-50 text-violet-700'
+  return 'border-blue-100 bg-blue-50 text-blue-700'
+}
+
+function getDocumentPriorityLabel(requirement = {}) {
+  const raw = String(
+    requirement?.priority ||
+      requirement?.requirementLevel ||
+      requirement?.requirement_level ||
+      requirement?.priorityLevel ||
+      '',
+  )
+    .trim()
+    .toLowerCase()
+  if (requirement?.isBlocking || raw === 'blocker' || raw === 'required' || raw === 'high' || raw === 'urgent') return 'High'
+  if (raw === 'optional' || raw === 'low') return 'Low'
+  return 'Medium'
+}
+
+function getDocumentPriorityTone(priority = '') {
+  const normalized = String(priority || '').trim().toLowerCase()
+  if (normalized === 'high') return 'border-red-100 bg-red-50 text-red-700'
+  if (normalized === 'low') return 'border-slate-200 bg-slate-50 text-slate-600'
+  return 'border-orange-100 bg-orange-50 text-orange-700'
+}
+
+function getDocumentCommandCategoryLabel(category = '') {
+  const normalized = normalizeLibraryCategory(category)
+  const labels = {
+    buyer: 'Buyer',
+    seller: 'Seller',
+    finance: 'Finance',
+    transfer: 'Transfer',
+    bond: 'Bond',
+    cancellation: 'Cancellation',
+    generated: 'Generated',
+    internal: 'Internal',
+  }
+  return labels[normalized] || 'Instruction / OTP'
+}
+
+function getUploadCategoryForLibraryFilter(filterKey = '') {
+  const normalized = normalizeLibraryCategory(filterKey)
+  if (normalized === 'buyer') return 'Buyer FICA / Compliance'
+  if (normalized === 'seller') return 'Seller FICA / Compliance'
+  if (normalized === 'finance' || normalized === 'bond') return 'Guarantees'
+  if (normalized === 'transfer' || normalized === 'generated') return 'Drafting Documents'
+  if (normalized === 'cancellation') return 'Clearance Documents'
+  if (normalized === 'internal') return 'Internal Working Documents'
+  return ATTORNEY_DOCUMENT_CATEGORIES[0]
+}
+
+function isDocumentActivityEntry(entry = {}) {
+  const filterKeys = new Set(Array.isArray(entry?.filterKeys) ? entry.filterKeys : [])
+  const messageType = String(entry?.messageType || '').trim().toLowerCase()
+  const title = String(entry?.title || '').trim().toLowerCase()
+  const body = String(entry?.body || '').trim().toLowerCase()
+  return filterKeys.has('documents') || messageType.includes('document') || title.includes('document') || body.includes('document') || Boolean(entry?.attachmentName)
 }
 
 function resolveUploadedByLabel(document = {}, participants = []) {
@@ -408,13 +436,6 @@ function resolveUploadedByLabel(document = {}, participants = []) {
     return toTitle(role)
   }
   return 'System'
-}
-
-function resolveLibraryUploadVisibilityScope(selection = 'client_visible') {
-  const normalized = String(selection || 'client_visible').trim().toLowerCase()
-  if (normalized === 'internal_only') return 'internal'
-  if (normalized === 'shared_role_players') return 'shared'
-  return 'shared'
 }
 
 const STAKEHOLDER_ROLE_OPTIONS = [
@@ -506,22 +527,6 @@ function getRequirementPartyLabel(requirement = {}) {
   if (normalized === 'cancellation_attorney') return 'Cancellation attorney'
   if (normalized === 'attorney' || normalized === 'transfer_attorney') return 'Conveyancer / Transfer Attorney'
   return toTitle(normalized.replaceAll('_', ' '))
-}
-
-function getRequirementBlockingLabel(requirement = {}) {
-  if (requirement?.preCollectionAllowed) {
-    return 'Pre-collection · Non-blocking'
-  }
-  if (requirement?.isBlocking === false) {
-    return 'Non-blocking'
-  }
-  const stage = String(requirement?.blockingStage || '').trim().toUpperCase()
-  if (stage === 'OTP') return 'Blocks OTP'
-  if (stage === 'FIN') return 'Blocks Finance'
-  if (stage === 'ATTY' || stage === 'TRANSFER') return 'Blocks Attorney Handover'
-  if (stage === 'XFER') return 'Blocks Transfer'
-  if (stage === 'REG' || stage === 'REGISTRATION') return 'Blocks Registration'
-  return 'Blocking'
 }
 
 function normalizeLifecycleState(value) {
@@ -1032,17 +1037,6 @@ function getWorkflowHealthLabel(lane = {}) {
   return WORKFLOW_STATUS_META[key]?.label || 'On Track'
 }
 
-function getWorkflowFocus(lane = {}) {
-  const currentStep = getCurrentWorkflowStep(lane)
-  const status = normalizeWorkspaceStatus(currentStep?.status || lane?.laneStatus || lane?.summary?.status)
-  const label = currentStep ? getWorkflowStepLabel(currentStep) : lane?.summary?.nextAction || 'Workflow review'
-  if (status === 'blocked') return `Blocked: ${label}`
-  if (status === 'waiting') return `Waiting on ${label.toLowerCase()}`
-  if (status === 'completed') return `${label} completed`
-  if (status === 'not_started') return `Start ${label.toLowerCase()}`
-  return `Current focus: ${label}`
-}
-
 function getWorkflowExplanation(lane = {}) {
   const currentStep = getCurrentWorkflowStep(lane)
   const status = normalizeWorkspaceStatus(currentStep?.status || lane?.laneStatus || lane?.summary?.status)
@@ -1051,15 +1045,6 @@ function getWorkflowExplanation(lane = {}) {
   if (status === 'waiting') return 'Capture who or what the workflow is waiting on, then follow up from the action drawer.'
   if (lane?.documentSummary?.missing) return `${lane.documentSummary.missing} required document item(s) still need attention.`
   return lane?.summary?.nextAction ? `Next action: ${lane.summary.nextAction}` : 'Keep the lane moving by updating the active step or adding a workflow note.'
-}
-
-function getPrimaryWorkflowAction(lane = {}) {
-  const currentStep = getCurrentWorkflowStep(lane)
-  const status = normalizeWorkspaceStatus(currentStep?.status || lane?.laneStatus || lane?.summary?.status)
-  if (status === 'blocked') return 'Blocker Details'
-  if (status === 'waiting') return 'Send Reminder'
-  if (lane?.documentSummary?.missing) return 'Upload Document'
-  return 'Mark Step Complete'
 }
 
 function normalizeLegalWorkflowDetailKey(value = '') {
@@ -1120,15 +1105,6 @@ function summarizeLaneMilestone(lane = {}, keywords = [], fallback = 'Not starte
   return WORKFLOW_STATUS_META[statusKey]?.label || toTitle(statusKey)
 }
 
-function isLegalActivityEntry(entry = {}) {
-  const filterKeys = new Set(Array.isArray(entry?.filterKeys) ? entry.filterKeys : [])
-  if (['transfer', 'bond', 'cancellation'].some((key) => filterKeys.has(key))) {
-    return true
-  }
-
-  return ['transfer_update', 'registration_update', 'finance_update', 'stage_change'].includes(String(entry?.messageType || '').trim().toLowerCase())
-}
-
 function getStepClasses(step = {}, currentStep = null) {
   const status = normalizeWorkspaceStatus(step.status)
   const meta = WORKFLOW_STATUS_META[status] || WORKFLOW_STATUS_META.not_started
@@ -1138,13 +1114,6 @@ function getStepClasses(step = {}, currentStep = null) {
   const base = isCurrent ? 'border-primary bg-primarySoft shadow-[0_8px_18px_rgba(15,70,110,0.10)]' : `${meta.border} ${meta.bg}`
   const text = isCurrent ? 'text-primary' : meta.text
   return { base, text, meta, isCurrent }
-}
-
-function getDocumentStatus(document = {}) {
-  const raw = String(document.review_status || document.status || '').trim().toLowerCase()
-  if (raw === 'under_review') return 'Under Review'
-  if (raw === 'completed') return 'Approved'
-  return toTitle(raw || 'Uploaded')
 }
 
 function getRequirementStatusLabel(status) {
@@ -2357,125 +2326,38 @@ function MatterOverviewHeader({
     </div>
   )
 }
-function WorkflowLaneCard({ lane, onOpenDetails, onPrimaryAction }) {
-  const laneKey = String(lane?.laneKey || 'transfer').toLowerCase()
-  const accent = LANE_ACCENTS[laneKey] || LANE_ACCENTS.transfer
-  const statusKey = getWorkflowHealthKey(lane)
-  const statusMeta = WORKFLOW_STATUS_META[statusKey] || WORKFLOW_STATUS_META.not_started
-  const progress = Number(lane?.summary?.completionPercent || 0)
-  const steps = Array.isArray(lane?.steps) ? lane.steps : []
-  const currentStep = getCurrentWorkflowStep(lane)
-  const visibleSteps = steps.slice(0, 8)
-  const primaryAction = getPrimaryWorkflowAction(lane)
-
-  return (
-    <article className={`overflow-hidden rounded-[16px] border border-borderDefault border-l-4 bg-white shadow-[0_10px_22px_rgba(15,23,42,0.04)] ${accent.ring}`}>
-      <div className="p-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={`inline-flex size-9 items-center justify-center rounded-[12px] ring-1 ${accent.icon}`}>
-                <Workflow size={17} />
-              </span>
-              <h3 className="text-base font-semibold text-textStrong">{getWorkflowLaneTitle(lane)}</h3>
-              <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${accent.badge}`}>
-                {getAssignedFirmLabel(lane)}
-              </span>
-            </div>
-            <p className="mt-3 text-sm font-semibold text-textStrong">{getWorkflowFocus(lane)}</p>
-            <p className="mt-1 max-w-3xl text-sm leading-5 text-textMuted">{getWorkflowExplanation(lane)}</p>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
-            <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.border} ${statusMeta.bg} ${statusMeta.text}`}>
-              <span className={`h-2 w-2 rounded-full ${statusMeta.dot}`} />
-              {getWorkflowHealthLabel(lane)}
-            </span>
-            <span className="rounded-full border border-borderSoft bg-surfaceAlt px-2.5 py-1 text-xs font-semibold text-textStrong">
-              {progress}% complete
-            </span>
-          </div>
-        </div>
-
-        <div className="mt-4">
-          <div className="grid grid-cols-2 gap-1.5 md:grid-cols-4 xl:grid-cols-8">
-            {visibleSteps.map((step) => {
-              const classes = getStepClasses(step, currentStep)
-              return (
-                <div key={step.id || step.stepKey} className={`min-h-[76px] rounded-[12px] border px-2.5 py-2 ${classes.base}`}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className={`h-2 w-2 shrink-0 rounded-full ${classes.meta.dot}`} />
-                    {classes.isCurrent ? <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[0.62rem] font-bold uppercase text-primary">Now</span> : null}
-                  </div>
-                  <p className={`mt-2 line-clamp-2 text-[0.72rem] font-semibold leading-4 ${classes.isCurrent ? 'text-textStrong' : 'text-textMuted'}`}>
-                    {getWorkflowStepLabel(step)}
-                  </p>
-                  <p className={`mt-1 truncate text-[0.68rem] font-medium ${classes.text}`}>
-                    {step.completedAt ? formatShortDayMonth(step.completedAt) : classes.meta.label}
-                  </p>
-                </div>
-              )
-            })}
-          </div>
-          {steps.length > visibleSteps.length ? (
-            <p className="mt-2 text-xs font-medium text-textMuted">+{steps.length - visibleSteps.length} more step(s) in details</p>
-          ) : null}
-        </div>
-
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 text-xs text-textMuted">
-            Next/current step: <span className="font-semibold text-textStrong">{currentStep ? getWorkflowStepLabel(currentStep) : 'No active step'}</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" size="sm" onClick={() => onPrimaryAction?.(lane, primaryAction)}>
-              {primaryAction}
-            </Button>
-            <Button type="button" variant="secondary" size="sm" onClick={() => onPrimaryAction?.(lane, 'Upload Document')}>
-              <Upload size={14} />
-              Upload Document
-            </Button>
-            <Button type="button" variant="secondary" size="sm" onClick={onOpenDetails}>
-              View Details
-              <ChevronRight size={14} />
-            </Button>
-          </div>
-        </div>
-      </div>
-    </article>
-  )
-}
-
 function LegalWorkflowHubCard({ workflow, onOpen }) {
   const accent = LANE_ACCENTS[workflow?.accentKey] || LANE_ACCENTS.transfer
   const statusMeta = WORKFLOW_STATUS_META[workflow?.statusKey] || WORKFLOW_STATUS_META.not_started
 
   return (
-    <article className={`rounded-[18px] border border-borderDefault border-l-4 bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)] ${accent.ring}`}>
+    <article className={`min-w-0 overflow-hidden rounded-[18px] border border-borderDefault border-l-4 bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5 ${accent.ring}`}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className={`inline-flex size-10 items-center justify-center rounded-[12px] ring-1 ${accent.icon}`}>
               <Workflow size={17} />
             </span>
-            <h3 className="text-base font-semibold text-textStrong">{workflow.title}</h3>
+            <h3 className="min-w-0 text-base font-semibold text-textStrong">{workflow.title}</h3>
           </div>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-textMuted">{workflow.summary}</p>
         </div>
-        <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${statusMeta.border} ${statusMeta.bg} ${statusMeta.text}`}>
+        <span className={`inline-flex w-fit shrink-0 items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${statusMeta.border} ${statusMeta.bg} ${statusMeta.text}`}>
           <span className={`h-2 w-2 rounded-full ${statusMeta.dot}`} />
           {workflow.statusLabel}
         </span>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,7.5rem),1fr))] gap-3">
         {[
           ['Status', workflow.statusLabel],
           ['Progress', `${workflow.progressPercent}%`],
           ['Next Step', workflow.nextStep || 'Pending'],
           [workflow.assignedLabel, workflow.assignedDisplay],
         ].map(([label, value]) => (
-          <article key={`${workflow.key}-${label}`} className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
-            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
-            <strong className="mt-1 block text-sm text-textStrong">{value || 'Not assigned'}</strong>
+          <article key={`${workflow.key}-${label}`} className="min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+            <span className="block break-words text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
+            <strong className="mt-1 block break-words text-sm text-textStrong">{value || 'Not assigned'}</strong>
           </article>
         ))}
       </div>
@@ -2486,7 +2368,7 @@ function LegalWorkflowHubCard({ workflow, onOpen }) {
         </div>
       ) : null}
 
-      <div className="mt-4 flex items-center justify-between gap-3">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <span className="text-xs font-medium text-textMuted">
           {workflow.activityCount} legal update{workflow.activityCount === 1 ? '' : 's'}
         </span>
@@ -2840,10 +2722,8 @@ function AttorneyTransactionDetail() {
   const [discussionBody, setDiscussionBody] = useState('')
   const [discussionType, setDiscussionType] = useState('operational')
   const [discussionVisibility, setDiscussionVisibility] = useState('shared')
-  const [activeDocumentGroup, setActiveDocumentGroup] = useState('all_documents')
   const [activeDocumentLibraryCategory, setActiveDocumentLibraryCategory] = useState('all')
-  const [activeDocumentLibraryStatus, setActiveDocumentLibraryStatus] = useState('all')
-  const [uploadingDocumentKey, setUploadingDocumentKey] = useState('')
+  const [showAllRequiredDocuments, setShowAllRequiredDocuments] = useState(false)
   const [uploadInputVersion, setUploadInputVersion] = useState(0)
   const [uploadDocumentModalOpen, setUploadDocumentModalOpen] = useState(false)
   const [documentUploadForm, setDocumentUploadForm] = useState({
@@ -2933,8 +2813,8 @@ function AttorneyTransactionDetail() {
   const [detailPanelKey, setDetailPanelKey] = useState('matter')
   const [hydratingDetail, setHydratingDetail] = useState(false)
   const [workflowOperations, setWorkflowOperations] = useState(null)
-  const [workflowLoading, setWorkflowLoading] = useState(false)
-  const [workflowError, setWorkflowError] = useState('')
+  const [, setWorkflowLoading] = useState(false)
+  const [, setWorkflowError] = useState('')
   const [transactionRollup, setTransactionRollup] = useState(null)
   const [transactionRollupError, setTransactionRollupError] = useState('')
   const [workflowDrawerLaneKey, setWorkflowDrawerLaneKey] = useState('')
@@ -3090,7 +2970,6 @@ function AttorneyTransactionDetail() {
   const unit = data?.unit || null
   const documents = data?.documents ?? EMPTY_ARRAY
   const requiredDocumentChecklist = useMemo(() => data?.requiredDocumentChecklist || EMPTY_ARRAY, [data?.requiredDocumentChecklist])
-  const documentChecklistInsights = data?.documentChecklistInsights || null
   const requiredDocumentsByDocumentId = useMemo(() => {
     const map = new Map()
     for (const requirement of requiredDocumentChecklist) {
@@ -3374,7 +3253,6 @@ function AttorneyTransactionDetail() {
   const financeTypeLabel = hasCapturedFinanceType ? toTitle(normalizedFinanceType) : 'Not captured'
   const isBondOrHybridFinance = hasCapturedFinanceType && isBondFinanceType(normalizedFinanceType)
   const financeRequiresBondSupport = hasCapturedFinanceType && isBondOrHybridFinance
-  const isCapturedCashFinance = hasCapturedFinanceType && normalizedFinanceType === 'cash'
   const displayPurchasePriceValue = hasCapturedFinancials ? Number(transaction?.purchase_price || transaction?.sales_price || 0) : 0
   const bondAmountFallback = hasCapturedFinanceType ? (financeRequiresBondSupport ? 'Pending' : 'N/A') : 'Not captured'
   const propertyAddress = buildPropertyAddress(transaction)
@@ -3457,23 +3335,6 @@ function AttorneyTransactionDetail() {
 
     return groups
   }, [documents, getLinkedRequirementForDocument])
-  const attorneyDocumentSections = useMemo(
-    () =>
-      ATTORNEY_DOCUMENT_GROUPS.map((group) => ({
-        ...group,
-        items: uniqueDocumentsByRenderKey(groupedDocuments[group.key] || []),
-      })),
-    [groupedDocuments],
-  )
-  const activeAttorneyDocumentSection = useMemo(
-    () => attorneyDocumentSections.find((group) => group.key === activeDocumentGroup) || attorneyDocumentSections[0] || null,
-    [activeDocumentGroup, attorneyDocumentSections],
-  )
-  const sharedAttorneyDocumentCount = useMemo(
-    () => documents.filter((document) => String(document.visibility_scope || 'shared').toLowerCase() === 'shared').length,
-    [documents],
-  )
-  const internalAttorneyDocumentCount = Math.max(0, documents.length - sharedAttorneyDocumentCount)
   const requirementDocumentLookup = useMemo(() => {
     const byCanonicalId = new Map()
     const byDocumentId = new Map()
@@ -3489,43 +3350,99 @@ function AttorneyTransactionDetail() {
     }
     return { byCanonicalId, byDocumentId }
   }, [documents, getLinkedRequirementForDocument])
-  const documentWorkspaceSections = useMemo(() => {
-    const sectionMap = {
-      buyer_documents: [],
-      finance_documents: [],
-      seller_documents: [],
-      transfer_documents: [],
-    }
+  const requiredDocumentRows = useMemo(
+    () =>
+      requiredDocumentChecklist.map((requirement) => {
+        const canonicalId = getRequirementCanonicalId(requirement)
+        const uploadedDocumentId = getRequirementDocumentId(requirement)
+        const linkedDocument =
+          (canonicalId ? requirementDocumentLookup.byCanonicalId.get(String(canonicalId)) : null) ||
+          (uploadedDocumentId ? requirementDocumentLookup.byDocumentId.get(String(uploadedDocumentId)) : null) ||
+          requirement?.matchedDocument ||
+          null
+        const status = normalizeDocumentCommandStatus(requirement?.status || linkedDocument?.review_status || linkedDocument?.status, {
+          hasDocument: Boolean(linkedDocument || uploadedDocumentId),
+        })
+        const category = resolveRequirementLibraryCategory(requirement)
+        const priority = getDocumentPriorityLabel(requirement)
 
-    for (const requirement of requiredDocumentChecklist) {
-      const canonicalId = getRequirementCanonicalId(requirement)
-      const uploadedDocumentId = getRequirementDocumentId(requirement)
-      const linkedDocument =
-        (canonicalId ? requirementDocumentLookup.byCanonicalId.get(String(canonicalId)) : null) ||
-        (uploadedDocumentId ? requirementDocumentLookup.byDocumentId.get(String(uploadedDocumentId)) : null) ||
-        null
-      const visibleSection = String(requirement?.visibleSection || '').trim().toLowerCase() || 'transfer_documents'
-      if (!sectionMap[visibleSection]) {
-        sectionMap[visibleSection] = []
-      }
-      sectionMap[visibleSection].push({ requirement, linkedDocument })
-    }
-
-    return sectionMap
-  }, [requiredDocumentChecklist, requirementDocumentLookup])
-  const uploadedByClientCount = useMemo(
-    () => documents.filter((document) => String(document.uploaded_by_role || '').toLowerCase() === 'client').length,
-    [documents],
+        return {
+          id: String(canonicalId || requirement?.id || requirement?.key || requirement?.documentKey || requirement?.document_key),
+          transactionId: transaction?.id || requirement?.transactionId || requirement?.transaction_id || '',
+          displayName: requirement?.label || requirement?.documentLabel || requirement?.document_label || requirement?.key || 'Document requirement',
+          category,
+          categoryLabel: getDocumentCommandCategoryLabel(category),
+          status,
+          statusLabel: getDocumentCommandStatusLabel(status),
+          priority,
+          blocksStage: Boolean(requirement?.isBlocking || requirement?.blocksStage || requirement?.blocks_stage),
+          requiredParty: getRequirementPartyLabel(requirement),
+          relatedWorkflow: requirement?.owningWorkflow || requirement?.workflow || requirement?.visibleSection || '',
+          requiredDocumentId: requirement?.id || null,
+          requiredDocumentKey: requirement?.key || requirement?.documentKey || requirement?.document_key || '',
+          canonicalRequirementInstanceId: canonicalId || '',
+          fileUrl: linkedDocument?.url || '',
+          requirement,
+          linkedDocument,
+          source: 'transaction_required_documents',
+          satisfiesRequirement: Boolean(linkedDocument || uploadedDocumentId),
+        }
+      }),
+    [requiredDocumentChecklist, requirementDocumentLookup, transaction?.id],
   )
-  const canShowWaiverAction = ['attorney', 'developer', 'internal_admin', 'admin', 'agency_admin'].includes(String(workspaceRole || '').toLowerCase())
+  const displayedRequiredDocumentRows = useMemo(
+    () => (showAllRequiredDocuments ? requiredDocumentRows : requiredDocumentRows.slice(0, 5)),
+    [requiredDocumentRows, showAllRequiredDocuments],
+  )
+  const documentHealthSummary = useMemo(() => {
+    const totalRequired = requiredDocumentRows.length
+    const received = requiredDocumentRows.filter((row) => ['uploaded', 'pending_review', 'verified', 'generated'].includes(row.status)).length
+    const missing = requiredDocumentRows.filter((row) => ['missing', 'requested', 'rejected', 'expired'].includes(row.status)).length
+    const pendingReview = requiredDocumentRows.filter((row) => row.status === 'pending_review').length
+    return { totalRequired, received, missing, pendingReview }
+  }, [requiredDocumentRows])
+  const documentLibraryRows = useMemo(
+    () =>
+      uniqueDocumentsByRenderKey(documents)
+        .filter((document) => !document?.archived_at)
+        .map((document) => {
+          const linkedRequirement = getLinkedRequirementForDocument(document)
+          const category = resolveDocumentLibraryCategory({ ...document, linkedRequirement })
+          const rawStatus =
+            document?.source === 'generated' || category === 'generated'
+              ? 'generated'
+              : document?.review_status || document?.status || linkedRequirement?.status || 'uploaded'
 
-  useEffect(() => {
-    if (!attorneyDocumentSections.length) return
-    if (!attorneyDocumentSections.some((group) => group.key === activeDocumentGroup)) {
-      setActiveDocumentGroup(attorneyDocumentSections[0].key)
-    }
-  }, [activeDocumentGroup, attorneyDocumentSections])
-
+          return {
+            id: String(document?.id || `${document?.name || ''}:${document?.file_path || ''}`),
+            transactionId: transaction?.id || document?.transaction_id || document?.transactionId || '',
+            displayName: document?.name || document?.displayName || 'Untitled document',
+            category,
+            categoryLabel: getDocumentCommandCategoryLabel(category),
+            status: normalizeDocumentCommandStatus(rawStatus, { hasDocument: true }),
+            visibility: resolveDocumentLibraryVisibility(document),
+            requiredParty: linkedRequirement ? getRequirementPartyLabel(linkedRequirement) : '',
+            uploadedBy: resolveUploadedByLabel(document, transactionParticipants),
+            uploadedAt: document?.created_at || document?.uploaded_at || document?.uploadedAt || '',
+            updatedAt: document?.updated_at || document?.updatedAt || document?.created_at || '',
+            source: document?.source || (category === 'generated' ? 'generated' : 'documents'),
+            fileUrl: document?.url || '',
+            relatedWorkflow: resolveDocumentWorkflowLabel(document),
+            requiredDocumentId: linkedRequirement?.id || null,
+            requiredDocumentKey: linkedRequirement?.key || document?.document_type || '',
+            requiredDocument: linkedRequirement,
+            requiredDocumentStatus: linkedRequirement?.status || '',
+            requiredDocumentCanonicalId: getRequirementCanonicalId(linkedRequirement) || getDocumentCanonicalId(document) || '',
+            documentRequestId: document?.document_request_id || document?.documentRequestId || '',
+            satisfiesRequirement: Boolean(linkedRequirement),
+            priority: linkedRequirement ? getDocumentPriorityLabel(linkedRequirement) : '',
+            blocksStage: Boolean(linkedRequirement?.isBlocking || linkedRequirement?.blocksStage || linkedRequirement?.blocks_stage),
+            raw: document,
+          }
+        })
+        .filter((row) => activeDocumentLibraryCategory === 'all' || row.category === activeDocumentLibraryCategory),
+    [activeDocumentLibraryCategory, documents, getLinkedRequirementForDocument, transaction?.id, transactionParticipants],
+  )
   const activeStakeholders = useMemo(
     () => transactionParticipants.filter((item) => item?.stakeholderStatus !== 'removed'),
     [transactionParticipants],
@@ -3634,6 +3551,10 @@ function AttorneyTransactionDetail() {
         ...visibleTransactionDiscussion.map((comment) => humanizeDiscussionActivity(comment)),
       ].sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime()),
     [transactionEvents, visibleTransactionDiscussion],
+  )
+  const documentRecentActivity = useMemo(
+    () => activityFeed.filter((entry) => isDocumentActivityEntry(entry)).slice(0, 4),
+    [activityFeed],
   )
   const overviewConversationEntries = useMemo(() => activityFeed.slice(0, 8), [activityFeed])
   const lifecycleProgressState = useMemo(
@@ -3887,16 +3808,6 @@ function AttorneyTransactionDetail() {
       : matterHealthLabel === 'Waiting'
         ? WORKFLOW_STATUS_META.waiting
         : WORKFLOW_STATUS_META.in_progress
-  const displayedWorkflowLanes = useMemo(() => {
-    if (activeWorkspaceMenu === 'transfer') {
-      return workflowLanes.filter((lane) => ['transfer', 'cancellation'].includes(lane.laneKey))
-    }
-    if (activeWorkspaceMenu === 'finance') {
-      if (isBondOrHybridFinance) return EMPTY_ARRAY
-      return workflowLanes.filter((lane) => lane.laneKey === 'bond')
-    }
-    return EMPTY_ARRAY
-  }, [activeWorkspaceMenu, isBondOrHybridFinance, workflowLanes])
   const canEditBondHybridFinanceWorkflow = ['bond_originator', 'developer', 'internal_admin', 'admin'].includes(
     String(workspaceRole || '').toLowerCase(),
   )
@@ -3914,6 +3825,27 @@ function AttorneyTransactionDetail() {
       onInstructionSent={() => void handleMarkBondHybridInstructionSent()}
     />
   ) : null
+  function handleOpenFinanceDocument(document = {}) {
+    const url = document?.url || document?.publicUrl || document?.downloadUrl || ''
+    if (url) window.open(url, '_blank', 'noopener,noreferrer')
+  }
+  const financeCommandCenterPanel = (
+    <TransactionFinanceCommandCenter
+      transaction={transaction || {}}
+      workflowData={transactionFinanceWorkflow}
+      requiredDocumentChecklist={requiredDocumentChecklist}
+      documents={documents}
+      viewerRole={workspaceRole}
+      activeViewerPermissions={{ canEditFinanceWorkflow: canEditBondHybridFinanceWorkflow }}
+      loadingAction={bondHybridFinanceActionLoading}
+      onSubmitBankApplication={(payload) => void handleAddBondHybridApplication(payload)}
+      onUpdateBankApplication={(application, payload) => void handleUpdateBondHybridApplication(application.id, payload)}
+      onCaptureBondOffer={(payload) => void handleAddBondHybridQuote(payload)}
+      onAcceptOffer={(offer) => void handleApproveBondHybridQuote(offer.id)}
+      onMarkInstructionSent={() => void handleMarkBondHybridInstructionSent()}
+      onOpenDocument={handleOpenFinanceDocument}
+    />
+  )
   const activeWorkflowLane = useMemo(
     () => workflowLanes.find((lane) => lane.laneKey === workflowDrawerLaneKey) || null,
     [workflowDrawerLaneKey, workflowLanes],
@@ -4049,31 +3981,6 @@ function AttorneyTransactionDetail() {
     setWorkflowStepDraft(null)
     setWorkflowNoteDraft(null)
     setWorkflowDocumentDraft(null)
-  }
-
-  function handleWorkflowPrimaryAction(lane, action) {
-    const currentStep = getCurrentWorkflowStep(lane)
-    openWorkflowDrawer(lane)
-    if (action === 'Mark Step Complete' && currentStep) {
-      setWorkflowStepDraft({ laneKey: lane.laneKey, step: currentStep, status: 'completed', note: '' })
-      return
-    }
-    if (action === 'Send Reminder') {
-      setWorkflowNoteDraft({
-        laneKey: lane.laneKey,
-        visibility: 'professional_shared',
-        message: `Reminder sent for ${currentStep ? getWorkflowStepLabel(currentStep) : getWorkflowLaneTitle(lane)}.`,
-      })
-      return
-    }
-    if (action === 'Upload Document') {
-      setWorkspaceMenu('documents')
-      setWorkflowDrawerLaneKey('')
-      return
-    }
-    if (action === 'Blocker Details' && currentStep) {
-      setWorkflowStepDraft({ laneKey: lane.laneKey, step: currentStep, status: 'blocked', note: currentStep.comment || '' })
-    }
   }
 
   function handleSelectWorkflowStepStatus(lane, step, status) {
@@ -4571,35 +4478,7 @@ function AttorneyTransactionDetail() {
       unit?.unit_number,
     ],
   )
-  const financialRows = [
-    ['Purchase Price', formatCurrencyValue(displayPurchasePriceValue, 'Not captured')],
-    ['Deposit', formatCurrencyValue(hasCapturedFinancials ? transaction?.deposit_amount : 0, 'Not captured')],
-    ['Bond Amount', formatCurrencyValue(hasCapturedFinancials ? transaction?.bond_amount : 0, bondAmountFallback)],
-    ['Cash Portion', formatCurrencyValue(hasCapturedFinancials ? transaction?.cash_portion : 0, 'Not captured')],
-    ['Transfer Fees', formatCurrencyValue(transaction?.transfer_fees, 'Pending')],
-    ['Bond Registration Fees', formatCurrencyValue(transaction?.bond_registration_costs, 'Pending')],
-    ['Cancellation Costs', formatCurrencyValue(transaction?.cancellation_costs, transaction?.seller_has_existing_bond ? 'Pending' : 'N/A')],
-    ['Guarantees', formatCurrencyValue(transaction?.guarantee_amount, 'Pending')],
-    ['Commission', formatCurrencyValue(transaction?.commission_amount, 'Pending')],
-    ['Trust / Disbursements', formatCurrencyValue(transaction?.trust_balance, 'Placeholder')],
-  ]
   const bondHybridFinanceSummary = transactionFinanceWorkflow?.summary || null
-  const bondHybridFundingSnapshotRows = isBondOrHybridFinance
-    ? [
-        ['Finance Type', financeTypeLabel],
-        ['Finance Stage', bondHybridFinanceSummary?.currentStageLabel || 'Documents Received'],
-        ['Bond Originator', getParticipantDisplayName(assignedBondOriginator) || transaction?.bond_originator || 'Not assigned'],
-        ['Submitted Banks', String(bondHybridFinanceSummary?.submittedBanksCount || 0)],
-        ['Quotes Received', String(bondHybridFinanceSummary?.quotesReceivedCount || 0)],
-        ['Approved Bank', bondHybridFinanceSummary?.approvedQuote?.bankName || 'Not approved yet'],
-        ['Instruction Sent', bondHybridFinanceSummary?.instructionSent ? 'Yes' : 'No'],
-      ]
-    : [
-        ['Finance Type', financeTypeLabel],
-        ['Bond Attorney', bondAttorney?.organisationName || bondAttorney?.participantName || bondAttorney?.participantEmail || 'Not assigned'],
-        ['Expected Transfer Date', formatDate(transaction?.expected_transfer_date)],
-        ['Registration Date', formatDate(transaction?.registration_date || transaction?.registered_at)],
-      ]
   const requiresBondOriginatorCard = financeRequiresBondSupport
   const requiresBondAttorneyCard = Boolean(
     isBondOrHybridFinance &&
@@ -4840,22 +4719,6 @@ function AttorneyTransactionDetail() {
   const activeLegalWorkflowModel = useMemo(
     () => legalWorkflowModels.find((item) => item.detailKey === activeLegalWorkflowDetailKey) || null,
     [activeLegalWorkflowDetailKey, legalWorkflowModels],
-  )
-  const legalRecentActivity = useMemo(
-    () => activityFeed.filter((entry) => isLegalActivityEntry(entry)).slice(0, 8),
-    [activityFeed],
-  )
-  const transferRecentActivity = useMemo(
-    () => activityFeed.filter((entry) => (entry?.filterKeys || []).includes('transfer')).slice(0, 8),
-    [activityFeed],
-  )
-  const bondRecentActivity = useMemo(
-    () => activityFeed.filter((entry) => (entry?.filterKeys || []).includes('bond')).slice(0, 8),
-    [activityFeed],
-  )
-  const cancellationRecentActivity = useMemo(
-    () => activityFeed.filter((entry) => (entry?.filterKeys || []).includes('cancellation')).slice(0, 8),
-    [activityFeed],
   )
   const bondWorkflowDocuments = useMemo(
     () => documents.filter((document) => ['bond', 'finance'].includes(resolveDocumentLibraryCategory(document))).slice(0, 8),
@@ -5837,11 +5700,54 @@ function AttorneyTransactionDetail() {
     void refreshRegistrationValidation()
   }, [refreshRegistrationValidation, registrationModalOpen])
 
+  function openDocumentUploadModal({ requirement = null, category = '' } = {}) {
+    const canonicalRequirementInstanceId = requirement ? getRequirementCanonicalId(requirement) || requirement.canonicalRequirementInstanceId || '' : ''
+    const requiredDocumentKey = requirement?.key || requirement?.documentKey || requirement?.document_key || ''
+    const selectedCategory = requirement
+      ? getAttorneyCategoryForRequiredDocument(requirement)
+      : category
+        ? getUploadCategoryForLibraryFilter(category)
+        : getUploadCategoryForLibraryFilter(activeDocumentLibraryCategory)
+
+    setUploadDraft((previous) => ({
+      ...previous,
+      file: null,
+      fileName: '',
+      category: selectedCategory,
+      documentType: requiredDocumentKey || previous.documentType || '',
+      visibility: previous.visibility || 'client_visible',
+      relatedWorkflow: requirement?.owningWorkflow || requirement?.visibleSection || previous.relatedWorkflow || '',
+      satisfiesRequiredDocument: requirement ? 'yes' : 'no',
+      requiredDocumentKey,
+      requiredDocumentId: requirement?.id || '',
+      canonicalRequirementInstanceId,
+      documentRequestId: requirement?.documentRequestId || requirement?.document_request_id || '',
+      notes: '',
+      requestTitle: requirement?.label || requirement?.documentLabel || requirement?.document_label || '',
+    }))
+    setUploadInputVersion((previous) => previous + 1)
+    setUploadDocumentModalOpen(true)
+  }
+
   async function handleUploadDocument(event) {
     event.preventDefault()
     if (!transaction?.id || !uploadDraft.file) {
       return
     }
+
+    const linkedRequirement =
+      uploadDraft.satisfiesRequiredDocument === 'yes'
+        ? requiredDocumentChecklist.find((item) => {
+            const canonicalId = getRequirementCanonicalId(item)
+            return (
+              (uploadDraft.canonicalRequirementInstanceId && String(canonicalId || '') === String(uploadDraft.canonicalRequirementInstanceId)) ||
+              (uploadDraft.requiredDocumentId && String(item?.id || '') === String(uploadDraft.requiredDocumentId)) ||
+              (uploadDraft.requiredDocumentKey && String(item?.key || item?.documentKey || item?.document_key || '') === String(uploadDraft.requiredDocumentKey))
+            )
+          }) || null
+        : null
+    const selectedVisibility = String(uploadDraft.visibility || 'client_visible').trim().toLowerCase()
+    const visibilityScope = selectedVisibility === 'internal' ? 'internal' : 'shared'
 
     try {
       setSaving(true)
@@ -5850,31 +5756,31 @@ function AttorneyTransactionDetail() {
         transactionId: transaction.id,
         file: uploadDraft.file,
         category: uploadDraft.category,
-        isClientVisible: uploadDraft.visibility === 'shared',
-        stageKey: transferStageKey,
-        requiredDocumentKey: uploadDraft.requiredDocumentKey || null,
-        documentType: uploadDraft.requiredDocumentKey || null,
-        canonicalRequirementInstanceId: uploadDraft.canonicalRequirementInstanceId || null,
+        isClientVisible: visibilityScope !== 'internal',
+        visibilityScope,
+        stageKey: uploadDraft.relatedWorkflow || transferStageKey,
+        requiredDocumentKey: linkedRequirement ? (uploadDraft.requiredDocumentKey || linkedRequirement?.key || null) : null,
+        documentType: uploadDraft.documentType || uploadDraft.requiredDocumentKey || null,
+        canonicalRequirementInstanceId: linkedRequirement ? (uploadDraft.canonicalRequirementInstanceId || null) : null,
+        documentRequestId: uploadDraft.documentRequestId || null,
       })
-      setUploadDraft((previous) => ({ ...previous, file: null }))
+      setUploadDraft((previous) => ({
+        ...previous,
+        file: null,
+        fileName: '',
+        notes: '',
+        satisfiesRequiredDocument: 'no',
+        requiredDocumentKey: '',
+        requiredDocumentId: '',
+        canonicalRequirementInstanceId: '',
+        documentRequestId: '',
+        requestTitle: '',
+      }))
       setUploadInputVersion((previous) => previous + 1)
+      setUploadDocumentModalOpen(false)
       await loadData()
     } catch (uploadError) {
       setError(uploadError.message || 'Unable to upload document.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleArchiveDocument(documentId) {
-    if (!documentId) return
-    try {
-      setSaving(true)
-      setError('')
-      await archiveTransactionDocument(documentId)
-      await loadData()
-    } catch (archiveError) {
-      setError(archiveError.message || 'Unable to archive document.')
     } finally {
       setSaving(false)
     }
@@ -5900,7 +5806,8 @@ function AttorneyTransactionDetail() {
       visibility: document?.visibility_scope === 'internal' ? 'internal' : previous.visibility,
     }))
     setWorkspaceMenu('documents')
-    setActiveDocumentGroup('all_documents')
+    setUploadDocumentModalOpen(true)
+    setUploadInputVersion((previous) => previous + 1)
   }
 
   async function handleSubmitReviewAction() {
@@ -6037,7 +5944,9 @@ function AttorneyTransactionDetail() {
               actionButtons={headerWorkflowActionButtons}
               isAgentView={isAgentTransactionView}
             />
-          <MatterWorkspaceTabs tabs={workspaceMenuTabs} activeTab={activeWorkspaceMenu} onChange={openWorkspaceMenu} premium={isAgentTransactionView} />
+          {activeWorkspaceMenu === 'transfer' ? null : (
+            <MatterWorkspaceTabs tabs={workspaceMenuTabs} activeTab={activeWorkspaceMenu} onChange={openWorkspaceMenu} premium={isAgentTransactionView} />
+          )}
           {onboardingActionMessage ? (
             <p className="rounded-[14px] border border-borderDefault bg-surfaceAlt px-4 py-2.5 text-helper text-textMuted">
               {onboardingActionMessage}
@@ -6049,7 +5958,7 @@ function AttorneyTransactionDetail() {
       <div className="space-y-6">
         {['overview', 'transfer'].includes(activeWorkspaceMenu) ? (
           <>
-            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+            <section className={activeWorkspaceMenu === 'overview' ? 'grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]' : 'space-y-5'}>
               <div className="space-y-4">
                 {activeWorkspaceMenu === 'overview' ? (
                   <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
@@ -6134,11 +6043,6 @@ function AttorneyTransactionDetail() {
                       const workflow = activeLegalWorkflowModel
                       const statusMeta = WORKFLOW_STATUS_META[workflow?.statusKey] || WORKFLOW_STATUS_META.not_started
                       const lane = workflow?.lane || null
-                      const detailActivity = activeLegalWorkflowDetailKey === 'bond-registration'
-                        ? bondRecentActivity
-                        : activeLegalWorkflowDetailKey === 'bond-cancellation'
-                          ? cancellationRecentActivity
-                          : transferRecentActivity
 
                       if (!workflow) {
                         return (
@@ -6171,16 +6075,16 @@ function AttorneyTransactionDetail() {
                               </span>
                             </div>
 
-                            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,8rem),1fr))] gap-3">
                               {[
                                 ['Status', workflow.statusLabel],
                                 ['Progress', `${workflow.progressPercent}%`],
                                 ['Next Step', workflow.nextStep || 'Pending'],
                                 [workflow.assignedLabel, workflow.assignedDisplay || 'Not assigned'],
                               ].map(([label, value]) => (
-                                <article key={`${workflow.key}-${label}`} className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
-                                  <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
-                                  <strong className="mt-1 block text-sm text-textStrong">{value}</strong>
+                                <article key={`${workflow.key}-${label}`} className="min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+                                  <span className="block break-words text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
+                                  <strong className="mt-1 block break-words text-sm text-textStrong">{value}</strong>
                                 </article>
                               ))}
                             </div>
@@ -6189,16 +6093,16 @@ function AttorneyTransactionDetail() {
                           {activeLegalWorkflowDetailKey === 'bond-registration' ? (
                             <>
                               <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,9rem),1fr))] gap-3">
                                   {[
                                     ['Current Stage', bondWorkflowSummary.currentStageLabel || 'Not started'],
                                     ['Instruction Sent', bondWorkflowSummary.instructionSent ? 'Yes' : 'No'],
                                     ['Quotes Received', String(bondWorkflowSummary.quotesReceivedCount || 0)],
                                     ['Approved Bank', bondWorkflowSummary.approvedBank || 'Not approved yet'],
                                   ].map(([label, value]) => (
-                                    <article key={label} className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
-                                      <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
-                                      <strong className="mt-1 block text-sm text-textStrong">{value}</strong>
+                                    <article key={label} className="min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+                                      <span className="block break-words text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
+                                      <strong className="mt-1 block break-words text-sm text-textStrong">{value}</strong>
                                     </article>
                                   ))}
                                 </div>
@@ -6206,59 +6110,36 @@ function AttorneyTransactionDetail() {
 
                               {bondHybridFinanceWorkflowPanel}
 
-                              <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-                                <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                                  <div className="flex flex-wrap items-start justify-between gap-3">
-                                    <div>
-                                      <h3 className="text-sm font-semibold text-textStrong">Bond Documents</h3>
-                                      <p className="mt-1 text-sm text-textMuted">Bond instructions, guarantees, and supporting finance documents.</p>
-                                    </div>
-                                    <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textMuted">
-                                      {bondWorkflowDocuments.length} file{bondWorkflowDocuments.length === 1 ? '' : 's'}
-                                    </span>
+                              <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div>
+                                    <h3 className="text-sm font-semibold text-textStrong">Bond Documents</h3>
+                                    <p className="mt-1 text-sm text-textMuted">Bond instructions, guarantees, and supporting finance documents.</p>
                                   </div>
-                                  <div className="mt-4 space-y-2">
-                                    {bondWorkflowDocuments.length ? (
-                                      bondWorkflowDocuments.map((document) => (
-                                        <article key={document.id} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3">
-                                          <strong className="block text-sm text-textStrong">{document.name || 'Bond document'}</strong>
-                                          <p className="mt-1 text-xs text-textMuted">
-                                            {document.category || 'Bond'} • {formatDateTime(document.updated_at || document.created_at)}
-                                          </p>
-                                        </article>
-                                      ))
-                                    ) : (
-                                      <p className="rounded-[12px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-4 text-sm text-textMuted">
-                                        No bond workflow documents have been uploaded yet.
-                                      </p>
-                                    )}
-                                  </div>
-                                </section>
-
-                                <aside className="space-y-4">
-                                  <OverviewSidePanel title="Quick Actions">
-                                    <div className="grid gap-2">
-                                      {[
-                                        ['Request Documents', FileText, handleQuickRequestDocuments],
-                                        ['Upload Document', Upload, () => openWorkspaceMenu('documents')],
-                                        ['Add Note', MessageSquarePlus, handleQuickAddWorkflowNote],
-                                        ['Schedule Signing', CalendarDays, handleQuickScheduleSigning],
-                                        ['Generate Sales Agreement', FileText, openAgentSalesAgreementWorkspace],
-                                      ].map(([label, Icon, action]) => (
-                                        <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
-                                          {createElement(Icon, { size: 14 })}
-                                          {label}
-                                        </Button>
-                                      ))}
-                                    </div>
-                                  </OverviewSidePanel>
-
-                                  <LegalActivityList title="Bond Registration Activity" items={detailActivity} emptyLabel="No bond registration activity yet." />
-                                </aside>
+                                  <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textMuted">
+                                    {bondWorkflowDocuments.length} file{bondWorkflowDocuments.length === 1 ? '' : 's'}
+                                  </span>
+                                </div>
+                                <div className="mt-4 space-y-2">
+                                  {bondWorkflowDocuments.length ? (
+                                    bondWorkflowDocuments.map((document) => (
+                                      <article key={document.id} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+                                        <strong className="block break-words text-sm text-textStrong">{document.name || 'Bond document'}</strong>
+                                        <p className="mt-1 break-words text-xs text-textMuted">
+                                          {document.category || 'Bond'} • {formatDateTime(document.updated_at || document.created_at)}
+                                        </p>
+                                      </article>
+                                    ))
+                                  ) : (
+                                    <p className="rounded-[12px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-4 text-sm text-textMuted">
+                                      No bond workflow documents have been uploaded yet.
+                                    </p>
+                                  )}
+                                </div>
                               </section>
                             </>
                           ) : (
-                            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+                            <section className="space-y-4">
                               <div className="space-y-4">
                                 <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
                                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -6341,54 +6222,29 @@ function AttorneyTransactionDetail() {
                                 </section>
                               </div>
 
-                              <aside className="space-y-4">
-                                <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                                  <h3 className="text-sm font-semibold text-textStrong">Workflow Snapshot</h3>
-                                  <div className="mt-3 grid gap-2">
-                                    {(activeLegalWorkflowDetailKey === 'bond-cancellation'
-                                      ? [
-                                          ['Instruction', summarizeLaneMilestone(lane, ['instruction'])],
-                                          ['Settlement Figures', summarizeLaneMilestone(lane, ['settlement'])],
-                                          ['Guarantees', summarizeLaneMilestone(lane, ['guarantee'])],
-                                          ['Lodgement', summarizeLaneMilestone(lane, ['lodgement'])],
-                                        ]
-                                      : [
-                                          ['Signing Status', summarizeLaneMilestone(lane, ['signed', 'signing'])],
-                                          ['Rates Clearance', summarizeLaneMilestone(lane, ['rates', 'clearance'])],
-                                          ['Lodgement', summarizeLaneMilestone(lane, ['lodgement'])],
-                                          ['Registration', summarizeLaneMilestone(lane, ['registration'])],
-                                        ]).map(([label, value]) => (
-                                      <div key={label} className="flex items-center justify-between gap-3 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2.5">
-                                        <span className="text-sm text-textMuted">{label}</span>
-                                        <strong className="text-sm text-textStrong">{value}</strong>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </section>
-
-                                <OverviewSidePanel title="Quick Actions">
-                                  <div className="grid gap-2">
-                                    {[
-                                      ['Request Documents', FileText, handleQuickRequestDocuments],
-                                      ['Upload Document', Upload, () => openWorkspaceMenu('documents')],
-                                      ['Add Note', MessageSquarePlus, handleQuickAddWorkflowNote],
-                                      ['Schedule Signing', CalendarDays, handleQuickScheduleSigning],
-                                      ['Generate Sales Agreement', FileText, openAgentSalesAgreementWorkspace],
-                                    ].map(([label, Icon, action]) => (
-                                      <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
-                                        {createElement(Icon, { size: 14 })}
-                                        {label}
-                                      </Button>
-                                    ))}
-                                  </div>
-                                </OverviewSidePanel>
-
-                                <LegalActivityList
-                                  title={activeLegalWorkflowDetailKey === 'bond-cancellation' ? 'Cancellation Activity' : 'Transfer Activity'}
-                                  items={detailActivity}
-                                  emptyLabel={activeLegalWorkflowDetailKey === 'bond-cancellation' ? 'No cancellation workflow activity yet.' : 'No transfer workflow activity yet.'}
-                                />
-                              </aside>
+                              <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                                <h3 className="text-sm font-semibold text-textStrong">Workflow Snapshot</h3>
+                                <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-2">
+                                  {(activeLegalWorkflowDetailKey === 'bond-cancellation'
+                                    ? [
+                                        ['Instruction', summarizeLaneMilestone(lane, ['instruction'])],
+                                        ['Settlement Figures', summarizeLaneMilestone(lane, ['settlement'])],
+                                        ['Guarantees', summarizeLaneMilestone(lane, ['guarantee'])],
+                                        ['Lodgement', summarizeLaneMilestone(lane, ['lodgement'])],
+                                      ]
+                                    : [
+                                        ['Signing Status', summarizeLaneMilestone(lane, ['signed', 'signing'])],
+                                        ['Rates Clearance', summarizeLaneMilestone(lane, ['rates', 'clearance'])],
+                                        ['Lodgement', summarizeLaneMilestone(lane, ['lodgement'])],
+                                        ['Registration', summarizeLaneMilestone(lane, ['registration'])],
+                                      ]).map(([label, value]) => (
+                                    <div key={label} className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2.5">
+                                      <span className="break-words text-sm text-textMuted">{label}</span>
+                                      <strong className="break-words text-sm text-textStrong">{value}</strong>
+                                    </div>
+                                  ))}
+                                </div>
+                              </section>
                             </section>
                           )}
                         </>
@@ -6402,7 +6258,7 @@ function AttorneyTransactionDetail() {
                       </section>
 
                       <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                        <div className="grid gap-4 xl:grid-cols-3">
+                        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-4">
                           {transferHubWorkflows.map((workflow) => (
                             <LegalWorkflowHubCard
                               key={workflow.key}
@@ -6423,12 +6279,12 @@ function AttorneyTransactionDetail() {
                             Manage Roleplayers
                           </Button>
                         </div>
-                        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,13rem),1fr))] gap-3">
                           {roleplayerStripItems.map((item) => (
-                            <article key={item.key} className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3">
-                              <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{item.label}</span>
-                              <strong className="mt-2 block text-sm text-textStrong">{item.value}</strong>
-                              <p className="mt-1 text-xs text-textMuted">{item.subtext}</p>
+                            <article key={item.key} className="min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3">
+                              <span className="block break-words text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{item.label}</span>
+                              <strong className="mt-2 block break-words text-sm text-textStrong">{item.value}</strong>
+                              <p className="mt-1 break-words text-xs text-textMuted">{item.subtext}</p>
                             </article>
                           ))}
                         </div>
@@ -6557,8 +6413,8 @@ function AttorneyTransactionDetail() {
                 ) : null}
               </div>
 
-              <aside className="space-y-4 xl:sticky xl:top-4">
-                {activeWorkspaceMenu === 'overview' ? (
+              {activeWorkspaceMenu === 'overview' ? (
+                <aside className="space-y-4 xl:sticky xl:top-4">
                   <OverviewSidePanel title="Quick Actions">
                     <div className="grid gap-2">
                       {overviewQuickActions.map((action) => (
@@ -6569,29 +6425,8 @@ function AttorneyTransactionDetail() {
                       ))}
                     </div>
                   </OverviewSidePanel>
-                ) : (
-                  <>
-                    <OverviewSidePanel title="Quick Actions">
-                      <div className="grid gap-2">
-                        {[
-                          ['Request Documents', FileText, handleQuickRequestDocuments],
-                          ['Upload Document', Upload, () => openWorkspaceMenu('documents')],
-                          ['Add Note', MessageSquarePlus, handleQuickAddWorkflowNote],
-                          ['Schedule Signing', CalendarDays, handleQuickScheduleSigning],
-                          ['Generate Sales Agreement', FileText, openAgentSalesAgreementWorkspace],
-                        ].map(([label, Icon, action]) => (
-                          <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
-                            {createElement(Icon, { size: 14 })}
-                            {label}
-                          </Button>
-                        ))}
-                      </div>
-                    </OverviewSidePanel>
-
-                    <LegalActivityList title="Recent Activity" items={legalRecentActivity} emptyLabel="No legal workflow activity yet." />
-                  </>
-                )}
-              </aside>
+                </aside>
+              ) : null}
             </section>
           </>
         ) : null}
@@ -6738,510 +6573,440 @@ function AttorneyTransactionDetail() {
         ) : null}
 
         {activeWorkspaceMenu === 'documents' ? (
-          <section className="space-y-5">
-            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="min-w-0 space-y-5">
+              <section className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <h3 className="text-[1.25rem] font-semibold tracking-[-0.03em] text-[#142132]">Documents</h3>
-                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                    Upload shared or internal legal documents and keep each file in the correct workflow group.
+                  <h3 className="text-[1.35rem] font-semibold tracking-[-0.02em] text-[#142132]">Documents</h3>
+                  <p className="mt-1 text-sm leading-6 text-[#60758d]">
+                    Manage all documents and requirements for this transaction.
                   </p>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-4">
-                  {[
-                    ['Shared', sharedAttorneyDocumentCount],
-                    ['Internal', internalAttorneyDocumentCount],
-                    ['Required', requiredDocumentChecklist.length],
-                    ['Client Uploads', uploadedByClientCount],
-                  ].map(([label, value]) => (
-                    <article key={label} className="rounded-[16px] border border-[#dde4ee] bg-[#fbfdff] px-4 py-3">
-                      <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                      <strong className="mt-2 block text-sm font-semibold text-[#142132]">{value}</strong>
-                    </article>
-                  ))}
-                </div>
-              </div>
-            </section>
+                <Button type="button" onClick={() => openDocumentUploadModal({ category: activeDocumentLibraryCategory })}>
+                  <Upload size={15} />
+                  Upload Document
+                </Button>
+              </section>
 
-            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-              <div className="grid gap-4 xl:grid-cols-2">
+              <section className="grid overflow-hidden rounded-[12px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.05)] sm:grid-cols-2 xl:grid-cols-4">
                 {[
-                  {
-                    title: 'Buyer Documents',
-                    subtitle: 'Buyer onboarding, identity, FICA, and OTP requirements.',
-                    rows: documentWorkspaceSections.buyer_documents || [],
-                    emptyLabel: documentChecklistInsights?.sections?.buyer_documents?.emptyReason || 'No buyer requirements are active yet.',
-                  },
-                  {
-                    title: 'Finance Documents',
-                    subtitle: 'Finance-owned requirements stay separate from buyer onboarding blockers.',
-                    rows: documentWorkspaceSections.finance_documents || [],
-                    emptyLabel: documentChecklistInsights?.sections?.finance_documents?.emptyReason || 'No finance requirements are active yet.',
-                  },
-                  {
-                    title: 'Seller Documents',
-                    subtitle: 'Seller-side compliance, authority, and bonded-property inputs.',
-                    rows: documentWorkspaceSections.seller_documents || [],
-                    emptyLabel: documentChecklistInsights?.sections?.seller_documents?.emptyReason || 'No seller requirements are active yet.',
-                  },
-                  {
-                    title: 'Transfer / Attorney Documents',
-                    subtitle: 'Transfer, cancellation, clearance, and attorney workflow requirements.',
-                    rows: documentWorkspaceSections.transfer_documents || [],
-                    emptyLabel: documentChecklistInsights?.sections?.transfer_documents?.emptyReason || 'No transfer or attorney requirements are active yet.',
-                  },
-                ].map((section) => (
-                  <article key={section.title} className="rounded-[18px] border border-[#dde4ee] bg-[#fbfdff] p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h3 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{section.title}</h3>
-                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{section.subtitle}</p>
-                      </div>
-                      <span className="inline-flex items-center rounded-full border border-[#d7e2ee] bg-white px-3 py-1 text-[0.68rem] font-semibold text-[#66758b]">
-                        {section.rows.length} item{section.rows.length === 1 ? '' : 's'}
-                      </span>
-                    </div>
-                    <div className="mt-4 space-y-3">
-                      {section.rows.length ? (
-                        section.rows.map(({ requirement, linkedDocument }) => (
-                          <article key={getRequirementCanonicalId(requirement) || `${section.title}-${requirement.key}`} className="rounded-[14px] border border-[#dde4ee] bg-white px-4 py-3.5">
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <strong className="block truncate text-sm font-semibold text-[#142132]">
-                                  {requirement.label || requirement.key || 'Document requirement'}
-                                </strong>
-                                <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                                  {linkedDocument?.name || 'No uploaded file yet'}
-                                </p>
-                              </div>
-                              <span className="inline-flex items-center rounded-full border border-[#d7e2ee] bg-[#f8fafc] px-3 py-1 text-[0.68rem] font-semibold text-[#66758b]">
-                                {getRequirementStatusLabel(requirement.status || linkedDocument?.status || 'missing')}
-                              </span>
-                            </div>
-                            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-[#60758d]">
-                              <div className="flex flex-wrap gap-2">
-                                <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-white px-2.5 py-1 font-semibold text-[#60758d]">
-                                  {getRequirementPartyLabel(requirement)}
-                                </span>
-                                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 font-semibold ${
-                                  requirement?.preCollectionAllowed || requirement?.isBlocking === false
-                                    ? 'border-[#dbe7f5] bg-[#f4f8fd] text-[#58718f]'
-                                    : 'border-[#f4d7c7] bg-[#fff4ec] text-[#8a5a32]'
-                                }`}>
-                                  {getRequirementBlockingLabel(requirement)}
-                                </span>
-                              </div>
-                              <span>Last updated: {formatDateTime(linkedDocument?.updated_at || linkedDocument?.created_at || requirement?.updatedAt || requirement?.createdAt)}</span>
-                            </div>
-                            <div className="mt-2 flex flex-wrap gap-2 text-[0.72rem] text-[#6b7d93]">
-                              <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f8fafc] px-2.5 py-1">
-                                {requirement?.owningWorkflow || 'Workflow pending'}
-                              </span>
-                              {requirement?.triggeringCondition ? (
-                                <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f8fafc] px-2.5 py-1">
-                                  Trigger: {requirement.triggeringCondition}
-                                </span>
-                              ) : null}
-                            </div>
-                            <div className="mt-3 flex flex-wrap items-center justify-end gap-3 text-xs text-[#60758d]">
-                              <div className="flex flex-wrap gap-2">
-                                {linkedDocument?.url ? (
-                                  <a
-                                    href={linkedDocument.url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="inline-flex items-center gap-2 rounded-full border border-[#dde4ee] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
-                                  >
-                                    <FileText size={13} />
-                                    View
-                                  </a>
-                                ) : null}
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={() => {
-                                    setUploadDraft((previous) => ({
-                                      ...previous,
-                                      canonicalRequirementInstanceId: String(getRequirementCanonicalId(requirement) || ''),
-                                      requiredDocumentKey: requirement?.key || '',
-                                      category: getAttorneyCategoryForRequiredDocument(requirement),
-                                      file: null,
-                                    }))
-                                  }}
-                                >
-                                  {linkedDocument ? 'Replace' : 'Upload'}
-                                </Button>
-                              </div>
-                            </div>
-                          </article>
-                        ))
-                      ) : (
-                        <p className="rounded-[14px] border border-dashed border-[#d8e2ee] bg-white px-4 py-4 text-sm text-[#6b7d93]">
-                          {section.emptyLabel}
-                        </p>
-                      )}
+                  ['Required Documents', documentHealthSummary.totalRequired, FileText, 'text-blue-700 bg-blue-50'],
+                  ['Received', documentHealthSummary.received, Upload, 'text-emerald-700 bg-emerald-50'],
+                  ['Missing', documentHealthSummary.missing, AlertTriangle, 'text-orange-700 bg-orange-50'],
+                  ['Pending Review', documentHealthSummary.pendingReview, Clock3, 'text-violet-700 bg-violet-50'],
+                ].map(([label, value, Icon, tone]) => (
+                  <article key={label} className="flex items-center gap-4 border-b border-r border-[#e6edf5] px-5 py-4 last:border-r-0 sm:border-b-0">
+                    <span className={`inline-flex size-11 shrink-0 items-center justify-center rounded-[10px] ${tone}`}>
+                      {createElement(Icon, { size: 20 })}
+                    </span>
+                    <div className="min-w-0">
+                      <span className="block truncate text-xs font-medium text-[#6b7d93]">{label}</span>
+                      <strong className="mt-1 block text-xl font-semibold text-[#142132]">{value}</strong>
                     </div>
                   </article>
                 ))}
-              </div>
-            </section>
+              </section>
 
-            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">Upload Document</h3>
-                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Select a category, set visibility, and upload your latest legal file.</p>
+              <section className="rounded-[12px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-[#142132]">Required Documents</h3>
+                    <p className="mt-1 text-sm text-[#60758d]">Documents still needed to complete this transaction.</p>
+                  </div>
+                  {requiredDocumentRows.length > 5 ? (
+                    <button
+                      type="button"
+                      className="text-sm font-semibold text-primary hover:text-primaryDark"
+                      onClick={() => setShowAllRequiredDocuments((previous) => !previous)}
+                    >
+                      {showAllRequiredDocuments ? 'Show first 5' : 'View all requirements'}
+                    </button>
+                  ) : null}
                 </div>
-                {uploadDraft.file ? (
-                  <span className="inline-flex max-w-full items-center rounded-full border border-[#dde4ee] bg-[#f8fafc] px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">
-                    {uploadDraft.file.name}
-                  </span>
+                <div className="mt-4 overflow-x-auto">
+                  <table className="min-w-[760px] w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b border-[#dde4ee] text-left text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#71839a]">
+                        <th className="py-2.5 pr-4">Document</th>
+                        <th className="px-4 py-2.5">Category</th>
+                        <th className="px-4 py-2.5">Status</th>
+                        <th className="px-4 py-2.5">Priority</th>
+                        <th className="py-2.5 pl-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayedRequiredDocumentRows.length ? (
+                        displayedRequiredDocumentRows.map((row) => {
+                          const document = row.linkedDocument || {}
+                          const showReviewActions = canReviewDocumentRequirement(row.requirement, document)
+                          const showReplaceAction = canReplaceDocumentRequirement(row.requirement, document)
+                          return (
+                            <tr key={row.id} className="border-b border-[#edf2f7] last:border-0">
+                              <td className="max-w-[280px] py-3 pr-4 font-medium text-[#142132]">
+                                <span className="block truncate">{row.displayName}</span>
+                              </td>
+                              <td className="px-4 py-3 text-[#52677f]">{row.categoryLabel}</td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
+                                  {row.statusLabel}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getDocumentPriorityTone(row.priority)}`}>
+                                  {row.priority}
+                                </span>
+                              </td>
+                              <td className="py-3 pl-4">
+                                <div className="flex items-center justify-end gap-2">
+                                  {row.fileUrl ? (
+                                    <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center rounded-[8px] border border-[#d8e4f0] px-3 text-xs font-semibold text-primary">
+                                      View
+                                    </a>
+                                  ) : null}
+                                  {!row.fileUrl || row.status === 'missing' || row.status === 'requested' ? (
+                                    <Button type="button" variant="secondary" size="sm" onClick={() => openDocumentUploadModal({ requirement: row.requirement })}>
+                                      Upload
+                                    </Button>
+                                  ) : null}
+                                  {showReplaceAction ? (
+                                    <Button type="button" variant="secondary" size="sm" onClick={() => handleReplaceDocument(document, row.requirement)} disabled={saving}>
+                                      Replace
+                                    </Button>
+                                  ) : null}
+                                  {row.fileUrl && !showReplaceAction ? (
+                                    <Button type="button" variant="secondary" size="sm" onClick={() => handleReplaceDocument(document, row.requirement)} disabled={saving}>
+                                      Replace
+                                    </Button>
+                                  ) : null}
+                                  {showReviewActions ? (
+                                    <>
+                                      <Button type="button" variant="secondary" size="sm" onClick={() => openReviewAction('approve', document, row.requirement)} disabled={saving}>
+                                        Approve
+                                      </Button>
+                                      <Button type="button" variant="ghost" size="sm" onClick={() => openReviewAction('reject', document, row.requirement)} disabled={saving}>
+                                        Reject
+                                      </Button>
+                                    </>
+                                  ) : null}
+                                  <button type="button" className="ui-icon-button h-8 w-8" aria-label={`More actions for ${row.displayName}`}>
+                                    <MoreHorizontal size={15} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan="5" className="py-8 text-center text-sm text-[#60758d]">
+                            No required documents are configured for this transaction.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {requiredDocumentRows.length ? (
+                  <p className="mt-3 text-xs text-[#60758d]">
+                    Showing {displayedRequiredDocumentRows.length} of {requiredDocumentRows.length} required documents
+                  </p>
                 ) : null}
-              </div>
-              <form onSubmit={handleUploadDocument} className="mt-4 grid gap-3 lg:grid-cols-12 lg:items-end">
-                <label className="flex flex-col gap-1.5 lg:col-span-12">
-                  <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Required document</span>
-                  <Field
-                    as="select"
-                    value={uploadDraft.canonicalRequirementInstanceId || ''}
-                    onChange={(event) => {
-                      const canonicalRequirementInstanceId = event.target.value
-                      const requirement = requiredDocumentChecklist.find((item) =>
-                        String(item?.canonicalRequirementInstanceId || item?.canonical_requirement_instance_id || '') === canonicalRequirementInstanceId
-                      )
-                      setUploadDraft((previous) => ({
-                        ...previous,
-                        canonicalRequirementInstanceId,
-                        requiredDocumentKey: requirement?.key || '',
-                        category: requirement ? getAttorneyCategoryForRequiredDocument(requirement) : previous.category,
-                      }))
-                    }}
-                  >
-                    <option value="">General upload - do not satisfy a requirement</option>
-                    {requiredDocumentChecklist
-                      .filter((item) => item?.canonicalRequirementInstanceId || item?.canonical_requirement_instance_id)
-                      .map((item) => {
-                        const canonicalId = item.canonicalRequirementInstanceId || item.canonical_requirement_instance_id
-                        return (
-                          <option key={`${item.key}:${canonicalId}`} value={canonicalId}>
-                            {item.label || item.key} · {item.status || 'pending'}
-                          </option>
-                        )
-                      })}
-                  </Field>
-                </label>
-                <label className="flex flex-col gap-1.5 lg:col-span-4">
-                  <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Category</span>
-                  <Field
-                    as="select"
-                    value={uploadDraft.category}
-                    onChange={(event) => setUploadDraft((previous) => ({ ...previous, category: event.target.value }))}
-                  >
-                    {ATTORNEY_DOCUMENT_CATEGORIES.map((category) => (
-                      <option key={category} value={category}>
-                        {category}
-                      </option>
+              </section>
+
+              <section className="rounded-[12px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-[#142132]">Document Library</h3>
+                    <p className="mt-1 text-sm text-[#60758d]">All uploaded and generated documents.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {DOCUMENT_LIBRARY_FILTERS.map((filter) => (
+                      <button
+                        key={filter.key}
+                        type="button"
+                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                          activeDocumentLibraryCategory === filter.key
+                            ? 'border-primary bg-primarySoft text-primary'
+                            : 'border-[#dbe5ef] bg-white text-[#52677f] hover:border-primary/40 hover:text-primary'
+                        }`}
+                        onClick={() => setActiveDocumentLibraryCategory(filter.key)}
+                      >
+                        {filter.label}
+                      </button>
                     ))}
-                  </Field>
-                </label>
-                <label className="flex flex-col gap-1.5 lg:col-span-3">
-                  <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Visibility</span>
-                  <Field
-                    as="select"
-                    value={uploadDraft.visibility}
-                    onChange={(event) => setUploadDraft((previous) => ({ ...previous, visibility: event.target.value }))}
-                  >
-                    {DOCUMENT_VISIBILITY_OPTIONS.map((option) => (
-                      <option key={option.key} value={option.key}>
-                        {option.label}
-                      </option>
+                  </div>
+                </div>
+                <div className="mt-4 overflow-x-auto">
+                  <table className="min-w-[820px] w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b border-[#dde4ee] text-left text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#71839a]">
+                        <th className="py-2.5 pr-4">Name</th>
+                        <th className="px-4 py-2.5">Category</th>
+                        <th className="px-4 py-2.5">Uploaded By</th>
+                        <th className="px-4 py-2.5">Date</th>
+                        <th className="px-4 py-2.5">Status</th>
+                        <th className="py-2.5 pl-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {documentLibraryRows.length ? (
+                        documentLibraryRows.map((row) => {
+                          const document = row.raw || {}
+                          return (
+                            <tr key={row.id} className="border-b border-[#edf2f7] last:border-0">
+                              <td className="max-w-[260px] py-3 pr-4 font-medium text-[#142132]">
+                                <span className="block truncate">{row.displayName}</span>
+                              </td>
+                              <td className="px-4 py-3 text-[#52677f]">{row.categoryLabel}</td>
+                              <td className="px-4 py-3 text-[#52677f]">{row.uploadedBy}</td>
+                              <td className="px-4 py-3 text-[#52677f]">{formatDateTime(row.uploadedAt)}</td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
+                                  {getDocumentCommandStatusLabel(row.status)}
+                                </span>
+                              </td>
+                              <td className="py-3 pl-4">
+                                <div className="flex items-center justify-end gap-2">
+                                  {row.fileUrl ? (
+                                    <>
+                                      <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center rounded-[8px] border border-[#d8e4f0] px-3 text-xs font-semibold text-primary">
+                                        View
+                                      </a>
+                                      <a href={row.fileUrl} download className="inline-flex h-8 items-center rounded-[8px] border border-[#d8e4f0] px-3 text-xs font-semibold text-[#35546c]">
+                                        Download
+                                      </a>
+                                    </>
+                                  ) : null}
+                                  <Button type="button" variant="secondary" size="sm" onClick={() => handleReplaceDocument(document, row.requiredDocument)} disabled={saving}>
+                                    Replace
+                                  </Button>
+                                  <button type="button" className="ui-icon-button h-8 w-8" aria-label={`More actions for ${row.displayName}`}>
+                                    <MoreHorizontal size={15} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan="6" className="py-8 text-center text-sm text-[#60758d]">
+                            No uploaded or generated documents match this filter.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="mt-3 text-xs text-[#60758d]">
+                  Showing {documentLibraryRows.length} document{documentLibraryRows.length === 1 ? '' : 's'}
+                </p>
+              </section>
+            </div>
+
+            <aside className="space-y-5 xl:sticky xl:top-4">
+              <OverviewSidePanel title="Quick Actions">
+                <div className="grid gap-2">
+                  {[
+                    ['Request Documents', FileText, handleQuickRequestDocuments, canPostSharedDiscussion || canManageTransactionRoleplayers],
+                    ['Upload Document', Upload, () => openDocumentUploadModal({ category: activeDocumentLibraryCategory }), true],
+                    ['Add Note', MessageSquarePlus, handleQuickAddWorkflowNote, canPostSharedDiscussion || canPostInternalDiscussion],
+                    ['Schedule Signing', CalendarDays, handleQuickScheduleSigning, canManageTransactionRoleplayers || workspaceRole === 'attorney'],
+                    ['Generate Sales Agreement', FileText, openAgentSalesAgreementWorkspace, canManageTransactionRoleplayers],
+                  ]
+                    .filter(([, , , allowed]) => allowed)
+                    .map(([label, Icon, action]) => (
+                      <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
+                        {createElement(Icon, { size: 14 })}
+                        {label}
+                      </Button>
                     ))}
-                  </Field>
-                </label>
-                <label className="flex flex-col gap-1.5 lg:col-span-5">
-                  <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">File</span>
+                </div>
+              </OverviewSidePanel>
+
+              <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                <h3 className="text-sm font-semibold text-textStrong">Recent Activity</h3>
+                <div className="mt-3 space-y-2">
+                  {documentRecentActivity.length ? (
+                    documentRecentActivity.map((item) => (
+                      <article key={item.id} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <strong className="block truncate text-sm text-textStrong">{item.attachmentName || item.title}</strong>
+                            <p className="mt-1 line-clamp-2 text-xs leading-5 text-textMuted">
+                              {item.body}
+                            </p>
+                            <p className="mt-1 truncate text-xs text-textMuted">
+                              {item.authorName} · {item.categoryLabel || 'Documents'}
+                            </p>
+                          </div>
+                          <span className="shrink-0 text-xs text-textMuted">{formatShortDayMonth(item.createdAt)}</span>
+                        </div>
+                      </article>
+                    ))
+                  ) : (
+                    <p className="rounded-[12px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-4 text-sm text-textMuted">
+                      No document activity yet.
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:text-primaryDark"
+                  onClick={() => {
+                    setActivityFilter('documents')
+                    setWorkspaceMenu('activity')
+                  }}
+                >
+                  View all activity
+                  <ChevronRight size={14} />
+                </button>
+              </section>
+            </aside>
+
+            <Modal
+              open={uploadDocumentModalOpen}
+              onClose={() => setUploadDocumentModalOpen(false)}
+              title="Upload Document"
+              subtitle="Add a file to the canonical transaction document system."
+              className="max-w-2xl"
+            >
+              <form onSubmit={handleUploadDocument} className="grid gap-4">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-label font-semibold uppercase text-textMuted">File</span>
                   <Field
                     key={`upload-input-${uploadInputVersion}`}
                     type="file"
                     onChange={(event) => {
                       const file = event.target.files?.[0] || null
-                      setUploadDraft((previous) => ({ ...previous, file }))
+                      setUploadDraft((previous) => ({ ...previous, file, fileName: file?.name || '' }))
                     }}
                   />
                 </label>
-                <div className="lg:col-span-12">
-                  <Button type="submit" disabled={saving || !uploadDraft.file} className="min-w-[176px] justify-center">
-                    {saving ? 'Uploading…' : 'Upload Document'}
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Document type</span>
+                    <Field
+                      value={uploadDraft.documentType}
+                      onChange={(event) => setUploadDraft((previous) => ({ ...previous, documentType: event.target.value }))}
+                      placeholder="e.g. buyer_id"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Category</span>
+                    <Field
+                      as="select"
+                      value={uploadDraft.category}
+                      onChange={(event) => setUploadDraft((previous) => ({ ...previous, category: event.target.value }))}
+                    >
+                      {ATTORNEY_DOCUMENT_CATEGORIES.map((category) => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </Field>
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Visibility</span>
+                    <Field
+                      as="select"
+                      value={uploadDraft.visibility}
+                      onChange={(event) => setUploadDraft((previous) => ({ ...previous, visibility: event.target.value }))}
+                    >
+                      {DOCUMENT_VISIBILITY_OPTIONS.map((option) => (
+                        <option key={option.key} value={option.key}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Field>
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Related workflow</span>
+                    <Field
+                      as="select"
+                      value={uploadDraft.relatedWorkflow}
+                      onChange={(event) => setUploadDraft((previous) => ({ ...previous, relatedWorkflow: event.target.value }))}
+                    >
+                      {DOCUMENT_RELATED_WORKFLOW_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Field>
+                  </label>
+                </div>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-label font-semibold uppercase text-textMuted">Satisfies required document?</span>
+                  <Field
+                    as="select"
+                    value={uploadDraft.satisfiesRequiredDocument}
+                    onChange={(event) => setUploadDraft((previous) => ({ ...previous, satisfiesRequiredDocument: event.target.value }))}
+                  >
+                    <option value="no">No</option>
+                    <option value="yes">Yes</option>
+                  </Field>
+                </label>
+                {uploadDraft.satisfiesRequiredDocument === 'yes' ? (
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Required document</span>
+                    <Field
+                      as="select"
+                      value={uploadDraft.canonicalRequirementInstanceId || ''}
+                      onChange={(event) => {
+                        const canonicalRequirementInstanceId = event.target.value
+                        const requirement = requiredDocumentChecklist.find((item) =>
+                          String(getRequirementCanonicalId(item) || '') === canonicalRequirementInstanceId
+                        )
+                        setUploadDraft((previous) => ({
+                          ...previous,
+                          canonicalRequirementInstanceId,
+                          requiredDocumentId: requirement?.id || '',
+                          requiredDocumentKey: requirement?.key || '',
+                          documentType: requirement?.key || previous.documentType,
+                          category: requirement ? getAttorneyCategoryForRequiredDocument(requirement) : previous.category,
+                          requestTitle: requirement?.label || requirement?.documentLabel || requirement?.document_label || '',
+                        }))
+                      }}
+                    >
+                      <option value="">Select required document</option>
+                      {requiredDocumentChecklist
+                        .filter((item) => getRequirementCanonicalId(item))
+                        .map((item) => {
+                          const canonicalId = getRequirementCanonicalId(item)
+                          return (
+                            <option key={`${item.key}:${canonicalId}`} value={canonicalId}>
+                              {item.label || item.key} · {getRequirementStatusLabel(item.status || 'missing')}
+                            </option>
+                          )
+                        })}
+                    </Field>
+                  </label>
+                ) : null}
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-label font-semibold uppercase text-textMuted">Notes</span>
+                  <Field
+                    as="textarea"
+                    rows={3}
+                    value={uploadDraft.notes}
+                    onChange={(event) => setUploadDraft((previous) => ({ ...previous, notes: event.target.value }))}
+                    placeholder="Optional upload note"
+                  />
+                </label>
+                <div className="flex flex-wrap justify-end gap-3 border-t border-borderSoft pt-4">
+                  <Button type="button" variant="secondary" onClick={() => setUploadDocumentModalOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={saving || !uploadDraft.file}>
+                    {saving ? 'Uploading...' : 'Upload Document'}
                   </Button>
                 </div>
               </form>
-            </section>
-
-            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-              <div className="rounded-[18px] border border-[#dde4ee] bg-[#f8fafc] p-3">
-                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
-                  {attorneyDocumentSections.map((group) => (
-                    <button
-                      key={group.key}
-                      type="button"
-                      className={`flex w-full items-center justify-between gap-3 rounded-[14px] border px-4 py-3 text-left transition ${
-                        activeDocumentGroup === group.key
-                          ? 'border-[#bfd3ea] bg-white text-[#1f3247] shadow-[0_8px_20px_rgba(15,23,42,0.06)]'
-                          : 'border-transparent bg-transparent text-[#5c7088] hover:border-[#d5e0ed] hover:bg-white/70'
-                      }`}
-                      onClick={() => setActiveDocumentGroup(group.key)}
-                    >
-                      <span className="text-sm font-semibold">{group.label}</span>
-                      <span className="inline-flex items-center rounded-full border border-[#d7e2ee] bg-[#f7fafd] px-2.5 py-1 text-[0.68rem] font-semibold text-[#6d8098]">
-                        {group.items.length}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {activeAttorneyDocumentSection ? (
-                <section className="mt-4 rounded-[20px] border border-[#dde4ee] bg-white p-6">
-                  <div className="mb-4 flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-[1.1rem] font-semibold tracking-[-0.03em] text-[#142132]">{activeAttorneyDocumentSection.label}</h3>
-                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{activeAttorneyDocumentSection.description}</p>
-                    </div>
-                    <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f8fafc] px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">
-                      {activeAttorneyDocumentSection.items.length} file{activeAttorneyDocumentSection.items.length === 1 ? '' : 's'}
-                    </span>
-                  </div>
-                  {activeAttorneyDocumentSection.items.length ? (
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      {activeAttorneyDocumentSection.items.map((document) => {
-                        const visibility = String(document.visibility_scope || 'shared').toLowerCase()
-                        const isShared = visibility === 'shared'
-                        const isArchived = Boolean(document.archived_at)
-                        const linkedRequirement = document.linkedRequirement || getLinkedRequirementForDocument(document)
-                        const linkedRequirementLabel = linkedRequirement?.label || linkedRequirement?.key || ''
-                        const requirementStatus = linkedRequirement?.status || document.review_status || document.status || ''
-                        const isRejectedRequirement = String(requirementStatus || '').trim().toLowerCase() === 'rejected'
-                        const showReviewActions = canReviewDocumentRequirement(linkedRequirement, document)
-                        const showReplaceAction = canReplaceDocumentRequirement(linkedRequirement, document)
-                        return (
-                          <article key={document.id} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-5 py-5">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <strong className="block break-words text-sm font-semibold leading-7 text-[#142132]">
-                                  {document.name || 'Untitled document'}
-                                </strong>
-                                <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                                  {document.normalizedCategory || document.category || 'Document'}
-                                </p>
-                              </div>
-                              <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.72rem] font-semibold ${
-                                isShared
-                                  ? 'border-[#d6e5f4] bg-[#eef5fb] text-[#35546c]'
-                                  : 'border-[#dde4ee] bg-[#f8fafc] text-[#66758b]'
-                              }`}>
-                                {isShared ? 'Client-visible' : 'Internal'}
-                              </span>
-                            </div>
-                            <div className="mt-4 grid gap-2 text-xs text-[#60758d]">
-                              {[
-                                ['Status', getDocumentStatus(document)],
-                                ['Linked requirement', linkedRequirementLabel || 'General upload'],
-                                ['Requirement status', linkedRequirementLabel ? getRequirementStatusLabel(requirementStatus) : 'Not linked'],
-                                ['Uploaded by', document.uploaded_by_role || document.uploadedByRole || 'Internal user'],
-                                ['Requested by', document.requested_by_role || document.requestedByRole || document.requested_by || 'Not recorded'],
-                                ['Reviewed by', document.reviewed_by_name || document.reviewedByName || document.reviewed_by || 'Not reviewed'],
-                                ['Last updated', formatDateTime(document.updated_at || document.created_at)],
-                              ].map(([label, value]) => (
-                                <div key={label} className="flex justify-between gap-3">
-                                  <span>{label}</span>
-                                  <strong className="min-w-0 truncate text-right text-[#142132]">{value}</strong>
-                                </div>
-                              ))}
-                            </div>
-                            {isRejectedRequirement && (document.rejection_reason || document.rejected_reason || linkedRequirement?.rejectionReason || linkedRequirement?.rejection_reason) ? (
-                              <p className="mt-3 rounded-[12px] border border-red-100 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
-                                {document.rejection_reason || document.rejected_reason || linkedRequirement?.rejectionReason || linkedRequirement?.rejection_reason}
-                              </p>
-                            ) : null}
-                            {isArchived ? <p className="mt-1 text-xs font-semibold text-[#b42318]">Archived</p> : null}
-                            <div className="mt-4 flex flex-wrap gap-2">
-                              {document.url ? (
-                                <a
-                                  href={document.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-2 rounded-full border border-[#dde4ee] bg-white px-4 py-2 text-sm font-semibold text-[#35546c]"
-                                >
-                                  <FileText size={14} />
-                                  View
-                                </a>
-                              ) : null}
-                              {document.url ? (
-                                <a
-                                  href={document.url}
-                                  download
-                                  className="inline-flex items-center rounded-full border border-[#dde4ee] bg-white px-4 py-2 text-sm font-semibold text-[#35546c]"
-                                >
-                                  Download
-                                </a>
-                              ) : null}
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleArchiveDocument(document.id)}
-                                disabled={saving || isArchived}
-                              >
-                                Archive
-                              </Button>
-                              {showReviewActions ? (
-                                <>
-                                  <Button
-                                    type="button"
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={() => openReviewAction('approve', document, linkedRequirement)}
-                                    disabled={saving}
-                                  >
-                                    Approve
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={() => openReviewAction('reject', document, linkedRequirement)}
-                                    disabled={saving}
-                                  >
-                                    Reject
-                                  </Button>
-                                </>
-                              ) : null}
-                              {showReplaceAction ? (
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={() => handleReplaceDocument(document, linkedRequirement)}
-                                  disabled={saving}
-                                >
-                                  Replace
-                                </Button>
-                              ) : null}
-                              {canShowWaiverAction && linkedRequirementLabel ? (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => openReviewAction('waive', document, linkedRequirement)}
-                                  disabled={saving}
-                                >
-                                  Waive
-                                </Button>
-                              ) : null}
-                            </div>
-                          </article>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-5 py-6 text-sm text-[#6b7d93]">
-                      No documents in {activeAttorneyDocumentSection.label.toLowerCase()} yet.
-                    </div>
-                  )}
-                </section>
-              ) : null}
-            </section>
+            </Modal>
           </section>
         ) : null}
 
         {activeWorkspaceMenu === 'finance' ? (
-          <section className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.9fr)]">
-            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-section-title font-semibold text-textStrong">Finance</h3>
-                  <p className="mt-1 text-secondary text-textMuted">Money, funding status, bond exposure, guarantees, proof of funds, and finance-related tasks.</p>
-                </div>
-                <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
-                  {financeTypeLabel}
-                </span>
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {financialRows.map(([label, value]) => (
-                  <article key={label} className="min-w-0 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                    <span className="text-label font-semibold uppercase text-textMuted">{label}</span>
-                    <strong className="mt-1 block truncate text-body font-semibold text-textStrong">{value}</strong>
-                  </article>
-                ))}
-              </div>
-            </section>
-
-            <section className="space-y-5">
-              <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-                <h3 className="text-section-title font-semibold text-textStrong">Funding Snapshot</h3>
-                <p className="mt-1 text-secondary text-textMuted">Compact view of finance type, guarantees, and registration timing.</p>
-                <div className="mt-4 grid gap-3">
-                  {bondHybridFundingSnapshotRows.map(([label, value]) => (
-                    <div key={label} className="flex items-center justify-between gap-3 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                      <span className="text-sm text-textMuted">{label}</span>
-                      <strong className="truncate text-right text-sm text-textStrong">{value}</strong>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              {isBondOrHybridFinance ? (
-                bondHybridFinanceWorkflowPanel
-              ) : (
-                <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-section-title font-semibold text-textStrong">Funding Workflow</h3>
-                      <p className="mt-1 text-secondary text-textMuted">Proof of funds, deposits, guarantees, and finance-related workflow movement.</p>
-                    </div>
-                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-helper font-semibold ${
-                      isCapturedCashFinance
-                        ? 'border-success/30 bg-successSoft text-success'
-                        : 'border-primary/20 bg-primarySoft text-primary'
-                    }`}>
-                      {hasCapturedFinanceType ? (isCapturedCashFinance ? 'Cash transaction' : 'Finance workflow') : 'Awaiting onboarding'}
-                    </span>
-                  </div>
-                </section>
-              )}
-
-              {!isBondOrHybridFinance && workflowLoading ? (
-                <LoadingSkeleton lines={4} className="rounded-[16px] border border-borderDefault bg-white p-4" />
-              ) : !isBondOrHybridFinance && workflowError ? (
-                <p className="rounded-[16px] border border-warning/30 bg-warningSoft px-4 py-3 text-sm font-medium text-warning">
-                  {workflowError}
-                </p>
-              ) : !isBondOrHybridFinance && displayedWorkflowLanes.length ? (
-                displayedWorkflowLanes.map((lane) => (
-                  <WorkflowLaneCard
-                    key={lane.id || lane.laneKey}
-                    lane={lane}
-                    onOpenDetails={() => openWorkflowDrawer(lane)}
-                    onPrimaryAction={handleWorkflowPrimaryAction}
-                  />
-                ))
-              ) : !isBondOrHybridFinance ? (
-                <section className="rounded-[18px] border border-dashed border-borderDefault bg-surface px-5 py-5 shadow-surface">
-                  <h4 className="text-sm font-semibold text-textStrong">
-                    {hasCapturedFinanceType
-                      ? (isCapturedCashFinance ? 'No bond workflow required' : 'No funding workflow configured yet')
-                      : 'Finance details not captured yet'}
-                  </h4>
-                  <p className="mt-1 text-sm leading-6 text-textMuted">
-                    {hasCapturedFinanceType && isCapturedCashFinance
-                      ? 'This transaction is marked as cash, so funding checks can stay focused on proof of funds, deposit, and guarantees.'
-                      : 'Bond or guarantee workflow steps will appear here once the buyer onboarding captures the finance route.'}
-                  </p>
-                </section>
-              ) : null}
-            </section>
-          </section>
+          financeCommandCenterPanel
         ) : null}
 
         {activeWorkspaceMenu === 'tasks' ? (
@@ -7582,8 +7347,8 @@ function AttorneyTransactionDetail() {
         ) : null}
 
         {activeWorkspaceMenu === 'stakeholders' ? (
-          <section className="space-y-5">
-            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+          <section className="space-y-6">
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-6 shadow-surface">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <h3 className="text-section-title font-semibold text-textStrong">Transaction Team</h3>
@@ -7605,17 +7370,17 @@ function AttorneyTransactionDetail() {
                 </div>
               </div>
 
-              <div className="mt-5 grid gap-3 xl:grid-cols-4">
+              <div className="mt-6 grid max-w-5xl gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {transactionTeamCards.map((card) => {
                   const isAssigned = Boolean(card.assigned)
                   return (
-                    <article key={card.key} className="rounded-[16px] border border-borderSoft bg-surfaceAlt p-4">
+                    <article key={card.key} className="flex min-h-[230px] min-w-0 flex-col rounded-[14px] border border-borderSoft bg-surfaceAlt p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <span className="text-label font-semibold uppercase text-textMuted">{card.label}</span>
-                          <strong className="mt-2 block truncate text-body font-semibold text-textStrong">{card.company}</strong>
+                          <span className="block max-w-[180px] text-label font-semibold uppercase text-textMuted">{card.label}</span>
+                          <strong className="mt-2 block break-words text-body font-semibold leading-6 text-textStrong">{card.company}</strong>
                         </div>
-                        <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
+                        <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
                           isAssigned
                             ? 'border-success/30 bg-successSoft text-success'
                             : 'border-warning/30 bg-warningSoft text-warning'
@@ -7623,24 +7388,25 @@ function AttorneyTransactionDetail() {
                           {card.status}
                         </span>
                       </div>
-                      <div className="mt-4 space-y-2 text-helper text-textMuted">
-                        <div className="flex items-center gap-2">
+                      <div className="mt-4 space-y-2 text-helper leading-5 text-textMuted">
+                        <div className="flex min-w-0 items-center gap-2">
                           <UsersRound size={14} className="shrink-0" />
-                          <span className="truncate">{card.contact}</span>
+                          <span className="min-w-0 truncate">{card.contact}</span>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
                           <AtSign size={14} className="shrink-0" />
-                          <span className="truncate">{card.email}</span>
+                          <span className="min-w-0 truncate">{card.email}</span>
                         </div>
                       </div>
-                      <div className="mt-4 flex items-center justify-between gap-3">
-                        <span className="text-helper text-textMuted">
+                      <div className="mt-auto pt-5">
+                        <span className="block text-helper leading-5 text-textMuted">
                           {isAssigned ? 'Ready for communication' : 'Assignment still needed'}
                         </span>
                         <Button
                           type="button"
                           variant="secondary"
                           size="sm"
+                          className="mt-3 w-full justify-center whitespace-normal text-center leading-5"
                           onClick={openRoleplayerConfirmation}
                           disabled={!canManageTransactionRoleplayers || partnerOptionsLoading}
                         >
@@ -7653,7 +7419,7 @@ function AttorneyTransactionDetail() {
               </div>
             </section>
 
-            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-6 shadow-surface">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
                   <h3 className="text-section-title font-semibold text-textStrong">Transaction Contacts</h3>
@@ -7666,7 +7432,7 @@ function AttorneyTransactionDetail() {
                 </span>
               </div>
 
-              <div className="mt-4 overflow-hidden rounded-[16px] border border-borderSoft">
+              <div className="mt-5 overflow-hidden rounded-[16px] border border-borderSoft">
                 <div className="hidden grid-cols-[minmax(120px,0.8fr)_minmax(160px,1fr)_minmax(160px,1fr)_minmax(180px,1fr)_minmax(140px,0.9fr)_110px] gap-3 border-b border-borderSoft bg-surfaceAlt px-4 py-3 text-label font-semibold uppercase text-textMuted md:grid">
                   <span>Role</span>
                   <span>Contact</span>
@@ -7716,7 +7482,7 @@ function AttorneyTransactionDetail() {
               </div>
             </section>
 
-            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-6 shadow-surface">
               <div>
                 <h3 className="text-section-title font-semibold text-textStrong">Team Actions</h3>
                 <p className="mt-1 text-secondary text-textMuted">
@@ -7724,8 +7490,8 @@ function AttorneyTransactionDetail() {
                 </p>
               </div>
 
-              <div className="mt-4 grid gap-3 xl:grid-cols-3">
-                <article className="rounded-[16px] border border-borderSoft bg-surfaceAlt p-4">
+              <div className="mt-5 grid gap-4 lg:grid-cols-3">
+                <article className="flex min-h-[250px] flex-col rounded-[14px] border border-borderSoft bg-surfaceAlt p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <strong className="text-body font-semibold text-textStrong">Send Buyer Introduction</strong>
@@ -7740,7 +7506,7 @@ function AttorneyTransactionDetail() {
                       ? `Last sent ${formatDateTime(latestRoleplayerIntroEvent.createdAt || latestRoleplayerIntroEvent.created_at)}.`
                       : 'No buyer introduction has been sent yet.'}
                   </p>
-                  <div className="mt-4">
+                  <div className="mt-auto pt-4">
                     <Button
                       type="button"
                       className="w-full justify-center"
@@ -7752,7 +7518,7 @@ function AttorneyTransactionDetail() {
                   </div>
                 </article>
 
-                <article className="rounded-[16px] border border-borderSoft bg-surfaceAlt p-4">
+                <article className="flex min-h-[250px] flex-col rounded-[14px] border border-borderSoft bg-surfaceAlt p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <strong className="text-body font-semibold text-textStrong">Send Team Introduction</strong>
@@ -7767,7 +7533,7 @@ function AttorneyTransactionDetail() {
                       ? `Last sent ${formatDateTime(latestRoleplayerHandoffEvent.createdAt || latestRoleplayerHandoffEvent.created_at)}.`
                       : 'No team introduction has been sent yet.'}
                   </p>
-                  <div className="mt-4">
+                  <div className="mt-auto pt-4">
                     <Button
                       type="button"
                       variant="secondary"
@@ -7780,7 +7546,7 @@ function AttorneyTransactionDetail() {
                   </div>
                 </article>
 
-                <article className="rounded-[16px] border border-borderSoft bg-surfaceAlt p-4">
+                <article className="flex min-h-[250px] flex-col rounded-[14px] border border-borderSoft bg-surfaceAlt p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <strong className="text-body font-semibold text-textStrong">View Activity</strong>
@@ -7793,7 +7559,7 @@ function AttorneyTransactionDetail() {
                   <p className="mt-4 text-helper text-textMuted">
                     Includes assignment changes, intro sends, and invitation response events.
                   </p>
-                  <div className="mt-4">
+                  <div className="mt-auto pt-4">
                     <Button type="button" variant="secondary" className="w-full justify-center" onClick={openRoleplayerActivityFeed}>
                       Open Roleplayer Activity
                     </Button>

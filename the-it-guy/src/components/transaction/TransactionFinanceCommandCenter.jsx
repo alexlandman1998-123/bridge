@@ -1,13 +1,19 @@
 import { useMemo, useState } from 'react'
 import {
-  ArrowRight,
+  BadgeCheck,
   CheckCircle2,
   Circle,
+  ClipboardCheck,
   Clock3,
-  FilePlus2,
+  Download,
+  Eye,
+  FileText,
   Landmark,
+  MessageSquarePlus,
+  MoreHorizontal,
   ShieldCheck,
   UploadCloud,
+  UserRound,
 } from 'lucide-react'
 import Button from '../ui/Button'
 import Field from '../ui/Field'
@@ -61,18 +67,42 @@ function getStatusTone(status = '') {
   return 'border-[#dbe5ef] bg-[#fbfdff] text-[#61758a]'
 }
 
-function SummaryBlock({ label, value }) {
+const SUMMARY_ICONS = {
+  finance_type: Landmark,
+  finance_owner: UserRound,
+  current_stage: FileText,
+  next_action: ClipboardCheck,
+  blocker_status: BadgeCheck,
+}
+
+function SummaryBlock({ item }) {
+  const Icon = SUMMARY_ICONS[item.key] || Circle
+  const isBlocked = item.key === 'blocker_status' && String(item.value || '').toLowerCase() !== 'no blockers'
   return (
-    <article className="rounded-[20px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] px-4 py-4 shadow-[0_16px_32px_rgba(15,23,42,0.05)]">
-      <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8397ad]">{label}</span>
-      <strong className="mt-2 block text-sm font-semibold leading-6 text-[#142132]">{value}</strong>
+    <article className="flex min-w-0 items-start gap-3 border-[#e1e9f2] px-4 py-4 sm:border-r last:border-r-0">
+      <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${
+        isBlocked
+          ? 'border-[#f1cbc7] bg-[#fff5f4] text-[#b42318]'
+          : item.key === 'next_action'
+            ? 'border-[#ffe0b2] bg-[#fff8ed] text-[#b26a00]'
+            : item.key === 'finance_type'
+              ? 'border-[#c9e0f7] bg-[#eef7ff] text-[#0b75d1]'
+              : 'border-[#d9e5f0] bg-[#f7fbff] text-[#55708d]'
+      }`}>
+        <Icon size={17} />
+      </span>
+      <div className="min-w-0">
+        <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8397ad]">{item.label}</span>
+        <strong className="mt-1 block text-sm font-semibold leading-5 text-[#142132]">{item.value}</strong>
+        {item.subtext ? <span className="mt-1 block truncate text-xs text-[#6f8299]">{item.subtext}</span> : null}
+      </div>
     </article>
   )
 }
 
 function SectionCard({ title, copy, children, actions = null }) {
   return (
-    <section className="rounded-[24px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+    <section className="rounded-[8px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{title}</h3>
@@ -87,7 +117,7 @@ function SectionCard({ title, copy, children, actions = null }) {
 
 function EmptyState({ message, action = null }) {
   return (
-    <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-5 text-sm text-[#6b7d93]">
+    <div className="rounded-[8px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-5 text-sm text-[#6b7d93]">
       <p>{message}</p>
       {action ? <div className="mt-3">{action}</div> : null}
     </div>
@@ -96,8 +126,8 @@ function EmptyState({ message, action = null }) {
 
 function ProgressRail({ groups = [] }) {
   return (
-    <section className="rounded-[26px] border border-[#dbe5ef] bg-[radial-gradient(circle_at_top_left,#f7fbff_0%,#ffffff_48%,#fbfdff_100%)] p-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-      <div className="space-y-4">
+    <section className="rounded-[8px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+      <div className="space-y-6">
         {groups.map((group) => (
           <div key={group.key}>
             <div className="mb-3 flex items-center justify-between gap-3">
@@ -109,25 +139,28 @@ function ProgressRail({ groups = [] }) {
                 {(group.steps || []).filter((item) => item.status === 'completed').length}/{group.steps?.length || 0}
               </span>
             </div>
-            <div className="grid gap-3 lg:grid-cols-5">
-              {(group.steps || []).map((step) => {
-                const Icon = step.status === 'completed' ? CheckCircle2 : step.status === 'current' ? Clock3 : Circle
-                return (
-                  <article key={step.key} className="rounded-[18px] border border-[#e5ecf4] bg-white px-4 py-4">
-                    <div className="flex items-start gap-3">
+            <div className="overflow-x-auto pb-1">
+              <div
+                className="relative grid min-w-[760px] gap-0"
+                style={{ gridTemplateColumns: `repeat(${Math.max(group.steps?.length || 1, 1)}, minmax(130px, 1fr))` }}
+              >
+                <div className="absolute left-12 right-12 top-[17px] h-px bg-[#cfddeb]" aria-hidden="true" />
+                {(group.steps || []).map((step) => {
+                  const Icon = step.status === 'completed' ? CheckCircle2 : step.status === 'current' ? Clock3 : Circle
+                  return (
+                    <article key={step.key} className="relative z-10 flex min-w-0 flex-col items-center px-3 text-center">
                       <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${getStepTone(step.status)}`}>
-                        <Icon size={15} />
-                      </span>
-                      <div className="min-w-0">
-                        <strong className="block text-sm font-semibold text-[#142132]">{step.label}</strong>
-                        <span className="mt-1 block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">
-                          {step.status === 'completed' ? 'Completed' : step.status === 'current' ? 'Current' : 'Upcoming'}
+                          <Icon size={15} />
                         </span>
-                      </div>
-                    </div>
-                  </article>
-                )
-              })}
+                      <strong className="mt-3 block text-sm font-semibold leading-5 text-[#142132]">{step.label}</strong>
+                      <span className="mt-1 block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">
+                        {step.status === 'completed' ? formatDate(step.completedAt, 'Completed') : step.status === 'current' ? 'Current' : 'Upcoming'}
+                      </span>
+                      <span className="mt-1 block max-w-[140px] truncate text-xs text-[#6f8299]">{step.responsibleRole || group.responsibleRole || 'Finance team'}</span>
+                    </article>
+                  )
+                })}
+              </div>
             </div>
           </div>
         ))}
@@ -175,39 +208,50 @@ function RequiredDocumentTable({
   }
 
   return (
-    <div className="space-y-3">
-      {rows.map((row) => (
-        <article key={row.id} className="rounded-[18px] border border-[#e5ecf4] bg-white px-4 py-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <strong className="block text-sm font-semibold text-[#142132]">{row.label}</strong>
-              <p className="mt-1 text-xs leading-5 text-[#70839a]">
-                Required from {row.requiredParty}. Uploaded {formatDate(row.uploadedAt, 'Not uploaded yet')}.
-              </p>
-              {row.matchedDocument?.name ? (
-                <p className="mt-1 text-xs text-[#70839a]">Current file: {row.matchedDocument.name}</p>
-              ) : null}
-            </div>
-            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.72rem] font-semibold ${getStatusTone(row.status)}`}>
-              {row.statusLabel}
-            </span>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {canUpload ? (
-              <UploadAction
-                label={uploadingKey === row.key ? 'Uploading...' : row.matchedDocument?.id ? 'Replace document' : 'Upload document'}
-                disabled={uploadingKey === row.key}
-                onSelect={(file) => onUpload?.(row, file)}
-              />
-            ) : null}
-            {row.matchedDocument?.url ? (
-              <Button type="button" variant="secondary" size="sm" onClick={() => onOpenDocument?.(row.matchedDocument)}>
-                View file
-              </Button>
-            ) : null}
-          </div>
-        </article>
-      ))}
+    <div className="overflow-hidden rounded-[8px] border border-[#e1e9f2]">
+      <table className="min-w-full divide-y divide-[#e6eef6] text-left text-sm">
+        <thead className="bg-[#f8fbff]">
+          <tr className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7f94aa]">
+            <th className="px-4 py-3">Document</th>
+            <th className="px-4 py-3">Status</th>
+            <th className="px-4 py-3">Uploaded Date</th>
+            <th className="px-4 py-3 text-right">Action</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-[#edf2f7] bg-white">
+          {rows.map((row) => (
+            <tr key={row.id} className="align-top">
+              <td className="px-4 py-3">
+                <strong className="block text-sm font-semibold text-[#142132]">{row.label}</strong>
+                <span className="mt-1 block truncate text-xs text-[#70839a]">{row.matchedDocument?.name || row.requiredParty}</span>
+              </td>
+              <td className="px-4 py-3">
+                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${getStatusTone(row.status)}`}>
+                  {row.statusLabel}
+                </span>
+              </td>
+              <td className="px-4 py-3 text-sm text-[#5f7288]">{formatDate(row.uploadedAt, '-')}</td>
+              <td className="px-4 py-3">
+                <div className="flex justify-end gap-2">
+                  {row.matchedDocument?.url ? (
+                    <Button type="button" variant="secondary" size="sm" onClick={() => onOpenDocument?.(row.matchedDocument)}>
+                      <Eye size={14} />
+                      View
+                    </Button>
+                  ) : null}
+                  {canUpload ? (
+                    <UploadAction
+                      label={uploadingKey === row.key ? 'Uploading...' : row.matchedDocument?.id ? 'Replace' : 'Upload'}
+                      disabled={uploadingKey === row.key}
+                      onSelect={(file) => onUpload?.(row, file)}
+                    />
+                  ) : null}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -220,7 +264,7 @@ function FinanceDocumentList({ rows = [], emptyMessage = 'No finance documents u
   return (
     <div className="space-y-3">
       {rows.map((row) => (
-        <article key={row.id} className="rounded-[18px] border border-[#e5ecf4] bg-white px-4 py-4">
+        <article key={row.id} className="rounded-[8px] border border-[#e5ecf4] bg-white px-4 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <strong className="block text-sm font-semibold text-[#142132]">{row.name}</strong>
@@ -258,37 +302,64 @@ function ApplicationsSection({
   return (
     <div className="space-y-4">
       {rows.length ? (
-        <div className="space-y-3">
-          {rows.map((row) => (
-            <article key={row.id} className="rounded-[18px] border border-[#e5ecf4] bg-white px-4 py-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <strong className="block text-sm font-semibold text-[#142132]">{row.bankName}</strong>
-                  <p className="mt-1 text-xs leading-5 text-[#70839a]">
-                    Submitted {formatDate(row.submittedAt)}{row.applicationReference ? ` • Ref ${row.applicationReference}` : ''}{row.submittedByName ? ` • ${row.submittedByName}` : ''}
-                  </p>
-                  {row.notes ? <p className="mt-2 text-xs leading-5 text-[#63758a]">{row.notes}</p> : null}
-                </div>
-                {canManage ? (
-                  <Field
-                    as="select"
-                    className="min-w-[160px]"
-                    value={row.status}
-                    disabled={Boolean(loadingAction)}
-                    onChange={(event) => onUpdateStatus?.(row, event.target.value)}
-                  >
-                    {['draft', 'submitted', 'in_review', 'approved', 'declined', 'withdrawn', 'expired'].map((status) => (
-                      <option key={status} value={status}>{title(status)}</option>
-                    ))}
-                  </Field>
-                ) : (
-                  <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.72rem] font-semibold ${getStatusTone(row.status)}`}>
-                    {title(row.status)}
-                  </span>
-                )}
-              </div>
-            </article>
-          ))}
+        <div className="overflow-hidden rounded-[8px] border border-[#e1e9f2]">
+          <table className="min-w-full divide-y divide-[#e6eef6] text-left text-sm">
+            <thead className="bg-[#f8fbff]">
+              <tr className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7f94aa]">
+                <th className="px-4 py-3">Bank</th>
+                <th className="px-4 py-3">Date Submitted</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Originator</th>
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#edf2f7] bg-white">
+              {rows.map((row) => (
+                <tr key={row.id} className="align-middle">
+                  <td className="px-4 py-3">
+                    <strong className="block text-sm font-semibold text-[#142132]">{row.bankName}</strong>
+                    {row.applicationReference ? <span className="mt-1 block text-xs text-[#70839a]">Ref {row.applicationReference}</span> : null}
+                  </td>
+                  <td className="px-4 py-3 text-[#5f7288]">{formatDate(row.submittedAt, '-')}</td>
+                  <td className="px-4 py-3">
+                    {canManage ? (
+                      <Field
+                        as="select"
+                        className="min-w-[150px]"
+                        value={row.status}
+                        disabled={Boolean(loadingAction)}
+                        onChange={(event) => onUpdateStatus?.(row, event.target.value)}
+                      >
+                        {['pending', 'submitted', 'feedback_received', 'quote_received', 'additional_documents_required', 'declined', 'approved', 'buyer_approved', 'expired'].map((status) => (
+                          <option key={status} value={status}>{title(status)}</option>
+                        ))}
+                      </Field>
+                    ) : (
+                      <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${getStatusTone(row.status)}`}>
+                        {row.statusLabel || title(row.status)}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-[#5f7288]">{row.submittedByName || row.createdByName || 'Finance owner'}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-1.5">
+                      <Button type="button" variant="secondary" size="sm">
+                        <Eye size={14} />
+                        View
+                      </Button>
+                      <Button type="button" variant="secondary" size="sm" disabled={!canManage}>
+                        <MessageSquarePlus size={14} />
+                        Add Note
+                      </Button>
+                      <Button type="button" variant="secondary" size="sm" disabled={!canManage}>
+                        <MoreHorizontal size={14} />
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : (
         <EmptyState message="No bank applications submitted yet." />
@@ -296,7 +367,7 @@ function ApplicationsSection({
 
       {canManage ? (
         <form
-          className="rounded-[18px] border border-[#e5ecf4] bg-[#fbfdff] p-4"
+          className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] p-4"
           onSubmit={(event) => {
             event.preventDefault()
             onSubmit?.(form)
@@ -371,46 +442,63 @@ function OffersSection({
   return (
     <div className="space-y-4">
       {rows.length ? (
-        <div className="space-y-3">
-          {rows.map((row) => {
-            const isAccepted = String(row.id || '') === String(acceptedOfferId || '')
-            return (
-              <article key={row.id} className="rounded-[18px] border border-[#e5ecf4] bg-white px-4 py-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <strong className="block text-sm font-semibold text-[#142132]">{row.bankName}</strong>
-                    <p className="mt-1 text-xs leading-5 text-[#70839a]">
-                      {formatCurrency(row.quotedAmount)} • {row.interestRateDisplay || (row.interestRate ? `${row.interestRate}%` : 'Rate pending')} • {row.monthlyRepayment ? `${formatCurrency(row.monthlyRepayment)} / month` : 'Repayment pending'}
-                    </p>
-                    <p className="mt-1 text-xs leading-5 text-[#70839a]">
-                      Valid until {formatDate(row.validUntil || row.quoteExpiryAt)}
-                    </p>
-                    {row.notes ? <p className="mt-2 text-xs leading-5 text-[#63758a]">{row.notes}</p> : null}
-                  </div>
-                  <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.72rem] font-semibold ${getStatusTone(isAccepted ? 'accepted' : row.quoteStatus)}`}>
-                    {isAccepted ? 'Accepted' : title(row.quoteStatusLabel || row.quoteStatus || 'received')}
-                  </span>
-                </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  {row.quoteDocumentId || row.relatedEntityId || row.url ? (
-                    <Button type="button" variant="secondary" size="sm" onClick={() => onOpenDocument?.(row)}>
-                      View quote
-                    </Button>
-                  ) : null}
-                  {canAccept ? (
-                    <>
-                      <Button type="button" size="sm" disabled={Boolean(loadingAction) || isAccepted} onClick={() => onAccept?.(row)}>
-                        {isAccepted ? 'Accepted' : 'Accept quote'}
-                      </Button>
-                      <Button type="button" variant="secondary" size="sm" disabled={Boolean(loadingAction) || row.quoteStatus === 'declined'} onClick={() => onDecline?.(row)}>
-                        Decline
-                      </Button>
-                    </>
-                  ) : null}
-                </div>
-              </article>
-            )
-          })}
+        <div className="overflow-hidden rounded-[8px] border border-[#e1e9f2]">
+          <table className="min-w-full divide-y divide-[#e6eef6] text-left text-sm">
+            <thead className="bg-[#f8fbff]">
+              <tr className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7f94aa]">
+                <th className="px-4 py-3">Bank</th>
+                <th className="px-4 py-3">Date Received</th>
+                <th className="px-4 py-3">Offer Amount</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#edf2f7] bg-white">
+              {rows.map((row) => {
+                const isAccepted = String(row.id || '') === String(acceptedOfferId || '')
+                return (
+                  <tr key={row.id} className="align-middle">
+                    <td className="px-4 py-3">
+                      <strong className="block text-sm font-semibold text-[#142132]">{row.bankName}</strong>
+                      <span className="mt-1 block text-xs text-[#70839a]">{row.interestRateDisplay || (row.interestRate ? `${row.interestRate}%` : 'Rate pending')}</span>
+                    </td>
+                    <td className="px-4 py-3 text-[#5f7288]">{formatDate(row.quoteReceivedAt || row.createdAt, '-')}</td>
+                    <td className="px-4 py-3 font-semibold text-[#142132]">{formatCurrency(row.quotedAmount, '-')}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${getStatusTone(isAccepted ? 'accepted' : row.quoteStatus)}`}>
+                        {isAccepted ? 'Accepted' : title(row.quoteStatusLabel || row.quoteStatus || 'received')}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-1.5">
+                        {row.quoteDocumentId || row.relatedEntityId || row.url ? (
+                          <>
+                            <Button type="button" variant="secondary" size="sm" onClick={() => onOpenDocument?.(row)}>
+                              <Eye size={14} />
+                              View Quote
+                            </Button>
+                            <Button type="button" variant="secondary" size="sm" onClick={() => onOpenDocument?.(row)}>
+                              <Download size={14} />
+                            </Button>
+                          </>
+                        ) : null}
+                        {canAccept ? (
+                          <>
+                            <Button type="button" size="sm" disabled={Boolean(loadingAction) || isAccepted} onClick={() => onAccept?.(row)}>
+                              {isAccepted ? 'Accepted' : 'Accept'}
+                            </Button>
+                            <Button type="button" variant="secondary" size="sm" disabled={Boolean(loadingAction) || row.quoteStatus === 'declined'} onClick={() => onDecline?.(row)}>
+                              Decline
+                            </Button>
+                          </>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       ) : (
         <EmptyState message="No quotes received yet." />
@@ -418,7 +506,7 @@ function OffersSection({
 
       {canManage ? (
         <form
-          className="rounded-[18px] border border-[#e5ecf4] bg-[#fbfdff] p-4"
+          className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] p-4"
           onSubmit={(event) => {
             event.preventDefault()
             onSubmit?.(form)
@@ -487,39 +575,66 @@ function OffersSection({
   )
 }
 
-function DecisionCard({ acceptedOffer, latestDecision, canAccept = false, onOpenDocument }) {
-  if (!acceptedOffer && !latestDecision) {
+function DecisionCard({
+  acceptedOffer,
+  latestDecision,
+  offers = [],
+  canAccept = false,
+  loadingAction = '',
+  onAccept,
+  onDecline,
+  onOpenDocument,
+}) {
+  const actionableOffer = acceptedOffer || offers.find((item) => !['declined', 'expired', 'not_selected'].includes(String(item?.quoteStatus || '').toLowerCase())) || null
+
+  if (!acceptedOffer && !latestDecision && !actionableOffer) {
     return (
       <EmptyState
         message="Buyer has not accepted an offer yet."
-        action={canAccept ? <span className="text-xs font-medium text-[#7c8ea4]">The buyer or permitted finance owner can accept a quote once offers are available.</span> : null}
+        action={canAccept ? <span className="text-xs font-medium text-[#7c8ea4]">Quote decision actions appear once an offer is received.</span> : null}
       />
     )
   }
 
-  const label = acceptedOffer ? 'Accepted Offer' : 'Latest Decision'
-  const status = acceptedOffer ? 'accepted' : latestDecision?.decision || 'pending'
-  const bankName = acceptedOffer?.bankName || latestDecision?.bankName || 'Offer recorded'
+  const offerForSummary = acceptedOffer || actionableOffer
+  const label = acceptedOffer ? 'Accepted Quote' : latestDecision ? 'Latest Decision' : 'Decision Required'
+  const status = acceptedOffer ? 'accepted' : latestDecision?.decision || offerForSummary?.quoteStatus || 'pending'
+  const bankName = offerForSummary?.bankName || latestDecision?.bankName || 'Offer recorded'
 
   return (
-    <article className="rounded-[18px] border border-[#e5ecf4] bg-white px-4 py-4">
+    <article className="rounded-[8px] border border-[#e5ecf4] bg-white px-4 py-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8ca0b6]">{label}</span>
           <strong className="mt-1 block text-sm font-semibold text-[#142132]">{bankName}</strong>
           <p className="mt-1 text-xs leading-5 text-[#70839a]">
-            {acceptedOffer ? `${formatCurrency(acceptedOffer.quotedAmount)} • ${acceptedOffer.interestRateDisplay || acceptedOffer.interestRate || 'Rate pending'}` : title(latestDecision?.decision || 'pending')}
+            {offerForSummary ? `${formatCurrency(offerForSummary.quotedAmount)} • ${offerForSummary.interestRateDisplay || offerForSummary.interestRate || 'Rate pending'}` : title(latestDecision?.decision || 'pending')}
           </p>
+          {offerForSummary?.monthlyRepayment ? <p className="mt-1 text-xs leading-5 text-[#70839a]">{formatCurrency(offerForSummary.monthlyRepayment)} monthly repayment</p> : null}
+          {offerForSummary?.termMonths ? <p className="mt-1 text-xs leading-5 text-[#70839a]">{Math.round(Number(offerForSummary.termMonths) / 12)} Years</p> : null}
         </div>
         <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.72rem] font-semibold ${getStatusTone(status)}`}>
           {title(status)}
         </span>
       </div>
-      {acceptedOffer?.quoteDocumentId || acceptedOffer?.url ? (
-        <div className="mt-3">
-          <Button type="button" variant="secondary" size="sm" onClick={() => onOpenDocument?.(acceptedOffer)}>
-            View accepted quote
-          </Button>
+      {offerForSummary ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {offerForSummary.quoteDocumentId || offerForSummary.url ? (
+            <Button type="button" variant="secondary" size="sm" onClick={() => onOpenDocument?.(offerForSummary)}>
+              <Eye size={14} />
+              View Quote
+            </Button>
+          ) : null}
+          {canAccept ? (
+            <>
+              <Button type="button" size="sm" disabled={Boolean(loadingAction) || Boolean(acceptedOffer)} onClick={() => onAccept?.(offerForSummary)}>
+                {acceptedOffer ? 'Quote Accepted' : 'Accept Quote'}
+              </Button>
+              <Button type="button" variant="secondary" size="sm" disabled={Boolean(loadingAction) || Boolean(acceptedOffer)} onClick={() => onDecline?.(offerForSummary)}>
+                Decline Quote
+              </Button>
+            </>
+          ) : null}
         </div>
       ) : null}
     </article>
@@ -541,7 +656,7 @@ function InstructionCard({
   return (
     <div className="space-y-4">
       {sent ? (
-        <article className="rounded-[18px] border border-[#e5ecf4] bg-white px-4 py-4">
+        <article className="rounded-[8px] border border-[#e5ecf4] bg-white px-4 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <strong className="block text-sm font-semibold text-[#142132]">Instruction sent</strong>
@@ -571,7 +686,7 @@ function InstructionCard({
 
       {canMark ? (
         <form
-          className="rounded-[18px] border border-[#e5ecf4] bg-[#fbfdff] p-4"
+          className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] p-4"
           onSubmit={(event) => {
             event.preventDefault()
             onSubmit?.({ notes, file: instructionFile })
@@ -601,7 +716,7 @@ function CashStatusList({ items = [] }) {
   return (
     <div className="space-y-3">
       {items.map((item) => (
-        <article key={item.label} className="rounded-[18px] border border-[#e5ecf4] bg-white px-4 py-4">
+        <article key={item.label} className="rounded-[8px] border border-[#e5ecf4] bg-white px-4 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <strong className="block text-sm font-semibold text-[#142132]">{item.label}</strong>
@@ -707,9 +822,9 @@ function FinanceCommandCenter({
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 xl:grid-cols-5">
+      <div className="grid overflow-hidden rounded-[8px] border border-[#dbe5ef] bg-white shadow-[0_14px_30px_rgba(15,23,42,0.05)] sm:grid-cols-2 xl:grid-cols-5">
         {workspace.summaryBlocks.map((item) => (
-          <SummaryBlock key={item.key} label={item.label} value={item.value} />
+          <SummaryBlock key={item.key} item={item} />
         ))}
       </div>
 
@@ -958,7 +1073,11 @@ function FinanceCommandCenter({
                 <DecisionCard
                   acceptedOffer={workspace.bond.acceptedOffer}
                   latestDecision={workspace.bond.latestDecision}
+                  offers={workspace.bond.offers}
                   canAccept={workspace.permissions.canAcceptOffer}
+                  loadingAction={loadingAction}
+                  onAccept={(row) => onAcceptOffer?.(row)}
+                  onDecline={(row) => onDeclineOffer?.(row)}
                   onOpenDocument={onOpenDocument}
                 />
               </SectionCard>
@@ -985,14 +1104,14 @@ function FinanceCommandCenter({
             actions={<ShieldCheck size={16} className="text-[#6d8197]" />}
           >
             <div className="space-y-3">
-              <article className="rounded-[18px] border border-[#e5ecf4] bg-white px-4 py-4">
+              <article className="rounded-[8px] border border-[#e5ecf4] bg-white px-4 py-4">
                 <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8ca0b6]">Current Blocker</span>
                 <strong className="mt-1 block text-sm font-semibold text-[#142132]">{workspace.summaryBlocks.find((item) => item.key === 'blocker_status')?.value || 'No blockers'}</strong>
                 <p className="mt-1 text-xs leading-5 text-[#70839a]">{workspace.summaryBlocks.find((item) => item.key === 'next_action')?.value || 'Review finance progress.'}</p>
               </article>
               {workspace.permissions.canUpdateBlockers ? (
                 <form
-                  className="rounded-[18px] border border-[#e5ecf4] bg-[#fbfdff] p-4"
+                className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] p-4"
                   onSubmit={(event) => {
                     event.preventDefault()
                     onUpdateBlockers?.(blockerForm)

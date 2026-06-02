@@ -20,7 +20,6 @@ import {
 } from '../core/transactions/bondHybridFinanceWorkflow'
 import {
   financeTypeShortLabel,
-  isBondFinanceType,
   normalizeFinanceType,
 } from '../core/transactions/financeType'
 
@@ -401,6 +400,72 @@ function buildRailGroup({ key, label, steps = [] }) {
   }
 }
 
+function getLatestDate(values = []) {
+  return values
+    .filter(Boolean)
+    .map((value) => new Date(value))
+    .filter((value) => !Number.isNaN(value.getTime()))
+    .sort((left, right) => right.getTime() - left.getTime())[0]?.toISOString() || null
+}
+
+function findStageEvent(workflowData = {}, stage = '') {
+  return (workflowData?.events || [])
+    .filter((event) => lower(event?.toStage || event?.to_stage) === lower(stage))
+    .sort((left, right) => new Date(right?.createdAt || right?.created_at || 0).getTime() - new Date(left?.createdAt || left?.created_at || 0).getTime())[0] || null
+}
+
+function enrichBondRailSteps(steps = [], workflowData = {}, buyerDocumentRows = []) {
+  const applications = resolveBondApplications(workflowData)
+  const offers = resolveBondOffers(workflowData)
+  const acceptedOffer = workflowData?.acceptedOffer || summarizeBondHybridFinanceWorkflow(workflowData || {}).approvedQuote || null
+  const instruction = workflowData?.instruction || null
+  const roleByStage = {
+    documents_received: 'Buyer',
+    documents_reviewed: 'Bond Originator',
+    applications_submitted: 'Bond Originator',
+    quotes_received: 'Banks / Originator',
+    quote_approved: 'Buyer',
+    instruction_sent: 'Bond Originator',
+  }
+
+  return (steps || []).map((step) => {
+    const event = findStageEvent(workflowData, step.key)
+    let completedAt = event?.createdAt || event?.created_at || null
+    let responsibleRole = event?.createdByName || null
+
+    if (step.key === 'documents_received') {
+      completedAt ||= getLatestDate(buyerDocumentRows.map((item) => item.uploadedAt))
+    } else if (step.key === 'documents_reviewed') {
+      completedAt ||= workflowData?.workflow?.lastUpdatedAt || workflowData?.workflow?.last_updated_at || null
+    } else if (step.key === 'applications_submitted') {
+      completedAt ||= getLatestDate(applications.map((item) => item.submittedAt || item.submitted_at || item.createdAt || item.created_at))
+      responsibleRole ||= applications.find((item) => item.submittedByName || item.createdByName)?.submittedByName || applications.find((item) => item.submittedByName || item.createdByName)?.createdByName || null
+    } else if (step.key === 'quotes_received') {
+      completedAt ||= getLatestDate(offers.map((item) => item.quoteReceivedAt || item.quote_received_at || item.createdAt || item.created_at))
+      responsibleRole ||= offers.find((item) => item.uploadedByName || item.createdByName)?.uploadedByName || offers.find((item) => item.uploadedByName || item.createdByName)?.createdByName || null
+    } else if (step.key === 'quote_approved') {
+      completedAt ||= acceptedOffer?.decisionAt || acceptedOffer?.approvedAt || acceptedOffer?.approved_at || null
+      responsibleRole ||= 'Buyer'
+    } else if (step.key === 'instruction_sent') {
+      completedAt ||= instruction?.instructionSentAt || instruction?.instruction_sent_at || null
+      responsibleRole ||= instruction?.instructionSentByName || null
+    }
+
+    return {
+      ...step,
+      completedAt: step.status === 'completed' || step.status === 'current' ? completedAt : null,
+      responsibleRole: responsibleRole || roleByStage[step.key] || 'Finance team',
+    }
+  })
+}
+
+function enrichGenericRailSteps(steps = [], roleByStage = {}) {
+  return (steps || []).map((step) => ({
+    ...step,
+    responsibleRole: roleByStage[step.key] || 'Finance team',
+  }))
+}
+
 export function resolveTransactionFinancePermissions({
   viewerRole = '',
   activeViewerPermissions = null,
@@ -411,14 +476,14 @@ export function resolveTransactionFinancePermissions({
 
   return {
     role,
-    canUploadDocuments: canUploadFromPermissions || ['developer', 'admin', 'agent', 'bond_originator', 'attorney', 'buyer'].includes(role),
+    canUploadDocuments: canUploadFromPermissions || ['developer', 'admin', 'bond_originator', 'buyer'].includes(role),
     canReviewDocuments: canEditFinanceWorkflow || ['developer', 'admin', 'bond_originator'].includes(role),
     canManageApplications: canEditFinanceWorkflow || ['developer', 'admin', 'bond_originator'].includes(role),
     canManageOffers: canEditFinanceWorkflow || ['developer', 'admin', 'bond_originator'].includes(role),
-    canAcceptOffer: ['developer', 'admin', 'bond_originator', 'buyer'].includes(role),
+    canAcceptOffer: ['developer', 'admin', 'buyer'].includes(role),
     canMarkInstructionSent: canEditFinanceWorkflow || ['developer', 'admin', 'bond_originator'].includes(role),
-    canVerifyProofOfFunds: ['developer', 'admin', 'attorney'].includes(role),
-    canUpdateBlockers: canEditFinanceWorkflow || ['developer', 'admin', 'agent', 'bond_originator', 'attorney'].includes(role),
+    canVerifyProofOfFunds: canEditFinanceWorkflow || ['developer', 'admin'].includes(role),
+    canUpdateBlockers: canEditFinanceWorkflow || ['developer', 'admin', 'bond_originator'].includes(role),
   }
 }
 
@@ -567,13 +632,17 @@ export function buildTransactionFinanceWorkspace({
       buildRailGroup({
         key: 'bond',
         label: 'Bond Finance',
-        steps: buildBondHybridFinanceStageSteps({
-          ...(workflowData || {}),
-          workflow: {
-            ...(workflowData?.workflow || {}),
-            currentStage: bondStage,
-          },
-        }),
+        steps: enrichBondRailSteps(
+          buildBondHybridFinanceStageSteps({
+            ...(workflowData || {}),
+            workflow: {
+              ...(workflowData?.workflow || {}),
+              currentStage: bondStage,
+            },
+          }),
+          workflowData || {},
+          buyerDocumentRows,
+        ),
       }),
     )
   } else if (financeType === 'combination') {
@@ -581,20 +650,42 @@ export function buildTransactionFinanceWorkspace({
       buildRailGroup({
         key: 'bond',
         label: 'Bond Portion',
-        steps: buildBondHybridFinanceStageSteps({
-          ...(workflowData || {}),
-          workflow: {
-            ...(workflowData?.workflow || {}),
-            currentStage: bondStage,
-          },
-        }),
+        steps: enrichBondRailSteps(
+          buildBondHybridFinanceStageSteps({
+            ...(workflowData || {}),
+            workflow: {
+              ...(workflowData?.workflow || {}),
+              currentStage: bondStage,
+            },
+          }),
+          workflowData || {},
+          buyerDocumentRows,
+        ),
       }),
     )
-    railGroups.push(buildRailGroup({ key: 'cash', label: 'Cash Portion', steps: cashStatus.steps }))
+    railGroups.push(buildRailGroup({ key: 'cash', label: 'Cash Portion', steps: enrichGenericRailSteps(cashStatus.steps, {
+      proof_of_funds_required: 'Buyer',
+      proof_uploaded: 'Buyer',
+      attorney_verified: 'Attorney',
+      guarantees_secured: 'Attorney',
+      ready_for_transfer: 'Attorney',
+    }) }))
   } else if (financeType === 'developer') {
-    railGroups.push(buildRailGroup({ key: 'developer', label: 'Developer Finance', steps: developerStatus.steps }))
+    railGroups.push(buildRailGroup({ key: 'developer', label: 'Developer Finance', steps: enrichGenericRailSteps(developerStatus.steps, {
+      application_submitted: 'Buyer / Developer',
+      deposit_paid: 'Buyer',
+      finance_approved: 'Developer',
+      terms_signed: 'Buyer / Developer',
+      ready_for_transfer: 'Developer',
+    }) }))
   } else {
-    railGroups.push(buildRailGroup({ key: 'cash', label: 'Cash Finance', steps: cashStatus.steps }))
+    railGroups.push(buildRailGroup({ key: 'cash', label: 'Cash Finance', steps: enrichGenericRailSteps(cashStatus.steps, {
+      proof_of_funds_required: 'Buyer',
+      proof_uploaded: 'Buyer',
+      attorney_verified: 'Attorney',
+      guarantees_secured: 'Attorney',
+      ready_for_transfer: 'Attorney',
+    }) }))
   }
 
   const bondQuoteDocuments = filterDocuments(documents, {
@@ -617,11 +708,36 @@ export function buildTransactionFinanceWorkspace({
     financeTypeLabel: financeTypeShortLabel(financeType === 'unknown' ? transaction?.finance_type : financeType),
     permissions,
     summaryBlocks: [
-      { key: 'finance_type', label: 'Finance Type', value: financeType === 'unknown' ? 'Not captured' : title(financeType === 'combination' ? 'hybrid' : financeType) },
-      { key: 'finance_owner', label: 'Finance Owner', value: summary.financeOwner },
-      { key: 'current_stage', label: 'Current Finance Stage', value: summary.currentStageLabel },
-      { key: 'next_action', label: 'Next Action', value: summary.nextAction },
-      { key: 'blocker_status', label: 'Blocker Status', value: summary.blockerStatus },
+      {
+        key: 'finance_type',
+        label: 'Finance Type',
+        value: financeType === 'unknown' ? 'Not captured' : title(financeType === 'combination' ? 'hybrid' : financeType),
+        subtext: financeType === 'bond' ? 'Buyer using bond finance' : financeType === 'combination' ? 'Bond plus cash component' : financeType === 'developer' ? 'Developer finance route' : 'Cash / proof of funds route',
+      },
+      {
+        key: 'finance_owner',
+        label: 'Finance Owner',
+        value: summary.financeOwner,
+        subtext: financeType === 'bond' || financeType === 'combination' ? 'Bond Originator' : financeType === 'developer' ? 'Developer' : 'Buyer / Attorney',
+      },
+      {
+        key: 'current_stage',
+        label: 'Current Stage',
+        value: summary.currentStageLabel,
+        subtext: formatDate(workflowData?.workflow?.lastUpdatedAt || workflowData?.workflow?.last_updated_at || transaction?.updated_at, 'Not updated yet'),
+      },
+      {
+        key: 'next_action',
+        label: 'Next Action',
+        value: summary.nextAction,
+        subtext: summary.financeOwner,
+      },
+      {
+        key: 'blocker_status',
+        label: 'Blocker Status',
+        value: summary.blockerStatus,
+        subtext: summary.blockerStatus === 'No blockers' ? 'On track' : 'Needs attention',
+      },
     ],
     railGroups,
     bond: {

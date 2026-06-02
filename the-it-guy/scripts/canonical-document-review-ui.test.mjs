@@ -30,13 +30,12 @@ assert.match(
   'document fetch should hydrate canonical review status/link fields',
 )
 
-assert.match(attorneyDetailSource, /Linked requirement/, 'document card should render the linked canonical requirement')
-assert.match(attorneyDetailSource, /Requirement status/, 'document card should render canonical requirement status')
-assert.match(attorneyDetailSource, /openReviewAction\('approve'/, 'approve action should be wired from the document card')
-assert.match(attorneyDetailSource, /openReviewAction\('reject'/, 'reject action should be wired from the document card')
-assert.match(attorneyDetailSource, /handleReplaceDocument/, 'rejected canonical documents should expose replacement upload flow')
-assert.match(attorneyDetailSource, /openReviewAction\('waive'/, 'waiver action should be gated and wired when supported')
-assert.match(attorneyDetailSource, /getLinkedRequirementForDocument/, 'document cards should merge canonical checklist metadata')
+assert.match(attorneyDetailSource, /requiredDocumentRows/, 'required table should render linked canonical requirements')
+assert.match(attorneyDetailSource, /requiredDocumentStatus/, 'library view model should preserve canonical requirement status')
+assert.match(attorneyDetailSource, /openReviewAction\('approve'/, 'approve action should be wired from the required document table')
+assert.match(attorneyDetailSource, /openReviewAction\('reject'/, 'reject action should be wired from the required document table')
+assert.match(attorneyDetailSource, /handleReplaceDocument/, 'canonical documents should expose replacement upload flow')
+assert.match(attorneyDetailSource, /getLinkedRequirementForDocument/, 'document library should merge canonical checklist metadata')
 
 assert.match(reviewMigrationSource, /security definer/i, 'review RPC should be security definer')
 assert.match(reviewMigrationSource, /auth\.uid\(\)/, 'review RPC should require authenticated users')

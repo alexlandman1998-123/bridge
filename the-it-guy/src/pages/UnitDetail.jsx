@@ -7734,28 +7734,7 @@ function UnitDetail() {
         ) : null}
 
         {activeWorkspaceMenu === 'financials' ? (
-          <div className="space-y-4">
-            {showReservationDepositOverviewCard ? (
-              <WorkspacePanel
-                title="Reservation Deposit"
-                copy="Track reservation payment instructions, proof of payment, and verification."
-              >
-                <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_260px]">
-                  <section className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                    <strong className="block text-sm font-semibold text-[#142132]">
-                      {reservationAmountValue !== null ? currency.format(reservationAmountValue) : 'Amount pending'}
-                    </strong>
-                    <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{reservationPaymentDetails.payment_instructions || 'Reservation payment instructions are not captured yet.'}</p>
-                  </section>
-                  <section className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-4">
-                    <span className="inline-flex rounded-full border border-[#d8e6f5] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#35546c]">{reservationStatusLabel}</span>
-                    <p className="mt-3 text-xs leading-5 text-[#6b7d93]">Requested: {transaction?.reservation_requested_at ? formatDateTime(transaction.reservation_requested_at) : 'Not requested yet'}</p>
-                  </section>
-                </div>
-              </WorkspacePanel>
-            ) : null}
-            {financeCommandCenterPanel}
-          </div>
+          financeCommandCenterPanel
         ) : null}
 
         {activeWorkspaceMenu === 'tasks' ? (
