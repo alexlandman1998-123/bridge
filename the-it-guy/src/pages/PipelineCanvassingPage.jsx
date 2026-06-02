@@ -1,6 +1,7 @@
 import {
   Archive,
   CalendarDays,
+  ChevronDown,
   CheckCircle2,
   ClipboardList,
   Clock3,
@@ -132,6 +133,35 @@ function formatDate(value) {
   const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) return '—'
   return parsed.toLocaleString('en-ZA')
+}
+
+function formatShortDate(value) {
+  if (!value) return 'No date set'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return 'No date set'
+  return parsed.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function formatRelativeActivityTime(value) {
+  if (!value) return 'No activity yet'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return 'No activity yet'
+  const diffMs = Date.now() - parsed.getTime()
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+  if (diffMs < minute) return 'Just now'
+  if (diffMs < hour) {
+    const minutes = Math.max(1, Math.round(diffMs / minute))
+    return `${minutes} min ago`
+  }
+  if (diffMs < day) {
+    const hours = Math.max(1, Math.round(diffMs / hour))
+    return `${hours} hour${hours === 1 ? '' : 's'} ago`
+  }
+  const days = Math.max(1, Math.round(diffMs / day))
+  if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`
+  return formatShortDate(value)
 }
 
 function formatCurrency(value) {
@@ -342,6 +372,7 @@ function PipelineCanvassingPage() {
   const [detailOpen, setDetailOpen] = useState(false)
   const [prospectView, setProspectView] = useState('seller')
   const [filters, setFilters] = useState({ search: '', method: 'all', status: 'all', sort: 'newest' })
+  const [openActionMenuId, setOpenActionMenuId] = useState('')
   const [archiveModal, setArchiveModal] = useState({
     open: false,
     prospectId: '',
@@ -529,6 +560,15 @@ function PipelineCanvassingPage() {
     })
   }, [currentAgent.email, currentAgent.id, preferredDemoAgentId])
 
+  useEffect(() => {
+    if (!openActionMenuId) return undefined
+    function handleWindowClick() {
+      setOpenActionMenuId('')
+    }
+    window.addEventListener('click', handleWindowClick)
+    return () => window.removeEventListener('click', handleWindowClick)
+  }, [openActionMenuId])
+
   const scopedProspects = useMemo(() => {
     const agentKey = normalizeKey(currentAgent.id || currentAgent.email)
     return prospects.filter((prospect) => {
@@ -542,6 +582,19 @@ function PipelineCanvassingPage() {
     const scopedIds = new Set(scopedProspects.map((prospect) => normalizeText(prospect?.id)))
     return activities.filter((activity) => scopedIds.has(normalizeText(activity?.prospectId)))
   }, [activities, scopedProspects])
+
+  const latestActivityByProspectId = useMemo(() => {
+    const map = new Map()
+    for (const activity of scopedActivities) {
+      const prospectId = normalizeText(activity?.prospectId)
+      if (!prospectId) continue
+      const current = map.get(prospectId)
+      const activityTime = new Date(activity?.activityDate || activity?.createdAt || 0).getTime()
+      const currentTime = new Date(current?.activityDate || current?.createdAt || 0).getTime()
+      if (!current || activityTime > currentTime) map.set(prospectId, activity)
+    }
+    return map
+  }, [scopedActivities])
 
   const filteredProspects = useMemo(() => {
     const rows = scopedProspects.filter((prospect) => {
@@ -608,8 +661,6 @@ function PipelineCanvassingPage() {
   const metrics = useMemo(() => {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
-    const callsLogged = scopedActivities.filter((activity) => normalizeText(activity?.activityType) === 'Call').length
-    const doorKnocks = scopedActivities.filter((activity) => normalizeText(activity?.activityType) === 'Door Knock').length
     const followUpsDue = scopedProspects.filter((prospect) => {
       const due = new Date(prospect?.nextFollowUpDate || '')
       if (Number.isNaN(due.getTime())) return false
@@ -623,8 +674,7 @@ function PipelineCanvassingPage() {
 
     return {
       prospectsAdded: scopedProspects.length,
-      callsLogged,
-      doorKnocks,
+      activities: scopedActivities.length,
       followUpsDue,
       convertedToLeads,
     }
@@ -658,6 +708,7 @@ function PipelineCanvassingPage() {
   function handleOpenProspectDetail(prospect) {
     const next = prospectById.get(normalizeText(prospect?.id))
     if (!next) return
+    setOpenActionMenuId('')
     setSelectedProspectId(next.id)
     setConvertLeadType(resolveDefaultLeadCategory(next))
     setDetailOpen(true)
@@ -899,14 +950,19 @@ function PipelineCanvassingPage() {
     }
   }
 
-  async function handleConvertProspectToLead() {
-    if (!organisationId || !selectedProspect) return
-    const existingConvertedLeadId = normalizeText(selectedProspect?.convertedLeadId)
+  async function handleConvertProspectToLead(prospectOverride = null) {
+    const targetProspect = prospectOverride || selectedProspect
+    if (!organisationId || !targetProspect) return
+    setOpenActionMenuId('')
+    const existingConvertedLeadId = normalizeText(targetProspect?.convertedLeadId)
     try {
-      const leadCategory = resolveLeadCategoryFromProspect(convertLeadType, resolveDefaultLeadCategory(selectedProspect))
+      const leadCategory = resolveLeadCategoryFromProspect(
+        prospectOverride ? resolveDefaultLeadCategory(targetProspect) : convertLeadType,
+        resolveDefaultLeadCategory(targetProspect),
+      )
       const createdLead = await createAgencyCrmLeadRecord(
         organisationId,
-        buildLeadPayloadFromProspect(selectedProspect, leadCategory, currentAgent, existingConvertedLeadId),
+        buildLeadPayloadFromProspect(targetProspect, leadCategory, currentAgent, existingConvertedLeadId),
         {
           actor: {
             id: currentAgent.id,
@@ -928,15 +984,15 @@ function PipelineCanvassingPage() {
       }, { actor: currentAgent })
 
       const convertedProspect = {
-        ...selectedProspect,
+        ...targetProspect,
         status: 'Converted to Lead',
         convertedLeadId: targetLeadId,
         convertedAt: new Date().toISOString(),
       }
-      const savedProspect = await updateCanvassingProspect(organisationId, selectedProspect.id, convertedProspect)
+      const savedProspect = await updateCanvassingProspect(organisationId, targetProspect.id, convertedProspect)
       const conversionActivity = await createCanvassingActivity(organisationId, {
         organisationId,
-        prospectId: selectedProspect.id,
+        prospectId: targetProspect.id,
         agentId: currentAgent.id || null,
         agentName: currentAgent.fullName || null,
         activityType: 'Note',
@@ -948,7 +1004,7 @@ function PipelineCanvassingPage() {
         createdAt: new Date().toISOString(),
         createdBy: currentAgent.id || currentAgent.email,
       })
-      setProspects((previous) => previous.map((row) => normalizeText(row?.id) === normalizeText(selectedProspect.id) ? (savedProspect || convertedProspect) : row))
+      setProspects((previous) => previous.map((row) => normalizeText(row?.id) === normalizeText(targetProspect.id) ? (savedProspect || convertedProspect) : row))
       setActivities((previous) => [conversionActivity, ...previous])
       setMessage(existingConvertedLeadId ? 'Converted prospect lead restored.' : 'Prospect converted to lead.')
       setError('')
@@ -999,10 +1055,6 @@ function PipelineCanvassingPage() {
                 Seller Prospects
               </button>
             </div>
-            <Button type="button" onClick={() => setShowCreateModal(true)}>
-              <Plus size={14} />
-              Add Prospect
-            </Button>
           </div>
         </div>
       </header>
@@ -1010,210 +1062,176 @@ function PipelineCanvassingPage() {
       {error ? <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">{error}</div> : null}
       {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { label: 'Prospects Added', value: metrics.prospectsAdded },
-          { label: 'Calls Logged', value: metrics.callsLogged },
-          { label: 'Door Knocks', value: metrics.doorKnocks },
-          { label: 'Follow-Ups Due', value: metrics.followUpsDue },
-          { label: 'Converted to Leads', value: metrics.convertedToLeads },
+          { label: 'Prospects', value: metrics.prospectsAdded },
+          { label: 'Activities', value: metrics.activities },
+          { label: 'Follow Ups', value: metrics.followUpsDue },
+          { label: 'Converted', value: metrics.convertedToLeads },
         ].map((metric) => (
-          <article key={metric.label} className="rounded-[18px] border border-[#dce6f1] bg-white px-4 py-3 shadow-[0_8px_16px_rgba(15,23,42,0.03)]">
-            <span className="text-[0.7rem] uppercase tracking-[0.09em] text-[#768aa1]">{metric.label}</span>
-            <strong className="mt-2 block text-[1.4rem] font-semibold tracking-[-0.03em] text-[#132437]">{metric.value}</strong>
+          <article key={metric.label} className="rounded-[12px] border border-[#dce6f1] bg-white px-4 py-3 shadow-[0_8px_16px_rgba(15,23,42,0.03)]">
+            <span className="text-[0.68rem] font-semibold uppercase tracking-[0.09em] text-[#768aa1]">{metric.label}</span>
+            <strong className="mt-1 block text-[1.35rem] font-semibold tracking-[-0.03em] text-[#132437]">{metric.value}</strong>
           </article>
         ))}
       </section>
 
-      <section className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <section className="rounded-[18px] border border-[#dde4ee] bg-white shadow-[0_12px_24px_rgba(15,23,42,0.04)]">
+        <div className="flex flex-col gap-2 border-b border-[#e5edf5] p-3 lg:flex-row lg:items-center">
           <Field
-            placeholder="Search prospects"
+            className="min-h-10 flex-1"
+            placeholder="Search Prospects..."
             value={filters.search}
             onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))}
           />
-          <Field
-            as="select"
-            value={filters.method}
-            onChange={(event) => setFilters((previous) => ({ ...previous, method: event.target.value }))}
-          >
-            <option value="all">All Methods</option>
-            {availableMethods.map((method) => (
-              <option key={method} value={method}>
-                {method}
-              </option>
-            ))}
-          </Field>
-          <Field
-            as="select"
-            value={filters.status}
-            onChange={(event) => setFilters((previous) => ({ ...previous, status: event.target.value }))}
-          >
-            <option value="all">All Statuses</option>
-            {PROSPECT_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </Field>
-          <Field
-            as="select"
-            value={filters.sort}
-            onChange={(event) => setFilters((previous) => ({ ...previous, sort: event.target.value }))}
-          >
-            <option value="newest">Sort: Newest</option>
-            <option value="next_follow_up">Sort: Next Follow-Up</option>
-            <option value="status">Sort: Status</option>
-          </Field>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:flex lg:shrink-0">
+            <Field
+              as="select"
+              className="min-h-10 lg:w-36"
+              value={filters.method}
+              onChange={(event) => setFilters((previous) => ({ ...previous, method: event.target.value }))}
+            >
+              <option value="all">Method</option>
+              {availableMethods.map((method) => (
+                <option key={method} value={method}>
+                  {method}
+                </option>
+              ))}
+            </Field>
+            <Field
+              as="select"
+              className="min-h-10 lg:w-36"
+              value={filters.status}
+              onChange={(event) => setFilters((previous) => ({ ...previous, status: event.target.value }))}
+            >
+              <option value="all">Status</option>
+              {PROSPECT_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </Field>
+            <Field
+              as="select"
+              className="min-h-10 lg:w-40"
+              value={filters.sort}
+              onChange={(event) => setFilters((previous) => ({ ...previous, sort: event.target.value }))}
+            >
+              <option value="newest">Sort: Newest</option>
+              <option value="next_follow_up">Sort: Follow Up</option>
+              <option value="status">Sort: Status</option>
+            </Field>
+            <Button type="button" className="min-h-10 justify-center whitespace-nowrap" onClick={() => setShowCreateModal(true)}>
+              <Plus size={14} />
+              Prospect
+            </Button>
+          </div>
         </div>
 
-        <div className="mt-4 overflow-x-auto rounded-[14px] border border-[#e4ebf4]">
-          <table className="w-full min-w-[980px] text-sm">
-            <thead className="bg-[#f7faff] text-left text-[0.7rem] uppercase tracking-[0.08em] text-[#6f839a]">
+        <div className="hidden overflow-x-auto md:block">
+          <table className="w-full min-w-[1080px] border-collapse text-sm">
+            <thead className="bg-[#f8fbff] text-left text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#71839a]">
               <tr>
-                <th className="w-[30%] px-4 py-3">Prospect</th>
-                <th className="w-[25%] px-4 py-3">{prospectView === 'buyer' ? 'Requirements' : 'Property Profile'}</th>
-                <th className="w-[25%] px-4 py-3">Follow-Up</th>
-                <th className="w-[20%] px-4 py-3">Actions</th>
+                <th className="w-[26%] px-4 py-3">Prospect</th>
+                <th className="w-[18%] px-4 py-3">Property</th>
+                <th className="w-[24%] px-4 py-3">Stage / Next Step</th>
+                <th className="w-[14%] px-4 py-3">Assigned</th>
+                <th className="w-[12%] px-4 py-3">Last Activity</th>
+                <th className="w-[6%] px-4 py-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#e8eef5] bg-white">
               {filteredProspects.length ? (
                 filteredProspects.map((prospect) => {
-                  const lastActivity = scopedActivities
-                    .filter((row) => normalizeText(row?.prospectId) === normalizeText(prospect?.id))
-                    .sort((a, b) => new Date(b?.activityDate || b?.createdAt || 0) - new Date(a?.activityDate || a?.createdAt || 0))[0]
+                  const lastActivity = latestActivityByProspectId.get(normalizeText(prospect?.id))
                   const displayName = getProspectDisplayName(prospect)
-                  const profileSummary = prospectView === 'buyer'
-                    ? prospect.propertyType || 'Requirement type pending'
-                    : prospect.propertyType || 'Property type pending'
-                  const profileDetail = prospect.area || (prospectView === 'buyer' ? 'Area of interest not set' : 'Property area not set')
+                  const propertyType = prospect.propertyType || 'Property type pending'
+                  const area = prospect.area || 'Area not set'
                   const valueLabel = formatCurrency(prospect.estimatedValue)
+                  const stage = prospect.status || 'New'
                   const followUpLabel = prospect.followUpNote || 'Follow up with prospect'
-                  const followUpDateLabel = prospect.nextFollowUpDate ? formatDate(prospect.nextFollowUpDate) : 'No follow-up date set'
+                  const followUpDateLabel = prospect.nextFollowUpDate ? `Due: ${formatShortDate(prospect.nextFollowUpDate)}` : 'Due date not set'
                   const assignedAgentLabel = prospect.assignedAgentName || prospect.assignedAgentEmail || 'Unassigned'
+                  const actionMenuOpen = openActionMenuId === normalizeText(prospect.id)
 
                   return (
                     <tr
                       key={prospect.id}
-                      className="cursor-pointer text-[#2d4560] transition hover:bg-[#f8fbff]"
+                      className="h-[88px] cursor-pointer text-[#253b52] transition hover:bg-[#f7fbff]"
                       onClick={() => handleOpenProspectDetail(prospect)}
                     >
-                      <td className="px-4 py-4 align-top">
-                        <div className="flex min-w-0 items-start gap-3">
-                          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[linear-gradient(135deg,#8b5cf6,#1f4f78)] text-sm font-bold text-white shadow-[0_10px_24px_rgba(31,79,120,0.18)]">
+                      <td className="px-4 py-3 align-middle">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#eaf2fb] text-sm font-semibold text-[#1f4f78]">
                             {getProspectInitials(prospect)}
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="break-words text-[0.96rem] font-semibold text-[#2d4560]">{displayName}</p>
-                              <span className={`rounded-full border px-2.5 py-1 text-[0.64rem] font-semibold ${getStatusPillClass(prospect.status)}`}>
-                                {prospect.status || 'New'}
-                              </span>
-                            </div>
-                            <p className="mt-1 text-xs font-medium text-[#6f839c]">{prospect.prospectType || 'Prospect'}</p>
-                            <div className="mt-2 grid gap-1 text-[0.8rem] text-[#60758b]">
-                              <span className="flex min-w-0 items-center gap-1.5">
-                                <Phone size={12} className="shrink-0 text-[#90a0b4]" />
-                                <span className="min-w-0 break-all">{prospect.phone || 'No phone'}</span>
-                              </span>
-                              <span className="flex min-w-0 items-center gap-1.5">
-                                <Mail size={12} className="shrink-0 text-[#90a0b4]" />
-                                <span className="min-w-0 break-all">{prospect.email || 'No email'}</span>
-                              </span>
-                            </div>
-                            <p className="mt-2 text-[0.72rem] font-medium text-[#90a0b4]">
-                              {prospect.canvassingMethod || 'Other'} • Added {formatDate(prospect.createdAt)}
-                            </p>
+                          <div className="min-w-0">
+                            <p className="truncate text-[0.95rem] font-semibold text-[#142132]">{displayName}</p>
+                            <p className="mt-0.5 truncate text-xs text-[#6f839c]">{prospect.prospectType || 'Prospect'}</p>
+                            <p className="mt-0.5 truncate text-xs text-[#8a9ab0]">{area}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-4 align-top">
-                        <div className="grid gap-3">
-                          <div className="rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-2.5">
-                            <p className="text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-[#8a9ab0]">
-                              {prospectView === 'buyer' ? 'Budget' : 'Estimated value'}
-                            </p>
-                            <p className="mt-1 text-[0.92rem] font-semibold text-[#1f4f78]">{valueLabel}</p>
-                          </div>
-                          <div>
-                            <p className="text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-[#8a9ab0]">
-                              {prospectView === 'buyer' ? 'Search brief' : 'Property profile'}
-                            </p>
-                            <p className="mt-1 break-words text-[0.88rem] font-semibold text-[#2d4560]">{profileSummary}</p>
-                            <p className="mt-1 break-words text-[0.8rem] text-[#60758b]">{profileDetail}</p>
-                          </div>
-                        </div>
+                      <td className="px-4 py-3 align-middle">
+                        <p className="truncate font-medium text-[#253b52]">{propertyType}</p>
+                        <p className="mt-0.5 truncate text-xs text-[#60758b]">{area}</p>
+                        <p className="mt-1 truncate text-sm font-semibold text-[#142132]">{valueLabel}</p>
                       </td>
-                      <td className="px-4 py-4 align-top">
-                        <div className="grid gap-3">
-                          <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3 py-2.5 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
-                            <p className="text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-[#8a9ab0]">Next step</p>
-                            <p className="mt-1 break-words text-[0.88rem] font-semibold leading-5 text-[#2d4560]">{followUpLabel}</p>
-                            <p className="mt-1 text-[0.76rem] font-medium text-[#6f839c]">{followUpDateLabel}</p>
-                          </div>
-                          <div className="grid gap-2 text-[0.8rem] text-[#60758b]">
-                            <div className="flex min-w-0 items-start gap-2">
-                              <UserRound size={13} className="mt-0.5 shrink-0 text-[#90a0b4]" />
-                              <div className="min-w-0">
-                                <p className="text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-[#8a9ab0]">Assigned agent</p>
-                                <p className="mt-0.5 break-words font-medium text-[#2d4560]">{assignedAgentLabel}</p>
-                              </div>
-                            </div>
-                            <div className="flex min-w-0 items-start gap-2">
-                              <Clock3 size={13} className="mt-0.5 shrink-0 text-[#90a0b4]" />
-                              <div className="min-w-0">
-                                <p className="text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-[#8a9ab0]">Last activity</p>
-                                <p className="mt-0.5 break-words font-medium text-[#2d4560]">{lastActivity ? formatDate(lastActivity.activityDate || lastActivity.createdAt) : 'No activity yet'}</p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+                      <td className="px-4 py-3 align-middle">
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusPillClass(stage)}`}>
+                          {stage}
+                        </span>
+                        <p className="mt-2 line-clamp-1 font-medium text-[#253b52]">{followUpLabel}</p>
+                        <p className="mt-0.5 text-xs text-[#71839a]">{followUpDateLabel}</p>
                       </td>
-                      <td className="px-4 py-4 align-top">
-                        <div className="flex flex-wrap gap-1" onClick={(event) => event.stopPropagation()}>
+                      <td className="px-4 py-3 align-middle">
+                        <p className="truncate font-medium text-[#253b52]">{assignedAgentLabel}</p>
+                      </td>
+                      <td className="px-4 py-3 align-middle">
+                        <p className="truncate font-medium text-[#253b52]">{formatRelativeActivityTime(lastActivity?.activityDate || lastActivity?.createdAt)}</p>
+                        <p className="mt-0.5 truncate text-xs text-[#71839a]">{lastActivity?.activityType || ''}</p>
+                      </td>
+                      <td className="px-4 py-3 text-right align-middle">
+                        <div className="relative inline-flex" onClick={(event) => event.stopPropagation()}>
                           <button
                             type="button"
-                            className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.66rem] font-semibold text-[#35546c]"
-                            onClick={() => handleQuickLogActivity(prospect, 'Call')}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-xs font-semibold text-[#24445f] shadow-[0_4px_10px_rgba(15,23,42,0.04)] transition hover:border-[#b8cce0] hover:bg-[#f8fbff]"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setOpenActionMenuId((previous) => (previous === normalizeText(prospect.id) ? '' : normalizeText(prospect.id)))
+                            }}
                           >
-                            Call
+                            Open
+                            <ChevronDown size={13} />
                           </button>
-                          <button
-                            type="button"
-                            className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.66rem] font-semibold text-[#35546c]"
-                            onClick={() => handleQuickLogActivity(prospect, 'WhatsApp')}
-                          >
-                            WhatsApp
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.66rem] font-semibold text-[#35546c]"
-                            onClick={() => handleQuickLogActivity(prospect, 'Email')}
-                          >
-                            Email
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.66rem] font-semibold text-[#35546c]"
-                            onClick={() => handleOpenProspectDetail(prospect)}
-                          >
-                            Convert to Lead
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-full border border-[#ead5d2] bg-[#fff8f8] px-2 py-0.5 text-[0.66rem] font-semibold text-[#8a3a33]"
-                            onClick={() => openArchiveProspectModal(prospect.id)}
-                          >
-                            Archive
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-full border border-[#efc7c0] bg-[#fff3f1] px-2 py-0.5 text-[0.66rem] font-semibold text-[#a13225]"
-                            onClick={() => openDeleteProspectModal(prospect.id)}
-                          >
-                            Delete
-                          </button>
+                          {actionMenuOpen ? (
+                            <div className="absolute right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-[10px] border border-[#dce6f2] bg-white py-1 text-left shadow-[0_18px_38px_rgba(15,23,42,0.14)]">
+                              {[
+                                ['Open Prospect', () => handleOpenProspectDetail(prospect)],
+                                ['Call Prospect', () => handleQuickLogActivity(prospect, 'Call')],
+                                ['WhatsApp Prospect', () => handleQuickLogActivity(prospect, 'WhatsApp')],
+                                ['Email Prospect', () => handleQuickLogActivity(prospect, 'Email')],
+                                ['Convert To Lead', () => handleConvertProspectToLead(prospect)],
+                                ['Archive', () => openArchiveProspectModal(prospect.id)],
+                                ['Delete', () => openDeleteProspectModal(prospect.id)],
+                              ].map(([label, action]) => (
+                                <button
+                                  key={label}
+                                  type="button"
+                                  className={`block w-full px-3 py-2 text-left text-xs font-semibold transition hover:bg-[#f5f8fc] ${
+                                    label === 'Delete' ? 'text-[#a13225]' : 'text-[#2d4560]'
+                                  }`}
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    setOpenActionMenuId('')
+                                    action()
+                                  }}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -1221,7 +1239,7 @@ function PipelineCanvassingPage() {
                 })
               ) : (
                 <tr>
-                  <td className="px-3 py-6 text-sm text-[#6f839c]" colSpan={4}>
+                  <td className="px-4 py-8 text-sm text-[#6f839c]" colSpan={6}>
                     {prospectView === 'seller'
                       ? 'No seller prospects yet. Add seller canvassing prospects to track valuation and mandate potential.'
                       : 'No buyer prospects yet. Add buyer canvassing prospects to track criteria and conversion readiness.'}
@@ -1230,6 +1248,94 @@ function PipelineCanvassingPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        <div className="divide-y divide-[#e8eef5] md:hidden">
+          {filteredProspects.length ? (
+            filteredProspects.map((prospect) => {
+              const lastActivity = latestActivityByProspectId.get(normalizeText(prospect?.id))
+              const displayName = getProspectDisplayName(prospect)
+              const propertyType = prospect.propertyType || 'Property type pending'
+              const area = prospect.area || 'Area not set'
+              const stage = prospect.status || 'New'
+              const actionMenuOpen = openActionMenuId === normalizeText(prospect.id)
+
+              return (
+                <div
+                  key={prospect.id}
+                  className="cursor-pointer px-4 py-3 transition hover:bg-[#f7fbff]"
+                  onClick={() => handleOpenProspectDetail(prospect)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[#142132]">{displayName}</p>
+                      <p className="mt-1 text-xs text-[#60758b]">
+                        {propertyType} • {area}
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-[#142132]">{formatCurrency(prospect.estimatedValue)}</p>
+                    </div>
+                    <div className="relative shrink-0" onClick={(event) => event.stopPropagation()}>
+                      <button
+                        type="button"
+                        className="inline-flex h-9 items-center gap-1.5 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-xs font-semibold text-[#24445f]"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setOpenActionMenuId((previous) => (previous === normalizeText(prospect.id) ? '' : normalizeText(prospect.id)))
+                        }}
+                      >
+                        Open
+                        <ChevronDown size={13} />
+                      </button>
+                      {actionMenuOpen ? (
+                        <div className="absolute right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-[10px] border border-[#dce6f2] bg-white py-1 text-left shadow-[0_18px_38px_rgba(15,23,42,0.14)]">
+                          {[
+                            ['Open Prospect', () => handleOpenProspectDetail(prospect)],
+                            ['Call Prospect', () => handleQuickLogActivity(prospect, 'Call')],
+                            ['WhatsApp Prospect', () => handleQuickLogActivity(prospect, 'WhatsApp')],
+                            ['Email Prospect', () => handleQuickLogActivity(prospect, 'Email')],
+                            ['Convert To Lead', () => handleConvertProspectToLead(prospect)],
+                            ['Archive', () => openArchiveProspectModal(prospect.id)],
+                            ['Delete', () => openDeleteProspectModal(prospect.id)],
+                          ].map(([label, action]) => (
+                            <button
+                              key={label}
+                              type="button"
+                              className={`block w-full px-3 py-2 text-left text-xs font-semibold transition hover:bg-[#f5f8fc] ${
+                                label === 'Delete' ? 'text-[#a13225]' : 'text-[#2d4560]'
+                              }`}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                setOpenActionMenuId('')
+                                action()
+                              }}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-2 text-xs text-[#60758b]">
+                    <span className={`w-fit rounded-full border px-2.5 py-1 font-semibold ${getStatusPillClass(stage)}`}>{stage}</span>
+                    <p>{prospect.followUpNote || 'Follow up with prospect'}</p>
+                    <p>Due {prospect.nextFollowUpDate ? formatShortDate(prospect.nextFollowUpDate) : 'date not set'}</p>
+                    <p>{prospect.assignedAgentName || prospect.assignedAgentEmail || 'Unassigned'}</p>
+                    <p>
+                      {formatRelativeActivityTime(lastActivity?.activityDate || lastActivity?.createdAt)}
+                      {lastActivity?.activityType ? ` • ${lastActivity.activityType}` : ''}
+                    </p>
+                  </div>
+                </div>
+              )
+            })
+          ) : (
+            <p className="px-4 py-8 text-sm text-[#6f839c]">
+              {prospectView === 'seller'
+                ? 'No seller prospects yet. Add seller canvassing prospects to track valuation and mandate potential.'
+                : 'No buyer prospects yet. Add buyer canvassing prospects to track criteria and conversion readiness.'}
+            </p>
+          )}
         </div>
       </section>
 
