@@ -6573,50 +6573,44 @@ function AttorneyTransactionDetail() {
         ) : null}
 
         {activeWorkspaceMenu === 'documents' ? (
-          <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="min-w-0 space-y-5">
-              <section className="flex justify-end">
-                <Button type="button" onClick={() => openDocumentUploadModal({ category: activeDocumentLibraryCategory })}>
-                  <Upload size={15} />
-                  Upload Document
-                </Button>
-              </section>
-
-              <section className="grid overflow-hidden rounded-[12px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.05)] sm:grid-cols-2 xl:grid-cols-4">
-                {[
-                  ['Required Documents', documentHealthSummary.totalRequired, FileText, 'text-blue-700 bg-blue-50'],
-                  ['Received', documentHealthSummary.received, Upload, 'text-emerald-700 bg-emerald-50'],
-                  ['Missing', documentHealthSummary.missing, AlertTriangle, 'text-orange-700 bg-orange-50'],
-                  ['Pending Review', documentHealthSummary.pendingReview, Clock3, 'text-violet-700 bg-violet-50'],
-                ].map(([label, value, Icon, tone]) => (
-                  <article key={label} className="flex items-center gap-4 border-b border-r border-[#e6edf5] px-5 py-4 last:border-r-0 sm:border-b-0">
-                    <span className={`inline-flex size-11 shrink-0 items-center justify-center rounded-[10px] ${tone}`}>
-                      {createElement(Icon, { size: 20 })}
-                    </span>
-                    <div className="min-w-0">
-                      <span className="block truncate text-xs font-medium text-[#6b7d93]">{label}</span>
-                      <strong className="mt-1 block text-xl font-semibold text-[#142132]">{value}</strong>
-                    </div>
-                  </article>
-                ))}
-              </section>
-
-              <section className="rounded-[12px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-base font-semibold text-[#142132]">Required Documents</h3>
-                    <p className="mt-1 text-sm text-[#60758d]">Documents still needed to complete this transaction.</p>
+          <section className="space-y-5">
+            <section className="grid overflow-hidden rounded-[12px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.05)] sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                ['Required Documents', documentHealthSummary.totalRequired, FileText, 'text-blue-700 bg-blue-50'],
+                ['Received', documentHealthSummary.received, Upload, 'text-emerald-700 bg-emerald-50'],
+                ['Missing', documentHealthSummary.missing, AlertTriangle, 'text-orange-700 bg-orange-50'],
+                ['Pending Review', documentHealthSummary.pendingReview, Clock3, 'text-violet-700 bg-violet-50'],
+              ].map(([label, value, Icon, tone]) => (
+                <article key={label} className="flex items-center gap-4 border-b border-r border-[#e6edf5] px-5 py-4 last:border-r-0 sm:border-b-0">
+                  <span className={`inline-flex size-11 shrink-0 items-center justify-center rounded-[10px] ${tone}`}>
+                    {createElement(Icon, { size: 20 })}
+                  </span>
+                  <div className="min-w-0">
+                    <span className="block truncate text-xs font-medium text-[#6b7d93]">{label}</span>
+                    <strong className="mt-1 block text-xl font-semibold text-[#142132]">{value}</strong>
                   </div>
-                  {requiredDocumentRows.length > 5 ? (
-                    <button
-                      type="button"
-                      className="text-sm font-semibold text-primary hover:text-primaryDark"
-                      onClick={() => setShowAllRequiredDocuments((previous) => !previous)}
-                    >
-                      {showAllRequiredDocuments ? 'Show first 5' : 'View all requirements'}
-                    </button>
-                  ) : null}
-                </div>
+                </article>
+              ))}
+            </section>
+
+            <section className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="min-w-0">
+                <section className="h-full rounded-[12px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-base font-semibold text-[#142132]">Required Documents</h3>
+                      <p className="mt-1 text-sm text-[#60758d]">Documents still needed to complete this transaction.</p>
+                    </div>
+                    {requiredDocumentRows.length > 5 ? (
+                      <button
+                        type="button"
+                        className="text-sm font-semibold text-primary hover:text-primaryDark"
+                        onClick={() => setShowAllRequiredDocuments((previous) => !previous)}
+                      >
+                        {showAllRequiredDocuments ? 'Show first 5' : 'View all requirements'}
+                      </button>
+                    ) : null}
+                  </div>
                 <div className="mt-4 overflow-x-auto">
                   <table className="min-w-[760px] w-full border-collapse text-sm">
                     <thead>
@@ -6705,158 +6699,159 @@ function AttorneyTransactionDetail() {
                     Showing {displayedRequiredDocumentRows.length} of {requiredDocumentRows.length} required documents
                   </p>
                 ) : null}
-              </section>
+                </section>
+              </div>
 
-              <section className="rounded-[12px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-base font-semibold text-[#142132]">Document Library</h3>
-                    <p className="mt-1 text-sm text-[#60758d]">All uploaded and generated documents.</p>
+              <aside className="flex min-h-0 flex-col gap-5">
+                <section className="shrink-0 rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                  <h3 className="text-sm font-semibold text-textStrong">Quick Actions</h3>
+                  <div className="mt-3 grid gap-2">
+                    {[
+                      ['Request Documents', FileText, handleQuickRequestDocuments, canPostSharedDiscussion || canManageTransactionRoleplayers],
+                      ['Add Note', MessageSquarePlus, handleQuickAddWorkflowNote, canPostSharedDiscussion || canPostInternalDiscussion],
+                      ['Schedule Signing', CalendarDays, handleQuickScheduleSigning, canManageTransactionRoleplayers || workspaceRole === 'attorney'],
+                      ['Generate Sales Agreement', FileText, openAgentSalesAgreementWorkspace, canManageTransactionRoleplayers],
+                    ]
+                      .filter(([, , , allowed]) => allowed)
+                      .map(([label, Icon, action]) => (
+                        <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
+                          {createElement(Icon, { size: 14 })}
+                          {label}
+                        </Button>
+                      ))}
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {DOCUMENT_LIBRARY_FILTERS.map((filter) => (
-                      <button
-                        key={filter.key}
-                        type="button"
-                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                          activeDocumentLibraryCategory === filter.key
-                            ? 'border-primary bg-primarySoft text-primary'
-                            : 'border-[#dbe5ef] bg-white text-[#52677f] hover:border-primary/40 hover:text-primary'
-                        }`}
-                        onClick={() => setActiveDocumentLibraryCategory(filter.key)}
-                      >
-                        {filter.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="mt-4 overflow-x-auto">
-                  <table className="min-w-[820px] w-full border-collapse text-sm">
-                    <thead>
-                      <tr className="border-b border-[#dde4ee] text-left text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#71839a]">
-                        <th className="py-2.5 pr-4">Name</th>
-                        <th className="px-4 py-2.5">Category</th>
-                        <th className="px-4 py-2.5">Uploaded By</th>
-                        <th className="px-4 py-2.5">Date</th>
-                        <th className="px-4 py-2.5">Status</th>
-                        <th className="py-2.5 pl-4 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {documentLibraryRows.length ? (
-                        documentLibraryRows.map((row) => {
-                          const document = row.raw || {}
-                          return (
-                            <tr key={row.id} className="border-b border-[#edf2f7] last:border-0">
-                              <td className="max-w-[260px] py-3 pr-4 font-medium text-[#142132]">
-                                <span className="block truncate">{row.displayName}</span>
-                              </td>
-                              <td className="px-4 py-3 text-[#52677f]">{row.categoryLabel}</td>
-                              <td className="px-4 py-3 text-[#52677f]">{row.uploadedBy}</td>
-                              <td className="px-4 py-3 text-[#52677f]">{formatDateTime(row.uploadedAt)}</td>
-                              <td className="px-4 py-3">
-                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
-                                  {getDocumentCommandStatusLabel(row.status)}
-                                </span>
-                              </td>
-                              <td className="py-3 pl-4">
-                                <div className="flex items-center justify-end gap-2">
-                                  {row.fileUrl ? (
-                                    <>
-                                      <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center rounded-[8px] border border-[#d8e4f0] px-3 text-xs font-semibold text-primary">
-                                        View
-                                      </a>
-                                      <a href={row.fileUrl} download className="inline-flex h-8 items-center rounded-[8px] border border-[#d8e4f0] px-3 text-xs font-semibold text-[#35546c]">
-                                        Download
-                                      </a>
-                                    </>
-                                  ) : null}
-                                  <Button type="button" variant="secondary" size="sm" onClick={() => handleReplaceDocument(document, row.requiredDocument)} disabled={saving}>
-                                    Replace
-                                  </Button>
-                                  <button type="button" className="ui-icon-button h-8 w-8" aria-label={`More actions for ${row.displayName}`}>
-                                    <MoreHorizontal size={15} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          )
-                        })
-                      ) : (
-                        <tr>
-                          <td colSpan="6" className="py-8 text-center text-sm text-[#60758d]">
-                            No uploaded or generated documents match this filter.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                <p className="mt-3 text-xs text-[#60758d]">
-                  Showing {documentLibraryRows.length} document{documentLibraryRows.length === 1 ? '' : 's'}
-                </p>
-              </section>
-            </div>
+                </section>
 
-            <aside className="space-y-5 xl:sticky xl:top-4">
-              <OverviewSidePanel title="Quick Actions">
-                <div className="grid gap-2">
-                  {[
-                    ['Request Documents', FileText, handleQuickRequestDocuments, canPostSharedDiscussion || canManageTransactionRoleplayers],
-                    ['Upload Document', Upload, () => openDocumentUploadModal({ category: activeDocumentLibraryCategory }), true],
-                    ['Add Note', MessageSquarePlus, handleQuickAddWorkflowNote, canPostSharedDiscussion || canPostInternalDiscussion],
-                    ['Schedule Signing', CalendarDays, handleQuickScheduleSigning, canManageTransactionRoleplayers || workspaceRole === 'attorney'],
-                    ['Generate Sales Agreement', FileText, openAgentSalesAgreementWorkspace, canManageTransactionRoleplayers],
-                  ]
-                    .filter(([, , , allowed]) => allowed)
-                    .map(([label, Icon, action]) => (
-                      <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
-                        {createElement(Icon, { size: 14 })}
-                        {label}
-                      </Button>
-                    ))}
-                </div>
-              </OverviewSidePanel>
-
-              <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                <h3 className="text-sm font-semibold text-textStrong">Recent Activity</h3>
-                <div className="mt-3 space-y-2">
-                  {documentRecentActivity.length ? (
-                    documentRecentActivity.map((item) => (
-                      <article key={item.id} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <strong className="block truncate text-sm text-textStrong">{item.attachmentName || item.title}</strong>
-                            <p className="mt-1 line-clamp-2 text-xs leading-5 text-textMuted">
-                              {item.body}
-                            </p>
-                            <p className="mt-1 truncate text-xs text-textMuted">
-                              {item.authorName} · {item.categoryLabel || 'Documents'}
-                            </p>
+                <section className="flex min-h-0 flex-1 flex-col rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                  <h3 className="text-sm font-semibold text-textStrong">Recent Activity</h3>
+                  <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+                    {documentRecentActivity.length ? (
+                      documentRecentActivity.map((item) => (
+                        <article key={item.id} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <strong className="block truncate text-sm text-textStrong">{item.attachmentName || item.title}</strong>
+                              <p className="mt-1 line-clamp-2 text-xs leading-5 text-textMuted">
+                                {item.body}
+                              </p>
+                              <p className="mt-1 truncate text-xs text-textMuted">
+                                {item.authorName} · {item.categoryLabel || 'Documents'}
+                              </p>
+                            </div>
+                            <span className="shrink-0 text-xs text-textMuted">{formatShortDayMonth(item.createdAt)}</span>
                           </div>
-                          <span className="shrink-0 text-xs text-textMuted">{formatShortDayMonth(item.createdAt)}</span>
-                        </div>
-                      </article>
-                    ))
-                  ) : (
-                    <p className="rounded-[12px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-4 text-sm text-textMuted">
-                      No document activity yet.
-                    </p>
-                  )}
+                        </article>
+                      ))
+                    ) : (
+                      <p className="rounded-[12px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-4 text-sm text-textMuted">
+                        No document activity yet.
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className="mt-4 inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-primary hover:text-primaryDark"
+                    onClick={() => {
+                      setActivityFilter('documents')
+                      setWorkspaceMenu('activity')
+                    }}
+                  >
+                    View all activity
+                    <ChevronRight size={14} />
+                  </button>
+                </section>
+              </aside>
+            </section>
+
+            <section className="rounded-[12px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-[#142132]">Document Library</h3>
+                  <p className="mt-1 text-sm text-[#60758d]">All uploaded and generated documents.</p>
                 </div>
-                <button
-                  type="button"
-                  className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:text-primaryDark"
-                  onClick={() => {
-                    setActivityFilter('documents')
-                    setWorkspaceMenu('activity')
-                  }}
-                >
-                  View all activity
-                  <ChevronRight size={14} />
-                </button>
-              </section>
-            </aside>
+                <div className="flex flex-wrap gap-2">
+                  {DOCUMENT_LIBRARY_FILTERS.map((filter) => (
+                    <button
+                      key={filter.key}
+                      type="button"
+                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                        activeDocumentLibraryCategory === filter.key
+                          ? 'border-primary bg-primarySoft text-primary'
+                          : 'border-[#dbe5ef] bg-white text-[#52677f] hover:border-primary/40 hover:text-primary'
+                      }`}
+                      onClick={() => setActiveDocumentLibraryCategory(filter.key)}
+                    >
+                      {filter.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-4 overflow-x-auto">
+                <table className="min-w-[820px] w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-[#dde4ee] text-left text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#71839a]">
+                      <th className="py-2.5 pr-4">Name</th>
+                      <th className="px-4 py-2.5">Category</th>
+                      <th className="px-4 py-2.5">Uploaded By</th>
+                      <th className="px-4 py-2.5">Date</th>
+                      <th className="px-4 py-2.5">Status</th>
+                      <th className="py-2.5 pl-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {documentLibraryRows.length ? (
+                      documentLibraryRows.map((row) => {
+                        const document = row.raw || {}
+                        return (
+                          <tr key={row.id} className="border-b border-[#edf2f7] last:border-0">
+                            <td className="max-w-[260px] py-3 pr-4 font-medium text-[#142132]">
+                              <span className="block truncate">{row.displayName}</span>
+                            </td>
+                            <td className="px-4 py-3 text-[#52677f]">{row.categoryLabel}</td>
+                            <td className="px-4 py-3 text-[#52677f]">{row.uploadedBy}</td>
+                            <td className="px-4 py-3 text-[#52677f]">{formatDateTime(row.uploadedAt)}</td>
+                            <td className="px-4 py-3">
+                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
+                                {getDocumentCommandStatusLabel(row.status)}
+                              </span>
+                            </td>
+                            <td className="py-3 pl-4">
+                              <div className="flex items-center justify-end gap-2">
+                                {row.fileUrl ? (
+                                  <>
+                                    <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center rounded-[8px] border border-[#d8e4f0] px-3 text-xs font-semibold text-primary">
+                                      View
+                                    </a>
+                                    <a href={row.fileUrl} download className="inline-flex h-8 items-center rounded-[8px] border border-[#d8e4f0] px-3 text-xs font-semibold text-[#35546c]">
+                                      Download
+                                    </a>
+                                  </>
+                                ) : null}
+                                <Button type="button" variant="secondary" size="sm" onClick={() => handleReplaceDocument(document, row.requiredDocument)} disabled={saving}>
+                                  Replace
+                                </Button>
+                                <button type="button" className="ui-icon-button h-8 w-8" aria-label={`More actions for ${row.displayName}`}>
+                                  <MoreHorizontal size={15} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan="6" className="py-8 text-center text-sm text-[#60758d]">
+                          No uploaded or generated documents match this filter.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-3 text-xs text-[#60758d]">
+                Showing {documentLibraryRows.length} document{documentLibraryRows.length === 1 ? '' : 's'}
+              </p>
+            </section>
 
             <Modal
               open={uploadDocumentModalOpen}
