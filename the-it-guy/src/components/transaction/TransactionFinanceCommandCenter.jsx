@@ -102,7 +102,7 @@ function SummaryBlock({ item }) {
 
 function SectionCard({ title, copy, children, actions = null }) {
   return (
-    <section className="rounded-[8px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+    <section className="rounded-[8px] border border-[#dbe5ef] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)] sm:p-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{title}</h3>
@@ -126,8 +126,8 @@ function EmptyState({ message, action = null }) {
 
 function ProgressRail({ groups = [] }) {
   return (
-    <section className="rounded-[8px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-      <div className="space-y-6">
+    <section className="rounded-[8px] border border-[#dbe5ef] bg-white p-4 shadow-[0_14px_30px_rgba(15,23,42,0.05)] sm:p-5">
+      <div className="space-y-5">
         {groups.map((group) => (
           <div key={group.key}>
             <div className="mb-3 flex items-center justify-between gap-3">
@@ -141,14 +141,14 @@ function ProgressRail({ groups = [] }) {
             </div>
             <div className="overflow-x-auto pb-1">
               <div
-                className="relative grid min-w-[760px] gap-0"
-                style={{ gridTemplateColumns: `repeat(${Math.max(group.steps?.length || 1, 1)}, minmax(130px, 1fr))` }}
+                className="relative grid min-w-[680px] gap-0"
+                style={{ gridTemplateColumns: `repeat(${Math.max(group.steps?.length || 1, 1)}, minmax(112px, 1fr))` }}
               >
                 <div className="absolute left-12 right-12 top-[17px] h-px bg-[#cfddeb]" aria-hidden="true" />
                 {(group.steps || []).map((step) => {
                   const Icon = step.status === 'completed' ? CheckCircle2 : step.status === 'current' ? Clock3 : Circle
                   return (
-                    <article key={step.key} className="relative z-10 flex min-w-0 flex-col items-center px-3 text-center">
+                    <article key={step.key} className="relative z-10 flex min-w-0 flex-col items-center px-2 text-center">
                       <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${getStepTone(step.status)}`}>
                           <Icon size={15} />
                         </span>
@@ -830,8 +830,8 @@ function FinanceCommandCenter({
 
       <ProgressRail groups={workspace.railGroups} />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.86fr)]">
-        <div className="space-y-5">
+      <div className="grid gap-5 xl:grid-cols-2">
+        <div className="grid gap-5 md:grid-cols-2 xl:col-span-2">
           {(workspace.financeType === 'bond' || workspace.financeType === 'combination') ? (
             <SectionCard
               title="Buyer Finance Documents"

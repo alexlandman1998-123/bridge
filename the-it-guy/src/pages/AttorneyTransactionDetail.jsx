@@ -2331,8 +2331,8 @@ function LegalWorkflowHubCard({ workflow, onOpen }) {
   const statusMeta = WORKFLOW_STATUS_META[workflow?.statusKey] || WORKFLOW_STATUS_META.not_started
 
   return (
-    <article className={`min-w-0 overflow-hidden rounded-[18px] border border-borderDefault border-l-4 bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5 ${accent.ring}`}>
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <article className={`flex h-full min-w-0 flex-col overflow-hidden rounded-[18px] border border-borderDefault border-l-4 bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5 ${accent.ring}`}>
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className={`inline-flex size-10 items-center justify-center rounded-[12px] ring-1 ${accent.icon}`}>
@@ -2340,7 +2340,7 @@ function LegalWorkflowHubCard({ workflow, onOpen }) {
             </span>
             <h3 className="min-w-0 text-base font-semibold text-textStrong">{workflow.title}</h3>
           </div>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-textMuted">{workflow.summary}</p>
+          <p className="mt-3 min-h-[3rem] max-w-3xl text-sm leading-6 text-textMuted">{workflow.summary}</p>
         </div>
         <span className={`inline-flex w-fit shrink-0 items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${statusMeta.border} ${statusMeta.bg} ${statusMeta.text}`}>
           <span className={`h-2 w-2 rounded-full ${statusMeta.dot}`} />
@@ -2348,27 +2348,29 @@ function LegalWorkflowHubCard({ workflow, onOpen }) {
         </span>
       </div>
 
-      <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,7.5rem),1fr))] gap-3">
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {[
           ['Status', workflow.statusLabel],
           ['Progress', `${workflow.progressPercent}%`],
           ['Next Step', workflow.nextStep || 'Pending'],
           [workflow.assignedLabel, workflow.assignedDisplay],
         ].map(([label, value]) => (
-          <article key={`${workflow.key}-${label}`} className="min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+          <article key={`${workflow.key}-${label}`} className="min-h-[5.25rem] min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
             <span className="block break-words text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
             <strong className="mt-1 block break-words text-sm text-textStrong">{value || 'Not assigned'}</strong>
           </article>
         ))}
       </div>
 
-      {workflow.blockers.length ? (
-        <div className="mt-4 rounded-[14px] border border-warning/30 bg-warningSoft px-3 py-3 text-sm text-warning">
-          {workflow.blockers[0]}
-        </div>
-      ) : null}
+      <div className="mt-4 min-h-[3.5rem]">
+        {workflow.blockers.length ? (
+          <div className="rounded-[14px] border border-warning/30 bg-warningSoft px-3 py-3 text-sm text-warning">
+            {workflow.blockers[0]}
+          </div>
+        ) : null}
+      </div>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-4">
         <span className="text-xs font-medium text-textMuted">
           {workflow.activityCount} legal update{workflow.activityCount === 1 ? '' : 's'}
         </span>
@@ -5944,9 +5946,7 @@ function AttorneyTransactionDetail() {
               actionButtons={headerWorkflowActionButtons}
               isAgentView={isAgentTransactionView}
             />
-          {activeWorkspaceMenu === 'transfer' ? null : (
-            <MatterWorkspaceTabs tabs={workspaceMenuTabs} activeTab={activeWorkspaceMenu} onChange={openWorkspaceMenu} premium={isAgentTransactionView} />
-          )}
+          <MatterWorkspaceTabs tabs={workspaceMenuTabs} activeTab={activeWorkspaceMenu} onChange={openWorkspaceMenu} premium={isAgentTransactionView} />
           {onboardingActionMessage ? (
             <p className="rounded-[14px] border border-borderDefault bg-surfaceAlt px-4 py-2.5 text-helper text-textMuted">
               {onboardingActionMessage}
@@ -6257,8 +6257,8 @@ function AttorneyTransactionDetail() {
                         <p className="mt-1 text-sm leading-6 text-textMuted">Manage the legal workflows for this transaction.</p>
                       </section>
 
-                      <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-4">
+                      <section className="rounded-[18px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5">
+                        <div className="grid items-stretch gap-4 lg:grid-cols-2">
                           {transferHubWorkflows.map((workflow) => (
                             <LegalWorkflowHubCard
                               key={workflow.key}
@@ -6575,13 +6575,7 @@ function AttorneyTransactionDetail() {
         {activeWorkspaceMenu === 'documents' ? (
           <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
             <div className="min-w-0 space-y-5">
-              <section className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-[1.35rem] font-semibold tracking-[-0.02em] text-[#142132]">Documents</h3>
-                  <p className="mt-1 text-sm leading-6 text-[#60758d]">
-                    Manage all documents and requirements for this transaction.
-                  </p>
-                </div>
+              <section className="flex justify-end">
                 <Button type="button" onClick={() => openDocumentUploadModal({ category: activeDocumentLibraryCategory })}>
                   <Upload size={15} />
                   Upload Document
