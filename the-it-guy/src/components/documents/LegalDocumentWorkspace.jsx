@@ -3577,11 +3577,23 @@ export default function LegalDocumentWorkspace({
           statusStateRef.current = generationResult.status
           setStatusState(generationResult.status)
         }
-        setActionProgressMessage('Refreshing draft status…')
-        const refreshed = await refreshWorkspaceData()
-        if (refreshed?.resolved) {
-          statusStateRef.current = refreshed.resolved
-          setStatusState(refreshed.resolved)
+        const hasGeneratedVersion = Boolean(getGeneratedPacketVersionForSigning(generationResult?.status?.versions || []))
+        if (hasGeneratedVersion) {
+          void refreshWorkspaceData().then((refreshed) => {
+            if (refreshed?.resolved) {
+              statusStateRef.current = refreshed.resolved
+              setStatusState(refreshed.resolved)
+            }
+          }).catch((refreshError) => {
+            console.warn('[LegalDocumentWorkspace] background draft status refresh failed after generation.', refreshError)
+          })
+        } else {
+          setActionProgressMessage('Refreshing draft status…')
+          const refreshed = await refreshWorkspaceData()
+          if (refreshed?.resolved) {
+            statusStateRef.current = refreshed.resolved
+            setStatusState(refreshed.resolved)
+          }
         }
       } else if (action.actionKey === 'send') {
         assertWorkspacePermission('canSend', 'send documents for signature')
@@ -3689,12 +3701,25 @@ export default function LegalDocumentWorkspace({
           statusStateRef.current = generationResult.status
           setStatusState(generationResult.status)
         }
-        setActionProgressMessage('Refreshing draft status…')
-        const refreshed = await refreshWorkspaceData()
-        if (!active) return
-        if (refreshed?.resolved) {
-          statusStateRef.current = refreshed.resolved
-          setStatusState(refreshed.resolved)
+        const hasGeneratedVersion = Boolean(getGeneratedPacketVersionForSigning(generationResult?.status?.versions || []))
+        if (hasGeneratedVersion) {
+          void refreshWorkspaceData().then((refreshed) => {
+            if (!active) return
+            if (refreshed?.resolved) {
+              statusStateRef.current = refreshed.resolved
+              setStatusState(refreshed.resolved)
+            }
+          }).catch((refreshError) => {
+            console.warn('[LegalDocumentWorkspace] background draft status refresh failed after auto-generation.', refreshError)
+          })
+        } else {
+          setActionProgressMessage('Refreshing draft status…')
+          const refreshed = await refreshWorkspaceData()
+          if (!active) return
+          if (refreshed?.resolved) {
+            statusStateRef.current = refreshed.resolved
+            setStatusState(refreshed.resolved)
+          }
         }
         setActionFeedback('Draft generated successfully.')
       } catch (error) {

@@ -393,6 +393,122 @@ async function invokeSendEmail({
   return { ok: response.ok, status: response.status, body: responseBody as Record<string, unknown> };
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function collectMandateLeadIds(packet: Record<string, unknown>, sourceContext: Record<string, unknown>) {
+  const generatedSnapshot = sourceContext.generatedDataSnapshot && typeof sourceContext.generatedDataSnapshot === "object"
+    ? sourceContext.generatedDataSnapshot as Record<string, unknown>
+    : {};
+  const lead = sourceContext.lead && typeof sourceContext.lead === "object"
+    ? sourceContext.lead as Record<string, unknown>
+    : {};
+  const candidates = [
+    packet.lead_id,
+    sourceContext.leadId,
+    sourceContext.lead_id,
+    sourceContext.uiLeadId,
+    sourceContext.ui_lead_id,
+    lead.id,
+    lead.lead_id,
+    generatedSnapshot.leadId,
+    generatedSnapshot.lead_id,
+  ];
+  return [...new Set(candidates.map((value) => normalizeText(value)).filter((value) => UUID_PATTERN.test(value)))];
+}
+
+async function syncSellerMandateCompletion({
+  supabase,
+  packet,
+  packetId,
+  organisationId,
+  nowIso,
+}: {
+  supabase: any;
+  packet: Record<string, unknown>;
+  packetId: string;
+  organisationId: string;
+  nowIso: string;
+}) {
+  if (normalizeText(packet.packet_type).toLowerCase() !== "mandate") return;
+
+  const sourceContext = packet.source_context_json && typeof packet.source_context_json === "object"
+    ? packet.source_context_json as Record<string, unknown>
+    : {};
+  const leadIds = collectMandateLeadIds(packet, sourceContext);
+  const syncedListingIds = new Set<string>();
+
+  const listingPatch = {
+    listing_status: "mandate_signed",
+    mandate_status: "signed",
+    mandate_packet_id: packetId,
+    updated_at: nowIso,
+  };
+
+  const collectListings = (rows: Record<string, unknown>[] | null | undefined) => {
+    for (const row of rows || []) {
+      const id = normalizeText(row?.id);
+      if (id) syncedListingIds.add(id);
+    }
+  };
+
+  const byPacket = await supabase
+    .from("private_listings")
+    .update(listingPatch)
+    .eq("organisation_id", organisationId)
+    .eq("mandate_packet_id", packetId)
+    .select("id");
+  if (byPacket.error) console.error("[mandate-signing] listing mandate packet sync failed", byPacket.error);
+  else collectListings(byPacket.data as Record<string, unknown>[]);
+
+  for (const leadId of leadIds) {
+    const bySellerLead = await supabase
+      .from("private_listings")
+      .update(listingPatch)
+      .eq("organisation_id", organisationId)
+      .eq("seller_lead_id", leadId)
+      .select("id");
+    if (bySellerLead.error) console.error("[mandate-signing] listing seller lead sync failed", bySellerLead.error);
+    else collectListings(bySellerLead.data as Record<string, unknown>[]);
+
+    const byOriginatingLead = await supabase
+      .from("private_listings")
+      .update(listingPatch)
+      .eq("organisation_id", organisationId)
+      .eq("originating_crm_lead_id", leadId)
+      .select("id");
+    if (byOriginatingLead.error) console.error("[mandate-signing] listing originating lead sync failed", byOriginatingLead.error);
+    else collectListings(byOriginatingLead.data as Record<string, unknown>[]);
+  }
+
+  if (leadIds.length) {
+    const leadUpdate = await supabase
+      .from("leads")
+      .update({
+        stage: "Mandate Signed",
+        status: "Mandate Signed",
+        mandate_packet_id: packetId,
+        updated_at: nowIso,
+      })
+      .eq("organisation_id", organisationId)
+      .in("lead_id", leadIds);
+    if (leadUpdate.error) console.error("[mandate-signing] lead mandate signed sync failed", leadUpdate.error);
+
+    const leadActivityRows = leadIds.map((leadId) => ({
+      organisation_id: organisationId,
+      lead_id: leadId,
+      activity_type: "Mandate Signed",
+      activity_note: "Mandate was fully signed by all required parties.",
+      outcome: "Signed",
+      activity_date: nowIso,
+      created_at: nowIso,
+    }));
+    const activityInsert = await supabase.from("lead_activities").insert(leadActivityRows);
+    if (activityInsert.error) console.error("[mandate-signing] lead activity sync failed", activityInsert.error);
+  }
+
+  if (!syncedListingIds.size) return;
+}
+
 async function maybeSendSellerMandateInvite({
   supabase,
   packet,
@@ -1010,7 +1126,7 @@ Deno.serve(async (req: Request) => {
         if (allSignersResult.error) throw allSignersResult.error;
         const packetContextResult = await supabase
           .from("document_packets")
-          .select("id, organisation_id, packet_type, title, source_context_json")
+          .select("id, organisation_id, packet_type, title, lead_id, source_context_json")
           .eq("id", packetId)
           .maybeSingle();
         if (packetContextResult.error) throw packetContextResult.error;
@@ -1139,7 +1255,7 @@ Deno.serve(async (req: Request) => {
       if (allSignersResult.error) throw allSignersResult.error;
       const packetContextResult = await supabase
         .from("document_packets")
-        .select("id, organisation_id, packet_type, title, source_context_json")
+        .select("id, organisation_id, packet_type, title, lead_id, source_context_json")
         .eq("id", packetId)
         .maybeSingle();
       if (packetContextResult.error) throw packetContextResult.error;
@@ -1259,6 +1375,20 @@ Deno.serve(async (req: Request) => {
               finalArtifactPath: finalBody?.finalArtifact?.path || null,
             },
           });
+          try {
+            await syncSellerMandateCompletion({
+              supabase,
+              packet,
+              packetId,
+              organisationId,
+              nowIso,
+            });
+          } catch (syncError) {
+            console.error("[mandate-signing] seller mandate completion sync failed", {
+              mandateId: packetId,
+              error: String(syncError),
+            });
+          }
           try {
             await sendFinalSignedMandateEmails({
               supabase,

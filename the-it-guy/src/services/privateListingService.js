@@ -764,6 +764,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     financeContext: row.finance_context || '',
     mandateType: row.mandate_type || 'sole',
     mandateStatus: normalizeStatus(row.mandate_status, MANDATE_STATUSES, 'not_started'),
+    mandatePacketId: row.mandate_packet_id || null,
     sellerOnboardingStatus: onboardingStatus,
     isActive: Boolean(row.is_active),
     createdBy: row.created_by || null,
@@ -874,6 +875,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     mandateUrl: mandateDocumentUrl,
     mandate: {
       status: normalizeStatus(row.mandate_status, MANDATE_STATUSES, 'not_started'),
+      packetId: row.mandate_packet_id || null,
       signedAt: mandateSignedDate || null,
       startDate: mandateStartDate || null,
       endDate: mandateEndDate || null,
@@ -958,6 +960,7 @@ function mapPrivateListingSummaryRow(row = {}) {
     financeContext: row.finance_context || '',
     mandateType: row.mandate_type || 'sole',
     mandateStatus: normalizeStatus(row.mandate_status, MANDATE_STATUSES, 'not_started'),
+    mandatePacketId: row.mandate_packet_id || null,
     sellerOnboardingStatus: normalizeStatus(row.seller_onboarding_status, SELLER_ONBOARDING_STATUSES, 'not_started'),
     isActive: Boolean(row.is_active),
     createdAt: row.created_at || null,
@@ -1117,9 +1120,15 @@ function mapSellerClientPortalPayload(payload) {
   const requirements = normalizeRequirementRows(Array.isArray(payload?.requirements) ? payload.requirements : [])
   const documents = normalizeDocumentRows(Array.isArray(payload?.documents) ? payload.documents : [])
   const appointments = Array.isArray(payload?.appointments) ? payload.appointments : []
+  const mandatePacket = payload?.mandatePacket && typeof payload.mandatePacket === 'object'
+    ? payload.mandatePacket
+    : payload?.mandate_packet && typeof payload.mandate_packet === 'object'
+      ? payload.mandate_packet
+      : null
   return {
     onboarding: onboardingRow,
     appointments,
+    mandatePacket,
     listing: mapPrivateListingRow(
       listingRow,
       onboardingMap,
@@ -1818,7 +1827,7 @@ export async function getAgentPrivateListingSummaries(
   const queryBuilder = applyVisiblePrivateListingFilters(
     client
       .from('private_listings')
-      .select('id, listing_reference, listing_status, listing_visibility, seller_onboarding_status, mandate_status, asking_price, estimated_value, title, address_line_1, address_line_2, suburb, city, province, postal_code, seller_type, finance_context, mandate_type, property_category, property_type, property_structure_type, listing_category, listing_source, stock_source, seller_canonical_facts_json, seller_canonical_fact_readiness_json, seller_lead_id, seller_profile_id, property_profile_id, organisation_id, branch_id, assigned_agent_id, created_at, updated_at'),
+      .select('id, listing_reference, listing_status, listing_visibility, seller_onboarding_status, mandate_status, mandate_packet_id, asking_price, estimated_value, title, address_line_1, address_line_2, suburb, city, province, postal_code, seller_type, finance_context, mandate_type, property_category, property_type, property_structure_type, listing_category, listing_source, stock_source, seller_canonical_facts_json, seller_canonical_fact_readiness_json, seller_lead_id, seller_profile_id, property_profile_id, organisation_id, branch_id, assigned_agent_id, created_at, updated_at'),
   )
 
   if (normalizedOrgId) {

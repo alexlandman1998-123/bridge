@@ -888,8 +888,8 @@ async function updateLeadConversionLink({
 }) {
   if (!organisationId || !leadId || !listingId) return false;
   const fullPayload = {
-    stage: "Converted To Listing",
-    status: "Converted To Listing",
+    stage: "Mandate Signed",
+    status: "Mandate Signed",
     listing_id: listingId,
     mandate_packet_id: packetId || null,
     updated_at: new Date().toISOString(),
@@ -906,8 +906,8 @@ async function updateLeadConversionLink({
   result = await supabase
     .from("leads")
     .update({
-      stage: "Converted To Listing",
-      status: "Converted To Listing",
+      stage: "Mandate Signed",
+      status: "Mandate Signed",
       updated_at: fullPayload.updated_at,
     })
     .eq("organisation_id", organisationId)
@@ -1044,6 +1044,7 @@ async function ensureListingFromSignedMandate({
         listing_status: resolveSignedMandateListingStatus(listing.listing_status),
         listing_visibility: normalizeText(listing.listing_visibility) || "internal",
         mandate_status: "signed",
+        mandate_packet_id: normalizeText(packet.id) || null,
         seller_onboarding_status: sellerOnboardingStatus === "completed" || !existingSellerOnboardingStatus || existingSellerOnboardingStatus === "not_started"
           ? sellerOnboardingStatus
           : existingSellerOnboardingStatus,
@@ -1082,6 +1083,7 @@ async function ensureListingFromSignedMandate({
         seller_type: firstValue(placeholders.seller_entity_type, placeholders["seller.entity_type"]) || null,
         mandate_type: firstValue(placeholders.mandate_type, placeholders["mandate.type"]) || "sole",
         mandate_status: "signed",
+        mandate_packet_id: normalizeText(packet.id) || null,
         seller_onboarding_status: sellerOnboardingStatus,
         is_active: false,
         created_by: null,
@@ -1118,7 +1120,7 @@ async function ensureListingFromSignedMandate({
       activity_title: "Mandate signed",
       activity_description: "All required mandate signers completed. Listing shell is ready for agent completion.",
       performed_by: null,
-      visibility: "internal",
+      visibility: "client_visible",
       metadata: {
         source: "signed_mandate_auto_conversion",
         leadId: leadId || null,

@@ -112,6 +112,29 @@ function mapSellerUploadedDocument(document = {}) {
   }
 }
 
+function mapSellerMandatePacket(packetPayload = null) {
+  if (!packetPayload || typeof packetPayload !== 'object') return null
+  const packet = packetPayload.packet && typeof packetPayload.packet === 'object' ? packetPayload.packet : {}
+  const version = packetPayload.version && typeof packetPayload.version === 'object' ? packetPayload.version : {}
+  const state = normalizeValue(packetPayload.state || packet.status || packetPayload.mandateStatus)
+  return {
+    ...packetPayload,
+    id: packetPayload.id || packet.id || '',
+    state: state || 'not_generated',
+    packet,
+    version,
+    packetVersionId: packetPayload.packetVersionId || packetPayload.packet_version_id || version.id || '',
+    finalSignedFilePath: packetPayload.finalSignedFilePath || packetPayload.final_signed_file_path || version.final_signed_file_path || '',
+    finalSignedFileName: packetPayload.finalSignedFileName || packetPayload.final_signed_file_name || version.final_signed_file_name || 'Signed Mandate',
+    finalSignedFileBucket: packetPayload.finalSignedFileBucket || packetPayload.final_signed_file_bucket || version.final_signed_file_bucket || '',
+    finalSignedDownloadUrl: packetPayload.finalSignedDownloadUrl || packetPayload.final_signed_file_url || version.final_signed_file_url || '',
+    generatedPreviewFilePath: packetPayload.generatedPreviewFilePath || packetPayload.rendered_file_path || version.rendered_file_path || '',
+    generatedPreviewFileName: packetPayload.generatedPreviewFileName || packetPayload.rendered_file_name || version.rendered_file_name || 'Mandate',
+    signedAt: packetPayload.signedAt || packetPayload.signed_at || version.finalised_at || packet.completed_at || '',
+    updatedAt: packetPayload.updatedAt || packetPayload.updated_at || packet.updated_at || '',
+  }
+}
+
 function mapSellerPortalAppointment(row = {}) {
   const startsAt = row?.date_time || row?.dateTime || (
     row?.appointment_date && row?.start_time ? `${row.appointment_date}T${row.start_time}` : null
@@ -216,7 +239,8 @@ async function fetchSellerClientPortalDataByToken(token) {
   const status = listing?.sellerOnboardingStatus || sellerOnboarding?.status || onboarding?.status || 'pending'
   const listingId = listing?.id || onboarding?.private_listing_id || null
   const sellerLeadId = listing?.sellerLeadId || listing?.seller_lead_id || null
-  const mandatePacketId = listing?.mandatePacketId || listing?.mandate_packet_id || null
+  const mandatePacket = mapSellerMandatePacket(context?.mandatePacket || listing?.mandatePacket || null)
+  const mandatePacketId = mandatePacket?.id || listing?.mandatePacketId || listing?.mandate_packet_id || null
   const sellerPortalStage = resolveSellerPortalWorkflowStage(listing, onboarding, status)
   const requiredDocuments = getSellerRequiredDocuments(listing, formData)
     .map((item) => mapSellerRequiredDocument(item))
@@ -312,9 +336,11 @@ async function fetchSellerClientPortalDataByToken(token) {
       status: sellerPortalStage,
       sellerOnboardingStatus: status,
       listingStatus: sellerPortalStage,
+      mandateStatus: mandatePacket?.state || listing?.mandateStatus || listing?.mandate_status || '',
       sellerLeadId,
       listingId,
       mandatePacketId,
+      mandatePacket,
       sellerWorkspaceToken: token,
     },
     otpPacket: null,

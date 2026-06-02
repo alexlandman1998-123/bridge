@@ -6263,7 +6263,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       onProgress?.('Draft ready.')
       let generatedStatus = null
       if (isUuidLike(packet?.id)) {
-        generatedStatus = await withPipelineTimeout(
+        generatedStatus = {
+          packetType: 'mandate',
+          state: 'generated',
+          packet: generatedVersionResult?.packet || packet,
+          versions: [generatedVersionResult?.version].filter(Boolean),
+          signingSummary: null,
+          warnings: generatedVersionResult?.validation?.warnings || [],
+          actionHint: 'Draft generated.',
+        }
+        void withPipelineTimeout(
           resolveDocumentPacketStatus({
             packetType: 'mandate',
             packetId: packet.id,
@@ -6273,17 +6282,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           }),
           'Generated mandate status is taking too long to refresh.',
           PIPELINE_RECORDS_TIMEOUT_MS,
-        ).catch((statusError) => {
-          console.warn('[MANDATE] generated packet status refresh failed; using local generated status.', statusError)
-          return {
-            packetType: 'mandate',
-            state: 'generated',
-            packet: generatedVersionResult?.packet || packet,
-            versions: [generatedVersionResult?.version].filter(Boolean),
-            signingSummary: null,
-            warnings: generatedVersionResult?.validation?.warnings || [],
-            actionHint: 'Draft generated.',
+        ).then((refreshedStatus) => {
+          if (refreshedStatus?.packet?.id && documentPacketBelongsToLead(refreshedStatus.packet, selectedLead.leadId)) {
+            setMandatePacketStatus(refreshedStatus)
           }
+        }).catch((statusError) => {
+          console.warn('[MANDATE] generated packet status refresh failed; using local generated status.', statusError)
         })
       } else if (fallbackPacketId) {
         generatedStatus = {
