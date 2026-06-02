@@ -3610,6 +3610,46 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ? 'Open the legal workspace and complete missing seller/property details manually.'
       : selectedLeadMandateActionMeta
 
+  const selectedLeadMandateSignedEvidence = useMemo(() => {
+    const mandateSigningStatus = normalizeText(mandatePacketStatus?.signingStatus).toLowerCase()
+    const mandatePacketState = normalizeText(mandatePacketStatus?.state || mandatePacketStatus?.packet?.status).toLowerCase()
+    const mandateSourceContext =
+      mandatePacketStatus?.packet?.source_context_json && typeof mandatePacketStatus.packet.source_context_json === 'object'
+        ? mandatePacketStatus.packet.source_context_json
+        : {}
+    const mandateSourceSigningStatus = normalizeText(
+      mandateSourceContext.signingStatus ||
+        mandateSourceContext.signing_status ||
+        mandateSourceContext.mandateStatus ||
+        mandateSourceContext.mandate_status,
+    ).toLowerCase()
+    const mandateSummary = mandatePacketStatus?.signingSummary || {}
+    const requiredFieldCount = Number(mandateSummary.requiredFieldCount || 0)
+    const completedRequiredFieldCount = Number(mandateSummary.completedRequiredFieldCount || 0)
+    const allRequiredFieldsCompleted =
+      Boolean(mandateSummary.allRequiredFieldsCompleted) ||
+      (requiredFieldCount > 0 && completedRequiredFieldCount === requiredFieldCount)
+    const allRequiredSignersCompleted =
+      Boolean(mandateSummary.allSignersSigned) &&
+      Number(mandateSummary.signerCount || 0) > 0 &&
+      (requiredFieldCount === 0 || allRequiredFieldsCompleted)
+    const mandateHasFinalArtifact = (Array.isArray(mandatePacketStatus?.versions) ? mandatePacketStatus.versions : []).some((version) =>
+      normalizeText(version?.final_signed_file_path || version?.final_signed_file_url || version?.final_signed_file_access_url),
+    )
+    return (
+      ['signed', 'uploaded_signed', 'completed', 'fully_signed'].includes(mandateSigningStatus) ||
+      ['signed', 'uploaded_signed', 'completed', 'fully_signed'].includes(mandateSourceSigningStatus) ||
+      ['signed', 'completed', 'fully_signed'].includes(mandatePacketState) ||
+      allRequiredSignersCompleted ||
+      mandateHasFinalArtifact
+    )
+  }, [mandatePacketStatus])
+
+  const selectedLeadEffectiveLifecycleStage =
+    selectedLeadIsSeller && selectedLeadMandateSignedEvidence
+      ? 'Mandate Signed'
+      : selectedLead?.stage || resolveLeadFunnelStage(selectedLead)
+
   const selectedLeadWorkflowHealth = useMemo(() => {
     if (!selectedLead) {
       return { completed: 0, total: 0, percent: 0, missing: [] }
@@ -3629,8 +3669,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       normalizeText(mandatePacketStatus?.packet?.id) &&
         documentPacketBelongsToLead(mandatePacketStatus?.packet, selectedLead?.leadId),
     )
-    const mandateSigningStatus = normalizeText(mandatePacketStatus?.signingStatus).toLowerCase()
-    const mandateSigned = stage.includes('mandate signed') || ['signed', 'uploaded_signed'].includes(mandateSigningStatus)
+    const mandateSigned = stage.includes('mandate signed') || selectedLeadMandateSignedEvidence
     const otpSigned = stage.includes('otp signed')
 
     const checks = isSeller
@@ -3657,7 +3696,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       items: checks,
       missing: checks.filter((item) => !item.done),
     }
-  }, [mandatePacketStatus?.packet, mandatePacketStatus?.signingStatus, selectedLead, selectedLeadAppointments, selectedLeadLinkedTransaction, selectedLeadOfferSummary.total])
+  }, [mandatePacketStatus?.packet, selectedLead, selectedLeadAppointments, selectedLeadLinkedTransaction, selectedLeadMandateSignedEvidence, selectedLeadOfferSummary.total])
 
   const selectedLeadUnifiedTimeline = useMemo(() => {
     const classifyActivity = (activity = {}) => {
@@ -9358,7 +9397,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                              {selectedLeadIsSeller ? 'Seller Lead' : 'Buyer Lead'}
 	                            </span>
 	                            <span className="rounded-full bg-[#eef8f2] px-2.5 py-1 text-[0.72rem] font-semibold text-[#247345]">
-	                              {resolveLeadFunnelStage(selectedLead)}
+	                              {selectedLeadEffectiveLifecycleStage}
 	                            </span>
 	                          </div>
 	                          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-medium text-[#60758b]">
@@ -9489,7 +9528,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <h2 className="mt-2 text-[1.45rem] font-semibold tracking-[-0.035em] text-[#102033]">Relationship Overview</h2>
                         </div>
                         <div className="w-full sm:w-60">
-                          <Field as="select" value={selectedLead.stage} onChange={(event) => handleUpdateLeadStage(selectedLead.leadId, event.target.value)}>
+                          <Field
+                            as="select"
+                            value={LEAD_STAGES.includes(selectedLeadEffectiveLifecycleStage) ? selectedLeadEffectiveLifecycleStage : selectedLead.stage}
+                            onChange={(event) => handleUpdateLeadStage(selectedLead.leadId, event.target.value)}
+                          >
                             {LEAD_STAGES.map((stage) => (
                               <option key={stage} value={stage}>
                                 {stage}
@@ -9510,7 +9553,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           ['Pipeline value', selectedLead.estimatedValue ? formatCurrency(selectedLead.estimatedValue) : formatCurrency(selectedLead.budget)],
                           ['Lead score', selectedLead.priority || selectedLead.leadScore || 'Standard'],
                           ['Follow up', selectedLeadNextStep || 'No next action'],
-                          ['Lifecycle stage', selectedLead.stage || resolveLeadFunnelStage(selectedLead)],
+                          ['Lifecycle stage', selectedLeadEffectiveLifecycleStage],
                           [
                             'Linked appointment',
                             selectedLeadLinkedAppointment
@@ -9529,10 +9572,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </div>
                       <div className="mt-6 grid gap-4 rounded-[20px] bg-[#f8fbfd] p-4 text-sm sm:grid-cols-4">
                         {[
-                          ['Status', resolveLeadFunnelStage(selectedLead)],
+                          ['Status', selectedLeadEffectiveLifecycleStage],
                           ['Last Activity', formatRelativeTime(selectedLeadActivities[0]?.activityDate || selectedLeadActivities[0]?.createdAt || selectedLead.updatedAt || selectedLead.createdAt)],
                           ['Created', formatDate(selectedLead.createdAt)],
-                          ['Stage', selectedLead.stage || 'Not set'],
+                          ['Stage', selectedLeadEffectiveLifecycleStage || 'Not set'],
                         ].map(([label, value]) => (
                           <div key={label}>
                             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">{label}</p>
@@ -10897,7 +10940,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                          <p className="mt-1 text-sm text-[#60758b]">{selectedLeadWorkflowHealth.completed}/{selectedLeadWorkflowHealth.total} lifecycle steps complete</p>
 	                        </div>
 	                        <span className="rounded-full bg-[#eef7f1] px-3 py-1 text-xs font-semibold text-[#247345]">
-	                          {resolveLeadFunnelStage(selectedLead)}
+	                          {selectedLeadEffectiveLifecycleStage}
 	                        </span>
 	                      </div>
 	                      <div className="mt-5 h-2 overflow-hidden rounded-full bg-[#e3ebf4]">

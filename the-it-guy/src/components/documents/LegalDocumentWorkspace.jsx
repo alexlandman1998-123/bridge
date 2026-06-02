@@ -2036,13 +2036,15 @@ export default function LegalDocumentWorkspace({
   const generatedPreviewUrl = normalizeText(
     latestVersion?.rendered_file_access_url || latestVersion?.rendered_file_url || '',
   )
+  const generatedPreviewPath = normalizeText(latestVersion?.rendered_file_path || '')
   const signedPreviewUrl = normalizeText(
     latestVersion?.final_signed_file_access_url || latestVersion?.final_signed_file_url || '',
   )
+  const signedPreviewPath = normalizeText(latestVersion?.final_signed_file_path || '')
   const signerSummary = statusState?.signingSummary || null
   const canFinalizeSignedRecord = useMemo(() => canFinalizeSigningSummary(signerSummary), [signerSummary])
   const isFullySignedLifecycle = normalizedLifecycleState === 'signed'
-  const hasFinalArtifact = Boolean(signedPreviewUrl)
+  const hasFinalArtifact = Boolean(signedPreviewPath || signedPreviewUrl)
   const mandateDataSnapshot = useMemo(() => {
     if (!isMandatePacket) return null
     if (sourceContext.generatedDataSnapshot && typeof sourceContext.generatedDataSnapshot === 'object') {
@@ -4373,8 +4375,8 @@ export default function LegalDocumentWorkspace({
                 </div>
                 <div className="min-w-[220px] rounded-[12px] border border-[#e1e9f2] bg-[#f8fbff] px-3 py-2 text-xs text-[#536b83]">
                   <p><span className="font-semibold text-[#243a51]">Seller onboarding:</span> {normalizeText(sourceContext.sellerOnboardingStatus || sourceContext.seller_onboarding_status || mandateDataSnapshot?.sourceContext?.onboardingStatus) || 'Unknown'}</p>
-                  <p><span className="font-semibold text-[#243a51]">Generated PDF:</span> {generatedPreviewUrl ? 'Available' : 'Not ready'}</p>
-                  <p><span className="font-semibold text-[#243a51]">Signed PDF:</span> {signedPreviewUrl ? 'Stored' : 'Not uploaded yet'}</p>
+                  <p><span className="font-semibold text-[#243a51]">Generated PDF:</span> {generatedPreviewPath || generatedPreviewUrl ? 'Available' : 'Not ready'}</p>
+                  <p><span className="font-semibold text-[#243a51]">Signed PDF:</span> {signedPreviewPath || signedPreviewUrl ? 'Stored' : 'Not uploaded yet'}</p>
                 </div>
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-2">

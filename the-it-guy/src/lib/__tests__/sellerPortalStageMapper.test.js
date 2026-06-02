@@ -17,6 +17,19 @@ assert.equal(onboardingSubmitted.currentStageKey, 'mandate_signed')
 assert.equal(onboardingSubmitted.currentStage.label, 'Sign Mandate')
 assert.equal(onboardingSubmitted.progressPercent, 0)
 
+const ambiguousMandateStageOnly = getSellerPortalStageMeta({
+  sellerOnboardingStatus: 'completed',
+  listingId: 'private-listing-1',
+  hasListing: true,
+  context: {
+    status: 'mandate_signed',
+    listingId: 'private-listing-1',
+    listingStatus: 'mandate_signed',
+  },
+})
+
+assert.equal(ambiguousMandateStageOnly.currentStageKey, 'mandate_signed')
+
 const mandateSigned = getSellerPortalStageMeta({
   sellerOnboardingStatus: 'completed',
   listingId: 'private-listing-1',
@@ -33,6 +46,22 @@ const mandateSigned = getSellerPortalStageMeta({
 assert.equal(mandateSigned.currentStageKey, 'listed')
 assert.equal(mandateSigned.currentStage.label, 'Listed')
 assert.equal(mandateSigned.progressPercent, 20)
+
+const mandateSignedFromFinalArtifact = getSellerPortalStageMeta({
+  sellerOnboardingStatus: 'completed',
+  listingId: 'private-listing-1',
+  hasListing: true,
+  context: {
+    status: 'mandate_signed',
+    listingId: 'private-listing-1',
+    mandatePacket: {
+      state: 'completed',
+      finalSignedFilePath: 'mandates/final-signed.pdf',
+    },
+  },
+})
+
+assert.equal(mandateSignedFromFinalArtifact.currentStageKey, 'listed')
 
 const activeMarketListing = getSellerPortalStageMeta({
   sellerOnboardingStatus: 'completed',

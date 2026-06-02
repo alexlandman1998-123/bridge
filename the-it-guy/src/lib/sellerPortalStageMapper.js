@@ -142,6 +142,35 @@ function hasSignedMandateSignal(signals = []) {
   ]) || signals.some((signal) => ['signed', 'signed_uploaded'].includes(signal))
 }
 
+function hasExplicitSignedMandateEvidence(transaction = {}, context = {}, mandatePacket = {}) {
+  const dedicatedMandateSignals = [
+    transaction.mandateStatus,
+    transaction.mandate_status,
+    transaction.mandatePacketState,
+    transaction.mandate_packet_state,
+    context.mandateStatus,
+    context.mandate_status,
+    context.mandatePacketState,
+    context.mandate_packet_state,
+    mandatePacket.state,
+    mandatePacket.status,
+    mandatePacket.packet?.status,
+  ].map(normalizeStageSignal)
+
+  if (dedicatedMandateSignals.some((signal) => ['signed', 'completed', 'fully_signed', 'uploaded_signed'].includes(signal))) {
+    return true
+  }
+
+  return Boolean(
+    mandatePacket.finalSignedFilePath ||
+      mandatePacket.final_signed_file_path ||
+      mandatePacket.finalSignedDownloadUrl ||
+      mandatePacket.final_signed_file_url ||
+      mandatePacket.version?.final_signed_file_path ||
+      mandatePacket.version?.final_signed_file_url,
+  )
+}
+
 function hasActiveListingSignal(signals = []) {
   return hasSignal(signals, [
     'active_listing',
@@ -212,7 +241,7 @@ function collectStageSignals(transaction = {}) {
     if (normalizeStageSignal(value) === 'active') pushSignal(signals, 'active_listing')
   })
 
-  if (hasSignedMandateSignal(signals)) {
+  if (hasExplicitSignedMandateEvidence(transaction, context, mandatePacket) || hasSignedMandateSignal(signals)) {
     pushSignal(signals, 'listed')
   }
 
