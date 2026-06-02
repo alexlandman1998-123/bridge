@@ -1,4 +1,4 @@
-import { ArrowRight, Building2, CheckCircle2, CircleAlert, FolderKanban, Loader2, Plus, Search, Trash2 } from 'lucide-react'
+import { ArrowRight, Building2, CheckCircle2, CircleAlert, FolderKanban, Loader2, MoreVertical, Plus, Search, Trash2, UserRound } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -313,19 +313,78 @@ function getListingComplianceWarnings(listing = {}, completeness = null) {
   return [...new Set(warnings)]
 }
 
-function statusPillClass(statusKey) {
-  if (statusKey === 'seller_lead') return 'border-[#dce6f2] bg-[#f5f9fd] text-[#35546c]'
-  if (statusKey === 'onboarding_sent') return 'border-[#dce6f2] bg-[#eef6ff] text-[#27517d]'
-  if (statusKey === 'onboarding_completed') return 'border-[#d6e9f4] bg-[#edf8ff] text-[#1f4f78]'
-  if (statusKey === 'listing_review') return 'border-[#ddd7f2] bg-[#f6f2ff] text-[#5b3fa3]'
-  if (statusKey === 'mandate_ready') return 'border-[#f2dfbf] bg-[#fff7e9] text-[#925f1b]'
-  if (statusKey === 'mandate_sent') return 'border-[#f2dfbf] bg-[#fff6e5] text-[#996016]'
-  if (statusKey === 'mandate_signed') return 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
-  if (statusKey === 'under_offer') return 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'
-  if (statusKey === 'transaction_created') return 'border-[#dbe6f2] bg-[#eef5ff] text-[#274e81]'
+function getInventoryStatus({ statusKey = '', lifecycleGroup = '', complianceWarnings = [], lifecycleBlockers = [], missingRequirementsCount = 0, readinessState = '' } = {}) {
+  const normalizedStatus = normalizeKey(statusKey)
+  const normalizedGroup = normalizeKey(lifecycleGroup)
+  const hasAttention = Boolean(
+    (Array.isArray(complianceWarnings) && complianceWarnings.length) ||
+      (Array.isArray(lifecycleBlockers) && lifecycleBlockers.length) ||
+      Number(missingRequirementsCount || 0) > 0 ||
+      ['blocked', 'attention_required', 'requires_attention'].includes(normalizeKey(readinessState)),
+  )
+
+  if (['sold', 'transaction_created'].includes(normalizedStatus) || normalizedGroup === 'sold_archived') {
+    return { key: 'sold', filterKey: 'sold', label: 'Sold' }
+  }
+  if (['withdrawn', 'archived'].includes(normalizedStatus) || normalizedGroup === 'withdrawn') {
+    return { key: 'archived', filterKey: 'archived', label: 'Archived' }
+  }
+  if (['draft', 'seller_lead', 'onboarding_sent'].includes(normalizedStatus) || normalizedGroup === 'draft_intake') {
+    return { key: 'draft', filterKey: 'draft', label: 'Draft' }
+  }
+  if (hasAttention) {
+    return { key: 'needs_attention', filterKey: 'needs_attention', label: 'Needs Attention' }
+  }
+  if (['active', 'listing_active', 'under_offer'].includes(normalizedStatus) || ['active', 'under_offer'].includes(normalizedGroup)) {
+    return { key: 'live', filterKey: 'live', label: 'Live' }
+  }
+  if (normalizedStatus === 'mandate_signed') {
+    return { key: 'ready_to_publish', filterKey: 'draft', label: 'Ready To Publish' }
+  }
+  if (['onboarding_completed', 'listing_review', 'mandate_ready', 'mandate_sent'].includes(normalizedStatus) || normalizedGroup === 'mandate') {
+    return { key: 'under_review', filterKey: 'draft', label: 'Under Review' }
+  }
+  return { key: 'draft', filterKey: 'draft', label: 'Draft' }
+}
+
+function inventoryStatusClass(statusKey) {
+  if (statusKey === 'live') return 'border-[#bfe5ce] bg-[#effaf3] text-[#17623a]'
+  if (statusKey === 'needs_attention') return 'border-[#f1d3a6] bg-[#fff8ea] text-[#8a5b16]'
+  if (statusKey === 'ready_to_publish') return 'border-[#c9dfef] bg-[#eff7ff] text-[#1f4f78]'
+  if (statusKey === 'under_review') return 'border-[#ded7f1] bg-[#f7f3ff] text-[#5a3d9c]'
   if (statusKey === 'sold') return 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
-  if (statusKey === 'withdrawn') return 'border-[#f1ced2] bg-[#fff2f4] text-[#a0383f]'
-  return 'border-[#dbe6f2] bg-[#f5f9fd] text-[#35546c]'
+  if (statusKey === 'archived') return 'border-[#d7dee8] bg-[#f4f7fb] text-[#607387]'
+  return 'border-[#dbe6f2] bg-[#f7fbff] text-[#35546c]'
+}
+
+function inventoryDotClass(statusKey) {
+  if (statusKey === 'live' || statusKey === 'sold') return 'bg-[#2fb463]'
+  if (statusKey === 'needs_attention') return 'bg-[#d78a16]'
+  if (statusKey === 'ready_to_publish') return 'bg-[#1f77b4]'
+  if (statusKey === 'under_review') return 'bg-[#7d55d7]'
+  if (statusKey === 'archived') return 'bg-[#8da0b5]'
+  return 'bg-[#607387]'
+}
+
+function formatListingAttentionLine(card = {}) {
+  const warnings = Array.isArray(card.complianceWarnings) ? card.complianceWarnings : []
+  const missingCount = Number(card.missingRequirementsCount || 0)
+  const blockers = Array.isArray(card.lifecycleBlockers) ? card.lifecycleBlockers : []
+  const allItems = [...warnings, ...(Array.isArray(card.missingCompletenessItems) ? card.missingCompletenessItems : [])]
+    .map((item) => normalizeText(item))
+    .filter(Boolean)
+
+  if (allItems.some((item) => normalizeKey(item).includes('fica') || normalizeKey(item).includes('seller id'))) return 'Missing FICA'
+  if (allItems.some((item) => normalizeKey(item).includes('photo'))) return 'Missing Photos'
+  if (allItems.some((item) => normalizeKey(item).includes('mandate'))) return 'Missing Mandate'
+  if (allItems.some((item) => normalizeKey(item).includes('commission'))) return 'Missing Commission'
+  if (allItems.some((item) => normalizeKey(item).includes('contact'))) return 'Seller Contact Incomplete'
+  if (missingCount > 0) return `${missingCount} Requirement${missingCount === 1 ? '' : 's'} Outstanding`
+  if (blockers.length > 1) return `${blockers.length} Requirements Outstanding`
+  if (blockers.length === 1) return normalizeText(blockers[0]?.message || blockers[0]?.label || blockers[0]) || 'Requirement Outstanding'
+  if (allItems.length > 1) return `${allItems.length} Requirements Outstanding`
+  if (allItems.length === 1) return allItems[0]
+  return ''
 }
 
 function mergePrivateListingRows(dbRows = [], runtimeRows = [], deletedIds = new Set()) {
@@ -698,6 +757,7 @@ function AgentListings({ initialTab = null } = {}) {
   const [deletedListingIds, setDeletedListingIds] = useState(() => readDeletedListingIds())
   const [organisationId, setOrganisationId] = useState('')
   const [deletingListingId, setDeletingListingId] = useState('')
+  const [openListingMenuId, setOpenListingMenuId] = useState('')
   const [filters, setFilters] = useState({
     statusGroup: 'all',
     search: '',
@@ -1199,13 +1259,13 @@ function AgentListings({ initialTab = null } = {}) {
       setQuickAddSuccess({
         id: createdListingId,
         title: createdListingTitle,
-        completeness: completeness.score,
+        statusLabel: complianceWarnings.length ? 'Needs Attention' : normalizedStatus === 'active' ? 'Live' : 'Draft',
         mandateStatus,
         complianceWarnings,
       })
       setWorkflowMessage(
-        `Quick Add Listing created in ${getStatusLabelFromManualSelection(normalizedStatus)} status. Completeness ${completeness.score}%${
-          mandateStatus === 'missing' ? ' with mandate follow-up still required.' : ' with signed mandate captured.'
+        `Quick Add Listing created as ${complianceWarnings.length ? 'Needs Attention' : getStatusLabelFromManualSelection(normalizedStatus)}${
+          mandateStatus === 'missing' ? '. Missing mandate still requires follow-up.' : '. Signed mandate captured.'
         }`,
       )
       window.dispatchEvent(new Event('itg:listings-updated'))
@@ -1439,6 +1499,14 @@ function AgentListings({ initialTab = null } = {}) {
               : statusKey,
         {},
       )
+      const inventoryStatus = getInventoryStatus({
+        statusKey,
+        lifecycleGroup,
+        complianceWarnings,
+        lifecycleBlockers,
+        missingRequirementsCount: Number(listing?.readinessSummary?.missingRequirementsCount || 0),
+        readinessState: String(listing?.readinessSummary?.readinessState || ''),
+      })
       const identityKeys = getListingIdentityKeys(listing)
       return {
         id: identityKeys[0] || String(listing.id || ''),
@@ -1451,7 +1519,7 @@ function AgentListings({ initialTab = null } = {}) {
         originLabel: getListingOriginLabel(listing),
         propertyStructureType,
         propertyStructureTypeLabel: getPropertyStructureTypeLabel(propertyStructureType),
-        title: listing.listingTitle || 'Untitled listing',
+        title: listing.listingTitle || listing.title || 'Untitled listing',
         suburb: [listing.suburb, listing.city].filter(Boolean).join(', ') || 'Location pending',
         address: [listing.addressLine1 || listing.propertyAddress, listing.suburb, listing.city].filter(Boolean).join(', ') || 'Address pending',
         price: Number(listing.askingPrice || 0),
@@ -1464,6 +1532,10 @@ function AgentListings({ initialTab = null } = {}) {
         lifecycleGroupLabel: listingStatusGroupLabel(lifecycleGroup),
         lifecycleNextAction,
         lifecycleBlockers,
+        inventoryStatusKey: inventoryStatus.key,
+        inventoryFilterKey: inventoryStatus.filterKey,
+        inventoryStatusLabel: inventoryStatus.label,
+        attentionLine: '',
         mandateStatusLabel: getMandateStatus(listing),
         completenessScore: completeness.score,
         missingCompletenessItems: completeness.missingItems || [],
@@ -1479,8 +1551,28 @@ function AgentListings({ initialTab = null } = {}) {
         imageUrl: resolveListingImageUrl(listing),
         agentName,
       }
-    })
+    }).map((card) => ({
+      ...card,
+      attentionLine: formatListingAttentionLine(card),
+    }))
   }, [deletedListingIds, privateListings, profile?.email, profile?.fullName, profile?.name])
+
+  const residentialListingCards = useMemo(
+    () => privateListingCards.filter((card) => ['residential', 'mixed_use', 'vacant_land'].includes(card.propertyCategory)),
+    [privateListingCards],
+  )
+
+  const inventoryFilterOptions = useMemo(() => {
+    const countFor = (key) => residentialListingCards.filter((card) => card.inventoryFilterKey === key).length
+    return [
+      { key: 'all', label: 'All', count: residentialListingCards.length },
+      { key: 'live', label: 'Live', count: countFor('live') },
+      { key: 'draft', label: 'Draft', count: countFor('draft') },
+      { key: 'needs_attention', label: 'Needs Attention', count: countFor('needs_attention') },
+      { key: 'sold', label: 'Sold', count: countFor('sold') },
+      { key: 'archived', label: 'Archived', count: countFor('archived') },
+    ]
+  }, [residentialListingCards])
 
   const categoryFilteredListingCards = useMemo(() => {
     const query = String(filters.search || '').trim().toLowerCase()
@@ -1491,9 +1583,9 @@ function AgentListings({ initialTab = null } = {}) {
 
     return privateListingCards.filter((card) => {
       const categoryMatch = targetCategories.has(String(card.propertyCategory || 'residential').toLowerCase())
-      const statusMatch = filters.statusGroup === 'all' ? true : card.lifecycleGroup === filters.statusGroup
-	      const searchMatch = query
-	        ? [card.title, card.suburb, card.typeLabel, card.agentName, card.originLabel].join(' ').toLowerCase().includes(query)
+      const statusMatch = filters.statusGroup === 'all' ? true : card.inventoryFilterKey === filters.statusGroup
+      const searchMatch = query
+        ? [card.title, card.suburb, card.typeLabel, card.agentName, card.originLabel].join(' ').toLowerCase().includes(query)
         : true
       return categoryMatch && statusMatch && searchMatch
     })
@@ -1666,23 +1758,34 @@ function AgentListings({ initialTab = null } = {}) {
     <section className="space-y-5">
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div className={`grid flex-1 gap-3 ${listingsTab === 'developments' ? 'md:grid-cols-1 xl:grid-cols-2' : 'md:grid-cols-2 xl:grid-cols-4'}`}>
+          <div className={`grid flex-1 gap-3 ${listingsTab === 'developments' ? 'md:grid-cols-1 xl:grid-cols-2' : 'md:grid-cols-1 xl:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.9fr)]'}`}>
             {listingsTab !== 'developments' ? (
-              <label className="grid gap-2">
-                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Lifecycle Group</span>
-                <Field as="select" value={filters.statusGroup} onChange={(event) => setFilters((prev) => ({ ...prev, statusGroup: event.target.value }))}>
-                  <option value="all">All</option>
-                  <option value="draft_intake">Draft / Intake</option>
-                  <option value="mandate">Mandate</option>
-                  <option value="active">Active</option>
-                  <option value="under_offer">Under Offer</option>
-                  <option value="sold_archived">Sold / Archived</option>
-                  <option value="withdrawn">Withdrawn</option>
-                </Field>
-              </label>
+              <div className="grid gap-2">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Inventory Status</span>
+                <div className="flex min-h-[44px] flex-wrap items-center gap-1.5 rounded-[14px] border border-[#dce6f2] bg-[#f7fbff] p-1.5">
+                  {inventoryFilterOptions.map((option) => {
+                    const active = filters.statusGroup === option.key
+                    return (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => setFilters((prev) => ({ ...prev, statusGroup: option.key }))}
+                        className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[0.78rem] font-semibold transition ${
+                          active
+                            ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_6px_14px_rgba(31,79,120,0.18)]'
+                            : 'border-[#d7e2ee] bg-white text-[#35546c] hover:border-[#b8c8db]'
+                        }`}
+                      >
+                        <span>{option.label}</span>
+                        <span className={active ? 'text-white/78' : 'text-[#7b8ca2]'}>({option.count})</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
             ) : null}
 
-            <label className={`grid gap-2 ${listingsTab !== 'developments' ? 'md:col-span-1 xl:col-span-3' : ''}`}>
+            <label className="grid gap-2">
               <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Search</span>
               <div className="flex h-[44px] items-center gap-2 rounded-[14px] border border-[#dce6f2] bg-white px-3">
                 <Search size={15} className="text-[#7b8ca2]" />
@@ -1721,7 +1824,7 @@ function AgentListings({ initialTab = null } = {}) {
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="text-sm font-semibold text-[#1f7d44]">Listing created successfully. What would you like to do next?</p>
-                <p className="mt-1 text-xs text-[#4d6a59]">{quickAddSuccess.title} · {quickAddSuccess.completeness}% complete</p>
+                <p className="mt-1 text-xs text-[#4d6a59]">{quickAddSuccess.title} · {quickAddSuccess.statusLabel || 'Draft'}</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button type="button" size="sm" onClick={() => navigate(`/agent/listings/${encodeURIComponent(quickAddSuccess.id)}`)}>Open Listing</Button>
@@ -1809,81 +1912,94 @@ function AgentListings({ initialTab = null } = {}) {
                   onClick={() => navigate(`/agent/listings/${encodeURIComponent(card.id)}`)}
                   className="group flex h-full cursor-pointer flex-col overflow-hidden rounded-[18px] border border-[#dce6f2] bg-white shadow-[0_8px_22px_rgba(15,23,42,0.055)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.1)]"
                 >
-                  <div className="h-[132px] w-full overflow-hidden border-b border-[#e5edf6]">
+                  <div className="relative h-[150px] w-full overflow-hidden border-b border-[#e5edf6]">
                     <ListingCardImage src={card.imageUrl} alt={card.title} />
+                    <div className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full border border-white/25 bg-[#091322]/58 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-white shadow-[0_8px_18px_rgba(9,19,34,0.18)] backdrop-blur">
+                      <span className={`h-2 w-2 rounded-full ${inventoryDotClass(card.inventoryStatusKey)}`} />
+                      {card.inventoryStatusLabel}
+                    </div>
                   </div>
 
-                  <div className="flex flex-1 flex-col gap-3 p-4">
+                  <div className="flex flex-1 flex-col gap-3.5 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${inventoryStatusClass(card.inventoryStatusKey)}`}>
+                        <span className={`h-2 w-2 rounded-full ${inventoryDotClass(card.inventoryStatusKey)}`} />
+                        {card.inventoryStatusLabel}
+                      </span>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setOpenListingMenuId((previous) => (previous === card.id ? '' : card.id))
+                          }}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#dce6f2] bg-white text-[#607387] transition hover:border-[#b8c8db] hover:bg-[#f7fbff]"
+                          aria-label={`Open actions for ${card.title}`}
+                        >
+                          <MoreVertical size={16} />
+                        </button>
+                        {openListingMenuId === card.id ? (
+                          <div
+                            className="absolute right-0 top-9 z-20 w-44 overflow-hidden rounded-[12px] border border-[#dce6f2] bg-white py-1 shadow-[0_14px_30px_rgba(15,23,42,0.16)]"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                setOpenListingMenuId('')
+                                handleDeleteListing(card, event)
+                              }}
+                              disabled={deletingListingId === card.id}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-semibold text-[#a13b35] transition hover:bg-[#fff5f5] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {deletingListingId === card.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                              Delete Listing
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+
                     <div>
                       <h3 className="line-clamp-2 text-[1.02rem] font-semibold leading-6 text-[#142132]">{card.title}</h3>
                       <p className="mt-2 text-[1.05rem] font-semibold text-[#1f4f78]">{formatCurrency(card.price)}</p>
                       <p className="mt-1 line-clamp-1 text-sm text-[#607387]">{card.address}</p>
                     </div>
 
-                    <div className="flex flex-wrap gap-1.5">
-                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusPillClass(card.listingStatusKey)}`}>
-                        {card.listingStatusLabel}
-                      </span>
-                      <span className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
-                        Mandate: {card.mandateStatusLabel}
-                      </span>
-                      <span className="inline-flex rounded-full border border-[#d8ecdf] bg-[#eefbf3] px-2.5 py-1 text-[0.72rem] font-semibold text-[#1f7d44]">
-                        {card.completenessScore}% complete
-                      </span>
-                      <span className="inline-flex rounded-full border border-[#e1e8f0] bg-[#f7fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#607387]">
-                        {card.originLabel}
-                      </span>
-                    </div>
-
-                    {card.complianceWarnings?.length ? (
-                      <div className="flex min-h-[4.15rem] flex-wrap content-start gap-1.5">
-                        {card.complianceWarnings.slice(0, 3).map((warning) => (
-                          <span key={warning} className="inline-flex rounded-full border border-[#f2dfbf] bg-[#fff8ea] px-2.5 py-1 text-[0.68rem] font-semibold text-[#8a5b16]">
-                            {warning}
-                          </span>
-                        ))}
-                        {card.complianceWarnings.length > 3 ? (
-                          <span className="inline-flex rounded-full border border-[#e1e8f0] bg-[#f7fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
-                            +{card.complianceWarnings.length - 3} more
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div className="min-h-[4.15rem] rounded-[12px] border border-dashed border-[#dbe6f2] bg-[#fbfdff] px-3 py-2 text-xs font-medium text-[#7b8ca2]">
-                        No open listing blockers.
-                      </div>
-                    )}
-
-                    <div className="mt-auto grid grid-cols-3 gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#f9fbfe] px-3 py-2 text-[0.76rem] font-semibold text-[#35546c]">
+                    <div className="grid grid-cols-3 gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#f9fbfe] px-3 py-2 text-[0.76rem] font-semibold text-[#35546c]">
                       <span>{card.bedroomsText}</span>
                       <span>{card.bathroomsText}</span>
                       <span>{card.parkingText}</span>
                     </div>
 
-                    <div className="flex items-center justify-between gap-3 border-t border-[#eef3f8] pt-3 text-[0.8rem] text-[#6b7d93]">
-                      <span className="truncate">{card.agentName || 'Assigned Agent'}</span>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={(event) => handleDeleteListing(card, event)}
-                          disabled={deletingListingId === card.id}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#f0c8c5] bg-[#fff7f7] text-[#a13b35] transition hover:border-[#e2a7a2] hover:bg-[#fff1f0] disabled:cursor-not-allowed disabled:opacity-60"
-                          aria-label={`Delete ${card.title}`}
-                        >
-                          {deletingListingId === card.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            navigate(`/agent/listings/${encodeURIComponent(card.id)}`)
-                          }}
-                          className="inline-flex items-center gap-1 rounded-full border border-[#c6d8ea] bg-white px-3 py-1.5 font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff]"
-                        >
-                          Open
-                          <ArrowRight size={14} />
-                        </button>
+                    {card.attentionLine ? (
+                      <div className="flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#f2dfbf] bg-[#fff8ea] px-3 py-2 text-[0.82rem] font-semibold text-[#8a5b16]">
+                        <CircleAlert size={15} />
+                        <span className="line-clamp-1">{card.attentionLine}</span>
                       </div>
+                    ) : (
+                      <div className="flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#d8ecdf] bg-[#f3fbf6] px-3 py-2 text-[0.82rem] font-semibold text-[#2d7650]">
+                        <CheckCircle2 size={15} />
+                        <span>No attention required</span>
+                      </div>
+                    )}
+
+                    <div className="mt-auto flex items-center justify-between gap-3 border-t border-[#eef3f8] pt-3 text-[0.82rem] text-[#53687f]">
+                      <span className="inline-flex min-w-0 items-center gap-1.5 font-semibold">
+                        <UserRound size={14} className="shrink-0 text-[#1f4f78]" />
+                        <span className="truncate">{card.agentName || 'Assigned Agent'}</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          navigate(`/agent/listings/${encodeURIComponent(card.id)}`)
+                        }}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[#c6d8ea] bg-white px-3 py-1.5 font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff]"
+                      >
+                        Open
+                        <ArrowRight size={14} />
+                      </button>
                     </div>
                   </div>
                 </article>
@@ -1896,7 +2012,7 @@ function AgentListings({ initialTab = null } = {}) {
                 No residential listings yet.
               </p>
               <p className="mt-1 text-sm text-[#6b7d93]">
-                Start a seller workflow or add a manual listing. Listings become active here once onboarding, mandate, and required documents are complete.
+                Start a seller workflow or add a manual listing. Listings become live here once onboarding, mandate, and required documents are ready.
               </p>
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                 <Button type="button" variant="secondary" onClick={openSellerLeadModal}>
@@ -2371,7 +2487,7 @@ function AgentListings({ initialTab = null } = {}) {
                 <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                   <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Mandate & Documents</h4>
                   <p className="rounded-[12px] border border-[#f3d7a8] bg-[#fff8ea] px-3 py-2 text-xs text-[#88531a]">
-                    Missing mandates do not block listing creation. They are added to listing completeness as a follow-up item.
+                    Missing mandates do not block listing creation. They are shown as a listing attention item.
                   </p>
 	                  <div className="grid gap-4 md:grid-cols-2">
 	                    {form.mandateSigned ? (
@@ -2497,24 +2613,29 @@ function AgentListings({ initialTab = null } = {}) {
                       </Field>
                     </label>
                   </div>
-	                  {(() => {
-	                    const mandateUploaded = Boolean(normalizeText(form.manualMandateFileName))
-	                    const completeness = buildListingCompleteness({ form, mandateUploaded })
-	                    const activeWarnings = normalizeKey(form.listingStatus) === 'active' && form.mandateStatusCaptured && !mandateUploaded
-	                      ? ['Mandate not uploaded. This listing can be Active, but the warning remains visible until uploaded.']
-	                      : []
-	                    return (
-	                      <div className="rounded-[14px] border border-[#dbe6f2] bg-white p-4">
-	                        <div className="flex flex-wrap items-center justify-between gap-3">
+                  {(() => {
+                    const mandateUploaded = Boolean(normalizeText(form.manualMandateFileName))
+                    const completeness = buildListingCompleteness({ form, mandateUploaded })
+                    const activeWarnings = normalizeKey(form.listingStatus) === 'active' && form.mandateStatusCaptured && !mandateUploaded
+                      ? ['Mandate not uploaded. This listing can be Active, but the warning remains visible until uploaded.']
+                      : []
+                    const readinessLabel = completeness.missingItems.length
+                      ? 'Needs Attention'
+                      : normalizeKey(form.listingStatus) === 'active'
+                        ? 'Live'
+                        : 'Ready To Publish'
+                    return (
+                      <div className="rounded-[14px] border border-[#dbe6f2] bg-white p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
-                            <p className="text-sm font-semibold text-[#22374d]">Listing completeness: {completeness.score}%</p>
-	                            <p className="mt-1 text-xs text-[#6b7d93]">
-	                              {completeness.missingItems.length ? `Missing: ${completeness.missingItems.join(', ')}` : 'No immediate follow-up items.'}
-	                            </p>
-	                            {activeWarnings.map((warning) => (
-	                              <p key={warning} className="mt-2 text-xs font-semibold text-[#9a5b13]">{warning}</p>
-	                            ))}
-	                          </div>
+                            <p className="text-sm font-semibold text-[#22374d]">Publication status: {readinessLabel}</p>
+                            <p className="mt-1 text-xs text-[#6b7d93]">
+                              {completeness.missingItems.length ? `Missing: ${completeness.missingItems.join(', ')}` : 'No immediate follow-up items.'}
+                            </p>
+                            {activeWarnings.map((warning) => (
+                              <p key={warning} className="mt-2 text-xs font-semibold text-[#9a5b13]">{warning}</p>
+                            ))}
+                          </div>
                           {completeness.missingItems.length ? <CircleAlert className="text-[#9a5b13]" size={20} /> : <CheckCircle2 className="text-[#1f7d44]" size={20} />}
                         </div>
                       </div>

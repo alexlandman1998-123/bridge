@@ -183,7 +183,7 @@ update public.leads lead
        updated_at = now()
 from completed_mandates
 where lead.organisation_id = completed_mandates.organisation_id
-  and lead.lead_id = completed_mandates.lead_id;
+  and lead.lead_id::text = completed_mandates.lead_id::text;
 
 with completed_mandates as (
   select
@@ -215,9 +215,81 @@ from completed_mandates
 where listing.organisation_id = completed_mandates.organisation_id
   and (
     listing.mandate_packet_id = completed_mandates.packet_id
-    or listing.seller_lead_id = completed_mandates.lead_id
-    or listing.originating_crm_lead_id = completed_mandates.lead_id
+    or listing.seller_lead_id::text = completed_mandates.lead_id::text
+    or listing.originating_crm_lead_id::text = completed_mandates.lead_id::text
   );
+
+insert into public.private_listing_documents (
+  private_listing_id,
+  requirement_id,
+  document_type,
+  category,
+  document_name,
+  storage_path,
+  file_url,
+  uploaded_by,
+  status,
+  visibility,
+  uploaded_at,
+  created_at,
+  updated_at
+)
+select distinct on (listing.id)
+  listing.id,
+  null,
+  'signed_mandate',
+  'Mandate',
+  coalesce(nullif(trim(ver.final_signed_file_name), ''), 'Signed Mandate'),
+  nullif(trim(coalesce(ver.final_signed_file_path, '')), ''),
+  nullif(trim(coalesce(ver.final_signed_file_url, '')), ''),
+  null,
+  'uploaded',
+  'seller_visible',
+  coalesce(ver.finalised_at, pkt.completed_at, pkt.updated_at, now()),
+  coalesce(ver.finalised_at, pkt.completed_at, pkt.updated_at, now()),
+  now()
+from public.document_packets pkt
+join lateral (
+  select
+    packet_version.final_signed_file_path,
+    packet_version.final_signed_file_url,
+    packet_version.final_signed_file_name,
+    packet_version.finalised_at,
+    packet_version.version_number,
+    packet_version.created_at
+  from public.document_packet_versions packet_version
+  where packet_version.packet_id = pkt.id
+    and (
+      nullif(trim(coalesce(packet_version.final_signed_file_path, '')), '') is not null
+      or nullif(trim(coalesce(packet_version.final_signed_file_url, '')), '') is not null
+    )
+  order by packet_version.finalised_at desc nulls last, packet_version.version_number desc nulls last, packet_version.created_at desc nulls last
+  limit 1
+) ver on true
+join public.private_listings listing
+  on listing.organisation_id = pkt.organisation_id
+ and (
+   listing.mandate_packet_id = pkt.id
+   or listing.seller_lead_id::text = pkt.lead_id::text
+   or listing.originating_crm_lead_id::text = pkt.lead_id::text
+   or pkt.source_context_json->>'listingId' = listing.id::text
+   or pkt.source_context_json->>'listing_id' = listing.id::text
+   or pkt.source_context_json->>'privateListingId' = listing.id::text
+   or pkt.source_context_json->>'private_listing_id' = listing.id::text
+ )
+where pkt.packet_type = 'mandate'
+  and pkt.status = 'completed'
+  and not exists (
+    select 1
+    from public.private_listing_documents existing
+    where existing.private_listing_id = listing.id
+      and (
+        lower(coalesce(existing.document_type, '')) in ('signed_mandate', 'mandate_signature')
+        or lower(coalesce(existing.document_name, '')) like '%signed%mandate%'
+        or nullif(trim(coalesce(existing.storage_path, '')), '') = nullif(trim(coalesce(ver.final_signed_file_path, '')), '')
+      )
+  )
+order by listing.id, coalesce(ver.finalised_at, pkt.completed_at, pkt.updated_at, now()) desc;
 
 do $$
 begin
@@ -310,8 +382,8 @@ begin
       on listing.organisation_id = pkt.organisation_id
      and (
        listing.mandate_packet_id = pkt.id
-       or listing.seller_lead_id = pkt.lead_id
-       or listing.originating_crm_lead_id = pkt.lead_id
+       or listing.seller_lead_id::text = pkt.lead_id::text
+       or listing.originating_crm_lead_id::text = pkt.lead_id::text
      )
     where pkt.packet_type = 'mandate'
       and pkt.status = 'completed'
