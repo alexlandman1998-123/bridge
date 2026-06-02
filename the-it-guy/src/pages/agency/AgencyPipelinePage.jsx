@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowUpRight, Bold, CalendarDays, CheckSquare, ChevronRight, Clock3, Columns3, Filter, Home, ImageIcon, Italic, Link2, List, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Search, Smile, Table2, Trash2, TrendingUp, Upload, UserRound, X } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, Bold, CalendarDays, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Filter, Home, ImageIcon, Italic, Link2, List, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Search, Smile, Table2, Trash2, TrendingUp, Upload, UserRound, X } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
@@ -1989,6 +1989,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [isLeadCreating, setIsLeadCreating] = useState(false)
   const [selectedAgentId, setSelectedAgentId] = useState('')
   const [selectedLeadId, setSelectedLeadId] = useState('')
+  const [leadActionsMenuOpen, setLeadActionsMenuOpen] = useState(false)
   const [leadArchiveModal, setLeadArchiveModal] = useState({
     open: false,
     leadId: '',
@@ -2717,6 +2718,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setLeadWorkspaceTab('activity')
     }
   }, [leadWorkspaceTab])
+
+  useEffect(() => {
+    setLeadActionsMenuOpen(false)
+  }, [selectedLeadId])
 
   useEffect(() => {
     if (!routeLeadId || !records.leads.length) return
@@ -7942,6 +7947,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     })
   }
 
+  function handleCopySelectedLeadLink() {
+    if (!selectedLead) return
+    const leadId = normalizeText(selectedLead.leadId)
+    const fallbackPath = `/pipeline/leads/${leadId}`
+    const link = typeof window !== 'undefined' ? `${window.location.origin}${fallbackPath}` : fallbackPath
+    if (typeof navigator !== 'undefined') void navigator.clipboard?.writeText(link)
+    setLeadActionsMenuOpen(false)
+    setMessage('Lead link copied.')
+  }
+
   async function handleArchiveLead() {
     if (!organisationId) return
     const leadId = normalizeText(leadArchiveModal.leadId)
@@ -9078,127 +9093,338 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
             {isLeadWorkspaceRoute ? (
             <article className="mx-auto w-full max-w-[1680px] space-y-6">
-              <section className="rounded-[28px] bg-white px-6 py-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_18px_48px_rgba(31,54,78,0.07)] sm:px-8 sm:py-8">
-                <div className="flex flex-col gap-8 xl:flex-row xl:items-start xl:justify-between">
-                  <div className="min-w-0">
-                    <button
-                      type="button"
-                      className="inline-flex items-center text-sm font-semibold text-[#60758b] transition hover:text-[#163247]"
-                      onClick={() => navigate('/pipeline/leads')}
-                    >
-                      ← Back to Leads
-                    </button>
-                    {selectedLead ? (
-                      <>
-                        <div className="mt-6 flex flex-wrap items-center gap-2">
-                          <span className="rounded-full bg-[#edf4fb] px-3 py-1 text-xs font-semibold text-[#244f70]">
-                            {selectedLeadIsSeller ? 'Seller Lead' : 'Buyer Lead'}
-                          </span>
-                          <span className="rounded-full bg-[#eef8f2] px-3 py-1 text-xs font-semibold text-[#247345]">
-                            {resolveLeadFunnelStage(selectedLead)}
-                          </span>
-                        </div>
-                        <h1 className="mt-3 text-[2.6rem] font-bold leading-[0.98] tracking-[-0.05em] text-[#102033] sm:text-[3.25rem]">
-                          {selectedLeadDisplayName}
+              <section className="overflow-hidden rounded-[30px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_18px_48px_rgba(31,54,78,0.07)]">
+                <div className="px-5 py-5 sm:px-7 sm:py-6 lg:px-8">
+                  <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <button
+                        type="button"
+                        className="inline-flex items-center text-sm font-semibold text-[#60758b] transition hover:text-[#163247]"
+                        onClick={() => navigate('/pipeline/leads')}
+                      >
+                        ← Back to Leads
+                      </button>
+                      {selectedLead ? (
+                        <>
+                          <h1 className="mt-4 max-w-full truncate text-[2rem] font-bold leading-tight tracking-[-0.04em] text-[#102033] sm:text-[2.45rem] lg:text-[2.7rem]" title={selectedLeadDisplayName}>
+                            {selectedLeadDisplayName}
+                          </h1>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span className="rounded-full bg-[#edf4fb] px-2.5 py-1 text-[0.72rem] font-semibold text-[#244f70]">
+                              {selectedLeadIsSeller ? 'Seller Lead' : 'Buyer Lead'}
+                            </span>
+                            <span className="rounded-full bg-[#eef8f2] px-2.5 py-1 text-[0.72rem] font-semibold text-[#247345]">
+                              {resolveLeadFunnelStage(selectedLead)}
+                            </span>
+                          </div>
+                          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-medium text-[#60758b]">
+                            <span className="inline-flex min-w-0 items-center gap-2">
+                              <Home className="h-4 w-4 shrink-0 text-[#8aa0b7]" />
+                              <span className="truncate">{selectedLeadPropertyLabel}</span>
+                            </span>
+                            <span className="hidden h-1 w-1 rounded-full bg-[#c8d4e0] sm:block" />
+                            <span className="inline-flex min-w-0 items-center gap-2">
+                              <UserRound className="h-4 w-4 shrink-0 text-[#8aa0b7]" />
+                              <span className="truncate">{selectedLeadAssignedAgentLabel}</span>
+                            </span>
+                            <span className="hidden h-1 w-1 rounded-full bg-[#c8d4e0] sm:block" />
+                            <span>{selectedLeadIsSeller ? 'Seller relationship' : 'Buyer relationship'}</span>
+                          </div>
+                        </>
+                      ) : (
+                        <h1 className="mt-4 text-[2rem] font-bold leading-tight tracking-[-0.04em] text-[#102033] sm:text-[2.45rem] lg:text-[2.7rem]">
+                          Lead Workspace
                         </h1>
-                        <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-medium text-[#60758b]">
-                          <span className="inline-flex items-center gap-2">
-                            <Home className="h-4 w-4 text-[#8aa0b7]" />
-                            {selectedLeadPropertyLabel}
-                          </span>
-                          <span className="hidden h-1 w-1 rounded-full bg-[#c8d4e0] sm:block" />
-                          <span className="inline-flex items-center gap-2">
-                            <UserRound className="h-4 w-4 text-[#8aa0b7]" />
-                            {selectedLeadAssignedAgentLabel}
-                          </span>
-                          <span className="hidden h-1 w-1 rounded-full bg-[#c8d4e0] sm:block" />
-                          <span>{selectedLeadIsSeller ? 'Seller relationship' : 'Buyer relationship'}</span>
+                      )}
+                    </div>
+
+                    {selectedLead ? (
+                      <div className="grid w-full grid-cols-2 gap-2 xl:w-auto xl:min-w-[760px] xl:grid-cols-[repeat(6,minmax(0,auto))] xl:justify-end">
+                        {selectedLeadIsSeller ? (
+                          <>
+                            <Button type="button" size="sm" className="w-full bg-[#123955] shadow-[0_10px_24px_rgba(18,57,85,0.18)] xl:w-auto" onClick={handleCreateListingFromSellerLead}>
+                              {selectedLeadMandateSigned ? 'Convert to Listing' : 'Create Listing'}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              className="hidden w-full xl:inline-flex xl:w-auto"
+                              onClick={handleSendSellerOnboarding}
+                              disabled={isSellerOnboardingSending}
+                            >
+                              {selectedLeadSellerOnboardingActionLabel}
+                            </Button>
+                            <Button type="button" variant="secondary" size="sm" className="hidden w-full xl:inline-flex xl:w-auto" onClick={handleScheduleSellerAppointment}>
+                              Schedule
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              className="hidden w-full xl:inline-flex xl:w-auto"
+                              onClick={() => void handleSelectedLeadMandatePrimaryAction()}
+                              disabled={isMandateGenerating || isMandateSending}
+                              title={
+                                !selectedLeadHasMandateData && selectedLeadMandateActionState.actionKey === 'generate'
+                                    ? 'Open the legal workspace and complete missing seller/property details manually.'
+                                  : selectedLeadMandateActionMeta
+                              }
+                            >
+                              {isMandateGenerating
+                                ? 'Generating…'
+                                : isMandateSending
+                                  ? 'Sending…'
+                                  : selectedLeadMandateActionState.label}
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="w-full bg-[#123955] shadow-[0_10px_24px_rgba(18,57,85,0.18)] xl:w-auto"
+                              onClick={() => void handleCreateBuyerOfferDraft()}
+                              disabled={Boolean(selectedLead.convertedTransactionId || selectedLead.convertedDealId)}
+                            >
+                              {selectedLead.convertedTransactionId || selectedLead.convertedDealId ? 'Transaction Created' : 'Create Offer'}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              className="hidden w-full xl:inline-flex xl:w-auto"
+                              onClick={() => void handleSendBuyerOnboardingFromLead()}
+                              disabled={canonicalOfferActionId === `lead:${selectedLead?.leadId}:buyer-onboarding`}
+                            >
+                              {selectedLeadBuyerOnboardingActionLabel}
+                            </Button>
+                            <Button type="button" variant="secondary" size="sm" className="hidden w-full xl:inline-flex xl:w-auto" onClick={() => handleOpenAppointmentModal()}>
+                              Schedule
+                            </Button>
+                          </>
+                        )}
+                        <div className="relative">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            className="w-full xl:w-auto"
+                            onClick={() => setLeadActionsMenuOpen((value) => !value)}
+                            aria-haspopup="menu"
+                            aria-expanded={leadActionsMenuOpen}
+                          >
+                            Actions
+                            <ChevronDown className="h-4 w-4" />
+                          </Button>
+                          {leadActionsMenuOpen ? (
+                            <div className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-[18px] border border-[#dbe7f2] bg-white py-2 shadow-[0_18px_40px_rgba(18,44,68,0.16)]" role="menu">
+                              {[
+                                ...(selectedLeadIsSeller
+                                  ? [
+                                      {
+                                        label: selectedLeadSellerOnboardingActionLabel,
+                                        Icon: Mail,
+                                        tone: 'text-[#29435d]',
+                                        mobileOnly: true,
+                                        disabled: isSellerOnboardingSending,
+                                        onClick: () => {
+                                          setLeadActionsMenuOpen(false)
+                                          void handleSendSellerOnboarding()
+                                        },
+                                      },
+                                      {
+                                        label: 'Schedule',
+                                        Icon: CalendarDays,
+                                        tone: 'text-[#29435d]',
+                                        mobileOnly: true,
+                                        onClick: () => {
+                                          setLeadActionsMenuOpen(false)
+                                          handleScheduleSellerAppointment()
+                                        },
+                                      },
+                                      {
+                                        label: selectedLeadMandateActionState.label,
+                                        Icon: CheckSquare,
+                                        tone: 'text-[#29435d]',
+                                        mobileOnly: true,
+                                        disabled: isMandateGenerating || isMandateSending,
+                                        onClick: () => {
+                                          setLeadActionsMenuOpen(false)
+                                          void handleSelectedLeadMandatePrimaryAction()
+                                        },
+                                      },
+                                    ]
+                                  : [
+                                      {
+                                        label: selectedLeadBuyerOnboardingActionLabel,
+                                        Icon: Mail,
+                                        tone: 'text-[#29435d]',
+                                        mobileOnly: true,
+                                        disabled: canonicalOfferActionId === `lead:${selectedLead?.leadId}:buyer-onboarding`,
+                                        onClick: () => {
+                                          setLeadActionsMenuOpen(false)
+                                          void handleSendBuyerOnboardingFromLead()
+                                        },
+                                      },
+                                      {
+                                        label: 'Schedule',
+                                        Icon: CalendarDays,
+                                        tone: 'text-[#29435d]',
+                                        mobileOnly: true,
+                                        onClick: () => {
+                                          setLeadActionsMenuOpen(false)
+                                          handleOpenAppointmentModal()
+                                        },
+                                      },
+                                    ]),
+                                {
+                                  label: 'Archive Lead',
+                                  Icon: X,
+                                  tone: 'text-[#29435d]',
+                                  onClick: () => {
+                                    setLeadActionsMenuOpen(false)
+                                    openArchiveLeadModal(selectedLead.leadId)
+                                  },
+                                },
+                                {
+                                  label: 'Delete Lead',
+                                  Icon: Trash2,
+                                  tone: 'text-[#b42318]',
+                                  onClick: () => {
+                                    setLeadActionsMenuOpen(false)
+                                    openDeleteLeadModal(selectedLead.leadId)
+                                  },
+                                },
+                                {
+                                  label: 'Change Owner',
+                                  Icon: UserRound,
+                                  tone: 'text-[#29435d]',
+                                  onClick: () => {
+                                    setLeadActionsMenuOpen(false)
+                                    setMessage('Owner changes can be managed from lead assignment settings.')
+                                  },
+                                },
+                                {
+                                  label: 'Mark as Lost',
+                                  Icon: X,
+                                  tone: 'text-[#29435d]',
+                                  onClick: () => {
+                                    setLeadActionsMenuOpen(false)
+                                    openArchiveLeadModal(selectedLead.leadId)
+                                  },
+                                },
+                                {
+                                  label: 'Convert Status',
+                                  Icon: TrendingUp,
+                                  tone: 'text-[#29435d]',
+                                  onClick: () => {
+                                    setLeadActionsMenuOpen(false)
+                                    setMessage('Use the stage selector in Lead Summary to convert this lead status.')
+                                  },
+                                },
+                                {
+                                  label: 'Copy Lead Link',
+                                  Icon: Link2,
+                                  tone: 'text-[#29435d]',
+                                  onClick: handleCopySelectedLeadLink,
+                                },
+                              ].map(({ label, Icon, tone, onClick, disabled, mobileOnly }) => (
+                                <button
+                                  key={label}
+                                  type="button"
+                                  className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold transition hover:bg-[#f5f9fc] disabled:cursor-not-allowed disabled:opacity-45 ${tone} ${mobileOnly ? 'xl:hidden' : ''}`}
+                                  onClick={onClick}
+                                  disabled={disabled}
+                                  role="menuitem"
+                                >
+                                  {createElement(Icon, { className: 'h-4 w-4' })}
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
-                      </>
-                    ) : (
-                      <h1 className="mt-5 text-[2.6rem] font-bold leading-[0.98] tracking-[-0.05em] text-[#102033] sm:text-[3.25rem]">
-                        Lead Workspace
-                      </h1>
-                    )}
+                        <Button type="button" variant="ghost" size="sm" className="hidden h-10 w-10 px-0 xl:inline-flex" title="More lead actions" onClick={() => openDeleteLeadModal(selectedLead.leadId)}>
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
 
                   {selectedLead ? (
-                    <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-                    {selectedLeadIsSeller ? (
-                      <>
-                        <Button type="button" size="sm" className="bg-[#123955] shadow-[0_10px_24px_rgba(18,57,85,0.18)]" onClick={handleCreateListingFromSellerLead}>
-                          {selectedLeadMandateSigned ? 'Convert to Listing' : 'Create Listing'}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          onClick={handleSendSellerOnboarding}
-                          disabled={isSellerOnboardingSending}
-                        >
-                          {selectedLeadSellerOnboardingActionLabel}
-                        </Button>
-                        <Button type="button" variant="secondary" size="sm" onClick={handleScheduleSellerAppointment}>
-                          Schedule
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => void handleSelectedLeadMandatePrimaryAction()}
-                          disabled={isMandateGenerating || isMandateSending}
-                          title={
-                            !selectedLeadHasMandateData && selectedLeadMandateActionState.actionKey === 'generate'
-                                ? 'Open the legal workspace and complete missing seller/property details manually.'
-                              : selectedLeadMandateActionMeta
-                          }
-                        >
-                          {isMandateGenerating
-                            ? 'Generating…'
-                            : isMandateSending
-                              ? 'Sending…'
-                              : selectedLeadMandateActionState.label}
-                        </Button>
-                        <Button type="button" variant="secondary" size="sm" onClick={() => openArchiveLeadModal(selectedLead.leadId)}>
-                          Archive Lead
-                        </Button>
-                        <Button type="button" variant="ghost" size="sm" title="More lead actions" onClick={() => openDeleteLeadModal(selectedLead.leadId)}>
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={() => void handleCreateBuyerOfferDraft()}
-                          disabled={Boolean(selectedLead.convertedTransactionId || selectedLead.convertedDealId)}
-                        >
-                          {selectedLead.convertedTransactionId || selectedLead.convertedDealId ? 'Transaction Created' : 'Create Offer'}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => void handleSendBuyerOnboardingFromLead()}
-                          disabled={canonicalOfferActionId === `lead:${selectedLead?.leadId}:buyer-onboarding`}
-                        >
-                          {selectedLeadBuyerOnboardingActionLabel}
-                        </Button>
-                        <Button type="button" variant="secondary" size="sm" onClick={() => handleOpenAppointmentModal()}>
-                          Schedule
-                        </Button>
-                        <Button type="button" variant="secondary" size="sm" onClick={() => openArchiveLeadModal(selectedLead.leadId)}>
-                          Archive Lead
-                        </Button>
-                        <Button type="button" variant="ghost" size="sm" title="More lead actions" onClick={() => openDeleteLeadModal(selectedLead.leadId)}>
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </>
-                    )}
-	                  </div>
-	                ) : null}
+                    <div className="mt-6 grid overflow-hidden rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] sm:grid-cols-2 xl:grid-cols-4">
+                      {[
+                        ['Activities', selectedLeadUnifiedTimeline.length, MessageCircle],
+                        ['Appointments', selectedLeadAppointments.length, CalendarDays],
+                        ['Offers', selectedLeadOfferSummary.total, CheckSquare],
+                        ['Lead Health', `${selectedLeadWorkflowHealth.percent}%`, TrendingUp],
+                      ].map(([label, value, Icon]) => (
+                        <div key={label} className="flex items-center gap-3 border-b border-[#e2ebf4] px-4 py-4 last:border-b-0 sm:[&:nth-child(odd)]:border-r xl:border-b-0 xl:border-r xl:last:border-r-0">
+                          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-white text-[#315b7a] shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+	                            {createElement(Icon, { className: 'h-4 w-4' })}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-[0.7rem] font-semibold uppercase text-[#7d93aa]">{label}</p>
+                            <p className="mt-0.5 text-[1.35rem] font-semibold tracking-[-0.04em] text-[#102033]">{value}</p>
+                          </div>
+                          {label === 'Lead Health' ? (
+                            <div className="ml-auto h-10 w-10 shrink-0 rounded-full bg-[conic-gradient(#2f7b9e_var(--lead-health),#e2ebf4_0)] p-1" style={{ '--lead-health': `${selectedLeadWorkflowHealth.percent}%` }}>
+                              <div className="h-full w-full rounded-full bg-white" />
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
+
+                {selectedLead ? (
+                  <div className="overflow-x-auto border-t border-[#e3ebf4] bg-[#fbfdff]" role="tablist" aria-label="Lead workspace sections">
+                    <div className="grid min-w-[640px] grid-cols-4">
+                      {[
+                        { key: 'overview', label: 'Overview', meta: '' },
+                        {
+                          key: 'activity',
+                          label: 'Activity',
+                          meta: selectedLeadUnifiedTimeline.length,
+                        },
+                        {
+                          key: 'appointments',
+                          label: 'Appointments',
+                          meta: selectedLeadAppointments.length,
+                        },
+                        {
+                          key: 'offers',
+                          label: 'Offers',
+                          meta: selectedLeadOfferSummary.total,
+                        },
+                      ].map((tab) => {
+                        const isActive = leadWorkspaceTab === tab.key
+                        return (
+                          <button
+                            key={tab.key}
+                            type="button"
+                            onClick={() => setLeadWorkspaceTab(tab.key)}
+                            role="tab"
+                            aria-selected={isActive}
+                            className={`relative flex min-h-[64px] items-center justify-center gap-2 whitespace-nowrap px-4 text-sm transition ${
+                              isActive
+                                ? 'font-semibold text-[#123955]'
+                                : 'font-medium text-[#60758b] hover:text-[#163247]'
+                            }`}
+                          >
+                            <span>{tab.label}</span>
+                            {tab.meta !== '' ? (
+                              <span className={`rounded-full px-2 py-0.5 text-[0.72rem] ${isActive ? 'bg-[#e8f2fb] text-[#1f5f8a]' : 'bg-white text-[#8aa0b7]'}`}>{tab.meta}</span>
+                            ) : null}
+                            <span className={`absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-[#2f7b9e] transition ${isActive ? 'opacity-100' : 'opacity-0'}`} />
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ) : null}
               </section>
               {selectedLeadHasSyncIssue ? (
                 <section className="flex flex-col gap-4 rounded-[24px] border border-[#f3d7a4] bg-[#fff8ea] px-5 py-4 text-[#5d4618] shadow-[0_1px_2px_rgba(15,23,42,0.03)] sm:flex-row sm:items-center sm:justify-between">
@@ -9219,52 +9445,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     Retry Sync
                   </Button>
                 </section>
-              ) : null}
-              {selectedLead ? (
-                <div className="overflow-x-auto rounded-[24px] bg-white px-5 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_10px_28px_rgba(31,54,78,0.05)]" role="tablist" aria-label="Lead workspace sections">
-                  <div className="flex min-w-max items-stretch gap-8">
-                  {[
-                    { key: 'overview', label: 'Overview', meta: '' },
-                    {
-                      key: 'activity',
-                      label: 'Activity',
-                      meta: selectedLeadUnifiedTimeline.length,
-                    },
-                    {
-                      key: 'appointments',
-                      label: 'Appointments',
-                      meta: selectedLeadAppointments.length,
-                    },
-                    {
-                      key: 'offers',
-                      label: 'Offers',
-                      meta: selectedLeadOfferSummary.total,
-                    },
-                  ].map((tab) => {
-                    const isActive = leadWorkspaceTab === tab.key
-                    return (
-                      <button
-                        key={tab.key}
-                        type="button"
-                        onClick={() => setLeadWorkspaceTab(tab.key)}
-                        role="tab"
-                        aria-selected={isActive}
-                        className={`relative flex min-h-[76px] items-center gap-2 whitespace-nowrap text-sm transition ${
-                          isActive
-                            ? 'font-semibold text-[#123955]'
-                            : 'font-medium text-[#60758b] hover:text-[#163247]'
-                        }`}
-                      >
-                        <span>{tab.label}</span>
-                        {tab.meta !== '' ? (
-                          <span className={`rounded-full px-2 py-0.5 text-[0.72rem] ${isActive ? 'bg-[#e8f2fb] text-[#1f5f8a]' : 'bg-[#f2f5f8] text-[#8aa0b7]'}`}>{tab.meta}</span>
-                        ) : null}
-                        <span className={`absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-[#2f7b9e] transition ${isActive ? 'opacity-100' : 'opacity-0'}`} />
-                      </button>
-                    )
-                  })}
-                  </div>
-                </div>
               ) : null}
               {selectedLead ? (
                 <div className={`mt-6 grid gap-6 ${leadWorkspaceTab === 'overview' || leadWorkspaceTab === 'activity' ? 'xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px]' : ''}`}>
@@ -10676,37 +10856,25 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                   {leadWorkspaceTab === 'overview' ? (
                   <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
-                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.06)]">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Workflow Health</p>
-                          <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[#102033]">
-                            {selectedLeadWorkflowHealth.percent}%
-                          </p>
-                          <p className="mt-1 text-sm text-[#60758b]">{selectedLeadWorkflowHealth.completed}/{selectedLeadWorkflowHealth.total} lifecycle steps complete</p>
-                        </div>
-                        <span className="rounded-full bg-[#eef7f1] px-3 py-1 text-xs font-semibold text-[#247345]">
-                          {resolveLeadFunnelStage(selectedLead)}
-                        </span>
-                      </div>
-                      <div className="mt-5 h-2 overflow-hidden rounded-full bg-[#e3ebf4]">
-                        <span className="block h-full rounded-full bg-[linear-gradient(90deg,#2f7b9e,#48a78d)] transition-all duration-500" style={{ width: `${selectedLeadWorkflowHealth.percent}%` }} />
-                      </div>
-                    </section>
+	                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.06)]">
+	                      <div className="flex items-start justify-between gap-4">
+	                        <div>
+	                          <p className="text-xs font-semibold uppercase text-[#8aa0b7]">Workflow Progress</p>
+	                          <p className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-[#102033]">
+	                            {selectedLeadWorkflowHealth.percent}%
+	                          </p>
+	                          <p className="mt-1 text-sm text-[#60758b]">{selectedLeadWorkflowHealth.completed}/{selectedLeadWorkflowHealth.total} lifecycle steps complete</p>
+	                        </div>
+	                        <span className="rounded-full bg-[#eef7f1] px-3 py-1 text-xs font-semibold text-[#247345]">
+	                          {resolveLeadFunnelStage(selectedLead)}
+	                        </span>
+	                      </div>
+	                      <div className="mt-5 h-2 overflow-hidden rounded-full bg-[#e3ebf4]">
+	                        <span className="block h-full rounded-full bg-[#2f7b9e] transition-all duration-500" style={{ width: `${selectedLeadWorkflowHealth.percent}%` }} />
+	                      </div>
+	                    </section>
 
-                    <section className="rounded-[28px] bg-[#102033] p-6 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_18px_44px_rgba(16,32,51,0.18)]">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#a8bfd3]">Next Recommended Action</p>
-                      <h3 className="mt-3 text-xl font-semibold tracking-[-0.03em]">
-                        {selectedLeadWorkflowHealth.missing?.[0]?.label || selectedLeadNextStep || 'Keep relationship warm'}
-                      </h3>
-                      <p className="mt-3 text-sm leading-6 text-[#c7d5e2]">
-                        {selectedLeadWorkflowHealth.missing?.[0]?.label
-                          ? `${selectedLeadWorkflowHealth.missing[0].label} is the next unlock for this lifecycle.`
-                          : selectedLeadNextStep || 'No blocker detected. Continue with the next relationship action.'}
-                      </p>
-                    </section>
-
-                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
+	                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Linked Contact</p>
                       <div className="mt-5 flex items-center gap-4">
                         <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#eaf3fb] text-sm font-bold text-[#244f70]">
