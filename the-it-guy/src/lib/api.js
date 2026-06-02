@@ -9334,6 +9334,7 @@ function normalizeBondApplicationRow(row = {}, profileById = {}) {
   if (!row) return null
   const createdBy = row.created_by || null
   const updatedBy = row.updated_by || null
+  const submittedBy = row.submitted_by || null
   return {
     id: row.id,
     transactionId: row.transaction_id,
@@ -9344,7 +9345,12 @@ function normalizeBondApplicationRow(row = {}, profileById = {}) {
     submittedAt: row.submitted_at || null,
     feedbackReceivedAt: row.feedback_received_at || null,
     referenceNumber: row.reference_number || '',
+    applicationReference: row.application_reference || row.reference_number || '',
+    bondOriginatorId: row.bond_originator_id || null,
+    originatorOrganisationId: row.originator_organisation_id || null,
     notes: row.notes || '',
+    submittedBy,
+    submittedByName: submittedBy ? profileById[submittedBy]?.full_name || profileById[submittedBy]?.email || null : null,
     createdBy,
     createdByName: createdBy ? profileById[createdBy]?.full_name || profileById[createdBy]?.email || null : null,
     updatedBy,
@@ -9359,6 +9365,7 @@ function normalizeBondQuoteRow(row = {}, profileById = {}) {
   const quoteStatus = normalizeBondHybridQuoteStatus(row.quote_status)
   const createdBy = row.created_by || null
   const updatedBy = row.updated_by || null
+  const uploadedBy = row.uploaded_by || null
   return {
     id: row.id,
     transactionId: row.transaction_id,
@@ -9367,17 +9374,61 @@ function normalizeBondQuoteRow(row = {}, profileById = {}) {
     bankName: row.bank_name || '',
     quotedAmount: row.quoted_amount === null || row.quoted_amount === undefined ? null : Number(row.quoted_amount),
     interestRate: row.interest_rate === null || row.interest_rate === undefined ? null : Number(row.interest_rate),
+    interestRateType: row.interest_rate_type || null,
+    interestRateMargin: row.interest_rate_margin === null || row.interest_rate_margin === undefined ? null : Number(row.interest_rate_margin),
+    interestRateDisplay: row.interest_rate_display || null,
+    monthlyRepayment: row.monthly_repayment === null || row.monthly_repayment === undefined ? null : Number(row.monthly_repayment),
     termMonths: row.term_months === null || row.term_months === undefined ? null : Number(row.term_months),
     quoteStatus,
     quoteStatusLabel: BOND_HYBRID_QUOTE_STATUS_LABELS[quoteStatus] || 'Received',
     quoteReceivedAt: row.quote_received_at || null,
     quoteExpiryAt: row.quote_expiry_at || null,
+    validUntil: row.valid_until || null,
     approvedAt: row.approved_at || null,
+    quoteDocumentId: row.quote_document_id || null,
     notes: row.notes || '',
+    uploadedBy,
+    uploadedByName: uploadedBy ? profileById[uploadedBy]?.full_name || profileById[uploadedBy]?.email || null : null,
     createdBy,
     createdByName: createdBy ? profileById[createdBy]?.full_name || profileById[createdBy]?.email || null : null,
     updatedBy,
     updatedByName: updatedBy ? profileById[updatedBy]?.full_name || profileById[updatedBy]?.email || null : null,
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  }
+}
+
+function normalizeBondOfferDecisionRow(row = {}, profileById = {}) {
+  if (!row) return null
+  const decidedBy = row.decided_by || null
+  return {
+    id: row.id,
+    transactionId: row.transaction_id,
+    bondOfferId: row.bond_offer_id || null,
+    decision: String(row.decision || '').trim().toLowerCase() || 'declined',
+    decidedBy,
+    decidedByRole: row.decided_by_role || null,
+    decidedByName: decidedBy ? profileById[decidedBy]?.full_name || profileById[decidedBy]?.email || null : null,
+    decisionAt: row.decision_at || row.created_at || null,
+    notes: row.notes || '',
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  }
+}
+
+function normalizeBondInstructionRow(row = {}, profileById = {}) {
+  if (!row) return null
+  const instructionSentBy = row.instruction_sent_by || null
+  return {
+    id: row.id,
+    transactionId: row.transaction_id,
+    acceptedBondOfferId: row.accepted_bond_offer_id || null,
+    instructionSent: row.instruction_sent === true,
+    instructionSentAt: row.instruction_sent_at || null,
+    instructionSentBy,
+    instructionSentByName: instructionSentBy ? profileById[instructionSentBy]?.full_name || profileById[instructionSentBy]?.email || null : null,
+    instructionDocumentId: row.instruction_document_id || null,
+    notes: row.notes || '',
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null,
   }
@@ -9621,6 +9672,60 @@ async function assertBondHybridStageRequirements(client, workflow, nextStage) {
   }
 }
 
+function deriveBondOfferStatusFromDecision({
+  quote = {},
+  acceptedOfferId = '',
+  latestDecisionByOfferId = new Map(),
+} = {}) {
+  const normalizedAcceptedOfferId = String(acceptedOfferId || '').trim()
+  const quoteId = String(quote?.id || '').trim()
+  const latestDecision = latestDecisionByOfferId.get(quoteId) || null
+  const rawStatus = String(quote?.quoteStatus || quote?.quote_status || '').trim().toLowerCase()
+
+  if (normalizedAcceptedOfferId && normalizedAcceptedOfferId === quoteId) {
+    return {
+      quoteStatus: 'accepted',
+      quoteStatusLabel: 'Accepted',
+      decisionStatus: 'accepted',
+      decisionAt: latestDecision?.decisionAt || quote?.approvedAt || quote?.approved_at || null,
+    }
+  }
+
+  if (latestDecision?.decision === 'declined' || rawStatus === 'declined_by_buyer' || rawStatus === 'declined') {
+    return {
+      quoteStatus: 'declined',
+      quoteStatusLabel: 'Declined',
+      decisionStatus: 'declined',
+      decisionAt: latestDecision?.decisionAt || null,
+    }
+  }
+
+  if (normalizedAcceptedOfferId && normalizedAcceptedOfferId !== quoteId) {
+    return {
+      quoteStatus: 'not_selected',
+      quoteStatusLabel: 'Not Selected',
+      decisionStatus: 'not_selected',
+      decisionAt: null,
+    }
+  }
+
+  if (rawStatus === 'approved_by_buyer') {
+    return {
+      quoteStatus: 'accepted',
+      quoteStatusLabel: 'Accepted',
+      decisionStatus: 'accepted',
+      decisionAt: quote?.approvedAt || quote?.approved_at || null,
+    }
+  }
+
+  return {
+    quoteStatus: rawStatus || 'received',
+    quoteStatusLabel: BOND_HYBRID_QUOTE_STATUS_LABELS[normalizeBondHybridQuoteStatus(rawStatus)] || 'Received',
+    decisionStatus: latestDecision?.decision || null,
+    decisionAt: latestDecision?.decisionAt || null,
+  }
+}
+
 export async function getTransactionFinanceWorkflow(transactionId, options = {}) {
   const client = options.client || requireClient()
   if (!transactionId) return null
@@ -9628,15 +9733,15 @@ export async function getTransactionFinanceWorkflow(transactionId, options = {})
   let workflow = await fetchRawBondHybridWorkflow(client, transactionId, { createIfMissing: Boolean(options.createIfMissing) })
   if (!workflow) return null
 
-  const [applicationsQuery, quotesQuery, eventsQuery] = await Promise.all([
+  const [applicationsQuery, quotesQuery, eventsQuery, decisionsQuery, instructionQuery] = await Promise.all([
     client
       .from('transaction_bond_applications')
-      .select('id, transaction_id, workflow_id, bank_name, status, submitted_at, feedback_received_at, reference_number, notes, created_by, updated_by, created_at, updated_at')
+      .select('id, transaction_id, workflow_id, bank_name, status, submitted_at, feedback_received_at, reference_number, application_reference, bond_originator_id, originator_organisation_id, submitted_by, notes, created_by, updated_by, created_at, updated_at')
       .eq('workflow_id', workflow.id)
       .order('created_at', { ascending: true }),
     client
       .from('transaction_bond_quotes')
-      .select('id, transaction_id, workflow_id, bond_application_id, bank_name, quoted_amount, interest_rate, term_months, quote_status, quote_received_at, quote_expiry_at, approved_at, notes, created_by, updated_by, created_at, updated_at')
+      .select('id, transaction_id, workflow_id, bond_application_id, bank_name, quoted_amount, interest_rate, interest_rate_type, interest_rate_margin, interest_rate_display, monthly_repayment, term_months, quote_status, quote_received_at, quote_expiry_at, valid_until, approved_at, quote_document_id, uploaded_by, notes, created_by, updated_by, created_at, updated_at')
       .eq('workflow_id', workflow.id)
       .order('created_at', { ascending: true }),
     client
@@ -9645,6 +9750,16 @@ export async function getTransactionFinanceWorkflow(transactionId, options = {})
       .eq('workflow_id', workflow.id)
       .order('created_at', { ascending: false })
       .limit(100),
+    client
+      .from('transaction_bond_offer_decisions')
+      .select('id, transaction_id, bond_offer_id, decision, decided_by, decided_by_role, decision_at, notes, created_at, updated_at')
+      .eq('transaction_id', transactionId)
+      .order('decision_at', { ascending: false }),
+    client
+      .from('transaction_bond_instructions')
+      .select('id, transaction_id, accepted_bond_offer_id, instruction_sent, instruction_sent_at, instruction_sent_by, instruction_document_id, notes, created_at, updated_at')
+      .eq('transaction_id', transactionId)
+      .maybeSingle(),
   ])
 
   for (const result of [applicationsQuery, quotesQuery, eventsQuery]) {
@@ -9653,23 +9768,65 @@ export async function getTransactionFinanceWorkflow(transactionId, options = {})
       throw result.error
     }
   }
+  if (decisionsQuery.error && !isMissingTableError(decisionsQuery.error, 'transaction_bond_offer_decisions') && !isMissingSchemaError(decisionsQuery.error)) {
+    throw decisionsQuery.error
+  }
+  if (instructionQuery.error && !isMissingTableError(instructionQuery.error, 'transaction_bond_instructions') && !isMissingSchemaError(instructionQuery.error)) {
+    throw instructionQuery.error
+  }
 
   const profileIds = [
     workflow.last_updated_by,
-    ...(applicationsQuery.data || []).flatMap((row) => [row.created_by, row.updated_by]),
-    ...(quotesQuery.data || []).flatMap((row) => [row.created_by, row.updated_by]),
+    ...(applicationsQuery.data || []).flatMap((row) => [row.created_by, row.updated_by, row.submitted_by, row.bond_originator_id]),
+    ...(quotesQuery.data || []).flatMap((row) => [row.created_by, row.updated_by, row.uploaded_by]),
     ...(eventsQuery.data || []).map((row) => row.created_by),
+    ...((decisionsQuery.data || []).map((row) => row.decided_by)),
+    ...(instructionQuery.data ? [instructionQuery.data.instruction_sent_by] : []),
   ].filter(Boolean)
   const profileById = await fetchProfilesByIds(client, profileIds)
   const normalizedWorkflow = normalizeBondHybridWorkflowRow(workflow, profileById)
   const applications = (applicationsQuery.data || []).map((row) => normalizeBondApplicationRow(row, profileById)).filter(Boolean)
-  const quotes = (quotesQuery.data || []).map((row) => normalizeBondQuoteRow(row, profileById)).filter(Boolean)
+  const baseQuotes = (quotesQuery.data || []).map((row) => normalizeBondQuoteRow(row, profileById)).filter(Boolean)
   const events = (eventsQuery.data || []).map((row) => normalizeBondHybridWorkflowEventRow(row, profileById)).filter(Boolean)
+  const decisions = (decisionsQuery.data || []).map((row) => normalizeBondOfferDecisionRow(row, profileById)).filter(Boolean)
+  const instruction = normalizeBondInstructionRow(instructionQuery.data || null, profileById)
+  const latestDecisionByOfferId = decisions.reduce((accumulator, decision) => {
+    const offerId = String(decision?.bondOfferId || '').trim()
+    if (!offerId || accumulator.has(offerId)) return accumulator
+    accumulator.set(offerId, decision)
+    return accumulator
+  }, new Map())
+  const acceptedDecision = decisions.find((decision) => decision.decision === 'accepted') || null
+  const acceptedOfferId =
+    String(acceptedDecision?.bondOfferId || instruction?.acceptedBondOfferId || '').trim() ||
+    String(baseQuotes.find((quote) => ['approved_by_buyer', 'accepted'].includes(String(quote.quoteStatus || '').trim().toLowerCase()))?.id || '').trim()
+  const quotes = baseQuotes.map((quote) => {
+    const derived = deriveBondOfferStatusFromDecision({
+      quote,
+      acceptedOfferId,
+      latestDecisionByOfferId,
+    })
+    return {
+      ...quote,
+      offerStatus: derived.quoteStatus,
+      offerStatusLabel: derived.quoteStatusLabel,
+      decisionStatus: derived.decisionStatus,
+      decisionAt: derived.decisionAt,
+      quoteStatus: derived.quoteStatus,
+      quoteStatusLabel: derived.quoteStatusLabel,
+      approvedAt: derived.quoteStatus === 'accepted' ? (derived.decisionAt || quote.approvedAt || null) : quote.approvedAt,
+    }
+  })
+  const acceptedOffer = acceptedOfferId ? quotes.find((quote) => String(quote.id) === acceptedOfferId) || null : null
   const snapshot = {
     workflow: normalizedWorkflow,
     applications,
     quotes,
+    offers: quotes,
     events,
+    decisions,
+    acceptedOffer,
+    instruction,
   }
 
   return {
@@ -9864,11 +10021,15 @@ export async function addBondApplication(transactionId, payload = {}, options = 
       submitted_at: submittedAt,
       feedback_received_at: feedbackReceivedAt,
       reference_number: normalizeNullableText(payload.referenceNumber || payload.reference_number),
+      application_reference: normalizeNullableText(payload.applicationReference || payload.application_reference || payload.referenceNumber || payload.reference_number),
+      bond_originator_id: normalizeNullableUuid(payload.bondOriginatorId || payload.bond_originator_id) || null,
+      originator_organisation_id: normalizeNullableUuid(payload.originatorOrganisationId || payload.originator_organisation_id) || null,
+      submitted_by: activeProfile.userId || null,
       notes: normalizeNullableText(payload.notes),
       created_by: activeProfile.userId || null,
       updated_by: activeProfile.userId || null,
     })
-    .select('id, transaction_id, workflow_id, bank_name, status, submitted_at, feedback_received_at, reference_number, notes, created_by, updated_by, created_at, updated_at')
+    .select('id, transaction_id, workflow_id, bank_name, status, submitted_at, feedback_received_at, reference_number, application_reference, bond_originator_id, originator_organisation_id, submitted_by, notes, created_by, updated_by, created_at, updated_at')
     .single()
 
   if (insert.error) throw insert.error
@@ -9914,6 +10075,14 @@ export async function addBondApplication(transactionId, payload = {}, options = 
     },
   })
 
+  if (getBondHybridFinanceStageIndex(workflow.current_stage) < getBondHybridFinanceStageIndex('applications_submitted')) {
+    await updateBondHybridFinanceStage(transactionId, 'applications_submitted', {
+      client,
+      actorRole,
+      notes: `${bankName} application submitted.`,
+    })
+  }
+
   return getTransactionFinanceWorkflow(transactionId, { client })
 }
 
@@ -9943,7 +10112,10 @@ export async function updateBondApplication(applicationId, payload = {}, options
   if (payload.submittedAt !== undefined || payload.submitted_at !== undefined) updatePayload.submitted_at = normalizeBondWorkflowPayloadDate(payload.submittedAt || payload.submitted_at)
   if (payload.feedbackReceivedAt !== undefined || payload.feedback_received_at !== undefined) updatePayload.feedback_received_at = normalizeBondWorkflowPayloadDate(payload.feedbackReceivedAt || payload.feedback_received_at)
   if (payload.referenceNumber !== undefined || payload.reference_number !== undefined) updatePayload.reference_number = normalizeNullableText(payload.referenceNumber || payload.reference_number)
+  if (payload.applicationReference !== undefined || payload.application_reference !== undefined) updatePayload.application_reference = normalizeNullableText(payload.applicationReference || payload.application_reference)
   if (payload.notes !== undefined) updatePayload.notes = normalizeNullableText(payload.notes)
+  if (payload.bondOriginatorId !== undefined || payload.bond_originator_id !== undefined) updatePayload.bond_originator_id = normalizeNullableUuid(payload.bondOriginatorId || payload.bond_originator_id)
+  if (payload.originatorOrganisationId !== undefined || payload.originator_organisation_id !== undefined) updatePayload.originator_organisation_id = normalizeNullableUuid(payload.originatorOrganisationId || payload.originator_organisation_id)
   if (['feedback_received', 'quote_received', 'additional_documents_required', 'declined', 'approved', 'buyer_approved'].includes(nextStatus) && !updatePayload.feedback_received_at) {
     updatePayload.feedback_received_at = new Date().toISOString()
   }
@@ -9952,7 +10124,7 @@ export async function updateBondApplication(applicationId, payload = {}, options
     .from('transaction_bond_applications')
     .update(updatePayload)
     .eq('id', applicationId)
-    .select('id, transaction_id, workflow_id, bank_name, status, submitted_at, feedback_received_at, reference_number, notes, created_by, updated_by, created_at, updated_at')
+    .select('id, transaction_id, workflow_id, bank_name, status, submitted_at, feedback_received_at, reference_number, application_reference, bond_originator_id, originator_organisation_id, submitted_by, notes, created_by, updated_by, created_at, updated_at')
     .single()
   if (update.error) throw update.error
 
@@ -10029,16 +10201,23 @@ export async function addBondQuote(transactionId, payload = {}, options = {}) {
       bank_name: bankName,
       quoted_amount: normalizeBondWorkflowPayloadNumber(payload.quotedAmount ?? payload.quoted_amount),
       interest_rate: normalizeBondWorkflowPayloadNumber(payload.interestRate ?? payload.interest_rate),
+      interest_rate_type: normalizeNullableText(payload.interestRateType || payload.interest_rate_type),
+      interest_rate_margin: normalizeBondWorkflowPayloadNumber(payload.interestRateMargin ?? payload.interest_rate_margin),
+      interest_rate_display: normalizeNullableText(payload.interestRateDisplay || payload.interest_rate_display),
+      monthly_repayment: normalizeBondWorkflowPayloadNumber(payload.monthlyRepayment ?? payload.monthly_repayment),
       term_months: normalizeBondWorkflowPayloadInteger(payload.termMonths ?? payload.term_months),
       quote_status: quoteStatus,
       quote_received_at: normalizeBondWorkflowPayloadDate(payload.quoteReceivedAt || payload.quote_received_at) || new Date().toISOString(),
       quote_expiry_at: normalizeBondWorkflowPayloadDate(payload.quoteExpiryAt || payload.quote_expiry_at),
+      valid_until: normalizeNullableText(payload.validUntil || payload.valid_until) || null,
+      quote_document_id: normalizeNullableUuid(payload.quoteDocumentId || payload.quote_document_id) || null,
       approved_at: quoteStatus === 'approved_by_buyer' ? new Date().toISOString() : null,
       notes: normalizeNullableText(payload.notes),
+      uploaded_by: activeProfile.userId || null,
       created_by: activeProfile.userId || null,
       updated_by: activeProfile.userId || null,
     })
-    .select('id, transaction_id, workflow_id, bond_application_id, bank_name, quoted_amount, interest_rate, term_months, quote_status, quote_received_at, quote_expiry_at, approved_at, notes, created_by, updated_by, created_at, updated_at')
+    .select('id, transaction_id, workflow_id, bond_application_id, bank_name, quoted_amount, interest_rate, interest_rate_type, interest_rate_margin, interest_rate_display, monthly_repayment, term_months, quote_status, quote_received_at, quote_expiry_at, valid_until, quote_document_id, uploaded_by, approved_at, notes, created_by, updated_by, created_at, updated_at')
     .single()
 
   if (insert.error) throw insert.error
@@ -10060,6 +10239,14 @@ export async function addBondQuote(transactionId, payload = {}, options = {}) {
 
   if (quoteStatus === 'approved_by_buyer') {
     return approveBondQuote(insert.data.id, { client, actorRole })
+  }
+
+  if (getBondHybridFinanceStageIndex(workflow.current_stage) < getBondHybridFinanceStageIndex('quotes_received')) {
+    await updateBondHybridFinanceStage(transactionId, 'quotes_received', {
+      client,
+      actorRole,
+      notes: `${bankName} offer received.`,
+    })
   }
 
   return getTransactionFinanceWorkflow(transactionId, { client })
@@ -10093,10 +10280,16 @@ export async function updateBondQuote(quoteId, payload = {}, options = {}) {
   if (payload.bankName !== undefined || payload.bank_name !== undefined) updatePayload.bank_name = normalizeNullableText(payload.bankName || payload.bank_name)
   if (payload.quotedAmount !== undefined || payload.quoted_amount !== undefined) updatePayload.quoted_amount = normalizeBondWorkflowPayloadNumber(payload.quotedAmount ?? payload.quoted_amount)
   if (payload.interestRate !== undefined || payload.interest_rate !== undefined) updatePayload.interest_rate = normalizeBondWorkflowPayloadNumber(payload.interestRate ?? payload.interest_rate)
+  if (payload.interestRateType !== undefined || payload.interest_rate_type !== undefined) updatePayload.interest_rate_type = normalizeNullableText(payload.interestRateType || payload.interest_rate_type)
+  if (payload.interestRateMargin !== undefined || payload.interest_rate_margin !== undefined) updatePayload.interest_rate_margin = normalizeBondWorkflowPayloadNumber(payload.interestRateMargin ?? payload.interest_rate_margin)
+  if (payload.interestRateDisplay !== undefined || payload.interest_rate_display !== undefined) updatePayload.interest_rate_display = normalizeNullableText(payload.interestRateDisplay || payload.interest_rate_display)
+  if (payload.monthlyRepayment !== undefined || payload.monthly_repayment !== undefined) updatePayload.monthly_repayment = normalizeBondWorkflowPayloadNumber(payload.monthlyRepayment ?? payload.monthly_repayment)
   if (payload.termMonths !== undefined || payload.term_months !== undefined) updatePayload.term_months = normalizeBondWorkflowPayloadInteger(payload.termMonths ?? payload.term_months)
   if (payload.quoteStatus !== undefined || payload.quote_status !== undefined) updatePayload.quote_status = quoteStatus
   if (payload.quoteReceivedAt !== undefined || payload.quote_received_at !== undefined) updatePayload.quote_received_at = normalizeBondWorkflowPayloadDate(payload.quoteReceivedAt || payload.quote_received_at)
   if (payload.quoteExpiryAt !== undefined || payload.quote_expiry_at !== undefined) updatePayload.quote_expiry_at = normalizeBondWorkflowPayloadDate(payload.quoteExpiryAt || payload.quote_expiry_at)
+  if (payload.validUntil !== undefined || payload.valid_until !== undefined) updatePayload.valid_until = normalizeNullableText(payload.validUntil || payload.valid_until) || null
+  if (payload.quoteDocumentId !== undefined || payload.quote_document_id !== undefined) updatePayload.quote_document_id = normalizeNullableUuid(payload.quoteDocumentId || payload.quote_document_id)
   if (payload.notes !== undefined) updatePayload.notes = normalizeNullableText(payload.notes)
   if (quoteStatus !== 'approved_by_buyer') updatePayload.approved_at = null
 
@@ -10104,7 +10297,7 @@ export async function updateBondQuote(quoteId, payload = {}, options = {}) {
     .from('transaction_bond_quotes')
     .update(updatePayload)
     .eq('id', quoteId)
-    .select('id, transaction_id, workflow_id, bond_application_id, bank_name, quoted_amount, interest_rate, term_months, quote_status, quote_received_at, quote_expiry_at, approved_at, notes, created_by, updated_by, created_at, updated_at')
+    .select('id, transaction_id, workflow_id, bond_application_id, bank_name, quoted_amount, interest_rate, interest_rate_type, interest_rate_margin, interest_rate_display, monthly_repayment, term_months, quote_status, quote_received_at, quote_expiry_at, valid_until, quote_document_id, approved_at, notes, created_by, updated_by, created_at, updated_at')
     .single()
   if (update.error) throw update.error
 
@@ -10161,6 +10354,25 @@ export async function approveBondQuote(quoteId, options = {}) {
     .single()
   if (update.error) throw update.error
 
+  const decisionInsert = await client
+    .from('transaction_bond_offer_decisions')
+    .insert({
+      transaction_id: quote.data.transaction_id,
+      bond_offer_id: quoteId,
+      decision: 'accepted',
+      decided_by: activeProfile.userId || null,
+      decided_by_role: normalizeRoleType(actorRole || activeProfile.role || 'buyer'),
+      notes: `${quote.data.bank_name} quote approved by buyer.`,
+    })
+
+  if (
+    decisionInsert.error &&
+    !isMissingTableError(decisionInsert.error, 'transaction_bond_offer_decisions') &&
+    decisionInsert.error.code !== '23505'
+  ) {
+    throw decisionInsert.error
+  }
+
   await insertBondHybridWorkflowEvent(client, {
     workflow,
     fromStage: workflow.current_stage,
@@ -10205,10 +10417,147 @@ export async function approveBondQuote(quoteId, options = {}) {
   return getTransactionFinanceWorkflow(quote.data.transaction_id, { client })
 }
 
+export async function recordBondOfferDecision(quoteId, { decision = 'accepted', notes = '', actorRole = 'buyer', client: providedClient = null, token = '' } = {}) {
+  const client = providedClient || (token ? requireClientPortalTokenClient(token) : requireClient())
+  if (!quoteId) throw new Error('Bond offer is required.')
+
+  const normalizedDecision = String(decision || '').trim().toLowerCase()
+  if (!['accepted', 'declined'].includes(normalizedDecision)) {
+    throw new Error('Decision must be accepted or declined.')
+  }
+
+  let actorProfile = { userId: null, role: actorRole || 'buyer' }
+  try {
+    actorProfile = await resolveActiveProfileContext(client)
+  } catch (_error) {
+    actorProfile = { userId: null, role: actorRole || 'buyer' }
+  }
+
+  const quote = await client
+    .from('transaction_bond_quotes')
+    .select('id, transaction_id, workflow_id, bank_name')
+    .eq('id', quoteId)
+    .maybeSingle()
+  if (quote.error) throw quote.error
+  if (!quote.data) throw new Error('Bond offer was not found.')
+
+  const insert = await client
+    .from('transaction_bond_offer_decisions')
+    .insert({
+      transaction_id: quote.data.transaction_id,
+      bond_offer_id: quoteId,
+      decision: normalizedDecision,
+      decided_by: actorProfile.userId || null,
+      decided_by_role: normalizeRoleType(actorRole || actorProfile.role || 'buyer'),
+      notes: normalizeNullableText(notes),
+    })
+    .select('id, transaction_id, bond_offer_id, decision, decided_by, decided_by_role, decision_at, notes, created_at, updated_at')
+    .single()
+  if (insert.error) throw insert.error
+
+  const workflow = await fetchRawBondHybridWorkflow(client, quote.data.transaction_id, { createIfMissing: false })
+  if (workflow?.id && normalizedDecision === 'accepted') {
+    await insertBondHybridWorkflowEvent(client, {
+      workflow,
+      fromStage: workflow.current_stage,
+      toStage: workflow.current_stage,
+      eventType: 'quote_approved',
+      notes: `${quote.data.bank_name} offer accepted by buyer.`,
+      createdBy: actorProfile.userId || null,
+    })
+  }
+
+  await logTransactionEventIfPossible(client, {
+    transactionId: quote.data.transaction_id,
+    eventType: 'TransactionUpdated',
+    createdBy: actorProfile.userId || null,
+    createdByRole: normalizeRoleType(actorRole || actorProfile.role || 'buyer'),
+    eventData: {
+      source: 'transaction_bond_offer_decisions',
+      financeEventType: normalizedDecision === 'accepted' ? 'bond_offer_accepted' : 'bond_offer_declined',
+      quoteId,
+      bankName: quote.data.bank_name,
+      notes: normalizeNullableText(notes),
+    },
+  })
+
+  await notifyRolesForTransaction(client, {
+    transactionId: quote.data.transaction_id,
+    roleTypes: normalizedDecision === 'accepted' ? ['bond_originator', 'agent', 'attorney'] : ['bond_originator', 'agent'],
+    title: normalizedDecision === 'accepted' ? 'Bond offer accepted' : 'Bond offer declined',
+    message:
+      normalizedDecision === 'accepted'
+        ? `${quote.data.bank_name} offer was accepted.`
+        : `${quote.data.bank_name} offer was declined.`,
+    notificationType: 'workflow_updated',
+    eventType: 'TransactionUpdated',
+    eventData: {
+      source: 'transaction_bond_offer_decisions',
+      financeEventType: normalizedDecision === 'accepted' ? 'bond_offer_accepted' : 'bond_offer_declined',
+      quoteId,
+    },
+    dedupePrefix: `bond-offer-decision:${quoteId}:${normalizedDecision}`,
+    excludeUserId: actorProfile.userId || null,
+  })
+
+  return getTransactionFinanceWorkflow(quote.data.transaction_id, { client })
+}
+
+export async function declineBondQuote(quoteId, options = {}) {
+  return recordBondOfferDecision(quoteId, {
+    ...options,
+    decision: 'declined',
+  })
+}
+
 export async function markFinanceInstructionSent(transactionId, options = {}) {
+  const client = options.client || requireClient()
+  const actorRole = options.actorRole || null
+  const activeProfile = await resolveActiveProfileContext(client)
+  const workflow = await fetchRawBondHybridWorkflow(client, transactionId, { createIfMissing: true })
+  if (!workflow?.id) throw new Error('Bond / Hybrid finance workflow is not available.')
+
+  const snapshot = await getTransactionFinanceWorkflow(transactionId, { client })
+  const acceptedOfferId = normalizeNullableUuid(
+    options.acceptedBondOfferId || options.accepted_bond_offer_id || snapshot?.acceptedOffer?.id || snapshot?.instruction?.acceptedBondOfferId,
+  )
+
+  const existingInstruction = await client
+    .from('transaction_bond_instructions')
+    .select('id')
+    .eq('transaction_id', transactionId)
+    .maybeSingle()
+
+  if (existingInstruction.error && !isMissingTableError(existingInstruction.error, 'transaction_bond_instructions')) {
+    throw existingInstruction.error
+  }
+
+  const instructionPayload = {
+    transaction_id: transactionId,
+    accepted_bond_offer_id: acceptedOfferId,
+    instruction_sent: true,
+    instruction_sent_at: new Date().toISOString(),
+    instruction_sent_by: activeProfile.userId || null,
+    instruction_document_id: normalizeNullableUuid(options.instructionDocumentId || options.instruction_document_id) || null,
+    notes: normalizeNullableText(options.notes || 'Finance instruction sent.'),
+  }
+
+  const instructionWrite = existingInstruction.data?.id
+    ? await client
+        .from('transaction_bond_instructions')
+        .update(instructionPayload)
+        .eq('id', existingInstruction.data.id)
+    : await client.from('transaction_bond_instructions').insert(instructionPayload)
+
+  if (instructionWrite.error && !isMissingTableError(instructionWrite.error, 'transaction_bond_instructions')) {
+    throw instructionWrite.error
+  }
+
   return updateBondHybridFinanceStage(transactionId, 'instruction_sent', {
     ...options,
+    client,
     notes: options.notes || 'Finance instruction sent.',
+    actorRole,
   })
 }
 
@@ -14119,6 +14468,9 @@ function normalizeSharedDocumentRow(row, { hasClientVisibilityColumn = true } = 
     source: row?.source || null,
     source_document_id: row?.source_document_id || null,
     file_bucket: row?.file_bucket || row?.bucket_key || null,
+    finance_lane: row?.finance_lane || null,
+    related_entity_type: row?.related_entity_type || null,
+    related_entity_id: row?.related_entity_id || null,
     canonicalRequirementInstanceId: row?.canonical_requirement_instance_id || null,
     canonical_requirement_instance_id: row?.canonical_requirement_instance_id || null,
     status: row?.status || row?.review_status || null,
@@ -14212,24 +14564,24 @@ async function fetchSharedDocumentRowsByTransactionIds(client, transactionIds = 
   const documentSelectCandidates = [
     {
       select:
-        'id, transaction_id, name, file_path, category, document_type, status, review_status, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, uploaded_by_party, external_access_id, bucket_key, source, source_document_id, file_bucket, canonical_requirement_instance_id, created_at, updated_at',
+        'id, transaction_id, name, file_path, category, document_type, status, review_status, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, uploaded_by_party, external_access_id, bucket_key, source, source_document_id, file_bucket, finance_lane, related_entity_type, related_entity_id, canonical_requirement_instance_id, created_at, updated_at',
       hasClientVisibilityColumn: true,
     },
     {
       select:
-        'id, transaction_id, name, file_path, category, document_type, status, review_status, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, uploaded_by_party, external_access_id, bucket_key, source, source_document_id, file_bucket, canonical_requirement_instance_id, created_at',
+        'id, transaction_id, name, file_path, category, document_type, status, review_status, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, uploaded_by_party, external_access_id, bucket_key, source, source_document_id, file_bucket, finance_lane, related_entity_type, related_entity_id, canonical_requirement_instance_id, created_at',
       hasClientVisibilityColumn: true,
     },
     {
       select:
-        'id, transaction_id, name, file_path, category, is_client_visible, uploaded_by_role, uploaded_by_email, uploaded_by_party, external_access_id, bucket_key, source, source_document_id, file_bucket, created_at',
+        'id, transaction_id, name, file_path, category, is_client_visible, uploaded_by_role, uploaded_by_email, uploaded_by_party, external_access_id, bucket_key, source, source_document_id, file_bucket, finance_lane, related_entity_type, related_entity_id, created_at',
       hasClientVisibilityColumn: true,
     },
     {
-      select: 'id, transaction_id, name, file_path, category, uploaded_by_role, uploaded_by_email, uploaded_by_party, external_access_id, bucket_key, source, source_document_id, file_bucket, created_at',
+      select: 'id, transaction_id, name, file_path, category, uploaded_by_role, uploaded_by_email, uploaded_by_party, external_access_id, bucket_key, source, source_document_id, file_bucket, finance_lane, related_entity_type, related_entity_id, created_at',
       hasClientVisibilityColumn: false,
     },
-    { select: 'id, transaction_id, name, file_path, category, bucket_key, source, source_document_id, file_bucket, created_at', hasClientVisibilityColumn: false },
+    { select: 'id, transaction_id, name, file_path, category, bucket_key, source, source_document_id, file_bucket, finance_lane, related_entity_type, related_entity_id, created_at', hasClientVisibilityColumn: false },
     { select: 'id, transaction_id, name, file_path, category, created_at', hasClientVisibilityColumn: false },
   ]
 
@@ -32071,6 +32423,7 @@ export async function fetchClientPortalByToken(token) {
   let transactionDiscussion = []
   let transactionSubprocesses = []
   let transactionEvents = []
+  let transactionFinanceWorkflow = null
   try {
     transactionDiscussion = await fetchTransactionDiscussion(transaction.id, {
       client,
@@ -32087,6 +32440,18 @@ export async function fetchClientPortalByToken(token) {
   } catch (subprocessError) {
     if (!isMissingSchemaError(subprocessError)) {
       throw subprocessError
+    }
+  }
+  if (isBondFinanceType(transaction.finance_type)) {
+    try {
+      transactionFinanceWorkflow = await getTransactionFinanceWorkflow(transaction.id, {
+        client,
+        createIfMissing: false,
+      })
+    } catch (financeWorkflowError) {
+      if (!isMissingSchemaError(financeWorkflowError) && !isPermissionDeniedError(financeWorkflowError)) {
+        throw financeWorkflowError
+      }
     }
   }
   try {
@@ -32326,6 +32691,7 @@ export async function fetchClientPortalByToken(token) {
     purchaserType: resolvedPurchaserType,
     purchaserTypeLabel: getPurchaserTypeLabel(resolvedPurchaserType),
     subprocesses: transactionSubprocesses,
+    transactionFinanceWorkflow,
     requiredDocuments,
     requiredDocumentChecklist: requiredDocumentChecklistResult.checklist,
     requiredDocumentSummary,
@@ -34222,6 +34588,13 @@ export async function uploadClientPortalDocument({
   requiredDocumentKey = null,
   documentType = null,
   documentRequestId = null,
+  source = 'client_portal',
+  uploadedByParty = 'buyer',
+  bucketKey = null,
+  fileBucket = null,
+  financeLane = null,
+  relatedEntityType = null,
+  relatedEntityId = null,
 }) {
   const client = requireClientPortalTokenClient(token)
   const link = await resolveClientPortalLinkByToken(client, token)
@@ -34311,9 +34684,16 @@ export async function uploadClientPortalDocument({
     is_client_visible: true,
     uploaded_by_role: 'client',
     uploaded_by_email: buyerEmail,
+    uploaded_by_party: normalizeNullableText(uploadedByParty),
+    bucket_key: normalizeNullableText(bucketKey),
+    source: normalizeNullableText(source),
+    file_bucket: normalizeNullableText(fileBucket),
+    finance_lane: normalizeNullableText(financeLane),
+    related_entity_type: normalizeNullableText(relatedEntityType),
+    related_entity_id: normalizeNullableUuid(relatedEntityId),
   }
   const fullSelect =
-    'id, transaction_id, name, file_path, category, document_type, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, created_at'
+    'id, transaction_id, name, file_path, category, document_type, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, uploaded_by_party, bucket_key, source, file_bucket, finance_lane, related_entity_type, related_entity_id, created_at'
 
   let result = null
   if (isReservationDepositProofUpload) {
@@ -34362,7 +34742,14 @@ export async function uploadClientPortalDocument({
       isMissingColumnError(result.error, 'uploaded_by_user_id') ||
       isMissingColumnError(result.error, 'is_client_visible') ||
       isMissingColumnError(result.error, 'uploaded_by_role') ||
-      isMissingColumnError(result.error, 'uploaded_by_email'))
+      isMissingColumnError(result.error, 'uploaded_by_email') ||
+      isMissingColumnError(result.error, 'uploaded_by_party') ||
+      isMissingColumnError(result.error, 'bucket_key') ||
+      isMissingColumnError(result.error, 'source') ||
+      isMissingColumnError(result.error, 'file_bucket') ||
+      isMissingColumnError(result.error, 'finance_lane') ||
+      isMissingColumnError(result.error, 'related_entity_type') ||
+      isMissingColumnError(result.error, 'related_entity_id'))
   ) {
     let legacyInsertResult = await client
       .from('documents')
@@ -34411,7 +34798,7 @@ export async function uploadClientPortalDocument({
       documentName: result.data.name,
       category: result.data.category || category || 'Client Portal',
       visibilityScope: result.data.visibility_scope || 'shared',
-      source: 'client_portal',
+      source: normalizeNullableText(source) || 'client_portal',
     },
   })
 
@@ -34434,7 +34821,7 @@ export async function uploadClientPortalDocument({
     requiredDocumentKey: requiredDocumentKey || (isReservationDepositProofUpload ? 'reservation_deposit_proof' : null),
     actorRole: 'client',
     actorUserId: null,
-    source: 'client_portal_upload',
+    source: normalizeNullableText(source) || 'client_portal_upload',
   })
 
   return {
@@ -35987,6 +36374,13 @@ export async function uploadDocument({
   requiredDocumentKey = null,
   documentRequestId = null,
   canonicalRequirementInstanceId = null,
+  source = 'internal',
+  uploadedByParty = null,
+  bucketKey = null,
+  fileBucket = null,
+  financeLane = null,
+  relatedEntityType = null,
+  relatedEntityId = null,
 }) {
   const client = requireClient()
   const activeProfile = await resolveActiveProfileContext(client)
@@ -36016,6 +36410,13 @@ export async function uploadDocument({
     uploaded_by_user_id: activeProfile.userId || null,
     stage_key: stageKey || null,
     is_client_visible: Boolean(isClientVisible),
+    uploaded_by_party: normalizeNullableText(uploadedByParty),
+    bucket_key: normalizeNullableText(bucketKey),
+    source: normalizeNullableText(source),
+    file_bucket: normalizeNullableText(fileBucket),
+    finance_lane: normalizeNullableText(financeLane),
+    related_entity_type: normalizeNullableText(relatedEntityType),
+    related_entity_id: normalizeNullableUuid(relatedEntityId),
     ...(canonicalTarget?.canonicalRequirementInstanceId
       ? { canonical_requirement_instance_id: canonicalTarget.canonicalRequirementInstanceId }
       : {}),
@@ -36024,7 +36425,7 @@ export async function uploadDocument({
   let result = await client
     .from('documents')
     .insert(documentInsertPayload)
-    .select('id, transaction_id, name, file_path, category, document_type, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, canonical_requirement_instance_id, created_at')
+    .select('id, transaction_id, name, file_path, category, document_type, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_party, bucket_key, source, file_bucket, finance_lane, related_entity_type, related_entity_id, canonical_requirement_instance_id, created_at')
     .single()
 
   if (
@@ -36034,6 +36435,13 @@ export async function uploadDocument({
       isMissingColumnError(result.error, 'stage_key') ||
       isMissingColumnError(result.error, 'uploaded_by_user_id') ||
       isMissingColumnError(result.error, 'is_client_visible') ||
+      isMissingColumnError(result.error, 'uploaded_by_party') ||
+      isMissingColumnError(result.error, 'bucket_key') ||
+      isMissingColumnError(result.error, 'source') ||
+      isMissingColumnError(result.error, 'file_bucket') ||
+      isMissingColumnError(result.error, 'finance_lane') ||
+      isMissingColumnError(result.error, 'related_entity_type') ||
+      isMissingColumnError(result.error, 'related_entity_id') ||
       isMissingColumnError(result.error, 'canonical_requirement_instance_id'))
   ) {
     result = await client
@@ -36107,7 +36515,7 @@ export async function uploadDocument({
       visibilityScope: result.data.visibility_scope || (isClientVisible ? 'shared' : 'internal'),
       stageKey: result.data.stage_key || stageKey || null,
       canonicalRequirementInstanceId: linkedCanonicalRequirementInstanceId,
-      source: 'internal',
+      source: normalizeNullableText(source) || 'internal',
     },
   })
 
@@ -36148,6 +36556,203 @@ export async function uploadDocument({
     canonicalUploadResult,
     url: await getSignedUrl(result.data.file_path),
   }
+}
+
+async function syncFinanceDocumentRelationIfPossible(
+  client,
+  {
+    transactionId,
+    documentId,
+    relatedEntityType = '',
+    relatedEntityId = null,
+  } = {},
+) {
+  const normalizedType = String(relatedEntityType || '').trim().toLowerCase()
+  if (!transactionId || !documentId || !normalizedType || !relatedEntityId) return
+
+  if (normalizedType === 'bond_offer') {
+    const update = await client
+      .from('transaction_bond_quotes')
+      .update({
+        quote_document_id: documentId,
+      })
+      .eq('id', relatedEntityId)
+      .eq('transaction_id', transactionId)
+    if (update.error && !isMissingColumnError(update.error, 'quote_document_id') && !isMissingTableError(update.error, 'transaction_bond_quotes')) {
+      throw update.error
+    }
+    return
+  }
+
+  if (normalizedType === 'bond_instruction') {
+    const existing = await client
+      .from('transaction_bond_instructions')
+      .select('id')
+      .eq('transaction_id', transactionId)
+      .maybeSingle()
+    if (existing.error && !isMissingTableError(existing.error, 'transaction_bond_instructions')) {
+      throw existing.error
+    }
+    if (existing.data?.id) {
+      const update = await client
+        .from('transaction_bond_instructions')
+        .update({
+          instruction_document_id: documentId,
+        })
+        .eq('id', existing.data.id)
+      if (update.error && !isMissingColumnError(update.error, 'instruction_document_id')) {
+        throw update.error
+      }
+    }
+  }
+}
+
+export async function uploadTransactionFinanceDocument({
+  transactionId,
+  file,
+  documentType,
+  requiredDocumentKey = null,
+  canonicalRequirementInstanceId = null,
+  financeLane = null,
+  relatedEntityType = null,
+  relatedEntityId = null,
+  category = 'Finance',
+  actorRole = null,
+  isClientVisible = true,
+} = {}) {
+  const uploaded = await uploadDocument({
+    transactionId,
+    file,
+    category,
+    isClientVisible,
+    documentType,
+    requiredDocumentKey,
+    canonicalRequirementInstanceId,
+    source: 'finance_tab',
+    uploadedByParty: normalizeRoleType(actorRole || 'agent'),
+    bucketKey: 'finance',
+    fileBucket: 'documents',
+    financeLane,
+    relatedEntityType,
+    relatedEntityId,
+  })
+
+  const client = requireClient()
+  await syncFinanceDocumentRelationIfPossible(client, {
+    transactionId,
+    documentId: uploaded.id,
+    relatedEntityType,
+    relatedEntityId,
+  })
+
+  await logTransactionEventIfPossible(client, {
+    transactionId,
+    eventType: 'TransactionUpdated',
+    createdByRole: normalizeRoleType(actorRole || 'agent'),
+    eventData: {
+      source: 'transaction_finance_document_upload',
+      financeEventType: 'finance_document_uploaded',
+      documentId: uploaded.id,
+      documentType: normalizeNullableText(documentType),
+      financeLane: normalizeNullableText(financeLane),
+      relatedEntityType: normalizeNullableText(relatedEntityType),
+      relatedEntityId: normalizeNullableUuid(relatedEntityId),
+    },
+  })
+
+  return uploaded
+}
+
+export async function uploadClientPortalFinanceDocument({
+  token,
+  file,
+  documentType,
+  requiredDocumentKey = null,
+  financeLane = null,
+  relatedEntityType = null,
+  relatedEntityId = null,
+  category = 'Finance',
+} = {}) {
+  const uploaded = await uploadClientPortalDocument({
+    token,
+    file,
+    category,
+    requiredDocumentKey,
+    documentType,
+    source: 'finance_tab',
+    uploadedByParty: 'buyer',
+    bucketKey: 'finance',
+    fileBucket: 'documents',
+    financeLane,
+    relatedEntityType,
+    relatedEntityId,
+  })
+
+  const client = requireClientPortalTokenClient(token)
+  await syncFinanceDocumentRelationIfPossible(client, {
+    transactionId: uploaded.transaction_id,
+    documentId: uploaded.id,
+    relatedEntityType,
+    relatedEntityId,
+  })
+
+  await logTransactionEventIfPossible(client, {
+    transactionId: uploaded.transaction_id,
+    eventType: 'TransactionUpdated',
+    createdByRole: 'buyer',
+    eventData: {
+      source: 'client_portal_finance_document_upload',
+      financeEventType: 'finance_document_uploaded',
+      documentId: uploaded.id,
+      documentType: normalizeNullableText(documentType),
+      financeLane: normalizeNullableText(financeLane),
+      relatedEntityType: normalizeNullableText(relatedEntityType),
+      relatedEntityId: normalizeNullableUuid(relatedEntityId),
+    },
+  })
+
+  return uploaded
+}
+
+export async function markFinanceDocumentsReviewed(transactionId, { actorRole = null, notes = '' } = {}) {
+  return updateBondHybridFinanceStage(transactionId, 'documents_reviewed', {
+    actorRole,
+    notes: notes || 'Finance documents reviewed.',
+  })
+}
+
+export async function verifyProofOfFunds(transactionId, { actorRole = 'attorney', reviewNotes = '' } = {}) {
+  const detail = await fetchTransactionById(transactionId)
+  const requirement = (detail?.requiredDocumentChecklist || []).find((item) => ['proof_of_funds', 'proof_of_funds_cash_component'].includes(String(item?.key || '').trim()))
+  if (!requirement?.key) {
+    throw new Error('Proof of funds requirement was not found for this transaction.')
+  }
+  return updateTransactionRequiredDocumentStatus({
+    transactionId,
+    documentKey: requirement.key,
+    status: 'accepted',
+    actorRole,
+    reviewNotes,
+  })
+}
+
+export async function updateTransactionFinanceBlockerStatus(transactionId, {
+  blockerStatus = '',
+  nextAction = '',
+  financeOwner = '',
+} = {}) {
+  const client = requireClient()
+  const update = await client
+    .from('transaction_finance_workflows')
+    .update({
+      blocker_status: normalizeNullableText(blockerStatus),
+      next_action: normalizeNullableText(nextAction),
+      finance_owner: normalizeNullableText(financeOwner),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('transaction_id', transactionId)
+  if (update.error) throw update.error
+  return getTransactionFinanceWorkflow(transactionId, { client })
 }
 
 export async function reviewCanonicalDocumentRequirement({

@@ -1,4 +1,4 @@
-export const CANONICAL_FINANCE_TYPES = ['cash', 'bond', 'combination']
+export const CANONICAL_FINANCE_TYPES = ['cash', 'bond', 'combination', 'developer']
 
 export function normalizeFinanceType(value, { fallback = 'cash', allowUnknown = false } = {}) {
   const normalized = String(value || '')
@@ -11,6 +11,10 @@ export function normalizeFinanceType(value, { fallback = 'cash', allowUnknown = 
 
   if (normalized === 'hybrid') {
     return 'combination'
+  }
+
+  if (normalized === 'developer' || normalized === 'developer_finance' || normalized === 'developer finance') {
+    return 'developer'
   }
 
   if (normalized === 'combination' || normalized === 'cash_bond' || normalized === 'cash+bond') {
@@ -26,6 +30,10 @@ export function normalizeFinanceType(value, { fallback = 'cash', allowUnknown = 
 
   if (hasBond) {
     return 'bond'
+  }
+
+  if (normalized.includes('developer')) {
+    return 'developer'
   }
 
   if (hasCash) {
@@ -49,6 +57,7 @@ export function financeTypeLabel(value) {
   if (normalized === 'cash') return 'Cash Purchase'
   if (normalized === 'bond') return 'Bond / Mortgage Finance'
   if (normalized === 'combination') return 'Combination (Cash + Bond)'
+  if (normalized === 'developer') return 'Developer Finance'
   return 'Unknown'
 }
 
@@ -57,6 +66,7 @@ export function financeTypeShortLabel(value) {
   if (normalized === 'cash') return 'Cash'
   if (normalized === 'bond') return 'Bond'
   if (normalized === 'combination') return 'Combination'
+  if (normalized === 'developer') return 'Developer Finance'
   return 'Unknown'
 }
 

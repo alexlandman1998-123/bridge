@@ -31,6 +31,10 @@ import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
+import {
+  buildBondHybridFinanceStageSteps,
+  summarizeBondHybridFinanceWorkflow,
+} from '../core/transactions/bondHybridFinanceWorkflow'
 import { getAttorneyTransferStage, stageLabelFromAttorneyKey } from '../core/transactions/attorneySelectors'
 import { isBondFinanceType, normalizeFinanceType } from '../core/transactions/financeType'
 import {
@@ -56,7 +60,6 @@ import {
   archiveTransactionLifecycle,
   cancelTransactionLifecycle,
   archiveTransactionDocument,
-  inviteStakeholder,
   fetchTransactionCoreById,
   fetchTransactionById,
   getCompletionBlockers,
@@ -68,14 +71,12 @@ import {
   markFinanceInstructionSent,
   markTransactionCompleted,
   markTransactionRegistered,
-  removeStakeholder,
   recordBuyerOnboardingSent,
   reviewCanonicalDocumentRequirement,
   runWorkflowAction,
   saveTransactionRoleplayerSelections,
   undoTransactionRegistration,
   unarchiveTransactionLifecycle,
-  updateTransactionAccessControl,
   updateBondApplication,
   updateBondHybridFinanceStage,
   updateTransactionStakeholderContacts,
@@ -179,9 +180,7 @@ function getAttorneyCategoryForRequiredDocument(requirement = {}) {
   if (visibleSection === 'finance_documents' || groupKey === 'finance') {
     return 'Internal Working Documents'
   }
-  if (groupKey.includes('buyer') || key.startsWith('buyer_')) {
-    return 'Buyer FICA / Compliance'
-  }
+  if (groupKey.includes('buyer') || key.startsWith('buyer_')) return 'Buyer FICA / Compliance'
   if (groupKey.includes('seller') || key.startsWith('seller_')) return 'Seller FICA / Compliance'
   if (key.includes('guarantee')) return 'Guarantees'
   if (key.includes('clearance') || key.includes('rates') || key.includes('levy')) return 'Clearance Documents'
@@ -193,10 +192,230 @@ function getAttorneyCategoryForRequiredDocument(requirement = {}) {
   return 'Internal Working Documents'
 }
 
-const DOCUMENT_VISIBILITY_OPTIONS = [
-  { key: 'shared', label: 'Shared' },
-  { key: 'internal', label: 'Internal Only' },
+const DOCUMENT_LIBRARY_FILTERS = [
+  { key: 'all', label: 'All Documents' },
+  { key: 'buyer', label: 'Buyer' },
+  { key: 'seller', label: 'Seller' },
+  { key: 'finance', label: 'Finance' },
+  { key: 'transfer', label: 'Transfer' },
+  { key: 'bond', label: 'Bond' },
+  { key: 'cancellation', label: 'Cancellation' },
+  { key: 'signed', label: 'Signed' },
+  { key: 'generated', label: 'Generated' },
+  { key: 'internal', label: 'Internal' },
 ]
+
+const DOCUMENT_LIBRARY_STATUS_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'required', label: 'Required' },
+  { key: 'missing', label: 'Missing' },
+  { key: 'pending_review', label: 'Pending Review' },
+  { key: 'approved', label: 'Approved' },
+]
+
+const DOCUMENT_RELATED_WORKFLOW_OPTIONS = [
+  { value: '', label: 'Select workflow' },
+  { value: 'sales', label: 'Sales' },
+  { value: 'finance', label: 'Finance' },
+  { value: 'transfer', label: 'Transfer' },
+  { value: 'bond', label: 'Bond' },
+  { value: 'cancellation', label: 'Cancellation' },
+  { value: 'signed', label: 'Signed document' },
+  { value: 'generated', label: 'Generated document' },
+  { value: 'other', label: 'Other' },
+]
+
+const DOCUMENT_UPLOAD_VISIBILITY_OPTIONS = [
+  { value: 'client_visible', label: 'Client visible' },
+  { value: 'shared_role_players', label: 'Shared' },
+  { value: 'internal_only', label: 'Internal only' },
+]
+
+const DOCUMENT_VISIBILITY_OPTIONS = [
+  { key: 'client_visible', label: 'Client visible' },
+  { key: 'shared', label: 'Shared with roleplayers' },
+  { key: 'internal', label: 'Internal only' },
+]
+
+const LEGAL_WORKFLOW_DETAIL_ROUTE_KEYS = ['transfer', 'bond-registration', 'bond-cancellation']
+
+function inferLibraryCategoryFromTokens(tokens = '') {
+  const haystack = String(tokens || '').toLowerCase()
+
+  if (/(signed|signature|executed|registrat|otp|instruction|lodgement|close.?out|handover)/.test(haystack)) {
+    return 'signed'
+  }
+  if (/(generated|auto[_-]?generated|draft|packet)/.test(haystack)) {
+    return 'generated'
+  }
+  if (/(cancellation|cancel|annul)/.test(haystack)) {
+    return 'cancellation'
+  }
+  if (/(bond|guarantee|lender|finance|proof of funds|statement|income|payroll|bank|affordability)/.test(haystack)) {
+    return 'bond'
+  }
+  if (/(seller)/.test(haystack)) {
+    return 'seller'
+  }
+  if (/(transfer|title deed|warranty|registration|property)/.test(haystack)) {
+    return 'transfer'
+  }
+  if (/(buyer|offer|sales|purchase agreement|reservation)/.test(haystack)) {
+    return 'buyer'
+  }
+  if (/(internal|commission|working|admin|confidential|private)/.test(haystack)) {
+    return 'internal'
+  }
+
+  return ''
+}
+
+function resolveDocumentLibraryCategory(document = {}) {
+  const tokens = [
+    document?.category,
+    document?.portal_workspace_category,
+    document?.portalWorkspaceCategory,
+    document?.document_type,
+    document?.documentType,
+    document?.portal_document_type,
+    document?.groupKey,
+    document?.group_key,
+    document?.name,
+    document?.label,
+    document?.key,
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).trim().toLowerCase())
+    .join(' ')
+  const byTokens = inferLibraryCategoryFromTokens(tokens)
+  if (byTokens) {
+    return byTokens
+  }
+
+  return 'buyer'
+}
+
+function resolveRequirementLibraryCategory(requirement = {}) {
+  const requirementTokens = `${String(requirement?.key || '').trim().toLowerCase()} ${String(requirement?.label || '').trim().toLowerCase()} ${String(
+    requirement?.groupKey || requirement?.group_key || requirement?.group || '',
+  )
+    .trim()
+    .toLowerCase()} ${String(requirement?.expectedFromRole || requirement?.requiredFromRole || '').trim().toLowerCase()}`
+  const byTokens = inferLibraryCategoryFromTokens(requirementTokens)
+  if (byTokens) {
+    return byTokens
+  }
+  if (String(requirement?.expectedFromRole || requirement?.requiredFromRole || '').trim().toLowerCase().includes('bond_originator')) {
+    return 'bond'
+  }
+  if (String(requirement?.visibleSection || '').trim().toLowerCase().includes('finance')) {
+    return 'finance'
+  }
+  if (String(requirement?.visibleSection || '').trim().toLowerCase().includes('transfer')) {
+    return 'transfer'
+  }
+  return getAttorneyCategoryForRequiredDocument(requirement).toLowerCase().includes('seller') ? 'seller' : 'buyer'
+}
+
+function resolveDocumentRequestLibraryCategory(documentRequest = {}) {
+  const requestedFrom = String(documentRequest?.requestedFrom || documentRequest?.requested_from || documentRequest?.audience || '').trim().toLowerCase()
+  if (requestedFrom.includes('seller')) return 'seller'
+  if (requestedFrom.includes('attorney') || requestedFrom.includes('conveyancer') || requestedFrom.includes('lawyer')) return 'transfer'
+  if (requestedFrom.includes('bond') || requestedFrom.includes('finance') || requestedFrom.includes('originator') || requestedFrom.includes('lender')) return 'bond'
+  if (requestedFrom.includes('internal') || requestedFrom.includes('agent') || requestedFrom.includes('developer')) return 'internal'
+  return 'buyer'
+}
+
+function resolveDocumentLibraryVisibility(document = {}) {
+  const raw = String(document?.visibility_scope || document?.visibility || '').trim().toLowerCase()
+  if (raw === 'internal' || raw === 'internal_only') return 'Internal'
+  if (raw === 'client_visible' || raw === 'shared' || raw === 'shared_role_players') return 'Shared'
+  return 'Internal'
+}
+
+function resolveDocumentRequestVisibilityLabel(documentRequest = {}) {
+  const visibility = String(documentRequest?.visibility || '').trim().toLowerCase()
+  if (visibility === 'internal_only') return 'Internal'
+  if (visibility === 'client_visible' || visibility === 'shared_role_players' || visibility === 'shared') return 'Shared'
+  return 'Internal'
+}
+
+function resolveDocumentWorkflowLabel(document = {}) {
+  const workflow = String(
+    document?.stage_key || document?.stageKey || document?.workflow || document?.relatedWorkflow || document?.finance_lane || document?.financeLane || '',
+  )
+    .trim()
+    .toLowerCase()
+  if (!workflow) return ''
+  return workflow
+    .split('_')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(' ')
+}
+
+function normalizeLibraryCategory(category = '') {
+  const normalized = String(category || '').trim().toLowerCase()
+  if (['all', 'buyer', 'seller', 'finance', 'transfer', 'bond', 'cancellation', 'signed', 'generated', 'internal'].includes(normalized)) {
+    return normalized
+  }
+  return ''
+}
+
+function normalizeLibraryStatus(status = '') {
+  const normalized = String(status || '').trim().toLowerCase()
+  if (!normalized) return 'uploaded'
+  if (normalized === 'required' || normalized === 'missing') return 'missing'
+  if (normalized === 'requested') return 'requested'
+  if (normalized === 'reviewed' || normalized === 'under_review' || normalized === 'pending_review') return 'under_review'
+  if (normalized === 'verified' || normalized === 'accepted' || normalized === 'approved' || normalized === 'completed') return 'approved'
+  if (normalized === 'rejected' || normalized === 'reupload_required') return 'rejected'
+  if (normalized === 'superseded') return 'superseded'
+  return normalized
+}
+
+function getLibraryStatusTone(status = '') {
+  const normalized = normalizeLibraryStatus(status)
+  if (normalized === 'missing' || normalized === 'requested') {
+    return 'border-[#f1ddd0] bg-[#fff8f3] text-[#a15b31]'
+  }
+  if (normalized === 'under_review') return 'border-[#d8e4ef] bg-[#f4f8fc] text-[#35546c]'
+  if (normalized === 'approved') return 'border-[#cfe3d7] bg-[#eef8f1] text-[#2f7a51]'
+  if (normalized === 'rejected') return 'border-[#f1cbc7] bg-[#fff5f4] text-[#b42318]'
+  if (normalized === 'superseded') return 'border-[#f7eadb] bg-[#fff9f0] text-[#8a5511]'
+  return 'border-[#dde7f1] bg-[#f8fbff] text-[#64748b]'
+}
+
+function formatLibraryStatusLabel(status = '') {
+  const normalized = normalizeLibraryStatus(status)
+  if (normalized === 'missing') return 'Missing'
+  if (normalized === 'requested') return 'Requested'
+  if (normalized === 'uploaded') return 'Uploaded'
+  if (normalized === 'under_review') return 'Pending Review'
+  if (normalized === 'approved') return 'Approved'
+  if (normalized === 'rejected') return 'Rejected'
+  if (normalized === 'superseded') return 'Superseded'
+  return toTitle(normalized || 'Unknown')
+}
+
+function resolveUploadedByLabel(document = {}, participants = []) {
+  const role = String(document?.uploaded_by_role || document?.uploadedByRole || '').trim()
+  const participant = participants.find((entry) => String(entry?.roleType || '').trim().toLowerCase() === String(role).trim().toLowerCase())
+  if (participant?.participantName) {
+    return participant.participantName
+  }
+  if (role) {
+    return toTitle(role)
+  }
+  return 'System'
+}
+
+function resolveLibraryUploadVisibilityScope(selection = 'client_visible') {
+  const normalized = String(selection || 'client_visible').trim().toLowerCase()
+  if (normalized === 'internal_only') return 'internal'
+  if (normalized === 'shared_role_players') return 'shared'
+  return 'shared'
+}
 
 const STAKEHOLDER_ROLE_OPTIONS = [
   { key: 'developer', label: 'Developer' },
@@ -205,22 +424,6 @@ const STAKEHOLDER_ROLE_OPTIONS = [
   { key: 'seller', label: 'Seller' },
   { key: 'attorney', label: 'Attorney' },
   { key: 'bond_originator', label: 'Bond Originator' },
-]
-
-const SERVICE_PROVIDER_ROLE_OPTIONS = STAKEHOLDER_ROLE_OPTIONS.filter((option) =>
-  ['developer', 'agent', 'attorney', 'bond_originator'].includes(option.key),
-)
-
-const ATTORNEY_LEGAL_ROLE_OPTIONS = [
-  { key: 'transfer', label: 'Transfer Attorney' },
-  { key: 'bond', label: 'Bond Attorney' },
-  { key: 'cancellation', label: 'Cancellation Attorney' },
-]
-
-const TRANSACTION_ACCESS_LEVEL_OPTIONS = [
-  { key: 'private', label: 'Private' },
-  { key: 'shared', label: 'Shared' },
-  { key: 'restricted', label: 'Restricted' },
 ]
 
 const DISCUSSION_TYPES = [
@@ -520,27 +723,6 @@ function findRoleplayerOptionInList(options = [], id = '') {
   return options.find((option) => normalizeRoleplayerOptionValue(option?.id) === normalizedId) || null
 }
 
-function getRoleplayerStatusLabel(value = '') {
-  const normalized = String(value || 'selected').trim().toLowerCase()
-  if (normalized === 'active') return 'Active'
-  if (normalized === 'notified') return 'Notified'
-  if (normalized === 'selected') return 'Selected'
-  if (normalized === 'removed') return 'Removed'
-  return toTitle(normalized || 'selected')
-}
-
-function getRoleplayerTriggerLabel(value = '', roleType = '') {
-  const normalized = String(value || '').trim().toLowerCase()
-  if (normalized === 'buyer_selects_bond_or_hybrid') return 'activates if buyer selects Bond/Hybrid'
-  if (normalized === 'buyer_selects_bond') return 'activates if buyer selects Bond'
-  if (normalized === 'buyer_selects_hybrid') return 'activates if buyer selects Hybrid'
-  if (normalized === 'bond_approved') return 'activates after bond approval'
-  if (normalized === 'attorney_instruction_stage') return 'activates at attorney instruction stage'
-  if (normalized === 'immediate') return 'active immediately'
-  if (roleType === 'bond_originator') return 'activates if buyer selects Bond/Hybrid'
-  return 'pending trigger'
-}
-
 function buildPartnerRoleplayerOption(option = {}, roleType = 'transfer_attorney') {
   const normalizedOption = option || {}
   const companyName = normalizeRoleplayerOptionValue(normalizedOption.companyName)
@@ -719,31 +901,6 @@ function formatRoleFriendlyReference(transaction = {}, role = '') {
   return `TRX-${numericPart || 'PENDING'}`
 }
 
-function isServiceProviderRole(roleType) {
-  return ['developer', 'agent', 'attorney', 'bond_originator'].includes(String(roleType || '').trim().toLowerCase())
-}
-
-function buildInviteParticipantName(form = {}) {
-  const baseName = String(form.participantName || '').trim()
-  if (String(form.roleType || '') !== 'agent') {
-    return baseName
-  }
-
-  const agency = String(form.agentAgencyName || '').trim()
-  const phone = String(form.agentPhone || '').trim()
-  const extras = [agency, phone].filter(Boolean)
-
-  if (!extras.length) {
-    return baseName
-  }
-
-  if (baseName) {
-    return `${baseName} (${extras.join(' • ')})`
-  }
-
-  return extras.join(' • ')
-}
-
 function formatCurrencyValue(value, fallback = 'Not captured') {
   const amount = Number(value || 0)
   return amount ? currency.format(amount) : fallback
@@ -905,6 +1062,73 @@ function getPrimaryWorkflowAction(lane = {}) {
   return 'Mark Step Complete'
 }
 
+function normalizeLegalWorkflowDetailKey(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  return LEGAL_WORKFLOW_DETAIL_ROUTE_KEYS.includes(normalized) ? normalized : ''
+}
+
+function getBondWorkflowStatusKey(workflowData = null) {
+  const summary = summarizeBondHybridFinanceWorkflow(workflowData || {})
+  if (summary.instructionSent || summary.status === 'completed') return 'completed'
+  if (summary.currentStage) return 'in_progress'
+  return 'not_started'
+}
+
+function getBondWorkflowProgressPercent(workflowData = null) {
+  const steps = buildBondHybridFinanceStageSteps(workflowData || {})
+  if (!steps.length) return 0
+  const completedCount = steps.filter((step) => step.status === 'completed').length
+  const hasCurrentStep = steps.some((step) => step.status === 'current')
+  const raw = ((completedCount + (hasCurrentStep ? 0.5 : 0)) / steps.length) * 100
+  return Math.max(0, Math.min(100, Math.round(raw)))
+}
+
+function getBondWorkflowNextStep(workflowData = null) {
+  const steps = buildBondHybridFinanceStageSteps(workflowData || {})
+  return (
+    steps.find((step) => step.status === 'current')?.label ||
+    steps.find((step) => step.status === 'upcoming')?.label ||
+    steps.at(-1)?.label ||
+    'Workflow setup pending'
+  )
+}
+
+function doesWorkflowStepMatch(step = {}, keywords = []) {
+  const haystack = [
+    step?.stepKey,
+    step?.step_key,
+    step?.stepLabel,
+    step?.step_label,
+    step?.comment,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return keywords.some((keyword) => haystack.includes(String(keyword || '').trim().toLowerCase()))
+}
+
+function summarizeLaneMilestone(lane = {}, keywords = [], fallback = 'Not started') {
+  const steps = Array.isArray(lane?.steps) ? lane.steps : []
+  const matchedStep = steps.find((step) => doesWorkflowStepMatch(step, keywords))
+  if (!matchedStep) return fallback
+
+  const statusKey = normalizeWorkspaceStatus(matchedStep.status)
+  if (statusKey === 'completed' && matchedStep.completedAt) {
+    return `Completed ${formatShortDayMonth(matchedStep.completedAt)}`
+  }
+
+  return WORKFLOW_STATUS_META[statusKey]?.label || toTitle(statusKey)
+}
+
+function isLegalActivityEntry(entry = {}) {
+  const filterKeys = new Set(Array.isArray(entry?.filterKeys) ? entry.filterKeys : [])
+  if (['transfer', 'bond', 'cancellation'].some((key) => filterKeys.has(key))) {
+    return true
+  }
+
+  return ['transfer_update', 'registration_update', 'finance_update', 'stage_change'].includes(String(entry?.messageType || '').trim().toLowerCase())
+}
+
 function getStepClasses(step = {}, currentStep = null) {
   const status = normalizeWorkspaceStatus(step.status)
   const meta = WORKFLOW_STATUS_META[status] || WORKFLOW_STATUS_META.not_started
@@ -997,6 +1221,7 @@ function getMatterStageProgressIndex({ transferStageKey = '', transferStageLabel
 
 const ACTIVITY_FILTER_OPTIONS = [
   { key: 'all', label: 'All' },
+  { key: 'roleplayers', label: 'Roleplayers' },
   { key: 'transfer', label: 'Transfer' },
   { key: 'bond', label: 'Bond' },
   { key: 'cancellation', label: 'Cancellation' },
@@ -1123,6 +1348,7 @@ function humanizeTransactionEvent(event = {}) {
   let title = eventData.title || toTitle(eventType || 'Matter update')
   let detail = eventData.message || eventData.note || ''
   let attachmentName = eventData.fileName || eventData.documentName || eventData.title || ''
+  const extraFilterKeys = []
 
   if (lowerType.includes('document')) {
     category = 'documents'
@@ -1162,17 +1388,24 @@ function humanizeTransactionEvent(event = {}) {
     detail = detail || 'A client-visible update was published.'
   } else if (lowerType.includes('roleplayerintro')) {
     category = 'notes'
+    extraFilterKeys.push('roleplayers')
     title = 'Buyer intro email sent'
     detail = eventData.recipientEmail
       ? `Roleplayer introduction sent to ${eventData.recipientEmail}.`
       : 'Roleplayer introduction sent to the buyer.'
   } else if (lowerType.includes('roleplayerhandoff')) {
     category = 'notes'
+    extraFilterKeys.push('roleplayers')
     title = 'Team handoff email sent'
     const recipients = Array.isArray(eventData.recipients) ? eventData.recipients : []
     detail = recipients.length
       ? `Handoff sent to ${recipients.map((item) => item.email).filter(Boolean).join(', ')}.`
       : 'Handoff sent to the transaction roleplayers.'
+  } else if (lowerType.includes('roleplayer') || lowerType.includes('attorney_assigned') || lowerType.includes('bond_originator_assigned')) {
+    category = 'notes'
+    extraFilterKeys.push('roleplayers')
+    title = eventData.title || 'Transaction team updated'
+    detail = detail || 'A transaction team assignment or visibility change was recorded.'
   }
 
   const meta = getActivityCategoryMeta(category)
@@ -1195,7 +1428,7 @@ function humanizeTransactionEvent(event = {}) {
     category,
     categoryLabel: meta.label,
     commentType: meta.label,
-    filterKeys: buildActivityFilterKeys(category, [laneCategory]),
+    filterKeys: buildActivityFilterKeys(category, [laneCategory, ...extraFilterKeys]),
     attachmentName: category === 'documents' ? attachmentName : '',
     meta,
     messageType,
@@ -2211,6 +2444,88 @@ function WorkflowLaneCard({ lane, onOpenDetails, onPrimaryAction }) {
   )
 }
 
+function LegalWorkflowHubCard({ workflow, onOpen }) {
+  const accent = LANE_ACCENTS[workflow?.accentKey] || LANE_ACCENTS.transfer
+  const statusMeta = WORKFLOW_STATUS_META[workflow?.statusKey] || WORKFLOW_STATUS_META.not_started
+
+  return (
+    <article className={`rounded-[18px] border border-borderDefault border-l-4 bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)] ${accent.ring}`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`inline-flex size-10 items-center justify-center rounded-[12px] ring-1 ${accent.icon}`}>
+              <Workflow size={17} />
+            </span>
+            <h3 className="text-base font-semibold text-textStrong">{workflow.title}</h3>
+          </div>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-textMuted">{workflow.summary}</p>
+        </div>
+        <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${statusMeta.border} ${statusMeta.bg} ${statusMeta.text}`}>
+          <span className={`h-2 w-2 rounded-full ${statusMeta.dot}`} />
+          {workflow.statusLabel}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          ['Status', workflow.statusLabel],
+          ['Progress', `${workflow.progressPercent}%`],
+          ['Next Step', workflow.nextStep || 'Pending'],
+          [workflow.assignedLabel, workflow.assignedDisplay],
+        ].map(([label, value]) => (
+          <article key={`${workflow.key}-${label}`} className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
+            <strong className="mt-1 block text-sm text-textStrong">{value || 'Not assigned'}</strong>
+          </article>
+        ))}
+      </div>
+
+      {workflow.blockers.length ? (
+        <div className="mt-4 rounded-[14px] border border-warning/30 bg-warningSoft px-3 py-3 text-sm text-warning">
+          {workflow.blockers[0]}
+        </div>
+      ) : null}
+
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <span className="text-xs font-medium text-textMuted">
+          {workflow.activityCount} legal update{workflow.activityCount === 1 ? '' : 's'}
+        </span>
+        <Button type="button" size="sm" onClick={onOpen}>
+          Open Workflow
+          <ChevronRight size={14} />
+        </Button>
+      </div>
+    </article>
+  )
+}
+
+function LegalActivityList({ title, items = [], emptyLabel = 'No legal workflow activity yet.' }) {
+  return (
+    <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+      <h3 className="text-sm font-semibold text-textStrong">{title}</h3>
+      <div className="mt-3 space-y-2">
+        {items.length ? (
+          items.map((item) => (
+            <article key={item.id} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <strong className="block truncate text-sm text-textStrong">{item.title}</strong>
+                  <p className="mt-1 line-clamp-3 text-xs leading-5 text-textMuted">{item.body}</p>
+                </div>
+                <span className="shrink-0 text-xs text-textMuted">{formatShortDayMonth(item.createdAt)}</span>
+              </div>
+            </article>
+          ))
+        ) : (
+          <p className="rounded-[12px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-4 text-sm text-textMuted">
+            {emptyLabel}
+          </p>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function OverviewSidePanel({ title, children }) {
   return (
     <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
@@ -2506,7 +2821,7 @@ function WorkflowDetailsDrawer({
 }
 
 function AttorneyTransactionDetail() {
-  const { transactionId } = useParams()
+  const { transactionId, workflowDetailKey } = useParams()
   const location = useLocation()
   const navigate = useNavigate()
   const { profile, role: workspaceRole, workspace, workspaceType, currentMembership } = useWorkspace()
@@ -2525,13 +2840,29 @@ function AttorneyTransactionDetail() {
   const [discussionBody, setDiscussionBody] = useState('')
   const [discussionType, setDiscussionType] = useState('operational')
   const [discussionVisibility, setDiscussionVisibility] = useState('shared')
-  const [uploadDraft, setUploadDraft] = useState({
-    category: ATTORNEY_DOCUMENT_CATEGORIES[0],
-    visibility: 'shared',
-    requiredDocumentKey: '',
-    canonicalRequirementInstanceId: '',
+  const [activeDocumentGroup, setActiveDocumentGroup] = useState('all_documents')
+  const [activeDocumentLibraryCategory, setActiveDocumentLibraryCategory] = useState('all')
+  const [activeDocumentLibraryStatus, setActiveDocumentLibraryStatus] = useState('all')
+  const [uploadingDocumentKey, setUploadingDocumentKey] = useState('')
+  const [uploadInputVersion, setUploadInputVersion] = useState(0)
+  const [uploadDocumentModalOpen, setUploadDocumentModalOpen] = useState(false)
+  const [documentUploadForm, setDocumentUploadForm] = useState({
     file: null,
+    fileName: '',
+    category: ATTORNEY_DOCUMENT_CATEGORIES[0],
+    documentType: '',
+    visibility: 'client_visible',
+    relatedWorkflow: '',
+    satisfiesRequiredDocument: 'yes',
+    requiredDocumentKey: '',
+    requiredDocumentId: '',
+    canonicalRequirementInstanceId: '',
+    documentRequestId: '',
+    notes: '',
+    requestTitle: '',
   })
+  const uploadDraft = documentUploadForm
+  const setUploadDraft = setDocumentUploadForm
   const [reviewActionDraft, setReviewActionDraft] = useState({
     open: false,
     action: '',
@@ -2539,19 +2870,8 @@ function AttorneyTransactionDetail() {
     requirement: null,
     reason: '',
   })
-  const [uploadInputVersion, setUploadInputVersion] = useState(0)
-  const [activeDocumentGroup, setActiveDocumentGroup] = useState(ATTORNEY_DOCUMENT_GROUPS[0]?.key || 'sales_documents')
-  const [stakeholderInviteForm, setStakeholderInviteForm] = useState({
-    roleType: 'attorney',
-    legalRole: 'transfer',
-    participantName: '',
-    agentPhone: '',
-    agentAgencyName: '',
-    email: '',
-    expiresDays: '14',
-  })
-  const [stakeholderMessage, setStakeholderMessage] = useState('')
-  const [inviteLinkResult, setInviteLinkResult] = useState('')
+  const [_stakeholderMessage, setStakeholderMessage] = useState('')
+  const [_inviteLinkResult, setInviteLinkResult] = useState('')
   const [roleplayerIntroBusy, setRoleplayerIntroBusy] = useState(false)
   const [roleplayerHandoffBusy, setRoleplayerHandoffBusy] = useState(false)
   const [roleplayerForm, setRoleplayerForm] = useState({
@@ -2568,16 +2888,6 @@ function AttorneyTransactionDetail() {
     bondOriginatorName: '',
     bondOriginatorEmail: '',
     matterOwner: '',
-  })
-  const [accessControlForm, setAccessControlForm] = useState({
-    ownerUserId: '',
-    accessLevel: 'shared',
-  })
-  const [removeDialog, setRemoveDialog] = useState({
-    open: false,
-    stakeholderId: null,
-    title: '',
-    description: '',
   })
   const [registrationModalOpen, setRegistrationModalOpen] = useState(false)
   const [registrationDraft, setRegistrationDraft] = useState({
@@ -2615,6 +2925,7 @@ function AttorneyTransactionDetail() {
     transferAttorney: '',
     bondOriginator: '',
     bondAttorney: '',
+    cancellationAttorney: '',
   })
   const [partnerSnapshot, setPartnerSnapshot] = useState(null)
   const [partnerOptionsLoading, setPartnerOptionsLoading] = useState(false)
@@ -2860,15 +3171,17 @@ function AttorneyTransactionDetail() {
     }),
     [currentMembership, profile, workspaceOrganisationId, workspaceRole],
   )
+  const activeLegalWorkflowDetailKey = normalizeLegalWorkflowDetailKey(workflowDetailKey)
   const canManageTransactionRoleplayers = ['agent', 'agency_admin', 'principal', 'admin', 'internal_admin', 'developer'].includes(String(workspaceRole || '').toLowerCase())
   const requestedWorkspaceMenu = useMemo(() => {
+    if (activeLegalWorkflowDetailKey) return 'transfer'
     if (workspaceMenu === 'financials' || workspaceMenu === 'bond') return 'finance'
     if (workspaceMenu === 'cancellation') return 'transfer'
     if (isAgentTransactionView && (workspaceMenu === 'parties' || workspaceMenu === 'tasks' || workspaceMenu === 'buyer' || workspaceMenu === 'seller')) {
       return 'overview'
     }
     return workspaceMenu
-  }, [isAgentTransactionView, workspaceMenu])
+  }, [activeLegalWorkflowDetailKey, isAgentTransactionView, workspaceMenu])
   const availableWorkspaceTabs = isAgentTransactionView ? AGENT_WORKSPACE_TABS : ATTORNEY_WORKSPACE_TABS
   const activeWorkspaceMenu = availableWorkspaceTabs.some((tab) => tab.id === requestedWorkspaceMenu) ? requestedWorkspaceMenu : 'overview'
 
@@ -3071,6 +3384,9 @@ function AttorneyTransactionDetail() {
   const workspaceReference = formatRoleFriendlyReference(transaction, workspaceRole)
   const workspaceBackPath = workspaceRole === 'bond_originator' ? '/bond/applications' : '/transactions'
   const workspaceBackLabel = workspaceRole === 'bond_originator' ? 'Back to Applications' : 'Back to Transactions'
+  const transactionWorkspaceBasePath = location.pathname.startsWith('/bond/files/')
+    ? `/bond/files/${transactionId}`
+    : `/transactions/${transactionId}`
   const transferStageKey = getAttorneyTransferStage({ transaction, stage: transaction?.stage, unit, development })
   const transferStageLabel = stageLabelFromAttorneyKey(transferStageKey)
   const lifecycleState = normalizeLifecycleState(
@@ -3214,21 +3530,6 @@ function AttorneyTransactionDetail() {
     () => transactionParticipants.filter((item) => item?.stakeholderStatus !== 'removed'),
     [transactionParticipants],
   )
-  const serviceProviderStakeholders = useMemo(
-    () =>
-      activeStakeholders
-        .filter((item) => isServiceProviderRole(item?.roleType))
-        .sort((left, right) => {
-          const leftRole = String(left?.roleLabel || left?.roleType || '')
-          const rightRole = String(right?.roleLabel || right?.roleType || '')
-          const roleDiff = leftRole.localeCompare(rightRole, 'en-ZA', { sensitivity: 'base' })
-          if (roleDiff !== 0) return roleDiff
-          const leftName = String(left?.participantName || left?.participantEmail || '')
-          const rightName = String(right?.participantName || right?.participantEmail || '')
-          return leftName.localeCompare(rightName, 'en-ZA', { sensitivity: 'base' })
-        }),
-    [activeStakeholders],
-  )
   const transferAttorney = useMemo(
     () => activeStakeholders.find((item) => item?.roleType === 'attorney' && item?.legalRole === 'transfer') || null,
     [activeStakeholders],
@@ -3318,39 +3619,14 @@ function AttorneyTransactionDetail() {
       ]),
     [attorneyPartnerOptions, bondAttorney, savedBondAttorneyRoleplayer],
   )
-  const legalRoleAssignmentNote = useMemo(() => {
-    if (transferAttorney && bondAttorney) {
-      const transferIdentity = String(transferAttorney.participantEmail || transferAttorney.participantName || '').trim().toLowerCase()
-      const bondIdentity = String(bondAttorney.participantEmail || bondAttorney.participantName || '').trim().toLowerCase()
-      if (transferIdentity && bondIdentity && transferIdentity !== bondIdentity) {
-        return 'Transfer and bond legal roles are assigned to different attorneys.'
-      }
-      return 'Transfer and bond legal roles are currently handled by the same attorney.'
-    }
-
-    if (transferAttorney && !bondAttorney) {
-      return 'Transfer attorney is assigned. Bond attorney is optional and can be assigned separately when required.'
-    }
-
-    return 'Assign legal roles explicitly so transfer and bond responsibilities remain clear.'
-  }, [bondAttorney, transferAttorney])
-  const ownerCandidateOptions = useMemo(() => {
-    const map = new Map()
-    for (const participant of activeStakeholders) {
-      if (!participant?.userId) continue
-      const labelBase = participant.participantName || participant.participantEmail || participant.roleLabel || participant.roleType || 'Stakeholder'
-      const roleLabel = participant.roleLabel || toTitle(participant.roleType || '')
-      map.set(participant.userId, `${labelBase} (${roleLabel})`)
-    }
-    if (profile?.id) {
-      const fallbackLabel = profile?.fullName || profile?.email || 'Current User'
-      if (!map.has(profile.id)) {
-        map.set(profile.id, `${fallbackLabel} (Current user)`)
-      }
-    }
-    return [...map.entries()].map(([value, label]) => ({ value, label }))
-  }, [activeStakeholders, profile?.email, profile?.fullName, profile?.id])
-
+  const cancellationAttorneyOptions = useMemo(
+    () =>
+      dedupeRoleplayerOptions([
+        buildExistingRoleplayerOption(cancellationAttorney, 'cancellation_attorney'),
+        ...attorneyPartnerOptions.map((option) => ({ ...option, roleType: 'cancellation_attorney' })),
+      ]),
+    [attorneyPartnerOptions, cancellationAttorney],
+  )
   const activityFeed = useMemo(
     () =>
       [
@@ -3595,82 +3871,6 @@ function AttorneyTransactionDetail() {
     roleplayerForm.buyerName,
     transaction?.seller_has_existing_bond,
     transferAttorney,
-  ])
-  const roleplayerCommunicationHistory = useMemo(() => {
-    const currentSnapshot = {
-      transferAttorneyName: roleplayerForm.attorneyName.trim() || transferAttorney?.participantName || '',
-      transferAttorneyEmail: roleplayerForm.attorneyEmail.trim() || transferAttorney?.participantEmail || '',
-      bondOriginatorName: roleplayerForm.bondOriginatorName.trim() || assignedBondOriginator?.participantName || '',
-      bondOriginatorEmail: roleplayerForm.bondOriginatorEmail.trim() || assignedBondOriginator?.participantEmail || '',
-      agentName: roleplayerForm.agentName.trim() || assignedAgent?.participantName || '',
-      agentEmail: roleplayerForm.agentEmail.trim() || assignedAgent?.participantEmail || '',
-    }
-    const isSnapshotOutdated = (eventData = {}) =>
-      [
-        [eventData.transferAttorneyName, currentSnapshot.transferAttorneyName],
-        [eventData.transferAttorneyEmail, currentSnapshot.transferAttorneyEmail],
-        [eventData.bondOriginatorName, currentSnapshot.bondOriginatorName],
-        [eventData.bondOriginatorEmail, currentSnapshot.bondOriginatorEmail],
-        [eventData.agentName, currentSnapshot.agentName],
-        [eventData.agentEmail, currentSnapshot.agentEmail],
-      ].some(([previous, current]) => normalizeComparableContact(previous) !== normalizeComparableContact(current))
-    const mapIntroEvent = (event) => {
-      const eventData = getActivityEventData(event)
-      const isLatest = event?.id && event.id === latestRoleplayerIntroEvent?.id
-      const outdated = isSnapshotOutdated(eventData)
-      return {
-        id: `intro-${event.id || event.createdAt || event.created_at}`,
-        type: 'Buyer Intro',
-        sentAt: event.createdAt || event.created_at,
-        recipients: [eventData.recipientEmail].filter(Boolean),
-        state: isLatest ? (outdated ? 'Needs resend' : 'Current') : 'Superseded',
-        summary: outdated && isLatest ? 'Roleplayer details changed after this buyer intro was sent.' : 'Buyer received the transaction team introduction.',
-      }
-    }
-    const mapHandoffEvent = (event) => {
-      const eventData = getActivityEventData(event)
-      const recipients = Array.isArray(eventData.recipients)
-        ? eventData.recipients.map((item) => item?.email).filter(Boolean)
-        : []
-      const fallbackTransferEmail = recipients[0] || ''
-      const fallbackBondEmail = recipients[1] || ''
-      const comparableData = {
-        ...eventData,
-        transferAttorneyEmail: eventData.transferAttorneyEmail || fallbackTransferEmail,
-        bondOriginatorEmail: eventData.bondOriginatorEmail || fallbackBondEmail,
-      }
-      const isLatest = event?.id && event.id === latestRoleplayerHandoffEvent?.id
-      const outdated = isSnapshotOutdated(comparableData)
-      return {
-        id: `handoff-${event.id || event.createdAt || event.created_at}`,
-        type: 'Team Handoff',
-        sentAt: event.createdAt || event.created_at,
-        recipients,
-        state: isLatest ? (outdated ? 'Needs resend' : 'Current') : 'Superseded',
-        summary: outdated && isLatest ? 'Provider details changed after this team handoff was sent.' : 'Roleplayers received the transaction handoff context.',
-      }
-    }
-    return [
-      ...roleplayerIntroEvents.map(mapIntroEvent),
-      ...roleplayerHandoffEvents.map(mapHandoffEvent),
-    ].sort((left, right) => new Date(right.sentAt || 0).getTime() - new Date(left.sentAt || 0).getTime())
-  }, [
-    assignedAgent?.participantEmail,
-    assignedAgent?.participantName,
-    assignedBondOriginator?.participantEmail,
-    assignedBondOriginator?.participantName,
-    latestRoleplayerHandoffEvent?.id,
-    latestRoleplayerIntroEvent?.id,
-    roleplayerForm.agentEmail,
-    roleplayerForm.agentName,
-    roleplayerForm.attorneyEmail,
-    roleplayerForm.attorneyName,
-    roleplayerForm.bondOriginatorEmail,
-    roleplayerForm.bondOriginatorName,
-    roleplayerHandoffEvents,
-    roleplayerIntroEvents,
-    transferAttorney?.participantEmail,
-    transferAttorney?.participantName,
   ])
   const workflowLanes = useMemo(
     () => (Array.isArray(workflowOperations?.lanes) ? workflowOperations.lanes : EMPTY_ARRAY),
@@ -4003,6 +4203,25 @@ function AttorneyTransactionDetail() {
     params.set('returnTo', `${location.pathname}${location.search || ''}`)
     navigate(`/transactions/${transaction.id}/legal/otp?${params.toString()}`)
   }, [location.pathname, location.search, navigate, transaction?.id])
+
+  const openWorkspaceMenu = useCallback((nextMenu) => {
+    setWorkspaceMenu(nextMenu)
+    if (activeLegalWorkflowDetailKey && nextMenu !== 'transfer') {
+      navigate(transactionWorkspaceBasePath)
+    }
+  }, [activeLegalWorkflowDetailKey, navigate, transactionWorkspaceBasePath])
+
+  const openLegalWorkflowDetail = useCallback((detailKey) => {
+    const normalized = normalizeLegalWorkflowDetailKey(detailKey)
+    if (!normalized) return
+    setWorkspaceMenu('transfer')
+    navigate(`${transactionWorkspaceBasePath}/transfer/${normalized}`)
+  }, [navigate, transactionWorkspaceBasePath])
+
+  const closeLegalWorkflowDetail = useCallback(() => {
+    setWorkspaceMenu('transfer')
+    navigate(transactionWorkspaceBasePath)
+  }, [navigate, transactionWorkspaceBasePath])
 
   function handleOverviewActionTarget(target = 'overview') {
     const normalizedTarget = normalizeDetailKey(target)
@@ -4381,6 +4600,336 @@ function AttorneyTransactionDetail() {
         ['Expected Transfer Date', formatDate(transaction?.expected_transfer_date)],
         ['Registration Date', formatDate(transaction?.registration_date || transaction?.registered_at)],
       ]
+  const requiresBondOriginatorCard = financeRequiresBondSupport
+  const requiresBondAttorneyCard = Boolean(
+    isBondOrHybridFinance &&
+    (
+      bondAttorney ||
+      bondHybridFinanceSummary?.approvedQuote ||
+      bondHybridFinanceSummary?.acceptedOffer ||
+      transactionFinanceWorkflow?.acceptedOffer ||
+      transaction?.bond_registered ||
+      transaction?.bond_registered_at ||
+      bondHybridFinanceSummary?.instructionSent
+    ),
+  )
+  const requiresCancellationAttorneyCard = Boolean(
+    cancellationAttorney ||
+    transaction?.seller_has_existing_bond ||
+    transaction?.transaction_requires_cancellation,
+  )
+  const transactionTeamCards = [
+    {
+      key: 'transfer_attorney',
+      label: 'Transfer Attorney',
+      visible: true,
+      assigned: transferAttorney,
+      company: transferAttorney?.organisationName || transferAttorney?.firmName || transaction?.attorney || 'Not assigned',
+      contact: transferAttorney?.participantName || transferAttorney?.participantEmail || transaction?.attorney || 'Not assigned',
+      email: transferAttorney?.participantEmail || transaction?.assigned_attorney_email || 'Not captured',
+      status: transferAttorney ? 'Assigned' : 'Not assigned',
+      actionLabel: transferAttorney ? 'Change Assignment' : 'Assign Transfer Attorney',
+    },
+    {
+      key: 'bond_originator',
+      label: 'Bond Originator',
+      visible: requiresBondOriginatorCard,
+      assigned: assignedBondOriginator,
+      company: assignedBondOriginator?.organisationName || transaction?.bond_originator || 'Not assigned',
+      contact: assignedBondOriginator?.participantName || transaction?.bond_originator || assignedBondOriginator?.participantEmail || 'Not assigned',
+      email: assignedBondOriginator?.participantEmail || transaction?.assigned_bond_originator_email || 'Not captured',
+      status: assignedBondOriginator ? 'Assigned' : 'Not assigned',
+      actionLabel: assignedBondOriginator ? 'Change Assignment' : 'Assign Bond Originator',
+    },
+    {
+      key: 'bond_attorney',
+      label: 'Bond Attorney',
+      visible: requiresBondAttorneyCard,
+      assigned: bondAttorney,
+      company: bondAttorney?.organisationName || bondAttorney?.firmName || 'Not assigned',
+      contact: bondAttorney?.participantName || bondAttorney?.participantEmail || 'Not assigned',
+      email: bondAttorney?.participantEmail || 'Not captured',
+      status: bondAttorney ? 'Assigned' : 'Not assigned',
+      actionLabel: bondAttorney ? 'Change Assignment' : 'Assign Bond Attorney',
+    },
+    {
+      key: 'cancellation_attorney',
+      label: 'Cancellation Attorney',
+      visible: requiresCancellationAttorneyCard,
+      assigned: cancellationAttorney,
+      company: cancellationAttorney?.organisationName || cancellationAttorney?.firmName || 'Not assigned',
+      contact: cancellationAttorney?.participantName || cancellationAttorney?.participantEmail || 'Not assigned',
+      email: cancellationAttorney?.participantEmail || 'Not captured',
+      status: cancellationAttorney ? 'Assigned' : 'Not assigned',
+      actionLabel: cancellationAttorney ? 'Change Assignment' : 'Assign Cancellation Attorney',
+    },
+  ].filter((item) => item.visible)
+  const transferWorkflowLane = useMemo(
+    () => workflowLanes.find((lane) => String(lane?.laneKey || '').trim().toLowerCase() === 'transfer') || null,
+    [workflowLanes],
+  )
+  const cancellationWorkflowLane = useMemo(
+    () => workflowLanes.find((lane) => String(lane?.laneKey || '').trim().toLowerCase() === 'cancellation') || null,
+    [workflowLanes],
+  )
+  const bondWorkflowSummary = useMemo(
+    () => summarizeBondHybridFinanceWorkflow(transactionFinanceWorkflow || {}),
+    [transactionFinanceWorkflow],
+  )
+  const requiresBondRegistrationWorkflow = isBondOrHybridFinance
+  const requiresCancellationWorkflow = Boolean(
+    transaction?.seller_has_existing_bond || transaction?.transaction_requires_cancellation,
+  )
+  const roleplayerStripItems = [
+    {
+      key: 'transfer-attorney',
+      label: 'Transfer Attorney',
+      value: transferAttorney?.organisationName || transferAttorney?.participantName || transferAttorney?.participantEmail || transaction?.attorney || 'Not assigned',
+      subtext: transferAttorney?.participantEmail || transaction?.assigned_attorney_email || 'Assignment pending',
+    },
+    {
+      key: 'bond-originator',
+      label: 'Bond Originator',
+      value: assignedBondOriginator?.organisationName || assignedBondOriginator?.participantName || assignedBondOriginator?.participantEmail || transaction?.bond_originator || (
+        requiresBondRegistrationWorkflow ? 'Not assigned' : 'Not required'
+      ),
+      subtext: assignedBondOriginator?.participantEmail || (
+        requiresBondRegistrationWorkflow ? 'Assignment pending' : 'No bond workflow required'
+      ),
+    },
+    {
+      key: 'bond-attorney',
+      label: 'Bond Attorney',
+      value: bondAttorney?.organisationName || bondAttorney?.participantName || bondAttorney?.participantEmail || (
+        requiresBondRegistrationWorkflow ? 'Not assigned' : 'Not required'
+      ),
+      subtext: bondAttorney?.participantEmail || (
+        requiresBondRegistrationWorkflow ? 'Assignment pending' : 'No bond workflow required'
+      ),
+    },
+    {
+      key: 'cancellation-attorney',
+      label: 'Cancellation Attorney',
+      value: cancellationAttorney?.organisationName || cancellationAttorney?.participantName || cancellationAttorney?.participantEmail || (
+        requiresCancellationWorkflow ? 'Not assigned' : 'Not required'
+      ),
+      subtext: cancellationAttorney?.participantEmail || (
+        requiresCancellationWorkflow ? 'Assignment pending' : 'No cancellation workflow required'
+      ),
+    },
+  ]
+  const legalWorkflowModels = useMemo(() => {
+    const transferWorkflow = {
+      key: 'transfer',
+      detailKey: 'transfer',
+      accentKey: 'transfer',
+      title: 'Transfer Attorney',
+      summary: transferWorkflowLane
+        ? getWorkflowExplanation(transferWorkflowLane)
+        : 'Transfer workflow is always required for this transaction.',
+      required: true,
+      statusKey: transferWorkflowLane ? getWorkflowHealthKey(transferWorkflowLane) : 'not_started',
+      statusLabel: transferWorkflowLane ? getWorkflowHealthLabel(transferWorkflowLane) : 'Not Started',
+      progressPercent: Number(transferWorkflowLane?.summary?.completionPercent || 0),
+      nextStep: transferWorkflowLane
+        ? (getCurrentWorkflowStep(transferWorkflowLane) ? getWorkflowStepLabel(getCurrentWorkflowStep(transferWorkflowLane)) : transferWorkflowLane?.summary?.nextAction || 'Workflow review')
+        : 'Assign transfer attorney',
+      assignedLabel: 'Assigned Attorney',
+      assignedDisplay: transferAttorney?.organisationName || transferAttorney?.participantName || transferAttorney?.participantEmail || transaction?.attorney || 'Not assigned',
+      assignedOrganisation: transferAttorney?.organisationName || transaction?.attorney || 'Not assigned',
+      assignedContact: transferAttorney?.participantName || transferAttorney?.participantEmail || transaction?.assigned_attorney_email || 'Not assigned',
+      route: `${transactionWorkspaceBasePath}/transfer/transfer`,
+      activityCount: activityFeed.filter((entry) => (entry?.filterKeys || []).includes('transfer')).length,
+      blockers: [
+        !transferAttorney && !transaction?.attorney ? 'Transfer attorney still needs to be assigned.' : '',
+        ...(Array.isArray(transferWorkflowLane?.summary?.blockers) ? transferWorkflowLane.summary.blockers : []),
+      ].filter(Boolean),
+      lane: transferWorkflowLane,
+    }
+
+    const items = [transferWorkflow]
+
+    items.push({
+      key: 'bond_registration',
+      detailKey: 'bond-registration',
+      accentKey: 'bond',
+      title: 'Bond Registration',
+      summary: requiresBondRegistrationWorkflow
+        ? 'Bond registration is active for this bond or hybrid transaction.'
+        : 'No bond registration workflow is required for this transaction.',
+      required: requiresBondRegistrationWorkflow,
+      statusKey: requiresBondRegistrationWorkflow ? getBondWorkflowStatusKey(transactionFinanceWorkflow) : 'not_started',
+      statusLabel: requiresBondRegistrationWorkflow
+        ? (WORKFLOW_STATUS_META[getBondWorkflowStatusKey(transactionFinanceWorkflow)]?.label || 'Not Started')
+        : 'Not Required',
+      progressPercent: requiresBondRegistrationWorkflow ? getBondWorkflowProgressPercent(transactionFinanceWorkflow) : 0,
+      nextStep: requiresBondRegistrationWorkflow ? getBondWorkflowNextStep(transactionFinanceWorkflow) : 'Not required',
+      assignedLabel: 'Assigned Bond Attorney',
+      assignedDisplay: bondAttorney?.organisationName || bondAttorney?.participantName || bondAttorney?.participantEmail || 'Not assigned',
+      assignedOrganisation: bondAttorney?.organisationName || bondAttorney?.firmName || 'Not assigned',
+      assignedContact: bondAttorney?.participantName || bondAttorney?.participantEmail || 'Not assigned',
+      route: `${transactionWorkspaceBasePath}/transfer/bond-registration`,
+      activityCount: activityFeed.filter((entry) => (entry?.filterKeys || []).includes('bond')).length,
+      blockers: requiresBondRegistrationWorkflow
+        ? [
+            !bondAttorney ? 'Bond attorney still needs to be assigned.' : '',
+            !bondWorkflowSummary.currentStage ? 'Bond workflow has not started yet.' : '',
+          ].filter(Boolean)
+        : [],
+      lane: null,
+    })
+
+    items.push({
+      key: 'bond_cancellation',
+      detailKey: 'bond-cancellation',
+      accentKey: 'cancellation',
+      title: 'Bond Cancellation',
+      summary: requiresCancellationWorkflow
+        ? (cancellationWorkflowLane ? getWorkflowExplanation(cancellationWorkflowLane) : 'Bond cancellation is required for this seller transaction.')
+        : 'No bond cancellation workflow is required for this transaction.',
+      required: requiresCancellationWorkflow,
+      statusKey: requiresCancellationWorkflow
+        ? (cancellationWorkflowLane ? getWorkflowHealthKey(cancellationWorkflowLane) : 'not_started')
+        : 'not_started',
+      statusLabel: requiresCancellationWorkflow
+        ? (cancellationWorkflowLane ? getWorkflowHealthLabel(cancellationWorkflowLane) : 'Not Started')
+        : 'Not Required',
+      progressPercent: requiresCancellationWorkflow ? Number(cancellationWorkflowLane?.summary?.completionPercent || 0) : 0,
+      nextStep: requiresCancellationWorkflow
+        ? (cancellationWorkflowLane
+            ? (getCurrentWorkflowStep(cancellationWorkflowLane)
+                ? getWorkflowStepLabel(getCurrentWorkflowStep(cancellationWorkflowLane))
+                : cancellationWorkflowLane?.summary?.nextAction || 'Workflow review')
+            : 'Assign cancellation attorney')
+        : 'Not required',
+      assignedLabel: 'Assigned Cancellation Attorney',
+      assignedDisplay: cancellationAttorney?.organisationName || cancellationAttorney?.participantName || cancellationAttorney?.participantEmail || 'Not assigned',
+      assignedOrganisation: cancellationAttorney?.organisationName || cancellationAttorney?.firmName || 'Not assigned',
+      assignedContact: cancellationAttorney?.participantName || cancellationAttorney?.participantEmail || 'Not assigned',
+      route: `${transactionWorkspaceBasePath}/transfer/bond-cancellation`,
+      activityCount: activityFeed.filter((entry) => (entry?.filterKeys || []).includes('cancellation')).length,
+      blockers: requiresCancellationWorkflow
+        ? [
+            !cancellationAttorney ? 'Cancellation attorney still needs to be assigned.' : '',
+            ...(Array.isArray(cancellationWorkflowLane?.summary?.blockers) ? cancellationWorkflowLane.summary.blockers : []),
+          ].filter(Boolean)
+        : [],
+      lane: cancellationWorkflowLane,
+    })
+
+    return items
+  }, [
+    activityFeed,
+    bondAttorney,
+    bondWorkflowSummary.currentStage,
+    cancellationAttorney,
+    cancellationWorkflowLane,
+    requiresBondRegistrationWorkflow,
+    requiresCancellationWorkflow,
+    transaction?.assigned_attorney_email,
+    transaction?.attorney,
+    transactionFinanceWorkflow,
+    transactionWorkspaceBasePath,
+    transferAttorney,
+    transferWorkflowLane,
+  ])
+  const transferHubWorkflows = useMemo(
+    () => legalWorkflowModels.filter((item) => item.required),
+    [legalWorkflowModels],
+  )
+  const activeLegalWorkflowModel = useMemo(
+    () => legalWorkflowModels.find((item) => item.detailKey === activeLegalWorkflowDetailKey) || null,
+    [activeLegalWorkflowDetailKey, legalWorkflowModels],
+  )
+  const legalRecentActivity = useMemo(
+    () => activityFeed.filter((entry) => isLegalActivityEntry(entry)).slice(0, 8),
+    [activityFeed],
+  )
+  const transferRecentActivity = useMemo(
+    () => activityFeed.filter((entry) => (entry?.filterKeys || []).includes('transfer')).slice(0, 8),
+    [activityFeed],
+  )
+  const bondRecentActivity = useMemo(
+    () => activityFeed.filter((entry) => (entry?.filterKeys || []).includes('bond')).slice(0, 8),
+    [activityFeed],
+  )
+  const cancellationRecentActivity = useMemo(
+    () => activityFeed.filter((entry) => (entry?.filterKeys || []).includes('cancellation')).slice(0, 8),
+    [activityFeed],
+  )
+  const bondWorkflowDocuments = useMemo(
+    () => documents.filter((document) => ['bond', 'finance'].includes(resolveDocumentLibraryCategory(document))).slice(0, 8),
+    [documents],
+  )
+  const transactionContactRows = [
+    {
+      key: 'buyer',
+      role: 'Buyer',
+      contact: roleplayerForm.buyerName || buyer?.name || 'Not assigned',
+      company: 'Client',
+      email: roleplayerForm.buyerEmail || buyer?.email || 'Not captured',
+      phone: roleplayerForm.buyerPhone || buyer?.phone || 'Not captured',
+      status: roleplayerForm.buyerEmail || buyer?.email ? 'Active' : 'Pending',
+    },
+    {
+      key: 'seller',
+      role: 'Seller',
+      contact: roleplayerForm.sellerName || transaction?.seller_name || 'Not assigned',
+      company: 'Client',
+      email: roleplayerForm.sellerEmail || transaction?.seller_email || 'Not captured',
+      phone: roleplayerForm.sellerPhone || transaction?.seller_phone || 'Not captured',
+      status: roleplayerForm.sellerEmail || transaction?.seller_email ? 'Active' : 'Pending',
+    },
+    {
+      key: 'agent',
+      role: 'Agent',
+      contact: roleplayerForm.agentName || assignedAgent?.participantName || transaction?.assigned_agent || 'Not assigned',
+      company: assignedAgent?.organisationName || development?.name || 'Sales Team',
+      email: roleplayerForm.agentEmail || assignedAgent?.participantEmail || transaction?.assigned_agent_email || 'Not captured',
+      phone: assignedAgent?.participantPhone || 'Not captured',
+      status: roleplayerForm.agentEmail || assignedAgent?.participantEmail || transaction?.assigned_agent_email ? 'Active' : 'Pending',
+    },
+    {
+      key: 'transfer_attorney',
+      role: 'Transfer Attorney',
+      contact: transferAttorney?.participantName || transaction?.attorney || transferAttorney?.participantEmail || 'Not assigned',
+      company: transferAttorney?.organisationName || transferAttorney?.firmName || transaction?.attorney || 'Not assigned',
+      email: transferAttorney?.participantEmail || transaction?.assigned_attorney_email || 'Not captured',
+      phone: transferAttorney?.participantPhone || 'Not captured',
+      status: transferAttorney ? 'Assigned' : 'Not assigned',
+      visible: true,
+    },
+    {
+      key: 'bond_originator',
+      role: 'Bond Originator',
+      contact: assignedBondOriginator?.participantName || transaction?.bond_originator || assignedBondOriginator?.participantEmail || 'Not assigned',
+      company: assignedBondOriginator?.organisationName || transaction?.bond_originator || 'Not assigned',
+      email: assignedBondOriginator?.participantEmail || transaction?.assigned_bond_originator_email || 'Not captured',
+      phone: assignedBondOriginator?.participantPhone || 'Not captured',
+      status: assignedBondOriginator ? 'Assigned' : 'Not assigned',
+      visible: requiresBondOriginatorCard,
+    },
+    {
+      key: 'bond_attorney',
+      role: 'Bond Attorney',
+      contact: bondAttorney?.participantName || bondAttorney?.participantEmail || 'Not assigned',
+      company: bondAttorney?.organisationName || bondAttorney?.firmName || 'Not assigned',
+      email: bondAttorney?.participantEmail || 'Not captured',
+      phone: bondAttorney?.participantPhone || 'Not captured',
+      status: bondAttorney ? 'Assigned' : 'Not assigned',
+      visible: requiresBondAttorneyCard,
+    },
+    {
+      key: 'cancellation_attorney',
+      role: 'Cancellation Attorney',
+      contact: cancellationAttorney?.participantName || cancellationAttorney?.participantEmail || 'Not assigned',
+      company: cancellationAttorney?.organisationName || cancellationAttorney?.firmName || 'Not assigned',
+      email: cancellationAttorney?.participantEmail || 'Not captured',
+      phone: cancellationAttorney?.participantPhone || 'Not captured',
+      status: cancellationAttorney ? 'Assigned' : 'Not assigned',
+      visible: requiresCancellationAttorneyCard,
+    },
+  ].filter((item) => item.visible !== false)
   const filteredActivityFeed = useMemo(
     () =>
       activityFeed.filter((entry) => {
@@ -4531,14 +5080,6 @@ function AttorneyTransactionDetail() {
 
   useEffect(() => {
     if (!transaction) return
-    setAccessControlForm({
-      ownerUserId: transaction.owner_user_id || profile?.id || '',
-      accessLevel: transaction.access_level || 'shared',
-    })
-  }, [profile?.id, transaction])
-
-  useEffect(() => {
-    if (!transaction) return
     setRoleplayerForm({
       buyerName: buyer?.name || '',
       buyerEmail: buyer?.email || '',
@@ -4569,8 +5110,9 @@ function AttorneyTransactionDetail() {
       transferAttorney: transferAttorneyOptions[0]?.id || '',
       bondOriginator: bondOriginatorOptions[0]?.id || '',
       bondAttorney: bondAttorneyOptions[0]?.id || '',
+      cancellationAttorney: cancellationAttorneyOptions[0]?.id || '',
     })
-  }, [bondAttorneyOptions, bondOriginatorOptions, isAgentTransactionView, roleplayerConfirmOpen, transferAttorneyOptions])
+  }, [bondAttorneyOptions, bondOriginatorOptions, cancellationAttorneyOptions, isAgentTransactionView, roleplayerConfirmOpen, transferAttorneyOptions])
 
   useEffect(() => {
     if (!isAgentTransactionView || !roleplayerConfirmOpen) return
@@ -4578,8 +5120,12 @@ function AttorneyTransactionDetail() {
       transferAttorney: findRoleplayerOptionInList(transferAttorneyOptions, previous.transferAttorney)?.id || transferAttorneyOptions[0]?.id || '',
       bondOriginator: findRoleplayerOptionInList(bondOriginatorOptions, previous.bondOriginator)?.id || bondOriginatorOptions[0]?.id || '',
       bondAttorney: findRoleplayerOptionInList(bondAttorneyOptions, previous.bondAttorney)?.id || bondAttorneyOptions[0]?.id || '',
+      cancellationAttorney:
+        findRoleplayerOptionInList(cancellationAttorneyOptions, previous.cancellationAttorney)?.id ||
+        cancellationAttorneyOptions[0]?.id ||
+        '',
     }))
-  }, [bondAttorneyOptions, bondOriginatorOptions, isAgentTransactionView, roleplayerConfirmOpen, transferAttorneyOptions])
+  }, [bondAttorneyOptions, bondOriginatorOptions, cancellationAttorneyOptions, isAgentTransactionView, roleplayerConfirmOpen, transferAttorneyOptions])
 
   function openPrintDocument(content, popupErrorMessage) {
     const blob = new Blob([content], { type: 'text/html;charset=utf-8' })
@@ -4828,6 +5374,10 @@ function AttorneyTransactionDetail() {
       transferAttorney: findRoleplayerOptionInList(transferAttorneyOptions, roleplayerConfirmDraft.transferAttorney)?.id || transferAttorneyOptions[0]?.id || '',
       bondOriginator: findRoleplayerOptionInList(bondOriginatorOptions, roleplayerConfirmDraft.bondOriginator)?.id || bondOriginatorOptions[0]?.id || '',
       bondAttorney: findRoleplayerOptionInList(bondAttorneyOptions, roleplayerConfirmDraft.bondAttorney)?.id || bondAttorneyOptions[0]?.id || '',
+      cancellationAttorney:
+        findRoleplayerOptionInList(cancellationAttorneyOptions, roleplayerConfirmDraft.cancellationAttorney)?.id ||
+        cancellationAttorneyOptions[0]?.id ||
+        '',
     })
     setRoleplayerConfirmOpen(true)
   }
@@ -4946,6 +5496,7 @@ function AttorneyTransactionDetail() {
       null
     const bondOriginatorOption = findRoleplayerOption('bond_originator', roleplayerConfirmDraft.bondOriginator)
     const bondAttorneyOption = findRoleplayerOption('bond_attorney', roleplayerConfirmDraft.bondAttorney)
+    const cancellationAttorneyOption = findRoleplayerOption('cancellation_attorney', roleplayerConfirmDraft.cancellationAttorney)
 
     if (!transferOption) {
       setRoleplayerConfirmError('Transfer Attorney is required before buyer onboarding can be sent.')
@@ -4960,6 +5511,7 @@ function AttorneyTransactionDetail() {
       buildRoleplayerSelection('transfer_attorney', transferOption),
       buildRoleplayerSelection('bond_originator', bondOriginatorOption),
       buildRoleplayerSelection('bond_attorney', bondAttorneyOption),
+      buildRoleplayerSelection('cancellation_attorney', cancellationAttorneyOption),
     ].filter(Boolean)
 
     try {
@@ -4995,13 +5547,6 @@ function AttorneyTransactionDetail() {
     }
   }
 
-  function updateRoleplayerFormField(field, value) {
-    setRoleplayerForm((previous) => ({
-      ...previous,
-      [field]: value,
-    }))
-  }
-
   async function persistRoleplayerContacts() {
     if (!transaction?.id) return
 
@@ -5029,24 +5574,6 @@ function AttorneyTransactionDetail() {
     }
     window.dispatchEvent(new Event('itg:transaction-updated'))
     return refreshed
-  }
-
-  async function handleSaveRoleplayerContacts(event) {
-    event.preventDefault()
-    if (!transaction?.id) return
-
-    try {
-      setSaving(true)
-      setError('')
-      setStakeholderMessage('')
-      setInviteLinkResult('')
-      await persistRoleplayerContacts()
-      setStakeholderMessage('Current roleplayers updated and transaction participants synced.')
-    } catch (saveRoleplayersError) {
-      setError(saveRoleplayersError.message || 'Unable to update roleplayers.')
-    } finally {
-      setSaving(false)
-    }
   }
 
   async function handleSendRoleplayerIntro() {
@@ -5138,6 +5665,11 @@ function AttorneyTransactionDetail() {
     } finally {
       setRoleplayerHandoffBusy(false)
     }
+  }
+
+  function openRoleplayerActivityFeed() {
+    setWorkspaceMenu('activity')
+    setActivityFilter('roleplayers')
   }
 
   const refreshRegistrationValidation = useCallback(async () => {
@@ -5396,116 +5928,6 @@ function AttorneyTransactionDetail() {
     }
   }
 
-  async function handleSaveAccessControl(event) {
-    event.preventDefault()
-    if (!transaction?.id) return
-    try {
-      setSaving(true)
-      setError('')
-      setStakeholderMessage('')
-      setInviteLinkResult('')
-      const refreshed = await updateTransactionAccessControl({
-        transactionId: transaction.id,
-        ownerUserId: accessControlForm.ownerUserId || null,
-        accessLevel: accessControlForm.accessLevel || 'shared',
-      })
-      if (refreshed) {
-        setData(refreshed)
-      } else {
-        await loadData()
-      }
-      setStakeholderMessage('Access control updated.')
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-    } catch (saveAccessError) {
-      setError(saveAccessError.message || 'Unable to update transaction access control.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleInviteStakeholder(event) {
-    event.preventDefault()
-    if (!transaction?.id) return
-    try {
-      setSaving(true)
-      setError('')
-      setStakeholderMessage('')
-      const response = await inviteStakeholder({
-        transactionId: transaction.id,
-        roleType: stakeholderInviteForm.roleType,
-        legalRole: stakeholderInviteForm.roleType === 'attorney' ? stakeholderInviteForm.legalRole : null,
-        email: stakeholderInviteForm.email,
-        participantName: buildInviteParticipantName(stakeholderInviteForm),
-        expiresDays: Number(stakeholderInviteForm.expiresDays) || 14,
-      })
-      const invitationUrl = response?.invitationUrl
-        ? `${window.location.origin}${response.invitationUrl}`
-        : ''
-      if (invitationUrl) {
-        try {
-          await navigator.clipboard.writeText(invitationUrl)
-        } catch {
-          // Clipboard can fail in embedded browsers; keep url visible in UI.
-        }
-      }
-      setInviteLinkResult(invitationUrl)
-      setStakeholderInviteForm((previous) => ({
-        ...previous,
-        participantName: '',
-        agentPhone: '',
-        agentAgencyName: '',
-        email: '',
-      }))
-      const agentMeta =
-        stakeholderInviteForm.roleType === 'agent'
-          ? [stakeholderInviteForm.agentAgencyName?.trim(), stakeholderInviteForm.agentPhone?.trim()].filter(Boolean).join(' • ')
-          : ''
-      setStakeholderMessage(invitationUrl ? 'Invite created and link copied.' : 'Invite created.')
-      if (agentMeta) {
-        setStakeholderMessage((previous) => `${previous} Agent details captured: ${agentMeta}.`)
-      }
-      await loadData()
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-    } catch (inviteError) {
-      setError(inviteError.message || 'Unable to create stakeholder invitation.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  function requestStakeholderRemoval(participant) {
-    if (!participant?.id) return
-    const participantLabel = participant.participantName || participant.participantEmail || participant.roleLabel || 'this stakeholder'
-    setRemoveDialog({
-      open: true,
-      stakeholderId: participant.id,
-      title: 'Remove Stakeholder',
-      description: `Remove ${participantLabel} from this transaction? Access will be revoked immediately, and history will be retained.`,
-    })
-  }
-
-  async function confirmRemoveStakeholder() {
-    if (!transaction?.id || !removeDialog.stakeholderId) return
-    try {
-      setSaving(true)
-      setError('')
-      setStakeholderMessage('')
-      setInviteLinkResult('')
-      await removeStakeholder({
-        transactionId: transaction.id,
-        stakeholderId: removeDialog.stakeholderId,
-      })
-      setRemoveDialog({ open: false, stakeholderId: null, title: '', description: '' })
-      setStakeholderMessage('Stakeholder removed.')
-      await loadData()
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-    } catch (removeError) {
-      setError(removeError.message || 'Unable to remove stakeholder.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   async function handleAddDiscussion(event) {
     event.preventDefault()
     if (!transaction?.id || !discussionBody.trim()) {
@@ -5615,7 +6037,7 @@ function AttorneyTransactionDetail() {
               actionButtons={headerWorkflowActionButtons}
               isAgentView={isAgentTransactionView}
             />
-          <MatterWorkspaceTabs tabs={workspaceMenuTabs} activeTab={activeWorkspaceMenu} onChange={setWorkspaceMenu} premium={isAgentTransactionView} />
+          <MatterWorkspaceTabs tabs={workspaceMenuTabs} activeTab={activeWorkspaceMenu} onChange={openWorkspaceMenu} premium={isAgentTransactionView} />
           {onboardingActionMessage ? (
             <p className="rounded-[14px] border border-borderDefault bg-surfaceAlt px-4 py-2.5 text-helper text-textMuted">
               {onboardingActionMessage}
@@ -5707,176 +6129,468 @@ function AttorneyTransactionDetail() {
                     ) : null}
                   </section>
                 ) : (
-                  <>
-                    <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <h2 className="text-base font-semibold text-textStrong">Transfer Workflow</h2>
-                          <p className="mt-1 text-sm text-textMuted">Transfer, lodgement, registration, and cancellation workflow details live in this operational tab.</p>
-                        </div>
-                        <div className="flex flex-wrap gap-3 text-xs font-medium text-textMuted">
-                          {Object.entries(WORKFLOW_STATUS_META).map(([key, meta]) => (
-                            <span key={key} className="inline-flex items-center gap-1.5">
-                              <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
-                              {meta.label}
-                            </span>
+                  activeLegalWorkflowDetailKey ? (
+                    (() => {
+                      const workflow = activeLegalWorkflowModel
+                      const statusMeta = WORKFLOW_STATUS_META[workflow?.statusKey] || WORKFLOW_STATUS_META.not_started
+                      const lane = workflow?.lane || null
+                      const detailActivity = activeLegalWorkflowDetailKey === 'bond-registration'
+                        ? bondRecentActivity
+                        : activeLegalWorkflowDetailKey === 'bond-cancellation'
+                          ? cancellationRecentActivity
+                          : transferRecentActivity
+
+                      if (!workflow) {
+                        return (
+                          <section className="rounded-[18px] border border-dashed border-borderDefault bg-white px-5 py-6 text-sm text-textMuted">
+                            This workflow route is not available for the current transaction.
+                          </section>
+                        )
+                      }
+
+                      return (
+                        <>
+                          <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                              <div>
+                                <Button type="button" variant="ghost" size="sm" onClick={closeLegalWorkflowDetail}>
+                                  Back to Transfer Hub
+                                </Button>
+                                <h2 className="mt-3 text-[1.2rem] font-semibold tracking-[-0.03em] text-textStrong">{workflow.title}</h2>
+                                <p className="mt-1 text-sm leading-6 text-textMuted">
+                                  {activeLegalWorkflowDetailKey === 'bond-registration'
+                                    ? 'Manage the bond registration workflow for this transaction.'
+                                    : activeLegalWorkflowDetailKey === 'bond-cancellation'
+                                      ? 'Manage the bond cancellation workflow for this transaction.'
+                                      : 'Manage the transfer workflow for this transaction.'}
+                                </p>
+                              </div>
+                              <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${statusMeta.border} ${statusMeta.bg} ${statusMeta.text}`}>
+                                <span className={`h-2 w-2 rounded-full ${statusMeta.dot}`} />
+                                {workflow.statusLabel}
+                              </span>
+                            </div>
+
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                              {[
+                                ['Status', workflow.statusLabel],
+                                ['Progress', `${workflow.progressPercent}%`],
+                                ['Next Step', workflow.nextStep || 'Pending'],
+                                [workflow.assignedLabel, workflow.assignedDisplay || 'Not assigned'],
+                              ].map(([label, value]) => (
+                                <article key={`${workflow.key}-${label}`} className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+                                  <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
+                                  <strong className="mt-1 block text-sm text-textStrong">{value}</strong>
+                                </article>
+                              ))}
+                            </div>
+                          </section>
+
+                          {activeLegalWorkflowDetailKey === 'bond-registration' ? (
+                            <>
+                              <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                  {[
+                                    ['Current Stage', bondWorkflowSummary.currentStageLabel || 'Not started'],
+                                    ['Instruction Sent', bondWorkflowSummary.instructionSent ? 'Yes' : 'No'],
+                                    ['Quotes Received', String(bondWorkflowSummary.quotesReceivedCount || 0)],
+                                    ['Approved Bank', bondWorkflowSummary.approvedBank || 'Not approved yet'],
+                                  ].map(([label, value]) => (
+                                    <article key={label} className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+                                      <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
+                                      <strong className="mt-1 block text-sm text-textStrong">{value}</strong>
+                                    </article>
+                                  ))}
+                                </div>
+                              </section>
+
+                              {bondHybridFinanceWorkflowPanel}
+
+                              <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+                                <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                                  <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                      <h3 className="text-sm font-semibold text-textStrong">Bond Documents</h3>
+                                      <p className="mt-1 text-sm text-textMuted">Bond instructions, guarantees, and supporting finance documents.</p>
+                                    </div>
+                                    <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textMuted">
+                                      {bondWorkflowDocuments.length} file{bondWorkflowDocuments.length === 1 ? '' : 's'}
+                                    </span>
+                                  </div>
+                                  <div className="mt-4 space-y-2">
+                                    {bondWorkflowDocuments.length ? (
+                                      bondWorkflowDocuments.map((document) => (
+                                        <article key={document.id} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+                                          <strong className="block text-sm text-textStrong">{document.name || 'Bond document'}</strong>
+                                          <p className="mt-1 text-xs text-textMuted">
+                                            {document.category || 'Bond'} • {formatDateTime(document.updated_at || document.created_at)}
+                                          </p>
+                                        </article>
+                                      ))
+                                    ) : (
+                                      <p className="rounded-[12px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-4 text-sm text-textMuted">
+                                        No bond workflow documents have been uploaded yet.
+                                      </p>
+                                    )}
+                                  </div>
+                                </section>
+
+                                <aside className="space-y-4">
+                                  <OverviewSidePanel title="Quick Actions">
+                                    <div className="grid gap-2">
+                                      {[
+                                        ['Request Documents', FileText, handleQuickRequestDocuments],
+                                        ['Upload Document', Upload, () => openWorkspaceMenu('documents')],
+                                        ['Add Note', MessageSquarePlus, handleQuickAddWorkflowNote],
+                                        ['Schedule Signing', CalendarDays, handleQuickScheduleSigning],
+                                        ['Generate Sales Agreement', FileText, openAgentSalesAgreementWorkspace],
+                                      ].map(([label, Icon, action]) => (
+                                        <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
+                                          {createElement(Icon, { size: 14 })}
+                                          {label}
+                                        </Button>
+                                      ))}
+                                    </div>
+                                  </OverviewSidePanel>
+
+                                  <LegalActivityList title="Bond Registration Activity" items={detailActivity} emptyLabel="No bond registration activity yet." />
+                                </aside>
+                              </section>
+                            </>
+                          ) : (
+                            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+                              <div className="space-y-4">
+                                <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                                  <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                      <h3 className="text-sm font-semibold text-textStrong">
+                                        {activeLegalWorkflowDetailKey === 'bond-cancellation' ? 'Cancellation Timeline' : 'Transfer Timeline'}
+                                      </h3>
+                                      <p className="mt-1 text-sm text-textMuted">Detailed milestone progress for this legal workflow.</p>
+                                    </div>
+                                    <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textMuted">
+                                      {(lane?.steps || []).length} step{(lane?.steps || []).length === 1 ? '' : 's'}
+                                    </span>
+                                  </div>
+                                  <div className="mt-4 space-y-2">
+                                    {(lane?.steps || []).length ? (
+                                      lane.steps.map((step) => {
+                                        const classes = getStepClasses(step, getCurrentWorkflowStep(lane))
+                                        return (
+                                          <article key={step.id || step.stepKey} className={`rounded-[12px] border px-3 py-3 ${classes.base}`}>
+                                            <div className="flex items-start justify-between gap-3">
+                                              <div className="min-w-0">
+                                                <strong className="block text-sm text-textStrong">{getWorkflowStepLabel(step)}</strong>
+                                                <p className={`mt-1 text-xs ${classes.text}`}>
+                                                  {step.completedAt ? `Completed ${formatShortDayMonth(step.completedAt)}` : classes.meta.label}
+                                                </p>
+                                                {step.comment ? <p className="mt-1 text-xs leading-5 text-textMuted">{step.comment}</p> : null}
+                                              </div>
+                                              <span className={`mt-0.5 h-2.5 w-2.5 rounded-full ${classes.meta.dot}`} />
+                                            </div>
+                                          </article>
+                                        )
+                                      })
+                                    ) : (
+                                      <p className="rounded-[12px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-4 text-sm text-textMuted">
+                                        {activeLegalWorkflowDetailKey === 'bond-cancellation'
+                                          ? 'No cancellation workflow lane is configured yet.'
+                                          : 'No transfer workflow lane is configured yet.'}
+                                      </p>
+                                    )}
+                                  </div>
+                                </section>
+
+                                <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                                  <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                      <h3 className="text-sm font-semibold text-textStrong">Required Documents</h3>
+                                      <p className="mt-1 text-sm text-textMuted">Canonical required documents linked to this workflow.</p>
+                                    </div>
+                                    <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textMuted">
+                                      {(lane?.documentRequirements || []).length} item{(lane?.documentRequirements || []).length === 1 ? '' : 's'}
+                                    </span>
+                                  </div>
+                                  <div className="mt-4 space-y-2">
+                                    {(lane?.documentRequirements || []).length ? (
+                                      lane.documentRequirements.map((item) => {
+                                        const statusKey = normalizeWorkspaceStatus(item.status)
+                                        const statusMeta = WORKFLOW_STATUS_META[statusKey] || WORKFLOW_STATUS_META.not_started
+                                        return (
+                                          <article key={item.id || item.key} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+                                            <div className="flex items-start justify-between gap-3">
+                                              <div className="min-w-0">
+                                                <strong className="block text-sm text-textStrong">{item.label}</strong>
+                                                <p className="mt-1 text-xs text-textMuted">
+                                                  {toTitle(item.category)} • {toTitle(item.requiredFrom)}
+                                                </p>
+                                              </div>
+                                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusMeta.border} ${statusMeta.bg} ${statusMeta.text}`}>
+                                                {toTitle(item.status || 'missing')}
+                                              </span>
+                                            </div>
+                                          </article>
+                                        )
+                                      })
+                                    ) : (
+                                      <p className="rounded-[12px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-4 text-sm text-textMuted">
+                                        No required documents are configured for this workflow yet.
+                                      </p>
+                                    )}
+                                  </div>
+                                </section>
+                              </div>
+
+                              <aside className="space-y-4">
+                                <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                                  <h3 className="text-sm font-semibold text-textStrong">Workflow Snapshot</h3>
+                                  <div className="mt-3 grid gap-2">
+                                    {(activeLegalWorkflowDetailKey === 'bond-cancellation'
+                                      ? [
+                                          ['Instruction', summarizeLaneMilestone(lane, ['instruction'])],
+                                          ['Settlement Figures', summarizeLaneMilestone(lane, ['settlement'])],
+                                          ['Guarantees', summarizeLaneMilestone(lane, ['guarantee'])],
+                                          ['Lodgement', summarizeLaneMilestone(lane, ['lodgement'])],
+                                        ]
+                                      : [
+                                          ['Signing Status', summarizeLaneMilestone(lane, ['signed', 'signing'])],
+                                          ['Rates Clearance', summarizeLaneMilestone(lane, ['rates', 'clearance'])],
+                                          ['Lodgement', summarizeLaneMilestone(lane, ['lodgement'])],
+                                          ['Registration', summarizeLaneMilestone(lane, ['registration'])],
+                                        ]).map(([label, value]) => (
+                                      <div key={label} className="flex items-center justify-between gap-3 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2.5">
+                                        <span className="text-sm text-textMuted">{label}</span>
+                                        <strong className="text-sm text-textStrong">{value}</strong>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </section>
+
+                                <OverviewSidePanel title="Quick Actions">
+                                  <div className="grid gap-2">
+                                    {[
+                                      ['Request Documents', FileText, handleQuickRequestDocuments],
+                                      ['Upload Document', Upload, () => openWorkspaceMenu('documents')],
+                                      ['Add Note', MessageSquarePlus, handleQuickAddWorkflowNote],
+                                      ['Schedule Signing', CalendarDays, handleQuickScheduleSigning],
+                                      ['Generate Sales Agreement', FileText, openAgentSalesAgreementWorkspace],
+                                    ].map(([label, Icon, action]) => (
+                                      <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
+                                        {createElement(Icon, { size: 14 })}
+                                        {label}
+                                      </Button>
+                                    ))}
+                                  </div>
+                                </OverviewSidePanel>
+
+                                <LegalActivityList
+                                  title={activeLegalWorkflowDetailKey === 'bond-cancellation' ? 'Cancellation Activity' : 'Transfer Activity'}
+                                  items={detailActivity}
+                                  emptyLabel={activeLegalWorkflowDetailKey === 'bond-cancellation' ? 'No cancellation workflow activity yet.' : 'No transfer workflow activity yet.'}
+                                />
+                              </aside>
+                            </section>
+                          )}
+                        </>
+                      )
+                    })()
+                  ) : (
+                    <>
+                      <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                        <h2 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-textStrong">Transfer</h2>
+                        <p className="mt-1 text-sm leading-6 text-textMuted">Manage the legal workflows for this transaction.</p>
+                      </section>
+
+                      <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                        <div className="grid gap-4 xl:grid-cols-3">
+                          {transferHubWorkflows.map((workflow) => (
+                            <LegalWorkflowHubCard
+                              key={workflow.key}
+                              workflow={workflow}
+                              onOpen={() => openLegalWorkflowDetail(workflow.detailKey)}
+                            />
                           ))}
                         </div>
-                      </div>
-                    </section>
+                      </section>
 
-                    {workflowLoading ? (
-                      <LoadingSkeleton lines={5} className="rounded-[16px] border border-borderDefault bg-white p-4" />
-                    ) : workflowError ? (
-                      <p className="rounded-[16px] border border-warning/30 bg-warningSoft px-4 py-3 text-sm font-medium text-warning">
-                        {workflowError}
-                      </p>
-                    ) : displayedWorkflowLanes.length ? (
-                      displayedWorkflowLanes.map((lane) => (
-                        <WorkflowLaneCard
-                          key={lane.id || lane.laneKey}
-                          lane={lane}
-                          onOpenDetails={() => openWorkflowDrawer(lane)}
-                          onPrimaryAction={handleWorkflowPrimaryAction}
-                        />
-                      ))
-                    ) : (
-                      <p className="rounded-[16px] border border-dashed border-borderDefault bg-white px-4 py-6 text-sm text-textMuted">
-                        No transfer or cancellation workflow lane is configured for this matter yet.
-                      </p>
-                    )}
-                  </>
+                      <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                          <div>
+                            <h3 className="text-sm font-semibold text-textStrong">Assigned Roleplayers</h3>
+                            <p className="mt-1 text-sm leading-6 text-textMuted">Current legal roleplayers for transfer, finance, and cancellation.</p>
+                          </div>
+                          <Button type="button" variant="secondary" size="sm" onClick={() => openWorkspaceMenu('stakeholders')}>
+                            Manage Roleplayers
+                          </Button>
+                        </div>
+                        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                          {roleplayerStripItems.map((item) => (
+                            <article key={item.key} className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3">
+                              <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{item.label}</span>
+                              <strong className="mt-2 block text-sm text-textStrong">{item.value}</strong>
+                              <p className="mt-1 text-xs text-textMuted">{item.subtext}</p>
+                            </article>
+                          ))}
+                        </div>
+                      </section>
+                    </>
+                  )
                 )}
 
-                <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-semibold text-textStrong">{isAgentTransactionView ? 'Transaction Conversation' : 'Matter Conversation'}</h3>
-                      <p className="mt-1 text-sm text-textMuted">
-                        {isAgentTransactionView
-                          ? 'System updates, document flow, portal events, finance movement, and human collaboration in one workspace thread.'
-                          : 'Collaborative matter updates, notes, documents, and workflow movement.'}
-                      </p>
-                    </div>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => setWorkspaceMenu('activity')}>
-                      View all activity
-                    </Button>
-                  </div>
-                  <form onSubmit={handleAddDiscussion} className="mb-4 rounded-[14px] border border-borderSoft bg-surfaceAlt p-3">
-                    <Field
-                      as="textarea"
-                      rows={3}
-                      value={discussionBody}
-                      onChange={(event) => setDiscussionBody(event.target.value)}
-                      placeholder="Write a message or update..."
-                    />
-                    <div className="mt-3 flex flex-wrap items-end gap-2">
-                      <label className="min-w-[160px] flex-1 text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
-                        Update Type
-                        <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)} className="mt-1 min-h-9 text-xs">
-                          {DISCUSSION_TYPES.map((item) => (
-                            <option key={item.key} value={item.key}>{item.label}</option>
-                          ))}
-                        </Field>
-                      </label>
-                      <label className="min-w-[200px] flex-1 text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
-                        Visibility
-                        <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)} className="mt-1 min-h-9 text-xs">
-                          {availableDiscussionVisibilityOptions.map((item) => (
-                            <option key={item.key} value={item.key}>
-                              {item.label}
-                            </option>
-                          ))}
-                        </Field>
-                      </label>
-                      <Button type="button" variant="secondary" size="sm" onClick={() => setWorkspaceMenu('documents')}>
-                        <Paperclip size={14} />
-                        Upload Document
-                      </Button>
-                      <Button
-                        type="submit"
-                        size="sm"
-                        disabled={
-                          saving ||
-                          !discussionBody.trim() ||
-                          (discussionVisibility === 'internal' && !canPostInternalDiscussion) ||
-                          (discussionVisibility === 'shared' && !canPostSharedDiscussion) ||
-                          (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion)
-                        }
-                      >
-                        <Send size={14} />
-                        {saving ? 'Sending...' : 'Send'}
+                {activeWorkspaceMenu === 'overview' ? (
+                  <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-textStrong">{isAgentTransactionView ? 'Transaction Conversation' : 'Matter Conversation'}</h3>
+                        <p className="mt-1 text-sm text-textMuted">
+                          {isAgentTransactionView
+                            ? 'System updates, document flow, portal events, finance movement, and human collaboration in one workspace thread.'
+                            : 'Collaborative matter updates, notes, documents, and workflow movement.'}
+                        </p>
+                      </div>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => openWorkspaceMenu('activity')}>
+                        View all activity
                       </Button>
                     </div>
-                  </form>
-                  <div className="max-h-[540px] space-y-3 overflow-y-auto pr-2">
-                    {overviewConversationEntries.map((entry) => {
-                      const meta = entry.meta || getActivityCategoryMeta(entry.category)
-                      const isSystemEntry = entry.kind === 'system'
-                      return (
-                        <article
-                          key={entry.id}
-                          className={`rounded-[15px] border px-4 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)] ${
-                            isSystemEntry ? 'border-borderSoft bg-surfaceAlt/70' : `${meta.card} bg-white`
-                          }`}
+                    <form onSubmit={handleAddDiscussion} className="mb-4 rounded-[14px] border border-borderSoft bg-surfaceAlt p-3">
+                      <Field
+                        as="textarea"
+                        rows={3}
+                        value={discussionBody}
+                        onChange={(event) => setDiscussionBody(event.target.value)}
+                        placeholder="Write a message or update..."
+                      />
+                      <div className="mt-3 flex flex-wrap items-end gap-2">
+                        <label className="min-w-[160px] flex-1 text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
+                          Update Type
+                          <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)} className="mt-1 min-h-9 text-xs">
+                            {DISCUSSION_TYPES.map((item) => (
+                              <option key={item.key} value={item.key}>{item.label}</option>
+                            ))}
+                          </Field>
+                        </label>
+                        <label className="min-w-[200px] flex-1 text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
+                          Visibility
+                          <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)} className="mt-1 min-h-9 text-xs">
+                            {availableDiscussionVisibilityOptions.map((item) => (
+                              <option key={item.key} value={item.key}>
+                                {item.label}
+                              </option>
+                            ))}
+                          </Field>
+                        </label>
+                        <Button type="button" variant="secondary" size="sm" onClick={() => openWorkspaceMenu('documents')}>
+                          <Paperclip size={14} />
+                          Upload Document
+                        </Button>
+                        <Button
+                          type="submit"
+                          size="sm"
+                          disabled={
+                            saving ||
+                            !discussionBody.trim() ||
+                            (discussionVisibility === 'internal' && !canPostInternalDiscussion) ||
+                            (discussionVisibility === 'shared' && !canPostSharedDiscussion) ||
+                            (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion)
+                          }
                         >
-                          <div className="flex items-start gap-3">
-                            <span className={`mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-[12px] ring-1 ${meta.icon}`}>
-                              {createElement(meta.Icon, { size: 16 })}
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-start justify-between gap-2">
-                                <div className="min-w-0">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <strong className="truncate text-sm text-textStrong">{entry.authorName}</strong>
-                                    <span className="text-xs text-textMuted">{entry.roleLabel}</span>
+                          <Send size={14} />
+                          {saving ? 'Sending...' : 'Send'}
+                        </Button>
+                      </div>
+                    </form>
+                    <div className="max-h-[540px] space-y-3 overflow-y-auto pr-2">
+                      {overviewConversationEntries.map((entry) => {
+                        const meta = entry.meta || getActivityCategoryMeta(entry.category)
+                        const isSystemEntry = entry.kind === 'system'
+                        return (
+                          <article
+                            key={entry.id}
+                            className={`rounded-[15px] border px-4 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)] ${
+                              isSystemEntry ? 'border-borderSoft bg-surfaceAlt/70' : `${meta.card} bg-white`
+                            }`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <span className={`mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-[12px] ring-1 ${meta.icon}`}>
+                                {createElement(meta.Icon, { size: 16 })}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <strong className="truncate text-sm text-textStrong">{entry.authorName}</strong>
+                                      <span className="text-xs text-textMuted">{entry.roleLabel}</span>
+                                    </div>
+                                    <p className="mt-1 text-sm font-semibold text-textStrong">{entry.title}</p>
+                                    <p className="mt-1 text-[0.72rem] text-textMuted">{formatDateTime(entry.createdAt)}</p>
                                   </div>
-                                  <p className="mt-1 text-sm font-semibold text-textStrong">{entry.title}</p>
-                                  <p className="mt-1 text-[0.72rem] text-textMuted">{formatDateTime(entry.createdAt)}</p>
+                                  <div className="flex shrink-0 flex-wrap gap-2">
+                                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${meta.badge}`}>
+                                      {getConversationTypeLabel(entry.messageType)}
+                                    </span>
+                                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getConversationVisibilityClasses(entry.visibility)}`}>
+                                      {getConversationVisibilityLabel(entry.visibility)}
+                                    </span>
+                                  </div>
                                 </div>
-                                <div className="flex shrink-0 flex-wrap gap-2">
-                                  <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${meta.badge}`}>
-                                    {getConversationTypeLabel(entry.messageType)}
-                                  </span>
-                                  <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getConversationVisibilityClasses(entry.visibility)}`}>
-                                    {getConversationVisibilityLabel(entry.visibility)}
-                                  </span>
-                                </div>
+                                <p className={`mt-2 whitespace-pre-wrap text-sm leading-6 ${isSystemEntry ? 'text-textMuted' : 'text-textBody'}`}>
+                                  {entry.body}
+                                </p>
+                                {entry.attachmentName ? (
+                                  <div className="mt-3 inline-flex max-w-full items-center gap-2 rounded-[10px] border border-borderSoft bg-surfaceAlt px-3 py-2 text-xs font-semibold text-textStrong">
+                                    <Paperclip size={13} className="shrink-0 text-textMuted" />
+                                    <span className="truncate">{entry.attachmentName}</span>
+                                  </div>
+                                ) : null}
                               </div>
-                              <p className={`mt-2 whitespace-pre-wrap text-sm leading-6 ${isSystemEntry ? 'text-textMuted' : 'text-textBody'}`}>
-                                {entry.body}
-                              </p>
-                              {entry.attachmentName ? (
-                                <div className="mt-3 inline-flex max-w-full items-center gap-2 rounded-[10px] border border-borderSoft bg-surfaceAlt px-3 py-2 text-xs font-semibold text-textStrong">
-                                  <Paperclip size={13} className="shrink-0 text-textMuted" />
-                                  <span className="truncate">{entry.attachmentName}</span>
-                                </div>
-                              ) : null}
                             </div>
-                          </div>
-                        </article>
-                      )
-                    })}
-                    {!overviewConversationEntries.length ? (
-                      <p className="rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm text-textMuted">
-                        Conversation updates will appear here as the transaction progresses.
-                      </p>
-                    ) : null}
-                  </div>
-                </section>
+                          </article>
+                        )
+                      })}
+                      {!overviewConversationEntries.length ? (
+                        <p className="rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm text-textMuted">
+                          Conversation updates will appear here as the transaction progresses.
+                        </p>
+                      ) : null}
+                    </div>
+                  </section>
+                ) : null}
               </div>
 
               <aside className="space-y-4 xl:sticky xl:top-4">
-                <OverviewSidePanel title="Quick Actions">
-                  <div className="grid gap-2">
-                    {overviewQuickActions.map((action) => (
-                      <Button key={action.label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action.onClick}>
-                        {createElement(action.icon, { size: 14 })}
-                        {action.label}
-                      </Button>
-                    ))}
-                  </div>
-                </OverviewSidePanel>
+                {activeWorkspaceMenu === 'overview' ? (
+                  <OverviewSidePanel title="Quick Actions">
+                    <div className="grid gap-2">
+                      {overviewQuickActions.map((action) => (
+                        <Button key={action.label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action.onClick}>
+                          {createElement(action.icon, { size: 14 })}
+                          {action.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </OverviewSidePanel>
+                ) : (
+                  <>
+                    <OverviewSidePanel title="Quick Actions">
+                      <div className="grid gap-2">
+                        {[
+                          ['Request Documents', FileText, handleQuickRequestDocuments],
+                          ['Upload Document', Upload, () => openWorkspaceMenu('documents')],
+                          ['Add Note', MessageSquarePlus, handleQuickAddWorkflowNote],
+                          ['Schedule Signing', CalendarDays, handleQuickScheduleSigning],
+                          ['Generate Sales Agreement', FileText, openAgentSalesAgreementWorkspace],
+                        ].map(([label, Icon, action]) => (
+                          <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
+                            {createElement(Icon, { size: 14 })}
+                            {label}
+                          </Button>
+                        ))}
+                      </div>
+                    </OverviewSidePanel>
+
+                    <LegalActivityList title="Recent Activity" items={legalRecentActivity} emptyLabel="No legal workflow activity yet." />
+                  </>
+                )}
               </aside>
             </section>
           </>
@@ -6872,141 +7586,66 @@ function AttorneyTransactionDetail() {
             <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <h3 className="text-section-title font-semibold text-textStrong">Roleplayer Handoff</h3>
-                  <p className="mt-1 text-secondary text-textMuted">
-                    Capture the current transaction team before the buyer onboarding and transfer handoff starts.
+                  <h3 className="text-section-title font-semibold text-textStrong">Transaction Team</h3>
+                  <p className="mt-1 max-w-3xl text-secondary text-textMuted">
+                    See who is assigned, which firms are involved, and how to contact each roleplayer without the workflow administration noise.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
+                    {financeTypeLabel}
+                  </span>
                   <span className={`inline-flex items-center rounded-full border px-3 py-1 text-helper font-semibold ${
-                    roleplayerForm.attorneyName || roleplayerForm.attorneyEmail || transferAttorney
+                    transactionTeamCards.every((card) => card.assigned)
                       ? 'border-success/30 bg-successSoft text-success'
                       : 'border-warning/30 bg-warningSoft text-warning'
                   }`}>
-                    Transfer attorney {roleplayerForm.attorneyName || roleplayerForm.attorneyEmail || transferAttorney ? 'set' : 'missing'}
-                  </span>
-                  <span className={`inline-flex items-center rounded-full border px-3 py-1 text-helper font-semibold ${
-                    !financeRequiresBondSupport
-                      ? 'border-borderDefault bg-mutedBg text-textMuted'
-                      : roleplayerForm.bondOriginatorName || roleplayerForm.bondOriginatorEmail || assignedBondOriginator
-                        ? 'border-success/30 bg-successSoft text-success'
-                        : 'border-warning/30 bg-warningSoft text-warning'
-                  }`}>
-                    {financeRequiresBondSupport ? 'Bond originator' : hasCapturedFinanceType ? 'Cash finance' : 'Finance pending'} {financeRequiresBondSupport ? (roleplayerForm.bondOriginatorName || roleplayerForm.bondOriginatorEmail || assignedBondOriginator ? 'set' : 'missing') : ''}
+                    {transactionTeamCards.filter((card) => card.assigned).length}/{transactionTeamCards.length} assigned
                   </span>
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                {[
-                  {
-                    title: 'Transfer Attorney',
-                    body: 'Selected by the agent or agency before the transfer instruction goes out.',
-                    state: roleplayerForm.attorneyName || roleplayerForm.attorneyEmail || transferAttorney ? 'Ready' : 'Needs selection',
-                  },
-                  {
-                    title: 'Bond Originator',
-                    body: financeRequiresBondSupport
-                      ? 'Capture the originator if the buyer opted into finance support.'
-                      : hasCapturedFinanceType
-                        ? 'Not required for a cash transaction unless finance support is added later.'
-                        : 'Captured after buyer onboarding confirms the finance route.',
-                    state: financeRequiresBondSupport
-                      ? roleplayerForm.bondOriginatorName || roleplayerForm.bondOriginatorEmail || assignedBondOriginator
-                        ? 'Ready'
-                        : 'Needs selection'
-                      : 'Optional',
-                  },
-                  {
-                    title: 'Bond Attorney',
-                    body: 'Usually confirmed by the bank after bond approval or instruction. Invite them once known.',
-                    state: bondAttorney ? 'Assigned' : 'Later',
-                  },
-                  {
-                    title: 'Cancellation Attorney',
-                    body: transaction?.seller_has_existing_bond ? 'Required because the seller has an existing bond flagged.' : 'Only required when the seller has an existing bond.',
-                    state: cancellationAttorney ? 'Assigned' : transaction?.seller_has_existing_bond ? 'Needs selection' : 'Optional',
-                  },
-                  {
-                    title: 'Buyer Intro',
-                    body: roleplayerReadiness.introOutdated
-                      ? 'Roleplayer details changed after the last buyer intro. Resend the updated introduction.'
-                      : latestRoleplayerIntroEvent
-                      ? `Last sent ${formatDateTime(latestRoleplayerIntroEvent.createdAt || latestRoleplayerIntroEvent.created_at)}${
-                          getActivityEventData(latestRoleplayerIntroEvent).recipientEmail ? ` to ${getActivityEventData(latestRoleplayerIntroEvent).recipientEmail}` : ''
-                        }.`
-                      : 'Send once roleplayers are confirmed so the buyer knows who will contact them.',
-                    state: roleplayerReadiness.introOutdated ? 'Needs resend' : latestRoleplayerIntroEvent ? 'Sent' : 'Not sent',
-                  },
-                  {
-                    title: 'Team Handoff',
-                    body: roleplayerReadiness.handoffOutdated
-                      ? 'Provider details changed after the last team handoff. Resend the updated context.'
-                      : latestRoleplayerHandoffEvent
-                      ? `Last sent ${formatDateTime(latestRoleplayerHandoffEvent.createdAt || latestRoleplayerHandoffEvent.created_at)}.`
-                      : roleplayerReadiness.teamHandoffBlockers.length
-                        ? `${roleplayerReadiness.teamHandoffBlockers.join(' and ')} required before sending.`
-                        : 'Send transaction context to the transfer and finance roleplayers.',
-                    state: roleplayerReadiness.handoffOutdated ? 'Needs resend' : latestRoleplayerHandoffEvent ? 'Sent' : roleplayerReadiness.canSendTeamHandoff ? 'Ready' : 'Blocked',
-                  },
-                ].map((item) => (
-                  <article key={item.title} className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <strong className="text-body font-semibold text-textStrong">{item.title}</strong>
-                      <span className="rounded-full border border-borderDefault bg-surface px-2 py-0.5 text-[0.68rem] font-semibold text-textMuted">
-                        {item.state}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-helper leading-5 text-textMuted">{item.body}</p>
-                  </article>
-                ))}
-              </div>
-            </section>
-
-            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <h3 className="text-section-title font-semibold text-textStrong">Selected Roleplayers</h3>
-                  <p className="mt-1 text-secondary text-textMuted">
-                    These selections control which partners are activated as the buyer finance and transfer workflow progresses.
-                  </p>
-                </div>
-                {isAgentTransactionView ? (
-                  <Button type="button" variant="secondary" onClick={openRoleplayerConfirmation} disabled={!canManageTransactionRoleplayers}>
-                    Confirm Roleplayers
-                  </Button>
-                ) : null}
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                {[
-                  { roleType: 'transfer_attorney', label: 'Transfer Attorney', fallback: transferAttorney },
-                  { roleType: 'bond_originator', label: 'Bond Originator', fallback: assignedBondOriginator },
-                  { roleType: 'bond_attorney', label: 'Bond Attorney', fallback: bondAttorney },
-                ].map((entry) => {
-                  const saved = transactionRolePlayers.find((item) => item?.roleType === entry.roleType || item?.role_type === entry.roleType)
-                  const name =
-                    saved?.partnerName ||
-                    saved?.partner_name ||
-                    saved?.contactPerson ||
-                    saved?.contact_person ||
-                    entry.fallback?.participantName ||
-                    entry.fallback?.participantEmail ||
-                    'Not selected'
-                  const email = saved?.emailAddress || saved?.email_address || entry.fallback?.participantEmail || ''
-                  const status = getRoleplayerStatusLabel(saved?.assignmentStatus || saved?.assignment_status || saved?.status || (entry.fallback ? 'active' : 'selected'))
-                  const trigger = getRoleplayerTriggerLabel(saved?.activationTrigger || saved?.activation_trigger, entry.roleType)
+              <div className="mt-5 grid gap-3 xl:grid-cols-4">
+                {transactionTeamCards.map((card) => {
+                  const isAssigned = Boolean(card.assigned)
                   return (
-                    <article key={entry.roleType} className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                      <span className="text-label font-semibold uppercase text-textMuted">{entry.label}</span>
-                      <strong className="mt-2 block text-body font-semibold text-textStrong">{name}</strong>
-                      {email ? <span className="mt-1 block text-helper text-textMuted">{email}</span> : null}
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <span className="rounded-full border border-primary/20 bg-primarySoft px-2.5 py-1 text-[0.68rem] font-semibold text-primary">
-                          {status}
+                    <article key={card.key} className="rounded-[16px] border border-borderSoft bg-surfaceAlt p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <span className="text-label font-semibold uppercase text-textMuted">{card.label}</span>
+                          <strong className="mt-2 block truncate text-body font-semibold text-textStrong">{card.company}</strong>
+                        </div>
+                        <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
+                          isAssigned
+                            ? 'border-success/30 bg-successSoft text-success'
+                            : 'border-warning/30 bg-warningSoft text-warning'
+                        }`}>
+                          {card.status}
                         </span>
-                        <span className="rounded-full border border-borderDefault bg-surface px-2.5 py-1 text-[0.68rem] font-semibold text-textMuted">
-                          {trigger}
+                      </div>
+                      <div className="mt-4 space-y-2 text-helper text-textMuted">
+                        <div className="flex items-center gap-2">
+                          <UsersRound size={14} className="shrink-0" />
+                          <span className="truncate">{card.contact}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <AtSign size={14} className="shrink-0" />
+                          <span className="truncate">{card.email}</span>
+                        </div>
+                      </div>
+                      <div className="mt-4 flex items-center justify-between gap-3">
+                        <span className="text-helper text-textMuted">
+                          {isAssigned ? 'Ready for communication' : 'Assignment still needed'}
                         </span>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={openRoleplayerConfirmation}
+                          disabled={!canManageTransactionRoleplayers || partnerOptionsLoading}
+                        >
+                          {card.actionLabel}
+                        </Button>
                       </div>
                     </article>
                   )
@@ -7014,541 +7653,155 @@ function AttorneyTransactionDetail() {
               </div>
             </section>
 
-            <form onSubmit={handleSaveRoleplayerContacts} className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-section-title font-semibold text-textStrong">Current Roleplayers</h3>
-                  <p className="mt-1 text-secondary text-textMuted">
-                    These details update the transaction record and sync into transaction participants for workflow visibility.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button type="submit" disabled={saving || roleplayerIntroBusy || roleplayerHandoffBusy || hydratingDetail}>
-                    {saving ? 'Saving…' : hydratingDetail ? 'Refreshing…' : 'Save Roleplayers'}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={
-                      saving ||
-                      roleplayerIntroBusy ||
-                      roleplayerHandoffBusy ||
-                      hydratingDetail ||
-                      !roleplayerReadiness.canSendIntro
-                    }
-                    onClick={() => void handleSendRoleplayerIntro()}
-                  >
-                    <Send size={14} />
-                    {roleplayerIntroBusy ? 'Sending…' : roleplayerReadiness.introOutdated ? 'Resend Updated Buyer Intro' : latestRoleplayerIntroEvent ? 'Resend Buyer Intro' : 'Send Buyer Intro'}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={
-                      saving ||
-                      roleplayerIntroBusy ||
-                      roleplayerHandoffBusy ||
-                      hydratingDetail ||
-                      !roleplayerReadiness.canSendTeamHandoff
-                    }
-                    onClick={() => void handleSendRoleplayerHandoff()}
-                  >
-                    <Send size={14} />
-                    {roleplayerHandoffBusy ? 'Sending…' : roleplayerReadiness.handoffOutdated ? 'Resend Updated Team Handoff' : latestRoleplayerHandoffEvent ? 'Resend Team Handoff' : 'Send Team Handoff'}
-                  </Button>
-                </div>
-              </div>
-
-              <section className="mb-5 rounded-control border border-borderSoft bg-surfaceAlt p-4">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h4 className="text-base font-semibold text-textStrong">Handoff Readiness</h4>
-                      <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase ${
-                        roleplayerReadiness.blockers.length
-                          ? 'border-warning/30 bg-warningSoft text-warning'
-                          : roleplayerReadiness.introOutdated || roleplayerReadiness.handoffOutdated
-                            ? 'border-warning/30 bg-warningSoft text-warning'
-                            : latestRoleplayerIntroEvent
-                            ? 'border-success/30 bg-successSoft text-success'
-                            : 'border-primary/20 bg-primarySoft text-primary'
-                      }`}>
-                        {roleplayerReadiness.statusLabel}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-helper leading-5 text-textMuted">
-                      {roleplayerReadiness.blockers.length
-                        ? `${roleplayerReadiness.blockers.length} required item${roleplayerReadiness.blockers.length === 1 ? '' : 's'} still block the buyer intro.`
-                        : roleplayerReadiness.introOutdated || roleplayerReadiness.handoffOutdated
-                          ? 'Roleplayer details changed after a previous send. Resend the updated handoff emails.'
-                        : latestRoleplayerIntroEvent
-                          ? 'The buyer has already received the transaction team introduction. Resend it if roleplayers changed.'
-                          : 'All required roleplayers are ready for the buyer introduction.'}
-                    </p>
-                  </div>
-                  <div className="min-w-[160px] rounded-[14px] border border-borderDefault bg-surface px-4 py-3">
-                    <span className="block text-label font-semibold uppercase text-textMuted">Completion</span>
-                    <strong className="mt-1 block text-2xl font-semibold text-textStrong">{roleplayerReadiness.percent}%</strong>
-                    <span className="mt-1 block text-helper text-textMuted">
-                      {roleplayerReadiness.completedRequired}/{roleplayerReadiness.requiredCount} required ready
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                  {roleplayerReadiness.items.map((item) => (
-                    <article key={item.key} className="rounded-[14px] border border-borderDefault bg-surface px-3 py-3">
-                      <div className="flex items-start gap-2">
-                        <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${item.complete ? 'bg-success' : item.required ? 'bg-warning' : 'bg-slate-300'}`} />
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <strong className="text-sm font-semibold text-textStrong">{item.label}</strong>
-                            <span className="rounded-full border border-borderSoft bg-mutedBg px-2 py-0.5 text-[0.64rem] font-semibold uppercase text-textMuted">
-                              {item.required ? 'Required' : 'Recommended'}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-helper leading-5 text-textMuted">{item.description}</p>
-                        </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-
-                {roleplayerReadiness.blockers.length || roleplayerReadiness.teamHandoffBlockers.length || roleplayerReadiness.recommended.length ? (
-                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                    {roleplayerReadiness.blockers.length ? (
-                      <div className="rounded-[14px] border border-warning/30 bg-warningSoft px-3 py-3">
-                        <span className="block text-label font-semibold uppercase text-warning">Blocking before send</span>
-                        <ul className="mt-2 space-y-1 text-helper leading-5 text-warning">
-                          {roleplayerReadiness.blockers.map((item) => (
-                            <li key={item.key}>{item.label}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                    {roleplayerReadiness.teamHandoffBlockers.length ? (
-                      <div className="rounded-[14px] border border-warning/30 bg-warningSoft px-3 py-3">
-                        <span className="block text-label font-semibold uppercase text-warning">Blocking team handoff</span>
-                        <ul className="mt-2 space-y-1 text-helper leading-5 text-warning">
-                          {roleplayerReadiness.teamHandoffBlockers.map((item) => (
-                            <li key={item}>{item}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                    {roleplayerReadiness.recommended.length ? (
-                      <div className="rounded-[14px] border border-borderDefault bg-surface px-3 py-3">
-                        <span className="block text-label font-semibold uppercase text-textMuted">Nice to complete</span>
-                        <ul className="mt-2 space-y-1 text-helper leading-5 text-textMuted">
-                          {roleplayerReadiness.recommended.map((item) => (
-                            <li key={item.key}>{item.label}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-              </section>
-
-              <div className="grid gap-5 xl:grid-cols-2">
-                <section className="rounded-control border border-borderSoft bg-surfaceAlt p-4">
-                  <h4 className="text-base font-semibold text-textStrong">Client & Agent Context</h4>
-                  <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-label font-semibold uppercase text-textMuted">Buyer Name</span>
-                      <Field value={roleplayerForm.buyerName} onChange={(event) => updateRoleplayerFormField('buyerName', event.target.value)} />
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-label font-semibold uppercase text-textMuted">Buyer Email</span>
-                      <Field type="email" value={roleplayerForm.buyerEmail} onChange={(event) => updateRoleplayerFormField('buyerEmail', event.target.value)} />
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-label font-semibold uppercase text-textMuted">Seller Name</span>
-                      <Field value={roleplayerForm.sellerName} onChange={(event) => updateRoleplayerFormField('sellerName', event.target.value)} />
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-label font-semibold uppercase text-textMuted">Seller Email</span>
-                      <Field type="email" value={roleplayerForm.sellerEmail} onChange={(event) => updateRoleplayerFormField('sellerEmail', event.target.value)} />
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-label font-semibold uppercase text-textMuted">Agent Name</span>
-                      <Field value={roleplayerForm.agentName} onChange={(event) => updateRoleplayerFormField('agentName', event.target.value)} />
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-label font-semibold uppercase text-textMuted">Agent Email</span>
-                      <Field type="email" value={roleplayerForm.agentEmail} onChange={(event) => updateRoleplayerFormField('agentEmail', event.target.value)} />
-                    </label>
-                  </div>
-                </section>
-
-                <section className="rounded-control border border-borderSoft bg-surfaceAlt p-4">
-                  <h4 className="text-base font-semibold text-textStrong">Transfer & Finance Team</h4>
-                  <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-label font-semibold uppercase text-textMuted">Transfer Attorney</span>
-                      <Field value={roleplayerForm.attorneyName} onChange={(event) => updateRoleplayerFormField('attorneyName', event.target.value)} placeholder="Firm or contact name" />
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-label font-semibold uppercase text-textMuted">Transfer Attorney Email</span>
-                      <Field type="email" value={roleplayerForm.attorneyEmail} onChange={(event) => updateRoleplayerFormField('attorneyEmail', event.target.value)} />
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-label font-semibold uppercase text-textMuted">Bond Originator</span>
-                      <Field value={roleplayerForm.bondOriginatorName} onChange={(event) => updateRoleplayerFormField('bondOriginatorName', event.target.value)} placeholder="Originator or company" />
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-label font-semibold uppercase text-textMuted">Bond Originator Email</span>
-                      <Field type="email" value={roleplayerForm.bondOriginatorEmail} onChange={(event) => updateRoleplayerFormField('bondOriginatorEmail', event.target.value)} />
-                    </label>
-                    <label className="flex flex-col gap-1.5 md:col-span-2">
-                      <span className="text-label font-semibold uppercase text-textMuted">Matter Owner</span>
-                      <Field value={roleplayerForm.matterOwner} onChange={(event) => updateRoleplayerFormField('matterOwner', event.target.value)} placeholder="Primary internal owner or coordinator" />
-                    </label>
-                  </div>
-                </section>
-              </div>
-            </form>
-
             <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
-                  <h3 className="text-section-title font-semibold text-textStrong">Handoff History</h3>
+                  <h3 className="text-section-title font-semibold text-textStrong">Transaction Contacts</h3>
                   <p className="mt-1 text-secondary text-textMuted">
-                    A focused audit trail for buyer introductions and roleplayer handoff emails.
+                    Relevant people, organisations, and contact details in one premium workspace.
                   </p>
                 </div>
                 <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
-                  {roleplayerCommunicationHistory.length} send{roleplayerCommunicationHistory.length === 1 ? '' : 's'}
+                  {transactionContactRows.length} contact{transactionContactRows.length === 1 ? '' : 's'}
                 </span>
               </div>
 
-              {roleplayerCommunicationHistory.length ? (
-                <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                  {roleplayerCommunicationHistory.map((entry) => (
-                    <article key={entry.id} className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="mt-4 overflow-hidden rounded-[16px] border border-borderSoft">
+                <div className="hidden grid-cols-[minmax(120px,0.8fr)_minmax(160px,1fr)_minmax(160px,1fr)_minmax(180px,1fr)_minmax(140px,0.9fr)_110px] gap-3 border-b border-borderSoft bg-surfaceAlt px-4 py-3 text-label font-semibold uppercase text-textMuted md:grid">
+                  <span>Role</span>
+                  <span>Contact</span>
+                  <span>Company</span>
+                  <span>Email</span>
+                  <span>Phone</span>
+                  <span>Status</span>
+                </div>
+                <div className="divide-y divide-borderSoft">
+                  {transactionContactRows.map((row) => {
+                    const isAssigned = row.status === 'Assigned' || row.status === 'Active'
+                    return (
+                      <div key={row.key} className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(120px,0.8fr)_minmax(160px,1fr)_minmax(160px,1fr)_minmax(180px,1fr)_minmax(140px,0.9fr)_110px] md:items-center">
                         <div>
-                          <span className="text-label font-semibold uppercase text-textMuted">{entry.type}</span>
-                          <strong className="mt-1 block text-body font-semibold text-textStrong">{formatDateTime(entry.sentAt)}</strong>
+                          <span className="text-label font-semibold uppercase text-textMuted md:hidden">Role</span>
+                          <p className="text-body font-semibold text-textStrong">{row.role}</p>
                         </div>
-                        <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase ${
-                          entry.state === 'Current'
-                            ? 'border-success/30 bg-successSoft text-success'
-                            : entry.state === 'Needs resend'
-                              ? 'border-warning/30 bg-warningSoft text-warning'
-                              : 'border-borderDefault bg-mutedBg text-textMuted'
-                        }`}>
-                          {entry.state}
-                        </span>
+                        <div>
+                          <span className="text-label font-semibold uppercase text-textMuted md:hidden">Contact</span>
+                          <p className="text-secondary text-textStrong">{row.contact}</p>
+                        </div>
+                        <div>
+                          <span className="text-label font-semibold uppercase text-textMuted md:hidden">Company</span>
+                          <p className="text-secondary text-textMuted">{row.company}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <span className="text-label font-semibold uppercase text-textMuted md:hidden">Email</span>
+                          <p className="truncate text-secondary text-textMuted">{row.email}</p>
+                        </div>
+                        <div>
+                          <span className="text-label font-semibold uppercase text-textMuted md:hidden">Phone</span>
+                          <p className="text-secondary text-textMuted">{row.phone}</p>
+                        </div>
+                        <div>
+                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
+                            isAssigned
+                              ? 'border-success/30 bg-successSoft text-success'
+                              : 'border-warning/30 bg-warningSoft text-warning'
+                          }`}>
+                            {row.status}
+                          </span>
+                        </div>
                       </div>
-                      <p className="mt-2 text-helper leading-5 text-textMuted">{entry.summary}</p>
-                      {entry.recipients.length ? (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {entry.recipients.map((recipient) => (
-                            <span key={`${entry.id}-${recipient}`} className="rounded-full border border-borderDefault bg-surface px-2.5 py-1 text-[0.7rem] font-semibold text-textMuted">
-                              {recipient}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-                    </article>
-                  ))}
+                    )
+                  })}
                 </div>
-              ) : (
-                <div className="mt-4 rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-4 text-sm text-textMuted">
-                  No buyer introductions or team handoffs have been sent yet.
-                </div>
-              )}
-            </section>
-
-            <AttorneyAssignmentSection
-              transactionId={transaction?.id}
-              financeType={transaction?.finance_type || 'cash'}
-              transaction={transaction}
-            />
-
-            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-              <h3 className="text-section-title font-semibold text-textStrong">Legal Role Assignments</h3>
-              <p className="mt-1 text-secondary text-textMuted">Transfer attorney is mandatory. Bond and cancellation attorneys are optional and may be different firms.</p>
-              <p className="mt-2 rounded-control border border-borderSoft bg-surfaceAlt px-3 py-2 text-helper text-textMuted">
-                {legalRoleAssignmentNote}
-              </p>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                {[
-                  { label: 'Transfer Attorney', item: transferAttorney, required: true },
-                  { label: 'Bond Attorney', item: bondAttorney, required: false },
-                  { label: 'Cancellation Attorney', item: cancellationAttorney, required: false },
-                ].map((entry) => (
-                  <article key={entry.label} className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                    <span className="text-label font-semibold uppercase text-textMuted">{entry.label}</span>
-                    <strong className="mt-1 block text-body font-semibold text-textStrong">
-                      {entry.item?.participantName || entry.item?.participantEmail || (entry.required ? 'Required' : 'Not assigned')}
-                    </strong>
-                    <small className="mt-1 block text-helper text-textMuted">
-                      {entry.item?.stakeholderStatus ? toTitle(entry.item.stakeholderStatus) : entry.required ? 'Must be configured' : 'Optional'}
-                    </small>
-                    {entry.item?.participantEmail ? (
-                      <small className="mt-1 block text-helper text-textMuted">{entry.item.participantEmail}</small>
-                    ) : null}
-                  </article>
-                ))}
               </div>
             </section>
 
             <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-section-title font-semibold text-textStrong">Ownership & Access</h3>
-                  <p className="mt-1 text-secondary text-textMuted">Control transaction owner and collaboration visibility (Private / Shared / Restricted).</p>
-                </div>
-                <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
-                  Current: {toTitle(accessControlForm.accessLevel || transaction?.access_level || 'shared')}
-                </span>
-              </div>
-              <form onSubmit={handleSaveAccessControl} className="grid gap-3 md:grid-cols-3">
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-label font-semibold uppercase text-textMuted">Owner</span>
-                  <Field
-                    as="select"
-                    value={accessControlForm.ownerUserId}
-                    onChange={(event) =>
-                      setAccessControlForm((previous) => ({
-                        ...previous,
-                        ownerUserId: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">Unassigned</option>
-                    {ownerCandidateOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </Field>
-                </label>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-label font-semibold uppercase text-textMuted">Access Level</span>
-                  <Field
-                    as="select"
-                    value={accessControlForm.accessLevel}
-                    onChange={(event) =>
-                      setAccessControlForm((previous) => ({
-                        ...previous,
-                        accessLevel: event.target.value,
-                      }))
-                    }
-                  >
-                    {TRANSACTION_ACCESS_LEVEL_OPTIONS.map((option) => (
-                      <option key={option.key} value={option.key}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </Field>
-                </label>
-                <div className="flex items-end">
-                  <Button type="submit" disabled={saving}>
-                    {saving ? 'Saving…' : 'Save Access'}
-                  </Button>
-                </div>
-              </form>
-            </section>
-
-            <section className="grid items-stretch gap-5 xl:grid-cols-2">
-              <form onSubmit={handleInviteStakeholder} className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-                <h3 className="text-section-title font-semibold text-textStrong">Invite Stakeholder</h3>
+              <div>
+                <h3 className="text-section-title font-semibold text-textStrong">Team Actions</h3>
                 <p className="mt-1 text-secondary text-textMuted">
-                  Invite service providers only. Buyer and seller onboarding is managed separately.
+                  The most useful roleplayer actions stay visible here: communicate, re-introduce, and inspect roleplayer activity.
                 </p>
-                <div className="mt-4 grid gap-3">
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Role</span>
-                    <Field
-                      as="select"
-                      value={stakeholderInviteForm.roleType}
-                      onChange={(event) =>
-                        setStakeholderInviteForm((previous) => ({
-                          ...previous,
-                          roleType: event.target.value,
-                          legalRole: event.target.value === 'attorney' ? previous.legalRole : 'transfer',
-                          agentPhone: event.target.value === 'agent' ? previous.agentPhone : '',
-                          agentAgencyName: event.target.value === 'agent' ? previous.agentAgencyName : '',
-                        }))
-                      }
+              </div>
+
+              <div className="mt-4 grid gap-3 xl:grid-cols-3">
+                <article className="rounded-[16px] border border-borderSoft bg-surfaceAlt p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <strong className="text-body font-semibold text-textStrong">Send Buyer Introduction</strong>
+                      <p className="mt-2 text-helper leading-5 text-textMuted">
+                        Introduce the buyer to the assigned agent, transfer attorney, and bond originator when required.
+                      </p>
+                    </div>
+                    <Send size={16} className="text-textMuted" />
+                  </div>
+                  <p className="mt-4 text-helper text-textMuted">
+                    {latestRoleplayerIntroEvent
+                      ? `Last sent ${formatDateTime(latestRoleplayerIntroEvent.createdAt || latestRoleplayerIntroEvent.created_at)}.`
+                      : 'No buyer introduction has been sent yet.'}
+                  </p>
+                  <div className="mt-4">
+                    <Button
+                      type="button"
+                      className="w-full justify-center"
+                      onClick={() => void handleSendRoleplayerIntro()}
+                      disabled={saving || roleplayerIntroBusy || roleplayerHandoffBusy || hydratingDetail || !roleplayerReadiness.canSendIntro}
                     >
-                      {SERVICE_PROVIDER_ROLE_OPTIONS.map((option) => (
-                        <option key={option.key} value={option.key}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </Field>
-                  </label>
-                  {stakeholderInviteForm.roleType === 'attorney' ? (
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-label font-semibold uppercase text-textMuted">Legal Role</span>
-                      <Field
-                        as="select"
-                        value={stakeholderInviteForm.legalRole}
-                        onChange={(event) =>
-                          setStakeholderInviteForm((previous) => ({
-                            ...previous,
-                            legalRole: event.target.value,
-                          }))
-                        }
-                      >
-                        {ATTORNEY_LEGAL_ROLE_OPTIONS.map((option) => (
-                          <option key={option.key} value={option.key}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Field>
-                    </label>
-                  ) : null}
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Name (optional)</span>
-                    <Field
-                      value={stakeholderInviteForm.participantName}
-                      onChange={(event) =>
-                        setStakeholderInviteForm((previous) => ({
-                          ...previous,
-                          participantName: event.target.value,
-                        }))
-                      }
-                      placeholder="Stakeholder name"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Email</span>
-                    <Field
-                      type="email"
-                      required
-                      value={stakeholderInviteForm.email}
-                      onChange={(event) =>
-                        setStakeholderInviteForm((previous) => ({
-                          ...previous,
-                          email: event.target.value,
-                        }))
-                      }
-                      placeholder="person@example.com"
-                    />
-                  </label>
-                  {stakeholderInviteForm.roleType === 'agent' ? (
-                    <>
-                      <label className="flex flex-col gap-1.5">
-                        <span className="text-label font-semibold uppercase text-textMuted">Agent Phone</span>
-                        <Field
-                          value={stakeholderInviteForm.agentPhone}
-                          onChange={(event) =>
-                            setStakeholderInviteForm((previous) => ({
-                              ...previous,
-                              agentPhone: event.target.value,
-                            }))
-                          }
-                          placeholder="+27 82 000 0000"
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1.5">
-                        <span className="text-label font-semibold uppercase text-textMuted">Agency Name</span>
-                        <Field
-                          value={stakeholderInviteForm.agentAgencyName}
-                          onChange={(event) =>
-                            setStakeholderInviteForm((previous) => ({
-                              ...previous,
-                              agentAgencyName: event.target.value,
-                            }))
-                          }
-                          placeholder="Agency / Brokerage"
-                        />
-                      </label>
-                    </>
-                  ) : null}
-                  <label className="flex flex-col gap-1.5 md:max-w-[220px]">
-                    <span className="text-label font-semibold uppercase text-textMuted">Expires (days)</span>
-                    <Field
-                      type="number"
-                      min="1"
-                      max="90"
-                      value={stakeholderInviteForm.expiresDays}
-                      onChange={(event) =>
-                        setStakeholderInviteForm((previous) => ({
-                          ...previous,
-                          expiresDays: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <div>
-                    <Button type="submit" disabled={saving || !stakeholderInviteForm.email.trim()}>
-                      {saving ? 'Creating…' : 'Create Invite'}
+                      {roleplayerIntroBusy ? 'Sending...' : roleplayerReadiness.introOutdated ? 'Resend Buyer Introduction' : 'Send Buyer Introduction'}
                     </Button>
                   </div>
-                  {inviteLinkResult ? (
-                    <p className="rounded-control border border-borderDefault bg-surfaceAlt px-3 py-2 text-helper text-textMuted">
-                      Invite URL: <a href={inviteLinkResult} target="_blank" rel="noreferrer" className="font-semibold text-primary">{inviteLinkResult}</a>
-                    </p>
-                  ) : null}
-                </div>
-              </form>
+                </article>
 
-              <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-section-title font-semibold text-textStrong">Stakeholder Contacts</h3>
-                    <p className="mt-1 text-secondary text-textMuted">Current invited and linked service providers on this transaction.</p>
+                <article className="rounded-[16px] border border-borderSoft bg-surfaceAlt p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <strong className="text-body font-semibold text-textStrong">Send Team Introduction</strong>
+                      <p className="mt-2 text-helper leading-5 text-textMuted">
+                        Share the transaction summary with assigned attorneys, the originator, and other active service providers.
+                      </p>
+                    </div>
+                    <Building2 size={16} className="text-textMuted" />
                   </div>
-                  <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
-                    {serviceProviderStakeholders.length} service provider{serviceProviderStakeholders.length === 1 ? '' : 's'}
-                  </span>
-                </div>
-
-                {serviceProviderStakeholders.length ? (
-                  <div className="space-y-2.5">
-                    {serviceProviderStakeholders.map((participant) => (
-                      <article key={participant.id} className="grid gap-3 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1.2fr)_auto] md:items-center">
-                        <div className="min-w-0">
-                          <strong className="block truncate text-body font-semibold text-textStrong">
-                            {participant.participantName || participant.participantEmail || 'Unassigned'}
-                          </strong>
-                          <small className="mt-1 block truncate text-helper text-textMuted">
-                            {participant.participantEmail || 'No contact email captured'}
-                          </small>
-                        </div>
-                        <div className="min-w-0">
-                          <small className="block text-helper text-textMuted">
-                            {participant.roleLabel}
-                            {participant.roleType === 'attorney' && participant.legalRole ? ` • ${toTitle(participant.legalRole)} role` : ''}
-                          </small>
-                          <small className="block text-helper text-textMuted">
-                            {toTitle(participant.stakeholderStatus || 'active')} • {participant.userId ? 'Linked User' : 'Invitation'}
-                            {participant.accessInherited ? ' • Inherited from development' : ''}
-                          </small>
-                        </div>
-                        <div className="flex justify-start md:justify-end">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            disabled={saving || participant.accessInherited}
-                            onClick={() => requestStakeholderRemoval(participant)}
-                          >
-                            Remove
-                          </Button>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-4 text-secondary text-textMuted">
-                    No service providers are currently linked to this transaction.
+                  <p className="mt-4 text-helper text-textMuted">
+                    {latestRoleplayerHandoffEvent
+                      ? `Last sent ${formatDateTime(latestRoleplayerHandoffEvent.createdAt || latestRoleplayerHandoffEvent.created_at)}.`
+                      : 'No team introduction has been sent yet.'}
                   </p>
-                )}
-              </section>
+                  <div className="mt-4">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="w-full justify-center"
+                      onClick={() => void handleSendRoleplayerHandoff()}
+                      disabled={saving || roleplayerIntroBusy || roleplayerHandoffBusy || hydratingDetail || !roleplayerReadiness.canSendTeamHandoff}
+                    >
+                      {roleplayerHandoffBusy ? 'Sending...' : roleplayerReadiness.handoffOutdated ? 'Resend Team Introduction' : 'Send Team Introduction'}
+                    </Button>
+                  </div>
+                </article>
+
+                <article className="rounded-[16px] border border-borderSoft bg-surfaceAlt p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <strong className="text-body font-semibold text-textStrong">View Activity</strong>
+                      <p className="mt-2 text-helper leading-5 text-textMuted">
+                        Jump into the activity feed filtered to roleplayer assignments, introductions, and team communication.
+                      </p>
+                    </div>
+                    <Activity size={16} className="text-textMuted" />
+                  </div>
+                  <p className="mt-4 text-helper text-textMuted">
+                    Includes assignment changes, intro sends, and invitation response events.
+                  </p>
+                  <div className="mt-4">
+                    <Button type="button" variant="secondary" className="w-full justify-center" onClick={openRoleplayerActivityFeed}>
+                      Open Roleplayer Activity
+                    </Button>
+                  </div>
+                </article>
+              </div>
             </section>
 
-            {stakeholderMessage ? (
-              <p className="rounded-control border border-borderDefault bg-surfaceAlt px-4 py-3 text-secondary text-textMuted">
-                {stakeholderMessage}
-              </p>
-            ) : null}
           </section>
         ) : null}
 
@@ -7722,6 +7975,13 @@ function AttorneyTransactionDetail() {
               onChange={(value) => updateRoleplayerConfirmDraft('bondAttorney', value)}
               options={bondAttorneyOptions}
               helper="Optional. Usually activated after bond approval or bank instruction."
+            />
+            <RoleplayerSelect
+              label="Cancellation Attorney"
+              value={roleplayerConfirmDraft.cancellationAttorney}
+              onChange={(value) => updateRoleplayerConfirmDraft('cancellationAttorney', value)}
+              options={cancellationAttorneyOptions}
+              helper="Optional. Use when the seller bond cancellation leg needs its own attorney."
             />
           </div>
           <div className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-helper leading-5 text-textMuted">
@@ -7902,17 +8162,6 @@ function AttorneyTransactionDetail() {
         confirming={saving}
         onCancel={() => setConfirmDialog({ open: false, title: '', description: '', action: '' })}
         onConfirm={() => void handleConfirmAction(confirmDialog.action)}
-      />
-
-      <ConfirmDialog
-        open={removeDialog.open}
-        title={removeDialog.title}
-        description={removeDialog.description}
-        confirmLabel="Remove Stakeholder"
-        variant="destructive"
-        confirming={saving}
-        onCancel={() => setRemoveDialog({ open: false, stakeholderId: null, title: '', description: '' })}
-        onConfirm={() => void confirmRemoveStakeholder()}
       />
 
       <Modal

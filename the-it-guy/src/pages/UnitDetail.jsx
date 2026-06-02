@@ -34,7 +34,7 @@ import StageAgingChip from '../components/StageAgingChip'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import TransactionWorkspaceHeader from '../components/TransactionWorkspaceHeader'
 import TransactionWorkspaceMenu from '../components/TransactionWorkspaceMenu'
-import TransactionBondHybridFinanceWorkflowPanel from '../components/TransactionBondHybridFinanceWorkflowPanel'
+import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
 import TransferWorkflowLane from '../components/TransferWorkflowLane'
 import LegalDocumentWorkspace from '../components/documents/LegalDocumentWorkspace'
 import Button from '../components/ui/Button'
@@ -47,10 +47,7 @@ import {
   FINANCE_MANAGED_BY_OPTIONS,
   ONBOARDING_STATUSES,
   TRANSACTION_ROLE_LABELS,
-  addBondApplication,
-  addBondQuote,
   addTransactionDiscussionComment,
-  approveBondQuote,
   completeTransactionSubprocess,
   createTransactionDocumentRequests,
   createWorkspaceAlteration,
@@ -69,9 +66,6 @@ import {
   saveTransactionClientInformation,
   sendReservationDepositRequest,
   signOffClientIssue,
-  markFinanceInstructionSent,
-  updateBondApplication,
-  updateBondHybridFinanceStage,
   runWorkflowAction,
   updateDocumentClientVisibility,
   updateOtpDocumentWorkflowState,
@@ -86,12 +80,29 @@ import { createPerfTimer } from '../lib/performanceTrace'
 import { getPurchaserTypeOptions, getPurchaserTypeLabel, normalizePurchaserType } from '../lib/purchaserPersonas'
 import { getRequiredBuyerDocuments } from '../lib/buyerRequirementEngine'
 import { normalizeFinanceType } from '../core/transactions/financeType'
+import {
+  acceptBondOffer,
+  captureBondOffer,
+  declineBondOffer,
+  markBondInstructionSent,
+  reviewFinanceDocuments,
+  submitBankApplication,
+  updateBankApplication as updateFinanceBankApplication,
+  updateFinanceBlockerStatus,
+  uploadFinanceDocument,
+  verifyFinanceProofOfFunds,
+} from '../services/transactionFinanceService'
 import { resolveFinanceWorkflowSnapshot } from '../core/transactions/financeWorkflow'
 import {
   buildTransactionLifecycleSummaryFromRollup,
   formatTransactionRollupStatusLabel,
   USE_TRANSACTION_ROLLUP_OVERVIEW,
 } from '../core/transactions/transactionLifecycle'
+import {
+  getDocumentStatusLabel,
+  getDocumentStatusTone,
+  normalizeDocumentStatus,
+} from '../lib/clientPortalDocumentStatus'
 import { OTP_DOCUMENT_TYPES, resolveSalesWorkflowSnapshot } from '../core/transactions/salesWorkflow'
 import { resolveBondWorkflowSnapshot } from '../core/transactions/bondWorkflow'
 import { resolveTransferWorkflowSnapshot } from '../core/transactions/transferWorkflow'
@@ -187,13 +198,40 @@ async function copyTextToClipboard(text) {
   }
 }
 
-const WORKSPACE_DOCUMENT_TABS = [
-  { key: 'sales', label: 'Sales Documents' },
-  { key: 'fica', label: 'FICA Documents' },
+const DOCUMENT_LIBRARY_FILTERS = [
+  { key: 'all', label: 'All Documents' },
+  { key: 'buyer', label: 'Buyer' },
+  { key: 'seller', label: 'Seller' },
+  { key: 'finance', label: 'Finance' },
+  { key: 'transfer', label: 'Transfer' },
   { key: 'bond', label: 'Bond' },
-  { key: 'additional', label: 'Additional Requests' },
-  { key: 'property', label: 'Property Documents' },
-  { key: 'internal', label: 'Internal Documents' },
+  { key: 'cancellation', label: 'Cancellation' },
+  { key: 'signed', label: 'Signed' },
+  { key: 'generated', label: 'Generated' },
+  { key: 'internal', label: 'Internal' },
+]
+const DOCUMENT_LIBRARY_STATUS_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'required', label: 'Required' },
+  { key: 'missing', label: 'Missing' },
+  { key: 'pending_review', label: 'Pending Review' },
+  { key: 'approved', label: 'Approved' },
+]
+const DOCUMENT_UPLOAD_VISIBILITY_OPTIONS = [
+  { value: 'client_visible', label: 'Client visible' },
+  { value: 'shared_role_players', label: 'Shared' },
+  { value: 'internal_only', label: 'Internal only' },
+]
+const DOCUMENT_RELATED_WORKFLOW_OPTIONS = [
+  { value: '', label: 'Select workflow' },
+  { value: 'sales', label: 'Sales' },
+  { value: 'finance', label: 'Finance' },
+  { value: 'transfer', label: 'Transfer' },
+  { value: 'bond', label: 'Bond' },
+  { value: 'cancellation', label: 'Cancellation' },
+  { value: 'signed', label: 'Signed document' },
+  { value: 'generated', label: 'Generated document' },
+  { value: 'other', label: 'Other' },
 ]
 const ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS = [
   { value: 'buyer', label: 'Buyer' },
@@ -314,31 +352,273 @@ function normalizeDocumentVaultCategory(value) {
   return 'additional'
 }
 
-function resolveInternalDocumentCategory(document = {}) {
-  const metadata = resolvePortalDocumentMetadata(document)
-  const vaultCategory = normalizeDocumentVaultCategory(metadata.portalWorkspaceCategory)
-  const source = `${document?.name || ''} ${document?.category || ''} ${document?.document_type || ''}`.toLowerCase()
-  const isInternalOnly = String(document?.visibility_scope || '').toLowerCase() === 'internal' || document?.is_client_visible === false
-  const isInternalTagged =
-    /internal|working|draft|commission|admin|backoffice|confidential|note/.test(source) &&
-    !/offer to purchase|otp|reservation|proof of payment/.test(source)
+function buildWorkspaceDocumentText(document = {}) {
+  return `${String(document?.category || '').trim().toLowerCase()} ${String(document?.name || document?.label || '').trim().toLowerCase()} ${String(
+    document?.document_type || document?.portal_document_type || document?.portalDocumentType || document?.documentType || '',
+  ).trim().toLowerCase()} ${String(document?.stage_key || document?.stageKey || '').trim().toLowerCase()} ${String(
+    document?.groupKey || document?.group_key || '',
+  ).trim().toLowerCase()}`.trim()
+}
 
-  if (isInternalOnly && (vaultCategory === 'additional' || isInternalTagged)) {
+function resolveDocumentVisibilityFromSource(source = {}) {
+  const scope = String(
+    source?.visibility_scope || source?.visibility || source?.visibilityScope || (source?.is_client_visible === false ? 'internal' : source?.is_client_visible === true ? 'client_visible' : ''),
+  )
+    .trim()
+    .toLowerCase()
+  if (scope.includes('internal')) {
+    return 'Internal'
+  }
+  if (scope === 'client_visible' || scope === 'shared_role_players') {
+    return 'Shared'
+  }
+  if (scope === 'shared' || scope === '') {
+    return 'Shared'
+  }
+  return 'Internal'
+}
+
+function inferLibraryCategoryFromTokens(tokens = '') {
+  const haystack = String(tokens || '')
+    .toLowerCase()
+
+  if (/signed|signature|executed|registrat/.test(haystack)) {
+    return 'signed'
+  }
+  if (/generated|packet|auto[-_ ]?generated|draft/.test(haystack)) {
+    return 'generated'
+  }
+  if (/cancellation|cancel/.test(haystack)) {
+    return 'cancellation'
+  }
+  if (/seller/.test(haystack)) {
+    return 'seller'
+  }
+  if (/bond|lender|finance|tax|bank|statement|income|affordability|proof of funds|paystub|salary|credit|proof/.test(haystack)) {
+    return 'finance'
+  }
+  if (/transfer|title deed|warranty|registration|handover|lodge|occupation/.test(haystack)) {
+    return 'transfer'
+  }
+  if (/otp|offer|reservation|reservation_deposit|signed otp|sale|sales|instruction/.test(haystack)) {
+    return 'buyer'
+  }
+  if (/internal|commission|working|admin|confidential|private/.test(haystack)) {
     return 'internal'
   }
 
-  return vaultCategory
+  return ''
 }
 
-function resolveRequirementVaultCategory(requirement = {}) {
+function resolveDocumentLibraryCategory(document = {}) {
   const metadata = resolvePortalDocumentMetadata({
-    ...requirement,
-    documentType: requirement?.portalDocumentType || requirement?.key,
-    portalWorkspaceCategory: requirement?.portalWorkspaceCategory,
-    groupKey: requirement?.groupKey,
-    stageKey: requirement?.stageKey,
+    ...document,
+    portal_workspace_category: document?.portal_workspace_category || document?.portalWorkspaceCategory,
+    document_type: document?.document_type || document?.portal_document_type || document?.portalDocumentType || document?.documentType,
+    stage_key: document?.stage_key || document?.stageKey,
+    category: document?.category,
+    name: document?.name || document?.label,
+    groupKey: document?.group_key || document?.groupKey,
+    key: document?.document_type || document?.portalDocumentType || document?.documentType || document?.key,
   })
-  return normalizeDocumentVaultCategory(metadata.portalWorkspaceCategory)
+  const tokens = buildWorkspaceDocumentText({
+    ...document,
+    document_type: metadata.portalDocumentType,
+    portalWorkspaceCategory: metadata.portalWorkspaceCategory,
+  })
+  const categoryFromTokens = inferLibraryCategoryFromTokens(tokens)
+  if (categoryFromTokens) {
+    return categoryFromTokens
+  }
+
+  const sourceCategory = normalizePortalWorkspaceCategory(metadata?.portalWorkspaceCategory)
+  if (sourceCategory === 'sales') return 'buyer'
+  if (sourceCategory === 'fica') return 'buyer'
+  if (sourceCategory === 'bond') return 'finance'
+  if (sourceCategory === 'property') return 'transfer'
+  if (sourceCategory === 'additional') return 'generated'
+
+  return 'buyer'
+}
+
+function resolveRequirementLibraryCategory(requirement = {}) {
+  const requirementTokens = `${String(requirement?.key || '').trim().toLowerCase()} ${String(requirement?.label || '').trim().toLowerCase()} ${String(
+    requirement?.groupKey || requirement?.group_key || '',
+  )
+    .trim()
+    .toLowerCase()} ${String(requirement?.expectedFromRole || requirement?.required_from_role || '').trim().toLowerCase()}`
+  const byTokens = inferLibraryCategoryFromTokens(requirementTokens)
+  if (byTokens) {
+    return byTokens
+  }
+
+  const groupKey = String(requirement?.groupKey || requirement?.group_key || '').trim().toLowerCase()
+  if (groupKey.includes('finance') || requirement?.required_from_role === 'bond_originator' || requirement?.expectedFromRole === 'bond_originator') {
+    return 'finance'
+  }
+  if (groupKey.includes('finance')) {
+    return 'finance'
+  }
+  if (groupKey.includes('transfer')) {
+    return 'transfer'
+  }
+  if (groupKey.includes('cancellation')) {
+    return 'cancellation'
+  }
+  if (/seller/.test(String(requirement?.expectedFromRole || '').toLowerCase())) {
+    return 'seller'
+  }
+  return 'buyer'
+}
+
+function resolveDocumentLibraryVisibility(document = {}) {
+  return resolveDocumentVisibilityFromSource(document)
+}
+
+function normalizeLibraryCategory(category = '') {
+  const normalized = String(category || '').trim().toLowerCase()
+  if (['all', 'buyer', 'seller', 'finance', 'transfer', 'bond', 'cancellation', 'signed', 'generated', 'internal'].includes(normalized)) {
+    return normalized
+  }
+  return ''
+}
+
+function normalizeLibraryStatus(status = '') {
+  const normalized = String(status || '').trim().toLowerCase()
+  if (!normalized) {
+    return 'uploaded'
+  }
+  if (normalized === 'required' || normalized === 'missing') {
+    return 'missing'
+  }
+  if (normalized === 'requested') {
+    return 'requested'
+  }
+  if (normalized === 'reviewed' || normalized === 'under_review' || normalized === 'pending_review') {
+    return 'under_review'
+  }
+  if (normalized === 'verified' || normalized === 'accepted' || normalized === 'approved' || normalized === 'completed') {
+    return 'approved'
+  }
+  if (normalized === 'rejected' || normalized === 'reupload_required') {
+    return 'rejected'
+  }
+  if (normalized === 'superseded') {
+    return 'superseded'
+  }
+  return normalized
+}
+
+function getLibraryStatusTone(status = '') {
+  const normalized = normalizeLibraryStatus(status)
+  if (normalized === 'missing' || normalized === 'requested') {
+    return 'border-[#f1ddd0] bg-[#fff8f3] text-[#a15b31]'
+  }
+  if (normalized === 'under_review') {
+    return 'border-[#d8e4ef] bg-[#f4f8fc] text-[#35546c]'
+  }
+  if (normalized === 'approved') {
+    return 'border-[#cfe3d7] bg-[#eef8f1] text-[#2f7a51]'
+  }
+  if (normalized === 'rejected') {
+    return 'border-[#f1cbc7] bg-[#fff5f4] text-[#b42318]'
+  }
+  if (normalized === 'superseded') {
+    return 'border-[#f7eadb] bg-[#fff9f0] text-[#8a5511]'
+  }
+  return 'border-[#dde7f1] bg-[#f8fbff] text-[#64748b]'
+}
+
+function formatLibraryStatusLabel(status = '') {
+  const normalized = normalizeLibraryStatus(status)
+  if (normalized === 'missing') return 'Missing'
+  if (normalized === 'requested') return 'Requested'
+  if (normalized === 'uploaded') return 'Uploaded'
+  if (normalized === 'under_review') return 'Pending Review'
+  if (normalized === 'approved') return 'Approved'
+  if (normalized === 'rejected') return 'Rejected'
+  if (normalized === 'superseded') return 'Superseded'
+  return toTitleLabel(normalized || 'Unknown')
+}
+
+function resolveRequiredPartyLabel(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized) {
+    return 'Internal'
+  }
+  if (normalized.includes('bond')) return 'Bond'
+  if (normalized.includes('seller')) return 'Seller'
+  if (normalized.includes('attorney')) return 'Attorney'
+  if (normalized.includes('agent')) return 'Agent'
+  if (normalized.includes('buyer')) return 'Buyer'
+  return toTitleLabel(normalized)
+}
+
+function resolveUploadedByLabel(document = {}, participants = []) {
+  const role = String(document?.uploaded_by_role || '').trim()
+  const participant =
+    participants.find((entry) => String(entry?.roleType || '').trim().toLowerCase() === String(role).trim().toLowerCase()) || null
+  if (participant?.participantName) {
+    return participant.participantName
+  }
+  if (role) {
+    return toTitleLabel(role)
+  }
+  return 'System'
+}
+
+function resolveDocumentRequestLibraryCategory(documentRequest = {}) {
+  const requestedFrom = String(documentRequest?.requestedFrom || documentRequest?.requested_from || documentRequest?.audience || '').trim().toLowerCase()
+  if (requestedFrom.includes('seller')) return 'seller'
+  if (requestedFrom.includes('attorney') || requestedFrom.includes('conveyancer') || requestedFrom.includes('lawyer')) return 'transfer'
+  if (requestedFrom.includes('bond') || requestedFrom.includes('finance') || requestedFrom.includes('lender') || requestedFrom.includes('originator')) {
+    return 'finance'
+  }
+  if (requestedFrom.includes('internal') || requestedFrom.includes('agent') || requestedFrom.includes('developer')) {
+    return 'internal'
+  }
+  return 'buyer'
+}
+
+function resolveDocumentRequestVisibilityLabel(documentRequest = {}) {
+  const visibility = String(documentRequest?.visibility || '').trim().toLowerCase()
+  if (visibility === 'internal_only') return 'Internal'
+  if (visibility === 'client_visible' || visibility === 'shared' || visibility === 'shared_role_players') {
+    return 'Shared'
+  }
+  return 'Internal'
+}
+
+function resolveLibraryUploadVisibilityScope(selection = 'client_visible') {
+  const normalized = String(selection || 'client_visible').trim().toLowerCase()
+  if (normalized === 'internal_only') return 'internal'
+  if (normalized === 'shared_role_players') return 'shared'
+  return 'shared'
+}
+
+function resolveDocumentWorkflowLabel(document = {}) {
+  const workflow = String(
+    document?.stage_key ||
+      document?.stageKey ||
+      document?.workflow ||
+      document?.relatedWorkflow ||
+      document?.finance_lane ||
+      document?.financeLane ||
+      '',
+  )
+    .trim()
+    .toLowerCase()
+
+  if (!workflow) {
+    return ''
+  }
+
+  return workflow
+    .split('_')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\b\w/g, (match) => match.toUpperCase())
 }
 
 function isInformationSheetRequirement(item = {}) {
@@ -2352,16 +2632,23 @@ function UnitDetail() {
   const [discussionFeedFilter, setDiscussionFeedFilter] = useState('all')
   const [actingRole, setActingRole] = useState('developer')
   const [clientPortalLink, setClientPortalLink] = useState(null)
-  const [activeWorkspaceDocumentsTab, setActiveWorkspaceDocumentsTab] = useState('sales')
-  const [uploadingDocumentKey, setUploadingDocumentKey] = useState('')
-  const [documentUploadContext, setDocumentUploadContext] = useState({
-    key: '',
-    category: 'General',
-    requiredDocumentKey: null,
-    documentType: null,
-    isClientVisible: false,
-    stageKey: null,
+  const [activeDocumentLibraryCategory, setActiveDocumentLibraryCategory] = useState('all')
+  const [activeDocumentLibraryStatus, setActiveDocumentLibraryStatus] = useState('all')
+  const [uploadDocumentModalOpen, setUploadDocumentModalOpen] = useState(false)
+  const [documentUploadForm, setDocumentUploadForm] = useState({
+    file: null,
+    fileName: '',
+    category: '',
+    documentType: '',
+    visibility: 'client_visible',
+    relatedWorkflow: '',
+    satisfiesRequiredDocument: 'yes',
+    notes: '',
+    requiredDocumentId: '',
+    documentRequestId: '',
+    requestTitle: '',
   })
+  const [uploadingDocumentKey, setUploadingDocumentKey] = useState('')
   const [documentRequestForm, setDocumentRequestForm] = useState({
     title: '',
     requestedFrom: 'buyer',
@@ -2442,7 +2729,7 @@ function UnitDetail() {
   const workspaceMenuRef = useRef(null)
   const workflowPanelRef = useRef(null)
   const signedOtpUploadInputRef = useRef(null)
-  const contextualUploadInputRef = useRef(null)
+  const uploadDocumentFileInputRef = useRef(null)
   const loadRequestRef = useRef(0)
 
   const loadDetail = useCallback(async () => {
@@ -2706,18 +2993,24 @@ function UnitDetail() {
 
     function setUploadCategoryForRoleFromQuickAction() {
       if (actingRole === 'attorney') {
-        setActiveWorkspaceDocumentsTab('property')
+        setActiveDocumentLibraryCategory('transfer')
+        setActiveDocumentLibraryStatus('missing')
         return
       }
 
       if (actingRole === 'bond_originator') {
-        setActiveWorkspaceDocumentsTab('bond')
+        setActiveDocumentLibraryCategory('finance')
+        setActiveDocumentLibraryStatus('missing')
         return
       }
 
-      const firstMissing = (detail?.requiredDocumentChecklist || []).find((item) => !item.complete)
-      const category = firstMissing ? resolveRequirementVaultCategory(firstMissing) : 'sales'
-      setActiveWorkspaceDocumentsTab(category)
+      const firstMissing = (detail?.requiredDocumentChecklist || []).find((item) => {
+        const status = String(item?.status || item?.requirementStatus || '').trim().toLowerCase()
+        return status === 'missing' || status === 'requested' || !item?.complete
+      })
+      const category = firstMissing ? normalizeLibraryCategory(resolveRequirementLibraryCategory(firstMissing)) : 'all'
+      setActiveDocumentLibraryCategory(category || 'all')
+      setActiveDocumentLibraryStatus('missing')
     }
 
     function onQuickAction(event) {
@@ -3290,33 +3583,103 @@ function UnitDetail() {
     }
   }
 
-  function openContextualUploadPicker({
-    key,
+  function openUploadDocumentModal({
     category = 'General',
-    requiredDocumentKey = null,
-    documentType = null,
-    isClientVisible = false,
-    stageKey = null,
+    documentType = '',
+    visibility = 'client_visible',
+    relatedWorkflow = '',
+    satisfiesRequiredDocument = 'yes',
+    requiredDocumentId = '',
+    documentRequestId = '',
+    requestTitle = '',
   } = {}) {
-    setDocumentUploadContext({
-      key: key || category || 'document_upload',
-      category,
-      requiredDocumentKey,
-      documentType,
-      isClientVisible,
-      stageKey,
-    })
-    contextualUploadInputRef.current?.click()
+    setDocumentUploadForm((previous) => ({
+      ...previous,
+      file: null,
+      fileName: '',
+      category: String(category || 'General').trim(),
+      documentType: String(documentType || '').trim(),
+      visibility: String(visibility || 'client_visible').trim(),
+      relatedWorkflow: String(relatedWorkflow || '').trim(),
+      satisfiesRequiredDocument,
+      notes: String(previous.notes || '').trim(),
+      requiredDocumentId: String(requiredDocumentId || '').trim(),
+      documentRequestId: String(documentRequestId || '').trim(),
+      requestTitle: String(requestTitle || '').trim(),
+    }))
+    setUploadDocumentModalOpen(true)
   }
 
-  async function handleContextualFileSelected(event) {
+  function closeUploadDocumentModal() {
+    setUploadDocumentModalOpen(false)
+    setDocumentUploadForm((previous) => ({
+      ...previous,
+      file: null,
+      fileName: '',
+      requiredDocumentId: '',
+      documentRequestId: '',
+      requestTitle: '',
+    }))
+  }
+
+  function resolveLibraryUploadVisibilityFromLabel(value = '') {
+    const normalized = String(value || '').trim().toLowerCase()
+    if (normalized === 'internal') {
+      return 'internal_only'
+    }
+    if (normalized === 'shared') {
+      return 'shared_role_players'
+    }
+    return 'client_visible'
+  }
+
+  function openUploadFromLibraryRow(row = {}) {
+    openUploadDocumentModal({
+      category: String(row?.category || row?.document?.category || 'General').trim() || 'General',
+      documentType: String(row?.document?.document_type || row?.document?.documentType || row?.documentType || row?.category || '').trim(),
+      visibility: resolveLibraryUploadVisibilityFromLabel(row?.visibility || ''),
+      relatedWorkflow: String(row?.relatedWorkflow || '').trim(),
+      satisfiesRequiredDocument: row?.source === 'required' ? 'yes' : 'no',
+      requiredDocumentId: String(row?.requiredDocumentId || '').trim(),
+      documentRequestId: String(row?.documentRequestId || '').trim(),
+      requestTitle: String(row?.name || '').trim(),
+    })
+  }
+
+  function handleDocumentUploadFileSelect(event) {
     const [file] = Array.from(event.target.files || [])
-    event.target.value = ''
-    if (!file || !detail?.transaction?.id) {
+    if (!file) {
       return
     }
 
-    const uploadKey = documentUploadContext.key || documentUploadContext.requiredDocumentKey || documentUploadContext.category || 'document_upload'
+    setDocumentUploadForm((previous) => ({
+      ...previous,
+      file,
+      fileName: file.name || '',
+    }))
+  }
+
+  async function handleUploadDocumentSubmit(event) {
+    event.preventDefault()
+    if (!detail?.transaction?.id) {
+      return
+    }
+
+    if (!documentUploadForm.file) {
+      setError('Select a file to upload.')
+      return
+    }
+
+    const file = documentUploadForm.file
+    const category = String(documentUploadForm.category || 'General').trim()
+    const documentType = String(documentUploadForm.documentType || '').trim()
+    const relatedWorkflow = String(documentUploadForm.relatedWorkflow || '').trim()
+    const satisfiesRequiredDocument =
+      String(documentUploadForm.satisfiesRequiredDocument || 'no').trim().toLowerCase() === 'yes'
+    const requiredDocumentId = satisfiesRequiredDocument ? String(documentUploadForm.requiredDocumentId || '').trim() : ''
+    const documentRequestId = String(documentUploadForm.documentRequestId || '').trim()
+    const visibility = String(documentUploadForm.visibility || 'client_visible').trim()
+    const uploadKey = documentRequestId || requiredDocumentId || category || 'document_upload'
 
     try {
       setUploadingDocumentKey(uploadKey)
@@ -3324,18 +3687,130 @@ function UnitDetail() {
       await uploadDocument({
         transactionId: detail.transaction.id,
         file,
-        category: documentUploadContext.category || 'General',
-        isClientVisible: Boolean(documentUploadContext.isClientVisible),
-        requiredDocumentKey: documentUploadContext.requiredDocumentKey || null,
-        documentType: documentUploadContext.documentType || null,
-        stageKey: documentUploadContext.stageKey || null,
+        category,
+        isClientVisible: visibility !== 'internal_only',
+        visibilityScope: resolveLibraryUploadVisibilityScope(visibility),
+        requiredDocumentKey: requiredDocumentId || null,
+        documentRequestId: documentRequestId || null,
+        documentType: documentType || null,
+        stageKey: relatedWorkflow || null,
       })
+      setUploadDocumentModalOpen(false)
+      closeUploadDocumentModal()
       window.dispatchEvent(new Event('itg:transaction-updated'))
       await loadDetail()
     } catch (uploadError) {
       setError(uploadError?.message || 'Unable to upload document.')
     } finally {
       setUploadingDocumentKey('')
+    }
+  }
+
+  function resolveDocumentRequestPartyForUpload(row = {}) {
+    const sourceParty = String(row?.requiredParty || '').trim().toLowerCase()
+    if (sourceParty.includes('buyer')) return 'buyer'
+    if (sourceParty.includes('seller')) return 'seller'
+    if (sourceParty.includes('attorney')) return 'attorney'
+    if (sourceParty.includes('bond') || sourceParty.includes('finance')) return 'bond_originator'
+    if (sourceParty.includes('agent')) return 'agent'
+    return 'buyer'
+  }
+
+  async function handleRequestDocumentFromLibraryRow(row = {}) {
+    if (!row?.requiredDocumentId || !detail?.transaction?.id) {
+      return
+    }
+
+    try {
+      setDocumentRequestSaving(true)
+      setError('')
+      await createTransactionDocumentRequests({
+        transactionId: detail.transaction.id,
+        createdByRole: effectiveEditorRole,
+        requests: [
+          {
+            title: row.name || 'Required document',
+            notes: `Requested via document library for ${row.name || 'required document'}.`,
+            category: 'Additional Requests',
+            requestedFrom: resolveDocumentRequestPartyForUpload(row),
+            visibility: 'client_visible',
+            priority: 'normal',
+            dueDate: null,
+            status: 'requested',
+          },
+        ],
+      })
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (requestError) {
+      setError(requestError?.message || 'Unable to request this document.')
+    } finally {
+      setDocumentRequestSaving(false)
+    }
+  }
+
+  async function handleApproveLibraryDocument(row = {}) {
+    if (!detail?.transaction?.id) {
+      return
+    }
+
+    try {
+      setDocumentRequestStatusUpdatingId(String(row?.documentRequestId || row?.requiredDocumentId || ''))
+      setError('')
+      if (row?.requiredDocumentId) {
+        await updateTransactionRequiredDocumentStatus({
+          transactionId: detail.transaction.id,
+          documentKey: row.requiredDocumentId,
+          status: 'accepted',
+          actorRole: effectiveEditorRole,
+        })
+      } else if (row?.documentRequestId) {
+        await updateTransactionDocumentRequestStatus({
+          requestId: row.documentRequestId,
+          status: 'completed',
+        })
+      }
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (approveError) {
+      setError(approveError?.message || 'Unable to approve this document.')
+    } finally {
+      setDocumentRequestStatusUpdatingId('')
+    }
+  }
+
+  async function handleRejectLibraryDocument(row = {}) {
+    if (!detail?.transaction?.id) {
+      return
+    }
+
+    try {
+      const requestId = String(row?.documentRequestId || '').trim()
+      const reason = window.prompt('Add rejection reason', '') || ''
+      setDocumentRequestStatusUpdatingId(String(row?.requiredDocumentId || requestId || ''))
+      setError('')
+      if (row?.requiredDocumentId) {
+        await updateTransactionRequiredDocumentStatus({
+          transactionId: detail.transaction.id,
+          documentKey: row.requiredDocumentId,
+          status: 'rejected',
+          actorRole: effectiveEditorRole,
+        })
+      } else if (requestId) {
+        await updateTransactionDocumentRequestStatus({
+          requestId,
+          status: 'rejected',
+        })
+      }
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+      if (reason) {
+        setError('')
+      }
+    } catch (rejectError) {
+      setError(rejectError?.message || 'Unable to reject this document.')
+    } finally {
+      setDocumentRequestStatusUpdatingId('')
     }
   }
 
@@ -4525,29 +5000,7 @@ function UnitDetail() {
     }
   }
 
-  async function handleBondHybridFinanceStage(stageKey) {
-    if (!transaction?.id) {
-      setError('Transaction data is not available for bond finance workflow updates.')
-      return
-    }
-
-    try {
-      setBondHybridFinanceActionLoading(stageKey)
-      setError('')
-      const result = await updateBondHybridFinanceStage(transaction.id, stageKey, {
-        actorRole: effectiveEditorRole,
-      })
-      setDetail((previous) => previous ? { ...previous, transactionFinanceWorkflow: result } : previous)
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-      await loadDetail()
-    } catch (workflowError) {
-      setError(workflowError?.message || 'Unable to update bond finance workflow.')
-    } finally {
-      setBondHybridFinanceActionLoading('')
-    }
-  }
-
-  async function handleAddBondHybridApplication(payload) {
+  async function handleSubmitFinanceBankApplication(payload) {
     if (!transaction?.id) {
       setError('Transaction data is not available for bond applications.')
       return
@@ -4556,7 +5009,7 @@ function UnitDetail() {
     try {
       setBondHybridFinanceActionLoading('add_application')
       setError('')
-      const result = await addBondApplication(transaction.id, payload, {
+      const result = await submitBankApplication(transaction.id, payload, {
         actorRole: effectiveEditorRole,
       })
       setDetail((previous) => previous ? { ...previous, transactionFinanceWorkflow: result } : previous)
@@ -4569,13 +5022,13 @@ function UnitDetail() {
     }
   }
 
-  async function handleUpdateBondHybridApplication(applicationId, payload) {
-    if (!applicationId) return
+  async function handleUpdateFinanceBankApplication(application, payload) {
+    if (!application?.id) return
 
     try {
-      setBondHybridFinanceActionLoading(`application_${applicationId}`)
+      setBondHybridFinanceActionLoading(`application_${application.id}`)
       setError('')
-      const result = await updateBondApplication(applicationId, payload, {
+      const result = await updateFinanceBankApplication(application.id, payload, {
         actorRole: effectiveEditorRole,
       })
       setDetail((previous) => previous ? { ...previous, transactionFinanceWorkflow: result } : previous)
@@ -4588,7 +5041,7 @@ function UnitDetail() {
     }
   }
 
-  async function handleAddBondHybridQuote(payload) {
+  async function handleCaptureFinanceBondOffer(payload) {
     if (!transaction?.id) {
       setError('Transaction data is not available for bond quotes.')
       return
@@ -4597,7 +5050,7 @@ function UnitDetail() {
     try {
       setBondHybridFinanceActionLoading('add_quote')
       setError('')
-      const result = await addBondQuote(transaction.id, payload, {
+      const result = await captureBondOffer(transaction.id, payload, {
         actorRole: effectiveEditorRole,
       })
       setDetail((previous) => previous ? { ...previous, transactionFinanceWorkflow: result } : previous)
@@ -4610,26 +5063,110 @@ function UnitDetail() {
     }
   }
 
-  async function handleApproveBondHybridQuote(quoteId) {
-    if (!quoteId) return
+  async function handleAcceptFinanceBondOffer(offer) {
+    if (!offer?.id) return
 
     try {
-      setBondHybridFinanceActionLoading(`quote_${quoteId}`)
+      setBondHybridFinanceActionLoading(`quote_${offer.id}`)
       setError('')
-      const result = await approveBondQuote(quoteId, {
+      const result = await acceptBondOffer(offer.id, {
         actorRole: effectiveEditorRole,
       })
       setDetail((previous) => previous ? { ...previous, transactionFinanceWorkflow: result } : previous)
       window.dispatchEvent(new Event('itg:transaction-updated'))
       await loadDetail()
     } catch (quoteError) {
-      setError(quoteError?.message || 'Unable to approve bond quote.')
+      setError(quoteError?.message || 'Unable to accept the selected bond quote.')
     } finally {
       setBondHybridFinanceActionLoading('')
     }
   }
 
-  async function handleMarkBondHybridInstructionSent() {
+  async function handleDeclineFinanceBondOffer(offer) {
+    if (!offer?.id) return
+
+    try {
+      setBondHybridFinanceActionLoading(`decline_${offer.id}`)
+      setError('')
+      const result = await declineBondOffer(offer.id, {
+        actorRole: effectiveEditorRole,
+      })
+      setDetail((previous) => previous ? { ...previous, transactionFinanceWorkflow: result } : previous)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (quoteError) {
+      setError(quoteError?.message || 'Unable to decline the selected bond quote.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  async function handleMarkFinanceDocumentsReviewed() {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for finance document review.')
+      return
+    }
+
+    try {
+      setBondHybridFinanceActionLoading('documents_reviewed')
+      setError('')
+      const result = await reviewFinanceDocuments(transaction.id, {
+        actorRole: effectiveEditorRole,
+      })
+      setDetail((previous) => previous ? { ...previous, transactionFinanceWorkflow: result } : previous)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (reviewError) {
+      setError(reviewError?.message || 'Unable to mark finance documents as reviewed.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  async function handleVerifyCashProofOfFunds() {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for proof of funds verification.')
+      return
+    }
+
+    try {
+      setBondHybridFinanceActionLoading('proof_of_funds_verified')
+      setError('')
+      await verifyFinanceProofOfFunds(transaction.id, {
+        actorRole: effectiveEditorRole,
+      })
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (verificationError) {
+      setError(verificationError?.message || 'Unable to verify proof of funds.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  async function handleUploadFinanceWorkspaceDocument(payload) {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for finance document uploads.')
+      return
+    }
+
+    try {
+      setBondHybridFinanceActionLoading('finance_upload')
+      setError('')
+      await uploadFinanceDocument({
+        transactionId: transaction.id,
+        ...payload,
+      })
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (uploadError) {
+      setError(uploadError?.message || 'Unable to upload the finance document.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  async function handleMarkFinanceInstructionFromCommandCentre(payload = {}) {
     if (!transaction?.id) {
       setError('Transaction data is not available for finance instruction.')
       return
@@ -4638,7 +5175,7 @@ function UnitDetail() {
     try {
       setBondHybridFinanceActionLoading('instruction_sent')
       setError('')
-      const result = await markFinanceInstructionSent(transaction.id, {
+      const result = await markBondInstructionSent(transaction.id, payload, {
         actorRole: effectiveEditorRole,
       })
       setDetail((previous) => previous ? { ...previous, transactionFinanceWorkflow: result } : previous)
@@ -4649,6 +5186,31 @@ function UnitDetail() {
     } finally {
       setBondHybridFinanceActionLoading('')
     }
+  }
+
+  async function handleUpdateFinanceCommand(payload = {}) {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for finance blocker updates.')
+      return
+    }
+
+    try {
+      setBondHybridFinanceActionLoading('finance_command')
+      setError('')
+      const result = await updateFinanceBlockerStatus(transaction.id, payload)
+      setDetail((previous) => previous ? { ...previous, transactionFinanceWorkflow: result } : previous)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (commandError) {
+      setError(commandError?.message || 'Unable to update the finance command centre state.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  function handleOpenFinanceDocument(document) {
+    if (!document?.url) return
+    window.open(document.url, '_blank', 'noopener,noreferrer')
   }
 
   function handleOpenClientPortalLink() {
@@ -5121,20 +5683,28 @@ function UnitDetail() {
   const isBondOrHybridFinance = activeFinanceType === 'bond' || activeFinanceType === 'combination'
   const canViewBondWorkspaceTab = ['developer', 'agent'].includes(workspaceRole) && isBondOrHybridFinance
   const bondHybridFinanceSummary = transactionFinanceWorkflow?.summary || null
-  const bondHybridFinanceWorkflowPanel = isBondOrHybridFinance && transactionFinanceWorkflow ? (
-    <TransactionBondHybridFinanceWorkflowPanel
+  const financeCommandCenterPanel = (
+    <TransactionFinanceCommandCenter
+      transaction={transaction}
       workflowData={transactionFinanceWorkflow}
-      canEdit={canEditFinanceWorkflowLane}
-      variant={effectiveEditorRole === 'bond_originator' ? 'originator' : 'agent'}
+      requiredDocumentChecklist={requiredDocumentChecklist || []}
+      documents={documents || []}
+      viewerRole={effectiveEditorRole}
+      activeViewerPermissions={actingPermissions}
       loadingAction={bondHybridFinanceActionLoading}
-      onAdvanceStage={(stageKey) => void handleBondHybridFinanceStage(stageKey)}
-      onAddApplication={(payload) => void handleAddBondHybridApplication(payload)}
-      onUpdateApplication={(applicationId, payload) => void handleUpdateBondHybridApplication(applicationId, payload)}
-      onAddQuote={(payload) => void handleAddBondHybridQuote(payload)}
-      onApproveQuote={(quoteId) => void handleApproveBondHybridQuote(quoteId)}
-      onInstructionSent={() => void handleMarkBondHybridInstructionSent()}
+      onUploadDocument={(payload) => void handleUploadFinanceWorkspaceDocument(payload)}
+      onSubmitBankApplication={(payload) => void handleSubmitFinanceBankApplication(payload)}
+      onUpdateBankApplication={(application, payload) => void handleUpdateFinanceBankApplication(application, payload)}
+      onCaptureBondOffer={(payload) => void handleCaptureFinanceBondOffer(payload)}
+      onAcceptOffer={(offer) => void handleAcceptFinanceBondOffer(offer)}
+      onDeclineOffer={(offer) => void handleDeclineFinanceBondOffer(offer)}
+      onMarkInstructionSent={(payload) => void handleMarkFinanceInstructionFromCommandCentre(payload)}
+      onReviewDocuments={() => void handleMarkFinanceDocumentsReviewed()}
+      onVerifyProofOfFunds={() => void handleVerifyCashProofOfFunds()}
+      onUpdateBlockers={(payload) => void handleUpdateFinanceCommand(payload)}
+      onOpenDocument={handleOpenFinanceDocument}
     />
-  ) : null
+  )
   const onboardingBondApplication =
     onboardingFormData?.formData?.bond_application &&
     typeof onboardingFormData.formData.bond_application === 'object' &&
@@ -5198,63 +5768,175 @@ function UnitDetail() {
   const bondConsent = onboardingBondApplication?.consent || {}
   const workspaceDocuments = documents || []
   const workspaceDocumentsById = new Map(workspaceDocuments.map((item) => [String(item?.id || ''), item]))
+  const workspaceDocumentRequests = Array.isArray(detail?.documentRequests) ? detail.documentRequests : []
   const visibleRequiredDocuments = (requiredDocumentChecklist || []).filter((item) => !isInformationSheetRequirement(item))
-  const workspaceDocumentRequests = detail?.documentRequests || []
-  const workspaceDocumentTabs = WORKSPACE_DOCUMENT_TABS.filter(
-    (tab) => tab.key !== 'bond' || normalizedClientFinanceType === 'bond' || normalizedClientFinanceType === 'combination',
-  )
-  const activeWorkspaceDocumentsTabKey = workspaceDocumentTabs.some((tab) => tab.key === activeWorkspaceDocumentsTab)
-    ? activeWorkspaceDocumentsTab
-    : workspaceDocumentTabs[0]?.key || 'sales'
-  const documentCategoryBuckets = {
-    sales: [],
-    fica: [],
-    bond: [],
-    additional: [],
-    property: [],
-    internal: [],
-  }
-  for (const document of workspaceDocuments) {
-    const bucketKey = resolveInternalDocumentCategory(document)
-    if (documentCategoryBuckets[bucketKey]) {
-      documentCategoryBuckets[bucketKey].push(document)
+  const requiredMatchedDocumentIds = new Set()
+  const requestedDocumentIds = new Set()
+  const requiredDocumentRows = []
+  const requestRows = []
+
+  visibleRequiredDocuments.forEach((requirement, index) => {
+    const requirementKey = String(requirement?.key || requirement?.requirementKey || '').trim()
+    const matchedDocument = requirement?.matchedDocument
+      || (requirement?.uploadedDocumentId ? workspaceDocumentsById.get(String(requirement.uploadedDocumentId)) : null)
+      || null
+    if (matchedDocument?.id) {
+      requiredMatchedDocumentIds.add(String(matchedDocument.id))
     }
-  }
-  const requiredDocumentBuckets = {
-    sales: [],
-    fica: [],
-    bond: [],
-    additional: [],
-    property: [],
-  }
-  for (const requirement of visibleRequiredDocuments) {
-    const bucketKey = resolveRequirementVaultCategory(requirement)
-    if (requiredDocumentBuckets[bucketKey]) {
-      requiredDocumentBuckets[bucketKey].push(requirement)
-    } else {
-      requiredDocumentBuckets.additional.push(requirement)
-    }
-  }
-  const additionalDocumentRequests = workspaceDocumentRequests
-    .filter((request) => {
-      const requestType = String(request?.requestType || '').trim().toLowerCase()
-      const category = String(request?.category || '').trim().toLowerCase()
-      return requestType === 'additional_document_request' || category === 'additional requests'
+    const rawStatus = String(requirement?.status || requirement?.requirementStatus || '').trim() || (requirement?.complete ? 'uploaded' : 'missing')
+    const rowStatus = normalizeLibraryStatus(rawStatus)
+    const category = normalizeLibraryCategory(resolveRequirementLibraryCategory(requirement)) || 'buyer'
+    requiredDocumentRows.push({
+      id: `required-${requirementKey || index}`,
+      transactionId: String(transaction?.id || ''),
+      name: String(requirement?.label || requirement?.name || 'Required document').trim(),
+      category,
+      requiredParty: resolveRequiredPartyLabel(requirement?.required_from_role || requirement?.expectedFromRole || ''),
+      status: rowStatus,
+      visibility: matchedDocument ? resolveDocumentLibraryVisibility(matchedDocument) : 'Internal',
+      uploadedBy: matchedDocument ? resolveUploadedByLabel(matchedDocument, transactionParticipants) : 'System',
+      uploadedAt: matchedDocument?.created_at || requirement?.created_at || requirement?.createdAt || '',
+      updatedAt: matchedDocument?.updated_at || requirement?.updated_at || requirement?.updatedAt || requirement?.created_at || '',
+      relatedWorkflow: requirement?.groupLabel || requirement?.group_key || requirement?.groupKey || '',
+      source: 'required',
+      requiredDocumentId: requirementKey,
+      documentRequestId: '',
+      blocksStage: requirement?.blocksStage || '',
+      fileUrl: matchedDocument?.url || '',
+      documentId: matchedDocument?.id || '',
+      document: matchedDocument || null,
     })
-    .reduce((accumulator, request) => {
-      const key = String(request?.id || '').trim() || `${request?.title || 'request'}-${request?.createdAt || ''}`
-      if (!key) return accumulator
-      if (accumulator.seen.has(key)) return accumulator
-      accumulator.seen.add(key)
-      accumulator.items.push(request)
-      return accumulator
-    }, { items: [], seen: new Set() })
-    .items
+  })
+
+  workspaceDocumentRequests.forEach((request, index) => {
+    const requestId = String(request?.id || '').trim()
+    const linkedDocument = request?.requestedDocumentId ? workspaceDocumentsById.get(String(request.requestedDocumentId)) : null
+    if (linkedDocument?.id) {
+      requestedDocumentIds.add(String(linkedDocument.id))
+    }
+    const requestStatus = normalizeLibraryStatus(request?.status || 'requested')
+    const category = resolveDocumentRequestLibraryCategory(request)
+    requestRows.push({
+      id: `request-${requestId || index}`,
+      transactionId: String(transaction?.id || ''),
+      name: String(request?.title || request?.name || request?.documentName || 'Document request').trim(),
+      category,
+      requiredParty: resolveRequiredPartyLabel(request?.requestedFrom || request?.requested_from || ''),
+      status: requestStatus,
+      visibility: resolveDocumentRequestVisibilityLabel(request),
+      uploadedBy: request?.createdByRole ? toTitleLabel(request.createdByRole) : 'Team',
+      uploadedAt: request?.createdAt || request?.created_at || '',
+      updatedAt: request?.updatedAt || request?.updated_at || request?.createdAt || request?.created_at || '',
+      relatedWorkflow: request?.category || request?.workflow || '',
+      source: 'request',
+      requiredDocumentId: '',
+      documentRequestId: requestId,
+      blocksStage: '',
+      fileUrl: linkedDocument?.url || '',
+      documentId: linkedDocument?.id || '',
+      document: linkedDocument || null,
+    })
+  })
+
+  const documentLibraryRows = [
+    ...requiredDocumentRows,
+    ...requestRows,
+    ...workspaceDocuments
+      .filter((item) => {
+        const itemId = String(item?.id || '').trim()
+        if (itemId && (requiredMatchedDocumentIds.has(itemId) || requestedDocumentIds.has(itemId))) {
+          return false
+        }
+        return true
+      })
+      .map((document) => {
+        const status = normalizeLibraryStatus(document?.status || 'uploaded')
+        return {
+          id: String(document?.id || ''),
+          transactionId: String(transaction?.id || ''),
+          name: String(document?.name || 'Document').trim(),
+          category: normalizeLibraryCategory(resolveDocumentLibraryCategory(document)) || 'generated',
+          requiredParty: '',
+          status,
+          visibility: resolveDocumentLibraryVisibility(document),
+          uploadedBy: resolveUploadedByLabel(document, transactionParticipants),
+          uploadedAt: document?.created_at || '',
+          updatedAt: document?.updated_at || document?.created_at || '',
+          relatedWorkflow: resolveDocumentWorkflowLabel(document),
+          source: 'document',
+          requiredDocumentId: '',
+          documentRequestId: '',
+          blocksStage: '',
+          fileUrl: document?.url || '',
+          documentId: String(document?.id || ''),
+          document,
+        }
+      }),
+  ]
+
+  const activeDocumentLibraryCategoryKey = normalizeLibraryCategory(activeDocumentLibraryCategory)
+  const activeDocumentLibraryStatusKey = String(activeDocumentLibraryStatus || 'all').trim().toLowerCase()
+  const activeDocumentLibraryStatusTone = String(activeDocumentLibraryStatusKey || 'all').trim().toLowerCase()
+  const documentLibraryRowsFiltered = documentLibraryRows.filter((row) => {
+    if (activeDocumentLibraryCategoryKey && activeDocumentLibraryCategoryKey !== 'all' && row.category !== activeDocumentLibraryCategoryKey) {
+      return false
+    }
+
+    if (activeDocumentLibraryStatusKey === 'required') {
+      return row.source === 'required'
+    }
+    if (activeDocumentLibraryStatusKey === 'missing') {
+      return row.status === 'missing'
+    }
+    if (activeDocumentLibraryStatusKey === 'pending_review') {
+      return row.status === 'under_review'
+    }
+    if (activeDocumentLibraryStatusKey === 'approved') {
+      return row.status === 'approved'
+    }
+
+    return true
+  })
+  const documentLibrarySummary = {
+    all: documentLibraryRows.length,
+    required: documentLibraryRows.filter((row) => row.source === 'required').length,
+    missing: documentLibraryRows.filter((row) => row.status === 'missing').length,
+    pending_review: documentLibraryRows.filter((row) => row.status === 'under_review').length,
+    approved: documentLibraryRows.filter((row) => row.status === 'approved').length,
+  }
+  const documentLibraryStatusCards = DOCUMENT_LIBRARY_STATUS_FILTERS.map((statusFilter) => ({
+    key: statusFilter.key,
+    label: statusFilter.label,
+    value: documentLibrarySummary[statusFilter.key] || 0,
+  }))
+  const documentLibraryActiveCategoryLabel =
+    DOCUMENT_LIBRARY_FILTERS.find((filter) => filter.key === activeDocumentLibraryCategoryKey)?.label || 'All Documents'
+  const documentLibraryEmptyState = (() => {
+    if (documentLibraryRowsFiltered.length > 0) {
+      return ''
+    }
+    if (activeDocumentLibraryStatusKey === 'missing') {
+      return 'No missing documents. Everything required is currently complete.'
+    }
+    if (activeDocumentLibraryCategoryKey === 'all') {
+      return 'No documents have been uploaded or requested yet.'
+    }
+    if (activeDocumentLibraryCategoryKey === 'finance') {
+      return 'No finance documents yet.'
+    }
+    if (activeDocumentLibraryCategoryKey === 'transfer') {
+      return 'No transfer documents yet.'
+    }
+    if (activeDocumentLibraryStatusKey === 'required') {
+      return 'No required documents for this filter.'
+    }
+    if (activeDocumentLibraryCategoryKey) {
+      return `No ${documentLibraryActiveCategoryLabel.toLowerCase()} documents yet.`
+    }
+    return 'No documents for this filter.'
+  })()
+  const isUploadingDocumentInModal = Boolean(uploadingDocumentKey)
   const attorneyParticipant = (transactionParticipants || []).find((item) => item.roleType === 'attorney') || null
-  const uploadedDocumentCount = workspaceDocuments.length
-  const requiredDocumentCount = visibleRequiredDocuments.length
-  const missingDocumentCount = visibleRequiredDocuments.filter((item) => !item?.complete).length
-  const clientVisibleDocumentCount = workspaceDocuments.filter((item) => Boolean(item?.is_client_visible)).length
   const reservationRequirementStatus = String(reservationRequirement?.status || '').trim().toLowerCase()
   const canAccessReservationProof = Boolean(reservationProofDocument?.url || reservationProofDocument?.file_path)
   const purchaserNameForOtp =
@@ -5316,30 +5998,6 @@ function UnitDetail() {
     if (salesActionLoading === 'share_otp') return 'Sending...'
     return otpPacketActionState.label
   })()
-  const salesRequirementsExcludingCore = requiredDocumentBuckets.sales.filter((item) => {
-    const keyToken = String(item?.key || '').toLowerCase()
-    if (keyToken.includes('reservation_deposit_proof')) return false
-    if (keyToken.includes('otp') || keyToken.includes('offer_to_purchase')) return false
-    return true
-  })
-  const tabCountByKey = {
-    sales:
-      (reservationRequired ? 1 : 0) +
-      1 +
-      salesRequirementsExcludingCore.length +
-      documentCategoryBuckets.sales.filter((item) => {
-        const token = `${item?.document_type || ''} ${item?.name || ''}`.toLowerCase()
-        return !/reservation_deposit_pop|otp|offer_to_purchase|signed_otp/.test(token)
-      }).length,
-    fica: requiredDocumentBuckets.fica.length + documentCategoryBuckets.fica.length,
-    bond: requiredDocumentBuckets.bond.length + documentCategoryBuckets.bond.length,
-    additional:
-      requiredDocumentBuckets.additional.length +
-      documentCategoryBuckets.additional.length +
-      additionalDocumentRequests.length,
-    property: requiredDocumentBuckets.property.length + documentCategoryBuckets.property.length,
-    internal: documentCategoryBuckets.internal.length,
-  }
   const developmentModuleState = developmentSettings?.enabledModules || {}
   const developmentTeams = developmentSettings?.stakeholderTeams || {}
   const agentOptions = developmentTeams.agents || []
@@ -5417,9 +6075,9 @@ function UnitDetail() {
     formatDate(transaction?.expected_transfer_date || transaction?.registration_date || transaction?.registered_at || transaction?.completed_at)
   const bondAmountLabel = hasCapturedFinancials && transaction?.bond_amount ? currency.format(Number(transaction.bond_amount || 0)) : 'Not captured'
   const depositAmountLabel = hasCapturedFinancials && transaction?.deposit_amount ? currency.format(Number(transaction.deposit_amount || 0)) : 'Not captured'
-  const matterHealthLabel = stageProgressModel.currentStageBlockers.length
+      const matterHealthLabel = stageProgressModel.currentStageBlockers.length
     ? 'Attention'
-    : missingDocumentCount > 0
+    : documentLibrarySummary.missing > 0
       ? 'Waiting'
       : 'On Track'
   const matterHealthTone =
@@ -5525,7 +6183,8 @@ function UnitDetail() {
       label: 'Request Documents',
       icon: FilePlus2,
       onClick: () => {
-        setActiveWorkspaceDocumentsTab('additional')
+        setActiveDocumentLibraryCategory('all')
+        setActiveDocumentLibraryStatus('required')
         openDocumentsWorkspace()
       },
       disabled: !canRequestAdditionalDocuments,
@@ -5534,8 +6193,15 @@ function UnitDetail() {
       label: 'Upload Documents',
       icon: UploadCloud,
       onClick: () => {
-        setActiveWorkspaceDocumentsTab('sales')
-        openDocumentsWorkspace()
+        setActiveDocumentLibraryCategory('all')
+        setActiveDocumentLibraryStatus('all')
+        openUploadDocumentModal({
+          category: '',
+          documentType: '',
+          visibility: 'client_visible',
+          relatedWorkflow: '',
+          satisfiesRequiredDocument: 'no',
+        })
       },
     },
     {
@@ -5560,7 +6226,8 @@ function UnitDetail() {
       label: 'Generate Document',
       icon: FilePlus2,
       onClick: () => {
-        setActiveWorkspaceDocumentsTab('bond')
+        setActiveDocumentLibraryCategory('generated')
+        setActiveDocumentLibraryStatus('all')
         openDocumentsWorkspace()
       },
     },
@@ -7068,20 +7735,6 @@ function UnitDetail() {
 
         {activeWorkspaceMenu === 'financials' ? (
           <div className="space-y-4">
-            <WorkspacePanel
-              title="Finance"
-              copy="Focused money, funding, bond, deposit, and guarantee readiness summary for the transaction."
-            >
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                {agentMetricCards.map((card) => (
-                  <article key={`financial-${card.label}`} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3">
-                    <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.09em] text-[#8ca0b6]">{card.label}</span>
-                    <strong className="mt-1.5 block text-sm font-semibold text-[#1c2e42]">{card.value}</strong>
-                    <span className="mt-1 block text-xs text-[#7c8ea4]">{card.subtext}</span>
-                  </article>
-                ))}
-              </div>
-            </WorkspacePanel>
             {showReservationDepositOverviewCard ? (
               <WorkspacePanel
                 title="Reservation Deposit"
@@ -7101,7 +7754,7 @@ function UnitDetail() {
                 </div>
               </WorkspacePanel>
             ) : null}
-            {isBondOrHybridFinance ? bondHybridFinanceWorkflowPanel : financeWorkflowSection}
+            {financeCommandCenterPanel}
           </div>
         ) : null}
 
@@ -7871,7 +8524,7 @@ function UnitDetail() {
 
         {activeWorkspaceMenu === 'bond' || (isAgentWorkspace && activeWorkspaceMenu === 'financials' && canViewBondWorkspaceTab) ? (
           <div className="space-y-4">
-            {activeWorkspaceMenu === 'bond' ? bondHybridFinanceWorkflowPanel : null}
+            {activeWorkspaceMenu === 'bond' ? financeCommandCenterPanel : null}
             <WorkspacePanel
               title="Bond Application"
               copy="Read-only view of the client bond application, offers, and grant records."
@@ -8056,273 +8709,216 @@ function UnitDetail() {
         ) : null}
 
         {activeWorkspaceMenu === 'documents' ? (
-          <div className="space-y-5">
+          <section className="space-y-5">
             <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <h3 className="text-[1.25rem] font-semibold tracking-[-0.03em] text-[#142132]">Documents</h3>
-                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                    Manage required documents, client uploads, signed agreements, and internal transaction files in one place.
-                  </p>
+                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">View, upload, and manage all transaction documents in one place.</p>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  {[
-                    ['Required', requiredDocumentCount],
-                    ['Uploaded', uploadedDocumentCount],
-                    ['Missing', missingDocumentCount],
-                    ['Client Visible', clientVisibleDocumentCount],
-                  ].map(([label, value]) => (
-                    <article key={label} className="rounded-[16px] border border-[#dde4ee] bg-[#fbfdff] px-4 py-3">
-                      <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                      <strong className="mt-2 block text-sm font-semibold text-[#142132]">{value}</strong>
-                    </article>
-                  ))}
-                </div>
+                <button
+                  type="button"
+                  className="inline-flex min-h-[42px] items-center justify-center rounded-[14px] border border-[#1f4f73] bg-[#1f4f73] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#183f5d]"
+                  onClick={() => void openUploadDocumentModal({})}
+                >
+                  <UploadCloud size={15} />
+                  <span className="ml-2">Upload Document</span>
+                </button>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                {documentLibraryStatusCards.map((item) => {
+                  const isActive = activeDocumentLibraryStatusTone === item.key
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      className={`rounded-[16px] border px-4 py-3 text-left transition ${
+                        isActive
+                          ? 'border-[#1f4f73] bg-[#f4f8ff] text-[#142132]'
+                          : 'border-[#dde4ee] bg-[#fbfdff] text-[#3d536a] hover:border-[#c8d7e9] hover:bg-white'
+                      }`}
+                      onClick={() => setActiveDocumentLibraryStatus(item.key)}
+                    >
+                      <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{item.label}</span>
+                      <strong className="mt-2 block text-sm font-semibold text-[#142132]">{item.value}</strong>
+                    </button>
+                  )
+                })}
               </div>
             </section>
 
             <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-              <div>
-                <nav className="grid grid-cols-2 gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2 md:grid-cols-3 xl:grid-cols-6">
-                  {workspaceDocumentTabs.map((tab) => {
-                    const isActive = activeWorkspaceDocumentsTabKey === tab.key
-                    return (
-                      <button
-                        key={tab.key}
-                        type="button"
-                        onClick={() => setActiveWorkspaceDocumentsTab(tab.key)}
-                        className={`inline-flex min-h-[44px] items-center justify-center rounded-[14px] px-4 py-2 text-sm font-semibold transition ${
-                          isActive
-                            ? 'border border-[#d1deeb] bg-white text-[#142132] shadow-[0_10px_22px_rgba(15,23,42,0.08)]'
-                            : 'border border-transparent text-[#5f7086] hover:border-[#d8e4ef] hover:bg-white hover:text-[#142132]'
-                        }`}
-                      >
-                        <span>{tab.label}</span>
-                        <span className="ml-2 inline-flex min-w-[22px] items-center justify-center rounded-full border border-[#dce6f0] bg-white px-1.5 py-0.5 text-[0.68rem] font-semibold text-[#5f7086]">
-                          {tabCountByKey[tab.key] || 0}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </nav>
+              <nav className="grid gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2 md:grid-cols-2 xl:grid-cols-5 2xl:grid-cols-6">
+                {DOCUMENT_LIBRARY_FILTERS.map((filter) => {
+                  const isActive = activeDocumentLibraryCategoryKey === filter.key
+                  return (
+                    <button
+                      key={filter.key}
+                      type="button"
+                      className={`inline-flex min-h-[42px] items-center justify-center rounded-[12px] px-3 py-2 text-sm font-semibold transition ${
+                        isActive
+                          ? 'border border-[#d1deeb] bg-white text-[#142132] shadow-[0_10px_22px_rgba(15,23,42,0.08)]'
+                          : 'border border-transparent text-[#5f7086] hover:border-[#d8e4ef] hover:bg-white hover:text-[#142132]'
+                      }`}
+                      onClick={() => setActiveDocumentLibraryCategory(filter.key)}
+                    >
+                      {filter.label}
+                    </button>
+                  )
+                })}
+              </nav>
+
+              <div className="mt-4 overflow-x-auto">
+                <table className="min-w-full table-fixed text-left">
+                  <thead>
+                    <tr className="border-b border-[#dde7f1] text-xs uppercase tracking-wide text-[#60768d]">
+                      <th className="min-w-[260px] py-3 pr-3 font-semibold">Document</th>
+                      <th className="min-w-[95px] py-3 pr-3 font-semibold">Category</th>
+                      <th className="min-w-[95px] py-3 pr-3 font-semibold">Required Party</th>
+                      <th className="min-w-[105px] py-3 pr-3 font-semibold">Status</th>
+                      <th className="min-w-[95px] py-3 pr-3 font-semibold">Visibility</th>
+                      <th className="min-w-[130px] py-3 pr-3 font-semibold">Uploaded By</th>
+                      <th className="min-w-[125px] py-3 pr-3 font-semibold">Last Updated</th>
+                      <th className="min-w-[120px] py-3 pr-3 font-semibold">Related Workflow</th>
+                      <th className="min-w-[170px] py-3 pr-3 font-semibold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {documentLibraryRowsFiltered.length ? (
+                      documentLibraryRowsFiltered.map((row) => {
+                        const normalizedStatus = normalizeLibraryStatus(row.status)
+                        const statusTone = getLibraryStatusTone(normalizedStatus)
+                        const rowDocument = row?.document || { id: row.documentId || row.id, name: row.name, url: row.fileUrl || '' }
+                        const canOpenRow = Boolean(row.fileUrl || rowDocument?.file_path || rowDocument?.url)
+                        const hasReplacement = canUploadDocuments && Boolean(row.fileUrl)
+                        const canApprove = canEditCoreTransaction && ['required', 'request'].includes(row.source) && ['requested', 'under_review'].includes(
+                          normalizedStatus,
+                        )
+                        const canReject = canEditCoreTransaction && ['required', 'request'].includes(row.source) && ['requested', 'under_review', 'approved', 'missing'].includes(
+                          normalizedStatus,
+                        )
+                        const showUploadAction = row.source === 'required' && normalizedStatus === 'missing'
+                        return (
+                          <tr key={row.id} className="border-b border-[#eaf0f6]">
+                            <td className="py-4 pr-3 text-sm">
+                              <strong className="block text-sm font-semibold text-[#142132]">{row.name || 'Document'}</strong>
+                              <p className="mt-1 text-xs text-[#7b8ca2]">Category: {toTitleLabel(row.category || 'Buyer')}</p>
+                              <p className="mt-0.5 text-xs text-[#7b8ca2]">Blocks: {row.blocksStage || '—'}</p>
+                            </td>
+                            <td className="py-4 pr-3 text-sm text-[#44566a]">{toTitleLabel(row.category || 'buyer')}</td>
+                            <td className="py-4 pr-3 text-sm text-[#44566a]">{row.requiredParty || 'Internal'}</td>
+                            <td className="py-4 pr-3 text-sm">
+                              <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusTone}`}>
+                                {formatLibraryStatusLabel(normalizedStatus)}
+                              </span>
+                            </td>
+                            <td className="py-4 pr-3 text-sm text-[#44566a]">{row.visibility || 'Client Visible'}</td>
+                            <td className="py-4 pr-3 text-sm text-[#44566a]">{row.uploadedBy || 'System'}</td>
+                            <td className="py-4 pr-3 text-sm text-[#44566a]">{formatDate(row.updatedAt || row.updated_at)}</td>
+                            <td className="py-4 pr-3 text-sm text-[#44566a]">{row.relatedWorkflow || '—'}</td>
+                            <td className="py-4 pr-3 text-sm">
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                                  onClick={() => canOpenRow && void openWorkspaceDocument(rowDocument, { download: false, filename: rowDocument.name || row.name })}
+                                  disabled={!canOpenRow}
+                                >
+                                  View
+                                </button>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                                  onClick={() =>
+                                    canOpenRow && void openWorkspaceDocument(rowDocument, { download: true, filename: `${rowDocument.name || row.name || 'document'}.pdf` })
+                                  }
+                                  disabled={!canOpenRow}
+                                >
+                                  Download
+                                </button>
+                                {hasReplacement ? (
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                                    onClick={() => openUploadFromLibraryRow(row)}
+                                  >
+                                    Replace
+                                  </button>
+                                ) : null}
+                                {showUploadAction ? (
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                                    onClick={() => openUploadFromLibraryRow(row)}
+                                  >
+                                    Upload
+                                  </button>
+                                ) : null}
+                                {showUploadAction && canRequestAdditionalDocuments ? (
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                                    onClick={() => void handleRequestDocumentFromLibraryRow(row)}
+                                  >
+                                    Request
+                                  </button>
+                                ) : null}
+                                {canApprove ? (
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center rounded-full border border-[#cfe3d7] bg-[#eef8f1] px-3 py-1.5 text-xs font-semibold text-[#2f7a51] transition hover:bg-[#e6f4ec] disabled:cursor-not-allowed disabled:opacity-60"
+                                    onClick={() => void handleApproveLibraryDocument(row)}
+                                    disabled={documentRequestStatusUpdatingId === row.requiredDocumentId || documentRequestStatusUpdatingId === row.documentRequestId}
+                                  >
+                                    Approve
+                                  </button>
+                                ) : null}
+                                {canReject ? (
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center rounded-full border border-[#f1d8d0] bg-[#fff5f2] px-3 py-1.5 text-xs font-semibold text-[#b5472d] transition hover:bg-[#ffede8] disabled:cursor-not-allowed disabled:opacity-60"
+                                    onClick={() => void handleRejectLibraryDocument(row)}
+                                    disabled={documentRequestStatusUpdatingId === row.requiredDocumentId || documentRequestStatusUpdatingId === row.documentRequestId}
+                                  >
+                                    Reject
+                                  </button>
+                                ) : null}
+                                <details className="inline-flex">
+                                  <summary className="inline-flex cursor-pointer rounded-full border border-[#dde7f3] bg-[#f7fbff] px-3 py-1.5 text-xs font-semibold text-[#3b556f]">
+                                    More options
+                                  </summary>
+                                  <div className="mt-2 rounded-[12px] border border-[#dce7f3] bg-white p-2 text-xs shadow-[0_8px_20px_rgba(15,23,42,0.08)]">
+                                    <button
+                                      type="button"
+                                      className="w-full rounded-[10px] px-2 py-1.5 text-left transition hover:bg-[#f7fbff]"
+                                      onClick={() => openUploadFromLibraryRow({ ...row, satisfiesRequiredDocument: row.source === 'required' ? 'yes' : 'no' })}
+                                    >
+                                      Duplicate Upload Preset
+                                    </button>
+                                  </div>
+                                </details>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })
+                    ) : (
+                      <tr>
+                        <td className="py-8 text-center text-sm text-[#6b7d93]" colSpan={9}>
+                          {documentLibraryEmptyState}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
+            </section>
+            </section>
+          ) : null}
 
-              {activeWorkspaceDocumentsTabKey === 'sales' ? (
-                <section className="mt-4 rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Sales Documents</h4>
-                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Core sale-stage documents and client proof workflows.</p>
-                    </div>
-                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                      {tabCountByKey.sales} items
-                    </span>
-                  </div>
-
-                  <div className="mt-4 space-y-3">
-                    {reservationRequired ? (
-                      <article className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <strong className="block text-sm font-semibold text-[#142132]">Reservation Deposit Proof of Payment</strong>
-                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                              Proof of payment uploaded by the client for the reservation deposit.
-                            </p>
-                            <p className="mt-2 text-xs font-medium text-[#7b8ca2]">Deposit amount: {reservationAmountValue ? currency.format(reservationAmountValue) : 'Amount pending'}</p>
-                            {reservationProofDocument?.name ? (
-                              <p className="mt-2 text-xs text-[#6b7d93]">File: {reservationProofDocument.name}</p>
-                            ) : null}
-                          </div>
-                          <span
-                            className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${
-                              reservationProofStatusLabel === 'Payment Received'
-                                ? 'border-[#cfe3d7] bg-[#eef8f1] text-[#2f7a51]'
-                                : reservationProofStatusLabel === 'Rejected / Needs Reupload'
-                                  ? 'border-[#f1d8d0] bg-[#fff5f2] text-[#b5472d]'
-                                  : reservationProofStatusLabel === 'Uploaded'
-                                    ? 'border-[#d8e4ef] bg-[#f4f8fc] text-[#35546c]'
-                                    : 'border-[#f4d9d7] bg-[#fff5f4] text-[#b42318]'
-                            }`}
-                          >
-                            {reservationProofStatusLabel}
-                          </span>
-                        </div>
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
-                            onClick={() => void openWorkspaceDocument(reservationProofDocument, { download: false })}
-                            disabled={!canAccessReservationProof}
-                          >
-                            View Uploaded POP
-                          </button>
-                          <button
-                            type="button"
-                            className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
-                            onClick={() =>
-                              void openWorkspaceDocument(reservationProofDocument, {
-                                download: true,
-                                filename: reservationProofDocument?.name || 'reservation-deposit-proof-of-payment',
-                              })
-                            }
-                            disabled={!canAccessReservationProof}
-                          >
-                            Download POP
-                          </button>
-                          {canEditCoreTransaction ? (
-                            <>
-                              <button
-                                type="button"
-                                className="inline-flex items-center rounded-full border border-[#cfe3d7] bg-[#eef8f1] px-4 py-2 text-sm font-semibold text-[#2f7a51] transition hover:bg-[#e6f4ec] disabled:cursor-not-allowed disabled:opacity-60"
-                                onClick={() => void handleReservationProofDecision('accepted')}
-                                disabled={reservationActionLoading === 'accepted'}
-                              >
-                                {reservationActionLoading === 'accepted' ? 'Saving...' : 'Payment Received'}
-                              </button>
-                              <button
-                                type="button"
-                                className="inline-flex items-center rounded-full border border-[#f1d8d0] bg-[#fff5f2] px-4 py-2 text-sm font-semibold text-[#b5472d] transition hover:bg-[#ffede8] disabled:cursor-not-allowed disabled:opacity-60"
-                                onClick={() => void handleReservationProofDecision('reupload_required')}
-                                disabled={reservationActionLoading === 'reupload_required'}
-                              >
-                                {reservationActionLoading === 'reupload_required' ? 'Saving...' : 'Request Reupload'}
-                              </button>
-                            </>
-                          ) : null}
-                        </div>
-                      </article>
-                    ) : null}
-
-                    <article className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <strong className="block text-sm font-semibold text-[#142132]">Offer to Purchase (OTP)</strong>
-                          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                            Generate, review, send, and manage the signed OTP.
-                          </p>
-                          {otpGeneratedDocument?.name ? (
-                            <p className="mt-2 text-xs text-[#6b7d93]">Latest: {otpGeneratedDocument.name}</p>
-                          ) : null}
-                        </div>
-                        <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
-                          {otpStatusLabel}
-                        </span>
-                      </div>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
-                          onClick={handleOtpPrimaryAction}
-                          disabled={!canEditSalesWorkflow || otpPacketStatusLoading || salesActionLoading === 'generate_otp' || salesActionLoading === 'share_otp'}
-                        >
-                          {otpPrimaryActionLabel}
-                        </button>
-                        <button
-                          type="button"
-                          className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
-                          onClick={() => openOtpLegalWorkspace('view')}
-                          disabled={!otpGeneratedDocument?.url}
-                        >
-                          Review OTP
-                        </button>
-                        <button
-                          type="button"
-                          className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
-                          onClick={() => openOtpLegalWorkspace('send')}
-                          disabled={!canEditSalesWorkflow || salesActionLoading === 'share_otp' || !otpGeneratedDocument}
-                        >
-                          {salesActionLoading === 'share_otp' ? 'Sharing...' : 'Send to Client'}
-                        </button>
-                        <button
-                          type="button"
-                          className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
-                          onClick={triggerSignedOtpUpload}
-                          disabled={!canUploadDocuments || salesActionLoading === 'upload_signed_otp'}
-                        >
-                          {salesActionLoading === 'upload_signed_otp' ? 'Uploading...' : 'Upload signed OTP'}
-                        </button>
-                      </div>
-                    </article>
-
-                    {salesRequirementsExcludingCore.map((item) => {
-                      const itemStatus = String(item.status || 'missing')
-                      const statusTone =
-                        itemStatus === 'verified'
-                          ? 'border-[#cfe3d7] bg-[#eef8f1] text-[#2f7a51]'
-                          : itemStatus === 'uploaded'
-                            ? 'border-[#d8e4ef] bg-[#f4f8fc] text-[#35546c]'
-                            : 'border-[#f4d9d7] bg-[#fff5f4] text-[#b42318]'
-                      return (
-                        <article key={item.key} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                              <strong className="block text-sm font-semibold text-[#142132]">{item.label || 'Sales document'}</strong>
-                              <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{item.description || 'Required for sale-stage progression.'}</p>
-                              {item.matchedDocument?.name ? (
-                                <p className="mt-2 text-xs text-[#6b7d93]">Uploaded file: {item.matchedDocument.name}</p>
-                              ) : null}
-                            </div>
-                            <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] ${statusTone}`}>
-                              {itemStatus.replaceAll('_', ' ')}
-                            </span>
-                          </div>
-                          <div className="mt-4 flex flex-wrap gap-2">
-                            {canUploadDocuments ? (
-                              <button
-                                type="button"
-                                className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
-                                onClick={() =>
-                                  openContextualUploadPicker({
-                                    key: item.key,
-                                    category: item.groupLabel || 'Sales Documents',
-                                    requiredDocumentKey: item.key,
-                                    documentType: item.portalDocumentType || item.key,
-                                    isClientVisible: item.visibilityScope !== 'internal',
-                                  })
-                                }
-                                disabled={uploadingDocumentKey === item.key}
-                              >
-                                {uploadingDocumentKey === item.key ? 'Uploading...' : item.matchedDocument?.id ? 'Replace document' : 'Upload document'}
-                              </button>
-                            ) : null}
-                            <button
-                              type="button"
-                              className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
-                              onClick={() => window.open(item.matchedDocument?.url || '', '_blank', 'noopener,noreferrer')}
-                              disabled={!item.matchedDocument?.url}
-                            >
-                              View upload
-                            </button>
-                            {canEditCoreTransaction ? (
-                              <>
-                                <button
-                                  type="button"
-                                  className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:bg-[#eaf2fb]"
-                                  onClick={() => void handleRequiredDocumentStatusChange(item, 'verified')}
-                                  disabled={updatingRequiredDocumentKey === item.key}
-                                >
-                                  Approve
-                                </button>
-                                <button
-                                  type="button"
-                                  className="inline-flex items-center rounded-full border border-[#f1d8d0] bg-[#fff5f2] px-4 py-2 text-sm font-semibold text-[#b5472d] transition hover:bg-[#ffede8]"
-                                  onClick={() => void handleRequiredDocumentStatusChange(item, 'missing')}
-                                  disabled={updatingRequiredDocumentKey === item.key}
-                                >
-                                  Request Reupload
-                                </button>
-                              </>
-                            ) : null}
-                          </div>
-                        </article>
-                      )
-                    })}
-                  </div>
-                </section>
-              ) : null}
-
-              {activeWorkspaceDocumentsTabKey === 'fica' ? (
-                <section className="mt-4 rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+        {/* Legacy Documents tabbed view intentionally removed in favor of the unified document library.
+        {activeWorkspaceMenu === 'documents' ? (
+          <div className="space-y-5">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">FICA Documents</h4>
@@ -8977,6 +9573,7 @@ function UnitDetail() {
             </section>
           </div>
         ) : null}
+            */}
 
       </div>
     </SharedTransactionShell>
@@ -9142,6 +9739,93 @@ function UnitDetail() {
           }}
         />
       </div>
+    </Modal>
+    <Modal
+      open={uploadDocumentModalOpen}
+      onClose={closeUploadDocumentModal}
+      title="Upload Transaction Document"
+      subtitle="Upload directly into the canonical transaction document library."
+      footer={(
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={closeUploadDocumentModal} disabled={isUploadingDocumentInModal}>
+            Cancel
+          </Button>
+          <Button type="submit" form="transaction-upload-form" disabled={isUploadingDocumentInModal}>
+            {isUploadingDocumentInModal ? 'Uploading...' : 'Upload Document'}
+          </Button>
+        </div>
+      )}
+      className="max-w-[760px]"
+    >
+      <form id="transaction-upload-form" onSubmit={handleUploadDocumentSubmit} className="space-y-4">
+        <div className="rounded-[12px] border border-[#e1eaf4] bg-[#fbfdff] p-3 text-sm text-[#2f4358]">
+          {documentUploadForm.requestTitle ? `Linked request: ${documentUploadForm.requestTitle}` : 'Upload a file and complete the metadata for this document.'}
+        </div>
+
+        <Field
+          label="File"
+          type="file"
+          onChange={handleDocumentUploadFileSelect}
+          inputClassName="cursor-pointer"
+        />
+        {documentUploadForm.fileName ? (
+          <p className="text-xs text-[#6b7ca0]">Selected file: {documentUploadForm.fileName}</p>
+        ) : null}
+
+        <Field
+          label="Document type"
+          value={documentUploadForm.documentType}
+          onChange={(event) => setDocumentUploadForm((previous) => ({ ...previous, documentType: event.target.value }))}
+          placeholder="e.g. proof_of_funds"
+        />
+        <Field
+          label="Category"
+          value={documentUploadForm.category}
+          onChange={(event) => setDocumentUploadForm((previous) => ({ ...previous, category: event.target.value }))}
+          placeholder="e.g. Finance / Proof of Funds"
+        />
+        <Field
+          as="select"
+          label="Visibility"
+          value={documentUploadForm.visibility}
+          onChange={(event) => setDocumentUploadForm((previous) => ({ ...previous, visibility: event.target.value }))}
+        >
+          {DOCUMENT_UPLOAD_VISIBILITY_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </Field>
+        <Field
+          as="select"
+          label="Related workflow"
+          value={documentUploadForm.relatedWorkflow}
+          onChange={(event) => setDocumentUploadForm((previous) => ({ ...previous, relatedWorkflow: event.target.value }))}
+        >
+          {DOCUMENT_RELATED_WORKFLOW_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </Field>
+        <Field
+          as="select"
+          label="Satisfies required document?"
+          value={documentUploadForm.satisfiesRequiredDocument}
+          onChange={(event) => setDocumentUploadForm((previous) => ({ ...previous, satisfiesRequiredDocument: event.target.value }))}
+        >
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
+        </Field>
+        <Field
+          label="Notes"
+          as="textarea"
+          value={documentUploadForm.notes}
+          onChange={(event) => setDocumentUploadForm((previous) => ({ ...previous, notes: event.target.value }))}
+          placeholder="Any notes for this upload"
+          rows={4}
+        />
+      </form>
     </Modal>
     <ConfirmDialog
       open={deleteTransactionConfirmOpen}
