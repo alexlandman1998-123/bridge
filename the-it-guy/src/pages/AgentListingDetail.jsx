@@ -110,6 +110,10 @@ function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(String(value || '').trim())
 }
 
+function normalizeKey(value) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
 const ATTORNEY_OPTIONS = [
   'Bridge Conveyancing',
   'Hayley Appel',

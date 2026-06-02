@@ -25,6 +25,7 @@ import {
   OFFER_STATUS,
   readAgentPrivateListings,
   readDeletedListingIds,
+  rememberDeletedListingIds,
   SELLER_ONBOARDING_STATUS,
   writeAgentPrivateListings,
 } from '../lib/agentListingStorage'
@@ -1366,8 +1367,17 @@ function AgentListings({ initialTab = null } = {}) {
 
   async function handleDeleteListing(card, event) {
     event.stopPropagation()
-    const listingId = String(card?.id || '').trim()
-    if (!listingId) return
+    const listingIdentityKeys = Array.from(new Set([
+      ...(Array.isArray(card?.identityKeys) ? card.identityKeys : []),
+      ...getListingIdentityKeys(card?.listingRecord || {}),
+      card?.id,
+    ].map((value) => String(value || '').trim()).filter(Boolean)))
+    const listingId = listingIdentityKeys[0] || ''
+    const remoteListingId = listingIdentityKeys.find((value) => isUuidLike(value)) || ''
+    if (!listingId) {
+      setError('Unable to delete this listing because it is missing a listing id.')
+      return
+    }
 
     const listingTitle = String(card?.title || 'this listing').trim()
     const confirmed = window.confirm(
@@ -1381,8 +1391,8 @@ function AgentListings({ initialTab = null } = {}) {
 
     try {
       let remoteDelete = null
-      if (isSupabaseConfigured && isUuidLike(listingId)) {
-        remoteDelete = await deletePrivateListing(listingId, {
+      if (isSupabaseConfigured && remoteListingId) {
+        remoteDelete = await deletePrivateListing(remoteListingId, {
           organisationId: card?.listingRecord?.organisationId || card?.listingRecord?.organisation_id || organisationId,
         })
         if (!remoteDelete?.deleted) {
@@ -1391,7 +1401,8 @@ function AgentListings({ initialTab = null } = {}) {
       }
 
       const localDelete = deleteAgentPrivateListingCascade(card?.listingRecord || remoteDelete?.listing || listingId)
-      const deletedIds = new Set([listingId, ...(localDelete.deletedIds || [])].map((value) => String(value || '').trim()).filter(Boolean))
+      const deletedIds = new Set([...listingIdentityKeys, ...(localDelete.deletedIds || [])].map((value) => String(value || '').trim()).filter(Boolean))
+      rememberDeletedListingIds(deletedIds)
       setDeletedListingIds((previous) => new Set([...previous, ...deletedIds]))
       setPrivateListings((rows) => rows.filter((row) => !rowMatchesDeletedListing(row, deletedIds)))
       await loadData({ showLoading: false })
@@ -1428,8 +1439,10 @@ function AgentListings({ initialTab = null } = {}) {
               : statusKey,
         {},
       )
+      const identityKeys = getListingIdentityKeys(listing)
       return {
-        id: String(listing.id || ''),
+        id: identityKeys[0] || String(listing.id || ''),
+        identityKeys,
         typeLabel: resolveListingTypeLabel(listing),
         propertyCategory,
         propertyCategoryLabel: getPropertyCategoryLabel(propertyCategory),
@@ -1789,61 +1802,65 @@ function AgentListings({ initialTab = null } = {}) {
 
         {!loading && listingsTab !== 'developments' ? (
           categoryFilteredListingCards.length ? (
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {categoryFilteredListingCards.map((card) => (
                 <article
                   key={card.id}
                   onClick={() => navigate(`/agent/listings/${encodeURIComponent(card.id)}`)}
-                  className="group cursor-pointer overflow-hidden rounded-[20px] border border-[#dce6f2] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.1)]"
+                  className="group flex h-full cursor-pointer flex-col overflow-hidden rounded-[18px] border border-[#dce6f2] bg-white shadow-[0_8px_22px_rgba(15,23,42,0.055)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.1)]"
                 >
-                  <div className="h-[170px] w-full overflow-hidden border-b border-[#e5edf6]">
+                  <div className="h-[132px] w-full overflow-hidden border-b border-[#e5edf6]">
                     <ListingCardImage src={card.imageUrl} alt={card.title} />
                   </div>
 
-                  <div className="space-y-4 p-4">
+                  <div className="flex flex-1 flex-col gap-3 p-4">
                     <div>
                       <h3 className="line-clamp-2 text-[1.02rem] font-semibold leading-6 text-[#142132]">{card.title}</h3>
                       <p className="mt-2 text-[1.05rem] font-semibold text-[#1f4f78]">{formatCurrency(card.price)}</p>
-                      <p className="mt-1 text-sm text-[#607387]">{card.address}</p>
+                      <p className="mt-1 line-clamp-1 text-sm text-[#607387]">{card.address}</p>
                     </div>
 
-	                    <div className="flex flex-wrap gap-2">
-                      <span className={`inline-flex rounded-full border px-3 py-1 text-[0.74rem] font-semibold ${statusPillClass(card.listingStatusKey)}`}>
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusPillClass(card.listingStatusKey)}`}>
                         {card.listingStatusLabel}
                       </span>
-                      <span className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1 text-[0.74rem] font-semibold text-[#35546c]">
+                      <span className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
                         Mandate: {card.mandateStatusLabel}
                       </span>
-	                      <span className="inline-flex rounded-full border border-[#d8ecdf] bg-[#eefbf3] px-3 py-1 text-[0.74rem] font-semibold text-[#1f7d44]">
-	                        {card.completenessScore}% complete
-	                      </span>
-	                      <span className="inline-flex rounded-full border border-[#e1e8f0] bg-[#f7fbff] px-3 py-1 text-[0.74rem] font-semibold text-[#607387]">
-	                        {card.originLabel}
-	                      </span>
-	                    </div>
+                      <span className="inline-flex rounded-full border border-[#d8ecdf] bg-[#eefbf3] px-2.5 py-1 text-[0.72rem] font-semibold text-[#1f7d44]">
+                        {card.completenessScore}% complete
+                      </span>
+                      <span className="inline-flex rounded-full border border-[#e1e8f0] bg-[#f7fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#607387]">
+                        {card.originLabel}
+                      </span>
+                    </div>
 
-	                    {card.complianceWarnings?.length ? (
-	                      <div className="flex flex-wrap gap-1.5">
-	                        {card.complianceWarnings.slice(0, 3).map((warning) => (
-	                          <span key={warning} className="inline-flex rounded-full border border-[#f2dfbf] bg-[#fff8ea] px-2.5 py-1 text-[0.68rem] font-semibold text-[#8a5b16]">
-	                            {warning}
-	                          </span>
-	                        ))}
-	                        {card.complianceWarnings.length > 3 ? (
-	                          <span className="inline-flex rounded-full border border-[#e1e8f0] bg-[#f7fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
-	                            +{card.complianceWarnings.length - 3} more
-	                          </span>
-	                        ) : null}
-	                      </div>
-	                    ) : null}
+                    {card.complianceWarnings?.length ? (
+                      <div className="flex min-h-[4.15rem] flex-wrap content-start gap-1.5">
+                        {card.complianceWarnings.slice(0, 3).map((warning) => (
+                          <span key={warning} className="inline-flex rounded-full border border-[#f2dfbf] bg-[#fff8ea] px-2.5 py-1 text-[0.68rem] font-semibold text-[#8a5b16]">
+                            {warning}
+                          </span>
+                        ))}
+                        {card.complianceWarnings.length > 3 ? (
+                          <span className="inline-flex rounded-full border border-[#e1e8f0] bg-[#f7fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
+                            +{card.complianceWarnings.length - 3} more
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="min-h-[4.15rem] rounded-[12px] border border-dashed border-[#dbe6f2] bg-[#fbfdff] px-3 py-2 text-xs font-medium text-[#7b8ca2]">
+                        No open listing blockers.
+                      </div>
+                    )}
 
-	                    <div className="grid grid-cols-3 gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#f9fbfe] px-3 py-2 text-[0.76rem] font-semibold text-[#35546c]">
+                    <div className="mt-auto grid grid-cols-3 gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#f9fbfe] px-3 py-2 text-[0.76rem] font-semibold text-[#35546c]">
                       <span>{card.bedroomsText}</span>
                       <span>{card.bathroomsText}</span>
                       <span>{card.parkingText}</span>
                     </div>
 
-                    <div className="flex items-center justify-between gap-3 text-[0.8rem] text-[#6b7d93]">
+                    <div className="flex items-center justify-between gap-3 border-t border-[#eef3f8] pt-3 text-[0.8rem] text-[#6b7d93]">
                       <span className="truncate">{card.agentName || 'Assigned Agent'}</span>
                       <div className="flex shrink-0 items-center gap-2">
                         <button

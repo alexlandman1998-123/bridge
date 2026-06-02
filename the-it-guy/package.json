@@ -31,6 +31,7 @@
     "test:seller-document-propagation": "node scripts/seller-document-propagation.test.mjs",
     "test:canonical-document-review-ui": "node scripts/canonical-document-review-ui.test.mjs",
     "test:transaction-documents-command-centre": "node scripts/transaction-documents-command-centre.test.mjs",
+    "test:agent-listings-delete-ui": "node scripts/agent-listings-delete-ui.test.mjs",
     "test:canonical-document-packet-fixture": "node scripts/canonical-document-packet-fixture.test.mjs",
     "test:canonical-document-primary-pilot": "node scripts/canonical-document-primary-pilot.test.mjs",
     "test:canonical-workflow-gates": "node scripts/canonical-workflow-gates.test.mjs",

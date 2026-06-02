@@ -819,6 +819,57 @@ function FinanceCommandCenter({
   }
 
   const acceptedOfferId = workspace.bond.acceptedOffer?.id || ''
+  const hasBondWorkflow = workspace.financeType === 'bond' || workspace.financeType === 'combination'
+  const hasCashWorkflow = workspace.financeType === 'cash' || workspace.financeType === 'combination'
+  const hasDeveloperWorkflow = workspace.financeType === 'developer'
+  const financeCommandCard = (
+    <SectionCard
+      title="Finance Command"
+      copy="Blockers, ownership, and next action."
+      actions={<ShieldCheck size={16} className="text-[#6d8197]" />}
+    >
+      <div className="space-y-2.5">
+        <article className="rounded-[8px] border border-[#e5ecf4] bg-white px-3 py-3">
+          <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8ca0b6]">Current Blocker</span>
+          <strong className="mt-1 block text-sm font-semibold text-[#142132]">{workspace.summaryBlocks.find((item) => item.key === 'blocker_status')?.value || 'No blockers'}</strong>
+          <p className="mt-1 text-xs leading-4 text-[#70839a]">{workspace.summaryBlocks.find((item) => item.key === 'next_action')?.value || 'Review finance progress.'}</p>
+        </article>
+        {workspace.permissions.canUpdateBlockers ? (
+          <form
+            className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] p-3"
+            onSubmit={(event) => {
+              event.preventDefault()
+              onUpdateBlockers?.(blockerForm)
+              setBlockerForm({ blockerStatus: '', nextAction: '', financeOwner: '' })
+            }}
+          >
+            <div className="grid gap-2">
+              <Field
+                placeholder="Blocker status"
+                value={blockerForm.blockerStatus}
+                onChange={(event) => setBlockerForm((current) => ({ ...current, blockerStatus: event.target.value }))}
+              />
+              <Field
+                placeholder="Next action"
+                value={blockerForm.nextAction}
+                onChange={(event) => setBlockerForm((current) => ({ ...current, nextAction: event.target.value }))}
+              />
+              <Field
+                placeholder="Finance owner"
+                value={blockerForm.financeOwner}
+                onChange={(event) => setBlockerForm((current) => ({ ...current, financeOwner: event.target.value }))}
+              />
+            </div>
+            <div className="mt-3 flex justify-end">
+              <Button type="submit" size="sm" variant="secondary">
+                Update finance command
+              </Button>
+            </div>
+          </form>
+        ) : null}
+      </div>
+    </SectionCard>
+  )
 
   return (
     <div className="space-y-4">
@@ -830,322 +881,268 @@ function FinanceCommandCenter({
 
       <ProgressRail groups={workspace.railGroups} />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1.05fr)_minmax(320px,0.9fr)]">
-        <div className="grid gap-4">
-          {(workspace.financeType === 'bond' || workspace.financeType === 'combination') ? (
-            <SectionCard
-              title="Buyer Finance Documents"
-              copy="Required buyer documents and upload status."
-              actions={workspace.permissions.canReviewDocuments ? (
-                <Button type="button" size="sm" variant="secondary" disabled={Boolean(loadingAction)} onClick={() => onReviewDocuments?.()}>
-                  Mark reviewed
-                </Button>
+      {hasBondWorkflow ? (
+        <SectionCard
+          title="Buyer Finance Documents"
+          copy="Required buyer documents and upload status."
+          actions={workspace.permissions.canReviewDocuments ? (
+            <Button type="button" size="sm" variant="secondary" disabled={Boolean(loadingAction)} onClick={() => onReviewDocuments?.()}>
+              Mark reviewed
+            </Button>
+          ) : null}
+        >
+          <RequiredDocumentTable
+            rows={workspace.bond.buyerDocuments}
+            canUpload={workspace.permissions.canUploadDocuments}
+            uploadingKey={uploadingKey}
+            onUpload={(row, file) => handleRequirementUpload(row, file, 'bond', 'buyer_finance_document', workspace.permissions.role)}
+            onOpenDocument={onOpenDocument}
+          />
+        </SectionCard>
+      ) : null}
+
+      {hasCashWorkflow ? (
+        <SectionCard
+          title={workspace.financeType === 'combination' ? 'Cash Portion Documents' : 'Proof Of Funds'}
+          copy="Proof of funds, deposit support, and guarantees."
+          actions={workspace.permissions.canVerifyProofOfFunds ? (
+            <Button type="button" size="sm" variant="secondary" disabled={Boolean(loadingAction)} onClick={() => onVerifyProofOfFunds?.()}>
+              Verify proof of funds
+            </Button>
+          ) : null}
+        >
+          <div className="space-y-3">
+            <CashStatusList items={proofStatusItems.slice(0, 2)} />
+            <div className="flex flex-wrap gap-2">
+              {workspace.permissions.canUploadDocuments ? (
+                <UploadAction
+                  label={uploadingKey === 'proof_of_funds' ? 'Uploading...' : 'Upload proof of funds'}
+                  disabled={uploadingKey === 'proof_of_funds'}
+                  onSelect={(file) =>
+                    handleRequirementUpload(
+                      { key: 'proof_of_funds', label: 'Proof Of Funds' },
+                      file,
+                      'cash',
+                      'proof_of_funds',
+                      workspace.permissions.role,
+                    )
+                  }
+                />
               ) : null}
-            >
-              <RequiredDocumentTable
-                rows={workspace.bond.buyerDocuments}
-                canUpload={workspace.permissions.canUploadDocuments}
-                uploadingKey={uploadingKey}
-                onUpload={(row, file) => handleRequirementUpload(row, file, 'bond', 'buyer_finance_document', workspace.permissions.role)}
-                onOpenDocument={onOpenDocument}
-              />
-            </SectionCard>
-          ) : null}
-
-          {(workspace.financeType === 'cash' || workspace.financeType === 'combination') ? (
-            <SectionCard
-              title={workspace.financeType === 'combination' ? 'Cash Portion Documents' : 'Proof Of Funds'}
-              copy="Proof of funds, deposit support, and guarantees."
-              actions={workspace.permissions.canVerifyProofOfFunds ? (
-                <Button type="button" size="sm" variant="secondary" disabled={Boolean(loadingAction)} onClick={() => onVerifyProofOfFunds?.()}>
-                  Verify proof of funds
-                </Button>
+              {workspace.permissions.canUploadDocuments ? (
+                <UploadAction
+                  label={uploadingKey === 'deposit_proof' ? 'Uploading...' : 'Upload deposit proof'}
+                  disabled={uploadingKey === 'deposit_proof'}
+                  onSelect={(file) =>
+                    handleRequirementUpload(
+                      { key: 'deposit_proof', label: 'Deposit Proof' },
+                      file,
+                      'cash',
+                      'deposit_proof',
+                      workspace.permissions.role,
+                    )
+                  }
+                />
               ) : null}
-            >
-              <div className="space-y-3">
-                <CashStatusList items={proofStatusItems.slice(0, 2)} />
-                <div className="flex flex-wrap gap-2">
-                  {workspace.permissions.canUploadDocuments ? (
-                    <UploadAction
-                      label={uploadingKey === 'proof_of_funds' ? 'Uploading...' : 'Upload proof of funds'}
-                      disabled={uploadingKey === 'proof_of_funds'}
-                      onSelect={(file) =>
-                        handleRequirementUpload(
-                          { key: 'proof_of_funds', label: 'Proof Of Funds' },
-                          file,
-                          'cash',
-                          'proof_of_funds',
-                          workspace.permissions.role,
-                        )
-                      }
-                    />
-                  ) : null}
-                  {workspace.permissions.canUploadDocuments ? (
-                    <UploadAction
-                      label={uploadingKey === 'deposit_proof' ? 'Uploading...' : 'Upload deposit proof'}
-                      disabled={uploadingKey === 'deposit_proof'}
-                      onSelect={(file) =>
-                        handleRequirementUpload(
-                          { key: 'deposit_proof', label: 'Deposit Proof' },
-                          file,
-                          'cash',
-                          'deposit_proof',
-                          workspace.permissions.role,
-                        )
-                      }
-                    />
-                  ) : null}
-                  {workspace.permissions.canUploadDocuments ? (
-                    <UploadAction
-                      label={uploadingKey === 'guarantees' ? 'Uploading...' : 'Upload guarantees'}
-                      disabled={uploadingKey === 'guarantees'}
-                      onSelect={(file) =>
-                        handleRequirementUpload(
-                          { key: 'guarantees', label: 'Guarantees' },
-                          file,
-                          'cash',
-                          'guarantees',
-                          workspace.permissions.role,
-                        )
-                      }
-                    />
-                  ) : null}
-                </div>
-                <FinanceDocumentList rows={[...workspace.cash.proofDocuments, ...workspace.cash.depositDocuments, ...workspace.cash.guaranteeDocuments]} emptyMessage="No proof of funds, deposit, or guarantee documents uploaded yet." onOpenDocument={onOpenDocument} />
-              </div>
-            </SectionCard>
-          ) : null}
-
-          {workspace.financeType === 'developer' ? (
-            <SectionCard
-              title="Developer Finance Application"
-              copy="Application, deposit, approval, and payment schedule support."
-            >
-              <div className="space-y-3">
-                <div className="flex flex-wrap gap-2">
-                  {workspace.permissions.canUploadDocuments ? (
-                    <UploadAction
-                      label={uploadingKey === 'developer_application' ? 'Uploading...' : 'Upload application'}
-                      disabled={uploadingKey === 'developer_application'}
-                      onSelect={(file) =>
-                        handleRequirementUpload(
-                          { key: 'developer_application', label: 'Developer Finance Application' },
-                          file,
-                          'developer',
-                          'developer_finance_application',
-                          workspace.permissions.role,
-                        )
-                      }
-                    />
-                  ) : null}
-                  {workspace.permissions.canUploadDocuments ? (
-                    <UploadAction
-                      label={uploadingKey === 'developer_deposit' ? 'Uploading...' : 'Upload deposit proof'}
-                      disabled={uploadingKey === 'developer_deposit'}
-                      onSelect={(file) =>
-                        handleRequirementUpload(
-                          { key: 'developer_deposit', label: 'Deposit Proof' },
-                          file,
-                          'developer',
-                          'developer_deposit',
-                          workspace.permissions.role,
-                        )
-                      }
-                    />
-                  ) : null}
-                </div>
-                <FinanceDocumentList rows={[...workspace.developer.applicationDocuments, ...workspace.developer.depositDocuments]} emptyMessage="No developer finance application or deposit documents uploaded yet." onOpenDocument={onOpenDocument} />
-              </div>
-            </SectionCard>
-          ) : null}
-        </div>
-
-        <div className="space-y-4">
-          {(workspace.financeType === 'bond' || workspace.financeType === 'combination') ? (
-            <>
-              <SectionCard
-                title="Bank Applications"
-                copy="Submitted applications, references, originator, and status."
-              >
-                <ApplicationsSection
-                  rows={workspace.bond.applications}
-                  canManage={workspace.permissions.canManageApplications}
-                  loadingAction={loadingAction}
-                  onSubmit={onSubmitBankApplication}
-                  onUpdateStatus={(row, status) => onUpdateBankApplication?.(row, { status })}
+              {workspace.permissions.canUploadDocuments ? (
+                <UploadAction
+                  label={uploadingKey === 'guarantees' ? 'Uploading...' : 'Upload guarantees'}
+                  disabled={uploadingKey === 'guarantees'}
+                  onSelect={(file) =>
+                    handleRequirementUpload(
+                      { key: 'guarantees', label: 'Guarantees' },
+                      file,
+                      'cash',
+                      'guarantees',
+                      workspace.permissions.role,
+                    )
+                  }
                 />
-              </SectionCard>
-
-              <SectionCard
-                title="Bank Quotes / Offers"
-                copy="Received offers, quote documents, and repayment snapshots."
-              >
-                <OffersSection
-                  rows={workspace.bond.offers}
-                  acceptedOfferId={acceptedOfferId}
-                  canManage={workspace.permissions.canManageOffers}
-                  canAccept={workspace.permissions.canAcceptOffer}
-                  loadingAction={loadingAction}
-                  onSubmit={(payload) => onCaptureBondOffer?.(payload)}
-                  onAccept={(row) => onAcceptOffer?.(row)}
-                  onDecline={(row) => onDeclineOffer?.(row)}
-                  onOpenDocument={onOpenDocument}
-                />
-              </SectionCard>
-            </>
-          ) : null}
-
-          {(workspace.financeType === 'cash' || workspace.financeType === 'combination') ? (
-            <SectionCard
-              title="Deposit / Guarantees"
-              copy="Attorney verification, guarantees, and readiness."
-            >
-              <CashStatusList items={proofStatusItems.slice(2)} />
-            </SectionCard>
-          ) : null}
-
-          {workspace.financeType === 'developer' ? (
-            <SectionCard
-              title="Developer Approval"
-              copy="Approval letters, signed terms, and payment schedule."
-            >
-              <div className="space-y-3">
-                <div className="flex flex-wrap gap-2">
-                  {workspace.permissions.canUploadDocuments ? (
-                    <UploadAction
-                      label={uploadingKey === 'developer_approval' ? 'Uploading...' : 'Upload approval'}
-                      disabled={uploadingKey === 'developer_approval'}
-                      onSelect={(file) =>
-                        handleRequirementUpload(
-                          { key: 'developer_approval', label: 'Finance Approval' },
-                          file,
-                          'developer',
-                          'developer_finance_approval',
-                          workspace.permissions.role,
-                        )
-                      }
-                    />
-                  ) : null}
-                  {workspace.permissions.canUploadDocuments ? (
-                    <UploadAction
-                      label={uploadingKey === 'developer_terms' ? 'Uploading...' : 'Upload signed terms'}
-                      disabled={uploadingKey === 'developer_terms'}
-                      onSelect={(file) =>
-                        handleRequirementUpload(
-                          { key: 'developer_terms', label: 'Signed Terms' },
-                          file,
-                          'developer',
-                          'developer_finance_terms',
-                          workspace.permissions.role,
-                        )
-                      }
-                    />
-                  ) : null}
-                  {workspace.permissions.canUploadDocuments ? (
-                    <UploadAction
-                      label={uploadingKey === 'developer_schedule' ? 'Uploading...' : 'Upload payment schedule'}
-                      disabled={uploadingKey === 'developer_schedule'}
-                      onSelect={(file) =>
-                        handleRequirementUpload(
-                          { key: 'developer_schedule', label: 'Payment Schedule' },
-                          file,
-                          'developer',
-                          'developer_payment_schedule',
-                          workspace.permissions.role,
-                        )
-                      }
-                    />
-                  ) : null}
-                </div>
-                <FinanceDocumentList rows={[...workspace.developer.approvalDocuments, ...workspace.developer.signedTermsDocuments, ...workspace.developer.paymentScheduleDocuments]} emptyMessage="No approval, signed terms, or payment schedule documents uploaded yet." onOpenDocument={onOpenDocument} />
-              </div>
-            </SectionCard>
-          ) : null}
-        </div>
-
-        <div className="space-y-4">
-          {(workspace.financeType === 'bond' || workspace.financeType === 'combination') ? (
-            <>
-              <SectionCard
-                title="Buyer Decision"
-                copy="Accepted or declined quote outcome."
-              >
-                <DecisionCard
-                  acceptedOffer={workspace.bond.acceptedOffer}
-                  latestDecision={workspace.bond.latestDecision}
-                  offers={workspace.bond.offers}
-                  canAccept={workspace.permissions.canAcceptOffer}
-                  loadingAction={loadingAction}
-                  onAccept={(row) => onAcceptOffer?.(row)}
-                  onDecline={(row) => onDeclineOffer?.(row)}
-                  onOpenDocument={onOpenDocument}
-                />
-              </SectionCard>
-
-              <SectionCard
-                title="Instruction Status"
-                copy="Instruction handoff to attorneys."
-              >
-                <InstructionCard
-                  instruction={workspace.bond.instruction}
-                  acceptedOffer={workspace.bond.acceptedOffer}
-                  canMark={workspace.permissions.canMarkInstructionSent}
-                  loadingAction={loadingAction}
-                  onSubmit={(payload) => onMarkInstructionSent?.(payload)}
-                  onOpenDocument={onOpenDocument}
-                />
-              </SectionCard>
-            </>
-          ) : null}
-
-          <SectionCard
-            title="Finance Command"
-            copy="Blockers, ownership, and next action."
-            actions={<ShieldCheck size={16} className="text-[#6d8197]" />}
-          >
-            <div className="space-y-2.5">
-              <article className="rounded-[8px] border border-[#e5ecf4] bg-white px-3 py-3">
-                <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8ca0b6]">Current Blocker</span>
-                <strong className="mt-1 block text-sm font-semibold text-[#142132]">{workspace.summaryBlocks.find((item) => item.key === 'blocker_status')?.value || 'No blockers'}</strong>
-                <p className="mt-1 text-xs leading-4 text-[#70839a]">{workspace.summaryBlocks.find((item) => item.key === 'next_action')?.value || 'Review finance progress.'}</p>
-              </article>
-              {workspace.permissions.canUpdateBlockers ? (
-                <form
-                  className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] p-3"
-                  onSubmit={(event) => {
-                    event.preventDefault()
-                    onUpdateBlockers?.(blockerForm)
-                    setBlockerForm({ blockerStatus: '', nextAction: '', financeOwner: '' })
-                  }}
-                >
-                  <div className="grid gap-2">
-                    <Field
-                      placeholder="Blocker status"
-                      value={blockerForm.blockerStatus}
-                      onChange={(event) => setBlockerForm((current) => ({ ...current, blockerStatus: event.target.value }))}
-                    />
-                    <Field
-                      placeholder="Next action"
-                      value={blockerForm.nextAction}
-                      onChange={(event) => setBlockerForm((current) => ({ ...current, nextAction: event.target.value }))}
-                    />
-                    <Field
-                      placeholder="Finance owner"
-                      value={blockerForm.financeOwner}
-                      onChange={(event) => setBlockerForm((current) => ({ ...current, financeOwner: event.target.value }))}
-                    />
-                  </div>
-                  <div className="mt-3 flex justify-end">
-                    <Button type="submit" size="sm" variant="secondary">
-                      Update finance command
-                    </Button>
-                  </div>
-                </form>
               ) : null}
             </div>
+            <FinanceDocumentList rows={[...workspace.cash.proofDocuments, ...workspace.cash.depositDocuments, ...workspace.cash.guaranteeDocuments]} emptyMessage="No proof of funds, deposit, or guarantee documents uploaded yet." onOpenDocument={onOpenDocument} />
+          </div>
+        </SectionCard>
+      ) : null}
+
+      {hasDeveloperWorkflow ? (
+        <SectionCard
+          title="Developer Finance Application"
+          copy="Application, deposit, approval, and payment schedule support."
+        >
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              {workspace.permissions.canUploadDocuments ? (
+                <UploadAction
+                  label={uploadingKey === 'developer_application' ? 'Uploading...' : 'Upload application'}
+                  disabled={uploadingKey === 'developer_application'}
+                  onSelect={(file) =>
+                    handleRequirementUpload(
+                      { key: 'developer_application', label: 'Developer Finance Application' },
+                      file,
+                      'developer',
+                      'developer_finance_application',
+                      workspace.permissions.role,
+                    )
+                  }
+                />
+              ) : null}
+              {workspace.permissions.canUploadDocuments ? (
+                <UploadAction
+                  label={uploadingKey === 'developer_deposit' ? 'Uploading...' : 'Upload deposit proof'}
+                  disabled={uploadingKey === 'developer_deposit'}
+                  onSelect={(file) =>
+                    handleRequirementUpload(
+                      { key: 'developer_deposit', label: 'Deposit Proof' },
+                      file,
+                      'developer',
+                      'developer_deposit',
+                      workspace.permissions.role,
+                    )
+                  }
+                />
+              ) : null}
+            </div>
+            <FinanceDocumentList rows={[...workspace.developer.applicationDocuments, ...workspace.developer.depositDocuments]} emptyMessage="No developer finance application or deposit documents uploaded yet." onOpenDocument={onOpenDocument} />
+          </div>
+        </SectionCard>
+      ) : null}
+
+      {hasBondWorkflow ? (
+        <div className="grid gap-4 xl:grid-cols-3">
+          <SectionCard
+            title="Bank Applications"
+            copy="Submitted applications, references, originator, and status."
+          >
+            <ApplicationsSection
+              rows={workspace.bond.applications}
+              canManage={workspace.permissions.canManageApplications}
+              loadingAction={loadingAction}
+              onSubmit={onSubmitBankApplication}
+              onUpdateStatus={(row, status) => onUpdateBankApplication?.(row, { status })}
+            />
           </SectionCard>
 
+          <SectionCard
+            title="Bank Quotes / Offers"
+            copy="Received offers, quote documents, and repayment snapshots."
+          >
+            <OffersSection
+              rows={workspace.bond.offers}
+              acceptedOfferId={acceptedOfferId}
+              canManage={workspace.permissions.canManageOffers}
+              canAccept={workspace.permissions.canAcceptOffer}
+              loadingAction={loadingAction}
+              onSubmit={(payload) => onCaptureBondOffer?.(payload)}
+              onAccept={(row) => onAcceptOffer?.(row)}
+              onDecline={(row) => onDeclineOffer?.(row)}
+              onOpenDocument={onOpenDocument}
+            />
+          </SectionCard>
+
+          <SectionCard
+            title="Buyer Decision"
+            copy="Accepted or declined quote outcome."
+          >
+            <DecisionCard
+              acceptedOffer={workspace.bond.acceptedOffer}
+              latestDecision={workspace.bond.latestDecision}
+              offers={workspace.bond.offers}
+              canAccept={workspace.permissions.canAcceptOffer}
+              loadingAction={loadingAction}
+              onAccept={(row) => onAcceptOffer?.(row)}
+              onDecline={(row) => onDeclineOffer?.(row)}
+              onOpenDocument={onOpenDocument}
+            />
+          </SectionCard>
         </div>
+      ) : null}
+
+      {hasCashWorkflow ? (
+        <SectionCard
+          title="Deposit / Guarantees"
+          copy="Attorney verification, guarantees, and readiness."
+        >
+          <CashStatusList items={proofStatusItems.slice(2)} />
+        </SectionCard>
+      ) : null}
+
+      {hasDeveloperWorkflow ? (
+        <SectionCard
+          title="Developer Approval"
+          copy="Approval letters, signed terms, and payment schedule."
+        >
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              {workspace.permissions.canUploadDocuments ? (
+                <UploadAction
+                  label={uploadingKey === 'developer_approval' ? 'Uploading...' : 'Upload approval'}
+                  disabled={uploadingKey === 'developer_approval'}
+                  onSelect={(file) =>
+                    handleRequirementUpload(
+                      { key: 'developer_approval', label: 'Finance Approval' },
+                      file,
+                      'developer',
+                      'developer_finance_approval',
+                      workspace.permissions.role,
+                    )
+                  }
+                />
+              ) : null}
+              {workspace.permissions.canUploadDocuments ? (
+                <UploadAction
+                  label={uploadingKey === 'developer_terms' ? 'Uploading...' : 'Upload signed terms'}
+                  disabled={uploadingKey === 'developer_terms'}
+                  onSelect={(file) =>
+                    handleRequirementUpload(
+                      { key: 'developer_terms', label: 'Signed Terms' },
+                      file,
+                      'developer',
+                      'developer_finance_terms',
+                      workspace.permissions.role,
+                    )
+                  }
+                />
+              ) : null}
+              {workspace.permissions.canUploadDocuments ? (
+                <UploadAction
+                  label={uploadingKey === 'developer_schedule' ? 'Uploading...' : 'Upload payment schedule'}
+                  disabled={uploadingKey === 'developer_schedule'}
+                  onSelect={(file) =>
+                    handleRequirementUpload(
+                      { key: 'developer_schedule', label: 'Payment Schedule' },
+                      file,
+                      'developer',
+                      'developer_payment_schedule',
+                      workspace.permissions.role,
+                    )
+                  }
+                />
+              ) : null}
+            </div>
+            <FinanceDocumentList rows={[...workspace.developer.approvalDocuments, ...workspace.developer.signedTermsDocuments, ...workspace.developer.paymentScheduleDocuments]} emptyMessage="No approval, signed terms, or payment schedule documents uploaded yet." onOpenDocument={onOpenDocument} />
+          </div>
+        </SectionCard>
+      ) : null}
+
+      <div className={hasBondWorkflow ? 'grid gap-4 xl:grid-cols-2' : 'grid gap-4'}>
+        {hasBondWorkflow ? (
+          <SectionCard
+            title="Instruction Status"
+            copy="Instruction handoff to attorneys."
+          >
+            <InstructionCard
+              instruction={workspace.bond.instruction}
+              acceptedOffer={workspace.bond.acceptedOffer}
+              canMark={workspace.permissions.canMarkInstructionSent}
+              loadingAction={loadingAction}
+              onSubmit={(payload) => onMarkInstructionSent?.(payload)}
+              onOpenDocument={onOpenDocument}
+            />
+          </SectionCard>
+        ) : null}
+
+        {financeCommandCard}
       </div>
     </div>
   )
