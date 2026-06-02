@@ -1,11 +1,11 @@
 export const SELLER_PORTAL_STAGES = [
   {
     key: 'mandate_signed',
-    label: 'Mandate Signed',
+    label: 'Sign Mandate',
     shortLabel: 'Mandate',
-    message: 'Your mandate is signed and your sale workspace is ready.',
-    nextStepTitle: 'Your mandate is on file',
-    nextStepDescription: 'Your agent is preparing the property for market and will share listing updates here.',
+    message: 'Your onboarding is submitted. The next step is to review and sign your mandate.',
+    nextStepTitle: 'Sign your mandate',
+    nextStepDescription: 'Your agent will prepare the mandate from your onboarding details and share it here for signature.',
     primaryAction: 'View documents',
     primaryRoute: 'documents',
   },
@@ -78,7 +78,6 @@ const SELLER_STAGE_KEYWORDS = {
     'converted_to_listing',
     'published',
     'live',
-    'active',
   ],
   offers: [
     'offer_received',
@@ -112,8 +111,6 @@ const SELLER_STAGE_KEYWORDS = {
   registered: [
     'registered',
     'registration',
-    'completed',
-    'complete',
     'closed',
   ],
 }
@@ -127,6 +124,35 @@ function normalizeStageSignal(value) {
 function pushSignal(signals, value) {
   const normalized = normalizeStageSignal(value)
   if (normalized) signals.push(normalized)
+}
+
+function hasSignal(signals = [], keywords = []) {
+  return signals.some((signal) => keywords.some((keyword) => signal === keyword || signal.includes(keyword)))
+}
+
+function hasSignedMandateSignal(signals = []) {
+  return hasSignal(signals, [
+    'all_signers_completed',
+    'fully_signed',
+    'mandate_signed_by_seller',
+    'manual_signed_document_uploaded',
+    'signed_physical_mandate_uploaded',
+    'signer_completed_signing',
+    'uploaded_signed',
+  ]) || signals.some((signal) => ['signed', 'signed_uploaded'].includes(signal))
+}
+
+function hasActiveListingSignal(signals = []) {
+  return hasSignal(signals, [
+    'active_listing',
+    'active_market',
+    'converted_to_listing',
+    'listed',
+    'listing_active',
+    'live',
+    'marketing',
+    'published',
+  ])
 }
 
 function collectStageSignals(transaction = {}) {
@@ -161,6 +187,10 @@ function collectStageSignals(transaction = {}) {
     context.mandate_status,
     context.listingStatus,
     context.listing_status,
+    context.listingVisibility,
+    context.listing_visibility,
+    transaction.listingVisibility,
+    transaction.listing_visibility,
     mandatePacket.state,
     portalTransaction.status,
     portalTransaction.stage,
@@ -172,6 +202,20 @@ function collectStageSignals(transaction = {}) {
     portal.unit?.status,
   ].forEach((value) => pushSignal(signals, value))
 
+  ;[
+    transaction.listingStatus,
+    transaction.listing_status,
+    context.listingStatus,
+    context.listing_status,
+    portal.unit?.status,
+  ].forEach((value) => {
+    if (normalizeStageSignal(value) === 'active') pushSignal(signals, 'active_listing')
+  })
+
+  if (hasSignedMandateSignal(signals)) {
+    pushSignal(signals, 'listed')
+  }
+
   if (['completed', 'submitted', 'under_review', 'in_progress', 'sent'].includes(sellerOnboardingStatus)) {
     pushSignal(signals, 'mandate_signed')
   }
@@ -180,7 +224,7 @@ function collectStageSignals(transaction = {}) {
     pushSignal(signals, 'mandate_signed')
   }
 
-  if (transaction.hasListing || transaction.listingId || transaction.listing_id || context.listingId || context.listing_id || portal.unit?.id) {
+  if (transaction.hasActiveListing || transaction.hasMarketListing || (transaction.hasListing && hasActiveListingSignal(signals))) {
     pushSignal(signals, 'listed')
   }
 
@@ -199,7 +243,7 @@ function collectStageSignals(transaction = {}) {
 function resolveStageKeyFromSignals(signals = []) {
   for (const stageKey of [...SELLER_STAGE_ORDER].reverse()) {
     const keywords = SELLER_STAGE_KEYWORDS[stageKey] || []
-    if (signals.some((signal) => keywords.some((keyword) => signal === keyword || signal.includes(keyword)))) {
+    if (hasSignal(signals, keywords)) {
       return stageKey
     }
   }
