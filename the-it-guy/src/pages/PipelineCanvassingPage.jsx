@@ -951,13 +951,24 @@ function PipelineCanvassingPage() {
   }
 
   async function handleConvertProspectToLead(prospectOverride = null) {
-    const targetProspect = prospectOverride || selectedProspect
+    const overrideLooksLikeProspect = Boolean(
+      prospectOverride &&
+        typeof prospectOverride === 'object' &&
+        !('preventDefault' in prospectOverride) &&
+        (normalizeText(prospectOverride?.id) || normalizeText(prospectOverride?.firstName) || normalizeText(prospectOverride?.email)),
+    )
+    const targetProspect = overrideLooksLikeProspect ? prospectOverride : selectedProspect
+    const targetProspectId = normalizeText(targetProspect?.id)
     if (!organisationId || !targetProspect) return
+    if (!targetProspectId) {
+      setError('Unable to convert this prospect because its record id is missing. Reopen the prospect and try again.')
+      return
+    }
     setOpenActionMenuId('')
     const existingConvertedLeadId = normalizeText(targetProspect?.convertedLeadId)
     try {
       const leadCategory = resolveLeadCategoryFromProspect(
-        prospectOverride ? resolveDefaultLeadCategory(targetProspect) : convertLeadType,
+        overrideLooksLikeProspect ? resolveDefaultLeadCategory(targetProspect) : convertLeadType,
         resolveDefaultLeadCategory(targetProspect),
       )
       const createdLead = await createAgencyCrmLeadRecord(
@@ -989,10 +1000,10 @@ function PipelineCanvassingPage() {
         convertedLeadId: targetLeadId,
         convertedAt: new Date().toISOString(),
       }
-      const savedProspect = await updateCanvassingProspect(organisationId, targetProspect.id, convertedProspect)
+      const savedProspect = await updateCanvassingProspect(organisationId, targetProspectId, convertedProspect)
       const conversionActivity = await createCanvassingActivity(organisationId, {
         organisationId,
-        prospectId: targetProspect.id,
+        prospectId: targetProspectId,
         agentId: currentAgent.id || null,
         agentName: currentAgent.fullName || null,
         activityType: 'Note',
@@ -1004,7 +1015,7 @@ function PipelineCanvassingPage() {
         createdAt: new Date().toISOString(),
         createdBy: currentAgent.id || currentAgent.email,
       })
-      setProspects((previous) => previous.map((row) => normalizeText(row?.id) === normalizeText(targetProspect.id) ? (savedProspect || convertedProspect) : row))
+      setProspects((previous) => previous.map((row) => normalizeText(row?.id) === targetProspectId ? (savedProspect || convertedProspect) : row))
       setActivities((previous) => [conversionActivity, ...previous])
       setMessage(existingConvertedLeadId ? 'Converted prospect lead restored.' : 'Prospect converted to lead.')
       setError('')
@@ -1862,7 +1873,7 @@ function PipelineCanvassingPage() {
                             </option>
                           ))}
                         </Field>
-                        <Button type="button" onClick={handleConvertProspectToLead} className="w-full">
+                        <Button type="button" onClick={() => handleConvertProspectToLead()} className="w-full">
                           <UserPlus size={16} />
                           Convert to Lead
                         </Button>
