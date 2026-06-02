@@ -714,9 +714,6 @@ export async function scheduleAppointmentReminders(appointmentId) {
   const context = await loadAppointmentContext(appointmentId)
   const appointment = context.appointment
   const visibility = normalizeVisibility(appointment?.visibility_scope)
-  const requiredDocs = Array.isArray(appointment?.required_documents) ? appointment.required_documents : []
-  const template = getAppointmentTypeTemplate(appointment?.appointment_type || appointment?.title)
-  const hasTemplatePrep = Array.isArray(template?.requiredBeforeAppointment) && template.requiredBeforeAppointment.length > 0
   const participants = (context.participants || []).filter((participant) =>
     shouldNotifyRoleForVisibility(participant?.participantRole, visibility),
   )
@@ -724,7 +721,7 @@ export async function scheduleAppointmentReminders(appointmentId) {
   const rows = buildReminderEntries({
     appointment,
     participants,
-    includeDocsReminder: requiredDocs.length > 0 || hasTemplatePrep,
+    includeDocsReminder: false,
   })
 
   if (!rows.length) {

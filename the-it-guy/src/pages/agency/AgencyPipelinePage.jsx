@@ -3598,6 +3598,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (selectedLeadMandateActionState.actionKey === 'view_signed') return 'Fully signed packet is available.'
     return ''
   }, [mandatePacketStatus, selectedLeadMandateActionState.actionKey])
+  const selectedLeadMandateRequiresCompletedOnboarding =
+    selectedLeadIsSeller &&
+    !selectedLeadOnboardingCompleted &&
+    selectedLeadMandateActionState.actionKey === 'generate'
+  const selectedLeadMandateActionDisabled =
+    isMandateGenerating || isMandateSending || selectedLeadMandateRequiresCompletedOnboarding
+  const selectedLeadMandateActionTitle = selectedLeadMandateRequiresCompletedOnboarding
+    ? 'Send seller onboarding and wait for the seller to submit their details before generating the mandate.'
+    : !selectedLeadHasMandateData && selectedLeadMandateActionState.actionKey === 'generate'
+      ? 'Open the legal workspace and complete missing seller/property details manually.'
+      : selectedLeadMandateActionMeta
 
   const selectedLeadWorkflowHealth = useMemo(() => {
     if (!selectedLead) {
@@ -5410,6 +5421,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (created?.notificationError) {
       return 'Appointment saved, but the appointment request email could not be sent.'
     }
+    if (created?.notificationsQueued) {
+      return 'Appointment added. Email request queued.'
+    }
     const emailRows = (Array.isArray(created?.notificationResults) ? created.notificationResults : [])
       .map((row) => row?.email)
       .filter(Boolean)
@@ -5559,13 +5573,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (created?.appointmentId) {
         setSelectedAppointmentId(created.appointmentId)
       }
-      if (linkedLead && resolveLeadCategoryView(linkedLead) === 'seller') {
-        await updateAgencyCrmLeadRecord(organisationId, linkedLead.leadId, {
-          stage: 'Appointment Scheduled',
-          status: 'Appointment Requested',
-        })
-      }
-      await reloadRecords(organisationId)
+      void (async () => {
+        try {
+          if (linkedLead && resolveLeadCategoryView(linkedLead) === 'seller') {
+            await updateAgencyCrmLeadRecord(organisationId, linkedLead.leadId, {
+              stage: 'Appointment Scheduled',
+              status: 'Appointment Requested',
+            })
+          }
+          await reloadRecords(organisationId)
+        } catch (postSaveError) {
+          console.warn('[appointments] post-save refresh failed', postSaveError)
+        }
+      })()
     } catch (createError) {
       if (createError?.code === 'APPOINTMENT_HARD_CONFLICT') {
         setAppointmentSchedulingIntegrity(createError?.schedulingConflicts || null)
@@ -6879,6 +6899,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedLead || !selectedLeadIsSeller) return
 
     const actionKey = normalizeText(selectedLeadMandateActionState?.actionKey).toLowerCase()
+    if (actionKey === 'generate' && !selectedLeadOnboardingCompleted) {
+      setError('Send seller onboarding and wait for the seller to submit their details before generating the mandate.')
+      return
+    }
+
     const workspaceMode = resolveWorkspaceModeFromAction(actionKey)
     setLegalWorkspaceMode(workspaceMode)
     setLegalWorkspaceOpen(true)
@@ -9133,12 +9158,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                size="sm"
 	                                className="hidden w-full xl:inline-flex xl:w-auto"
 	                                onClick={() => void handleSelectedLeadMandatePrimaryAction()}
-	                                disabled={isMandateGenerating || isMandateSending}
-	                                title={
-	                                  !selectedLeadHasMandateData && selectedLeadMandateActionState.actionKey === 'generate'
-	                                    ? 'Open the legal workspace and complete missing seller/property details manually.'
-	                                    : selectedLeadMandateActionMeta
-	                                }
+	                                disabled={selectedLeadMandateActionDisabled}
+	                                title={selectedLeadMandateActionTitle}
 	                              >
 	                                {isMandateGenerating
 	                                  ? 'Generating…'
@@ -9217,8 +9238,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                          Icon: CheckSquare,
 	                                          tone: 'text-[#29435d]',
 	                                          mobileOnly: true,
-	                                          disabled: isMandateGenerating || isMandateSending,
+	                                          disabled: selectedLeadMandateActionDisabled,
 	                                          onClick: () => {
+	                                            if (selectedLeadMandateActionDisabled) return
 	                                            setLeadActionsMenuOpen(false)
 	                                            void handleSelectedLeadMandatePrimaryAction()
 	                                          },
@@ -9324,7 +9346,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                    <div className="min-w-0">
 	                      {selectedLead ? (
 	                        <>
-	                          <h1 className="max-w-full truncate text-[2.25rem] font-bold leading-tight tracking-[-0.04em] text-[#102033] sm:text-[2.75rem] lg:text-[3rem]" title={selectedLeadDisplayName}>
+	                          <h1 className="max-w-full truncate text-[1.875rem] font-bold leading-tight tracking-[-0.035em] text-[#102033] sm:text-[2.25rem] lg:text-[2.5rem]" title={selectedLeadDisplayName}>
 	                            {selectedLeadDisplayName}
 	                          </h1>
 	                          <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -9350,7 +9372,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                          </div>
 	                        </>
 	                      ) : (
-	                        <h1 className="text-[2.25rem] font-bold leading-tight tracking-[-0.04em] text-[#102033] sm:text-[2.75rem] lg:text-[3rem]">
+	                        <h1 className="text-[1.875rem] font-bold leading-tight tracking-[-0.035em] text-[#102033] sm:text-[2.25rem] lg:text-[2.5rem]">
 	                          Lead Workspace
 	                        </h1>
 	                      )}

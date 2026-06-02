@@ -2306,6 +2306,37 @@ export function createLeadAppointment(organisationId, leadId, payload = {}, { ac
   )
 }
 
+async function runAppointmentCreateNotificationSideEffects(notificationSource = {}, payload = {}) {
+  let inviteNotificationResults = []
+  let documentNotificationResults = []
+  let reminderResults = []
+
+  inviteNotificationResults = await notifyAppointmentParticipants(notificationSource.appointmentId, 'appointment_confirmation_required', {
+    visibility: notificationSource.visibility,
+    metadata: {
+      source: 'createAppointmentAsync',
+      attachCalendarInvite: payload?.attachCalendarInvite !== false,
+      notifyCreatorOnRsvp: payload?.notifyCreatorOnRsvp !== false,
+      listingId: normalizeText(payload?.listingId || notificationSource?.listingId) || '',
+      listingLabel: normalizeText(payload?.listingLabel || payload?.listingReference || payload?.listingReferenceSnapshot) || '',
+    },
+  })
+
+  if (['requested', 'pending', 'confirmed', 'accepted'].includes(normalizeLowerText(notificationSource.status))) {
+    reminderResults = await scheduleAppointmentReminders(notificationSource.appointmentId)
+  }
+
+  return { inviteNotificationResults, documentNotificationResults, reminderResults }
+}
+
+function queueAppointmentCreateNotificationSideEffects(notificationSource = {}, payload = {}) {
+  void Promise.resolve()
+    .then(() => runAppointmentCreateNotificationSideEffects(notificationSource, payload))
+    .catch((notificationError) => {
+      console.warn('[appointments][notifications] queued appointment notification work failed', notificationError)
+    })
+}
+
 export async function createAppointmentAsync(organisationId, payload = {}, { actor = null } = {}) {
   const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
   if (fallbackReason) {
@@ -2487,53 +2518,22 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
 
   const saved = await fetchAppointmentByIdFromSupabase(scopedOrganisationId, appointment.appointmentId)
   const notificationSource = saved || { ...appointment, participants: defaultParticipants }
-  let inviteNotificationResults = []
-  let inviteNotificationError = null
-  let documentNotificationResults = []
-  let reminderResults = []
+  let notificationsQueued = false
   if (payload?.sendInviteEmails !== false) {
-    try {
-      inviteNotificationResults = await notifyAppointmentParticipants(notificationSource.appointmentId, 'appointment_confirmation_required', {
-        visibility: notificationSource.visibility,
-        metadata: {
-          source: 'createAppointmentAsync',
-          attachCalendarInvite: payload?.attachCalendarInvite !== false,
-          notifyCreatorOnRsvp: payload?.notifyCreatorOnRsvp !== false,
-          listingId: normalizeText(payload?.listingId || notificationSource?.listingId) || '',
-          listingLabel: normalizeText(payload?.listingLabel || payload?.listingReference || payload?.listingReferenceSnapshot) || '',
-        },
-      })
-      if (['requested', 'pending', 'confirmed', 'accepted'].includes(normalizeLowerText(notificationSource.status))) {
-        reminderResults = await scheduleAppointmentReminders(notificationSource.appointmentId)
-      }
-      if (Array.isArray(notificationSource.requiredDocuments) && notificationSource.requiredDocuments.length > 0) {
-        documentNotificationResults = await notifyAppointmentParticipants(notificationSource.appointmentId, 'appointment_documents_required', {
-          visibility: notificationSource.visibility,
-          metadata: {
-            source: 'createAppointmentAsync',
-            requiredDocuments: notificationSource.requiredDocuments,
-          },
-        })
-      }
-    } catch (notificationError) {
-      inviteNotificationError = notificationError
-      console.warn('[appointments][notifications] appointment_confirmation_required failed', notificationError)
-    }
+    notificationsQueued = true
+    queueAppointmentCreateNotificationSideEffects(notificationSource, payload)
   }
   emitAgencyCrmUpdated()
   return {
     ...notificationSource,
     schedulingIntegrity,
-    notificationResults: inviteNotificationResults,
-    notificationError: inviteNotificationError
-      ? {
-          message: normalizeText(inviteNotificationError?.message || inviteNotificationError) || 'Appointment request email failed.',
-          code: normalizeText(inviteNotificationError?.code),
-          status: normalizeText(inviteNotificationError?.status || inviteNotificationError?.statusCode),
-        }
-      : null,
-    documentNotificationResults,
-    reminderResults,
+    notificationsQueued,
+    notificationResults: notificationsQueued
+      ? [{ email: { sent: false, status: 'queued', reason: 'background_delivery' } }]
+      : [],
+    notificationError: null,
+    documentNotificationResults: [],
+    reminderResults: [],
   }
 }
 
