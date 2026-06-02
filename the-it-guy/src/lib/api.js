@@ -125,10 +125,10 @@ import {
 import { processWorkflowEvidence } from '../../server/services/workflowEvidenceMapper.js'
 import { applyWorkflowOverride as applyCanonicalWorkflowOverride } from '../../server/services/workflowOverrideService.js'
 import { publishWorkflowChanged } from '../../server/services/workflowRecomputeService.js'
-import { mapLegacyStageToWorkflowAction } from '../../server/services/legacyStageCompatibilityMapper.js'
 import { fetchTransactionRollupAudit } from '../../server/services/transactionRollupAuditService.js'
 import { fetchTransactionRollupValidationReport } from '../../server/services/transactionRollupValidationService.js'
 import { runTransactionWorkflowMigration } from '../../server/services/transactionWorkflowMigrationService.js'
+import { getWorkflowEngineHealthSnapshot } from '../../server/services/workflowEngineHealthService.js'
 import { resolveTransactionRollup } from '../../server/services/transactionWorkflowRollup.js'
 import { resolveLegalDocumentRequirements } from '../services/attorneyWorkflow/attorneyDocumentRequirementsResolver'
 import { normalizePropertyCategory, PROPERTY_CATEGORIES } from './propertyTaxonomy'
@@ -24884,6 +24884,20 @@ export async function runTransactionWorkflowMigrationBackfill(options = {}) {
   })
 }
 
+export async function getWorkflowEngineHealth(options = {}) {
+  const client = requireClient()
+  const activeProfile = await resolveActiveProfileContext(client)
+  const actorRole = normalizeRoleType(options.actorRole || activeProfile.role || 'developer')
+  if (!['developer', 'internal_admin', 'admin', 'platform_admin'].includes(actorRole)) {
+    throw new Error('You do not have permission to inspect workflow engine health.')
+  }
+
+  return getWorkflowEngineHealthSnapshot({
+    client,
+    staleThresholdMinutes: options.staleThresholdMinutes || 30,
+  })
+}
+
 export async function fetchTransactionById(transactionId) {
   if (!transactionId) {
     return null
@@ -26956,95 +26970,15 @@ export async function updateTransactionMainStage({
   note = '',
   actorRole,
 }) {
-  const client = requireClient()
+  void transactionId
+  void unitId
+  void mainStage
+  void note
+  void actorRole
 
-  if (!transactionId) {
-    throw new Error('Transaction is required.')
-  }
-
-  const normalizedActorRole = normalizeRoleType(actorRole || 'developer')
-  if (!['developer', 'internal_admin', 'agent', 'attorney'].includes(normalizedActorRole)) {
-    throw new Error('Your role does not have permission to update the main transaction stage.')
-  }
-
-  const transactionQuery = await client
-    .from('transactions')
-    .select('id, unit_id, stage, current_main_stage')
-    .eq('id', transactionId)
-    .maybeSingle()
-
-  if (transactionQuery.error) {
-    if (!isMissingColumnError(transactionQuery.error, 'current_main_stage')) {
-      throw transactionQuery.error
-    }
-    const fallbackQuery = await client.from('transactions').select('id, unit_id, stage').eq('id', transactionId).maybeSingle()
-    if (fallbackQuery.error) {
-      throw fallbackQuery.error
-    }
-    transactionQuery.data = fallbackQuery.data
-  }
-
-  const transaction = transactionQuery.data
-  if (!transaction) {
-    throw new Error('Transaction was not found.')
-  }
-
-  const previousStage = normalizeStage(transaction.stage, 'Available')
-  const previousMainStage = normalizeMainStage(transaction.current_main_stage, previousStage)
-  const requestedMainStage = normalizeMainStage(mainStage, previousStage)
-  const actionKey = mapLegacyStageToWorkflowAction(mainStage || requestedMainStage)
-  const normalizedNote = normalizeNullableText(note)
-
-  const actorProfile = await resolveActiveProfileContext(client)
-  const workflowResult = await runCanonicalWorkflowAction({
-    transactionId,
-    actionKey,
-    userId: actorProfile.userId || null,
-    actorRole: normalizedActorRole,
-    payload: {
-      note: normalizedNote,
-      reason: actionKey === 'CANCEL_TRANSACTION' ? normalizedNote : null,
-      source: 'legacy_stage_update',
-    },
-    client,
-  })
-
-  if (!workflowResult?.allowed) {
-    const error = new Error(workflowActionErrorMessage(workflowResult) || 'This workflow action is currently blocked.')
-    error.blockers = workflowResult?.blockers || []
-    throw error
-  }
-
-  const nextStage = workflowResult?.compatibility?.stage || previousStage
-  const nextMainStage = workflowResult?.compatibility?.current_main_stage || previousMainStage
-
-  await logTransactionEventIfPossible(client, {
-    transactionId,
-    eventType: 'TransactionStageChanged',
-    createdByRole: normalizedActorRole,
-    eventData: {
-      fromStage: previousStage,
-      toStage: nextStage,
-      fromMainStage: previousMainStage,
-      toMainStage: nextMainStage,
-      source: 'workflow_action_wrapper',
-      legacyRequestedStage: mainStage || requestedMainStage,
-      translatedAction: actionKey,
-      note: normalizedNote,
-      actionKey,
-    },
-  })
-
-  return {
-    previousStage,
-    previousMainStage,
-    nextStage,
-    nextMainStage,
-    rollup: workflowResult.rollup,
-    warning: import.meta.env.DEV
-      ? 'This endpoint is in compatibility mode. Use workflow-actions endpoint instead.'
-      : undefined,
-  }
+  throw new Error(
+    'Direct stage updates are deprecated. Use GET /api/transactions/:id/rollup plus POST /api/transactions/:id/workflow-actions.',
+  )
 }
 
 export async function runWorkflowAction({

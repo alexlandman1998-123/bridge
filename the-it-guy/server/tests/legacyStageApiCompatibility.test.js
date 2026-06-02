@@ -282,21 +282,14 @@ try {
     transaction: client.state.transactions[1],
   })
 
-  let blockedError = null
-  try {
-    await api.updateTransactionMainStage({
+  await assert.rejects(
+    () => api.updateTransactionMainStage({
       transactionId: 'tx-1',
       mainStage: 'FIN',
       actorRole: 'developer',
-    })
-  } catch (error) {
-    blockedError = error
-  }
-
-  assert.ok(blockedError)
-  assert.equal(Array.isArray(blockedError.blockers), true)
-  assert.equal(client.state.transactions[0].current_main_stage, 'OTP')
-  assert.equal(client.state.transaction_events.length, 0)
+    }),
+    /Direct stage updates are deprecated/i,
+  )
 
   for (const stepKey of [
     'buyer_onboarding_complete',
@@ -310,38 +303,35 @@ try {
     })
   }
 
-  const financeResult = await api.updateTransactionMainStage({
+  const blockedFinanceMove = await api.runWorkflowAction({
+    transactionId: 'tx-2',
+    actionKey: 'MOVE_TO_FINANCE',
+    actorRole: 'developer',
+  })
+  assert.equal(blockedFinanceMove.allowed, false)
+  assert.equal(Array.isArray(blockedFinanceMove.blockers), true)
+  assert.equal(client.state.transactions[1].current_main_stage, 'OTP')
+
+  const financeResult = await api.runWorkflowAction({
     transactionId: 'tx-1',
-    mainStage: 'FIN',
-    note: 'OTP workflow completed',
+    actionKey: 'MOVE_TO_FINANCE',
     actorRole: 'developer',
   })
 
   assert.equal(financeResult.rollup.parentStage, 'FINANCE')
-  assert.equal(financeResult.nextMainStage, 'FIN')
-  assert.equal(financeResult.nextStage, 'FIN')
-  assert.match(String(financeResult.warning || ''), /compatibility mode/i)
+  assert.equal(financeResult.compatibility.current_main_stage, 'FIN')
   assert.equal(client.state.transactions[0].current_main_stage, 'FIN')
   assert.equal(client.state.units[0].status, 'FIN')
 
-  const stageChangeEvents = client.state.transaction_events.filter((item) => item.event_type === 'TransactionStageChanged')
-  assert.equal(stageChangeEvents.length > 0, true)
-  assert.equal(stageChangeEvents.some((item) => item.event_data?.translatedAction === 'MOVE_TO_FINANCE'), true)
-  assert.equal(stageChangeEvents.some((item) => item.event_data?.source === 'manual_stage_update'), false)
-
-  const cancelledResult = await api.updateTransactionMainStage({
+  const cancelledResult = await api.runWorkflowAction({
     transactionId: 'tx-2',
-    mainStage: 'CANCELLED',
-    note: 'Buyer withdrew',
+    actionKey: 'CANCEL_TRANSACTION',
     actorRole: 'developer',
+    payload: { reason: 'Buyer withdrew' },
   })
 
   assert.equal(cancelledResult.rollup.parentStage, 'CANCELLED')
   assert.equal(client.state.transactions[1].cancelled_reason, 'Buyer withdrew')
-  assert.equal(
-    client.state.transaction_events.some((item) => item.event_data?.translatedAction === 'CANCEL_TRANSACTION'),
-    true,
-  )
 
   await assert.rejects(
     () => api.updateTransactionMainStage({
@@ -349,7 +339,7 @@ try {
       mainStage: 'OTP',
       actorRole: 'developer',
     }),
-    /Unsupported legacy stage: OTP/,
+    /Direct stage updates are deprecated/i,
   )
 
   console.log('legacyStageApiCompatibility tests passed')

@@ -73,7 +73,6 @@ import {
   updateBondApplication,
   updateBondHybridFinanceStage,
   runWorkflowAction,
-  updateTransactionMainStage,
   updateDocumentClientVisibility,
   updateOtpDocumentWorkflowState,
   updateTransactionRequiredDocumentStatus,
@@ -123,6 +122,31 @@ const ONBOARDING_MODE_OPTIONS = [
   { value: 'client_portal', label: 'Client Portal' },
   { value: 'manual', label: 'Manual (Internal)' },
 ]
+
+function mapLegacyMainStageToWorkflowAction(mainStage = '') {
+  const normalized = String(mainStage || '').trim().toUpperCase()
+
+  switch (normalized) {
+    case 'FIN':
+    case 'FINANCE':
+      return 'MOVE_TO_FINANCE'
+    case 'ATTY':
+    case 'XFER':
+    case 'TRANSFER':
+      return 'MOVE_TO_TRANSFER'
+    case 'REG':
+    case 'REGISTRATION':
+      return 'MARK_READY_FOR_REGISTRATION'
+    case 'COMPLETE':
+    case 'REGISTERED':
+      return 'MARK_REGISTERED'
+    case 'CANCELLED':
+    case 'ARCHIVED':
+      return 'CANCEL_TRANSACTION'
+    default:
+      throw new Error(`Direct stage updates are deprecated. Unsupported workflow stage target: ${mainStage}`)
+  }
+}
 const CLIENT_INFO_SECTION_KEYS = ['identity', 'employment', 'purchase_structure']
 const CLIENT_INFO_SECTION_LABELS = {
   identity: 'Identity',
@@ -2849,34 +2873,45 @@ function UnitDetail() {
       const timestampLabel = formatDateTime(new Date().toISOString())
       const note = String(stageEditor.note || '').trim()
 
-      const result = await updateTransactionMainStage({
+      const actionKey = mapLegacyMainStageToWorkflowAction(nextMainStage)
+      const result = await runWorkflowAction({
         transactionId: detail.transaction.id,
-        unitId: detail.unit.id,
-        mainStage: nextMainStage,
-        note,
+        actionKey,
         actorRole: effectiveEditorRole,
+        payload: {
+          note,
+          reason: actionKey === 'CANCEL_TRANSACTION' ? note : null,
+          source: 'unit_detail_stage_editor',
+        },
       })
+      const nextStage =
+        result?.compatibility?.stage ||
+        result?.rollup?.parentStage ||
+        previousMainStage
+      const nextCompatibilityMainStage =
+        result?.compatibility?.current_main_stage ||
+        previousMainStage
 
       setDetail((previous) => {
         if (!previous) return previous
         return {
           ...previous,
-          mainStage: result.nextMainStage,
-          stage: result.nextStage,
+          mainStage: nextCompatibilityMainStage,
+          stage: nextStage,
           transaction: previous.transaction
             ? {
                 ...previous.transaction,
-                stage: result.nextStage,
-                current_main_stage: result.nextMainStage,
+                stage: nextStage,
+                current_main_stage: nextCompatibilityMainStage,
                 updated_at: new Date().toISOString(),
               }
             : previous.transaction,
         }
       })
-      setStageForm((previous) => ({ ...previous, main_stage: result.nextMainStage }))
+      setStageForm((previous) => ({ ...previous, main_stage: nextCompatibilityMainStage }))
 
-      const fromLabel = MAIN_STAGE_LABELS[result.previousMainStage] || result.previousMainStage
-      const toLabel = MAIN_STAGE_LABELS[result.nextMainStage] || result.nextMainStage
+      const fromLabel = MAIN_STAGE_LABELS[previousMainStage] || previousMainStage
+      const toLabel = MAIN_STAGE_LABELS[nextCompatibilityMainStage] || nextCompatibilityMainStage
       const message = note
         ? `Transaction stage updated: ${fromLabel} changed to ${toLabel} by ${actorName} at ${timestampLabel}. Note: ${note}`
         : `Transaction stage updated: ${fromLabel} changed to ${toLabel} by ${actorName} at ${timestampLabel}.`
@@ -4367,31 +4402,35 @@ function UnitDetail() {
       const systemNotes = [transferStageEvent.message]
 
       if (currentStep.step_key === 'registration_confirmed' && !['REG', 'REGISTRATION', 'COMPLETE'].includes(mainStage)) {
-        const stageResult = await updateTransactionMainStage({
+        const stageResult = await runWorkflowAction({
           transactionId: transaction.id,
-          unitId: unit.id,
-          mainStage: 'REG',
-          note: 'Transfer workflow completed with registration confirmed.',
+          actionKey: 'MARK_REGISTERED',
           actorRole: effectiveEditorRole,
+          payload: {
+            note: 'Transfer workflow completed with registration confirmed.',
+            source: 'transfer_registration_completion',
+          },
         })
+        const nextStage = stageResult?.compatibility?.stage || 'REGISTRATION'
+        const nextMainStage = stageResult?.compatibility?.current_main_stage || 'COMPLETE'
 
         setDetail((previous) => {
           if (!previous) return previous
           return {
             ...previous,
-            mainStage: stageResult.nextMainStage,
-            stage: stageResult.nextStage,
+            mainStage: nextMainStage,
+            stage: nextStage,
             transaction: previous.transaction
               ? {
                   ...previous.transaction,
-                  stage: stageResult.nextStage,
-                  current_main_stage: stageResult.nextMainStage,
+                  stage: nextStage,
+                  current_main_stage: nextMainStage,
                   updated_at: new Date().toISOString(),
                 }
               : previous.transaction,
           }
         })
-        setStageForm((previous) => ({ ...previous, main_stage: 'REGISTRATION' }))
+        setStageForm((previous) => ({ ...previous, main_stage: nextMainStage }))
         const registrationEvent = buildWorkflowActivityEvent({
           laneLabel: 'Transfer Workflow',
           stageLabel: 'Registration Confirmed',

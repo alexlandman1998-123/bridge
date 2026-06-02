@@ -92,6 +92,7 @@ export async function recomputeTransactionWorkflow(transactionIdOrOptions, maybe
   const reasonCode = normalizeText(options.reasonCode) || 'WORKFLOW_REEVALUATED'
   const createdBy = options.createdBy || options.userId || null
   const attemptAt = options.now || new Date().toISOString()
+  const startedAtMs = Date.now()
   let previousState = options.state || null
   let previousRollup = options.previousRollup || null
 
@@ -157,6 +158,7 @@ export async function recomputeTransactionWorkflow(transactionIdOrOptions, maybe
           changed,
           noOp: !changed,
           derivedAt: persistedRollup?.derived_at || rollup?.derivedAt || attemptAt,
+          durationMs: Date.now() - startedAtMs,
         },
         source: 'workflow_recompute',
         createdBy,
@@ -194,6 +196,7 @@ export async function recomputeTransactionWorkflow(transactionIdOrOptions, maybe
           triggerId: options.triggerId || null,
           reasonCode,
           error: normalizeText(error?.message || error),
+          durationMs: Date.now() - startedAtMs,
         },
         source: 'workflow_recompute',
         createdBy,

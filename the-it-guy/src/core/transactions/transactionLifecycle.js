@@ -15,17 +15,19 @@ export const TRANSACTION_LIFECYCLE_STAGE_LABELS = {
 }
 
 export const USE_TRANSACTION_ROLLUP_OVERVIEW =
-  ['1', 'true', 'yes', 'on'].includes(
-    String(
+  (() => {
+    const rawValue =
       import.meta.env?.VITE_USE_WORKFLOW_ROLLUP_OVERVIEW ??
-        import.meta.env?.USE_WORKFLOW_ROLLUP_OVERVIEW ??
-        import.meta.env?.VITE_USE_TRANSACTION_ROLLUP_OVERVIEW ??
-        import.meta.env?.USE_TRANSACTION_ROLLUP_OVERVIEW ??
-        '',
-    )
-      .trim()
-      .toLowerCase(),
-  )
+      import.meta.env?.USE_WORKFLOW_ROLLUP_OVERVIEW ??
+      import.meta.env?.VITE_USE_TRANSACTION_ROLLUP_OVERVIEW ??
+      import.meta.env?.USE_TRANSACTION_ROLLUP_OVERVIEW ??
+      ''
+
+    const normalized = String(rawValue).trim().toLowerCase()
+    if (!normalized) return true
+    if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) return false
+    return ['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)
+  })()
 
 export const USE_WORKFLOW_ROLLUP_OVERVIEW = USE_TRANSACTION_ROLLUP_OVERVIEW
 

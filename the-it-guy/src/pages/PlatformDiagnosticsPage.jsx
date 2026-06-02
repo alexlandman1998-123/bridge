@@ -7,6 +7,7 @@ import {
   validateUserState,
   validateWorkspaceStateById,
 } from '../services/validation/validationEngine'
+import { getWorkflowEngineHealth } from '../lib/api'
 import { getRecentOperationalEvents, getAuditMetrics } from '../services/observability/auditMetrics'
 import { deploymentHealthCheck, getOperationalHealthSummary } from '../services/observability/systemHealth'
 import { getDemoEnvironmentSummary, resetDemoEnvironment } from '../services/demo/demoEnvironmentService'
@@ -86,13 +87,14 @@ export default function PlatformDiagnosticsPage() {
     try {
       setOperationsLoading(true)
       setError('')
-      const [health, auditMetrics, recentEvents, deployment] = await Promise.all([
+      const [health, auditMetrics, recentEvents, deployment, workflowEngine] = await Promise.all([
         getOperationalHealthSummary({ createdBy: authState.user?.id || null }),
         getAuditMetrics(),
         getRecentOperationalEvents(12),
         deploymentHealthCheck({ persist: true, createdBy: authState.user?.id || null }),
+        getWorkflowEngineHealth(),
       ])
-      setOperations({ health, auditMetrics, recentEvents, deployment })
+      setOperations({ health, auditMetrics, recentEvents, deployment, workflowEngine })
     } catch (operationsError) {
       setError(operationsError?.message || 'Operations health check failed.')
     } finally {
@@ -195,6 +197,41 @@ export default function PlatformDiagnosticsPage() {
                 <p className="mt-3 text-sm text-[#60758d]">No telemetry events available yet.</p>
               )}
             </div>
+            {operations.workflowEngine ? (
+              <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Workflow engine health</h2>
+                    <p className="mt-2 text-sm text-[#60758d]">
+                      Canonical lifecycle coverage, stale roll-ups, recompute failures, overrides, and missing workflow scaffolding.
+                    </p>
+                  </div>
+                  <p className="text-xs font-medium text-[#60758d]">
+                    Generated {new Date(operations.workflowEngine.generatedAt).toLocaleString()}
+                  </p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-4">
+                  <StatCard label="Roll-up coverage" value={`${operations.workflowEngine.totals?.coveragePercent || 0}%`} tone={(operations.workflowEngine.totals?.coveragePercent || 0) >= 95 ? 'success' : 'warning'} />
+                  <StatCard label="Stale roll-ups" value={operations.workflowEngine.totals?.staleRollups || 0} tone={operations.workflowEngine.totals?.staleRollups ? 'warning' : 'success'} />
+                  <StatCard label="Recompute failures" value={operations.workflowEngine.totals?.recomputeFailures || 0} tone={operations.workflowEngine.totals?.recomputeFailures ? 'critical' : 'success'} />
+                  <StatCard label="Blocked workflows" value={operations.workflowEngine.totals?.blockedWorkflows || 0} tone={operations.workflowEngine.totals?.blockedWorkflows ? 'warning' : 'success'} />
+                </div>
+                <div className="grid gap-3 md:grid-cols-4">
+                  <StatCard label="Overrides" value={operations.workflowEngine.totals?.overrideCount || 0} />
+                  <StatCard label="Audit rows" value={operations.workflowEngine.totals?.auditVolume || 0} />
+                  <StatCard label="Missing instances" value={operations.workflowEngine.totals?.missingWorkflowInstances || 0} tone={operations.workflowEngine.totals?.missingWorkflowInstances ? 'warning' : 'success'} />
+                  <StatCard label="Missing steps" value={operations.workflowEngine.totals?.missingWorkflowSteps || 0} tone={operations.workflowEngine.totals?.missingWorkflowSteps ? 'warning' : 'success'} />
+                </div>
+                <div className="rounded-[14px] border border-[#dde4ee] bg-white p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Workflow engine notes</h3>
+                  <ul className="mt-3 space-y-2 text-sm text-[#60758d]">
+                    <li>Average recompute time: {operations.workflowEngine.totals?.averageRecomputeTimeMs ?? 'Unavailable'} ms</li>
+                    <li>Stale threshold: {operations.workflowEngine.staleThresholdMinutes || 30} minutes</li>
+                    <li>Stale transactions: {(operations.workflowEngine.staleTransactions || []).slice(0, 5).join(', ') || 'None'}</li>
+                  </ul>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
