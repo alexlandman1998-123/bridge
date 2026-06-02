@@ -145,6 +145,7 @@ const PipelineOverviewPage = lazy(() => import('./pages/PipelineOverviewPage'))
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'))
 const PartnersPage = lazy(() => import('./pages/PartnersPage'))
 const PlatformDiagnosticsPage = lazy(() => import('./pages/PlatformDiagnosticsPage'))
+const WorkflowMigrationValidationPage = lazy(() => import('./pages/WorkflowMigrationValidationPage'))
 const PostDashboardSetup = lazy(() => import('./pages/PostDashboardSetup'))
 const Report = lazy(() => import('./pages/Report'))
 const RoleModuleOnboarding = lazy(() => import('./pages/RoleModuleOnboarding'))
@@ -1161,6 +1162,14 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['platform_admin']}>
                     <PlatformDiagnosticsPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/platform/workflow-migration-validation"
+                element={
+                  <RoleRoute allowedRoles={['platform_admin', 'developer']}>
+                    <WorkflowMigrationValidationPage />
                   </RoleRoute>
                 }
               />

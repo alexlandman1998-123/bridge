@@ -14,6 +14,21 @@ export const TRANSACTION_LIFECYCLE_STAGE_LABELS = {
   registration: 'Registration',
 }
 
+export const USE_TRANSACTION_ROLLUP_OVERVIEW =
+  ['1', 'true', 'yes', 'on'].includes(
+    String(
+      import.meta.env?.VITE_USE_WORKFLOW_ROLLUP_OVERVIEW ??
+        import.meta.env?.USE_WORKFLOW_ROLLUP_OVERVIEW ??
+        import.meta.env?.VITE_USE_TRANSACTION_ROLLUP_OVERVIEW ??
+        import.meta.env?.USE_TRANSACTION_ROLLUP_OVERVIEW ??
+        '',
+    )
+      .trim()
+      .toLowerCase(),
+  )
+
+export const USE_WORKFLOW_ROLLUP_OVERVIEW = USE_TRANSACTION_ROLLUP_OVERVIEW
+
 const LEGACY_MAIN_STAGE_MAP = {
   AVAIL: 'confirmed',
   NEW: 'confirmed',
@@ -24,13 +39,33 @@ const LEGACY_MAIN_STAGE_MAP = {
   OTP: 'otp',
   FIN: 'finance',
   FINANCE: 'finance',
+  TRANSFER: 'transfer',
   ATTY: 'transfer',
   ATTORNEY: 'transfer',
   XFER: 'transfer',
-  TRANSFER: 'transfer',
-  REG: 'registration',
-  REGISTERED: 'registration',
   REGISTRATION: 'registration',
+  REG: 'registration',
+  COMPLETE: 'registration',
+  CANCELLED: 'registration',
+  REGISTERED: 'registration',
+}
+
+const ROLLUP_PARENT_STAGE_MAP = {
+  SETUP: 'confirmed',
+  SALES_OTP: 'otp',
+  FINANCE: 'finance',
+  TRANSFER: 'transfer',
+  REGISTRATION: 'registration',
+  COMPLETE: 'registration',
+  CANCELLED: 'registration',
+}
+
+const LIFECYCLE_STAGE_TO_ROLLUP_PARENT_STAGE = {
+  confirmed: 'SETUP',
+  otp: 'SALES_OTP',
+  finance: 'FINANCE',
+  transfer: 'TRANSFER',
+  registration: 'REGISTRATION',
 }
 
 function normalizeText(value) {
@@ -39,6 +74,13 @@ function normalizeText(value) {
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase().replace(/[\s/-]+/g, '_')
+}
+
+function toTitleLabel(value = '') {
+  return normalizeText(value)
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, (match) => match.toUpperCase())
 }
 
 export function normalizeTransactionLifecycleStage(value, fallback = 'confirmed') {
@@ -56,6 +98,27 @@ export function normalizeTransactionLifecycleStage(value, fallback = 'confirmed'
   if (/finance|bond|cash|fund|application|quote|approval|instruction_sent/.test(lower)) return 'finance'
   if (/otp|offer|purchase_agreement|sale_agreement/.test(lower)) return 'otp'
   return fallback
+}
+
+export function formatTransactionRollupStageLabel(value = '') {
+  const normalized = normalizeText(value).toUpperCase()
+  return normalized ? toTitleLabel(normalized.toLowerCase()) : 'Workflow'
+}
+
+export function formatTransactionRollupStatusLabel(value = '') {
+  const normalized = normalizeKey(value)
+  if (!normalized) return 'Not started'
+  if (normalized === 'ready_for_handoff') return 'Ready for handoff'
+  return toTitleLabel(normalized)
+}
+
+export function mapRollupParentStageToLifecycleStage(value = '', fallback = 'confirmed') {
+  const normalized = normalizeText(value).toUpperCase()
+  return ROLLUP_PARENT_STAGE_MAP[normalized] || fallback
+}
+
+function mapLifecycleStageToRollupParentStage(value = '', fallback = 'SETUP') {
+  return LIFECYCLE_STAGE_TO_ROLLUP_PARENT_STAGE[normalizeTransactionLifecycleStage(value, 'confirmed')] || fallback
 }
 
 function resolveMainStage(transaction = {}, explicitStage = '') {
@@ -90,6 +153,105 @@ function formatSubStatusLabel(value = '') {
     .replace(/\b\w/g, (match) => match.toUpperCase())
     .replace(/\bOtp\b/g, 'OTP')
     .replace(/\bFica\b/g, 'FICA')
+}
+
+function mapRollupStatusToLifecycleStatus(value = '', parentStage = '') {
+  const normalized = normalizeKey(value)
+  const normalizedParentStage = normalizeText(parentStage).toUpperCase()
+  if (normalizedParentStage === 'COMPLETE') return 'completed'
+  if (normalized === 'blocked') return 'blocked'
+  return 'active'
+}
+
+function mapWorkflowKeyToLifecycleStage(value = '', fallback = 'confirmed') {
+  const normalized = normalizeKey(value)
+  if (!normalized) return fallback
+  if (normalized === 'sales_otp') return 'otp'
+  if (normalized.startsWith('finance_') || normalized === 'finance') return 'finance'
+  if (
+    ['transfer', 'attorney_transfer', 'attorney_bond', 'seller_bond_cancellation'].includes(normalized)
+  ) {
+    return 'transfer'
+  }
+  if (normalized === 'registration') return 'registration'
+  return fallback
+}
+
+function buildRollupBlockersByStage(rollup = {}, currentStage = 'confirmed') {
+  const blockersByStage = {}
+  const blockedStages = Array.isArray(rollup?.blockedStages) ? rollup.blockedStages : []
+
+  for (const blocker of rollup?.blockers || []) {
+    const lifecycleStage =
+      mapWorkflowKeyToLifecycleStage(
+        blocker?.workflowKey,
+        blockedStages.length
+          ? mapRollupParentStageToLifecycleStage(blockedStages[0], currentStage)
+          : currentStage,
+      )
+    if (!blockersByStage[lifecycleStage]) blockersByStage[lifecycleStage] = []
+    if (blocker?.message) blockersByStage[lifecycleStage].push(blocker.message)
+  }
+
+  for (const blockedStage of blockedStages) {
+    const lifecycleStage = mapRollupParentStageToLifecycleStage(blockedStage, currentStage)
+    if (!blockersByStage[lifecycleStage] || !blockersByStage[lifecycleStage].length) {
+      blockersByStage[lifecycleStage] = ['Blocked']
+    }
+  }
+
+  return blockersByStage
+}
+
+export function buildTransactionLifecycleSummaryFromRollup(rollup = {}, options = {}) {
+  if (!rollup || typeof rollup !== 'object') return null
+
+  const parentStage = normalizeText(rollup.parentStage).toUpperCase()
+  const currentStage = mapRollupParentStageToLifecycleStage(parentStage || 'SETUP')
+  const lifecycleStatus = mapRollupStatusToLifecycleStatus(rollup.parentStatus, parentStage)
+  const blockersByStage = buildRollupBlockersByStage(rollup, currentStage)
+  const currentStageIndex = TRANSACTION_LIFECYCLE_STAGE_ORDER.indexOf(currentStage)
+  const isComplete = parentStage === 'COMPLETE'
+
+  return {
+    transactionId: normalizeText(rollup.transactionId || options.transactionId),
+    currentStage,
+    status: lifecycleStatus,
+    progressPercent: Number.isFinite(Number(rollup.progressPercent)) ? Number(rollup.progressPercent) : 0,
+    stages: TRANSACTION_LIFECYCLE_STAGE_ORDER.map((stage, index) => {
+      const blocked = Array.isArray(blockersByStage[stage]) && blockersByStage[stage].length > 0
+      let state = 'upcoming'
+      if (isComplete) {
+        state = 'completed'
+      } else if (index < currentStageIndex || (currentStage === 'confirmed' && stage === 'confirmed' && parentStage !== 'SETUP')) {
+        state = 'completed'
+      } else if (index === currentStageIndex) {
+        state = blocked ? 'blocked' : 'current'
+      }
+
+      return {
+        key: stage,
+        label: TRANSACTION_LIFECYCLE_STAGE_LABELS[stage],
+        state,
+      }
+    }),
+    subStatus: rollup?.nextAction?.label
+      ? {
+          module: currentStage,
+          label: rollup.nextAction.label,
+          workflowType: formatTransactionRollupStageLabel(parentStage),
+          currentSubStage: rollup.nextAction.label,
+        }
+      : null,
+    blockersByStage,
+    lastUpdatedAt:
+      rollup?.lastWorkflowUpdatedAt ||
+      rollup?.derivedAt ||
+      options.fallbackUpdatedAt ||
+      null,
+    rollupParentStage: parentStage || mapLifecycleStageToRollupParentStage(currentStage),
+    rollupParentStatus: normalizeKey(rollup.parentStatus),
+  }
 }
 
 function getCurrentStepFromProcess(process = {}) {
@@ -169,6 +331,10 @@ export function buildTransactionLifecycleSummary({
     transactionId: normalizeText(transaction?.id || transaction?.transaction_id || transaction?.transactionId),
     currentStage: resolvedStage,
     status: lifecycleStatus,
+    progressPercent:
+      TRANSACTION_LIFECYCLE_STAGE_ORDER.length > 1
+        ? Math.round((currentIndex / (TRANSACTION_LIFECYCLE_STAGE_ORDER.length - 1)) * 100)
+        : 0,
     stages: TRANSACTION_LIFECYCLE_STAGE_ORDER.map((stage, index) => ({
       key: stage,
       label: TRANSACTION_LIFECYCLE_STAGE_LABELS[stage],

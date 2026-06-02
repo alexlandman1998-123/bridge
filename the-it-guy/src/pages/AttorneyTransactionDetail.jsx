@@ -33,7 +33,13 @@ import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import { getAttorneyTransferStage, stageLabelFromAttorneyKey } from '../core/transactions/attorneySelectors'
 import { isBondFinanceType, normalizeFinanceType } from '../core/transactions/financeType'
-import { TRANSACTION_LIFECYCLE_STAGE_LABELS, TRANSACTION_LIFECYCLE_STAGE_ORDER } from '../core/transactions/transactionLifecycle'
+import {
+  buildTransactionLifecycleSummaryFromRollup,
+  formatTransactionRollupStatusLabel,
+  TRANSACTION_LIFECYCLE_STAGE_LABELS,
+  TRANSACTION_LIFECYCLE_STAGE_ORDER,
+  USE_TRANSACTION_ROLLUP_OVERVIEW,
+} from '../core/transactions/transactionLifecycle'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import {
@@ -55,6 +61,7 @@ import {
   fetchTransactionById,
   getCompletionBlockers,
   getFinalReportData,
+  getTransactionRollup,
   getTransactionFinanceWorkflow,
   getOrCreateTransactionOnboarding,
   getRegistrationBlockers,
@@ -64,6 +71,7 @@ import {
   removeStakeholder,
   recordBuyerOnboardingSent,
   reviewCanonicalDocumentRequirement,
+  runWorkflowAction,
   saveTransactionRoleplayerSelections,
   undoTransactionRegistration,
   unarchiveTransactionLifecycle,
@@ -167,7 +175,11 @@ const ATTORNEY_DOCUMENT_GROUPS = [
 function getAttorneyCategoryForRequiredDocument(requirement = {}) {
   const groupKey = String(requirement?.groupKey || requirement?.group || '').trim().toLowerCase()
   const key = String(requirement?.key || '').trim().toLowerCase()
-  if (groupKey.includes('buyer') || key.startsWith('buyer_') || ['proof_of_funds', 'bond_approval', 'bank_statements', 'payslips', 'proof_of_income', 'grant_letter'].includes(key)) {
+  const visibleSection = String(requirement?.visibleSection || '').trim().toLowerCase()
+  if (visibleSection === 'finance_documents' || groupKey === 'finance') {
+    return 'Internal Working Documents'
+  }
+  if (groupKey.includes('buyer') || key.startsWith('buyer_')) {
     return 'Buyer FICA / Compliance'
   }
   if (groupKey.includes('seller') || key.startsWith('seller_')) return 'Seller FICA / Compliance'
@@ -281,22 +293,32 @@ function resolveBuyerDisplayName({ buyer = null, transaction = null, onboardingF
   return resolvedName || 'Buyer details pending'
 }
 
-function isBuyerDocumentRequirement(requirement = {}) {
-  const category = getAttorneyCategoryForRequiredDocument(requirement)
-  const groupKey = cleanDetailText(requirement?.groupKey || requirement?.group).toLowerCase()
-  const key = cleanDetailText(requirement?.key).toLowerCase()
-  if (category === 'Buyer FICA / Compliance') return true
-  if (groupKey.includes('buyer')) return true
-  return ['proof_of_funds', 'proof_of_income', 'bank_statements', 'bond_approval', 'grant_letter', 'payslips'].includes(key)
+function getRequirementPartyLabel(requirement = {}) {
+  const normalized = String(requirement?.expectedFromRole || requirement?.requiredFromRole || '').trim().toLowerCase()
+  if (!normalized || normalized === 'client' || normalized === 'buyer') return 'Buyer'
+  if (normalized === 'seller') return 'Seller'
+  if (normalized === 'agent') return 'Agent'
+  if (normalized === 'bond_originator') return 'Bond originator'
+  if (normalized === 'bond_attorney') return 'Bond attorney'
+  if (normalized === 'cancellation_attorney') return 'Cancellation attorney'
+  if (normalized === 'attorney' || normalized === 'transfer_attorney') return 'Conveyancer / Transfer Attorney'
+  return toTitle(normalized.replaceAll('_', ' '))
 }
 
-function isSellerDocumentRequirement(requirement = {}) {
-  const category = getAttorneyCategoryForRequiredDocument(requirement)
-  const groupKey = cleanDetailText(requirement?.groupKey || requirement?.group).toLowerCase()
-  const key = cleanDetailText(requirement?.key).toLowerCase()
-  if (category === 'Seller FICA / Compliance' || category === 'Clearance Documents') return true
-  if (groupKey.includes('seller')) return true
-  return key.startsWith('seller_') || key.includes('mandate') || key.includes('title_deed') || key.includes('clearance') || key.includes('rates') || key.includes('levy')
+function getRequirementBlockingLabel(requirement = {}) {
+  if (requirement?.preCollectionAllowed) {
+    return 'Pre-collection · Non-blocking'
+  }
+  if (requirement?.isBlocking === false) {
+    return 'Non-blocking'
+  }
+  const stage = String(requirement?.blockingStage || '').trim().toUpperCase()
+  if (stage === 'OTP') return 'Blocks OTP'
+  if (stage === 'FIN') return 'Blocks Finance'
+  if (stage === 'ATTY' || stage === 'TRANSFER') return 'Blocks Attorney Handover'
+  if (stage === 'XFER') return 'Blocks Transfer'
+  if (stage === 'REG' || stage === 'REGISTRATION') return 'Blocks Registration'
+  return 'Blocking'
 }
 
 function normalizeLifecycleState(value) {
@@ -1413,7 +1435,7 @@ function resolveTransactionProgress({
     hasTransactionEvent(transactionEvents, ['otp_signed', 'sale agreement signed', 'offer to purchase signed']) ||
     hasRequirementStatus(requiredDocumentChecklist, ['signed_otp', 'otp_signed', 'sale_agreement_signed']) ||
     hasDocumentWithKeywords(documents, ['signed otp', 'signed sale agreement', 'signed offer to purchase']) ||
-    ['FIN', 'ATTY', 'XFER', 'REG'].includes(mainStage)
+    ['FIN', 'ATTY', 'XFER', 'REG', 'TRANSFER', 'REGISTRATION', 'COMPLETE'].includes(mainStage)
   const proofOfFundsVerified =
     hasRequirementStatus(requiredDocumentChecklist, ['proof_of_funds', 'proof_of_funds_cash_component'], APPROVED_WORKFLOW_DOCUMENT_STATUSES) ||
     hasDocumentWithKeywords(documents, ['proof_of_funds', 'cash proof'], APPROVED_WORKFLOW_DOCUMENT_STATUSES) ||
@@ -1672,6 +1694,90 @@ function resolveTransactionNextAction({
   }
 }
 
+function getRollupOverviewTarget(action = {}, rollup = null) {
+  const actionKey = normalizeDetailKey(action?.actionKey)
+  if (actionKey === 'move_to_finance') return 'documents'
+  if (actionKey === 'move_to_transfer') return 'finance'
+  if (actionKey === 'mark_ready_for_registration' || actionKey === 'mark_registered') return 'transfer'
+
+  const workflowKey = normalizeDetailKey(action?.workflowKey || rollup?.activeWorkflowKey)
+  if (workflowKey === 'sales_otp') return 'documents'
+  if (workflowKey.startsWith('finance')) return 'finance'
+  if (
+    workflowKey === 'registration' ||
+    workflowKey.includes('transfer') ||
+    workflowKey.includes('attorney') ||
+    workflowKey.includes('cancellation')
+  ) {
+    return 'transfer'
+  }
+  return 'overview'
+}
+
+function getRollupNextActionStatus(parentStatus = '') {
+  const normalized = normalizeDetailKey(parentStatus)
+  if (normalized === 'blocked') return 'blocked'
+  if (normalized === 'complete') return 'complete'
+  if (normalized === 'ready_for_handoff') return 'ready'
+  return 'pending'
+}
+
+function getRollupHealthLabel(parentStatus = '') {
+  const normalized = normalizeDetailKey(parentStatus)
+  if (normalized === 'blocked') return 'Blocked'
+  if (normalized === 'ready_for_handoff') return 'Ready'
+  if (normalized === 'complete') return 'Complete'
+  if (normalized === 'not_started') return 'Waiting'
+  return 'In Progress'
+}
+
+function getRollupLifecycleStatusClasses(parentStatus = '') {
+  const normalized = normalizeDetailKey(parentStatus)
+  if (normalized === 'blocked') return 'border-[#f5c7c7] bg-[#fff1f1] text-[#b42318]'
+  if (normalized === 'ready_for_handoff' || normalized === 'complete') {
+    return 'border-[#cfe8d8] bg-[#effaf3] text-[#197a45]'
+  }
+  if (normalized === 'not_started') return 'border-borderDefault bg-surfaceAlt text-textMuted'
+  return 'border-[#d7e5f3] bg-[#eef5fb] text-[#35546c]'
+}
+
+function buildOverviewPrimaryNextActionFromRollup({ rollup = null, transaction = null } = {}) {
+  const primaryAction =
+    (rollup?.availableActions || []).find((item) => item?.enabled) ||
+    (rollup?.availableActions || [])[0] ||
+    null
+
+  return {
+    title:
+      primaryAction?.label ||
+      rollup?.nextAction?.label ||
+      `Review ${String(rollup?.parentStage || 'workflow').replaceAll('_', ' ')}`,
+    description:
+      primaryAction?.reason ||
+      rollup?.blockers?.[0]?.message ||
+      (rollup?.nextAction?.label
+        ? `Current workflow: ${rollup.nextAction.label}.`
+        : 'Review the current workflow progress.'),
+    status: getRollupNextActionStatus(rollup?.parentStatus),
+    priority: normalizeDetailKey(rollup?.parentStatus) === 'blocked' ? 'high' : 'normal',
+    dueDate: rollup?.derivedAt || transaction?.updated_at || transaction?.created_at || null,
+    primaryActionLabel: primaryAction?.label || '',
+    primaryActionTarget: getRollupOverviewTarget(primaryAction, rollup),
+    primaryActionKey: primaryAction?.actionKey || '',
+    primaryActionEnabled: primaryAction?.enabled !== false,
+    secondaryActionLabel: rollup?.blockers?.length ? 'View Transfer Workflow' : 'Open Activity',
+    secondaryActionTarget: rollup?.blockers?.length ? 'transfer' : 'activity',
+  }
+}
+
+function getRollupHeaderActionVariant(action = {}) {
+  const groupKey = normalizeDetailKey(action?.groupKey)
+  if (groupKey === 'stage' || groupKey === 'finance' || groupKey === 'attorney') {
+    return 'primary'
+  }
+  return 'secondary'
+}
+
 function getConversationVisibilityLabel(value = '') {
   const normalized = normalizeDetailKey(value)
   if (normalized === 'internal') return 'Internal only'
@@ -1877,12 +1983,24 @@ function MatterOverviewHeader({
               ) : null}
             </div>
             <div className="flex shrink-0 flex-wrap gap-2 xl:justify-end">
-              {actionButtons.map((action) => (
-                <Button key={action.label} type="button" variant={action.variant || 'secondary'} onClick={action.onClick} disabled={action.disabled}>
-                  {action.icon ? createElement(action.icon, { size: 14 }) : null}
-                  {action.busy ? action.busyLabel || 'Preparing...' : action.label}
-                </Button>
-              ))}
+              {actionButtons.map((action) => {
+                const button = (
+                  <Button type="button" variant={action.variant || 'secondary'} onClick={action.onClick} disabled={action.disabled}>
+                    {action.icon ? createElement(action.icon, { size: 14 }) : null}
+                    {action.busy ? action.busyLabel || 'Preparing...' : action.label}
+                  </Button>
+                )
+
+                if (!action.reason) {
+                  return <span key={action.actionKey || action.label}>{button}</span>
+                }
+
+                return (
+                  <span key={action.actionKey || action.label} title={action.reason}>
+                    {button}
+                  </span>
+                )
+              })}
             </div>
           </div>
         </section>
@@ -2506,6 +2624,8 @@ function AttorneyTransactionDetail() {
   const [workflowOperations, setWorkflowOperations] = useState(null)
   const [workflowLoading, setWorkflowLoading] = useState(false)
   const [workflowError, setWorkflowError] = useState('')
+  const [transactionRollup, setTransactionRollup] = useState(null)
+  const [transactionRollupError, setTransactionRollupError] = useState('')
   const [workflowDrawerLaneKey, setWorkflowDrawerLaneKey] = useState('')
   const [workflowStepDraft, setWorkflowStepDraft] = useState(null)
   const [workflowNoteDraft, setWorkflowNoteDraft] = useState(null)
@@ -2659,6 +2779,7 @@ function AttorneyTransactionDetail() {
   const unit = data?.unit || null
   const documents = data?.documents ?? EMPTY_ARRAY
   const requiredDocumentChecklist = useMemo(() => data?.requiredDocumentChecklist || EMPTY_ARRAY, [data?.requiredDocumentChecklist])
+  const documentChecklistInsights = data?.documentChecklistInsights || null
   const requiredDocumentsByDocumentId = useMemo(() => {
     const map = new Map()
     for (const requirement of requiredDocumentChecklist) {
@@ -2750,6 +2871,35 @@ function AttorneyTransactionDetail() {
   }, [isAgentTransactionView, workspaceMenu])
   const availableWorkspaceTabs = isAgentTransactionView ? AGENT_WORKSPACE_TABS : ATTORNEY_WORKSPACE_TABS
   const activeWorkspaceMenu = availableWorkspaceTabs.some((tab) => tab.id === requestedWorkspaceMenu) ? requestedWorkspaceMenu : 'overview'
+
+  useEffect(() => {
+    let active = true
+
+    async function loadTransactionRollupState() {
+      if (!USE_TRANSACTION_ROLLUP_OVERVIEW || !transaction?.id) {
+        if (!active) return
+        setTransactionRollup(null)
+        setTransactionRollupError('')
+        return
+      }
+
+      try {
+        const rollup = await getTransactionRollup(transaction.id, { actorRole: workspaceRole })
+        if (!active) return
+        setTransactionRollup(rollup)
+        setTransactionRollupError('')
+      } catch (rollupError) {
+        if (!active) return
+        setTransactionRollup(null)
+        setTransactionRollupError(rollupError?.message || 'Unable to load transaction roll-up.')
+      }
+    }
+
+    void loadTransactionRollupState()
+    return () => {
+      active = false
+    }
+  }, [transaction?.current_main_stage, transaction?.id, transaction?.stage, transaction?.updated_at, workspaceRole])
 
   useEffect(() => {
     if (!availableDiscussionVisibilityOptions.length) return
@@ -3023,36 +3173,30 @@ function AttorneyTransactionDetail() {
     }
     return { byCanonicalId, byDocumentId }
   }, [documents, getLinkedRequirementForDocument])
-  const buyerDocumentRows = useMemo(
-    () =>
-      requiredDocumentChecklist
-        .filter((requirement) => isBuyerDocumentRequirement(requirement))
-        .map((requirement) => {
-          const canonicalId = getRequirementCanonicalId(requirement)
-          const uploadedDocumentId = getRequirementDocumentId(requirement)
-          const linkedDocument =
-            (canonicalId ? requirementDocumentLookup.byCanonicalId.get(String(canonicalId)) : null) ||
-            (uploadedDocumentId ? requirementDocumentLookup.byDocumentId.get(String(uploadedDocumentId)) : null) ||
-            null
-          return { requirement, linkedDocument }
-        }),
-    [requiredDocumentChecklist, requirementDocumentLookup],
-  )
-  const sellerDocumentRows = useMemo(
-    () =>
-      requiredDocumentChecklist
-        .filter((requirement) => isSellerDocumentRequirement(requirement))
-        .map((requirement) => {
-          const canonicalId = getRequirementCanonicalId(requirement)
-          const uploadedDocumentId = getRequirementDocumentId(requirement)
-          const linkedDocument =
-            (canonicalId ? requirementDocumentLookup.byCanonicalId.get(String(canonicalId)) : null) ||
-            (uploadedDocumentId ? requirementDocumentLookup.byDocumentId.get(String(uploadedDocumentId)) : null) ||
-            null
-          return { requirement, linkedDocument }
-        }),
-    [requiredDocumentChecklist, requirementDocumentLookup],
-  )
+  const documentWorkspaceSections = useMemo(() => {
+    const sectionMap = {
+      buyer_documents: [],
+      finance_documents: [],
+      seller_documents: [],
+      transfer_documents: [],
+    }
+
+    for (const requirement of requiredDocumentChecklist) {
+      const canonicalId = getRequirementCanonicalId(requirement)
+      const uploadedDocumentId = getRequirementDocumentId(requirement)
+      const linkedDocument =
+        (canonicalId ? requirementDocumentLookup.byCanonicalId.get(String(canonicalId)) : null) ||
+        (uploadedDocumentId ? requirementDocumentLookup.byDocumentId.get(String(uploadedDocumentId)) : null) ||
+        null
+      const visibleSection = String(requirement?.visibleSection || '').trim().toLowerCase() || 'transfer_documents'
+      if (!sectionMap[visibleSection]) {
+        sectionMap[visibleSection] = []
+      }
+      sectionMap[visibleSection].push({ requirement, linkedDocument })
+    }
+
+    return sectionMap
+  }, [requiredDocumentChecklist, requirementDocumentLookup])
   const uploadedByClientCount = useMemo(
     () => documents.filter((document) => String(document.uploaded_by_role || '').toLowerCase() === 'client').length,
     [documents],
@@ -3241,16 +3385,21 @@ function AttorneyTransactionDetail() {
   )
   const overviewPrimaryNextAction = useMemo(
     () =>
-      resolveTransactionNextAction({
-        transaction,
-        progressState: lifecycleProgressState,
-        buyerEmail,
-        sellerEmail,
-        onboardingCompleted,
-        isPrivateMatter,
-        transferAttorney,
-        documentRequests,
-      }),
+      USE_TRANSACTION_ROLLUP_OVERVIEW && transactionRollup
+        ? buildOverviewPrimaryNextActionFromRollup({
+            rollup: transactionRollup,
+            transaction,
+          })
+        : resolveTransactionNextAction({
+            transaction,
+            progressState: lifecycleProgressState,
+            buyerEmail,
+            sellerEmail,
+            onboardingCompleted,
+            isPrivateMatter,
+            transferAttorney,
+            documentRequests,
+          }),
     [
       buyerEmail,
       documentRequests,
@@ -3258,6 +3407,7 @@ function AttorneyTransactionDetail() {
       lifecycleProgressState,
       onboardingCompleted,
       sellerEmail,
+      transactionRollup,
       transaction,
       transferAttorney,
     ],
@@ -3891,6 +4041,45 @@ function AttorneyTransactionDetail() {
     setWorkspaceMenu('transfer')
   }
 
+  async function handleOverviewWorkflowAction(action = null) {
+    if (!transaction?.id || !action?.actionKey) return
+
+    if (action.actionKey === 'MARK_REGISTERED') {
+      setRegistrationModalOpen(true)
+      return
+    }
+
+    try {
+      setSaving(true)
+      setError('')
+      const result = await runWorkflowAction({
+        transactionId: transaction.id,
+        actionKey: action.actionKey,
+        payload: { source: 'rollup_overview' },
+        actorRole: workspaceRole,
+      })
+      if (!result?.allowed) {
+        throw new Error((result?.blockers || []).map((item) => item.message).filter(Boolean).join(' • ') || 'Workflow action is blocked.')
+      }
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadData({ background: true })
+      if (USE_TRANSACTION_ROLLUP_OVERVIEW) {
+        try {
+          const refreshedRollup = await getTransactionRollup(transaction.id, { actorRole: workspaceRole })
+          setTransactionRollup(refreshedRollup)
+          setTransactionRollupError('')
+        } catch (rollupError) {
+          setTransactionRollup(null)
+          setTransactionRollupError(rollupError?.message || 'Unable to load transaction roll-up.')
+        }
+      }
+    } catch (actionError) {
+      setError(actionError?.message || 'Unable to run workflow action.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const matterHeaderMetrics = useMemo(
     () => {
       const metrics = [
@@ -3943,13 +4132,108 @@ function AttorneyTransactionDetail() {
     development?.name || null,
     propertyAddress || null,
   ].filter(Boolean).join(' • ')
+  const rollupLifecycleSummary = useMemo(
+    () =>
+      buildTransactionLifecycleSummaryFromRollup(transactionRollup, {
+        transactionId: transaction?.id,
+        fallbackUpdatedAt: transaction?.updated_at || transaction?.created_at || null,
+      }),
+    [transaction?.created_at, transaction?.id, transaction?.updated_at, transactionRollup],
+  )
+  const usingTransactionRollupOverview = USE_TRANSACTION_ROLLUP_OVERVIEW && Boolean(rollupLifecycleSummary)
+  const displayedLifecycleProgress = usingTransactionRollupOverview
+    ? {
+        ...rollupLifecycleSummary,
+        blockerReason:
+          transactionRollup?.blockers?.[0]?.message ||
+          transactionRollup?.nextAction?.label ||
+          '',
+        nextMilestone: String(transactionRollup?.parentStage || 'workflow').replaceAll('_', ' '),
+      }
+    : lifecycleProgressState
+  const displayedLifecycleLabel = usingTransactionRollupOverview
+    ? formatTransactionRollupStatusLabel(transactionRollup?.parentStatus)
+    : lifecycleLabel
+  const displayedLifecycleStatusClassName = usingTransactionRollupOverview
+    ? getRollupLifecycleStatusClasses(transactionRollup?.parentStatus)
+    : getLifecycleStateClasses(lifecycleState)
+  const displayedMatterHealthLabel = usingTransactionRollupOverview
+    ? getRollupHealthLabel(transactionRollup?.parentStatus)
+    : matterHealthLabel
+  const displayedUpdatedLabel = usingTransactionRollupOverview
+    ? formatShortDayMonth(
+        transactionRollup?.derivedAt ||
+          transactionRollup?.lastWorkflowUpdatedAt ||
+          transaction?.updated_at ||
+          transaction?.created_at,
+      )
+    : formatShortDayMonth(transaction?.updated_at || transaction?.created_at)
+  const headerWorkflowActionButtons = (() => {
+    if (!isAgentTransactionView) return []
+    if (!usingTransactionRollupOverview) {
+      return [
+        {
+          label: 'Resend Buyer Portal Link',
+          busyLabel: 'Sending buyer portal link...',
+          busy: onboardingActionBusy,
+          disabled: onboardingActionBusy || !buyerEmail,
+          onClick: () => void handleAgentHeaderOnboardingAction(),
+          icon: Send,
+        },
+        {
+          label: 'Send Seller Portal Link',
+          busyLabel: 'Sending seller portal link...',
+          busy: sellerPortalBusy,
+          disabled: sellerPortalBusy || !sellerEmail,
+          onClick: () => void handleSendSellerPortalLink(),
+          icon: Send,
+          variant: 'secondary',
+        },
+      ]
+    }
+
+    return (transactionRollup?.availableActions || [])
+      .filter((action) =>
+        ['request_buyer_details', 'request_seller_details', 'move_to_finance', 'move_to_transfer', 'mark_ready_for_registration', 'mark_registered']
+          .includes(normalizeDetailKey(action?.actionKey)),
+      )
+      .map((action) => {
+        const actionKey = normalizeDetailKey(action?.actionKey)
+        const busy =
+          (actionKey === 'request_buyer_details' && onboardingActionBusy) ||
+          (actionKey === 'request_seller_details' && sellerPortalBusy)
+        let onClick = () => void handleOverviewWorkflowAction(action)
+        if (actionKey === 'request_buyer_details') {
+          onClick = () => void handleAgentHeaderOnboardingAction()
+        } else if (actionKey === 'request_seller_details') {
+          onClick = () => void handleSendSellerPortalLink()
+        }
+
+        return {
+          actionKey: action.actionKey,
+          label: action.label,
+          busyLabel:
+            actionKey === 'request_buyer_details'
+              ? 'Sending buyer details request...'
+              : actionKey === 'request_seller_details'
+                ? 'Sending seller details request...'
+                : undefined,
+          busy,
+          disabled: busy || action?.enabled === false,
+          reason: action?.reason || '',
+          onClick,
+          icon: actionKey.startsWith('request_') ? Send : undefined,
+          variant: getRollupHeaderActionVariant(action),
+        }
+      })
+  })()
   const overviewNextActions = useMemo(() => {
     return [
       {
         title: overviewPrimaryNextAction.title,
         description: overviewPrimaryNextAction.description,
         dueDate: overviewPrimaryNextAction.dueDate,
-        workflow: TRANSACTION_LIFECYCLE_STAGE_LABELS[lifecycleProgressState.currentStage] || 'Overview',
+        workflow: TRANSACTION_LIFECYCLE_STAGE_LABELS[displayedLifecycleProgress.currentStage] || 'Overview',
         action: overviewPrimaryNextAction.primaryActionLabel || 'Open',
         actionTarget: overviewPrimaryNextAction.primaryActionTarget || 'overview',
         secondaryAction: overviewPrimaryNextAction.secondaryActionLabel || '',
@@ -3958,7 +4242,7 @@ function AttorneyTransactionDetail() {
         status: overviewPrimaryNextAction.status || 'pending',
       },
     ]
-  }, [lifecycleProgressState.currentStage, overviewPrimaryNextAction])
+  }, [displayedLifecycleProgress.currentStage, overviewPrimaryNextAction])
   const getWorkspaceMenuForTask = useCallback((item) => {
     const target = normalizeDetailKey(item?.actionTarget || item?.primaryActionTarget || item?.secondaryActionTarget)
     if (target === 'documents' || target === 'sales_agreement') return 'documents'
@@ -5314,8 +5598,8 @@ function AttorneyTransactionDetail() {
               transactionStageLabel={transferStageLabel}
               transaction={transaction}
               mainStage={mainStage}
-              statusLabel={hydratingDetail ? 'Refreshing' : lifecycleLabel}
-              statusClassName={getLifecycleStateClasses(lifecycleState)}
+              statusLabel={hydratingDetail ? 'Refreshing' : displayedLifecycleLabel}
+              statusClassName={displayedLifecycleStatusClassName}
               propertyLabel={isAgentTransactionView ? (propertyAddress || matterHeadline) : matterHeadline}
               subtitle={matterSubtitle}
               buyerName={buyerDisplayName}
@@ -5324,33 +5608,11 @@ function AttorneyTransactionDetail() {
               assignedFirms={matterAssignedFirms}
               metrics={matterHeaderMetrics}
               progressIndex={matterProgressIndex}
-              matterHealthLabel={matterHealthLabel}
+              matterHealthLabel={displayedMatterHealthLabel}
               daysActiveLabel={daysBetween(transaction?.created_at)}
-              updatedLabel={formatShortDayMonth(transaction?.updated_at || transaction?.created_at)}
-              lifecycleProgress={lifecycleProgressState}
-              actionButtons={
-                isAgentTransactionView
-                  ? [
-                      {
-                        label: 'Resend Buyer Portal Link',
-                        busyLabel: 'Sending buyer portal link...',
-                        busy: onboardingActionBusy,
-                        disabled: onboardingActionBusy || !buyerEmail,
-                        onClick: () => void handleAgentHeaderOnboardingAction(),
-                        icon: Send,
-                      },
-                      {
-                        label: 'Send Seller Portal Link',
-                        busyLabel: 'Sending seller portal link...',
-                        busy: sellerPortalBusy,
-                        disabled: sellerPortalBusy || !sellerEmail,
-                        onClick: () => void handleSendSellerPortalLink(),
-                        icon: Send,
-                        variant: 'secondary',
-                      },
-                    ]
-                  : []
-              }
+              updatedLabel={displayedUpdatedLabel}
+              lifecycleProgress={displayedLifecycleProgress}
+              actionButtons={headerWorkflowActionButtons}
               isAgentView={isAgentTransactionView}
             />
           <MatterWorkspaceTabs tabs={workspaceMenuTabs} activeTab={activeWorkspaceMenu} onChange={setWorkspaceMenu} premium={isAgentTransactionView} />
@@ -5387,7 +5649,7 @@ function AttorneyTransactionDetail() {
                       {[
                         ['Due Date', formatDate(overviewPrimaryNextAction.dueDate)],
                         ['Priority', toTitle(overviewPrimaryNextAction.priority || 'normal')],
-                        ['Stage', TRANSACTION_LIFECYCLE_STAGE_LABELS[lifecycleProgressState.currentStage] || 'Overview'],
+                        ['Stage', TRANSACTION_LIFECYCLE_STAGE_LABELS[displayedLifecycleProgress.currentStage] || 'Overview'],
                       ].map(([label, value]) => (
                         <article key={label} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2.5">
                           <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
@@ -5397,7 +5659,18 @@ function AttorneyTransactionDetail() {
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
                       {overviewPrimaryNextAction.primaryActionLabel ? (
-                        <Button type="button" size="sm" onClick={() => handleOverviewActionTarget(overviewPrimaryNextAction.primaryActionTarget)}>
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={saving || overviewPrimaryNextAction.primaryActionEnabled === false}
+                          onClick={() => (
+                            usingTransactionRollupOverview && overviewPrimaryNextAction.primaryActionKey
+                              ? void handleOverviewWorkflowAction({
+                                  actionKey: overviewPrimaryNextAction.primaryActionKey,
+                                })
+                              : handleOverviewActionTarget(overviewPrimaryNextAction.primaryActionTarget)
+                          )}
+                        >
                           {overviewPrimaryNextAction.primaryActionLabel}
                         </Button>
                       ) : null}
@@ -5412,6 +5685,26 @@ function AttorneyTransactionDetail() {
                         </Button>
                       ) : null}
                     </div>
+                    {usingTransactionRollupOverview && transactionRollup?.blockers?.length ? (
+                      <div className="mt-4 rounded-[12px] border border-[#f5d7bc] bg-[#fff7ed] px-3 py-3">
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#b85d12]">Workflow blockers</span>
+                        <ul className="mt-2 space-y-1 text-sm text-[#8a4b16]">
+                          {transactionRollup.blockers.slice(0, 3).map((blocker, index) => (
+                            <li key={`${blocker.code || blocker.stepKey || 'blocker'}-${index}`}>{blocker.message}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                    {import.meta.env.DEV && USE_TRANSACTION_ROLLUP_OVERVIEW ? (
+                      <div className="mt-4 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3 text-xs text-textMuted">
+                        <div>Legacy stage: {TRANSACTION_LIFECYCLE_STAGE_LABELS[lifecycleProgressState.currentStage] || 'Overview'}</div>
+                        <div>Roll-up stage: {transactionRollup?.parentStage || 'Unavailable'}</div>
+                        <div>Legacy progress: {lifecycleProgressState.progressPercent ?? 0}%</div>
+                        <div>Roll-up progress: {transactionRollup?.progressPercent ?? 0}%</div>
+                        <div>Used fallback: {usingTransactionRollupOverview ? 'false' : 'true'}</div>
+                        {transactionRollupError ? <div>Roll-up warning: {transactionRollupError}</div> : null}
+                      </div>
+                    ) : null}
                   </section>
                 ) : (
                   <>
@@ -5761,15 +6054,27 @@ function AttorneyTransactionDetail() {
                 {[
                   {
                     title: 'Buyer Documents',
-                    subtitle: 'Buyer-side compliance, finance, and onboarding requirements.',
-                    rows: buyerDocumentRows,
-                    emptyLabel: 'No buyer document requirements are configured yet.',
+                    subtitle: 'Buyer onboarding, identity, FICA, and OTP requirements.',
+                    rows: documentWorkspaceSections.buyer_documents || [],
+                    emptyLabel: documentChecklistInsights?.sections?.buyer_documents?.emptyReason || 'No buyer requirements are active yet.',
+                  },
+                  {
+                    title: 'Finance Documents',
+                    subtitle: 'Finance-owned requirements stay separate from buyer onboarding blockers.',
+                    rows: documentWorkspaceSections.finance_documents || [],
+                    emptyLabel: documentChecklistInsights?.sections?.finance_documents?.emptyReason || 'No finance requirements are active yet.',
                   },
                   {
                     title: 'Seller Documents',
-                    subtitle: 'Seller-side compliance, mandate, and clearance requirements.',
-                    rows: sellerDocumentRows,
-                    emptyLabel: 'No seller document requirements are configured yet.',
+                    subtitle: 'Seller-side compliance, authority, and bonded-property inputs.',
+                    rows: documentWorkspaceSections.seller_documents || [],
+                    emptyLabel: documentChecklistInsights?.sections?.seller_documents?.emptyReason || 'No seller requirements are active yet.',
+                  },
+                  {
+                    title: 'Transfer / Attorney Documents',
+                    subtitle: 'Transfer, cancellation, clearance, and attorney workflow requirements.',
+                    rows: documentWorkspaceSections.transfer_documents || [],
+                    emptyLabel: documentChecklistInsights?.sections?.transfer_documents?.emptyReason || 'No transfer or attorney requirements are active yet.',
                   },
                 ].map((section) => (
                   <article key={section.title} className="rounded-[18px] border border-[#dde4ee] bg-[#fbfdff] p-4">
@@ -5800,7 +6105,31 @@ function AttorneyTransactionDetail() {
                               </span>
                             </div>
                             <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-[#60758d]">
-                              <span>Last updated: {formatDateTime(linkedDocument?.updated_at || linkedDocument?.created_at || requirement?.updated_at || requirement?.created_at)}</span>
+                              <div className="flex flex-wrap gap-2">
+                                <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-white px-2.5 py-1 font-semibold text-[#60758d]">
+                                  {getRequirementPartyLabel(requirement)}
+                                </span>
+                                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 font-semibold ${
+                                  requirement?.preCollectionAllowed || requirement?.isBlocking === false
+                                    ? 'border-[#dbe7f5] bg-[#f4f8fd] text-[#58718f]'
+                                    : 'border-[#f4d7c7] bg-[#fff4ec] text-[#8a5a32]'
+                                }`}>
+                                  {getRequirementBlockingLabel(requirement)}
+                                </span>
+                              </div>
+                              <span>Last updated: {formatDateTime(linkedDocument?.updated_at || linkedDocument?.created_at || requirement?.updatedAt || requirement?.createdAt)}</span>
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-2 text-[0.72rem] text-[#6b7d93]">
+                              <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f8fafc] px-2.5 py-1">
+                                {requirement?.owningWorkflow || 'Workflow pending'}
+                              </span>
+                              {requirement?.triggeringCondition ? (
+                                <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f8fafc] px-2.5 py-1">
+                                  Trigger: {requirement.triggeringCondition}
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="mt-3 flex flex-wrap items-center justify-end gap-3 text-xs text-[#60758d]">
                               <div className="flex flex-wrap gap-2">
                                 {linkedDocument?.url ? (
                                   <a

@@ -118,6 +118,19 @@ import {
 } from '../services/transactionOperationalChecklistService'
 import { DEFAULT_APP_ROLE, normalizeAppRole } from './roles'
 import { createPerfTimer } from './performanceTrace'
+import {
+  runWorkflowAction as runCanonicalWorkflowAction,
+  workflowActionErrorMessage,
+} from '../../server/services/workflowActionService.js'
+import { processWorkflowEvidence } from '../../server/services/workflowEvidenceMapper.js'
+import { applyWorkflowOverride as applyCanonicalWorkflowOverride } from '../../server/services/workflowOverrideService.js'
+import { publishWorkflowChanged } from '../../server/services/workflowRecomputeService.js'
+import { mapLegacyStageToWorkflowAction } from '../../server/services/legacyStageCompatibilityMapper.js'
+import { fetchTransactionRollupAudit } from '../../server/services/transactionRollupAuditService.js'
+import { fetchTransactionRollupValidationReport } from '../../server/services/transactionRollupValidationService.js'
+import { runTransactionWorkflowMigration } from '../../server/services/transactionWorkflowMigrationService.js'
+import { resolveTransactionRollup } from '../../server/services/transactionWorkflowRollup.js'
+import { resolveLegalDocumentRequirements } from '../services/attorneyWorkflow/attorneyDocumentRequirementsResolver'
 import { normalizePropertyCategory, PROPERTY_CATEGORIES } from './propertyTaxonomy'
 import { getSuggestedRescheduleSlots } from './appointmentAvailabilityEngine'
 import { resolveSystemRole, resolveTransactionRole } from '../services/roleResolutionService'
@@ -127,6 +140,11 @@ import {
   notifyBondIntakeEvent,
   notifyBondIntakeStartedForOnboarding,
 } from '../services/bondIntakeNotificationService'
+import {
+  fetchTransactionDocumentRequirementsByTransactionIds as fetchCanonicalTransactionDocumentRequirementsByTransactionIds,
+  maybeResolveTransactionDocumentRequirements,
+} from '../services/documents/transactionCanonicalDocumentRequirementService'
+import { getCanonicalDocumentRolloutMode } from '../services/documents/canonicalDocumentConsolidationService'
 
 const CANONICAL_PILOT_BUILD_MARKER = 'CANONICAL_PILOT_BUILD_MARKER_20260525'
 const CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH_FLAG = 'VITE_CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH'
@@ -6448,7 +6466,148 @@ function normalizeOnboardingFormDataRow(row) {
   }
 }
 
-function normalizeRequiredDocumentRows(rows = [], metadataByKey = {}) {
+const FINANCE_PRE_COLLECTION_DOCUMENT_KEYS = new Set([])
+
+function normalizeChecklistTraceRole(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized || normalized === 'client') return 'Buyer'
+  if (normalized === 'buyer') return 'Buyer'
+  if (normalized === 'seller') return 'Seller'
+  if (normalized === 'agent') return 'Agent'
+  if (normalized === 'attorney' || normalized === 'transfer_attorney') return 'Conveyancer / Transfer Attorney'
+  if (normalized === 'bond_originator') return 'Bond originator'
+  if (normalized === 'bond_attorney') return 'Bond attorney'
+  if (normalized === 'cancellation_attorney') return 'Cancellation attorney'
+  if (normalized === 'developer') return 'Developer'
+  return normalized
+    .split('_')
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ')
+}
+
+function getRequirementWorkflowMetadata(row = {}, context = {}) {
+  const key = String(row?.document_key || row?.key || '').trim().toLowerCase()
+  const groupKey = String(row?.group_key || row?.groupKey || '').trim().toLowerCase()
+  const expectedFromRole = String(row?.required_from_role || row?.expectedFromRole || 'client').trim().toLowerCase()
+  const mainStage = normalizeMainStage(context?.currentMainStage, context?.stage || context?.transaction?.stage || 'Available')
+  const mainStageIndex = getMainStageIndex(mainStage)
+  const financeVisible = mainStageIndex >= getMainStageIndex('FIN')
+  const preCollectionAllowed = FINANCE_PRE_COLLECTION_DOCUMENT_KEYS.has(key)
+
+  let owningWorkflow = 'Transaction Documents'
+  let visibleSection = 'transfer_documents'
+  let blockingStage = 'ATTY'
+
+  if (groupKey === 'sale' || groupKey === 'buyer_fica') {
+    owningWorkflow = 'OTP / Buyer onboarding'
+    visibleSection = 'buyer_documents'
+    blockingStage = 'OTP'
+  } else if (groupKey === 'finance') {
+    owningWorkflow = 'Finance'
+    visibleSection = 'finance_documents'
+    blockingStage = 'FIN'
+  } else if (groupKey === 'transfer') {
+    owningWorkflow = 'Transfer of Property'
+    visibleSection = 'transfer_documents'
+    blockingStage = 'ATTY'
+  } else if (
+    groupKey.includes('seller') ||
+    key === 'seller_fica' ||
+    key.startsWith('seller_') ||
+    (expectedFromRole === 'seller' && !groupKey.includes('cancellation'))
+  ) {
+    owningWorkflow = 'OTP / Seller onboarding'
+    visibleSection = 'seller_documents'
+    blockingStage = 'OTP'
+  } else if (groupKey.includes('cancellation') || key.includes('cancellation')) {
+    owningWorkflow = 'Bond Cancellation'
+    visibleSection = 'transfer_documents'
+    blockingStage = 'ATTY'
+  } else if (groupKey.includes('bond') || expectedFromRole === 'bond_originator' || expectedFromRole === 'bond_attorney') {
+    owningWorkflow = 'Bond Registration'
+    visibleSection = 'finance_documents'
+    blockingStage = 'FIN'
+  }
+
+  const isBlocking =
+    row?.requirementLevel !== 'optional_required' &&
+    row?.requirementLevel !== 'optional' &&
+    !(visibleSection === 'finance_documents' && preCollectionAllowed && !financeVisible)
+
+  return {
+    owningWorkflow,
+    visibleSection,
+    blockingStage,
+    preCollectionAllowed,
+    isBlocking,
+  }
+}
+
+function inferRequirementTriggeringCondition(row = {}, context = {}) {
+  const key = String(row?.document_key || row?.key || '').trim().toLowerCase()
+  const transaction = context?.transaction || {}
+  const financeType = normalizeFinanceType(
+    context?.financeType ||
+      transaction?.finance_type ||
+      context?.formData?.purchase_finance_type ||
+      'cash',
+    { allowUnknown: true },
+  )
+
+  if (key === 'bond_approval' || key === 'grant_signed') return `finance_type = ${financeType || 'bond'}`
+  if (key === 'proof_of_funds') return `finance_type = ${financeType || 'cash'}`
+  if (key === 'proof_of_funds_cash_component') return 'finance_type = hybrid'
+  if (key.includes('payslip') || key.includes('bank_statement') || key === 'proof_of_income') {
+    return `finance_type = ${financeType || 'bond'}`
+  }
+  if (key === 'passport_copy') return 'buyer persona resolved as foreign purchaser'
+  if (key === 'source_of_funds') return 'foreign purchaser or cash-source compliance path'
+  if (key.includes('cancellation')) return 'seller_has_existing_bond = true'
+  if (key === 'seller_fica' || key.startsWith('seller_')) return 'seller-side requirements are active for this transaction stage'
+  if (key === 'transfer_documents') return 'transaction entered transfer workflow document set'
+  if (key === 'otp' || key === 'information_sheet') return 'base buyer onboarding requirements'
+  return 'legacy requirement generator'
+}
+
+function withRequirementTraceMetadata(row = {}, context = {}) {
+  const workflowMeta = getRequirementWorkflowMetadata(row, context)
+  const currentMainStage = normalizeMainStage(context?.currentMainStage, context?.stage || context?.transaction?.stage || 'Available')
+  return {
+    ...row,
+    owningWorkflow: row.owningWorkflow || workflowMeta.owningWorkflow,
+    visibleSection: row.visibleSection || workflowMeta.visibleSection,
+    blockingStage: row.blockingStage || workflowMeta.blockingStage,
+    preCollectionAllowed:
+      row.preCollectionAllowed === true || workflowMeta.preCollectionAllowed === true,
+    isBlocking: row.isBlocking ?? workflowMeta.isBlocking,
+    sourceEngine: row.sourceEngine || 'legacy_transaction_required_documents',
+    sourceRuleOrLegacyPath:
+      row.sourceRuleOrLegacyPath || '/src/lib/purchaserPersonas.js#deriveOnboardingConfiguration',
+    triggeringCondition: row.triggeringCondition || inferRequirementTriggeringCondition(row, context),
+    currentMainStageAtGeneration: row.currentMainStageAtGeneration || currentMainStage,
+    lastRecalculatedAt: row.lastRecalculatedAt || row.updatedAt || row.updated_at || row.createdAt || row.created_at || null,
+    requestedFromLabel: normalizeChecklistTraceRole(row.expectedFromRole || row.required_from_role || 'client'),
+    debugTrace: row.debugTrace || {
+      documentName: row.label || row.document_label || row.key || row.document_key || 'Document',
+      owningWorkflow: row.owningWorkflow || workflowMeta.owningWorkflow,
+      requestedFrom: normalizeChecklistTraceRole(row.expectedFromRole || row.required_from_role || 'client'),
+      visibleSection: row.visibleSection || workflowMeta.visibleSection,
+      sourceEngine: row.sourceEngine || 'legacy_transaction_required_documents',
+      sourceRuleOrLegacyPath:
+        row.sourceRuleOrLegacyPath || '/src/lib/purchaserPersonas.js#deriveOnboardingConfiguration',
+      triggeringCondition: row.triggeringCondition || inferRequirementTriggeringCondition(row, context),
+      currentMainStageAtGeneration: row.currentMainStageAtGeneration || currentMainStage,
+      blockingStage: row.blockingStage || workflowMeta.blockingStage,
+      preCollectionAllowed:
+        row.preCollectionAllowed === true || workflowMeta.preCollectionAllowed === true,
+      createdAt: row.createdAt || row.created_at || null,
+      lastRecalculatedAt: row.lastRecalculatedAt || row.updatedAt || row.updated_at || row.createdAt || row.created_at || null,
+    },
+  }
+}
+
+function normalizeRequiredDocumentRows(rows = [], metadataByKey = {}, context = {}) {
   return rows
     .map((row) => {
       const metadata = metadataByKey[row.document_key] || {}
@@ -6498,8 +6657,11 @@ function normalizeRequiredDocumentRows(rows = [], metadataByKey = {}) {
         portalMappingSource: portalMetadata.portalMappingSource,
         portalMappingConfidence: portalMetadata.portalMappingConfidence,
         portalMappingAmbiguous: portalMetadata.portalMappingAmbiguous,
+        createdAt: row.created_at || null,
+        updatedAt: row.updated_at || null,
       }
     })
+    .map((row) => withRequirementTraceMetadata(row, context))
     .sort((a, b) => a.sortOrder - b.sortOrder)
 }
 
@@ -6701,6 +6863,8 @@ async function ensureTransactionRequiredDocuments(
     cashAmount = null,
     bondAmount = null,
     formData = {},
+    stage = null,
+    currentMainStage = null,
   },
   { sync = true } = {},
 ) {
@@ -6708,8 +6872,52 @@ async function ensureTransactionRequiredDocuments(
     return []
   }
 
+  try {
+    const canonicalResolution = await maybeResolveTransactionDocumentRequirements({
+      transactionId,
+      client,
+      formData,
+      rolloutOptions: {
+        transactionId,
+      },
+    })
+
+    if (
+      canonicalResolution?.rolloutMode === 'canonical_primary' ||
+      canonicalResolution?.rolloutMode === 'canonical_only'
+    ) {
+      return canonicalResolution.requirements || []
+    }
+  } catch (canonicalError) {
+    console.warn('[canonical-documents] transaction canonical resolution failed; falling back to legacy generation.', canonicalError)
+  }
+
   const normalizedType = normalizePurchaserType(purchaserType)
   const normalizedFinanceType = normalizeFinanceType(financeType || 'cash')
+  let resolvedStage = normalizeStage(stage, 'Available')
+  let resolvedMainStage = normalizeMainStage(currentMainStage, resolvedStage)
+
+  if (!stage || !currentMainStage) {
+    let transactionStageQuery = await client
+      .from('transactions')
+      .select('stage, current_main_stage')
+      .eq('id', transactionId)
+      .maybeSingle()
+
+    if (transactionStageQuery.error && isMissingColumnError(transactionStageQuery.error, 'current_main_stage')) {
+      transactionStageQuery = await client
+        .from('transactions')
+        .select('stage')
+        .eq('id', transactionId)
+        .maybeSingle()
+    }
+
+    if (!transactionStageQuery.error && transactionStageQuery.data) {
+      resolvedStage = normalizeStage(transactionStageQuery.data.stage, resolvedStage)
+      resolvedMainStage = normalizeMainStage(transactionStageQuery.data.current_main_stage, resolvedStage)
+    }
+  }
+
   const derivedConfiguration = deriveOnboardingConfiguration(
     {
       ...(formData || {}),
@@ -6729,7 +6937,7 @@ async function ensureTransactionRequiredDocuments(
     financeType: normalizedFinanceType,
     reservationRequired,
   })
-  const templates = ruleDrivenTemplates.length
+  const initialTemplates = ruleDrivenTemplates.length
     ? ruleDrivenTemplates
     : derivedConfiguration.requiredDocuments.length
       ? derivedConfiguration.requiredDocuments
@@ -6740,6 +6948,20 @@ async function ensureTransactionRequiredDocuments(
           bondAmount,
           formData,
         })
+  const templates = initialTemplates.filter((template) => {
+    const groupKey = String(template?.groupKey || '').trim().toLowerCase()
+    const key = String(template?.key || '').trim().toLowerCase()
+    if (groupKey !== 'finance') {
+      return true
+    }
+
+    const preCollectionAllowed = FINANCE_PRE_COLLECTION_DOCUMENT_KEYS.has(key)
+    if (preCollectionAllowed) {
+      return true
+    }
+
+    return getMainStageIndex(resolvedMainStage) >= getMainStageIndex('FIN')
+  })
   const metadataByKey = templates.reduce((accumulator, template) => {
     accumulator[template.key] = {
       label: template.label,
@@ -6753,14 +6975,18 @@ async function ensureTransactionRequiredDocuments(
       allowMultiple: template.allowMultiple,
       sortOrder: template.sortOrder,
       keywords: template.keywords,
+      owningWorkflow: template.groupKey === 'finance' ? 'Finance' : undefined,
+      visibleSection: template.groupKey === 'finance' ? 'finance_documents' : undefined,
+      blockingStage: template.groupKey === 'finance' ? 'FIN' : undefined,
+      preCollectionAllowed: FINANCE_PRE_COLLECTION_DOCUMENT_KEYS.has(String(template?.key || '').trim().toLowerCase()),
     }
     return accumulator
   }, {})
   const templateMap = buildTemplateMap(templates)
   const fullRowSelect =
-    'id, transaction_id, document_key, document_label, is_required, is_uploaded, status, enabled, group_key, group_label, description, required_from_role, visibility_scope, allow_multiple, uploaded_document_id, uploaded_at, verified_at, rejected_at, notes, sort_order, canonical_requirement_instance_id'
+    'id, transaction_id, document_key, document_label, is_required, is_uploaded, status, enabled, group_key, group_label, description, required_from_role, visibility_scope, allow_multiple, uploaded_document_id, uploaded_at, verified_at, rejected_at, notes, sort_order, canonical_requirement_instance_id, created_at, updated_at'
   const legacyRowSelect =
-    'id, transaction_id, document_key, document_label, is_required, is_uploaded, uploaded_document_id, sort_order'
+    'id, transaction_id, document_key, document_label, is_required, is_uploaded, uploaded_document_id, sort_order, created_at, updated_at'
 
   let existingRowsQuery = await client
     .from('transaction_required_documents')
@@ -6832,7 +7058,19 @@ async function ensureTransactionRequiredDocuments(
   })
 
   if (!sync) {
-    return normalizeRequiredDocumentRows(upsertRows, metadataByKey)
+    return normalizeRequiredDocumentRows(upsertRows, metadataByKey, {
+      transaction: {
+        id: transactionId,
+        finance_type: normalizedFinanceType,
+        purchaser_type: normalizedType,
+        stage: resolvedStage,
+        current_main_stage: resolvedMainStage,
+      },
+      financeType: normalizedFinanceType,
+      currentMainStage: resolvedMainStage,
+      stage: resolvedStage,
+      formData,
+    })
   }
 
   let { error: upsertError } = await client
@@ -6957,7 +7195,53 @@ async function ensureTransactionRequiredDocuments(
     throw refreshedQuery.error
   }
 
-  return normalizeRequiredDocumentRows(refreshedQuery.data || [], metadataByKey)
+  const normalizedRows = normalizeRequiredDocumentRows(refreshedQuery.data || [], metadataByKey, {
+    transaction: {
+      id: transactionId,
+      finance_type: normalizedFinanceType,
+      purchaser_type: normalizedType,
+      stage: resolvedStage,
+      current_main_stage: resolvedMainStage,
+    },
+    financeType: normalizedFinanceType,
+    currentMainStage: resolvedMainStage,
+    stage: resolvedStage,
+    formData,
+  })
+
+  if (sync) {
+    const existingKeys = new Set(existingRows.map((row) => row.document_key).filter(Boolean))
+    const generatedKeys = new Set(templates.map((template) => template.key).filter(Boolean))
+    const addedKeys = [...generatedKeys].filter((key) => !existingKeys.has(key))
+    const removedKeys = staleRows.map((row) => row.document_key).filter(Boolean)
+
+    if (addedKeys.length || removedKeys.length) {
+      try {
+        await logTransactionEventIfPossible(client, {
+          transactionId,
+          eventType: 'RequiredDocumentsRecalculated',
+          createdByRole: 'system',
+          eventData: {
+            source: 'phase1_live_checklist',
+            purchaserType: normalizedType,
+            financeType: normalizedFinanceType,
+            currentMainStage: resolvedMainStage,
+            stage: resolvedStage,
+            addedKeys,
+            removedKeys,
+            reason:
+              removedKeys.length
+                ? 'Transaction conditions changed or stage-gating removed stale requirements.'
+                : 'Transaction conditions changed and new requirements were generated.',
+          },
+        })
+      } catch (eventError) {
+        console.warn('[required-documents] recalculation event failed', eventError)
+      }
+    }
+  }
+
+  return normalizedRows
 }
 
 async function resolveRuleDrivenDocumentTemplates() {
@@ -6972,10 +7256,39 @@ async function fetchTransactionRequiredDocumentsByTransactionIds(client, transac
     return {}
   }
 
+  const canonicalEligibleIds = transactionIds.filter((transactionId) => {
+    const rolloutMode = getCanonicalDocumentRolloutMode({ transactionId })
+    return rolloutMode === 'canonical_primary' || rolloutMode === 'canonical_only'
+  })
+  if (canonicalEligibleIds.length) {
+    try {
+      const canonicalRows = await fetchCanonicalTransactionDocumentRequirementsByTransactionIds({
+        transactionIds: canonicalEligibleIds,
+        client,
+      })
+      if (canonicalEligibleIds.length === transactionIds.length && Object.keys(canonicalRows).length) {
+        return canonicalRows
+      }
+      if (Object.keys(canonicalRows).length) {
+        const legacyRows = await fetchTransactionRequiredDocumentsByTransactionIdsLegacy(client, transactionIds)
+        return {
+          ...legacyRows,
+          ...canonicalRows,
+        }
+      }
+    } catch (canonicalError) {
+      console.warn('[canonical-documents] canonical transaction document read failed; falling back to legacy projection.', canonicalError)
+    }
+  }
+
+  return fetchTransactionRequiredDocumentsByTransactionIdsLegacy(client, transactionIds)
+}
+
+async function fetchTransactionRequiredDocumentsByTransactionIdsLegacy(client, transactionIds = []) {
   let query = await client
     .from('transaction_required_documents')
     .select(
-      'id, transaction_id, document_key, document_label, is_required, is_uploaded, status, enabled, group_key, group_label, description, required_from_role, visibility_scope, allow_multiple, uploaded_document_id, uploaded_at, verified_at, rejected_at, notes, sort_order, canonical_requirement_instance_id',
+      'id, transaction_id, document_key, document_label, is_required, is_uploaded, status, enabled, group_key, group_label, description, required_from_role, visibility_scope, allow_multiple, uploaded_document_id, uploaded_at, verified_at, rejected_at, notes, sort_order, canonical_requirement_instance_id, created_at, updated_at',
     )
     .in('transaction_id', transactionIds)
     .order('sort_order', { ascending: true })
@@ -6993,7 +7306,7 @@ async function fetchTransactionRequiredDocumentsByTransactionIds(client, transac
   ) {
     query = await client
       .from('transaction_required_documents')
-      .select('id, transaction_id, document_key, document_label, is_required, is_uploaded, uploaded_document_id, sort_order')
+      .select('id, transaction_id, document_key, document_label, is_required, is_uploaded, uploaded_document_id, sort_order, created_at, updated_at')
       .in('transaction_id', transactionIds)
       .order('sort_order', { ascending: true })
   }
@@ -7088,6 +7401,20 @@ function buildRequiredChecklistFromRows(requiredRows, documents) {
       portalMappingAmbiguous: Boolean(row.portalMappingAmbiguous),
       canonicalRequirementInstanceId: row.canonicalRequirementInstanceId || row.canonical_requirement_instance_id || null,
       canonical_requirement_instance_id: row.canonicalRequirementInstanceId || row.canonical_requirement_instance_id || null,
+      owningWorkflow: row.owningWorkflow || 'Transaction Documents',
+      visibleSection: row.visibleSection || 'transfer_documents',
+      blockingStage: row.blockingStage || null,
+      preCollectionAllowed: row.preCollectionAllowed === true,
+      isBlocking: row.isBlocking !== false,
+      sourceEngine: row.sourceEngine || 'legacy_transaction_required_documents',
+      sourceRuleOrLegacyPath: row.sourceRuleOrLegacyPath || '',
+      triggeringCondition: row.triggeringCondition || '',
+      currentMainStageAtGeneration: row.currentMainStageAtGeneration || null,
+      lastRecalculatedAt: row.lastRecalculatedAt || row.updatedAt || row.updated_at || row.createdAt || row.created_at || null,
+      requestedFromLabel: row.requestedFromLabel || normalizeChecklistTraceRole(row.expectedFromRole || 'client'),
+      debugTrace: row.debugTrace || null,
+      createdAt: row.createdAt || row.created_at || null,
+      updatedAt: row.updatedAt || row.updated_at || null,
     }
   })
 
@@ -7098,6 +7425,278 @@ function buildRequiredChecklistFromRows(requiredRows, documents) {
       uploadedCount,
       totalRequired: checklist.length,
     },
+  }
+}
+
+function mergeLiveRequirementRows(expectedRows = [], persistedRows = [], context = {}) {
+  const mergedByKey = new Map()
+  const expectedKeys = new Set(expectedRows.map((row) => row?.key).filter(Boolean))
+  const financeVisible = getMainStageIndex(context?.currentMainStage || 'AVAIL') >= getMainStageIndex('FIN')
+
+  for (const row of expectedRows) {
+    if (row?.key) {
+      mergedByKey.set(row.key, row)
+    }
+  }
+
+  for (const row of persistedRows || []) {
+    if (!row?.key || mergedByKey.has(row.key)) {
+      continue
+    }
+
+    const normalizedRow = withRequirementTraceMetadata(row, context)
+    if (normalizedRow.visibleSection === 'finance_documents' && !financeVisible && !normalizedRow.preCollectionAllowed) {
+      continue
+    }
+    if ((normalizedRow.visibleSection === 'buyer_documents' || normalizedRow.groupKey === 'sale') && !expectedKeys.has(normalizedRow.key)) {
+      continue
+    }
+
+    mergedByKey.set(normalizedRow.key, normalizedRow)
+  }
+
+  return [...mergedByKey.values()].sort((left, right) => Number(left.sortOrder || 0) - Number(right.sortOrder || 0))
+}
+
+function buildSupplementalAttorneyRequirementRows({ transaction = null, currentMainStage = 'AVAIL' } = {}) {
+  if (!transaction?.id) {
+    return { rows: [], sellerEmptyReason: 'Seller details are not captured yet.' }
+  }
+
+  const mainStage = normalizeMainStage(currentMainStage, transaction?.stage || 'Available')
+  const mainStageIndex = getMainStageIndex(mainStage)
+  if (mainStageIndex < getMainStageIndex('OTP')) {
+    return { rows: [], sellerEmptyReason: 'Seller requirements are deferred until OTP is active.' }
+  }
+
+  const resolved = resolveLegalDocumentRequirements(transaction || {})
+  const facts = resolved?.facts || {}
+  if (facts.sellerEntityType === 'unknown') {
+    return { rows: [], sellerEmptyReason: 'Seller type is not captured yet.' }
+  }
+
+  const rows = (resolved?.requirements || [])
+    .filter((requirement) => {
+      if (!requirement?.id) return false
+      if (requirement.laneKey === 'bond') return false
+      if (requirement.laneKey === 'cancellation') {
+        if (requirement.id === 'existing_bond_account_details' && mainStageIndex >= getMainStageIndex('OTP')) {
+          return true
+        }
+        return mainStageIndex >= getMainStageIndex('ATTY')
+      }
+      if (requirement.category === 'property_compliance' || requirement.laneKey === 'transfer') {
+        return mainStageIndex >= getMainStageIndex('ATTY')
+      }
+      return (
+        requirement.requiredFrom === 'seller' ||
+        requirement.appliesTo === 'seller' ||
+        requirement.id === 'seller_fica' ||
+        String(requirement.id || '').startsWith('seller_')
+      )
+    })
+    .map((requirement, index) => {
+      let groupKey = 'seller_documents'
+      let owningWorkflow = 'OTP / Seller onboarding'
+      let visibleSection = 'seller_documents'
+      let blockingStage = 'OTP'
+
+      if (requirement.laneKey === 'cancellation' && requirement.id !== 'existing_bond_account_details') {
+        groupKey = 'cancellation_documents'
+        owningWorkflow = 'Bond Cancellation'
+        visibleSection = 'transfer_documents'
+        blockingStage = 'ATTY'
+      } else if (requirement.category === 'property_compliance' || requirement.laneKey === 'transfer') {
+        groupKey = 'transfer'
+        owningWorkflow = 'Transfer of Property'
+        visibleSection = 'transfer_documents'
+        blockingStage = 'ATTY'
+      }
+
+      return withRequirementTraceMetadata({
+        id: `supplemental:${transaction.id}:${requirement.id}`,
+        transactionId: transaction.id,
+        key: requirement.id,
+        label: requirement.label,
+        groupKey,
+        groupLabel:
+          visibleSection === 'seller_documents'
+            ? 'Seller Documents'
+            : visibleSection === 'finance_documents'
+              ? 'Finance'
+              : 'Transfer / Attorney',
+        group:
+          visibleSection === 'seller_documents'
+            ? 'Seller Documents'
+            : visibleSection === 'finance_documents'
+              ? 'Finance'
+              : 'Transfer / Attorney',
+        description: requirement.description || requirement.reason || '',
+        requirementLevel: requirement.required === false ? 'optional' : 'required',
+        isRequired: requirement.required !== false,
+        isUploaded: false,
+        isEnabled: true,
+        status: requirement.required === false ? 'not_required' : 'missing',
+        expectedFromRole: requirement.requiredFrom || 'seller',
+        visibilityScope: requirement.visibilityDefault === 'client_visible' ? 'client' : 'shared',
+        allowMultiple: false,
+        uploadedDocumentId: null,
+        uploadedAt: null,
+        verifiedAt: null,
+        rejectedAt: null,
+        notes: '',
+        sortOrder: 500 + index,
+        canonicalRequirementInstanceId: null,
+        canonical_requirement_instance_id: null,
+        owningWorkflow,
+        visibleSection,
+        blockingStage,
+        preCollectionAllowed: false,
+        isBlocking: requirement.required !== false,
+        sourceEngine: 'attorney_document_requirements_resolver',
+        sourceRuleOrLegacyPath: '/src/services/attorneyWorkflow/attorneyDocumentRequirementsResolver.js#resolveLegalDocumentRequirements',
+        triggeringCondition: requirement.reason || 'Attorney workflow requirement',
+        currentMainStageAtGeneration: mainStage,
+        lastRecalculatedAt: transaction?.updated_at || transaction?.created_at || null,
+        createdAt: transaction?.created_at || null,
+        updatedAt: transaction?.updated_at || null,
+      }, {
+        transaction,
+        currentMainStage: mainStage,
+        stage: transaction?.stage || 'Available',
+      })
+    })
+
+  return {
+    rows,
+    sellerEmptyReason: rows.length ? '' : 'Seller requirements are deferred until the seller workflow is active.',
+  }
+}
+
+function buildDocumentChecklistInsights({ transaction = null, checklist = [] } = {}) {
+  const stage = normalizeStage(transaction?.stage, 'Available')
+  const currentMainStage = normalizeMainStage(transaction?.current_main_stage, stage)
+  const financeType = normalizeFinanceType(transaction?.finance_type || 'cash', { allowUnknown: true })
+  const facts = resolveLegalDocumentRequirements(transaction || {}).facts || {}
+  const financeRows = checklist.filter((item) => item?.visibleSection === 'finance_documents')
+  const sellerRows = checklist.filter((item) => item?.visibleSection === 'seller_documents')
+  const transferRows = checklist.filter((item) => item?.visibleSection === 'transfer_documents')
+
+  let financeEmptyReason = 'No finance requirements are active yet.'
+  if (getMainStageIndex(currentMainStage) < getMainStageIndex('FIN')) {
+    financeEmptyReason =
+      financeType === 'bond' || financeType === 'hybrid' || financeType === 'cash'
+        ? 'Finance requirements unlock when the transaction reaches Finance.'
+        : 'Finance type is still unknown.'
+  }
+
+  let sellerEmptyReason = 'No seller requirements apply at this stage.'
+  if (getMainStageIndex(currentMainStage) < getMainStageIndex('OTP')) {
+    sellerEmptyReason = 'Seller requirements are deferred until OTP is active.'
+  } else if (facts.sellerEntityType === 'unknown') {
+    sellerEmptyReason = 'Seller type is not captured yet.'
+  }
+
+  let transferEmptyReason = 'No transfer or attorney requirements are active yet.'
+  if (getMainStageIndex(currentMainStage) < getMainStageIndex('ATTY')) {
+    transferEmptyReason = 'Transfer and attorney requirements unlock once the matter moves to attorneys.'
+  }
+
+  return {
+    sections: {
+      buyer_documents: {
+        emptyReason: 'No buyer requirements are active yet.',
+      },
+      finance_documents: {
+        emptyReason: financeRows.length ? '' : financeEmptyReason,
+      },
+      seller_documents: {
+        emptyReason: sellerRows.length ? '' : sellerEmptyReason,
+      },
+      transfer_documents: {
+        emptyReason: transferRows.length ? '' : transferEmptyReason,
+      },
+    },
+  }
+}
+
+async function buildLiveTransactionChecklistData(
+  client,
+  {
+    transaction = null,
+    onboardingFormData = null,
+    documents = [],
+    persistedRequirements = [],
+  } = {},
+) {
+  if (!transaction?.id) {
+    return {
+      requiredDocuments: [],
+      requiredDocumentChecklist: [],
+      documentSummary: { uploadedCount: 0, totalRequired: 0 },
+      documentChecklistInsights: buildDocumentChecklistInsights({ transaction, checklist: [] }),
+    }
+  }
+
+  const formValues =
+    onboardingFormData?.formData && typeof onboardingFormData.formData === 'object'
+      ? onboardingFormData.formData
+      : onboardingFormData && typeof onboardingFormData === 'object'
+        ? onboardingFormData
+        : {}
+  const stage = normalizeStage(transaction?.stage, 'Available')
+  const currentMainStage = normalizeMainStage(transaction?.current_main_stage, stage)
+  const financeSnapshot = getOnboardingFinanceSnapshot({
+    formData: formValues,
+    transaction,
+  })
+  const expectedRows = await ensureTransactionRequiredDocuments(client, {
+    transactionId: transaction.id,
+    purchaserType: normalizePurchaserType(formValues.purchaser_type || transaction?.purchaser_type),
+    financeType: financeSnapshot.financeType,
+    reservationRequired:
+      financeSnapshot.reservationRequired === true ||
+      String(formValues?.reservation_required || '').trim().toLowerCase() === 'yes' ||
+      Boolean(transaction?.reservation_required),
+    cashAmount: financeSnapshot.cashAmount,
+    bondAmount: financeSnapshot.bondAmount,
+    formData: formValues,
+    stage,
+    currentMainStage,
+  }, { sync: false })
+  const mergedRows = mergeLiveRequirementRows(expectedRows, persistedRequirements, {
+    transaction,
+    stage,
+    currentMainStage,
+    formData: formValues,
+    financeType: financeSnapshot.financeType,
+  })
+  const sellerSupplement = buildSupplementalAttorneyRequirementRows({
+    transaction,
+    currentMainStage,
+  })
+  const mergedWithSellerSupplement = mergeLiveRequirementRows(mergedRows, sellerSupplement.rows, {
+    transaction,
+    stage,
+    currentMainStage,
+    formData: formValues,
+    financeType: financeSnapshot.financeType,
+  })
+  const checklistResult = buildRequiredChecklistFromRows(mergedWithSellerSupplement, documents)
+  const insights = buildDocumentChecklistInsights({
+    transaction,
+    checklist: checklistResult.checklist,
+  })
+
+  if (!checklistResult.checklist.some((item) => item?.visibleSection === 'seller_documents') && sellerSupplement.sellerEmptyReason) {
+    insights.sections.seller_documents.emptyReason = sellerSupplement.sellerEmptyReason
+  }
+
+  return {
+    requiredDocuments: mergedWithSellerSupplement,
+    requiredDocumentChecklist: checklistResult.checklist,
+    documentSummary: checklistResult.summary,
+    documentChecklistInsights: insights,
   }
 }
 
@@ -8394,6 +8993,106 @@ async function logTransactionEventIfPossible(client, payload = {}) {
   return normalizeTransactionEventRow(insertResult.data)
 }
 
+async function processWorkflowEvidenceIfPossible(client, payload = {}) {
+  if (!payload?.transactionId || !payload?.evidenceKey) {
+    return null
+  }
+
+  try {
+    return await processWorkflowEvidence({
+      ...payload,
+      client,
+    })
+  } catch (error) {
+    if (
+      isMissingTableError(error, 'transaction_workflow_instances') ||
+      isMissingTableError(error, 'transaction_workflow_steps') ||
+      isMissingTableError(error, 'transaction_workflow_evidence') ||
+      isMissingTableError(error, 'transaction_rollups') ||
+      isMissingTableError(error, 'transaction_workflow_events') ||
+      isMissingSchemaError(error)
+    ) {
+      console.warn('[workflow-evidence] canonical workflow schema unavailable, skipping evidence processing', {
+        transactionId: payload.transactionId,
+        evidenceKey: payload.evidenceKey,
+        error: error?.message || String(error),
+      })
+      return null
+    }
+    throw error
+  }
+}
+
+async function publishWorkflowChangedIfPossible(client, payload = {}) {
+  if (!payload?.transactionId) {
+    return null
+  }
+
+  try {
+    return await publishWorkflowChanged({
+      ...payload,
+      client,
+    })
+  } catch (error) {
+    if (
+      isMissingTableError(error, 'transaction_workflow_instances') ||
+      isMissingTableError(error, 'transaction_workflow_steps') ||
+      isMissingTableError(error, 'transaction_workflow_evidence') ||
+      isMissingTableError(error, 'transaction_rollups') ||
+      isMissingTableError(error, 'transaction_workflow_events') ||
+      isMissingSchemaError(error)
+    ) {
+      console.warn('[workflow-recompute] canonical workflow schema unavailable, skipping workflow recompute', {
+        transactionId: payload.transactionId,
+        triggerType: payload.triggerType,
+        reasonCode: payload.reasonCode,
+        error: error?.message || String(error),
+      })
+      return null
+    }
+    throw error
+  }
+}
+
+function resolveWorkflowEvidenceKeyFromDocumentRequest(request = {}) {
+  const explicitCandidates = [
+    request.evidenceKey,
+    request.evidence_key,
+    request.documentType,
+    request.document_type,
+    request.category,
+    request.title,
+  ]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean)
+
+  for (const candidate of explicitCandidates) {
+    if (
+      [
+        'supporting_docs_complete',
+        'supporting_documents_complete',
+        'required_documents_complete',
+        'signed_otp',
+        'proof_of_funds',
+        'registration_confirmation',
+      ].includes(candidate)
+    ) {
+      return candidate
+    }
+  }
+
+  const requestType = String(request.requestType || request.request_type || '').trim().toLowerCase()
+  const assignedRole = String(request.assignedToRole || request.assigned_to_role || '').trim().toLowerCase()
+  if (
+    requestType !== 'additional_document_request' &&
+    ['buyer', 'seller', 'client'].includes(assignedRole)
+  ) {
+    return 'supporting_docs_complete'
+  }
+
+  return null
+}
+
 export async function createTransactionEvent({
   transactionId,
   eventType,
@@ -8402,13 +9101,28 @@ export async function createTransactionEvent({
   createdByRole = null,
 }) {
   const client = requireClient()
-  return logTransactionEventIfPossible(client, {
+  const event = await logTransactionEventIfPossible(client, {
     transactionId,
     eventType,
     eventData,
     createdBy,
     createdByRole,
   })
+
+  await publishWorkflowChangedIfPossible(client, {
+    transactionId,
+    triggerType: 'event',
+    triggerId: event?.id || eventType || null,
+    reasonCode: `transaction_event_${String(eventType || 'created').trim().toLowerCase() || 'created'}`,
+    userId: createdBy || null,
+    source: 'transaction_event',
+    payload: {
+      eventType,
+      eventData,
+    },
+  })
+
+  return event
 }
 
 function getLegacyMainStageForLifecycleStage(stage) {
@@ -9106,6 +9820,23 @@ export async function updateBondHybridFinanceStage(transactionId, nextStage, opt
     eventType: isCompleted ? 'BondHybridFinanceInstructionSent' : 'BondHybridFinanceWorkflowUpdated',
   })
 
+  if (normalizedNextStage === 'instruction_sent') {
+    await processWorkflowEvidenceIfPossible(client, {
+      transactionId,
+      evidenceType: 'external_status',
+      evidenceId: workflow.id,
+      evidenceKey: 'instruction_sent',
+      status: 'instruction_sent',
+      source: 'bond_hybrid_finance_workflow',
+      createdBy: activeProfile.userId || null,
+      payload: {
+        workflowId: workflow.id,
+        fromStage,
+        toStage: normalizedNextStage,
+      },
+    })
+  }
+
   return getTransactionFinanceWorkflow(transactionId, { client })
 }
 
@@ -9155,6 +9886,32 @@ export async function addBondApplication(transactionId, payload = {}, options = 
     message: buildBondHybridWorkflowActivityMessage({ action: 'application_added', bankName }),
     eventType: 'BondHybridFinanceApplicationUpdated',
     eventData: { workflowId: workflow.id, applicationId: insert.data.id, bankName, status },
+  })
+
+  await processWorkflowEvidenceIfPossible(client, {
+    transactionId,
+    evidenceType: 'external_status',
+    evidenceId: insert.data.id,
+    evidenceKey: 'bond_documents_reviewed',
+    status: status === 'submitted' ? 'approved' : status,
+    source: 'bond_application_added',
+    createdBy: activeProfile.userId || null,
+    payload: {
+      bankName,
+      status,
+    },
+  })
+  await processWorkflowEvidenceIfPossible(client, {
+    transactionId,
+    evidenceType: 'external_status',
+    evidenceId: insert.data.id,
+    evidenceKey: 'bank_applications_submitted',
+    status,
+    source: 'bond_application_added',
+    createdBy: activeProfile.userId || null,
+    payload: {
+      bankName,
+    },
   })
 
   return getTransactionFinanceWorkflow(transactionId, { client })
@@ -9216,6 +9973,37 @@ export async function updateBondApplication(applicationId, payload = {}, options
     eventType: 'BondHybridFinanceApplicationUpdated',
     eventData: { workflowId: workflow.id, applicationId, bankName: update.data.bank_name, status: nextStatus },
   })
+
+  if (nextStatus === 'submitted') {
+    await processWorkflowEvidenceIfPossible(client, {
+      transactionId: existing.data.transaction_id,
+      evidenceType: 'external_status',
+      evidenceId: applicationId,
+      evidenceKey: 'bond_documents_reviewed',
+      status: 'approved',
+      source: 'bond_application_updated',
+      createdBy: activeProfile.userId || null,
+      payload: {
+        bankName: update.data.bank_name,
+        status: nextStatus,
+      },
+    })
+  }
+
+  if (['submitted', 'feedback_received', 'quote_received', 'approved', 'buyer_approved'].includes(nextStatus)) {
+    await processWorkflowEvidenceIfPossible(client, {
+      transactionId: existing.data.transaction_id,
+      evidenceType: 'external_status',
+      evidenceId: applicationId,
+      evidenceKey: nextStatus === 'submitted' ? 'bank_applications_submitted' : 'bank_feedback_received',
+      status: nextStatus,
+      source: 'bond_application_updated',
+      createdBy: activeProfile.userId || null,
+      payload: {
+        bankName: update.data.bank_name,
+      },
+    })
+  }
 
   return getTransactionFinanceWorkflow(existing.data.transaction_id, { client })
 }
@@ -9398,6 +10186,20 @@ export async function approveBondQuote(quoteId, options = {}) {
     stage: 'quote_approved',
     message: 'Buyer has approved a finance quote.',
     eventType: 'BondHybridFinanceQuoteUpdated',
+  })
+
+  await processWorkflowEvidenceIfPossible(client, {
+    transactionId: quote.data.transaction_id,
+    evidenceType: 'external_status',
+    evidenceId: quoteId,
+    evidenceKey: 'quote_approved',
+    status: 'approved',
+    source: 'bond_quote_approved',
+    createdBy: activeProfile.userId || null,
+    payload: {
+      workflowId: workflow.id,
+      bankName: quote.data.bank_name,
+    },
   })
 
   return getTransactionFinanceWorkflow(quote.data.transaction_id, { client })
@@ -10174,6 +10976,7 @@ async function runDocumentAutomationIfPossible(
     transactionId,
     documentId,
     documentName,
+    documentType = null,
     category,
     actorRole = null,
     actorUserId = null,
@@ -10186,6 +10989,11 @@ async function runDocumentAutomationIfPossible(
   }
 
   let matchedRequiredDocument = null
+  const resolvedEvidenceKey =
+    normalizeDocumentKeyCandidate(requiredDocumentKey) ||
+    normalizeDocumentKeyCandidate(documentType) ||
+    normalizeDocumentKeyCandidate(category) ||
+    normalizeDocumentKeyCandidate(documentName)
   if (documentId) {
     matchedRequiredDocument = await matchAndMarkRequiredDocumentFromUpload(client, {
       transactionId,
@@ -10262,6 +11070,23 @@ async function runDocumentAutomationIfPossible(
         excludeUserId: actorUserId || null,
       })
     }
+  }
+
+  if (documentId && resolvedEvidenceKey) {
+    await processWorkflowEvidenceIfPossible(client, {
+      transactionId,
+      evidenceType: 'document',
+      evidenceId: documentId,
+      evidenceKey: matchedRequiredDocument?.document_key || resolvedEvidenceKey,
+      status: 'uploaded',
+      source,
+      createdBy: actorUserId || null,
+      payload: {
+        category: normalizeNullableText(category),
+        documentName: normalizeNullableText(documentName),
+        documentType: normalizeNullableText(documentType),
+      },
+    })
   }
 
   const readiness = await computeTransactionReadinessSnapshot(client, transactionId)
@@ -11202,8 +12027,26 @@ export async function updateTransactionDocumentRequestStatus({
       status: normalizedStatus,
     },
   })
+  const normalizedRequest = normalizeDocumentRequestRow(update.data)
+  const requestEvidenceKey = resolveWorkflowEvidenceKeyFromDocumentRequest(normalizedRequest)
+  if (requestEvidenceKey) {
+    await processWorkflowEvidenceIfPossible(client, {
+      transactionId: normalizedRequest.transactionId,
+      evidenceType: 'document_request',
+      evidenceId: normalizedRequest.id,
+      evidenceKey: requestEvidenceKey,
+      status: normalizedStatus,
+      source: 'document_request_status_update',
+      createdBy: actor.userId || null,
+      payload: {
+        requestType: normalizedRequest.requestType,
+        assignedToRole: normalizedRequest.assignedToRole,
+        title: normalizedRequest.title,
+      },
+    })
+  }
 
-  return normalizeDocumentRequestRow(update.data)
+  return normalizedRequest
 }
 
 export async function resendTransactionDocumentRequest(requestId) {
@@ -11514,6 +12357,27 @@ export async function updateTransactionChecklistItem({
     },
   })
 
+  await publishWorkflowChangedIfPossible(client, {
+    transactionId: update.data?.transaction_id || null,
+    triggerType: 'checklist_item',
+    triggerId: checklistItemId,
+    reasonCode:
+      normalizedStatus === 'completed'
+        ? 'checklist_item_completed'
+        : normalizedStatus === 'pending'
+          ? 'checklist_item_reopened'
+          : normalizedStatus === 'blocked'
+            ? 'checklist_item_blocked'
+            : `checklist_item_${normalizedStatus}`,
+    userId: actor.userId || null,
+    source: 'checklist_item_update',
+    payload: {
+      checklistItemId,
+      status: normalizedStatus,
+      overrideReason: normalizeNullableText(overrideReason),
+    },
+  })
+
   return normalizeChecklistItemRow(update.data)
 }
 
@@ -11816,47 +12680,23 @@ export async function markTransactionRegistered({
   const normalizedRegistrationDate = normalizeOptionalDate(registrationDate || context.transaction.registration_date || now)
   const normalizedTitleDeedNumber = normalizeTextValue(titleDeedNumber || context.transaction.title_deed_number)
 
-  const updatePayload = {
-    stage: 'Registered',
-    current_main_stage: 'REG',
-    lifecycle_state: 'registered',
-    attorney_stage: 'registered',
-    registration_date: normalizedRegistrationDate,
-    title_deed_number: normalizedTitleDeedNumber,
-    registration_confirmation_document_id: validation.requestedDocumentId,
-    registered_by_user_id: actorProfile.userId || null,
-    registered_at: context.transaction.registered_at || now,
-    cancelled_at: null,
-    cancelled_by_user_id: null,
-    cancelled_reason: null,
-    archived_at: null,
-    archived_by_user_id: null,
-    archive_reason: null,
-    is_active: true,
-    last_meaningful_activity_at: now,
-    updated_at: now,
-  }
-
-  const updateResult = await client.from('transactions').update(updatePayload).eq('id', transactionId)
-  if (updateResult.error) {
-    if (
-      isMissingColumnError(updateResult.error, 'lifecycle_state') ||
-      isMissingColumnError(updateResult.error, 'registration_date') ||
-      isMissingColumnError(updateResult.error, 'title_deed_number')
-    ) {
-      throw new Error('Registration lifecycle columns are not set up yet. Run sql/schema.sql and refresh.')
-    }
-    throw updateResult.error
-  }
-
-  await upsertTransactionLifecycleWorkflow(client, {
+  const workflowResult = await runCanonicalWorkflowAction({
     transactionId,
-    currentStage: 'registration',
-    status: 'active',
-    actorUserId: actorProfile.userId || null,
-    source: 'registration_flow',
-    note: 'Transaction marked as Registered.',
+    actionKey: 'MARK_REGISTERED',
+    userId: actorProfile.userId || null,
+    actorRole: actorProfile.role || null,
+    payload: {
+      registrationDate: normalizedRegistrationDate,
+      titleDeedNumber: normalizedTitleDeedNumber,
+      registrationConfirmationDocumentId: validation.requestedDocumentId,
+      source: 'registration_flow',
+    },
+    client,
   })
+
+  if (!workflowResult?.allowed) {
+    throw new Error(workflowActionErrorMessage(workflowResult) || 'Registration workflow is blocked.')
+  }
 
   await logTransactionEventIfPossible(client, {
     transactionId,
@@ -13043,7 +13883,7 @@ async function fetchTransactionRowById(client, transactionId) {
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+        'id, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, listing_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
       ),
     )
     .eq('id', transactionId)
@@ -13058,6 +13898,7 @@ async function fetchTransactionRowById(client, transactionId) {
       isMissingColumnError(query.error, 'property_address_line_1') ||
       isMissingColumnError(query.error, 'matter_owner') ||
       isMissingColumnError(query.error, 'development_id') ||
+      isMissingColumnError(query.error, 'listing_id') ||
       isMissingColumnError(query.error, 'sales_price') ||
       isMissingColumnError(query.error, 'purchase_price') ||
       isMissingColumnError(query.error, 'cash_amount') ||
@@ -13113,6 +13954,7 @@ async function fetchTransactionRowById(client, transactionId) {
       'property_address_line_1',
       'matter_owner',
       'development_id',
+      'listing_id',
       'sales_price',
       'purchase_price',
       'cash_amount',
@@ -13271,7 +14113,12 @@ function normalizeSharedDocumentRow(row, { hasClientVisibilityColumn = true } = 
     uploaded_by_user_id: row?.uploaded_by_user_id || null,
     uploaded_by_role: row?.uploaded_by_role || null,
     uploaded_by_email: row?.uploaded_by_email || null,
+    uploaded_by_party: row?.uploaded_by_party || null,
     external_access_id: row?.external_access_id || null,
+    bucket_key: row?.bucket_key || null,
+    source: row?.source || null,
+    source_document_id: row?.source_document_id || null,
+    file_bucket: row?.file_bucket || row?.bucket_key || null,
     canonicalRequirementInstanceId: row?.canonical_requirement_instance_id || null,
     canonical_requirement_instance_id: row?.canonical_requirement_instance_id || null,
     status: row?.status || row?.review_status || null,
@@ -13292,13 +14139,56 @@ function normalizeSharedDocumentRow(row, { hasClientVisibilityColumn = true } = 
   }
 }
 
-function filterSharedDocumentsByViewer(documents, viewer = 'internal') {
+function normalizeDocumentViewerRole(viewerRole = '') {
+  const normalized = String(viewerRole || '')
+    .trim()
+    .toLowerCase()
+
+  if (['attorney', 'tuckers', 'conveyancer', 'transfer_attorney', 'bond_attorney', 'cancellation_attorney'].includes(normalized)) {
+    return 'attorney'
+  }
+
+  if (normalized === 'developer_contact') {
+    return 'developer'
+  }
+
+  if (['developer', 'agent', 'internal_admin', 'bond_originator', 'client', 'buyer', 'seller'].includes(normalized)) {
+    return normalized
+  }
+
+  return ''
+}
+
+function roleCanAccessInternalDocumentBucket(roleType = '', bucketKey = '') {
+  const normalizedRole = normalizeDocumentViewerRole(roleType)
+  const normalizedBucket = String(bucketKey || '').trim().toLowerCase()
+  if (!normalizedBucket) return false
+  if (['developer', 'agent', 'internal_admin'].includes(normalizedRole)) return true
+  if (normalizedRole === 'attorney') {
+    return ['transfer', 'sale', 'buyer_fica', 'legal'].includes(normalizedBucket)
+  }
+  if (normalizedRole === 'bond_originator') {
+    return ['finance', 'buyer_fica', 'sale'].includes(normalizedBucket)
+  }
+  return false
+}
+
+function filterSharedDocumentsByViewer(documents, viewer = 'internal', { viewerRole = null } = {}) {
   const normalizedViewer = String(viewer || 'internal')
     .trim()
     .toLowerCase()
 
   if (normalizedViewer === 'internal') {
     return documents.filter((item) => !item?.is_archived)
+  }
+
+  if (normalizedViewer === 'external') {
+    return documents.filter((item) => {
+      if (item?.is_archived) return false
+      const visibility = normalizeDocumentVisibilityScope(item.visibility_scope, 'internal')
+      if (['shared', 'client'].includes(visibility)) return true
+      return roleCanAccessInternalDocumentBucket(viewerRole, item?.bucket_key)
+    })
   }
 
   return documents.filter(
@@ -13322,27 +14212,25 @@ async function fetchSharedDocumentRowsByTransactionIds(client, transactionIds = 
   const documentSelectCandidates = [
     {
       select:
-        'id, transaction_id, name, file_path, category, document_type, status, review_status, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, external_access_id, canonical_requirement_instance_id, created_at, updated_at',
+        'id, transaction_id, name, file_path, category, document_type, status, review_status, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, uploaded_by_party, external_access_id, bucket_key, source, source_document_id, file_bucket, canonical_requirement_instance_id, created_at, updated_at',
       hasClientVisibilityColumn: true,
     },
     {
       select:
-        'id, transaction_id, name, file_path, category, document_type, status, review_status, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, external_access_id, canonical_requirement_instance_id, created_at',
+        'id, transaction_id, name, file_path, category, document_type, status, review_status, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, uploaded_by_party, external_access_id, bucket_key, source, source_document_id, file_bucket, canonical_requirement_instance_id, created_at',
       hasClientVisibilityColumn: true,
     },
     {
       select:
-        'id, transaction_id, name, file_path, category, is_client_visible, uploaded_by_role, uploaded_by_email, external_access_id, created_at',
+        'id, transaction_id, name, file_path, category, is_client_visible, uploaded_by_role, uploaded_by_email, uploaded_by_party, external_access_id, bucket_key, source, source_document_id, file_bucket, created_at',
       hasClientVisibilityColumn: true,
     },
     {
-      select: 'id, transaction_id, name, file_path, category, uploaded_by_role, uploaded_by_email, external_access_id, created_at',
+      select: 'id, transaction_id, name, file_path, category, uploaded_by_role, uploaded_by_email, uploaded_by_party, external_access_id, bucket_key, source, source_document_id, file_bucket, created_at',
       hasClientVisibilityColumn: false,
     },
-    {
-      select: 'id, transaction_id, name, file_path, category, created_at',
-      hasClientVisibilityColumn: false,
-    },
+    { select: 'id, transaction_id, name, file_path, category, bucket_key, source, source_document_id, file_bucket, created_at', hasClientVisibilityColumn: false },
+    { select: 'id, transaction_id, name, file_path, category, created_at', hasClientVisibilityColumn: false },
   ]
 
   let hasClientVisibilityColumn = true
@@ -13380,10 +14268,35 @@ async function fetchSharedDocumentRowsByTransactionIds(client, transactionIds = 
   }
 }
 
-async function loadSharedDocuments(client, { transactionIds = [], viewer = 'internal' } = {}) {
+async function loadSharedDocuments(client, { transactionIds = [], viewer = 'internal', viewerRole = null } = {}) {
   const { rows } = await fetchSharedDocumentRowsByTransactionIds(client, transactionIds)
-  const visibleRows = filterSharedDocumentsByViewer(rows, viewer)
+  const visibleRows = filterSharedDocumentsByViewer(rows, viewer, { viewerRole })
   return enrichDocuments(visibleRows)
+}
+
+async function attemptPromotePendingSellerDocumentsIfPossible(client, listingId) {
+  const normalizedListingId = normalizeNullableUuid(listingId)
+  if (!normalizedListingId) {
+    return null
+  }
+
+  const result = await client.rpc('bridge_promote_pending_private_listing_documents', {
+    p_private_listing_id: normalizedListingId,
+  })
+
+  if (result.error) {
+    const message = String(result.error.message || result.error.error || '')
+    if (message.includes('bridge_promote_pending_private_listing_documents')) {
+      return null
+    }
+    console.warn('Pending seller document promotion skipped', {
+      listingId: normalizedListingId,
+      error: result.error,
+    })
+    return null
+  }
+
+  return result.data || null
 }
 
 let developmentOptionsCache = null
@@ -19252,6 +20165,22 @@ export async function saveTransactionRoleplayerSelections({
     actorRole: normalizedActorRole,
   })
 
+  await publishWorkflowChangedIfPossible(client, {
+    transactionId,
+    triggerType: 'transaction_update',
+    triggerId: transactionId,
+    reasonCode: 'attorney_lane_requirement_changed',
+    userId: actorProfile.userId || null,
+    source: 'save_transaction_roleplayer_selections',
+    payload: {
+      roleplayers: selections.map((selection) => ({
+        roleType: selection.roleType,
+        organisationId: selection.organisationId || null,
+        email: selection.email || null,
+      })),
+    },
+  })
+
   return fetchTransactionById(transactionId)
 }
 
@@ -23879,6 +24808,82 @@ export async function fetchTransactionCoreById(transactionId) {
   return fetchUnitWorkspaceShell(transactionId)
 }
 
+export async function getTransactionRollup(transactionId, options = {}) {
+  if (!transactionId) {
+    return null
+  }
+
+  const client = requireClient()
+  const activeProfile = await resolveActiveProfileContext(client)
+  const actorRole = normalizeRoleType(options.actorRole || activeProfile.role || 'developer')
+  const rollup = await resolveTransactionRollup(transactionId, { client, actorRole })
+  if (!rollup) {
+    return null
+  }
+
+  return {
+    ...rollup,
+    lastWorkflowUpdatedAt: rollup.derivedAt || null,
+    availableActions: Array.isArray(rollup.availableActions) ? rollup.availableActions : [],
+  }
+}
+
+export async function getTransactionRollupAudit(transactionId, options = {}) {
+  if (!transactionId) {
+    return []
+  }
+
+  const client = requireClient()
+  const activeProfile = await resolveActiveProfileContext(client)
+  const actorRole = normalizeRoleType(options.actorRole || activeProfile.role || 'developer')
+  if (!['developer', 'internal_admin', 'admin', 'agency_admin'].includes(actorRole)) {
+    throw new Error('You do not have permission to inspect roll-up audit history.')
+  }
+
+  return fetchTransactionRollupAudit(transactionId, {
+    client,
+    limit: options.limit || 100,
+  })
+}
+
+export async function getTransactionWorkflowMigrationValidation(options = {}) {
+  const client = requireClient()
+  const activeProfile = await resolveActiveProfileContext(client)
+  const actorRole = normalizeRoleType(options.actorRole || activeProfile.role || 'developer')
+  if (!['developer', 'internal_admin', 'admin', 'agency_admin', 'platform_admin'].includes(actorRole)) {
+    throw new Error('You do not have permission to inspect workflow migration validation.')
+  }
+
+  return fetchTransactionRollupValidationReport({
+    client,
+    transactionId: options.transactionId || '',
+    comparisonStatus: options.comparisonStatus || '',
+    mismatchCategory: options.mismatchCategory || '',
+    limit: options.limit || 250,
+  })
+}
+
+export async function runTransactionWorkflowMigrationBackfill(options = {}) {
+  const client = requireClient()
+  const activeProfile = await resolveActiveProfileContext(client)
+  const actorRole = normalizeRoleType(options.actorRole || activeProfile.role || 'developer')
+  if (!['developer', 'internal_admin', 'admin', 'platform_admin'].includes(actorRole)) {
+    throw new Error('You do not have permission to run workflow migration backfills.')
+  }
+
+  return runTransactionWorkflowMigration({
+    client,
+    transactionId: options.transactionId || '',
+    limit: options.limit || 100,
+    offset: options.offset || 0,
+    dryRun: options.dryRun === true,
+    validateOnly: options.validateOnly === true,
+    persistValidation: options.persistValidation !== false,
+    createdBy: activeProfile.userId || null,
+    source: 'platform_validation_dashboard',
+  })
+}
+
 export async function fetchTransactionById(transactionId) {
   if (!transactionId) {
     return null
@@ -23907,6 +24912,10 @@ export async function fetchTransactionById(transactionId) {
     }
   }
 
+  if (transaction.listing_id) {
+    await attemptPromotePendingSellerDocumentsIfPossible(client, transaction.listing_id)
+  }
+
   if (transaction.unit_id) {
     let unitDetail = null
     try {
@@ -23925,8 +24934,18 @@ export async function fetchTransactionById(transactionId) {
       const transactionEvents = await fetchTransactionEvents(transactionId)
       const appointmentsByTransactionId = await fetchTransactionAppointments(client, [transactionId], { viewer: 'internal' })
       const rolePlayers = await fetchTransactionRolePlayersIfPossible(client, transactionId)
+      const liveChecklist = await buildLiveTransactionChecklistData(client, {
+        transaction: unitDetail.transaction,
+        onboardingFormData: unitDetail.onboardingFormData || null,
+        documents: unitDetail.documents || [],
+        persistedRequirements: unitDetail.transactionRequiredDocuments || [],
+      })
       return {
         ...unitDetail,
+        transactionRequiredDocuments: liveChecklist.requiredDocuments,
+        requiredDocumentChecklist: liveChecklist.requiredDocumentChecklist,
+        documentSummary: liveChecklist.documentSummary,
+        documentChecklistInsights: liveChecklist.documentChecklistInsights,
         rolePlayers,
         transactionRolePlayers: rolePlayers,
         transaction_role_players: rolePlayers,
@@ -24023,29 +25042,28 @@ export async function fetchTransactionById(transactionId) {
     fetchTransactionRequiredDocumentsByTransactionIds(client, [transactionId]),
   ])
   const transactionRequiredDocuments = transactionRequirementsByTransactionId[transactionId] || []
-  const fallbackRequirements =
-    unitQuery.data?.development_id
-      ? await fetchDocumentRequirements(client, unitQuery.data.development_id)
-      : DEFAULT_DOCUMENT_REQUIREMENTS
-  const checklistResult = transactionRequiredDocuments.length
-    ? buildRequiredChecklistFromRows(transactionRequiredDocuments, documents)
-    : buildDocumentChecklist(fallbackRequirements, documents)
+  const liveChecklist = await buildLiveTransactionChecklistData(client, {
+    transaction,
+    onboardingFormData: onboardingFormData || null,
+    documents,
+    persistedRequirements: transactionRequiredDocuments,
+  })
   const buyerRequirementProfile = getBuyerRequirementProfile({
     transaction,
     onboardingFormData,
-    requiredDocumentChecklist: checklistResult.checklist,
+    requiredDocumentChecklist: liveChecklist.requiredDocumentChecklist,
   })
-  const buyerRequirementMissing = getMissingBuyerRequirementsFromProfile(buyerRequirementProfile, checklistResult.checklist)
-  const buyerRequirementActions = getRequiredTransactionActions(buyerRequirementProfile, checklistResult.checklist)
-  const buyerFicaReadiness = getBuyerFicaReadinessFromProfile(buyerRequirementProfile, checklistResult.checklist)
-  const buyerFinanceReadiness = getBuyerFinanceReadinessFromProfile(buyerRequirementProfile, checklistResult.checklist)
+  const buyerRequirementMissing = getMissingBuyerRequirementsFromProfile(buyerRequirementProfile, liveChecklist.requiredDocumentChecklist)
+  const buyerRequirementActions = getRequiredTransactionActions(buyerRequirementProfile, liveChecklist.requiredDocumentChecklist)
+  const buyerFicaReadiness = getBuyerFicaReadinessFromProfile(buyerRequirementProfile, liveChecklist.requiredDocumentChecklist)
+  const buyerFinanceReadiness = getBuyerFinanceReadinessFromProfile(buyerRequirementProfile, liveChecklist.requiredDocumentChecklist)
   const transferReadinessFromBuyerDocs = getTransferReadinessFromBuyerDocsFromProfile(
     {
       ...buyerRequirementProfile,
       onboardingStatus: onboardingFormData?.status || null,
       onboarding: onboardingFormData || null,
     },
-    checklistResult.checklist,
+    liveChecklist.requiredDocumentChecklist,
   )
   const stageKey = resolveAttorneyOperationalStageKey({ transaction })
 
@@ -24066,7 +25084,7 @@ export async function fetchTransactionById(transactionId) {
     onboardingFormData: onboardingFormData || null,
     purchaserType: normalizePurchaserType(transaction?.purchaser_type),
     purchaserTypeLabel: getPurchaserTypeLabel(transaction?.purchaser_type),
-    transactionRequiredDocuments,
+    transactionRequiredDocuments: liveChecklist.requiredDocuments,
     rolePlayers,
     transactionRolePlayers: rolePlayers,
     transaction_role_players: rolePlayers,
@@ -24079,8 +25097,9 @@ export async function fetchTransactionById(transactionId) {
     transactionDiscussion: discussionRows || [],
     transactionStatusLink: null,
     developmentSettings: DEFAULT_DEVELOPMENT_SETTINGS,
-    requiredDocumentChecklist: checklistResult.checklist,
-    documentSummary: checklistResult.summary,
+    requiredDocumentChecklist: liveChecklist.requiredDocumentChecklist,
+    documentSummary: liveChecklist.documentSummary,
+    documentChecklistInsights: liveChecklist.documentChecklistInsights,
     buyerRequirementProfile,
     buyerRequirementSummary: {
       buyerType: buyerRequirementProfile.buyerType,
@@ -25906,6 +26925,27 @@ export async function saveTransaction({
     source: 'transaction_updated',
   })
 
+  await publishWorkflowChangedIfPossible(client, {
+    transactionId: result.data.id,
+    triggerType: 'transaction_update',
+    triggerId: result.data.id,
+    reasonCode:
+      normalizeFinanceType(previousTransaction?.finance_type || '', { allowUnknown: true }) !==
+      normalizeFinanceType(payload.finance_type || '', { allowUnknown: true })
+        ? 'finance_type_changed'
+        : stageChanged || mainStageChanged
+          ? 'transaction_stage_saved'
+          : 'transaction_updated',
+    userId: effectiveActorUserId,
+    source: 'save_transaction',
+    payload: {
+      financeType: payload.finance_type,
+      previousFinanceType: previousTransaction?.finance_type || null,
+      requestedMainStage: resolvedMainStage,
+      requestedStage: resolvedDetailedStage,
+    },
+  })
+
   return result.data
 }
 
@@ -25951,74 +26991,32 @@ export async function updateTransactionMainStage({
 
   const previousStage = normalizeStage(transaction.stage, 'Available')
   const previousMainStage = normalizeMainStage(transaction.current_main_stage, previousStage)
-  const resolvedMainStage = normalizeMainStage(mainStage, previousStage)
-  const resolvedDetailedStage = getDetailedStageFromMainStage(resolvedMainStage, previousStage)
-  const nowIso = new Date().toISOString()
+  const requestedMainStage = normalizeMainStage(mainStage, previousStage)
+  const actionKey = mapLegacyStageToWorkflowAction(mainStage || requestedMainStage)
+  const normalizedNote = normalizeNullableText(note)
 
-  await assertReservationDepositGateForTransition(client, {
+  const actorProfile = await resolveActiveProfileContext(client)
+  const workflowResult = await runCanonicalWorkflowAction({
     transactionId,
-    previousMainStage,
-    nextMainStage: resolvedMainStage,
-    nextDetailedStage: resolvedDetailedStage,
+    actionKey,
+    userId: actorProfile.userId || null,
+    actorRole: normalizedActorRole,
+    payload: {
+      note: normalizedNote,
+      reason: actionKey === 'CANCEL_TRANSACTION' ? normalizedNote : null,
+      source: 'legacy_stage_update',
+    },
+    client,
   })
 
-  const previousMainStageIndex = getMainStageIndex(previousMainStage)
-  const nextMainStageIndex = getMainStageIndex(resolvedMainStage)
-  const financeStageIndex = getMainStageIndex('FIN')
-  const transferStageIndex = getMainStageIndex('ATTY')
-  const movingIntoOrPastFinance =
-    previousMainStageIndex < financeStageIndex && nextMainStageIndex >= financeStageIndex
-  const movingIntoOrPastTransfer =
-    previousMainStageIndex < transferStageIndex && nextMainStageIndex >= transferStageIndex
-
-  if (movingIntoOrPastFinance) {
-    await assertSalesWorkflowReadyForFinanceTransition(client, transactionId)
+  if (!workflowResult?.allowed) {
+    const error = new Error(workflowActionErrorMessage(workflowResult) || 'This workflow action is currently blocked.')
+    error.blockers = workflowResult?.blockers || []
+    throw error
   }
 
-  if (movingIntoOrPastTransfer) {
-    await assertTransferWorkflowReadyForTransition(client, transactionId)
-  }
-
-  const payload = {
-    stage: resolvedDetailedStage,
-    current_main_stage: resolvedMainStage,
-    is_active: resolvedMainStage !== 'AVAIL',
-    stage_date: nowIso,
-    updated_at: nowIso,
-  }
-
-  let updateResult = await client.from('transactions').update(payload).eq('id', transactionId)
-
-  if (
-    updateResult.error &&
-    (isMissingColumnError(updateResult.error, 'current_main_stage') ||
-      isMissingColumnError(updateResult.error, 'stage_date') ||
-      isMissingColumnError(updateResult.error, 'is_active'))
-  ) {
-    const fallbackPayload = { ...payload }
-    if (isMissingColumnError(updateResult.error, 'current_main_stage')) {
-      delete fallbackPayload.current_main_stage
-    }
-    if (isMissingColumnError(updateResult.error, 'stage_date')) {
-      delete fallbackPayload.stage_date
-    }
-    if (isMissingColumnError(updateResult.error, 'is_active')) {
-      delete fallbackPayload.is_active
-    }
-    updateResult = await client.from('transactions').update(fallbackPayload).eq('id', transactionId)
-  }
-
-  if (updateResult.error) {
-    throw updateResult.error
-  }
-
-  const resolvedUnitId = unitId || transaction.unit_id || null
-  if (resolvedUnitId) {
-    const unitUpdate = await client.from('units').update({ status: resolvedDetailedStage }).eq('id', resolvedUnitId)
-    if (unitUpdate.error) {
-      throw unitUpdate.error
-    }
-  }
+  const nextStage = workflowResult?.compatibility?.stage || previousStage
+  const nextMainStage = workflowResult?.compatibility?.current_main_stage || previousMainStage
 
   await logTransactionEventIfPossible(client, {
     transactionId,
@@ -26026,20 +27024,71 @@ export async function updateTransactionMainStage({
     createdByRole: normalizedActorRole,
     eventData: {
       fromStage: previousStage,
-      toStage: resolvedDetailedStage,
+      toStage: nextStage,
       fromMainStage: previousMainStage,
-      toMainStage: resolvedMainStage,
-      source: 'manual_stage_update',
-      note: normalizeNullableText(note),
+      toMainStage: nextMainStage,
+      source: 'workflow_action_wrapper',
+      legacyRequestedStage: mainStage || requestedMainStage,
+      translatedAction: actionKey,
+      note: normalizedNote,
+      actionKey,
     },
   })
 
   return {
     previousStage,
     previousMainStage,
-    nextStage: resolvedDetailedStage,
-    nextMainStage: resolvedMainStage,
+    nextStage,
+    nextMainStage,
+    rollup: workflowResult.rollup,
+    warning: import.meta.env.DEV
+      ? 'This endpoint is in compatibility mode. Use workflow-actions endpoint instead.'
+      : undefined,
   }
+}
+
+export async function runWorkflowAction({
+  transactionId,
+  actionKey,
+  payload = {},
+  actorRole = null,
+} = {}) {
+  const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+
+  return runCanonicalWorkflowAction({
+    transactionId,
+    actionKey,
+    userId: actorProfile.userId || null,
+    actorRole: normalizeRoleType(actorRole || actorProfile.role || 'developer'),
+    payload,
+    client,
+  })
+}
+
+export async function applyWorkflowOverride({
+  transactionId,
+  workflowKey,
+  stepKey,
+  overrideType,
+  reason,
+  payload = {},
+  actorRole = null,
+} = {}) {
+  const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+
+  return applyCanonicalWorkflowOverride({
+    transactionId,
+    workflowKey,
+    stepKey,
+    overrideType,
+    reason,
+    userId: actorProfile.userId || null,
+    actorRole: actorRole || actorProfile.role || 'developer',
+    payload,
+    client,
+  })
 }
 
 function getManualOnboardingLifecycleStatus(status) {
@@ -26466,6 +27515,22 @@ export async function saveTransactionClientInformation({
       depositAmount: normalizedDepositAmount,
     },
   })
+
+  if (lifecycleStatus === 'client_onboarding_complete') {
+    await processWorkflowEvidenceIfPossible(client, {
+      transactionId,
+      evidenceType: 'onboarding',
+      evidenceId: onboardingRecord?.id || transactionId,
+      evidenceKey: 'buyer_onboarding_complete',
+      status: 'completed',
+      source: 'save_transaction_client_information',
+      createdBy: effectiveActorUserId,
+      payload: {
+        onboardingMode: normalizedOnboardingMode,
+        purchaserType: normalizedPurchaserType,
+      },
+    })
+  }
 
   return {
     buyer,
@@ -26993,6 +28058,25 @@ export async function updateTransactionSubprocessStep({
       status: normalizedStatus,
       completedAt: normalizedCompletedAt || null,
       comment: normalizedComment || null,
+    },
+  })
+
+  await publishWorkflowChangedIfPossible(client, {
+    transactionId,
+    triggerType: 'workflow_step',
+    triggerId: updateResult.data?.id || stepId,
+    reasonCode:
+      normalizedStatus === 'completed'
+        ? 'workflow_step_completed'
+        : normalizedStatus === 'not_started'
+          ? 'workflow_step_reopened'
+          : `workflow_step_${normalizedStatus}`,
+    userId: actorProfile?.userId || null,
+    source: 'transaction_subprocess_step_update',
+    payload: {
+      subprocessId: updateResult.data?.subprocess_id || subprocessId,
+      stepKey: updateResult.data?.step_key || null,
+      status: normalizedStatus,
     },
   })
 
@@ -27930,11 +29014,11 @@ async function fetchExternalTransactionSummaries(client, transactionIds) {
   })
 }
 
-async function fetchExternalTransactionWorkspace(client, transactionId) {
+async function fetchExternalTransactionWorkspace(client, transactionId, { viewerRole = null } = {}) {
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, purchaser_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_status, reservation_paid_date, bank, stage, attorney, bond_originator, next_action, expected_transfer_date, updated_at, created_at',
+      'id, development_id, unit_id, listing_id, buyer_id, sales_price, purchase_price, finance_type, purchaser_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_status, reservation_paid_date, bank, stage, attorney, bond_originator, next_action, expected_transfer_date, updated_at, created_at',
     )
     .eq('id', transactionId)
     .maybeSingle()
@@ -27943,6 +29027,7 @@ async function fetchExternalTransactionWorkspace(client, transactionId) {
     transactionQuery.error &&
     (isMissingColumnError(transactionQuery.error, 'expected_transfer_date') ||
       isMissingColumnError(transactionQuery.error, 'development_id') ||
+      isMissingColumnError(transactionQuery.error, 'listing_id') ||
       isMissingColumnError(transactionQuery.error, 'bank') ||
       isMissingColumnError(transactionQuery.error, 'purchaser_type') ||
       isMissingColumnError(transactionQuery.error, 'purchase_price') ||
@@ -27956,7 +29041,7 @@ async function fetchExternalTransactionWorkspace(client, transactionId) {
   ) {
     transactionQuery = await client
       .from('transactions')
-      .select('id, unit_id, buyer_id, sales_price, finance_type, purchaser_type, stage, attorney, bond_originator, next_action, updated_at, created_at')
+      .select('id, unit_id, listing_id, buyer_id, sales_price, finance_type, purchaser_type, stage, attorney, bond_originator, next_action, updated_at, created_at')
       .eq('id', transactionId)
       .maybeSingle()
   }
@@ -27995,9 +29080,14 @@ async function fetchExternalTransactionWorkspace(client, transactionId) {
     buyer = buyerData
   }
 
+  if (transaction.listing_id) {
+    await attemptPromotePendingSellerDocumentsIfPossible(client, transaction.listing_id)
+  }
+
   const documents = await loadSharedDocuments(client, {
     transactionIds: [transaction.id],
     viewer: 'external',
+    viewerRole,
   })
   const handover = await fetchTransactionHandover(client, {
     developmentId: transaction.development_id || unit?.development_id || null,
@@ -29213,6 +30303,20 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       },
     })
 
+    await processWorkflowEvidenceIfPossible(client, {
+      transactionId: transaction.id,
+      evidenceType: 'onboarding',
+      evidenceId: onboarding.id,
+      evidenceKey: 'buyer_onboarding_complete',
+      status: 'completed',
+      source: 'buyer_onboarding_completed',
+      createdBy: null,
+      payload: {
+        purchaserType,
+        financeType: financeSnapshot.financeType,
+      },
+    })
+
     await logTransactionEventIfPossible(client, {
       transactionId: transaction.id,
       eventType: 'finance_type_selected',
@@ -29693,6 +30797,7 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
     transactionId: transaction.id,
     documentId: insertResult.data.id,
     documentName: insertResult.data?.name || `${requiredDocument.label} - ${safeName}`,
+    documentType: requiredDocument.portalDocumentType || requiredDocument.key || requiredDocument.label,
     category: requiredDocument.label,
     actorRole: 'client',
     actorUserId: null,
@@ -29842,6 +30947,27 @@ export async function updateTransactionRequiredDocumentStatus({
       source: 'required_document_status_update',
       documentKey,
       status: normalizedStatus,
+    },
+  })
+
+  await processWorkflowEvidenceIfPossible(client, {
+    transactionId,
+    evidenceType: uploadedDocumentId ? 'document' : 'document_request',
+    evidenceId: uploadedDocumentId || documentKey,
+    evidenceKey: documentKey,
+    status:
+      normalizedStatus === 'accepted'
+        ? 'approved'
+        : normalizedStatus === 'reupload_required'
+          ? 'rejected'
+          : normalizedStatus === 'missing'
+            ? 'removed'
+            : normalizedStatus,
+    source: 'required_document_status_update',
+    createdBy: effectiveActorUserId,
+    payload: {
+      reviewNotes,
+      actorRole: effectiveActorRole,
     },
   })
 
@@ -30197,7 +31323,11 @@ export async function archiveTransactionDocument(documentId) {
     throw new Error('Document id is required.')
   }
 
-  const lookup = await client.from('documents').select('id, transaction_id, category').eq('id', documentId).maybeSingle()
+  const lookup = await client
+    .from('documents')
+    .select('id, transaction_id, category, document_type, name')
+    .eq('id', documentId)
+    .maybeSingle()
   if (lookup.error) {
     throw lookup.error
   }
@@ -30264,6 +31394,23 @@ export async function archiveTransactionDocument(documentId) {
       archivedAt: now,
     },
   })
+
+  const archivedEvidenceKey =
+    lookup.data.document_type ||
+    lookup.data.category ||
+    lookup.data.name ||
+    null
+  if (archivedEvidenceKey) {
+    await processWorkflowEvidenceIfPossible(client, {
+      transactionId: updateResult.data?.transaction_id || lookup.data.transaction_id || null,
+      evidenceType: 'document',
+      evidenceId: documentId,
+      evidenceKey: archivedEvidenceKey,
+      status: 'removed',
+      source: 'archive_transaction_document',
+      createdBy: null,
+    })
+  }
 
   return {
     id: updateResult.data?.id || documentId,
@@ -33348,6 +34495,7 @@ export async function uploadClientPortalDocument({
     transactionId: link.transaction_id,
     documentId: result.data.id,
     documentName: result.data.name,
+    documentType: normalizedDocumentType,
     category: result.data.category || category || 'Client Portal',
     requiredDocumentKey: requiredDocumentKey || (isReservationDepositProofUpload ? 'reservation_deposit_proof' : null),
     actorRole: 'client',
@@ -33922,6 +35070,7 @@ export async function submitClientOtpSignature({
     transactionId: link.transaction_id,
     documentId: signedOtpInsert.data?.id || null,
     documentName: signedOtpInsert.data?.name || signedOtpPdfFile.name,
+    documentType: 'signed_otp',
     category: signedOtpInsert.data?.category || 'Offer to Purchase (OTP) · Signed Final',
     actorRole: 'client',
     actorUserId: null,
@@ -34374,7 +35523,7 @@ export async function fetchExternalTransactionPortal(accessToken, options = {}) 
   }
 
   const [workspace, summaries] = await Promise.all([
-    fetchExternalTransactionWorkspace(client, selectedTransactionId),
+    fetchExternalTransactionWorkspace(client, selectedTransactionId, { viewerRole: access.role }),
     fetchExternalTransactionSummaries(client, accessibleTransactionIds),
   ])
 
@@ -34692,6 +35841,7 @@ export async function uploadExternalDocument({ accessToken, transactionId = null
     transactionId: targetTransactionId,
     documentId: result.data.id,
     documentName: result.data.name,
+    documentType: normalizedDocumentType,
     category: result.data.category || category || 'General',
     requiredDocumentKey,
     actorRole: normalizeExternalAccessRoleToTransactionRole(access.role),
@@ -35049,6 +36199,7 @@ export async function uploadDocument({
     transactionId,
     documentId: result.data.id,
     documentName: result.data.name,
+    documentType: normalizedDocumentType,
     category: result.data.category || category || 'General',
     requiredDocumentKey: linkedRequiredDocumentKey,
     canonicalRequirementInstanceId: linkedCanonicalRequirementInstanceId,
@@ -35091,6 +36242,49 @@ export async function reviewCanonicalDocumentRequirement({
 
   if (rpc.error) {
     throw rpc.error
+  }
+
+  if (documentId) {
+    const documentLookup = await client
+      .from('documents')
+      .select('id, transaction_id, document_type, category, name')
+      .eq('id', documentId)
+      .maybeSingle()
+
+    if (documentLookup.error && !isMissingTableError(documentLookup.error, 'documents')) {
+      throw documentLookup.error
+    }
+
+    const reviewedDocument = documentLookup.data || null
+    if (reviewedDocument?.transaction_id) {
+      const evidenceKey =
+        reviewedDocument.document_type ||
+        reviewedDocument.category ||
+        reviewedDocument.name ||
+        null
+
+      if (evidenceKey) {
+        await processWorkflowEvidenceIfPossible(client, {
+          transactionId: reviewedDocument.transaction_id,
+          evidenceType: 'document',
+          evidenceId: reviewedDocument.id,
+          evidenceKey,
+          status:
+            normalizedAction === 'approve'
+              ? 'approved'
+              : normalizedAction === 'reject'
+                ? 'rejected'
+                : 'removed',
+          source: 'canonical_document_review',
+          createdBy: activeProfile.userId || null,
+          payload: {
+            requirementInstanceId,
+            reviewAction: normalizedAction,
+            reviewResult: rpc.data || null,
+          },
+        })
+      }
+    }
   }
 
   return rpc.data || null

@@ -9,6 +9,7 @@ import {
   isMissingTableError,
   requireClient,
 } from './attorneyFirmServiceShared'
+import { processWorkflowEvidence } from '../../server/services/workflowEvidenceMapper.js'
 
 const WARNING_PREFIX = '[operational-checklist]'
 const LEGACY_TRANSFER_STEP_ALIASES = {
@@ -80,6 +81,66 @@ function parseOperationalDedupeKey(value = '') {
     lane: parts[1] || '',
     stepKey: parts[2] || '',
     ownerRole: parts[3] || '',
+  }
+}
+
+function resolveWorkflowEvidenceKeyFromChecklist({ parsed = null, definition = null, payload = {} } = {}) {
+  const explicitKey = String(payload.evidenceKey || payload.evidence_key || '').trim().toLowerCase()
+  if (explicitKey) return explicitKey
+
+  const completionEventType = String(definition?.completionEventType || payload?.completionEventType || '').trim().toLowerCase()
+  const eventMap = {
+    finance_ready_for_transfer: 'ready_for_transfer',
+    lodgement_submitted: 'lodgement_confirmed',
+    agent_onboarding_confirmed: 'buyer_onboarding_complete',
+    agent_otp_confirmed: 'signed_otp',
+    bond_registered: 'registration_confirmation',
+  }
+  if (eventMap[completionEventType]) return eventMap[completionEventType]
+
+  const lane = toLower(parsed?.lane)
+  const stepKey = toLower(parsed?.stepKey)
+  if (lane === 'transfer' && stepKey === 'transfer_documents_prepared') return 'transfer_documents_prepared'
+  if (lane === 'transfer' && ['buyer_signed_transfer_documents', 'seller_signed_transfer_documents'].includes(stepKey)) return 'transfer_signatures_complete'
+  if (lane === 'transfer' && ['rates_clearance_uploaded', 'levy_clearance_uploaded'].includes(stepKey)) return 'transfer_clearance_complete'
+  if (lane === 'transfer' && stepKey === 'lodgement_submitted') return 'lodgement_confirmed'
+  if (lane === 'finance' && stepKey === 'ready_for_transfer') return 'ready_for_transfer'
+  if (lane === 'agent_oversight' && stepKey === 'onboarding_completed') return 'buyer_onboarding_complete'
+  if (lane === 'agent_oversight' && stepKey === 'otp_signed') return 'signed_otp'
+
+  return ''
+}
+
+async function processChecklistEvidenceIfPossible(client, item, { parsed = null, definition = null, status = '', payload = {} } = {}) {
+  const evidenceKey = resolveWorkflowEvidenceKeyFromChecklist({ parsed, definition, payload })
+  if (!item?.transactionId || !item?.id || !evidenceKey) return null
+
+  try {
+    return await processWorkflowEvidence({
+      transactionId: item.transactionId,
+      evidenceType: 'checklist_item',
+      evidenceId: item.id,
+      evidenceKey,
+      status,
+      source: payload?.source || 'operational_checklist',
+      payload: {
+        checklistLabel: item.label,
+        lane: parsed?.lane || item.stage,
+        stepKey: parsed?.stepKey || '',
+      },
+      client,
+    })
+  } catch (error) {
+    if (
+      isMissingTableError(error, 'transaction_workflow_instances') ||
+      isMissingTableError(error, 'transaction_workflow_steps') ||
+      isMissingTableError(error, 'transaction_workflow_evidence') ||
+      isMissingTableError(error, 'transaction_rollups')
+    ) {
+      console.warn(WARNING_PREFIX, 'Skipping canonical workflow evidence processing for checklist item', error)
+      return null
+    }
+    throw error
   }
 }
 
@@ -922,6 +983,15 @@ export async function completeOperationalChecklistItem(itemId, payload = {}) {
     },
     visibilityScope: definition?.clientVisible ? 'client_visible' : 'internal',
   })
+  await processChecklistEvidenceIfPossible(client, item, {
+    parsed,
+    definition,
+    status: 'completed',
+    payload: {
+      ...payload,
+      source: 'operational_checklist_completed',
+    },
+  })
 
   return (await fetchChecklistItemById(client, itemId)) || item
 }
@@ -929,6 +999,11 @@ export async function completeOperationalChecklistItem(itemId, payload = {}) {
 export async function blockOperationalChecklistItem(itemId, reason = '') {
   const client = requireClient()
   if (!itemId) throw new Error('Checklist item id is required.')
+
+  const item = await fetchChecklistItemById(client, itemId)
+  if (!item) {
+    throw new Error('Checklist item not found.')
+  }
 
   const now = nowIso()
   const update = await client
@@ -943,6 +1018,18 @@ export async function blockOperationalChecklistItem(itemId, reason = '') {
   if (update.error) {
     throw update.error
   }
+
+  const parsed = parseOperationalDedupeKey(item.autoRuleKey || '')
+  const definition = parsed ? getOperationalStepDefinition(parsed.lane, parsed.stepKey) : null
+  await processChecklistEvidenceIfPossible(client, item, {
+    parsed,
+    definition,
+    status: 'blocked',
+    payload: {
+      source: 'operational_checklist_blocked',
+      reason,
+    },
+  })
 
   return fetchChecklistItemById(client, itemId)
 }

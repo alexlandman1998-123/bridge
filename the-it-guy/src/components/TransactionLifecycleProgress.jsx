@@ -38,9 +38,12 @@ function TransactionLifecycleProgress({
   const currentStageLabel = TRANSACTION_LIFECYCLE_STAGE_LABELS[lifecycleSummary.currentStage] || 'Confirmed'
   const currentIndex = Math.max(TRANSACTION_LIFECYCLE_STAGE_ORDER.indexOf(lifecycleSummary.currentStage), 0)
   const progressPercent =
-    TRANSACTION_LIFECYCLE_STAGE_ORDER.length > 1
-      ? Math.round((currentIndex / (TRANSACTION_LIFECYCLE_STAGE_ORDER.length - 1)) * 100)
-      : 0
+    Number.isFinite(Number(lifecycleSummary?.progressPercent))
+      ? Number(lifecycleSummary.progressPercent)
+      : TRANSACTION_LIFECYCLE_STAGE_ORDER.length > 1
+        ? Math.round((currentIndex / (TRANSACTION_LIFECYCLE_STAGE_ORDER.length - 1)) * 100)
+        : 0
+  const blockersByStage = lifecycleSummary?.blockersByStage || buildBlockersByStage(lifecycleSummary)
   const fallbackHelper = lifecycleSummary.subStatus?.label
     ? `Sub-status: ${lifecycleSummary.subStatus.label}`
     : `Current stage: ${currentStageLabel}`
@@ -70,7 +73,7 @@ function TransactionLifecycleProgress({
         premium={premium}
         showCurrentSummary={!showHeader}
         progressPercent={progressPercent}
-        blockersByStage={buildBlockersByStage(lifecycleSummary)}
+        blockersByStage={blockersByStage}
         helperText={helperText || fallbackHelper}
         lastUpdatedLabel={lifecycleSummary.lastUpdatedAt ? `Updated ${new Date(lifecycleSummary.lastUpdatedAt).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' })}` : ''}
         onStageClick={onStageClick}

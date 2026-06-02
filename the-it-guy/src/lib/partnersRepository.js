@@ -1254,7 +1254,7 @@ function buildInvitePayloadBase({
   })
 }
 
-export async function fetchPartnersSnapshot({ organisationId = '', workspaceType = 'agency', accessContext = {} } = {}) {
+export async function fetchPartnersSnapshot({ organisationId = '', workspaceType = 'agency', accessContext = {}, includeDirectory = true } = {}) {
   const scopedOrganisationId = normalizeText(organisationId)
   if (PARTNERS_DEMO_MODE || !isSupabaseConfigured || !supabase || !scopedOrganisationId) {
     return {
@@ -1264,7 +1264,7 @@ export async function fetchPartnersSnapshot({ organisationId = '', workspaceType
   }
 
   try {
-    const [relationshipResult, invitationResult, referralResult] = await Promise.all([
+    const queries = [
       fetchRelationshipRows(scopedOrganisationId),
       fetchInvitationRows(scopedOrganisationId),
       supabase
@@ -1272,9 +1272,22 @@ export async function fetchPartnersSnapshot({ organisationId = '', workspaceType
         .select('id, referring_organisation_id, referred_organisation_id, transaction_id, referral_status, referral_date, referral_value')
         .or(`referring_organisation_id.eq.${scopedOrganisationId},referred_organisation_id.eq.${scopedOrganisationId}`)
         .order('referral_date', { ascending: false }),
-    ])
+    ]
 
-    const firstError = [referralResult].find((result) => result.error)?.error
+    if (includeDirectory) {
+      queries.push(
+        supabase
+          .from('organisations')
+          .select(ORGANISATION_DIRECTORY_SELECT)
+          .neq('id', scopedOrganisationId)
+          .neq('discovery_visibility', 'hidden')
+          .order('display_name', { ascending: true }),
+      )
+    }
+
+    const [relationshipResult, invitationResult, referralResult, organisationsResult = null] = await Promise.all(queries)
+
+    const firstError = [referralResult, organisationsResult].find((result) => result?.error)?.error
     if (firstError) {
       if (isRecoverablePartnerSchemaError(firstError)) {
         return {
@@ -1290,14 +1303,15 @@ export async function fetchPartnersSnapshot({ organisationId = '', workspaceType
     }
 
     const referralRows = referralResult.data || []
-    const relatedOrganisationIds = [
-      ...(relationshipResult || []).flatMap((row) => [row.organisation_id || row.organisationId, row.partner_organisation_id || row.partnerOrganisationId]),
-      ...(invitationResult || []).flatMap((row) => [row.sender_organisation_id || row.senderOrganisationId, row.recipient_organisation_id || row.recipientOrganisationId]),
-      ...referralRows.flatMap((row) => [row.referring_organisation_id || row.referringOrganisationId, row.referred_organisation_id || row.referredOrganisationId]),
-    ]
-    const organisations = (await fetchOrganisationsByIds(relatedOrganisationIds))
-      .filter((row) => normalizeText(row.id) !== scopedOrganisationId)
-      .map(mapOrganisation)
+    const organisations = includeDirectory
+      ? (organisationsResult?.data || []).map(mapOrganisation)
+      : (await fetchOrganisationsByIds([
+          ...(relationshipResult || []).flatMap((row) => [row.organisation_id || row.organisationId, row.partner_organisation_id || row.partnerOrganisationId]),
+          ...(invitationResult || []).flatMap((row) => [row.sender_organisation_id || row.senderOrganisationId, row.recipient_organisation_id || row.recipientOrganisationId]),
+          ...referralRows.flatMap((row) => [row.referring_organisation_id || row.referringOrganisationId, row.referred_organisation_id || row.referredOrganisationId]),
+        ]))
+          .filter((row) => normalizeText(row.id) !== scopedOrganisationId)
+          .map(mapOrganisation)
     const invitations = enrichInvitations(invitationResult || [], organisations)
     const relationships = enrichRelationships(
       filterPartnerRelationshipsByScope(
@@ -1320,7 +1334,7 @@ export async function fetchPartnersSnapshot({ organisationId = '', workspaceType
       invitations,
       referrals,
       metrics: buildMetrics({ relationships, referrals }),
-      directoryHydrated: false,
+      directoryHydrated: includeDirectory,
     }
   } catch (error) {
     if (isRecoverablePartnerSchemaError(error)) {

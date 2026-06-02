@@ -389,11 +389,11 @@ const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_LEGACY =
 const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_MIN =
   'id, private_listing_id, requirement_key, status, is_required, created_at, updated_at'
 const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS =
-  'id, private_listing_id, requirement_id, document_type, category, document_name, storage_path, file_url, uploaded_by, status, visibility, canonical_requirement_instance_id, uploaded_at, created_at, updated_at'
+  'id, private_listing_id, requirement_id, document_type, category, document_name, storage_path, file_url, uploaded_by, status, visibility, canonical_requirement_instance_id, pending_transaction_promotion, promoted_transaction_id, promoted_document_id, uploaded_at, created_at, updated_at'
 const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_LEGACY =
-  'id, private_listing_id, requirement_id, document_type, document_name, status, uploaded_at, created_at'
+  'id, private_listing_id, requirement_id, document_type, document_name, status, pending_transaction_promotion, promoted_transaction_id, promoted_document_id, uploaded_at, created_at'
 const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_MIN =
-  'id, private_listing_id, requirement_id, document_type, document_name, status, uploaded_at, created_at'
+  'id, private_listing_id, requirement_id, document_type, document_name, status, pending_transaction_promotion, promoted_transaction_id, promoted_document_id, uploaded_at, created_at'
 const PRIVATE_LISTING_REQUIREMENT_SELECT_VARIANTS = [
   PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS,
   PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_LEGACY,
@@ -549,6 +549,9 @@ function normalizeDocumentRows(rows = []) {
       status: normalizeText(row?.status || 'uploaded'),
       visibility: normalizeText(row?.visibility || row?.document_visibility || 'seller_visible'),
       canonical_requirement_instance_id: normalizeText(row?.canonical_requirement_instance_id || ''),
+      pending_transaction_promotion: Boolean(row?.pending_transaction_promotion),
+      promoted_transaction_id: normalizeText(row?.promoted_transaction_id || ''),
+      promoted_document_id: normalizeText(row?.promoted_document_id || ''),
       uploaded_at: normalizeText(row?.uploaded_at || ''),
       created_at: row?.created_at || null,
       updated_at: row?.updated_at || row?.created_at || null,
@@ -2870,6 +2873,8 @@ export async function uploadSellerClientPortalDocument({
     p_storage_path: filePath,
     p_file_url: null,
     p_document_type: normalizedDocumentType,
+    p_canonical_requirement_instance_id: canonicalRequirementInstanceId || null,
+    p_category: category || 'Seller Document',
   })
 
   if (rpc.error && !isMissingRpcError(rpc.error, 'bridge_upload_private_listing_seller_document')) {
@@ -2882,6 +2887,11 @@ export async function uploadSellerClientPortalDocument({
       ? normalizeDocumentRows([rpc.data.document])[0] || null
       : null
   }
+  const promotedSharedDocument = rpc.data?.shared_document && typeof rpc.data.shared_document === 'object'
+    ? rpc.data.shared_document
+    : null
+  const pendingTransactionPromotion = Boolean(rpc.data?.pending_transaction_promotion)
+  const promotedTransactionId = normalizeText(rpc.data?.transaction_id || '')
 
   if (!documentRow) {
     const insertPayload = {
@@ -2948,6 +2958,11 @@ export async function uploadSellerClientPortalDocument({
     requirementId: documentRow?.requirement_id || matchedRequirement?.id || null,
     requirementKey: normalizedRequirementKey || matchedRequirement?.requirement_key || null,
     canonicalRequirementInstanceId: canonicalRequirementInstanceId || null,
+    pendingTransactionPromotion,
+    transactionId: promotedTransactionId || null,
+    sharedDocumentId: promotedSharedDocument?.id || documentRow?.promoted_document_id || null,
+    promotedDocumentId: promotedSharedDocument?.id || documentRow?.promoted_document_id || null,
+    sharedDocument: promotedSharedDocument,
   }
 }
 

@@ -591,6 +591,7 @@ export default function PartnersPage() {
         organisationId,
         workspaceType: resolvedWorkspaceType,
         accessContext,
+        includeDirectory: false,
       })
       setSnapshot(nextSnapshot)
     } catch (loadError) {

@@ -58,6 +58,7 @@ import {
   resendTransactionDocumentRequest,
   updateTransactionDocumentRequestStatus,
   buildWorkflowStepComment,
+  getTransactionRollup,
   fetchUnitDetail,
   fetchUnitWorkspaceShell,
   parseWorkflowStepComment,
@@ -71,6 +72,7 @@ import {
   markFinanceInstructionSent,
   updateBondApplication,
   updateBondHybridFinanceStage,
+  runWorkflowAction,
   updateTransactionMainStage,
   updateDocumentClientVisibility,
   updateOtpDocumentWorkflowState,
@@ -86,6 +88,11 @@ import { getPurchaserTypeOptions, getPurchaserTypeLabel, normalizePurchaserType 
 import { getRequiredBuyerDocuments } from '../lib/buyerRequirementEngine'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { resolveFinanceWorkflowSnapshot } from '../core/transactions/financeWorkflow'
+import {
+  buildTransactionLifecycleSummaryFromRollup,
+  formatTransactionRollupStatusLabel,
+  USE_TRANSACTION_ROLLUP_OVERVIEW,
+} from '../core/transactions/transactionLifecycle'
 import { OTP_DOCUMENT_TYPES, resolveSalesWorkflowSnapshot } from '../core/transactions/salesWorkflow'
 import { resolveBondWorkflowSnapshot } from '../core/transactions/bondWorkflow'
 import { resolveTransferWorkflowSnapshot } from '../core/transactions/transferWorkflow'
@@ -829,6 +836,79 @@ function getHealthSummary({ progressPercent = 0, totalSteps = 0, completedSteps 
     title: 'Status: At Risk',
     detail: 'Limited workflow completion detected. Immediate operational follow-through is required.',
   }
+}
+
+function getRollupHealthLabel(parentStatus = '') {
+  const normalized = String(parentStatus || '').trim().toLowerCase()
+  if (normalized === 'blocked') return 'Blocked'
+  if (normalized === 'ready_for_handoff') return 'Ready'
+  if (normalized === 'complete') return 'Complete'
+  if (normalized === 'not_started') return 'Waiting'
+  return 'In Progress'
+}
+
+function getRollupMatterHealthTone(parentStatus = '') {
+  const normalized = String(parentStatus || '').trim().toLowerCase()
+  if (normalized === 'blocked') return 'border-[#f5d7bc] bg-[#fff7ed] text-[#b85d12]'
+  if (normalized === 'ready_for_handoff' || normalized === 'complete') {
+    return 'border-[#cfe8d8] bg-[#effaf3] text-[#197a45]'
+  }
+  if (normalized === 'not_started') return 'border-[#d9e3ee] bg-[#f7fafc] text-[#60758c]'
+  return 'border-[#d9e3ee] bg-[#f7fafc] text-[#35546c]'
+}
+
+function getRollupOverviewTarget(action = {}, rollup = null) {
+  const actionKey = String(action?.actionKey || '').trim().toLowerCase()
+  if (actionKey === 'move_to_finance') return 'documents'
+  if (actionKey === 'move_to_transfer') return 'financials'
+  if (actionKey === 'mark_ready_for_registration' || actionKey === 'mark_registered') return 'transfer'
+
+  const workflowKey = String(action?.workflowKey || rollup?.activeWorkflowKey || '').trim().toLowerCase()
+  if (workflowKey === 'sales_otp') return 'documents'
+  if (workflowKey.startsWith('finance')) return 'financials'
+  if (workflowKey === 'registration') return 'transfer'
+  if (workflowKey.includes('transfer') || workflowKey.includes('attorney') || workflowKey.includes('cancellation')) {
+    return 'transfer'
+  }
+  return 'overview'
+}
+
+function buildOverviewActionFromRollup(rollup = null, transaction = null) {
+  const primaryAction =
+    (rollup?.availableActions || []).find((item) => item?.enabled) ||
+    (rollup?.availableActions || [])[0] ||
+    null
+
+  return {
+    title:
+      primaryAction?.label ||
+      rollup?.nextAction?.label ||
+      `Review ${String(rollup?.parentStage || 'workflow').replaceAll('_', ' ')}`,
+    description:
+      primaryAction?.reason ||
+      rollup?.blockers?.[0]?.message ||
+      (rollup?.nextAction?.label
+        ? `Current workflow: ${rollup.nextAction.label}.`
+        : 'Review transaction progress.'),
+    dueLabel:
+      transaction?.expected_transfer_date ||
+      transaction?.target_registration_date ||
+      rollup?.derivedAt ||
+      transaction?.updated_at ||
+      transaction?.created_at ||
+      null,
+    priority: String(rollup?.parentStatus || '').trim().toLowerCase() === 'blocked' ? 'High' : 'Normal',
+    statusLabel: formatTransactionRollupStatusLabel(rollup?.parentStatus),
+    primaryAction,
+  }
+}
+
+function getRollupHeaderActionVariant(action = {}) {
+  const groupKey = String(action?.groupKey || '').trim().toLowerCase()
+  if (groupKey === 'stage' || groupKey === 'finance' || groupKey === 'attorney') {
+    return 'primary'
+  }
+  return 'secondary'
 }
 
 const TRANSACTION_REPORT_WORKFLOW_ROW_LIMIT = 5
@@ -2230,6 +2310,8 @@ function UnitDetail() {
   const [sendingClientPortalLink, setSendingClientPortalLink] = useState(false)
   const [onboardingLinkCopied, setOnboardingLinkCopied] = useState(false)
   const [clientPortalLinkCopied, setClientPortalLinkCopied] = useState(false)
+  const [transactionRollup, setTransactionRollup] = useState(null)
+  const [transactionRollupError, setTransactionRollupError] = useState('')
   const [deletingTransaction, setDeletingTransaction] = useState(false)
   const [deleteTransactionConfirmOpen, setDeleteTransactionConfirmOpen] = useState(false)
   const [archivingTransaction, setArchivingTransaction] = useState(false)
@@ -2488,6 +2570,36 @@ function UnitDetail() {
   }, [detail])
 
   useEffect(() => {
+    let active = true
+
+    async function loadTransactionRollupState() {
+      const transactionId = String(detail?.transaction?.id || '').trim()
+      if (!USE_TRANSACTION_ROLLUP_OVERVIEW || !transactionId) {
+        if (!active) return
+        setTransactionRollup(null)
+        setTransactionRollupError('')
+        return
+      }
+
+      try {
+        const rollup = await getTransactionRollup(transactionId, { actorRole: actingRole })
+        if (!active) return
+        setTransactionRollup(rollup)
+        setTransactionRollupError('')
+      } catch (rollupError) {
+        if (!active) return
+        setTransactionRollup(null)
+        setTransactionRollupError(rollupError?.message || 'Unable to load transaction roll-up.')
+      }
+    }
+
+    void loadTransactionRollupState()
+    return () => {
+      active = false
+    }
+  }, [actingRole, detail?.transaction?.current_main_stage, detail?.transaction?.id, detail?.transaction?.stage, detail?.transaction?.updated_at])
+
+  useEffect(() => {
     function onTransactionCreated(event) {
       const createdUnitId = event?.detail?.unitId
       if (!createdUnitId || createdUnitId === unitId) {
@@ -2633,6 +2745,40 @@ function UnitDetail() {
     }
 
     return null
+  }
+
+  async function handleOverviewWorkflowAction(action = null) {
+    const actionKey = String(action?.actionKey || '').trim()
+    if (!detail?.transaction?.id || !actionKey) return
+
+    try {
+      setSaving(true)
+      setError('')
+      const result = await runWorkflowAction({
+        transactionId: detail.transaction.id,
+        actionKey,
+        payload: { source: 'rollup_overview' },
+        actorRole: actingRole,
+      })
+      if (!result?.allowed) {
+        throw new Error((result?.blockers || []).map((item) => item.message).filter(Boolean).join(' • ') || 'Workflow action is blocked.')
+      }
+      await loadDetail()
+      if (USE_TRANSACTION_ROLLUP_OVERVIEW) {
+        try {
+          const refreshedRollup = await getTransactionRollup(detail.transaction.id, { actorRole: actingRole })
+          setTransactionRollup(refreshedRollup)
+          setTransactionRollupError('')
+        } catch (rollupError) {
+          setTransactionRollup(null)
+          setTransactionRollupError(rollupError?.message || 'Unable to load transaction roll-up.')
+        }
+      }
+    } catch (actionError) {
+      setError(actionError?.message || 'Unable to run workflow action.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function postSystemDiscussionUpdates(messages = []) {
@@ -3971,31 +4117,37 @@ function UnitDetail() {
       setSalesActionLoading('move_ready_for_finance')
       setError('')
 
-      const result = await updateTransactionMainStage({
+      const result = await runWorkflowAction({
         transactionId: transaction.id,
-        unitId: unit.id,
-        mainStage: 'FIN',
-        note: 'Sales workflow complete and ready for finance.',
         actorRole: effectiveEditorRole,
+        actionKey: 'MOVE_TO_FINANCE',
+        payload: {
+          note: 'Sales workflow complete and ready for finance.',
+          source: 'workspace_button',
+        },
       })
+
+      if (!result?.allowed) {
+        throw new Error((result?.blockers || []).map((item) => item.message).filter(Boolean).join(' • ') || 'Unable to move transaction to finance.')
+      }
 
       setDetail((previous) => {
         if (!previous) return previous
         return {
           ...previous,
-          mainStage: result.nextMainStage,
-          stage: result.nextStage,
+          mainStage: result.compatibility?.current_main_stage || previous.mainStage,
+          stage: result.compatibility?.stage || previous.stage,
           transaction: previous.transaction
             ? {
                 ...previous.transaction,
-                stage: result.nextStage,
-                current_main_stage: result.nextMainStage,
+                stage: result.compatibility?.stage || previous.transaction.stage,
+                current_main_stage: result.compatibility?.current_main_stage || previous.transaction.current_main_stage,
                 updated_at: new Date().toISOString(),
               }
             : previous.transaction,
         }
       })
-      setStageForm((previous) => ({ ...previous, main_stage: 'FIN' }))
+      setStageForm((previous) => ({ ...previous, main_stage: result.compatibility?.current_main_stage || 'FIN' }))
 
       await postSystemDiscussionUpdates([
         `Sales workflow updated: Ready for Finance confirmed by ${resolveActingParticipantName()} at ${formatDateTime(new Date().toISOString())}.`,
@@ -4097,31 +4249,37 @@ function UnitDetail() {
       setFinanceActionLoading('move_ready_for_transfer')
       setError('')
 
-      const result = await updateTransactionMainStage({
+      const result = await runWorkflowAction({
         transactionId: transaction.id,
-        unitId: unit.id,
-        mainStage: 'ATTY',
-        note: 'Finance workflow complete and ready for transfer.',
         actorRole: effectiveEditorRole,
+        actionKey: 'MOVE_TO_TRANSFER',
+        payload: {
+          note: 'Finance workflow complete and ready for transfer.',
+          source: 'workspace_button',
+        },
       })
+
+      if (!result?.allowed) {
+        throw new Error((result?.blockers || []).map((item) => item.message).filter(Boolean).join(' • ') || 'Unable to move transaction to transfer.')
+      }
 
       setDetail((previous) => {
         if (!previous) return previous
         return {
           ...previous,
-          mainStage: result.nextMainStage,
-          stage: result.nextStage,
+          mainStage: result.compatibility?.current_main_stage || previous.mainStage,
+          stage: result.compatibility?.stage || previous.stage,
           transaction: previous.transaction
             ? {
                 ...previous.transaction,
-                stage: result.nextStage,
-                current_main_stage: result.nextMainStage,
+                stage: result.compatibility?.stage || previous.transaction.stage,
+                current_main_stage: result.compatibility?.current_main_stage || previous.transaction.current_main_stage,
                 updated_at: new Date().toISOString(),
               }
             : previous.transaction,
         }
       })
-      setStageForm((previous) => ({ ...previous, main_stage: 'ATTY' }))
+      setStageForm((previous) => ({ ...previous, main_stage: result.compatibility?.current_main_stage || 'TRANSFER' }))
 
       const financeHandoffEvent = buildWorkflowActivityEvent({
         laneLabel: 'Finance Workflow',
@@ -4208,7 +4366,7 @@ function UnitDetail() {
       })
       const systemNotes = [transferStageEvent.message]
 
-      if (currentStep.step_key === 'registration_confirmed' && mainStage !== 'REG') {
+      if (currentStep.step_key === 'registration_confirmed' && !['REG', 'REGISTRATION', 'COMPLETE'].includes(mainStage)) {
         const stageResult = await updateTransactionMainStage({
           transactionId: transaction.id,
           unitId: unit.id,
@@ -4233,7 +4391,7 @@ function UnitDetail() {
               : previous.transaction,
           }
         })
-        setStageForm((previous) => ({ ...previous, main_stage: 'REG' }))
+        setStageForm((previous) => ({ ...previous, main_stage: 'REGISTRATION' }))
         const registrationEvent = buildWorkflowActivityEvent({
           laneLabel: 'Transfer Workflow',
           stageLabel: 'Registration Confirmed',
@@ -4560,7 +4718,7 @@ function UnitDetail() {
     onboardingFormData,
   } = detail
 
-  const isRegisteredUnit = mainStage === 'REG' || /registered/i.test(String(stage || ''))
+  const isRegisteredUnit = ['REG', 'REGISTRATION', 'COMPLETE'].includes(mainStage) || /registered|complete/i.test(String(stage || ''))
   const elevatedWorkspaceRoles = ['developer', 'internal_admin', 'agent', 'attorney']
   const hasWorkspaceEditOverride = elevatedWorkspaceRoles.includes(workspaceRole)
   const effectiveEditorRole = hasWorkspaceEditOverride ? workspaceRole : actingRole
@@ -4618,6 +4776,11 @@ function UnitDetail() {
       ? 'Onboarding sent'
       : 'Onboarding not sent'
   const alterationTotalAmount = (alterationRequests || []).reduce((sum, request) => sum + (Number(request.amount_inc_vat) || 0), 0)
+  const rollupLifecycleSummary = buildTransactionLifecycleSummaryFromRollup(transactionRollup, {
+    transactionId: transaction?.id,
+    fallbackUpdatedAt: transaction?.updated_at || transaction?.created_at || null,
+  })
+  const usingTransactionRollupOverview = USE_TRANSACTION_ROLLUP_OVERVIEW && Boolean(rollupLifecycleSummary)
 
   async function handleCreateAlteration(payload) {
     if (!transaction?.id || !unit) {
@@ -4852,7 +5015,7 @@ function UnitDetail() {
     if (financeLabel === 'cash') {
       return 'Cash Purchase'
     }
-    if (['ATTY', 'XFER', 'REG'].includes(mainStage) || stage === 'Bond Approved / Proof of Funds') {
+    if (['ATTY', 'XFER', 'REG', 'TRANSFER', 'REGISTRATION', 'COMPLETE'].includes(mainStage) || stage === 'Bond Approved / Proof of Funds') {
       return 'Bond Approved'
     }
     if (mainStage === 'FIN') {
@@ -5238,6 +5401,67 @@ function UnitDetail() {
       ? targetRegistrationLabel
       : 'No due date'
   const nextActionPriority = matterHealthLabel === 'Attention' ? 'High' : matterHealthLabel === 'Waiting' ? 'Medium' : 'Normal'
+  const rollupOverviewAction = usingTransactionRollupOverview
+    ? buildOverviewActionFromRollup(transactionRollup, transaction)
+    : null
+  const displayedMatterHealthLabel = usingTransactionRollupOverview
+    ? getRollupHealthLabel(transactionRollup?.parentStatus)
+    : matterHealthLabel
+  const displayedMatterHealthTone = usingTransactionRollupOverview
+    ? getRollupMatterHealthTone(transactionRollup?.parentStatus)
+    : matterHealthTone
+  const displayedLatestUpdatedLabel = usingTransactionRollupOverview
+    ? formatDateTime(
+        transactionRollup?.derivedAt ||
+          transactionRollup?.lastWorkflowUpdatedAt ||
+          transaction?.updated_at ||
+          transaction?.created_at,
+      )
+    : latestUpdatedLabel
+  const displayedNextActionTitle = usingTransactionRollupOverview
+    ? rollupOverviewAction?.title || nextActionTitle
+    : nextActionTitle
+  const displayedNextActionDescription = usingTransactionRollupOverview
+    ? rollupOverviewAction?.description || nextActionDescription
+    : nextActionDescription
+  const displayedNextActionDueLabel = usingTransactionRollupOverview
+    ? formatDate(rollupOverviewAction?.dueLabel)
+    : nextActionDueLabel
+  const displayedNextActionPriority = usingTransactionRollupOverview
+    ? rollupOverviewAction?.priority || nextActionPriority
+    : nextActionPriority
+  const displayedNextActionStatus = usingTransactionRollupOverview
+    ? rollupOverviewAction?.statusLabel || displayedMatterHealthLabel
+    : displayedMatterHealthLabel
+  const workflowHeaderActions = usingTransactionRollupOverview
+    ? (transactionRollup?.availableActions || [])
+      .filter((action) =>
+        ['request_buyer_details', 'move_to_finance', 'move_to_transfer', 'mark_ready_for_registration', 'mark_registered']
+          .includes(String(action?.actionKey || '').trim().toLowerCase()),
+      )
+      .map((action) => {
+        const actionKey = String(action?.actionKey || '').trim().toLowerCase()
+        const busy =
+          actionKey === 'request_buyer_details'
+            ? sendingOnboardingEmail
+            : false
+        let onClick = () => void handleOverviewWorkflowAction(action)
+        if (actionKey === 'request_buyer_details') {
+          onClick = () => void handleSendOnboardingEmail({ resend: onboardingEmailSent })
+        }
+
+        return {
+          id: `workflow-${action.actionKey}`,
+          label: action.label,
+          variant: getRollupHeaderActionVariant(action),
+          disabled: busy || action?.enabled === false,
+          reason: action?.reason || '',
+          onClick,
+          busy,
+          busyLabel: actionKey === 'request_buyer_details' ? 'Sending buyer details request...' : undefined,
+        }
+      })
+    : []
   const agentMetricCards = isBondOrHybridFinance
     ? [
         { label: 'Finance Type', value: activeFinanceType === 'combination' ? 'Hybrid' : 'Bond', subtext: 'Bond / Hybrid', icon: Landmark },
@@ -5494,6 +5718,13 @@ function UnitDetail() {
     })
   }
 
+  const filteredWorkspaceHeaderActionItems = usingTransactionRollupOverview
+    ? workspaceHeaderActionItems.filter(
+        (item) =>
+          !['send-onboarding', 'resend-onboarding', 'resend-client-portal-link', 'copy-onboarding-link'].includes(item?.id),
+      )
+    : workspaceHeaderActionItems
+
   const workspaceHeaderActions = [
     ...(onboardingComplete
       ? [{
@@ -5510,7 +5741,7 @@ function UnitDetail() {
       icon: 'menu',
       type: 'menu',
       className: 'min-w-[156px]',
-      items: workspaceHeaderActionItems.filter((item) => item && !item.hidden),
+      items: filteredWorkspaceHeaderActionItems.filter((item) => item && !item.hidden),
     },
   ]
   const visibleWorkspaceHeaderActions = workspaceHeaderActions.filter((action) => action && !action.hidden)
@@ -5532,7 +5763,7 @@ function UnitDetail() {
               Transaction Command Center
             </span>
             <span className="inline-flex items-center rounded-full border border-[#cfe1d8] bg-[#effaf3] px-3 py-1 text-xs font-semibold text-[#197a45]">
-              {mainStageLabel || 'Active'}
+              {usingTransactionRollupOverview ? formatTransactionRollupStatusLabel(transactionRollup?.parentStatus) : (mainStageLabel || 'Active')}
             </span>
           </div>
 
@@ -5540,9 +5771,9 @@ function UnitDetail() {
             <h1 className="text-[2rem] font-semibold leading-none tracking-[-0.05em] text-[#142132] md:text-[2.35rem]">
               {transactionReference}
             </h1>
-            <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${matterHealthTone}`}>
+            <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${displayedMatterHealthTone}`}>
               <HeartPulse size={13} />
-              {matterHealthLabel}
+              {displayedMatterHealthLabel}
             </span>
           </div>
 
@@ -5557,7 +5788,7 @@ function UnitDetail() {
               { label: 'Assigned Agent', value: assignedAgentDisplayName, icon: Building2 },
               { label: 'Transfer Attorney', value: transferAttorneyDisplayName, icon: Scale },
               { label: 'Bond Attorney', value: bondAttorneyDisplayName, icon: Landmark },
-              { label: 'Last Updated', value: latestUpdatedLabel, icon: Clock3 },
+              { label: 'Last Updated', value: displayedLatestUpdatedLabel, icon: Clock3 },
             ].map((item) => {
               const Icon = item.icon
               return (
@@ -5579,15 +5810,42 @@ function UnitDetail() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7c8ea4]">Matter Health</span>
-              <strong className="mt-1.5 block text-[1.35rem] font-semibold tracking-[-0.035em] text-[#142132]">{matterHealthLabel}</strong>
+              <strong className="mt-1.5 block text-[1.35rem] font-semibold tracking-[-0.035em] text-[#142132]">{displayedMatterHealthLabel}</strong>
               <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                {formatTransactionAge(transaction?.created_at || transaction?.updated_at)} • Updated {formatDate(transaction?.updated_at || transaction?.created_at)}
+                {formatTransactionAge(transaction?.created_at || transaction?.updated_at)} • Updated {formatDate(transactionRollup?.derivedAt || transaction?.updated_at || transaction?.created_at)}
               </p>
             </div>
-            <span className={`inline-flex h-10 w-10 items-center justify-center rounded-[14px] border ${matterHealthTone}`}>
+            <span className={`inline-flex h-10 w-10 items-center justify-center rounded-[14px] border ${displayedMatterHealthTone}`}>
               <HeartPulse size={18} />
             </span>
           </div>
+
+          {workflowHeaderActions.length ? (
+            <div className="mt-4 grid gap-2">
+              {workflowHeaderActions.map((action) => {
+                const button = (
+                  <Button
+                    type="button"
+                    variant={action.variant || 'secondary'}
+                    size="sm"
+                    className="w-full rounded-[12px]"
+                    onClick={action.onClick}
+                    disabled={Boolean(action.disabled)}
+                  >
+                    {action.busy ? action.busyLabel || 'Processing...' : action.label}
+                  </Button>
+                )
+
+                return action.reason ? (
+                  <span key={action.id || action.label} title={action.reason}>
+                    {button}
+                  </span>
+                ) : (
+                  <span key={action.id || action.label}>{button}</span>
+                )
+              })}
+            </div>
+          ) : null}
 
           {visibleWorkspaceHeaderActions.length ? (
             <div className="mt-4 grid gap-2">
@@ -5603,9 +5861,8 @@ function UnitDetail() {
                   )
                 }
 
-                return (
+                const button = (
                   <Button
-                    key={action.id || action.label}
                     type="button"
                     variant={action.variant || 'secondary'}
                     size="sm"
@@ -5615,6 +5872,14 @@ function UnitDetail() {
                   >
                     {action.label}
                   </Button>
+                )
+
+                return action.reason ? (
+                  <span key={action.id || action.label} title={action.reason}>
+                    {button}
+                  </span>
+                ) : (
+                  <span key={action.id || action.label}>{button}</span>
                 )
               })}
             </div>
@@ -5781,7 +6046,9 @@ function UnitDetail() {
           () => void handleMoveToReadyForFinance(),
           {
             variant: 'primary',
-            disabled: !salesWorkflowSnapshot.readyForFinance || mainStage === 'FIN' || mainStage === 'ATTY' || mainStage === 'XFER' || mainStage === 'REG',
+            disabled:
+              !salesWorkflowSnapshot.readyForFinance ||
+              ['FIN', 'ATTY', 'XFER', 'REG', 'TRANSFER', 'REGISTRATION', 'COMPLETE'].includes(mainStage),
           },
         )
         if (salesWorkflowSnapshot.latestSignedOtpDocument?.url) {
@@ -6017,6 +6284,7 @@ function UnitDetail() {
             {agentMetricSection}
             {workspaceNavigationSection}
             <TransactionLifecycleProgress
+              summary={usingTransactionRollupOverview ? rollupLifecycleSummary : null}
               transaction={transaction}
               mainStage={mainStage}
               subprocesses={transactionSubprocesses || []}
@@ -6024,7 +6292,11 @@ function UnitDetail() {
               compact
               premium
               helperText={
-                stageProgressModel.currentStageBlockers.length
+                usingTransactionRollupOverview
+                  ? transactionRollup?.blockers?.[0]?.message ||
+                    transactionRollup?.nextAction?.label ||
+                    `${displayedMatterHealthLabel} workflow status from the backend roll-up.`
+                  : stageProgressModel.currentStageBlockers.length
                   ? `Blockers: ${stageProgressModel.currentStageBlockers.slice(0, 2).join(' • ')}`
                   : `${mainStageLabel} is currently healthy.`
               }
@@ -6037,12 +6309,17 @@ function UnitDetail() {
             <div>
               <div className="rounded-[24px] border border-[#e5e7eb] bg-white px-4 py-5 shadow-[0_8px_18px_rgba(15,23,42,0.04)] md:px-5">
                 <TransactionLifecycleProgress
+                  summary={usingTransactionRollupOverview ? rollupLifecycleSummary : null}
                   transaction={transaction}
                   mainStage={mainStage}
                   subprocesses={transactionSubprocesses || []}
                   framed={false}
                   helperText={
-                    stageProgressModel.currentStageBlockers.length
+                    usingTransactionRollupOverview
+                      ? transactionRollup?.blockers?.[0]?.message ||
+                        transactionRollup?.nextAction?.label ||
+                        `${displayedMatterHealthLabel} workflow status from the backend roll-up.`
+                      : stageProgressModel.currentStageBlockers.length
                       ? `Blockers: ${stageProgressModel.currentStageBlockers.slice(0, 2).join(' • ')}`
                       : `${mainStageLabel} is currently healthy.`
                   }
@@ -6057,6 +6334,26 @@ function UnitDetail() {
                     Stage = macro, Progress = workflow completion
                   </span>
                 </div>
+                {usingTransactionRollupOverview && transactionRollup?.blockers?.length ? (
+                  <div className="mt-4 rounded-[14px] border border-[#f5d7bc] bg-[#fff7ed] px-4 py-3">
+                    <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#b85d12]">Workflow blockers</span>
+                    <ul className="mt-2 space-y-1 text-sm text-[#8a4b16]">
+                      {transactionRollup.blockers.slice(0, 3).map((blocker, index) => (
+                        <li key={`${blocker.code || blocker.stepKey || 'blocker'}-${index}`}>{blocker.message}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {import.meta.env.DEV && USE_TRANSACTION_ROLLUP_OVERVIEW ? (
+                  <div className="mt-4 rounded-[14px] border border-[#e5e7eb] bg-[#f8fafc] px-4 py-3 text-xs text-[#64748b]">
+                    <div>Legacy stage: {mainStageLabel}</div>
+                    <div>Roll-up stage: {transactionRollup?.parentStage || 'Unavailable'}</div>
+                    <div>Legacy progress: {stageProgressModel.totalProgressPercent || 0}%</div>
+                    <div>Roll-up progress: {transactionRollup?.progressPercent ?? 0}%</div>
+                    <div>Used fallback: {usingTransactionRollupOverview ? 'false' : 'true'}</div>
+                    {transactionRollupError ? <div>Roll-up warning: {transactionRollupError}</div> : null}
+                  </div>
+                ) : null}
               </div>
             </div>
           </section>
@@ -6116,18 +6413,18 @@ function UnitDetail() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8496ab]">Next Action</span>
-                      <h3 className="mt-2 text-[1.24rem] font-semibold tracking-[-0.035em] text-[#142132]">{nextActionTitle}</h3>
-                      <p className="mt-2 max-w-2xl text-sm leading-6 text-[#63758a]">{nextActionDescription}</p>
+                      <h3 className="mt-2 text-[1.24rem] font-semibold tracking-[-0.035em] text-[#142132]">{displayedNextActionTitle}</h3>
+                      <p className="mt-2 max-w-2xl text-sm leading-6 text-[#63758a]">{displayedNextActionDescription}</p>
                     </div>
-                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${matterHealthTone}`}>
-                      {matterHealthLabel}
+                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${displayedMatterHealthTone}`}>
+                      {displayedNextActionStatus}
                     </span>
                   </div>
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">
                     {[
-                      ['Due Date', nextActionDueLabel],
-                      ['Priority', nextActionPriority],
-                      ['Status', matterHealthLabel],
+                      ['Due Date', displayedNextActionDueLabel],
+                      ['Priority', displayedNextActionPriority],
+                      ['Status', displayedNextActionStatus],
                     ].map(([label, value]) => (
                       <article key={label} className="rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2.5">
                         <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#8496ab]">{label}</span>
@@ -6136,11 +6433,31 @@ function UnitDetail() {
                     ))}
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <Button type="button" size="sm" onClick={() => setWorkspaceMenu('transfer')}>
-                      View Action
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={saving || (usingTransactionRollupOverview && rollupOverviewAction?.primaryAction?.enabled === false)}
+                      onClick={() => (
+                        usingTransactionRollupOverview && rollupOverviewAction?.primaryAction?.actionKey
+                          ? void handleOverviewWorkflowAction(rollupOverviewAction.primaryAction)
+                          : setWorkspaceMenu('transfer')
+                      )}
+                    >
+                      {usingTransactionRollupOverview
+                        ? rollupOverviewAction?.primaryAction?.label || 'Open Workflow'
+                        : 'View Action'}
                     </Button>
-                    <Button type="button" variant="secondary" size="sm" onClick={openDocumentsWorkspace}>
-                      Open Documents
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => (
+                        usingTransactionRollupOverview
+                          ? setWorkspaceMenu(getRollupOverviewTarget(rollupOverviewAction?.primaryAction, transactionRollup))
+                          : openDocumentsWorkspace()
+                      )}
+                    >
+                      {usingTransactionRollupOverview ? 'Open Workflow' : 'Open Documents'}
                     </Button>
                   </div>
                 </section>

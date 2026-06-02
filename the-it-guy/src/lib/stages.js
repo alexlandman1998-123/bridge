@@ -21,6 +21,10 @@ export const MAIN_STAGE_LABELS = {
   ATTY: 'Transfer Preparation',
   XFER: 'Transfer',
   REG: 'Registered',
+  TRANSFER: 'Transfer',
+  REGISTRATION: 'Registration',
+  COMPLETE: 'Complete',
+  CANCELLED: 'Cancelled',
 }
 
 export const CLIENT_STAGE_EXPLAINERS = {
@@ -101,7 +105,7 @@ export const CLIENT_STAGE_EXPLAINERS = {
 }
 
 export function getClientStageExplainer(mainStage) {
-  const normalized = String(mainStage || '').toUpperCase()
+  const normalized = normalizeMainProcessStageKey(mainStage)
   return (
     CLIENT_STAGE_EXPLAINERS[normalized] || {
       stageKey: normalized || 'AVAIL',
@@ -123,6 +127,15 @@ const STAGE_ALIASES = {
   'With Attorneys': 'Proceed to Attorneys',
 }
 
+function normalizeMainProcessStageKey(mainStage) {
+  const normalized = String(mainStage || '').toUpperCase()
+  if (normalized === 'TRANSFER') return 'XFER'
+  if (normalized === 'REGISTRATION') return 'REG'
+  if (normalized === 'COMPLETE') return 'REG'
+  if (normalized === 'CANCELLED') return 'REG'
+  return normalized
+}
+
 const TRANSFER_STAGES = new Set([
   'Proceed to Attorneys',
   'Transfer in Progress',
@@ -135,6 +148,9 @@ export function normalizeStageLabel(stage) {
 
 export function getMainStageFromDetailedStage(stage) {
   const normalized = normalizeStageLabel(stage)
+  const normalizedMain = normalizeMainProcessStageKey(stage)
+
+  if (MAIN_PROCESS_STAGES.includes(normalizedMain)) return normalizedMain
 
   if (normalized === 'Available') return 'AVAIL'
   if (normalized === 'Reserved' || normalized === 'Deposit Paid') return 'DEP'
@@ -148,7 +164,7 @@ export function getMainStageFromDetailedStage(stage) {
 }
 
 export function getDetailedStageFromMainStage(mainStage, currentDetailedStage = null) {
-  const normalizedMain = String(mainStage || '').toUpperCase()
+  const normalizedMain = normalizeMainProcessStageKey(mainStage)
 
   if (normalizedMain === 'AVAIL') return 'Available'
   if (normalizedMain === 'DEP') return 'Reserved'
@@ -174,13 +190,13 @@ export function getDetailedStageFromMainStage(mainStage, currentDetailedStage = 
 }
 
 export function getMainStageIndex(stageOrMain) {
-  const raw = String(stageOrMain || '').toUpperCase()
+  const raw = normalizeMainProcessStageKey(stageOrMain)
   const mainStage = MAIN_PROCESS_STAGES.includes(raw) ? raw : getMainStageFromDetailedStage(stageOrMain)
   const index = MAIN_PROCESS_STAGES.indexOf(mainStage)
   return index === -1 ? 0 : index
 }
 
-export function getMainProcessStats(rows) {
+export function getMainProcessStats() {
   return MAIN_PROCESS_STAGES.reduce((accumulator, mainStage) => {
     accumulator[mainStage] = 0
     return accumulator
