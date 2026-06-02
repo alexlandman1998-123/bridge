@@ -79,8 +79,8 @@ function SummaryBlock({ item }) {
   const Icon = SUMMARY_ICONS[item.key] || Circle
   const isBlocked = item.key === 'blocker_status' && String(item.value || '').toLowerCase() !== 'no blockers'
   return (
-    <article className="flex min-w-0 items-start gap-3 border-[#e1e9f2] px-4 py-4 sm:border-r last:border-r-0">
-      <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${
+    <article className="flex min-w-0 items-start gap-2.5 border-[#e1e9f2] px-3 py-3 sm:border-r last:border-r-0">
+      <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${
         isBlocked
           ? 'border-[#f1cbc7] bg-[#fff5f4] text-[#b42318]'
           : item.key === 'next_action'
@@ -89,12 +89,12 @@ function SummaryBlock({ item }) {
               ? 'border-[#c9e0f7] bg-[#eef7ff] text-[#0b75d1]'
               : 'border-[#d9e5f0] bg-[#f7fbff] text-[#55708d]'
       }`}>
-        <Icon size={17} />
+        <Icon size={15} />
       </span>
       <div className="min-w-0">
-        <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8397ad]">{item.label}</span>
+        <span className="block text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-[#8397ad]">{item.label}</span>
         <strong className="mt-1 block text-sm font-semibold leading-5 text-[#142132]">{item.value}</strong>
-        {item.subtext ? <span className="mt-1 block truncate text-xs text-[#6f8299]">{item.subtext}</span> : null}
+        {item.subtext ? <span className="block truncate text-xs text-[#6f8299]">{item.subtext}</span> : null}
       </div>
     </article>
   )
@@ -102,35 +102,35 @@ function SummaryBlock({ item }) {
 
 function SectionCard({ title, copy, children, actions = null }) {
   return (
-    <section className="rounded-[8px] border border-[#dbe5ef] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)] sm:p-5">
-      <header className="flex flex-wrap items-start justify-between gap-3">
+    <section className="rounded-[8px] border border-[#dbe5ef] bg-white p-3.5 shadow-[0_10px_22px_rgba(15,23,42,0.045)]">
+      <header className="flex flex-wrap items-start justify-between gap-2.5">
         <div>
           <h3 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{title}</h3>
-          {copy ? <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{copy}</p> : null}
+          {copy ? <p className="mt-1 text-sm leading-5 text-[#6b7d93]">{copy}</p> : null}
         </div>
         {actions}
       </header>
-      <div className="mt-4">{children}</div>
+      <div className="mt-3">{children}</div>
     </section>
   )
 }
 
 function EmptyState({ message, action = null }) {
   return (
-    <div className="rounded-[8px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-5 text-sm text-[#6b7d93]">
+    <div className="rounded-[8px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-3.5 py-3.5 text-sm text-[#334155]">
       <p>{message}</p>
-      {action ? <div className="mt-3">{action}</div> : null}
+      {action ? <div className="mt-2">{action}</div> : null}
     </div>
   )
 }
 
 function ProgressRail({ groups = [] }) {
   return (
-    <section className="rounded-[8px] border border-[#dbe5ef] bg-white p-4 shadow-[0_14px_30px_rgba(15,23,42,0.05)] sm:p-5">
-      <div className="space-y-5">
+    <section className="rounded-[8px] border border-[#dbe5ef] bg-white p-3.5 shadow-[0_10px_22px_rgba(15,23,42,0.045)]">
+      <div className="space-y-4">
         {groups.map((group) => (
           <div key={group.key}>
-            <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Landmark size={16} className="text-[#35546c]" />
                 <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[#6d8197]">{group.label}</h3>
@@ -144,15 +144,15 @@ function ProgressRail({ groups = [] }) {
                 className="relative grid min-w-[680px] gap-0"
                 style={{ gridTemplateColumns: `repeat(${Math.max(group.steps?.length || 1, 1)}, minmax(112px, 1fr))` }}
               >
-                <div className="absolute left-12 right-12 top-[17px] h-px bg-[#cfddeb]" aria-hidden="true" />
+                <div className="absolute left-12 right-12 top-[16px] h-px bg-[#cfddeb]" aria-hidden="true" />
                 {(group.steps || []).map((step) => {
                   const Icon = step.status === 'completed' ? CheckCircle2 : step.status === 'current' ? Clock3 : Circle
                   return (
                     <article key={step.key} className="relative z-10 flex min-w-0 flex-col items-center px-2 text-center">
-                      <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${getStepTone(step.status)}`}>
-                          <Icon size={15} />
+                      <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${getStepTone(step.status)}`}>
+                          <Icon size={14} />
                         </span>
-                      <strong className="mt-3 block text-sm font-semibold leading-5 text-[#142132]">{step.label}</strong>
+                      <strong className="mt-2.5 block text-sm font-semibold leading-5 text-[#142132]">{step.label}</strong>
                       <span className="mt-1 block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">
                         {step.status === 'completed' ? formatDate(step.completedAt, 'Completed') : step.status === 'current' ? 'Current' : 'Upcoming'}
                       </span>
@@ -212,26 +212,26 @@ function RequiredDocumentTable({
       <table className="min-w-full divide-y divide-[#e6eef6] text-left text-sm">
         <thead className="bg-[#f8fbff]">
           <tr className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7f94aa]">
-            <th className="px-4 py-3">Document</th>
-            <th className="px-4 py-3">Status</th>
-            <th className="px-4 py-3">Uploaded Date</th>
-            <th className="px-4 py-3 text-right">Action</th>
+            <th className="px-3 py-2.5">Document</th>
+            <th className="px-3 py-2.5">Status</th>
+            <th className="px-3 py-2.5">Uploaded Date</th>
+            <th className="px-3 py-2.5 text-right">Action</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[#edf2f7] bg-white">
           {rows.map((row) => (
             <tr key={row.id} className="align-top">
-              <td className="px-4 py-3">
+              <td className="px-3 py-2.5">
                 <strong className="block text-sm font-semibold text-[#142132]">{row.label}</strong>
-                <span className="mt-1 block truncate text-xs text-[#70839a]">{row.matchedDocument?.name || row.requiredParty}</span>
+                <span className="block truncate text-xs text-[#70839a]">{row.matchedDocument?.name || row.requiredParty}</span>
               </td>
-              <td className="px-4 py-3">
+              <td className="px-3 py-2.5">
                 <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${getStatusTone(row.status)}`}>
                   {row.statusLabel}
                 </span>
               </td>
-              <td className="px-4 py-3 text-sm text-[#5f7288]">{formatDate(row.uploadedAt, '-')}</td>
-              <td className="px-4 py-3">
+              <td className="px-3 py-2.5 text-sm text-[#5f7288]">{formatDate(row.uploadedAt, '-')}</td>
+              <td className="px-3 py-2.5">
                 <div className="flex justify-end gap-2">
                   {row.matchedDocument?.url ? (
                     <Button type="button" variant="secondary" size="sm" onClick={() => onOpenDocument?.(row.matchedDocument)}>
@@ -262,13 +262,13 @@ function FinanceDocumentList({ rows = [], emptyMessage = 'No finance documents u
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {rows.map((row) => (
-        <article key={row.id} className="rounded-[8px] border border-[#e5ecf4] bg-white px-4 py-4">
+        <article key={row.id} className="rounded-[8px] border border-[#e5ecf4] bg-white px-3 py-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <strong className="block text-sm font-semibold text-[#142132]">{row.name}</strong>
-              <p className="mt-1 text-xs leading-5 text-[#70839a]">
+              <p className="mt-1 text-xs leading-4 text-[#70839a]">
                 {row.category} • Uploaded {formatDate(row.uploadedAt)}{row.uploadedByRole ? ` • ${title(row.uploadedByRole)}` : ''}
               </p>
             </div>
@@ -300,28 +300,28 @@ function ApplicationsSection({
   })
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {rows.length ? (
         <div className="overflow-hidden rounded-[8px] border border-[#e1e9f2]">
           <table className="min-w-full divide-y divide-[#e6eef6] text-left text-sm">
             <thead className="bg-[#f8fbff]">
               <tr className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7f94aa]">
-                <th className="px-4 py-3">Bank</th>
-                <th className="px-4 py-3">Date Submitted</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Originator</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                <th className="px-3 py-2.5">Bank</th>
+                <th className="px-3 py-2.5">Date Submitted</th>
+                <th className="px-3 py-2.5">Status</th>
+                <th className="px-3 py-2.5">Originator</th>
+                <th className="px-3 py-2.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#edf2f7] bg-white">
               {rows.map((row) => (
                 <tr key={row.id} className="align-middle">
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2.5">
                     <strong className="block text-sm font-semibold text-[#142132]">{row.bankName}</strong>
-                    {row.applicationReference ? <span className="mt-1 block text-xs text-[#70839a]">Ref {row.applicationReference}</span> : null}
+                    {row.applicationReference ? <span className="block text-xs text-[#70839a]">Ref {row.applicationReference}</span> : null}
                   </td>
-                  <td className="px-4 py-3 text-[#5f7288]">{formatDate(row.submittedAt, '-')}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2.5 text-[#5f7288]">{formatDate(row.submittedAt, '-')}</td>
+                  <td className="px-3 py-2.5">
                     {canManage ? (
                       <Field
                         as="select"
@@ -340,8 +340,8 @@ function ApplicationsSection({
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-[#5f7288]">{row.submittedByName || row.createdByName || 'Finance owner'}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2.5 text-[#5f7288]">{row.submittedByName || row.createdByName || 'Finance owner'}</td>
+                  <td className="px-3 py-2.5">
                     <div className="flex justify-end gap-1.5">
                       <Button type="button" variant="secondary" size="sm">
                         <Eye size={14} />
@@ -367,14 +367,14 @@ function ApplicationsSection({
 
       {canManage ? (
         <form
-          className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] p-4"
+          className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] p-3"
           onSubmit={(event) => {
             event.preventDefault()
             onSubmit?.(form)
             setForm({ bankName: '', submittedAt: '', applicationReference: '', status: 'submitted', notes: '' })
           }}
         >
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-2">
             <Field
               placeholder="Bank / lender"
               value={form.bankName}
@@ -440,17 +440,17 @@ function OffersSection({
   })
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {rows.length ? (
         <div className="overflow-hidden rounded-[8px] border border-[#e1e9f2]">
           <table className="min-w-full divide-y divide-[#e6eef6] text-left text-sm">
             <thead className="bg-[#f8fbff]">
               <tr className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7f94aa]">
-                <th className="px-4 py-3">Bank</th>
-                <th className="px-4 py-3">Date Received</th>
-                <th className="px-4 py-3">Offer Amount</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                <th className="px-3 py-2.5">Bank</th>
+                <th className="px-3 py-2.5">Date Received</th>
+                <th className="px-3 py-2.5">Offer Amount</th>
+                <th className="px-3 py-2.5">Status</th>
+                <th className="px-3 py-2.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#edf2f7] bg-white">
@@ -458,18 +458,18 @@ function OffersSection({
                 const isAccepted = String(row.id || '') === String(acceptedOfferId || '')
                 return (
                   <tr key={row.id} className="align-middle">
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-2.5">
                       <strong className="block text-sm font-semibold text-[#142132]">{row.bankName}</strong>
-                      <span className="mt-1 block text-xs text-[#70839a]">{row.interestRateDisplay || (row.interestRate ? `${row.interestRate}%` : 'Rate pending')}</span>
+                      <span className="block text-xs text-[#70839a]">{row.interestRateDisplay || (row.interestRate ? `${row.interestRate}%` : 'Rate pending')}</span>
                     </td>
-                    <td className="px-4 py-3 text-[#5f7288]">{formatDate(row.quoteReceivedAt || row.createdAt, '-')}</td>
-                    <td className="px-4 py-3 font-semibold text-[#142132]">{formatCurrency(row.quotedAmount, '-')}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-2.5 text-[#5f7288]">{formatDate(row.quoteReceivedAt || row.createdAt, '-')}</td>
+                    <td className="px-3 py-2.5 font-semibold text-[#142132]">{formatCurrency(row.quotedAmount, '-')}</td>
+                    <td className="px-3 py-2.5">
                       <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${getStatusTone(isAccepted ? 'accepted' : row.quoteStatus)}`}>
                         {isAccepted ? 'Accepted' : title(row.quoteStatusLabel || row.quoteStatus || 'received')}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-2.5">
                       <div className="flex justify-end gap-1.5">
                         {row.quoteDocumentId || row.relatedEntityId || row.url ? (
                           <>
@@ -506,7 +506,7 @@ function OffersSection({
 
       {canManage ? (
         <form
-          className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] p-4"
+          className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] p-3"
           onSubmit={(event) => {
             event.preventDefault()
             onSubmit?.(form)
@@ -522,7 +522,7 @@ function OffersSection({
             })
           }}
         >
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-2">
             <Field
               placeholder="Bank"
               value={form.bankName}
@@ -602,23 +602,23 @@ function DecisionCard({
   const bankName = offerForSummary?.bankName || latestDecision?.bankName || 'Offer recorded'
 
   return (
-    <article className="rounded-[8px] border border-[#e5ecf4] bg-white px-4 py-4">
+    <article className="rounded-[8px] border border-[#e5ecf4] bg-white px-3 py-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8ca0b6]">{label}</span>
           <strong className="mt-1 block text-sm font-semibold text-[#142132]">{bankName}</strong>
-          <p className="mt-1 text-xs leading-5 text-[#70839a]">
+          <p className="mt-1 text-xs leading-4 text-[#70839a]">
             {offerForSummary ? `${formatCurrency(offerForSummary.quotedAmount)} • ${offerForSummary.interestRateDisplay || offerForSummary.interestRate || 'Rate pending'}` : title(latestDecision?.decision || 'pending')}
           </p>
-          {offerForSummary?.monthlyRepayment ? <p className="mt-1 text-xs leading-5 text-[#70839a]">{formatCurrency(offerForSummary.monthlyRepayment)} monthly repayment</p> : null}
-          {offerForSummary?.termMonths ? <p className="mt-1 text-xs leading-5 text-[#70839a]">{Math.round(Number(offerForSummary.termMonths) / 12)} Years</p> : null}
+          {offerForSummary?.monthlyRepayment ? <p className="mt-1 text-xs leading-4 text-[#70839a]">{formatCurrency(offerForSummary.monthlyRepayment)} monthly repayment</p> : null}
+          {offerForSummary?.termMonths ? <p className="mt-1 text-xs leading-4 text-[#70839a]">{Math.round(Number(offerForSummary.termMonths) / 12)} Years</p> : null}
         </div>
         <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.72rem] font-semibold ${getStatusTone(status)}`}>
           {title(status)}
         </span>
       </div>
       {offerForSummary ? (
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
           {offerForSummary.quoteDocumentId || offerForSummary.url ? (
             <Button type="button" variant="secondary" size="sm" onClick={() => onOpenDocument?.(offerForSummary)}>
               <Eye size={14} />
@@ -654,16 +654,16 @@ function InstructionCard({
   const sent = Boolean(instruction?.instructionSent || instruction?.instruction_sent)
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {sent ? (
-        <article className="rounded-[8px] border border-[#e5ecf4] bg-white px-4 py-4">
+        <article className="rounded-[8px] border border-[#e5ecf4] bg-white px-3 py-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <strong className="block text-sm font-semibold text-[#142132]">Instruction sent</strong>
-              <p className="mt-1 text-xs leading-5 text-[#70839a]">
+              <p className="mt-1 text-xs leading-4 text-[#70839a]">
                 Sent {formatDate(instruction?.instructionSentAt || instruction?.instruction_sent_at)}{instruction?.instructionSentByName ? ` • ${instruction.instructionSentByName}` : ''}
               </p>
-              {instruction?.notes ? <p className="mt-2 text-xs leading-5 text-[#63758a]">{instruction.notes}</p> : null}
+              {instruction?.notes ? <p className="mt-2 text-xs leading-4 text-[#63758a]">{instruction.notes}</p> : null}
             </div>
             <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.72rem] font-semibold ${getStatusTone('instruction_sent')}`}>
               Instruction sent
@@ -686,7 +686,7 @@ function InstructionCard({
 
       {canMark ? (
         <form
-          className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] p-4"
+          className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] p-3"
           onSubmit={(event) => {
             event.preventDefault()
             onSubmit?.({ notes, file: instructionFile })
@@ -714,13 +714,13 @@ function InstructionCard({
 
 function CashStatusList({ items = [] }) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {items.map((item) => (
-        <article key={item.label} className="rounded-[8px] border border-[#e5ecf4] bg-white px-4 py-4">
+        <article key={item.label} className="rounded-[8px] border border-[#e5ecf4] bg-white px-3 py-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <strong className="block text-sm font-semibold text-[#142132]">{item.label}</strong>
-              <p className="mt-1 text-xs leading-5 text-[#70839a]">{item.copy}</p>
+              <p className="mt-1 text-xs leading-4 text-[#70839a]">{item.copy}</p>
             </div>
             <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.72rem] font-semibold ${getStatusTone(item.status)}`}>
               {item.value}
@@ -821,8 +821,8 @@ function FinanceCommandCenter({
   const acceptedOfferId = workspace.bond.acceptedOffer?.id || ''
 
   return (
-    <div className="space-y-5">
-      <div className="grid overflow-hidden rounded-[8px] border border-[#dbe5ef] bg-white shadow-[0_14px_30px_rgba(15,23,42,0.05)] sm:grid-cols-2 xl:grid-cols-5">
+    <div className="space-y-4">
+      <div className="grid overflow-hidden rounded-[8px] border border-[#dbe5ef] bg-white shadow-[0_10px_22px_rgba(15,23,42,0.045)] sm:grid-cols-2 xl:grid-cols-5">
         {workspace.summaryBlocks.map((item) => (
           <SummaryBlock key={item.key} item={item} />
         ))}
@@ -830,12 +830,12 @@ function FinanceCommandCenter({
 
       <ProgressRail groups={workspace.railGroups} />
 
-      <div className="grid gap-5 xl:grid-cols-2">
-        <div className="grid gap-5 md:grid-cols-2 xl:col-span-2">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1.05fr)_minmax(320px,0.9fr)]">
+        <div className="grid gap-4">
           {(workspace.financeType === 'bond' || workspace.financeType === 'combination') ? (
             <SectionCard
               title="Buyer Finance Documents"
-              copy="Required buyer documents, live status, and structured uploads that sync straight back into canonical transaction documents."
+              copy="Required buyer documents and upload status."
               actions={workspace.permissions.canReviewDocuments ? (
                 <Button type="button" size="sm" variant="secondary" disabled={Boolean(loadingAction)} onClick={() => onReviewDocuments?.()}>
                   Mark reviewed
@@ -855,14 +855,14 @@ function FinanceCommandCenter({
           {(workspace.financeType === 'cash' || workspace.financeType === 'combination') ? (
             <SectionCard
               title={workspace.financeType === 'combination' ? 'Cash Portion Documents' : 'Proof Of Funds'}
-              copy="Proof of funds, deposit support, and guarantee evidence captured as shared finance documents."
+              copy="Proof of funds, deposit support, and guarantees."
               actions={workspace.permissions.canVerifyProofOfFunds ? (
                 <Button type="button" size="sm" variant="secondary" disabled={Boolean(loadingAction)} onClick={() => onVerifyProofOfFunds?.()}>
                   Verify proof of funds
                 </Button>
               ) : null}
             >
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <CashStatusList items={proofStatusItems.slice(0, 2)} />
                 <div className="flex flex-wrap gap-2">
                   {workspace.permissions.canUploadDocuments ? (
@@ -919,9 +919,9 @@ function FinanceCommandCenter({
           {workspace.financeType === 'developer' ? (
             <SectionCard
               title="Developer Finance Application"
-              copy="Application, deposit, approval, and payment-schedule documents captured against the shared finance lane."
+              copy="Application, deposit, approval, and payment schedule support."
             >
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <div className="flex flex-wrap gap-2">
                   {workspace.permissions.canUploadDocuments ? (
                     <UploadAction
@@ -960,12 +960,12 @@ function FinanceCommandCenter({
           ) : null}
         </div>
 
-        <div className="space-y-5">
+        <div className="space-y-4">
           {(workspace.financeType === 'bond' || workspace.financeType === 'combination') ? (
             <>
               <SectionCard
                 title="Bank Applications"
-                copy="Submitted bank applications, references, originator handling, and workflow progression."
+                copy="Submitted applications, references, originator, and status."
               >
                 <ApplicationsSection
                   rows={workspace.bond.applications}
@@ -978,7 +978,7 @@ function FinanceCommandCenter({
 
               <SectionCard
                 title="Bank Quotes / Offers"
-                copy="Received offers, quote documents, repayment snapshots, and buyer decision controls."
+                copy="Received offers, quote documents, and repayment snapshots."
               >
                 <OffersSection
                   rows={workspace.bond.offers}
@@ -998,7 +998,7 @@ function FinanceCommandCenter({
           {(workspace.financeType === 'cash' || workspace.financeType === 'combination') ? (
             <SectionCard
               title="Deposit / Guarantees"
-              copy="Cash portion readiness, attorney verification, guarantees, and completion status."
+              copy="Attorney verification, guarantees, and readiness."
             >
               <CashStatusList items={proofStatusItems.slice(2)} />
             </SectionCard>
@@ -1007,9 +1007,9 @@ function FinanceCommandCenter({
           {workspace.financeType === 'developer' ? (
             <SectionCard
               title="Developer Approval"
-              copy="Approval letters, signed terms, and finance payment schedule support."
+              copy="Approval letters, signed terms, and payment schedule."
             >
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <div className="flex flex-wrap gap-2">
                   {workspace.permissions.canUploadDocuments ? (
                     <UploadAction
@@ -1063,12 +1063,12 @@ function FinanceCommandCenter({
           ) : null}
         </div>
 
-        <div className="space-y-5">
+        <div className="space-y-4">
           {(workspace.financeType === 'bond' || workspace.financeType === 'combination') ? (
             <>
               <SectionCard
                 title="Buyer Decision"
-                copy="Accepted or declined quote outcome stored against the shared transaction finance record."
+                copy="Accepted or declined quote outcome."
               >
                 <DecisionCard
                   acceptedOffer={workspace.bond.acceptedOffer}
@@ -1084,7 +1084,7 @@ function FinanceCommandCenter({
 
               <SectionCard
                 title="Instruction Status"
-                copy="Instruction handoff to attorneys, including the supporting instruction document when captured."
+                copy="Instruction handoff to attorneys."
               >
                 <InstructionCard
                   instruction={workspace.bond.instruction}
@@ -1100,25 +1100,25 @@ function FinanceCommandCenter({
 
           <SectionCard
             title="Finance Command"
-            copy="Blockers, ownership, and next-action steering for the finance lane."
+            copy="Blockers, ownership, and next action."
             actions={<ShieldCheck size={16} className="text-[#6d8197]" />}
           >
-            <div className="space-y-3">
-              <article className="rounded-[8px] border border-[#e5ecf4] bg-white px-4 py-4">
+            <div className="space-y-2.5">
+              <article className="rounded-[8px] border border-[#e5ecf4] bg-white px-3 py-3">
                 <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8ca0b6]">Current Blocker</span>
                 <strong className="mt-1 block text-sm font-semibold text-[#142132]">{workspace.summaryBlocks.find((item) => item.key === 'blocker_status')?.value || 'No blockers'}</strong>
-                <p className="mt-1 text-xs leading-5 text-[#70839a]">{workspace.summaryBlocks.find((item) => item.key === 'next_action')?.value || 'Review finance progress.'}</p>
+                <p className="mt-1 text-xs leading-4 text-[#70839a]">{workspace.summaryBlocks.find((item) => item.key === 'next_action')?.value || 'Review finance progress.'}</p>
               </article>
               {workspace.permissions.canUpdateBlockers ? (
                 <form
-                className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] p-4"
+                  className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] p-3"
                   onSubmit={(event) => {
                     event.preventDefault()
                     onUpdateBlockers?.(blockerForm)
                     setBlockerForm({ blockerStatus: '', nextAction: '', financeOwner: '' })
                   }}
                 >
-                  <div className="grid gap-3">
+                  <div className="grid gap-2">
                     <Field
                       placeholder="Blocker status"
                       value={blockerForm.blockerStatus}
@@ -1145,32 +1145,6 @@ function FinanceCommandCenter({
             </div>
           </SectionCard>
 
-          <SectionCard
-            title="Financial Snapshot"
-            copy="Core deal values exposed in the finance workspace."
-          >
-            <div className="grid gap-3">
-              {[
-                ['Purchase Price', workspace.amounts.purchasePrice],
-                ['Deposit', workspace.amounts.deposit],
-                ['Cash Portion', workspace.amounts.cashPortion],
-                ['Bond Amount', workspace.amounts.bondAmount],
-                ['Transfer Fees', workspace.amounts.transferFees],
-                ['Bond Registration Fees', workspace.amounts.bondRegistrationFees],
-                ['Commission', workspace.amounts.commission],
-              ].map(([label, value]) => (
-                <div key={label} className="flex items-center justify-between gap-3 rounded-[16px] border border-[#e5ecf4] bg-white px-4 py-3">
-                  <span className="text-sm text-[#6b7d93]">{label}</span>
-                  <strong className="text-sm font-semibold text-[#142132]">{value}</strong>
-                </div>
-              ))}
-              {workspace.financeType === 'developer' ? (
-                <div className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-white px-4 py-4 text-xs leading-5 text-[#70839a]">
-                  Developer finance uses the same shared transaction finance layer, so documents and state captured here remain visible in the wider Documents and Activity surfaces.
-                </div>
-              ) : null}
-            </div>
-          </SectionCard>
         </div>
       </div>
     </div>
