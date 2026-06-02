@@ -9094,263 +9094,268 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             {isLeadWorkspaceRoute ? (
             <article className="mx-auto w-full max-w-[1680px] space-y-6">
               <section className="overflow-hidden rounded-[30px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_18px_48px_rgba(31,54,78,0.07)]">
-                <div className="px-5 py-5 sm:px-7 sm:py-6 lg:px-8">
-                  <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <button
-                        type="button"
-                        className="inline-flex items-center text-sm font-semibold text-[#60758b] transition hover:text-[#163247]"
-                        onClick={() => navigate('/pipeline/leads')}
-                      >
-                        ← Back to Leads
-                      </button>
-                      {selectedLead ? (
-                        <>
-                          <h1 className="mt-4 max-w-full truncate text-[2rem] font-bold leading-tight tracking-[-0.04em] text-[#102033] sm:text-[2.45rem] lg:text-[2.7rem]" title={selectedLeadDisplayName}>
-                            {selectedLeadDisplayName}
-                          </h1>
-                          <div className="mt-2 flex flex-wrap items-center gap-2">
-                            <span className="rounded-full bg-[#edf4fb] px-2.5 py-1 text-[0.72rem] font-semibold text-[#244f70]">
-                              {selectedLeadIsSeller ? 'Seller Lead' : 'Buyer Lead'}
-                            </span>
-                            <span className="rounded-full bg-[#eef8f2] px-2.5 py-1 text-[0.72rem] font-semibold text-[#247345]">
-                              {resolveLeadFunnelStage(selectedLead)}
-                            </span>
-                          </div>
-                          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-medium text-[#60758b]">
-                            <span className="inline-flex min-w-0 items-center gap-2">
-                              <Home className="h-4 w-4 shrink-0 text-[#8aa0b7]" />
-                              <span className="truncate">{selectedLeadPropertyLabel}</span>
-                            </span>
-                            <span className="hidden h-1 w-1 rounded-full bg-[#c8d4e0] sm:block" />
-                            <span className="inline-flex min-w-0 items-center gap-2">
-                              <UserRound className="h-4 w-4 shrink-0 text-[#8aa0b7]" />
-                              <span className="truncate">{selectedLeadAssignedAgentLabel}</span>
-                            </span>
-                            <span className="hidden h-1 w-1 rounded-full bg-[#c8d4e0] sm:block" />
-                            <span>{selectedLeadIsSeller ? 'Seller relationship' : 'Buyer relationship'}</span>
-                          </div>
-                        </>
-                      ) : (
-                        <h1 className="mt-4 text-[2rem] font-bold leading-tight tracking-[-0.04em] text-[#102033] sm:text-[2.45rem] lg:text-[2.7rem]">
-                          Lead Workspace
-                        </h1>
-                      )}
-                    </div>
+	                <div className="px-5 py-5 sm:px-7 sm:py-6 lg:px-8">
+	                  <div className="space-y-5">
+	                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+	                      <div className="shrink-0">
+	                        <button
+	                          type="button"
+	                          className="inline-flex items-center text-sm font-semibold text-[#60758b] transition hover:text-[#163247]"
+	                          onClick={() => navigate('/pipeline/leads')}
+	                        >
+	                          ← Back to Leads
+	                        </button>
+	                      </div>
 
-                    {selectedLead ? (
-                      <div className="grid w-full grid-cols-2 gap-2 xl:w-auto xl:min-w-[760px] xl:grid-cols-[repeat(6,minmax(0,auto))] xl:justify-end">
-                        {selectedLeadIsSeller ? (
-                          <>
-                            <Button type="button" size="sm" className="w-full bg-[#123955] shadow-[0_10px_24px_rgba(18,57,85,0.18)] xl:w-auto" onClick={handleCreateListingFromSellerLead}>
-                              {selectedLeadMandateSigned ? 'Convert to Listing' : 'Create Listing'}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              className="hidden w-full xl:inline-flex xl:w-auto"
-                              onClick={handleSendSellerOnboarding}
-                              disabled={isSellerOnboardingSending}
-                            >
-                              {selectedLeadSellerOnboardingActionLabel}
-                            </Button>
-                            <Button type="button" variant="secondary" size="sm" className="hidden w-full xl:inline-flex xl:w-auto" onClick={handleScheduleSellerAppointment}>
-                              Schedule
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              className="hidden w-full xl:inline-flex xl:w-auto"
-                              onClick={() => void handleSelectedLeadMandatePrimaryAction()}
-                              disabled={isMandateGenerating || isMandateSending}
-                              title={
-                                !selectedLeadHasMandateData && selectedLeadMandateActionState.actionKey === 'generate'
-                                    ? 'Open the legal workspace and complete missing seller/property details manually.'
-                                  : selectedLeadMandateActionMeta
-                              }
-                            >
-                              {isMandateGenerating
-                                ? 'Generating…'
-                                : isMandateSending
-                                  ? 'Sending…'
-                                  : selectedLeadMandateActionState.label}
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <Button
-                              type="button"
-                              size="sm"
-                              className="w-full bg-[#123955] shadow-[0_10px_24px_rgba(18,57,85,0.18)] xl:w-auto"
-                              onClick={() => void handleCreateBuyerOfferDraft()}
-                              disabled={Boolean(selectedLead.convertedTransactionId || selectedLead.convertedDealId)}
-                            >
-                              {selectedLead.convertedTransactionId || selectedLead.convertedDealId ? 'Transaction Created' : 'Create Offer'}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              className="hidden w-full xl:inline-flex xl:w-auto"
-                              onClick={() => void handleSendBuyerOnboardingFromLead()}
-                              disabled={canonicalOfferActionId === `lead:${selectedLead?.leadId}:buyer-onboarding`}
-                            >
-                              {selectedLeadBuyerOnboardingActionLabel}
-                            </Button>
-                            <Button type="button" variant="secondary" size="sm" className="hidden w-full xl:inline-flex xl:w-auto" onClick={() => handleOpenAppointmentModal()}>
-                              Schedule
-                            </Button>
-                          </>
-                        )}
-                        <div className="relative">
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            className="w-full xl:w-auto"
-                            onClick={() => setLeadActionsMenuOpen((value) => !value)}
-                            aria-haspopup="menu"
-                            aria-expanded={leadActionsMenuOpen}
-                          >
-                            Actions
-                            <ChevronDown className="h-4 w-4" />
-                          </Button>
-                          {leadActionsMenuOpen ? (
-                            <div className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-[18px] border border-[#dbe7f2] bg-white py-2 shadow-[0_18px_40px_rgba(18,44,68,0.16)]" role="menu">
-                              {[
-                                ...(selectedLeadIsSeller
-                                  ? [
-                                      {
-                                        label: selectedLeadSellerOnboardingActionLabel,
-                                        Icon: Mail,
-                                        tone: 'text-[#29435d]',
-                                        mobileOnly: true,
-                                        disabled: isSellerOnboardingSending,
-                                        onClick: () => {
-                                          setLeadActionsMenuOpen(false)
-                                          void handleSendSellerOnboarding()
-                                        },
-                                      },
-                                      {
-                                        label: 'Schedule',
-                                        Icon: CalendarDays,
-                                        tone: 'text-[#29435d]',
-                                        mobileOnly: true,
-                                        onClick: () => {
-                                          setLeadActionsMenuOpen(false)
-                                          handleScheduleSellerAppointment()
-                                        },
-                                      },
-                                      {
-                                        label: selectedLeadMandateActionState.label,
-                                        Icon: CheckSquare,
-                                        tone: 'text-[#29435d]',
-                                        mobileOnly: true,
-                                        disabled: isMandateGenerating || isMandateSending,
-                                        onClick: () => {
-                                          setLeadActionsMenuOpen(false)
-                                          void handleSelectedLeadMandatePrimaryAction()
-                                        },
-                                      },
-                                    ]
-                                  : [
-                                      {
-                                        label: selectedLeadBuyerOnboardingActionLabel,
-                                        Icon: Mail,
-                                        tone: 'text-[#29435d]',
-                                        mobileOnly: true,
-                                        disabled: canonicalOfferActionId === `lead:${selectedLead?.leadId}:buyer-onboarding`,
-                                        onClick: () => {
-                                          setLeadActionsMenuOpen(false)
-                                          void handleSendBuyerOnboardingFromLead()
-                                        },
-                                      },
-                                      {
-                                        label: 'Schedule',
-                                        Icon: CalendarDays,
-                                        tone: 'text-[#29435d]',
-                                        mobileOnly: true,
-                                        onClick: () => {
-                                          setLeadActionsMenuOpen(false)
-                                          handleOpenAppointmentModal()
-                                        },
-                                      },
-                                    ]),
-                                {
-                                  label: 'Archive Lead',
-                                  Icon: X,
-                                  tone: 'text-[#29435d]',
-                                  onClick: () => {
-                                    setLeadActionsMenuOpen(false)
-                                    openArchiveLeadModal(selectedLead.leadId)
-                                  },
-                                },
-                                {
-                                  label: 'Delete Lead',
-                                  Icon: Trash2,
-                                  tone: 'text-[#b42318]',
-                                  onClick: () => {
-                                    setLeadActionsMenuOpen(false)
-                                    openDeleteLeadModal(selectedLead.leadId)
-                                  },
-                                },
-                                {
-                                  label: 'Change Owner',
-                                  Icon: UserRound,
-                                  tone: 'text-[#29435d]',
-                                  onClick: () => {
-                                    setLeadActionsMenuOpen(false)
-                                    setMessage('Owner changes can be managed from lead assignment settings.')
-                                  },
-                                },
-                                {
-                                  label: 'Mark as Lost',
-                                  Icon: X,
-                                  tone: 'text-[#29435d]',
-                                  onClick: () => {
-                                    setLeadActionsMenuOpen(false)
-                                    openArchiveLeadModal(selectedLead.leadId)
-                                  },
-                                },
-                                {
-                                  label: 'Convert Status',
-                                  Icon: TrendingUp,
-                                  tone: 'text-[#29435d]',
-                                  onClick: () => {
-                                    setLeadActionsMenuOpen(false)
-                                    setMessage('Use the stage selector in Lead Summary to convert this lead status.')
-                                  },
-                                },
-                                {
-                                  label: 'Copy Lead Link',
-                                  Icon: Link2,
-                                  tone: 'text-[#29435d]',
-                                  onClick: handleCopySelectedLeadLink,
-                                },
-                              ].map(({ label, Icon, tone, onClick, disabled, mobileOnly }) => (
-                                <button
-                                  key={label}
-                                  type="button"
-                                  className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold transition hover:bg-[#f5f9fc] disabled:cursor-not-allowed disabled:opacity-45 ${tone} ${mobileOnly ? 'xl:hidden' : ''}`}
-                                  onClick={onClick}
-                                  disabled={disabled}
-                                  role="menuitem"
-                                >
-                                  {createElement(Icon, { className: 'h-4 w-4' })}
-                                  {label}
-                                </button>
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                        <Button type="button" variant="ghost" size="sm" className="hidden h-10 w-10 px-0 xl:inline-flex" title="More lead actions" onClick={() => openDeleteLeadModal(selectedLead.leadId)}>
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ) : null}
-                  </div>
+	                      {selectedLead ? (
+	                        <div className="grid w-full grid-cols-2 gap-2 xl:w-auto xl:grid-cols-[repeat(6,max-content)] xl:justify-end">
+	                          {selectedLeadIsSeller ? (
+	                            <>
+	                              <Button type="button" size="sm" className="w-full bg-[#123955] shadow-[0_10px_24px_rgba(18,57,85,0.18)] xl:w-auto" onClick={handleCreateListingFromSellerLead}>
+	                                {selectedLeadMandateSigned ? 'Convert to Listing' : 'Create Listing'}
+	                              </Button>
+	                              <Button
+	                                type="button"
+	                                variant="secondary"
+	                                size="sm"
+	                                className="hidden w-full xl:inline-flex xl:w-auto"
+	                                onClick={handleSendSellerOnboarding}
+	                                disabled={isSellerOnboardingSending}
+	                              >
+	                                {selectedLeadSellerOnboardingActionLabel}
+	                              </Button>
+	                              <Button type="button" variant="secondary" size="sm" className="hidden w-full xl:inline-flex xl:w-auto" onClick={handleScheduleSellerAppointment}>
+	                                Schedule
+	                              </Button>
+	                              <Button
+	                                type="button"
+	                                variant="secondary"
+	                                size="sm"
+	                                className="hidden w-full xl:inline-flex xl:w-auto"
+	                                onClick={() => void handleSelectedLeadMandatePrimaryAction()}
+	                                disabled={isMandateGenerating || isMandateSending}
+	                                title={
+	                                  !selectedLeadHasMandateData && selectedLeadMandateActionState.actionKey === 'generate'
+	                                    ? 'Open the legal workspace and complete missing seller/property details manually.'
+	                                    : selectedLeadMandateActionMeta
+	                                }
+	                              >
+	                                {isMandateGenerating
+	                                  ? 'Generating…'
+	                                  : isMandateSending
+	                                    ? 'Sending…'
+	                                    : selectedLeadMandateActionState.label}
+	                              </Button>
+	                            </>
+	                          ) : (
+	                            <>
+	                              <Button
+	                                type="button"
+	                                size="sm"
+	                                className="w-full bg-[#123955] shadow-[0_10px_24px_rgba(18,57,85,0.18)] xl:w-auto"
+	                                onClick={() => void handleCreateBuyerOfferDraft()}
+	                                disabled={Boolean(selectedLead.convertedTransactionId || selectedLead.convertedDealId)}
+	                              >
+	                                {selectedLead.convertedTransactionId || selectedLead.convertedDealId ? 'Transaction Created' : 'Create Offer'}
+	                              </Button>
+	                              <Button
+	                                type="button"
+	                                variant="secondary"
+	                                size="sm"
+	                                className="hidden w-full xl:inline-flex xl:w-auto"
+	                                onClick={() => void handleSendBuyerOnboardingFromLead()}
+	                                disabled={canonicalOfferActionId === `lead:${selectedLead?.leadId}:buyer-onboarding`}
+	                              >
+	                                {selectedLeadBuyerOnboardingActionLabel}
+	                              </Button>
+	                              <Button type="button" variant="secondary" size="sm" className="hidden w-full xl:inline-flex xl:w-auto" onClick={() => handleOpenAppointmentModal()}>
+	                                Schedule
+	                              </Button>
+	                            </>
+	                          )}
+	                          <div className="relative">
+	                            <Button
+	                              type="button"
+	                              variant="secondary"
+	                              size="sm"
+	                              className="w-full xl:w-auto"
+	                              onClick={() => setLeadActionsMenuOpen((value) => !value)}
+	                              aria-haspopup="menu"
+	                              aria-expanded={leadActionsMenuOpen}
+	                            >
+	                              Actions
+	                              <ChevronDown className="h-4 w-4" />
+	                            </Button>
+	                            {leadActionsMenuOpen ? (
+	                              <div className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-[18px] border border-[#dbe7f2] bg-white py-2 shadow-[0_18px_40px_rgba(18,44,68,0.16)]" role="menu">
+	                                {[
+	                                  ...(selectedLeadIsSeller
+	                                    ? [
+	                                        {
+	                                          label: selectedLeadSellerOnboardingActionLabel,
+	                                          Icon: Mail,
+	                                          tone: 'text-[#29435d]',
+	                                          mobileOnly: true,
+	                                          disabled: isSellerOnboardingSending,
+	                                          onClick: () => {
+	                                            setLeadActionsMenuOpen(false)
+	                                            void handleSendSellerOnboarding()
+	                                          },
+	                                        },
+	                                        {
+	                                          label: 'Schedule',
+	                                          Icon: CalendarDays,
+	                                          tone: 'text-[#29435d]',
+	                                          mobileOnly: true,
+	                                          onClick: () => {
+	                                            setLeadActionsMenuOpen(false)
+	                                            handleScheduleSellerAppointment()
+	                                          },
+	                                        },
+	                                        {
+	                                          label: selectedLeadMandateActionState.label,
+	                                          Icon: CheckSquare,
+	                                          tone: 'text-[#29435d]',
+	                                          mobileOnly: true,
+	                                          disabled: isMandateGenerating || isMandateSending,
+	                                          onClick: () => {
+	                                            setLeadActionsMenuOpen(false)
+	                                            void handleSelectedLeadMandatePrimaryAction()
+	                                          },
+	                                        },
+	                                      ]
+	                                    : [
+	                                        {
+	                                          label: selectedLeadBuyerOnboardingActionLabel,
+	                                          Icon: Mail,
+	                                          tone: 'text-[#29435d]',
+	                                          mobileOnly: true,
+	                                          disabled: canonicalOfferActionId === `lead:${selectedLead?.leadId}:buyer-onboarding`,
+	                                          onClick: () => {
+	                                            setLeadActionsMenuOpen(false)
+	                                            void handleSendBuyerOnboardingFromLead()
+	                                          },
+	                                        },
+	                                        {
+	                                          label: 'Schedule',
+	                                          Icon: CalendarDays,
+	                                          tone: 'text-[#29435d]',
+	                                          mobileOnly: true,
+	                                          onClick: () => {
+	                                            setLeadActionsMenuOpen(false)
+	                                            handleOpenAppointmentModal()
+	                                          },
+	                                        },
+	                                      ]),
+	                                  {
+	                                    label: 'Archive Lead',
+	                                    Icon: X,
+	                                    tone: 'text-[#29435d]',
+	                                    onClick: () => {
+	                                      setLeadActionsMenuOpen(false)
+	                                      openArchiveLeadModal(selectedLead.leadId)
+	                                    },
+	                                  },
+	                                  {
+	                                    label: 'Delete Lead',
+	                                    Icon: Trash2,
+	                                    tone: 'text-[#b42318]',
+	                                    onClick: () => {
+	                                      setLeadActionsMenuOpen(false)
+	                                      openDeleteLeadModal(selectedLead.leadId)
+	                                    },
+	                                  },
+	                                  {
+	                                    label: 'Change Owner',
+	                                    Icon: UserRound,
+	                                    tone: 'text-[#29435d]',
+	                                    onClick: () => {
+	                                      setLeadActionsMenuOpen(false)
+	                                      setMessage('Owner changes can be managed from lead assignment settings.')
+	                                    },
+	                                  },
+	                                  {
+	                                    label: 'Mark as Lost',
+	                                    Icon: X,
+	                                    tone: 'text-[#29435d]',
+	                                    onClick: () => {
+	                                      setLeadActionsMenuOpen(false)
+	                                      openArchiveLeadModal(selectedLead.leadId)
+	                                    },
+	                                  },
+	                                  {
+	                                    label: 'Convert Status',
+	                                    Icon: TrendingUp,
+	                                    tone: 'text-[#29435d]',
+	                                    onClick: () => {
+	                                      setLeadActionsMenuOpen(false)
+	                                      setMessage('Use the stage selector in Lead Summary to convert this lead status.')
+	                                    },
+	                                  },
+	                                  {
+	                                    label: 'Copy Lead Link',
+	                                    Icon: Link2,
+	                                    tone: 'text-[#29435d]',
+	                                    onClick: handleCopySelectedLeadLink,
+	                                  },
+	                                ].map(({ label, Icon, tone, onClick, disabled, mobileOnly }) => (
+	                                  <button
+	                                    key={label}
+	                                    type="button"
+	                                    className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold transition hover:bg-[#f5f9fc] disabled:cursor-not-allowed disabled:opacity-45 ${tone} ${mobileOnly ? 'xl:hidden' : ''}`}
+	                                    onClick={onClick}
+	                                    disabled={disabled}
+	                                    role="menuitem"
+	                                  >
+	                                    {createElement(Icon, { className: 'h-4 w-4' })}
+	                                    {label}
+	                                  </button>
+	                                ))}
+	                              </div>
+	                            ) : null}
+	                          </div>
+	                          <Button type="button" variant="ghost" size="sm" className="hidden h-10 w-10 px-0 xl:inline-flex" title="More lead actions" onClick={() => openDeleteLeadModal(selectedLead.leadId)}>
+	                            <MoreHorizontal className="h-4 w-4" />
+	                          </Button>
+	                        </div>
+	                      ) : null}
+	                    </div>
+
+	                    <div className="min-w-0">
+	                      {selectedLead ? (
+	                        <>
+	                          <h1 className="max-w-full truncate text-[2.25rem] font-bold leading-tight tracking-[-0.04em] text-[#102033] sm:text-[2.75rem] lg:text-[3rem]" title={selectedLeadDisplayName}>
+	                            {selectedLeadDisplayName}
+	                          </h1>
+	                          <div className="mt-2 flex flex-wrap items-center gap-2">
+	                            <span className="rounded-full bg-[#edf4fb] px-2.5 py-1 text-[0.72rem] font-semibold text-[#244f70]">
+	                              {selectedLeadIsSeller ? 'Seller Lead' : 'Buyer Lead'}
+	                            </span>
+	                            <span className="rounded-full bg-[#eef8f2] px-2.5 py-1 text-[0.72rem] font-semibold text-[#247345]">
+	                              {resolveLeadFunnelStage(selectedLead)}
+	                            </span>
+	                          </div>
+	                          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-medium text-[#60758b]">
+	                            <span className="inline-flex min-w-0 items-center gap-2">
+	                              <Home className="h-4 w-4 shrink-0 text-[#8aa0b7]" />
+	                              <span className="truncate">{selectedLeadPropertyLabel}</span>
+	                            </span>
+	                            <span className="hidden h-1 w-1 rounded-full bg-[#c8d4e0] sm:block" />
+	                            <span className="inline-flex min-w-0 items-center gap-2">
+	                              <UserRound className="h-4 w-4 shrink-0 text-[#8aa0b7]" />
+	                              <span className="truncate">{selectedLeadAssignedAgentLabel}</span>
+	                            </span>
+	                            <span className="hidden h-1 w-1 rounded-full bg-[#c8d4e0] sm:block" />
+	                            <span>{selectedLeadIsSeller ? 'Seller relationship' : 'Buyer relationship'}</span>
+	                          </div>
+	                        </>
+	                      ) : (
+	                        <h1 className="text-[2.25rem] font-bold leading-tight tracking-[-0.04em] text-[#102033] sm:text-[2.75rem] lg:text-[3rem]">
+	                          Lead Workspace
+	                        </h1>
+	                      )}
+	                    </div>
+	                  </div>
 
                   {selectedLead ? (
                     <div className="mt-6 grid overflow-hidden rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] sm:grid-cols-2 xl:grid-cols-4">
