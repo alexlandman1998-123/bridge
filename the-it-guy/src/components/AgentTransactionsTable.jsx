@@ -64,18 +64,6 @@ function formatMainStage(row) {
   }
 }
 
-function formatTransactionStatus(row) {
-  const lifecycle = String(row?.transaction?.lifecycle_state || '').trim().toLowerCase()
-  if (lifecycle === 'registered') return { label: 'Registered', className: 'border border-[#d5eadf] bg-[#edf9f2] text-[#1f7a45]' }
-  if (lifecycle === 'completed') return { label: 'Completed', className: 'border border-[#d5eadf] bg-[#edf9f2] text-[#1f7a45]' }
-  if (lifecycle === 'archived') return { label: 'Archived', className: 'border border-[#dce6f2] bg-[#f5f8fc] text-[#5a6f88]' }
-  if (lifecycle === 'cancelled') return { label: 'Cancelled', className: 'border border-[#efd4d2] bg-[#fff4f3] text-[#a53f36]' }
-  if (String(row?.stage || '').trim().toLowerCase() === 'registered') {
-    return { label: 'Registered', className: 'border border-[#d5eadf] bg-[#edf9f2] text-[#1f7a45]' }
-  }
-  return { label: 'Active', className: 'border border-[#d8e4f2] bg-[#f3f8fd] text-[#29567f]' }
-}
-
 function getPropertyLabel(row) {
   const unitLabel = row?.unit?.unit_number ? `Unit ${row.unit.unit_number}` : ''
   const addressLabel = [
@@ -127,22 +115,6 @@ function getEmptyStateCopy(isPrincipalView) {
     return 'Transactions will appear here once leads are converted, offers are accepted, or a deal is created directly.'
   }
   return 'Your assigned transactions will appear here once a lead is converted, an offer is accepted, or a deal is allocated to you.'
-}
-
-function getTableMetrics(rows = []) {
-  return rows.reduce(
-    (accumulator, row) => {
-      const status = formatTransactionStatus(row).label.toLowerCase()
-      const mainStage = formatMainStage(row).key
-      accumulator.total += 1
-      if (status === 'active') accumulator.active += 1
-      if (status === 'registered' || mainStage === 'REG') accumulator.registered += 1
-      if (['ATTY', 'XFER'].includes(mainStage)) accumulator.transfer += 1
-      if (String(row?.transaction?.finance_type || '').trim().toLowerCase() === 'bond') accumulator.bond += 1
-      return accumulator
-    },
-    { total: 0, active: 0, registered: 0, transfer: 0, bond: 0 },
-  )
 }
 
 function rowMatchesQuickFilter(row, filterKey, searchTerm = '') {
@@ -220,7 +192,6 @@ function AgentTransactionsTable({
   )
   const totalPages = Math.max(1, Math.ceil((filteredRows?.length || 0) / pageSize))
   const currentPage = Math.min(page, totalPages)
-  const metrics = useMemo(() => getTableMetrics(rows || []), [rows])
   const hasAnyRows = Boolean((rows || []).length)
 
   const visibleRows = useMemo(() => {
@@ -245,41 +216,14 @@ function AgentTransactionsTable({
       title={title}
       copy={description}
       actions={
-        <div className="agent-transactions-header-actions">
-          <div className="agent-transactions-metrics">
-            {hasAnyRows ? (
-              <>
-                <div className="agent-transaction-metric">
-                  <strong>{metrics.total}</strong>
-                  <span>Transactions</span>
-                </div>
-                <div className="agent-transaction-metric">
-                  <strong>{metrics.active}</strong>
-                  <span>Active</span>
-                </div>
-                <div className="agent-transaction-metric">
-                  <strong>{metrics.transfer}</strong>
-                  <span>Transfer</span>
-                </div>
-                <div className="agent-transaction-metric">
-                  <strong>{metrics.registered}</strong>
-                  <span>Registered</span>
-                </div>
-              </>
-            ) : (
-              <div className="agent-transactions-empty-summary">
-                <span>Waiting for first deal</span>
-                <strong>0 live transactions</strong>
-              </div>
-            )}
-          </div>
-          {onCreateTransaction ? (
+        onCreateTransaction ? (
+          <div className="agent-transactions-header-actions">
             <Button type="button" className="agent-transactions-create-button" onClick={onCreateTransaction}>
               <Plus size={16} />
               Create Deal
             </Button>
-          ) : null}
-        </div>
+          </div>
+        ) : null
       }
       className={`table-panel agent-transactions-panel${compactLayout ? ' transactions-page-compact' : ''}`}
     >
