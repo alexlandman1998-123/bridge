@@ -3,6 +3,7 @@ import { listAppointmentsAsync } from '../lib/agencyPipelineService'
 import { listCanonicalOffersForLead } from '../lib/buyerLifecycleService'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { listLeadListingInterests } from './leadListingInterestService'
+import { buildRequirementSummary, listLeadRequirements } from './leadRequirementService'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -148,6 +149,7 @@ export function buildAgentLeadRows({
   transactions = [],
   listings = [],
   listingInterests = [],
+  requirements = [],
 } = {}) {
   const contactsById = new Map(contacts.map((contact) => [readId(contact, ['contactId', 'contact_id', 'id']), contact]).filter(([id]) => id))
   const normalizedOffers = offers.map(normalizeOffer).filter((offer) => offer.id || offer.leadId || offer.contactId || offer.listingId)
@@ -170,6 +172,14 @@ export function buildAgentLeadRows({
     const relatedTransactions = normalizedTransactions.filter((transaction) => matchesLeadContext(transaction, context))
     const relatedListings = normalizedListings.filter((listing) => matchesLeadContext(listing, context))
     const relatedListingInterests = listingInterests.filter((interest) => getLeadId(interest) === leadId || readId(interest, ['leadId', 'lead_id']) === leadId)
+    const relatedRequirements = requirements
+      .map((requirement) => requirement?.requirementId || requirement?.requirement_id ? requirement : requirement)
+      .filter((requirement) => getLeadId(requirement) === leadId || readId(requirement, ['leadId', 'lead_id']) === leadId)
+      .sort((left, right) => {
+        if (Boolean(left.isPrimary ?? left.is_primary) !== Boolean(right.isPrimary ?? right.is_primary)) return (left.isPrimary ?? left.is_primary) ? -1 : 1
+        return new Date(right.updatedAt || right.updated_at || right.createdAt || right.created_at || 0).getTime() - new Date(left.updatedAt || left.updated_at || left.createdAt || left.created_at || 0).getTime()
+      })
+    const primaryRequirement = relatedRequirements.find((requirement) => requirement.isPrimary || requirement.is_primary) || relatedRequirements[0] || null
     const nextTask = relatedTasks.find(isOpenTask) || null
     const latestActivity = relatedActivities[0] || null
 
@@ -199,6 +209,9 @@ export function buildAgentLeadRows({
       transactions: relatedTransactions,
       listings: relatedListings,
       listingInterests: relatedListingInterests,
+      requirements: relatedRequirements,
+      primaryRequirement,
+      requirementSummary: buildRequirementSummary(primaryRequirement),
       listingCount: Math.max(relatedListingInterests.length, relatedListings.length || (listingId ? 1 : 0)),
       appointmentCount: relatedAppointments.length,
       offerCount: relatedOffers.length,
@@ -297,6 +310,21 @@ async function safeReadLeadListingInterests(organisationId = '') {
   return Array.isArray(data) ? data : []
 }
 
+async function safeReadLeadRequirements(organisationId = '') {
+  if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) return []
+  const { data, error } = await supabase
+    .from('lead_requirements')
+    .select('*')
+    .eq('organisation_id', organisationId)
+    .order('updated_at', { ascending: false })
+    .limit(2000)
+  if (error) {
+    if (isRecoverableReadError(error, 'lead_requirements')) return []
+    throw error
+  }
+  return Array.isArray(data) ? data : []
+}
+
 async function safeReadAppointments(organisationId = '') {
   try {
     return await listAppointmentsAsync(organisationId, { includeAll: true })
@@ -308,12 +336,13 @@ async function safeReadAppointments(organisationId = '') {
 
 export async function listAgentLeadWorkspaceRows({ organisationId = '' } = {}) {
   const snapshot = await listAgencyCrmLeadContacts(organisationId)
-  const [appointments, offers, transactions, listings, listingInterests] = await Promise.all([
+  const [appointments, offers, transactions, listings, listingInterests, requirements] = await Promise.all([
     safeReadAppointments(organisationId),
     safeReadAllOffers(organisationId),
     safeReadTransactions(organisationId),
     safeReadPrivateListings(organisationId),
     safeReadLeadListingInterests(organisationId),
+    safeReadLeadRequirements(organisationId),
   ])
   const rows = buildAgentLeadRows({
     leads: snapshot.leads,
@@ -325,6 +354,7 @@ export async function listAgentLeadWorkspaceRows({ organisationId = '' } = {}) {
     transactions,
     listings,
     listingInterests,
+    requirements,
   })
   return {
     ...snapshot,
@@ -334,6 +364,7 @@ export async function listAgentLeadWorkspaceRows({ organisationId = '' } = {}) {
     transactions: transactions.map(normalizeTransaction),
     listings: listings.map(normalizeListing),
     listingInterests,
+    requirements,
   }
 }
 
@@ -369,10 +400,11 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     if (!isRecoverableReadError(error, 'offers')) throw error
     offers = []
   }
-  const [transactions, listings, listingInterests] = await Promise.all([
+  const [transactions, listings, listingInterests, requirements] = await Promise.all([
     safeReadTransactions(organisationId, context),
     safeReadPrivateListings(organisationId),
     listLeadListingInterests({ organisationId, leadId: context.leadId }),
+    listLeadRequirements({ organisationId, leadId: context.leadId }),
   ])
   const rows = buildAgentLeadRows({
     leads: workspace.leads,
@@ -384,6 +416,7 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     transactions,
     listings,
     listingInterests,
+    requirements,
   })
   return {
     ...workspace,
@@ -393,5 +426,6 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     transactions: transactions.map(normalizeTransaction).filter((transaction) => matchesLeadContext(transaction, context)),
     listings: listings.map(normalizeListing).filter((listing) => matchesLeadContext(listing, context)),
     listingInterests,
+    requirements,
   }
 }

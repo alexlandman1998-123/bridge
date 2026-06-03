@@ -91,6 +91,16 @@ function requireClient() {
 function normalizeListing(row = {}) {
   const propertyDetails = row?.propertyDetails && typeof row.propertyDetails === 'object' ? row.propertyDetails : {}
   const marketing = row?.marketing && typeof row.marketing === 'object' ? row.marketing : {}
+  const onboarding = row?.onboarding && typeof row.onboarding === 'object' ? row.onboarding : {}
+  const onboardingFormData = onboarding?.formData && typeof onboarding.formData === 'object' ? onboarding.formData : {}
+  const features = [
+    ...(Array.isArray(row?.features) ? row.features : []),
+    ...(Array.isArray(propertyDetails.features) ? propertyDetails.features : []),
+    ...(Array.isArray(onboardingFormData.features) ? onboardingFormData.features : []),
+    propertyDetails.securityFeatures,
+    propertyDetails.description,
+    row?.description,
+  ].map(normalizeText).filter(Boolean)
   return {
     id: readId(row, ['id', 'listingId', 'listing_id']),
     organisationId: readId(row, ['organisationId', 'organisation_id']),
@@ -100,6 +110,7 @@ function normalizeListing(row = {}) {
     city: normalizeText(row?.city || propertyDetails.city),
     province: normalizeText(row?.province || propertyDetails.province),
     price: normalizeNumber(row?.askingPrice ?? row?.asking_price ?? propertyDetails.price),
+    propertyType: normalizeText(row?.propertyType || row?.property_type || propertyDetails.propertyType || onboardingFormData.propertyType),
     status: normalizeText(row?.listingStatus || row?.listing_status || row?.status),
     imageUrl: normalizeText(marketing.mediaUrl || row?.imageUrl || row?.image_url),
     bedrooms: normalizeNumber(row?.bedrooms ?? propertyDetails.bedrooms),
@@ -107,6 +118,9 @@ function normalizeListing(row = {}) {
     garages: normalizeNumber(row?.garages ?? propertyDetails.garages),
     coveredParking: normalizeNumber(row?.coveredParking ?? propertyDetails.coveredParking),
     openParking: normalizeNumber(row?.openParking ?? propertyDetails.openParking),
+    erfSize: normalizeNumber(row?.erfSize ?? row?.erf_size ?? propertyDetails.erfSize),
+    floorSize: normalizeNumber(row?.floorSize ?? row?.floor_size ?? propertyDetails.floorSize),
+    features,
     updatedAt: row?.updatedAt || row?.updated_at || null,
     createdAt: row?.createdAt || row?.created_at || null,
     raw: row,
@@ -141,6 +155,7 @@ export function mapLeadListingInterest(row = {}, { listing = null, lead = null, 
     leadId: readId(row, ['leadId', 'lead_id']),
     contactId: readId(row, ['contactId', 'contact_id']),
     listingId: readId(row, ['listingId', 'listing_id']),
+    requirementId: readId(row, ['requirementId', 'requirement_id']),
     source: normalizeText(row?.source) || 'manual',
     status: normalizeStatus(row?.status),
     matchScore: row?.matchScore ?? row?.match_score ?? null,
@@ -171,6 +186,7 @@ export function buildLeadListingInterestPayload(payload = {}) {
   const leadId = nullableUuid(payload.leadId || payload.lead_id || lead.leadId || lead.lead_id || lead.id)
   const contactId = nullableUuid(payload.contactId || payload.contact_id || contact.contactId || contact.contact_id || contact.id || lead.contactId || lead.contact_id)
   const listingId = nullableUuid(payload.listingId || payload.listing_id || listing.id || listing.listingId || listing.listing_id)
+  const requirementId = nullableUuid(payload.requirementId || payload.requirement_id)
   if (!organisationId || !leadId || !listingId) {
     throw new Error('A valid organisation id, lead id, and listing id are required for lead listing interests.')
   }
@@ -180,6 +196,7 @@ export function buildLeadListingInterestPayload(payload = {}) {
     lead_id: leadId,
     contact_id: contactId,
     listing_id: listingId,
+    requirement_id: requirementId,
     source: normalizeText(payload.source) || 'manual',
     status: normalizeStatus(payload.status),
     match_score: payload.matchScore === undefined && payload.match_score === undefined ? null : normalizeNumber(payload.matchScore ?? payload.match_score),

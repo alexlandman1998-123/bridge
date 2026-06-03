@@ -59,6 +59,7 @@ try {
   const contactId = '33333333-3333-4333-8333-333333333333'
   const listingId = '44444444-4444-4444-8444-444444444444'
   const actorId = '55555555-5555-4555-8555-555555555555'
+  const requirementId = '77777777-7777-4777-8777-777777777777'
 
   const payload = buildLeadListingInterestPayload({
     organisationId,
@@ -70,6 +71,7 @@ try {
     isAgentSelected: true,
     matchScore: 82,
     matchReasons: ['area', 'budget'],
+    requirementId,
     createdBy: actorId,
   })
 
@@ -77,6 +79,7 @@ try {
   assert.equal(payload.lead_id, leadId)
   assert.equal(payload.contact_id, contactId)
   assert.equal(payload.listing_id, listingId)
+  assert.equal(payload.requirement_id, requirementId)
   assert.equal(payload.status, 'shortlisted')
   assert.equal(payload.is_agent_selected, true)
   assert.equal(payload.match_score, 82)
@@ -89,6 +92,7 @@ try {
     lead_id: leadId,
     contact_id: contactId,
     listing_id: listingId,
+    requirement_id: requirementId,
     source: 'manual',
     status: 'not-real',
     match_reasons: [{ reason: 'stored only' }],
@@ -99,6 +103,7 @@ try {
   assert.equal(mapped.status, 'interested', 'unknown statuses should fall back without hiding the record')
   assert.equal(mapped.isOriginalEnquiry, true)
   assert.equal(mapped.sentAt, '2026-06-03T08:00:00.000Z')
+  assert.equal(mapped.requirementId, requirementId)
   assert.deepEqual(mapped.matchReasons, [{ reason: 'stored only' }])
 
   assert.throws(() => buildLeadListingInterestPayload({ organisationId, leadId }), /listing id/i)

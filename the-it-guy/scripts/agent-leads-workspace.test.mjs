@@ -74,6 +74,20 @@ const listingInterests = [
   { interest_id: 'interest-two', lead_id: 'lead-viewing-offer', listing_id: 'listing-one', status: 'sent', source: 'manual' },
 ]
 
+const requirements = [
+  {
+    requirement_id: 'requirement-one',
+    lead_id: 'lead-contact-only',
+    intent_type: 'buy',
+    property_types: ['house'],
+    suburbs: ['Bartlett'],
+    budget_max: 2200000,
+    bedrooms_min: 3,
+    status: 'active',
+    is_primary: true,
+  },
+]
+
 const server = await createServer({
   root: process.cwd(),
   logLevel: 'silent',
@@ -87,7 +101,7 @@ try {
     getLeadFilterOptions,
   } = await server.ssrLoadModule('/src/services/agentLeadWorkspaceService.js')
 
-  const rows = buildAgentLeadRows({ leads, contacts, leadActivities, tasks, appointments, offers, transactions, listings, listingInterests })
+  const rows = buildAgentLeadRows({ leads, contacts, leadActivities, tasks, appointments, offers, transactions, listings, listingInterests, requirements })
 
   assert.equal(rows.length, 3, 'all leads should remain visible')
 
@@ -98,6 +112,9 @@ try {
   assert.equal(contactOnly.source, 'Unknown', 'unknown source should not hide the lead')
   assert.equal(contactOnly.nextTask.title, 'Call missing details lead')
   assert.equal(contactOnly.listingCount, 1, 'missing listing details should still count the relationship')
+  assert.equal(contactOnly.requirements.length, 1)
+  assert.match(contactOnly.requirementSummary, /3-bed/)
+  assert.match(contactOnly.requirementSummary, /Bartlett/)
 
   const viewingLead = rows.find((row) => row.leadId === 'lead-viewing-offer')
   assert.equal(viewingLead.appointmentCount, 1)

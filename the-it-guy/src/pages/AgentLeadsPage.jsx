@@ -28,7 +28,6 @@ import {
 } from '../services/agentLeadWorkspaceService'
 import {
   dismissLeadListingInterest,
-  LEAD_LISTING_INTEREST_STATUSES,
   listSearchablePrivateListings,
   markLeadListingInterestSent,
   markLeadListingInterestViewed,
@@ -37,6 +36,25 @@ import {
   updateLeadListingInterestStatus,
   upsertLeadListingInterest,
 } from '../services/leadListingInterestService'
+import {
+  activateLeadRequirement,
+  archiveLeadRequirement,
+  buildRequirementFromLeadFallback,
+  buildRequirementSummary,
+  createLeadRequirement,
+  LEAD_REQUIREMENT_FINANCE_STATUSES,
+  LEAD_REQUIREMENT_INTENT_TYPES,
+  LEAD_REQUIREMENT_STATUSES,
+  LEAD_REQUIREMENT_TIMELINES,
+  LEAD_REQUIREMENT_URGENCIES,
+  pauseLeadRequirement,
+  setPrimaryLeadRequirement,
+  updateLeadRequirement,
+} from '../services/leadRequirementService'
+import {
+  addMatchesToLead,
+  findListingsForRequirement,
+} from '../services/leadMatchingService'
 
 const pageShell = 'mx-auto flex w-full max-w-[1480px] flex-col gap-5'
 const panelClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm'
@@ -63,6 +81,96 @@ function formatCurrency(value) {
   const number = Number(value || 0)
   if (!number) return '—'
   return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(number)
+}
+
+function parseListInput(value) {
+  if (Array.isArray(value)) return value.map(normalizeText).filter(Boolean)
+  return normalizeText(value).split(/[,;\n]/).map(normalizeText).filter(Boolean)
+}
+
+function listToInput(value) {
+  return Array.isArray(value) ? value.join(', ') : normalizeText(value)
+}
+
+function formatList(value) {
+  const items = parseListInput(value)
+  return items.length ? items.join(', ') : '—'
+}
+
+function makeRequirementDraft(requirement = null, lead = null) {
+  const source = requirement || buildRequirementFromLeadFallback(lead || {})
+  return {
+    title: source.title || '',
+    intentType: source.intentType || 'buy',
+    propertyCategory: source.propertyCategory || '',
+    propertyTypes: listToInput(source.propertyTypes),
+    areas: listToInput(source.areas),
+    suburbs: listToInput(source.suburbs),
+    city: source.city || '',
+    province: source.province || '',
+    budgetMin: source.budgetMin ?? '',
+    budgetMax: source.budgetMax ?? '',
+    bedroomsMin: source.bedroomsMin ?? '',
+    bathroomsMin: source.bathroomsMin ?? '',
+    garagesMin: source.garagesMin ?? '',
+    parkingMin: source.parkingMin ?? '',
+    erfSizeMin: source.erfSizeMin ?? '',
+    floorSizeMin: source.floorSizeMin ?? '',
+    mustHaves: listToInput(source.mustHaves),
+    niceToHaves: listToInput(source.niceToHaves),
+    dealBreakers: listToInput(source.dealBreakers),
+    financeStatus: source.financeStatus || 'unknown',
+    financeType: source.financeType || '',
+    preApproved: source.preApproved === null || source.preApproved === undefined ? '' : String(Boolean(source.preApproved)),
+    depositAvailable: source.depositAvailable === null || source.depositAvailable === undefined ? '' : String(Boolean(source.depositAvailable)),
+    timeline: source.timeline || '',
+    urgency: source.urgency || '',
+    communicationPreference: source.communicationPreference || '',
+    consentToReceiveMatches: Boolean(source.consentToReceiveMatches),
+    notes: source.notes || '',
+    status: source.status || 'active',
+    isPrimary: Boolean(source.isPrimary),
+  }
+}
+
+function draftToRequirementPayload(draft = {}, lead = {}, organisationId = '', actor = {}) {
+  return {
+    organisationId,
+    lead,
+    leadId: lead.leadId,
+    contactId: lead.contactId,
+    title: draft.title,
+    intentType: draft.intentType || 'buy',
+    propertyCategory: draft.propertyCategory,
+    propertyTypes: parseListInput(draft.propertyTypes),
+    areas: parseListInput(draft.areas),
+    suburbs: parseListInput(draft.suburbs),
+    city: draft.city,
+    province: draft.province,
+    budgetMin: draft.budgetMin,
+    budgetMax: draft.budgetMax,
+    bedroomsMin: draft.bedroomsMin,
+    bathroomsMin: draft.bathroomsMin,
+    garagesMin: draft.garagesMin,
+    parkingMin: draft.parkingMin,
+    erfSizeMin: draft.erfSizeMin,
+    floorSizeMin: draft.floorSizeMin,
+    mustHaves: parseListInput(draft.mustHaves),
+    niceToHaves: parseListInput(draft.niceToHaves),
+    dealBreakers: parseListInput(draft.dealBreakers),
+    financeStatus: draft.financeStatus || 'unknown',
+    financeType: draft.financeType,
+    preApproved: draft.preApproved,
+    depositAvailable: draft.depositAvailable,
+    timeline: draft.timeline,
+    urgency: draft.urgency,
+    communicationPreference: draft.communicationPreference,
+    consentToReceiveMatches: draft.consentToReceiveMatches,
+    notes: draft.notes,
+    status: draft.status || 'active',
+    isPrimary: draft.isPrimary,
+    createdBy: actor?.id,
+  }
 }
 
 function getOrganisationId(workspaceContext = {}) {
@@ -138,6 +246,391 @@ function ContactLines({ row }) {
   )
 }
 
+function RequirementForm({ organisationId, lead, actor, requirement = null, onCancel, onSaved }) {
+  const [draft, setDraft] = useState(() => makeRequirementDraft(requirement, lead))
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  function updateField(field, value) {
+    setDraft((previous) => ({ ...previous, [field]: value }))
+  }
+
+  async function submit(event) {
+    event.preventDefault()
+    try {
+      setSaving(true)
+      setError('')
+      const payload = draftToRequirementPayload(draft, lead, organisationId, actor)
+      if (requirement?.requirementId) {
+        await updateLeadRequirement({ requirementId: requirement.requirementId, updates: payload }, { actor })
+      } else {
+        await createLeadRequirement(payload, { actor })
+      }
+      await onSaved()
+      onCancel()
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to save requirement.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <input value={draft.title} onChange={(event) => updateField('title', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Title" />
+        <select value={draft.intentType} onChange={(event) => updateField('intentType', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+          {LEAD_REQUIREMENT_INTENT_TYPES.map((option) => <option key={option} value={option}>{option.replace(/_/g, ' ')}</option>)}
+        </select>
+        <input value={draft.propertyCategory} onChange={(event) => updateField('propertyCategory', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Property category" />
+        <input value={draft.propertyTypes} onChange={(event) => updateField('propertyTypes', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Property types" />
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <input value={draft.areas} onChange={(event) => updateField('areas', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Areas" />
+        <input value={draft.suburbs} onChange={(event) => updateField('suburbs', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Suburbs" />
+        <input value={draft.city} onChange={(event) => updateField('city', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="City" />
+        <input value={draft.province} onChange={(event) => updateField('province', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Province" />
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <input value={draft.budgetMin} onChange={(event) => updateField('budgetMin', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Budget min" />
+        <input value={draft.budgetMax} onChange={(event) => updateField('budgetMax', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Budget max" />
+        <input value={draft.bedroomsMin} onChange={(event) => updateField('bedroomsMin', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Bedrooms min" />
+        <input value={draft.bathroomsMin} onChange={(event) => updateField('bathroomsMin', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Bathrooms min" />
+        <input value={draft.garagesMin} onChange={(event) => updateField('garagesMin', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Garages min" />
+        <input value={draft.parkingMin} onChange={(event) => updateField('parkingMin', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Parking min" />
+        <input value={draft.erfSizeMin} onChange={(event) => updateField('erfSizeMin', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Erf size min" />
+        <input value={draft.floorSizeMin} onChange={(event) => updateField('floorSizeMin', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Floor size min" />
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-3">
+        <input value={draft.mustHaves} onChange={(event) => updateField('mustHaves', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Must-haves" />
+        <input value={draft.niceToHaves} onChange={(event) => updateField('niceToHaves', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Nice-to-haves" />
+        <input value={draft.dealBreakers} onChange={(event) => updateField('dealBreakers', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Deal-breakers" />
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <select value={draft.financeStatus} onChange={(event) => updateField('financeStatus', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+          {LEAD_REQUIREMENT_FINANCE_STATUSES.map((option) => <option key={option} value={option}>{option.replace(/_/g, ' ')}</option>)}
+        </select>
+        <input value={draft.financeType} onChange={(event) => updateField('financeType', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Finance type" />
+        <select value={draft.preApproved} onChange={(event) => updateField('preApproved', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+          <option value="">Pre-approved unknown</option>
+          <option value="true">Pre-approved</option>
+          <option value="false">Not pre-approved</option>
+        </select>
+        <select value={draft.depositAvailable} onChange={(event) => updateField('depositAvailable', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+          <option value="">Deposit unknown</option>
+          <option value="true">Deposit available</option>
+          <option value="false">No deposit captured</option>
+        </select>
+        <select value={draft.timeline} onChange={(event) => updateField('timeline', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+          <option value="">Timeline unknown</option>
+          {LEAD_REQUIREMENT_TIMELINES.map((option) => <option key={option} value={option}>{option.replace(/_/g, ' ')}</option>)}
+        </select>
+        <select value={draft.urgency} onChange={(event) => updateField('urgency', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+          <option value="">Urgency unknown</option>
+          {LEAD_REQUIREMENT_URGENCIES.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+        <input value={draft.communicationPreference} onChange={(event) => updateField('communicationPreference', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Communication preference" />
+        <select value={draft.status} onChange={(event) => updateField('status', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+          {LEAD_REQUIREMENT_STATUSES.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_auto_auto] lg:items-center">
+        <textarea value={draft.notes} onChange={(event) => updateField('notes', event.target.value)} className="min-h-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" placeholder="Notes" />
+        <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-700">
+          <input type="checkbox" checked={draft.consentToReceiveMatches} onChange={(event) => updateField('consentToReceiveMatches', event.target.checked)} />
+          Consent to matches
+        </label>
+        <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-700">
+          <input type="checkbox" checked={draft.isPrimary} onChange={(event) => updateField('isPrimary', event.target.checked)} />
+          Primary
+        </label>
+      </div>
+
+      {error ? <p className="mt-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <button type="button" onClick={onCancel} className="min-h-10 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Cancel</button>
+        <button type="submit" disabled={saving} className="min-h-10 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:bg-slate-300">{saving ? 'Saving...' : 'Save Requirement'}</button>
+      </div>
+    </form>
+  )
+}
+
+function MatchReasonList({ reasons = [] }) {
+  const visibleReasons = Array.isArray(reasons) ? reasons.slice(0, 5) : []
+  if (!visibleReasons.length) return <p className="text-xs text-slate-500">No scoring reasons available.</p>
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      {visibleReasons.map((reason, index) => {
+        const type = reason?.type || 'match'
+        const text = typeof reason === 'string' ? reason : reason?.text
+        const tone = type === 'match'
+          ? 'bg-emerald-50 text-emerald-700'
+          : type === 'missing'
+            ? 'bg-amber-50 text-amber-700'
+            : 'bg-rose-50 text-rose-700'
+        return <span key={`match-reason-${index}`} className={`rounded-full px-2.5 py-1 text-xs font-semibold ${tone}`}>{text}</span>
+      })}
+    </div>
+  )
+}
+
+function RequirementMatchPanel({ organisationId, lead, requirement, actor, onSaved }) {
+  const [loading, setLoading] = useState(true)
+  const [matches, setMatches] = useState([])
+  const [selectedIds, setSelectedIds] = useState([])
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+
+  const loadMatches = useCallback(async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const result = await findListingsForRequirement({ organisationId, requirementId: requirement.requirementId })
+      setMatches(result.matches || [])
+    } catch (loadError) {
+      setMatches([])
+      setError(loadError?.message || 'Unable to find matches.')
+    } finally {
+      setLoading(false)
+    }
+  }, [organisationId, requirement.requirementId])
+
+  useEffect(() => {
+    void loadMatches()
+  }, [loadMatches])
+
+  function toggleListing(listingId) {
+    setSelectedIds((previous) => previous.includes(listingId)
+      ? previous.filter((id) => id !== listingId)
+      : [...previous, listingId])
+  }
+
+  async function addSelected() {
+    try {
+      setSaving(true)
+      setError('')
+      const saved = await addMatchesToLead(
+        {
+          organisationId,
+          leadId: lead.leadId,
+          requirementId: requirement.requirementId,
+          listingIds: selectedIds,
+        },
+        { actor },
+      )
+      setMessage(`${saved.length} listing${saved.length === 1 ? '' : 's'} added to Interested Listings.`)
+      setSelectedIds([])
+      await onSaved()
+      await loadMatches()
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to add selected matches.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h4 className="text-sm font-semibold text-slate-950">Matching Listings</h4>
+          <p className="mt-1 text-sm text-slate-500">Deterministic scoring from existing private listings. Agents choose what gets linked.</p>
+        </div>
+        <button type="button" onClick={addSelected} disabled={saving || !selectedIds.length} className="min-h-10 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:bg-slate-300">
+          {saving ? 'Adding...' : `Add Selected (${selectedIds.length})`}
+        </button>
+      </div>
+      {message ? <p className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+      {error ? <p className="mt-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+      {loading ? <LoadingSkeleton lines={5} className="mt-4 rounded-2xl border border-slate-200 bg-white" /> : null}
+      {!loading ? (
+        <div className="mt-4 grid gap-3">
+          {matches.length ? matches.map((match) => {
+            const selected = selectedIds.includes(match.id)
+            const hasMissingData = match.matchReasons?.some((reason) => reason?.type === 'missing')
+            return (
+              <article key={match.id} className={`rounded-2xl border bg-white p-4 shadow-sm ${selected ? 'border-blue-300 ring-2 ring-blue-100' : 'border-slate-200'}`}>
+                <div className="grid gap-4 lg:grid-cols-[auto_120px_1fr_auto] lg:items-start">
+                  <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+                    <input type="checkbox" checked={selected} onChange={() => toggleListing(match.id)} />
+                    Select
+                  </label>
+                  <div className="flex h-24 items-center justify-center overflow-hidden rounded-2xl bg-slate-100 text-slate-400">
+                    {match.imageUrl ? <img src={match.imageUrl} alt="" className="h-full w-full object-cover" /> : <Home size={22} />}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h5 className="truncate text-sm font-semibold text-slate-950">{match.title || 'Untitled listing'}</h5>
+                      {match.alreadyLinked ? <StatusPill tone="amber">Already linked</StatusPill> : null}
+                      {hasMissingData ? <StatusPill tone="amber">Missing data</StatusPill> : null}
+                      <StatusPill>{match.status || 'Status unknown'}</StatusPill>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-500">{[match.address, match.suburb, match.city].filter(Boolean).join(', ') || 'Address pending'}</p>
+                    <p className="mt-2 text-sm font-semibold text-blue-700">{formatCurrency(match.price)}</p>
+                    <ListingSpecs listing={match} />
+                    <MatchReasonList reasons={match.matchReasons} />
+                    {match.id ? <Link to={`/agent/listings/${match.id}`} className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-blue-700">Open listing <ExternalLink size={13} /></Link> : null}
+                  </div>
+                  <div className="rounded-2xl bg-slate-900 px-4 py-3 text-center text-white">
+                    <span className="block text-xs font-semibold uppercase tracking-[0.08em] text-slate-300">Score</span>
+                    <strong className="mt-1 block text-2xl font-semibold">{match.matchScore}</strong>
+                  </div>
+                </div>
+              </article>
+            )
+          }) : <EmptyState title="No listing matches found" copy="Create or activate listings with price, location, and property details before matching this requirement." />}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+function RequirementCard({ requirement, lead, organisationId, actor, onSaved }) {
+  const [editing, setEditing] = useState(false)
+  const [showMatches, setShowMatches] = useState(false)
+  const [working, setWorking] = useState('')
+  const summary = buildRequirementSummary(requirement)
+
+  async function runAction(action) {
+    try {
+      setWorking(action)
+      if (action === 'primary') await setPrimaryLeadRequirement({ leadId: lead.leadId, requirementId: requirement.requirementId }, { actor })
+      if (action === 'pause') await pauseLeadRequirement({ requirementId: requirement.requirementId }, { actor })
+      if (action === 'archive') await archiveLeadRequirement({ requirementId: requirement.requirementId }, { actor })
+      if (action === 'activate') await activateLeadRequirement({ requirementId: requirement.requirementId }, { actor })
+      await onSaved()
+    } finally {
+      setWorking('')
+    }
+  }
+
+  if (editing) {
+    return <RequirementForm organisationId={organisationId} lead={lead} actor={actor} requirement={requirement} onCancel={() => setEditing(false)} onSaved={onSaved} />
+  }
+
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-base font-semibold text-slate-950">{requirement.title || summary}</h3>
+            {requirement.isPrimary ? <StatusPill tone="green">Primary</StatusPill> : null}
+            <StatusPill tone={requirement.status === 'active' ? 'blue' : 'slate'}>{requirement.status}</StatusPill>
+            <StatusPill>{requirement.intentType}</StatusPill>
+          </div>
+          <p className="mt-2 text-sm font-semibold text-blue-700">{summary}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {!requirement.isPrimary && requirement.status !== 'archived' ? <button type="button" onClick={() => runAction('primary')} disabled={Boolean(working)} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">Set Primary</button> : null}
+          {requirement.status === 'active' ? <button type="button" onClick={() => runAction('pause')} disabled={Boolean(working)} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">Pause</button> : <button type="button" onClick={() => runAction('activate')} disabled={Boolean(working)} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">Activate</button>}
+          {requirement.status !== 'archived' ? <button type="button" onClick={() => runAction('archive')} disabled={Boolean(working)} className="rounded-xl border border-rose-100 px-3 py-2 text-xs font-semibold text-rose-700">Archive</button> : null}
+          {requirement.status === 'active' ? <button type="button" onClick={() => setShowMatches((value) => !value)} className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700">Find Matches</button> : null}
+          <button type="button" onClick={() => setEditing(true)} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white">Edit</button>
+        </div>
+      </div>
+
+      <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Field label="Property Types" value={formatList(requirement.propertyTypes)} />
+        <Field label="Areas" value={formatList(requirement.areas)} />
+        <Field label="Suburbs" value={formatList(requirement.suburbs)} />
+        <Field label="Budget" value={requirement.budgetMin || requirement.budgetMax ? `${requirement.budgetMin ? formatCurrency(requirement.budgetMin) : 'No min'} - ${requirement.budgetMax ? formatCurrency(requirement.budgetMax) : 'No max'}` : '—'} />
+        <Field label="Bedrooms Min" value={requirement.bedroomsMin} />
+        <Field label="Bathrooms Min" value={requirement.bathroomsMin} />
+        <Field label="Must-Haves" value={formatList(requirement.mustHaves)} />
+        <Field label="Finance" value={requirement.financeStatus} />
+        <Field label="Timeline" value={requirement.timeline} />
+        <Field label="Urgency" value={requirement.urgency} />
+        <Field label="Consent" value={requirement.consentToReceiveMatches ? 'Yes' : 'No'} />
+        <Field label="Updated" value={formatDateTime(requirement.updatedAt)} />
+      </dl>
+      {requirement.notes ? <p className="mt-4 whitespace-pre-wrap rounded-2xl bg-slate-50 p-3 text-sm leading-6 text-slate-600">{requirement.notes}</p> : null}
+      {showMatches ? (
+        <RequirementMatchPanel
+          organisationId={organisationId}
+          lead={lead}
+          requirement={requirement}
+          actor={actor}
+          onSaved={onSaved}
+        />
+      ) : null}
+    </article>
+  )
+}
+
+function LeadRequirementsPanel({ organisationId, lead, requirements = [], actor, onSaved }) {
+  const [showForm, setShowForm] = useState(false)
+  const [creatingFromLegacy, setCreatingFromLegacy] = useState(false)
+  const hasLegacy = Boolean(lead.budget || lead.areaInterest || lead.area_interest || lead.propertyInterest || lead.property_interest)
+
+  async function createFromLegacy() {
+    try {
+      setCreatingFromLegacy(true)
+      await createLeadRequirement(buildRequirementFromLeadFallback({ ...lead, organisationId }), { actor })
+      await onSaved()
+    } finally {
+      setCreatingFromLegacy(false)
+    }
+  }
+
+  return (
+    <section className={`${panelClass} p-5`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Requirements</h2>
+          <p className="mt-1 text-sm text-slate-500">Structured lead intent for manual matching later. Existing loose lead fields are preserved as fallback context.</p>
+        </div>
+        <button type="button" onClick={() => setShowForm((value) => !value)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white">
+          <Plus size={15} />
+          {showForm ? 'Close' : 'Add Requirement'}
+        </button>
+      </div>
+
+      {showForm ? (
+        <div className="mt-5">
+          <RequirementForm organisationId={organisationId} lead={lead} actor={actor} onCancel={() => setShowForm(false)} onSaved={onSaved} />
+        </div>
+      ) : null}
+
+      {!requirements.length && hasLegacy ? (
+        <div className="mt-5 rounded-2xl border border-amber-100 bg-amber-50 p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-amber-950">Legacy lead details</h3>
+              <dl className="mt-3 grid gap-3 sm:grid-cols-3">
+                <Field label="Budget" value={lead.budget ? formatCurrency(lead.budget) : '—'} />
+                <Field label="Area Interest" value={lead.areaInterest || lead.area_interest} />
+                <Field label="Property Interest" value={lead.propertyInterest || lead.property_interest} />
+              </dl>
+            </div>
+            <button type="button" onClick={createFromLegacy} disabled={creatingFromLegacy} className="min-h-10 rounded-xl bg-amber-900 px-4 text-sm font-semibold text-white disabled:bg-amber-300">
+              {creatingFromLegacy ? 'Creating...' : 'Create structured requirement from existing lead details'}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-5 grid gap-4">
+        {requirements.length ? requirements.map((requirement) => (
+          <RequirementCard
+            key={requirement.requirementId}
+            requirement={requirement}
+            lead={lead}
+            organisationId={organisationId}
+            actor={actor}
+            onSaved={onSaved}
+          />
+        )) : <EmptyState title="No structured requirements yet" copy="Capture what this lead is looking for before manual matching is introduced." />}
+      </div>
+    </section>
+  )
+}
+
 function ListingSpecs({ listing }) {
   const specs = [
     listing?.bedrooms ? `${listing.bedrooms} bed` : '',
@@ -159,9 +652,10 @@ function InterestStatusActions({ interest, onAction }) {
   )
 }
 
-function AddListingToLeadPanel({ organisationId, lead, actor, onSaved }) {
+function AddListingToLeadPanel({ organisationId, lead, requirements = [], actor, onSaved }) {
   const [open, setOpen] = useState(false)
-  const [filters, setFilters] = useState({ search: '', status: 'all', minPrice: '', maxPrice: '' })
+  const primaryRequirement = requirements.find((requirement) => requirement.isPrimary) || requirements[0] || null
+  const [filters, setFilters] = useState({ search: '', status: 'all', minPrice: '', maxPrice: '', requirementId: primaryRequirement?.requirementId || '' })
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -195,6 +689,7 @@ function AddListingToLeadPanel({ organisationId, lead, actor, onSaved }) {
           lead,
           contactId: lead.contactId,
           listing,
+          requirementId: filters.requirementId,
           source: 'manual',
           status: 'interested',
           isAgentSelected: true,
@@ -235,6 +730,12 @@ function AddListingToLeadPanel({ organisationId, lead, actor, onSaved }) {
             <input value={filters.minPrice} onChange={(event) => setFilters((previous) => ({ ...previous, minPrice: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Min price" />
             <input value={filters.maxPrice} onChange={(event) => setFilters((previous) => ({ ...previous, maxPrice: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Max price" />
           </div>
+          {requirements.length ? (
+            <select value={filters.requirementId} onChange={(event) => setFilters((previous) => ({ ...previous, requirementId: event.target.value }))} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm">
+              <option value="">No requirement link</option>
+              {requirements.map((requirement) => <option key={requirement.requirementId} value={requirement.requirementId}>{buildRequirementSummary(requirement)}</option>)}
+            </select>
+          ) : null}
           {error ? <p className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
           <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
             {loading ? <LoadingSkeleton lines={4} className="rounded-2xl border border-slate-200 bg-white" /> : null}
@@ -264,11 +765,12 @@ function AddListingToLeadPanel({ organisationId, lead, actor, onSaved }) {
   )
 }
 
-function LeadListingInterestsPanel({ organisationId, lead, interests = [], actor, onSaved }) {
+function LeadListingInterestsPanel({ organisationId, lead, interests = [], requirements = [], actor, onSaved }) {
   const [noteDrafts, setNoteDrafts] = useState({})
   const [scheduleDrafts, setScheduleDrafts] = useState({})
   const [workingId, setWorkingId] = useState('')
   const [error, setError] = useState('')
+  const requirementById = useMemo(() => new Map(requirements.map((requirement) => [requirement.requirementId, requirement])), [requirements])
 
   async function handleAction(action, interest) {
     try {
@@ -334,13 +836,14 @@ function LeadListingInterestsPanel({ organisationId, lead, interests = [], actor
         <StatusPill>{interests.length} linked</StatusPill>
       </div>
       <div className="mt-5">
-        <AddListingToLeadPanel organisationId={organisationId} lead={lead} actor={actor} onSaved={onSaved} />
+        <AddListingToLeadPanel organisationId={organisationId} lead={lead} requirements={requirements} actor={actor} onSaved={onSaved} />
       </div>
       {error ? <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
       <div className="mt-5 grid gap-4">
         {interests.length ? interests.map((interest) => {
           const listing = interest.listing || {}
           const draft = scheduleDrafts[interest.interestId] || {}
+          const requirement = requirementById.get(interest.requirementId) || null
           return (
             <article key={interest.interestId} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="grid gap-4 lg:grid-cols-[160px_1fr]">
@@ -359,13 +862,16 @@ function LeadListingInterestsPanel({ organisationId, lead, interests = [], actor
                       <StatusPill tone={getStageTone(interest.status)}>{interest.status.replace(/_/g, ' ')}</StatusPill>
                       <StatusPill>{interest.source}</StatusPill>
                       {interest.isOriginalEnquiry ? <StatusPill tone="blue">Original enquiry</StatusPill> : null}
+                      {interest.isAgentSelected ? <StatusPill tone="blue">Agent selected</StatusPill> : null}
+                      {requirement ? <StatusPill tone="blue">Requirement linked</StatusPill> : null}
                       {interest.matchScore !== null && interest.matchScore !== undefined ? <StatusPill tone="green">{interest.matchScore}% match</StatusPill> : null}
                     </div>
                   </div>
+                  {requirement ? <p className="mt-2 text-xs font-semibold text-slate-500">Requirement: {buildRequirementSummary(requirement)}</p> : null}
                   {interest.matchReasons?.length ? (
                     <div className="mt-3 flex flex-wrap gap-2">
                       {interest.matchReasons.map((reason, index) => (
-                        <span key={`${interest.interestId}-reason-${index}`} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{typeof reason === 'string' ? reason : JSON.stringify(reason)}</span>
+                        <span key={`${interest.interestId}-reason-${index}`} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{typeof reason === 'string' ? reason : reason?.text || JSON.stringify(reason)}</span>
                       ))}
                     </div>
                   ) : null}
@@ -505,10 +1011,11 @@ function AgentLeadList() {
       {!loading && !error ? (
         <section className={`${panelClass} overflow-hidden`}>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1180px] text-left text-sm">
+            <table className="w-full min-w-[1280px] text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-400">
                 <tr>
                   <th className="px-4 py-3 font-semibold">Lead</th>
+                  <th className="px-4 py-3 font-semibold">Requirement</th>
                   <th className="px-4 py-3 font-semibold">Source</th>
                   <th className="px-4 py-3 font-semibold">Status / Stage</th>
                   <th className="px-4 py-3 font-semibold">Owner</th>
@@ -527,6 +1034,9 @@ function AgentLeadList() {
                         <span className="block font-semibold text-slate-950">{row.name}</span>
                         <ContactLines row={row} />
                       </button>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className="block max-w-[230px] text-sm font-medium text-slate-700">{row.requirementSummary || 'No structured requirement'}</span>
                     </td>
                     <td className="px-4 py-4 text-slate-700">{row.source}</td>
                     <td className="px-4 py-4"><StatusPill tone={getStageTone(row.stage)}>{row.stage}</StatusPill></td>
@@ -757,9 +1267,10 @@ function AgentLeadWorkspace() {
   const row = data?.row || null
   const tabs = [
     { key: 'overview', label: 'Overview' },
+    { key: 'requirements', label: 'Requirements' },
+    { key: 'listings', label: 'Listings' },
     { key: 'activity', label: 'Notes & Activity' },
     { key: 'tasks', label: 'Tasks' },
-    { key: 'listings', label: 'Listings' },
     { key: 'appointments', label: 'Appointments' },
     { key: 'offers', label: 'Offers / Transactions' },
   ]
@@ -788,7 +1299,8 @@ function AgentLeadWorkspace() {
                 {row.transactionCount || row.convertedTransactionId ? <StatusPill tone="green">Converted</StatusPill> : null}
               </div>
             </div>
-            <div className="mt-5 grid gap-3 md:grid-cols-4">
+            <div className="mt-5 grid gap-3 md:grid-cols-5">
+              <Metric label="Requirements" value={row.requirements?.length || 0} icon={ClipboardList} />
               <Metric label="Listings" value={row.listingInterests?.length || row.listingCount || 0} icon={Home} />
               <Metric label="Appointments" value={row.appointmentCount} icon={CalendarDays} />
               <Metric label="Offers" value={row.offerCount} icon={FileText} />
@@ -818,11 +1330,22 @@ function AgentLeadWorkspace() {
                 <Field label="Contact Id" value={row.contactId || 'No contact link'} />
                 <Field label="Listing Id" value={row.listingId || 'No listing link'} />
                 <Field label="Converted Transaction" value={row.convertedTransactionId || 'Not converted'} />
+                <Field label="Legacy Budget" value={row.budget ? formatCurrency(row.budget) : '—'} />
                 <Field label="Area Interest" value={row.areaInterest || row.area_interest} />
                 <Field label="Property Interest" value={row.propertyInterest || row.property_interest} />
               </dl>
               {row.notes ? <p className="mt-5 whitespace-pre-wrap rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">{row.notes}</p> : null}
             </section>
+          ) : null}
+
+          {activeTab === 'requirements' ? (
+            <LeadRequirementsPanel
+              organisationId={organisationId}
+              lead={row}
+              requirements={data?.requirements || row.requirements || []}
+              actor={actor}
+              onSaved={loadWorkspace}
+            />
           ) : null}
 
           {activeTab === 'activity' ? (
@@ -846,6 +1369,7 @@ function AgentLeadWorkspace() {
               organisationId={organisationId}
               lead={row}
               interests={data?.listingInterests || row.listingInterests || []}
+              requirements={data?.requirements || row.requirements || []}
               actor={actor}
               onSaved={loadWorkspace}
             />
