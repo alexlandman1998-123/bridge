@@ -22,7 +22,12 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import Modal from '../components/ui/Modal'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { createAgencyCrmLeadRecord, createAgencyCrmLeadTask } from '../lib/agencyCrmRepository'
+import {
+  createAgencyCrmLeadActivity,
+  createAgencyCrmLeadRecord,
+  createAgencyCrmLeadTask,
+  updateAgencyCrmLeadRecord,
+} from '../lib/agencyCrmRepository'
 import { normalizeLeadCategory as normalizeCanonicalLeadCategory } from '../lib/leadCategory'
 import {
   fetchAgentLeadWorkspace,
@@ -40,6 +45,10 @@ import {
   updateLeadListingInterestStatus,
   upsertLeadListingInterest,
 } from '../services/leadListingInterestService'
+import {
+  createPrivateListing,
+  sendSellerOnboarding,
+} from '../services/privateListingService'
 import {
   activateLeadRequirement,
   archiveLeadRequirement,
@@ -2183,12 +2192,11 @@ function AgentLeadList() {
           <div className="hidden lg:block">
             <table className="w-full table-fixed text-left text-sm">
               <colgroup>
-                <col className="w-[32%]" />
-                <col className="w-[12%]" />
-                <col className="w-[15%]" />
-                <col className="w-[18%]" />
-                <col className="w-[15%]" />
-                <col className="w-[8%]" />
+                <col className="w-[36%]" />
+                <col className="w-[13%]" />
+                <col className="w-[16%]" />
+                <col className="w-[21%]" />
+                <col className="w-[10%]" />
               </colgroup>
               <thead className="bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-400">
                 <tr>
@@ -2196,14 +2204,12 @@ function AgentLeadList() {
                   <th className="px-3 py-2.5 font-semibold">Stage</th>
                   <th className="px-3 py-2.5 font-semibold">Owner</th>
                   <th className="px-3 py-2.5 font-semibold">Latest Activity</th>
-                  <th className="px-3 py-2.5 font-semibold">Next Action</th>
                   <th className="px-3 py-2.5 text-right font-semibold">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {visibleRows.map((row) => {
                   const latestDate = getLatestActivityDate(row.latestActivity)
-                  const nextDate = row.nextTask?.dueDate || row.nextTask?.due_date
                   const openRow = () => navigate(`/pipeline/leads/${row.leadId}`)
                   return (
                     <tr key={row.leadId} className="align-middle hover:bg-slate-50/80">
@@ -2221,10 +2227,6 @@ function AgentLeadList() {
                       <td className="px-3 py-3">
                         <span className="block truncate font-medium text-slate-800">{getLatestActivityTitle(row)}</span>
                         <span className="mt-1 block truncate text-xs text-slate-500">{formatRelativeTime(latestDate, 'No activity yet')}</span>
-                      </td>
-                      <td className="px-3 py-3">
-                        <span className="block truncate font-semibold text-slate-800">{getNextAction(row)}</span>
-                        <span className="mt-1 block truncate text-xs text-slate-500">{nextDate ? formatDate(nextDate) : 'Recommended next step'}</span>
                       </td>
                       <td className="px-3 py-3">
                         <RowActionMenu row={row} onOpen={openRow} />
@@ -2876,11 +2878,78 @@ function SellerDocumentsPanel({ journey = null }) {
   )
 }
 
-function SellerActionsPanel({ journey = null, readiness = null, onOpenListing, onOpenTimeline }) {
+function getSellerOnboardingStatus(row = {}, listing = null) {
+  return normalizeText(
+    row?.sellerOnboardingStatus ||
+    row?.seller_onboarding_status ||
+    row?.sellerOnboarding?.status ||
+    listing?.sellerOnboarding?.status ||
+    listing?.sellerOnboardingStatus ||
+    listing?.seller_onboarding_status,
+  ).toLowerCase()
+}
+
+function sellerOnboardingIsSubmitted(status = '') {
+  const normalized = normalizeText(status).toLowerCase()
+  return ['submitted', 'completed', 'complete', 'under_review', 'onboarding_completed', 'seller_onboarding_completed'].includes(normalized)
+}
+
+function sellerOnboardingActionLabel(status = '') {
+  const normalized = normalizeText(status).toLowerCase()
+  if (sellerOnboardingIsSubmitted(normalized)) return 'Seller Onboarding Submitted'
+  if (['sent', 'in_progress', 'started'].includes(normalized)) return 'Resend Seller Onboarding'
+  return 'Send Seller Onboarding'
+}
+
+function SellerActionsPanel({
+  journey = null,
+  readiness = null,
+  onboardingStatus = '',
+  sendingOnboarding = false,
+  sellerActionError = '',
+  sellerActionMessage = '',
+  onSendSellerOnboarding,
+  onGenerateMandate,
+  onOpenListing,
+  onOpenTimeline,
+}) {
   const actions = readiness?.actions?.length ? readiness.actions : journey?.actions || []
+  const onboardingSubmitted = sellerOnboardingIsSubmitted(onboardingStatus)
+  const mandateDisabled = !onboardingSubmitted
+  const mandateReason = mandateDisabled
+    ? 'Seller onboarding must be submitted before generating a mandate.'
+    : 'Open the mandate workspace to generate, edit, or send the mandate.'
   return (
     <section className={`${panelClass} p-5`}>
-      <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Seller Actions</h2>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Seller Actions</h2>
+          <p className="mt-1 text-sm text-slate-500">Seller onboarding must be submitted before a mandate can be generated.</p>
+        </div>
+        <StatusPill tone={onboardingSubmitted ? 'green' : onboardingStatus === 'sent' ? 'amber' : 'slate'}>{normalizeText(onboardingStatus) || 'not started'}</StatusPill>
+      </div>
+      {sellerActionError ? <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{sellerActionError}</p> : null}
+      {sellerActionMessage ? <p className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">{sellerActionMessage}</p> : null}
+      <div className="mt-5 grid gap-3 md:grid-cols-2">
+        <button
+          type="button"
+          disabled={sendingOnboarding}
+          onClick={() => onSendSellerOnboarding?.()}
+          className="rounded-2xl border border-slate-900 bg-slate-900 p-4 text-left text-white disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <span className="block text-sm font-semibold">{sendingOnboarding ? 'Sending Seller Onboarding...' : sellerOnboardingActionLabel(onboardingStatus)}</span>
+          <span className="mt-1 block text-xs font-medium text-slate-200">Create or reuse the seller listing intake and send the onboarding link.</span>
+        </button>
+        <button
+          type="button"
+          disabled={mandateDisabled}
+          onClick={() => onGenerateMandate?.()}
+          className={`rounded-2xl border p-4 text-left ${mandateDisabled ? 'border-slate-200 bg-slate-50 text-slate-400' : 'border-blue-200 bg-blue-50 text-blue-800'} disabled:cursor-not-allowed`}
+        >
+          <span className="block text-sm font-semibold">Generate Mandate</span>
+          <span className={`mt-1 block text-xs font-medium ${mandateDisabled ? 'text-slate-400' : 'text-blue-700'}`}>{mandateReason}</span>
+        </button>
+      </div>
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {actions.length ? actions.map((action) => {
           const canOpenListing = ['create_listing', 'open_listing', 'complete_listing', 'activate_listing'].includes(action.id)
@@ -3014,6 +3083,9 @@ function AgentLeadWorkspace() {
   const [data, setData] = useState(null)
   const [activeTab, setActiveTab] = useState('timeline')
   const [shareDraft, setShareDraft] = useState(null)
+  const [sellerActionError, setSellerActionError] = useState('')
+  const [sellerActionMessage, setSellerActionMessage] = useState('')
+  const [sendingSellerOnboarding, setSendingSellerOnboarding] = useState(false)
 
   const loadWorkspace = useCallback(async () => {
     if (!organisationId || !leadId) return
@@ -3067,6 +3139,7 @@ function AgentLeadWorkspace() {
       journey: sellerJourney,
     })
   }, [isSellerLeadWorkspace, linkedSellerListing, row, sellerJourney])
+  const sellerOnboardingStatus = row ? getSellerOnboardingStatus(row, linkedSellerListing) : ''
   const tabs = useMemo(() => isSellerLeadWorkspace
     ? [
       { key: 'overview', label: 'Overview' },
@@ -3116,6 +3189,88 @@ function AgentLeadWorkspace() {
     })
   }, [data?.listingInterests, data?.suggestions, row?.listingInterests, row?.suggestions])
 
+  const sendSellerOnboardingForLead = useCallback(async () => {
+    if (!row || !isSellerLeadWorkspace || sendingSellerOnboarding) return
+    if (!organisationId) {
+      setSellerActionError('Select an agency workspace before sending seller onboarding.')
+      return
+    }
+    const sellerEmail = normalizeText(row.email || row.contact?.email)
+    if (!sellerEmail || !sellerEmail.includes('@')) {
+      setSellerActionError('Seller email is required to send onboarding.')
+      return
+    }
+
+    try {
+      setSendingSellerOnboarding(true)
+      setSellerActionError('')
+      setSellerActionMessage('')
+      let listingId = normalizeText(linkedSellerListing?.id || row.listingId || row.listing_id)
+      if (!listingId) {
+        const created = await createPrivateListing({
+          organisationId,
+          assignedAgentId: normalizeText(row.assignedAgentId || actor.id),
+          sellerLeadId: normalizeText(row.leadId),
+          originatingCrmLeadId: normalizeText(row.leadId),
+          listingStatus: 'seller_lead',
+          sellerOnboardingStatus: 'not_started',
+          mandateStatus: 'not_started',
+          listingVisibility: 'internal',
+          title: normalizeText(row.propertyInterest || row.property_interest || row.sellerPropertyAddress || row.seller_property_address),
+          propertyType: normalizeText(row.propertyType || row.property_type) || 'House',
+          listingCategory: 'private_sale',
+          askingPrice: Number(row.estimatedValue || row.estimated_value || row.budget || 0) || 0,
+          estimatedValue: Number(row.estimatedValue || row.estimated_value || row.budget || 0) || 0,
+          addressLine1: normalizeText(row.sellerPropertyAddress || row.seller_property_address || row.areaInterest || row.area_interest),
+          suburb: normalizeText(row.areaInterest || row.area_interest),
+          description: normalizeText(row.notes),
+          source: 'lead_workspace_seller_onboarding',
+        }, {
+          includeRequirementsAndDocuments: false,
+          syncRequirements: false,
+        })
+        listingId = normalizeText(created?.listing?.id)
+      }
+      if (!listingId) throw new Error('Create or link a seller listing before sending onboarding.')
+
+      const onboarding = await sendSellerOnboarding(listingId, {
+        sellerContactEmail: sellerEmail,
+        sellerContactPhone: normalizeText(row.phone || row.contact?.phone),
+      })
+      await updateAgencyCrmLeadRecord(organisationId, row.leadId, {
+        stage: 'Onboarding Sent',
+        status: 'Onboarding Sent',
+        sellerOnboardingToken: onboarding?.token,
+        sellerOnboardingStatus: 'sent',
+        listingId,
+      })
+      await createAgencyCrmLeadActivity(organisationId, row.leadId, {
+        agent: { id: actor.id, name: actor.fullName || actor.name, email: actor.email },
+        activityType: 'Seller Onboarding Sent',
+        activityNote: `Seller onboarding was sent to ${row.name || 'Seller'}.`,
+        outcome: 'Onboarding link sent',
+        activityDate: new Date().toISOString(),
+      }, { actor })
+      setSellerActionMessage('Seller onboarding sent.')
+      await loadWorkspace()
+    } catch (actionError) {
+      setSellerActionError(actionError?.message || 'Unable to send seller onboarding right now.')
+    } finally {
+      setSendingSellerOnboarding(false)
+    }
+  }, [actor, isSellerLeadWorkspace, linkedSellerListing, loadWorkspace, organisationId, row, sendingSellerOnboarding])
+
+  const openMandateWorkspace = useCallback(() => {
+    if (!row) return
+    const onboardingSubmitted = sellerOnboardingIsSubmitted(getSellerOnboardingStatus(row, linkedSellerListing))
+    if (!onboardingSubmitted) {
+      setSellerActionError('Send seller onboarding and wait for the seller to submit their details before generating the mandate.')
+      return
+    }
+    const returnTo = encodeURIComponent(`/pipeline/leads/${row.leadId}`)
+    navigate(`/pipeline/leads/${row.leadId}/legal/mandate?mode=generate&returnTo=${returnTo}`)
+  }, [linkedSellerListing, navigate, row])
+
   return (
     <main className={pageShell}>
       <button type="button" onClick={() => navigate('/pipeline/leads')} className="inline-flex w-fit items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-950">
@@ -3135,6 +3290,27 @@ function AgentLeadWorkspace() {
                 <ContactLines row={row} />
               </div>
               <div className="flex flex-wrap gap-2">
+                {isSellerLeadWorkspace ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void sendSellerOnboardingForLead()}
+                      disabled={sendingSellerOnboarding}
+                      className="inline-flex min-h-9 items-center rounded-xl bg-slate-900 px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      {sendingSellerOnboarding ? 'Sending...' : sellerOnboardingActionLabel(sellerOnboardingStatus)}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={openMandateWorkspace}
+                      disabled={!sellerOnboardingIsSubmitted(sellerOnboardingStatus)}
+                      title={!sellerOnboardingIsSubmitted(sellerOnboardingStatus) ? 'Seller onboarding must be submitted before generating a mandate.' : 'Open mandate workspace'}
+                      className="inline-flex min-h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Generate Mandate
+                    </button>
+                  </>
+                ) : null}
                 <StatusPill tone={getStageTone(row.stage)}>{row.stage}</StatusPill>
                 <StatusPill>{row.source}</StatusPill>
                 <StatusPill tone={getLeadCategoryTone(row)}>{getLeadCategoryLabel(row)}</StatusPill>
@@ -3164,6 +3340,12 @@ function AgentLeadWorkspace() {
                 </>
               )}
             </div>
+            {isSellerLeadWorkspace && sellerActionError ? (
+              <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{sellerActionError}</p>
+            ) : null}
+            {isSellerLeadWorkspace && sellerActionMessage ? (
+              <p className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">{sellerActionMessage}</p>
+            ) : null}
           </header>
 
           <nav className={`${panelClass} flex gap-2 overflow-x-auto p-2`} aria-label="Lead workspace tabs">
@@ -3241,6 +3423,12 @@ function AgentLeadWorkspace() {
             <SellerActionsPanel
               journey={sellerJourney}
               readiness={sellerReadiness}
+              onboardingStatus={sellerOnboardingStatus}
+              sendingOnboarding={sendingSellerOnboarding}
+              sellerActionError={sellerActionError}
+              sellerActionMessage={sellerActionMessage}
+              onSendSellerOnboarding={sendSellerOnboardingForLead}
+              onGenerateMandate={openMandateWorkspace}
               onOpenListing={() => {
                 if (linkedSellerListing?.id) navigate(`/agent/listings/${linkedSellerListing.id}`)
                 else navigate('/listings')

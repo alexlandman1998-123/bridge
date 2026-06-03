@@ -74,8 +74,14 @@ for (const copy of ['Buyer / Requirement', 'Seller / Property', 'LeadViewSummary
 for (const copy of ['Listing Journey', 'Readiness', 'Seller Actions', 'Seller leads progress toward a listing']) {
   assert.match(pageSource, new RegExp(copy), `seller leads workspace should render seller-specific workflow copy for ${copy}`)
 }
+for (const copy of ['Send Seller Onboarding', 'Generate Mandate', 'Seller onboarding must be submitted before generating a mandate']) {
+  assert.match(pageSource, new RegExp(copy), `seller leads workspace should restore seller onboarding and mandate action copy for ${copy}`)
+}
 assert.match(pageSource, /CreateLeadDropdown/)
 assert.match(pageSource, /LeadCreateModal/)
+assert.match(pageSource, /sendSellerOnboarding/)
+assert.match(pageSource, /sellerOnboardingIsSubmitted/)
+assert.match(pageSource, /\/pipeline\/leads\/\$\{row\.leadId\}\/legal\/mandate\?mode=generate/)
 assert.match(pageSource, /buildSellerJourney/)
 assert.match(pageSource, /buildSellerReadinessSummary/)
 assert.match(pageSource, /activeTab === 'requirements' && !isSellerLeadWorkspace/)
@@ -84,7 +90,15 @@ assert.match(pageSource, /normalizeCanonicalLeadCategory\(createCategory, 'other
 assert.match(pageSource, /leadCategory: category/)
 assert.match(pageSource, /sellerPropertyAddress: category === 'seller'/)
 assert.match(pageSource, /budget: category === 'buyer'/)
+assert.doesNotMatch(pageSource, /<th[^>]*>\s*Next Action\s*<\/th>/)
 assert.equal(pageSource.includes('navigate(`/pipeline/leads/${createdLead.leadId}`)'), true)
+
+const canvassingPageSource = await fs.readFile(new URL('../src/pages/PipelineCanvassingPage.jsx', import.meta.url), 'utf8')
+assert.match(canvassingPageSource, /createAgencyCrmLeadRecord/)
+assert.match(canvassingPageSource, /leadCategory: normalizedCategory/)
+assert.match(canvassingPageSource, /leadSource: 'Canvassing'/)
+assert.match(canvassingPageSource, /sellerPropertyAddress: normalizedCategory === 'seller'/)
+assert.match(canvassingPageSource, /navigate\(`\/pipeline\/leads\/\$\{targetLeadId\}`\)/)
 
 const server = await createServer({
   root: process.cwd(),

@@ -343,7 +343,7 @@ function buildLeadPayloadFromProspect(prospect = {}, leadCategory = 'buyer', cur
     areaInterest: normalizeText(prospect.area || linkedListingLabel),
     propertyInterest: normalizeText(linkedListingLabel || prospect.propertyType),
     listingId: linkedListingId,
-    sellerPropertyAddress: normalizedCategory === 'Seller' ? normalizeText(prospect.area) : '',
+    sellerPropertyAddress: normalizedCategory === 'seller' ? normalizeText(prospect.area || linkedListingLabel) : '',
     canvassingProspectId: prospect.id,
     sellerName: firstName,
     sellerSurname: lastName,
