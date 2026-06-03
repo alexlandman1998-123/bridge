@@ -65,6 +65,26 @@ assert.match(pageSource, /Enquiry History/)
 assert.match(pageSource, /Original Source/)
 assert.match(pageSource, /Latest Source/)
 assert.match(pageSource, /Original Enquiry Listing/)
+for (const copy of ['Create Lead', 'Buyer Lead', 'Seller Lead', 'Other Lead', 'Import Leads', 'Create Buyer Lead', 'Create Seller Lead']) {
+  assert.match(pageSource, new RegExp(copy), `leads page should render ${copy}`)
+}
+for (const copy of ['Buyer / Requirement', 'Seller / Property', 'LeadViewSummary', 'Lead pipeline views']) {
+  assert.match(pageSource, new RegExp(copy), `leads page should keep buyer/seller split view copy for ${copy}`)
+}
+for (const copy of ['Listing Journey', 'Readiness', 'Seller Actions', 'Seller leads progress toward a listing']) {
+  assert.match(pageSource, new RegExp(copy), `seller leads workspace should render seller-specific workflow copy for ${copy}`)
+}
+assert.match(pageSource, /CreateLeadDropdown/)
+assert.match(pageSource, /LeadCreateModal/)
+assert.match(pageSource, /buildSellerJourney/)
+assert.match(pageSource, /buildSellerReadinessSummary/)
+assert.match(pageSource, /activeTab === 'requirements' && !isSellerLeadWorkspace/)
+assert.match(pageSource, /activeTab === 'offers' && !isSellerLeadWorkspace/)
+assert.match(pageSource, /normalizeCanonicalLeadCategory\(createCategory, 'other'\)/)
+assert.match(pageSource, /leadCategory: category/)
+assert.match(pageSource, /sellerPropertyAddress: category === 'seller'/)
+assert.match(pageSource, /budget: category === 'buyer'/)
+assert.equal(pageSource.includes('navigate(`/pipeline/leads/${createdLead.leadId}`)'), true)
 
 const server = await createServer({
   root: process.cwd(),

@@ -2405,7 +2405,7 @@ function ReassignApplicationsModal({
   )
 }
 
-function ConsultantWorkspaceRoute({ workspace = null, onBack = () => {} }) {
+function ConsultantWorkspaceRoute({ workspace = null, onBack = () => {}, onOpenPerformance = () => {} }) {
   if (!workspace) {
     return (
       <HierarchySelectionUnavailable
@@ -2424,7 +2424,12 @@ function ConsultantWorkspaceRoute({ workspace = null, onBack = () => {} }) {
         eyebrow="Consultant Workspace"
         title={consultant.name || consultant.consultant || 'Consultant'}
         description="Assigned applications, workload, activity, and consultant performance."
-        action={<BreadcrumbButton onClick={onBack}>Back to Consultants</BreadcrumbButton>}
+        action={(
+          <div className="flex flex-wrap items-center gap-2">
+            <CommandButton icon={ShieldCheck} onClick={() => onOpenPerformance(consultant.id)}>Performance Centre</CommandButton>
+            <BreadcrumbButton onClick={onBack}>Back to Consultants</BreadcrumbButton>
+          </div>
+        )}
       >
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <SummaryMetric label="Role" value={consultant.role || 'consultant'} emphasis />
@@ -3366,6 +3371,7 @@ export default function BondOrganisationPage({
             <ConsultantWorkspaceRoute
               workspace={snapshot.consultantWorkspaces?.[consultantWorkspaceId]}
               onBack={() => navigate(getBondOrganisationRouteForTab('consultants'))}
+              onOpenPerformance={(consultantId) => navigate(`/bond/consultant-performance?consultantId=${encodeURIComponent(consultantId)}`)}
             />
           ) : null}
 

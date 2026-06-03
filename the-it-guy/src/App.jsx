@@ -101,6 +101,7 @@ const BondModuleHubPage = lazy(() => import('./pages/bond/BondModuleHubPage'))
 const BondOrganisationPage = lazy(() => import('./pages/bond/BondOrganisationPage'))
 const BondPartnerCollaborationPage = lazy(() => import('./pages/bond/BondPartnerCollaborationPage'))
 const BondPartnerIntelligencePage = lazy(() => import('./pages/bond/BondPartnerIntelligencePage'))
+const BondConsultantPerformancePage = lazy(() => import('./pages/bond/BondConsultantPerformancePage'))
 const CommercialLayout = lazy(() => import('./modules/commercial/components/CommercialLayout'))
 const CommercialActivityPage = lazy(() => import('./modules/commercial/pages/CommercialActivityPage'))
 const CommercialBrokerPerformancePage = lazy(() => import('./modules/commercial/pages/CommercialBrokerPerformancePage'))
@@ -1670,6 +1671,16 @@ function AppRoutes() {
                   <RoleRoute allowedRoles={['bond_originator']}>
                     <AppErrorBoundary scope="bond-partner-intelligence" title="Partner intelligence failed to load">
                       <BondPartnerIntelligencePage />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/consultant-performance"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <AppErrorBoundary scope="bond-consultant-performance" title="Consultant performance failed to load">
+                      <BondConsultantPerformancePage />
                     </AppErrorBoundary>
                   </RoleRoute>
                 }

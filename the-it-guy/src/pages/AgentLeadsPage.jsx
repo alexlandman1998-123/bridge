@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   CalendarDays,
+  ChevronDown,
   CheckCircle2,
   Clock3,
   ExternalLink,
@@ -19,8 +20,10 @@ import {
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
+import Modal from '../components/ui/Modal'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { createAgencyCrmLeadTask } from '../lib/agencyCrmRepository'
+import { createAgencyCrmLeadRecord, createAgencyCrmLeadTask } from '../lib/agencyCrmRepository'
+import { normalizeLeadCategory as normalizeCanonicalLeadCategory } from '../lib/leadCategory'
 import {
   fetchAgentLeadWorkspace,
   filterAgentLeadRows,
@@ -88,6 +91,8 @@ import {
 } from '../services/communicationDeliveryService'
 import { listLeadCommunicationTemplates } from '../services/leadCommunicationTemplateService'
 import { buildLeadWorkspaceAnalyticsSummary } from '../services/leadAnalyticsService'
+import { buildSellerJourney } from '../services/sellerJourneyService'
+import { buildSellerReadinessSummary } from '../services/sellerReadinessService'
 import {
   acceptRecommendation,
   completeRecommendation,
@@ -105,14 +110,54 @@ const pageShell = 'mx-auto flex w-full max-w-[1480px] flex-col gap-5'
 const panelClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm'
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const LEAD_CATEGORY_FILTERS = [
-  { key: 'all', label: 'All Leads' },
-  { key: 'buyer', label: 'Buyer Leads' },
-  { key: 'seller', label: 'Seller Leads' },
-  { key: 'other', label: 'Other' },
+  { key: 'all', label: 'All Leads', helper: 'Unified operating list', icon: Tag },
+  { key: 'buyer', label: 'Buyer Leads', helper: 'Requirements, matches, viewings', icon: UserRound },
+  { key: 'seller', label: 'Seller Leads', helper: 'Property, mandate, listing readiness', icon: Home },
+  { key: 'other', label: 'Other', helper: 'Uncategorised follow-up', icon: FileText },
 ]
+const LEAD_SOURCE_OPTIONS = [
+  'Property24',
+  'Private Property',
+  'Website',
+  'Referral',
+  'Walk-In',
+  'WhatsApp',
+  'Facebook',
+  'Google',
+  'Signboard',
+  'Canvassing',
+  'Manual Entry',
+  'Other / Unknown',
+]
+const EMPTY_LEAD_CREATE_FORM = {
+  name: '',
+  phone: '',
+  email: '',
+  source: 'Manual Entry',
+  budget: '',
+  areaInterest: '',
+  propertyInterest: '',
+  sellerPropertyAddress: '',
+  estimatedValue: '',
+  assignedAgent: '',
+  notes: '',
+}
 
 function normalizeText(value) {
   return String(value ?? '').trim()
+}
+
+function splitName(fullName = '') {
+  const parts = normalizeText(fullName).split(/\s+/).filter(Boolean)
+  return {
+    firstName: parts[0] || '',
+    lastName: parts.slice(1).join(' '),
+  }
+}
+
+function normalizeLeadSourceOption(value = '') {
+  const normalized = normalizeText(value)
+  return LEAD_SOURCE_OPTIONS.includes(normalized) ? normalized : LEAD_SOURCE_OPTIONS[LEAD_SOURCE_OPTIONS.length - 1]
 }
 
 function formatDate(value, fallback = '—') {
@@ -423,15 +468,6 @@ function getNextAction(row = {}) {
   return category === 'buyer' ? 'Contact Buyer' : 'Contact Lead'
 }
 
-function getLifecycleItems(row = {}) {
-  return [
-    { key: 'L', label: 'Listing', active: Number(row.listingCount || 0) > 0 },
-    { key: 'V', label: 'Viewing', active: Number(row.appointmentCount || 0) > 0 },
-    { key: 'O', label: 'Offer', active: Number(row.offerCount || 0) > 0 },
-    { key: 'T', label: 'Transaction', active: Number(row.transactionCount || 0) > 0 || Boolean(row.convertedTransactionId) },
-  ]
-}
-
 function EmptyState({ title, copy }) {
   return (
     <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center">
@@ -534,8 +570,9 @@ function ContactLines({ row }) {
   )
 }
 
-function LeadIdentityBlock({ row, onOpen }) {
+function LeadIdentityBlock({ row, onOpen, activeCategory = 'all' }) {
   const context = getLeadContextSummary(row)
+  const showCategoryBadge = !['buyer', 'seller', 'other'].includes(activeCategory)
   return (
     <button type="button" onClick={onOpen} className="group min-w-0 text-left">
       <span className="block truncate text-sm font-semibold text-slate-950 group-hover:text-blue-700">{row.name}</span>
@@ -544,27 +581,11 @@ function LeadIdentityBlock({ row, onOpen }) {
         {row.email ? <span className="max-w-[180px] truncate">{row.email}</span> : null}
       </span>
       <span className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-        <StatusPill tone={getLeadCategoryTone(row)}>{getLeadCategoryLabel(row)}</StatusPill>
+        {showCategoryBadge ? <StatusPill tone={getLeadCategoryTone(row)}>{getLeadCategoryLabel(row)}</StatusPill> : null}
         <span className="max-w-[180px] truncate rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{row.source || 'Unknown'}</span>
       </span>
       {context ? <span className="mt-2 block max-w-[260px] truncate text-xs font-semibold text-slate-500">{context}</span> : null}
     </button>
-  )
-}
-
-function LifecycleIndicator({ row }) {
-  return (
-    <div className="flex flex-wrap gap-1.5" aria-label="Lifecycle links">
-      {getLifecycleItems(row).map((item) => (
-        <span
-          key={item.key}
-          title={`${item.label}: ${item.active ? 'linked' : 'not linked'}`}
-          className={`inline-flex h-7 min-w-7 items-center justify-center rounded-lg border px-1.5 text-xs font-bold ${item.active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-400'}`}
-        >
-          {item.key} {item.active ? '✓' : '—'}
-        </span>
-      ))}
-    </div>
   )
 }
 
@@ -596,18 +617,29 @@ function LeadCategoryFilter({ filters, rows, onChange }) {
     return accumulator
   }, { all: 0, buyer: 0, seller: 0, other: 0 })
   return (
-    <div className="flex flex-wrap gap-2" role="group" aria-label="Lead category quick filters">
+    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4" role="tablist" aria-label="Lead pipeline views">
       {LEAD_CATEGORY_FILTERS.map((option) => {
         const active = filters.category === option.key
+        const Icon = option.icon
         return (
           <button
             key={option.key}
             type="button"
             onClick={() => onChange((previous) => ({ ...previous, category: option.key }))}
-            className={`inline-flex min-h-9 items-center gap-2 rounded-xl px-3 text-sm font-semibold ${active ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+            role="tab"
+            aria-selected={active}
+            className={`flex min-h-[72px] items-center gap-3 rounded-xl border px-3 text-left transition ${active ? 'border-slate-900 bg-slate-900 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}
           >
-            {option.label}
-            <span className={`rounded-full px-2 py-0.5 text-xs ${active ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-500'}`}>{counts[option.key] || 0}</span>
+            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${active ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-500'}`}>
+              <Icon size={16} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center justify-between gap-2">
+                <span className="truncate text-sm font-semibold">{option.label}</span>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${active ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-500'}`}>{counts[option.key] || 0}</span>
+              </span>
+              <span className={`mt-1 block truncate text-xs font-medium ${active ? 'text-slate-200' : 'text-slate-500'}`}>{option.helper}</span>
+            </span>
           </button>
         )
       })}
@@ -615,17 +647,209 @@ function LeadCategoryFilter({ filters, rows, onChange }) {
   )
 }
 
+function LeadViewSummary({ category = 'all', visibleCount = 0 }) {
+  const summaries = {
+    all: {
+      title: 'All leads',
+      copy: 'A combined queue for triage. Switch to Buyer Leads or Seller Leads for the cleaner category-specific workflow.',
+    },
+    buyer: {
+      title: 'Buyer leads',
+      copy: 'Buyer context is prioritised: requirements, latest buyer activity, and the next buyer action.',
+    },
+    seller: {
+      title: 'Seller leads',
+      copy: 'Seller context is prioritised: property address, mandate or listing stage, and the next seller action.',
+    },
+    other: {
+      title: 'Other leads',
+      copy: 'Basic follow-up leads that are not yet buyer or seller pipeline work.',
+    },
+  }
+  const summary = summaries[category] || summaries.all
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-slate-950">{summary.title}</p>
+          <p className="mt-0.5 text-xs font-medium text-slate-500">{summary.copy}</p>
+        </div>
+        <span className="shrink-0 text-sm font-semibold text-slate-500">{visibleCount} visible</span>
+      </div>
+    </div>
+  )
+}
+
+function getLeadColumnHeader(category = 'all') {
+  if (category === 'buyer') return 'Buyer / Requirement'
+  if (category === 'seller') return 'Seller / Property'
+  if (category === 'other') return 'Lead / Notes'
+  return 'Lead Context'
+}
+
 function EmptyLeadResults({ onCreate, onImport, onAdjustFilters }) {
   return (
     <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center">
       <p className="text-sm font-semibold text-slate-900">No leads found</p>
-      <p className="mx-auto mt-2 max-w-xl text-sm text-slate-500">Create a lead, review imported enquiries, or loosen the current filters.</p>
+      <p className="mx-auto mt-2 max-w-xl text-sm text-slate-500">Create your first buyer or seller lead to start managing the pipeline.</p>
       <div className="mt-4 flex flex-wrap justify-center gap-2">
-        <button type="button" onClick={onCreate} className="inline-flex min-h-10 items-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white">Create Lead</button>
-        <button type="button" onClick={onImport} className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Import Lead</button>
+        <button type="button" onClick={() => onCreate('buyer')} className="inline-flex min-h-10 items-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white">Create Buyer Lead</button>
+        <button type="button" onClick={() => onCreate('seller')} className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Create Seller Lead</button>
+        <button type="button" onClick={onImport} className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Import Leads</button>
         <button type="button" onClick={onAdjustFilters} className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Adjust Filters</button>
       </div>
     </div>
+  )
+}
+
+function getCreateLeadButtonLabel(category = 'all') {
+  if (category === 'buyer') return 'Create Buyer Lead'
+  if (category === 'seller') return 'Create Seller Lead'
+  if (category === 'other') return 'Create Other Lead'
+  return 'Create Lead'
+}
+
+function CreateLeadDropdown({ activeCategory = 'all', onCreate, onImport }) {
+  const [open, setOpen] = useState(false)
+  const defaultCategory = ['buyer', 'seller', 'other'].includes(activeCategory) ? activeCategory : ''
+  const buttonLabel = getCreateLeadButtonLabel(activeCategory)
+  const createOptions = [
+    { category: 'buyer', label: 'Buyer Lead', helper: 'Buyer enquiry with budget and area context' },
+    { category: 'seller', label: 'Seller Lead', helper: 'Seller enquiry with property and value context' },
+    { category: 'other', label: 'Other Lead', helper: 'Basic lead capture for uncategorised work' },
+  ]
+
+  function choose(category) {
+    setOpen(false)
+    onCreate(category)
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => defaultCategory ? choose(defaultCategory) : setOpen((previous) => !previous)}
+        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-700"
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <Plus size={15} />
+        {buttonLabel}
+        {!defaultCategory ? <ChevronDown size={14} /> : null}
+      </button>
+      {open ? (
+        <div className="absolute right-0 top-[calc(100%+10px)] z-30 w-72 rounded-2xl border border-slate-200 bg-white p-2 text-left shadow-xl" role="menu">
+          {createOptions.map((option) => (
+            <button
+              key={option.category}
+              type="button"
+              role="menuitem"
+              onClick={() => choose(option.category)}
+              className="block w-full rounded-xl px-3 py-2.5 text-left hover:bg-slate-50"
+            >
+              <span className="block text-sm font-semibold text-slate-950">{option.label}</span>
+              <span className="mt-0.5 block text-xs font-medium text-slate-500">{option.helper}</span>
+            </button>
+          ))}
+          <div className="my-1 border-t border-slate-100" />
+          <button type="button" role="menuitem" onClick={() => { setOpen(false); onImport() }} className="block w-full rounded-xl px-3 py-2.5 text-left hover:bg-slate-50">
+            <span className="block text-sm font-semibold text-slate-950">Import Leads</span>
+            <span className="mt-0.5 block text-xs font-medium text-slate-500">Review imported and manually ingested leads</span>
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function LeadCreateModal({ open, category = 'buyer', form, setForm, saving, error, onClose, onSubmit }) {
+  const normalizedCategory = normalizeCanonicalLeadCategory(category, 'other')
+  const isBuyer = normalizedCategory === 'buyer'
+  const isSeller = normalizedCategory === 'seller'
+  const isOther = normalizedCategory === 'other'
+  const title = `Create ${isBuyer ? 'Buyer' : isSeller ? 'Seller' : 'Other'} Lead`
+  const subtitle = isBuyer
+    ? 'Capture buyer contact and search context. Requirements can be refined in the buyer workspace.'
+    : isSeller
+      ? 'Capture seller contact and property context without buyer requirement fields.'
+      : 'Capture a basic lead for follow-up and routing.'
+
+  function update(field, value) {
+    setForm((previous) => ({ ...previous, [field]: value }))
+  }
+
+  const footer = (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+      <button type="button" onClick={onClose} disabled={saving} className="min-h-10 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Cancel</button>
+      <button type="submit" form="lead-create-form" disabled={saving} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:bg-slate-300">
+        <Plus size={15} />
+        {saving ? 'Creating...' : title}
+      </button>
+    </div>
+  )
+
+  return (
+    <Modal open={open} onClose={saving ? undefined : onClose} title={title} subtitle={subtitle} className="max-w-2xl" footer={footer}>
+      <form id="lead-create-form" className="grid gap-4" onSubmit={onSubmit}>
+        {error ? <p className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="grid gap-1.5 text-sm font-semibold text-slate-600">
+            Name
+            <input value={form.name} onChange={(event) => update('name', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-300" placeholder="Client name" autoFocus />
+          </label>
+          <label className="grid gap-1.5 text-sm font-semibold text-slate-600">
+            Source
+            <select value={form.source} onChange={(event) => update('source', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900">
+              {LEAD_SOURCE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1.5 text-sm font-semibold text-slate-600">
+            Phone
+            <input value={form.phone} onChange={(event) => update('phone', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-300" placeholder="+27 ..." />
+          </label>
+          <label className="grid gap-1.5 text-sm font-semibold text-slate-600">
+            Email
+            <input type="email" value={form.email} onChange={(event) => update('email', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-300" placeholder="client@example.com" />
+          </label>
+          {isBuyer ? (
+            <>
+              <label className="grid gap-1.5 text-sm font-semibold text-slate-600">
+                Budget
+                <input value={form.budget} onChange={(event) => update('budget', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-300" placeholder="2500000" />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-slate-600">
+                Area interest
+                <input value={form.areaInterest} onChange={(event) => update('areaInterest', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-300" placeholder="Suburb, area, city" />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-slate-600 md:col-span-2">
+                Property interest
+                <input value={form.propertyInterest} onChange={(event) => update('propertyInterest', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-300" placeholder="3-bed home, townhouse, investment unit..." />
+              </label>
+            </>
+          ) : null}
+          {isSeller ? (
+            <>
+              <label className="grid gap-1.5 text-sm font-semibold text-slate-600">
+                Seller property address
+                <input value={form.sellerPropertyAddress} onChange={(event) => update('sellerPropertyAddress', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-300" placeholder="116 Ridge Road" />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-slate-600">
+                Estimated value
+                <input value={form.estimatedValue} onChange={(event) => update('estimatedValue', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-300" placeholder="3200000" />
+              </label>
+            </>
+          ) : null}
+          <label className={`grid gap-1.5 text-sm font-semibold text-slate-600 ${isOther ? '' : 'md:col-span-2'}`}>
+            Assigned agent
+            <input value={form.assignedAgent} onChange={(event) => update('assignedAgent', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-300" placeholder="Agent name" />
+          </label>
+        </div>
+        <label className="grid gap-1.5 text-sm font-semibold text-slate-600">
+          Notes
+          <textarea value={form.notes} onChange={(event) => update('notes', event.target.value)} className="min-h-24 resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-300" placeholder={isOther ? 'Basic context and routing notes' : 'Helpful context'} />
+        </label>
+      </form>
+    </Modal>
   )
 }
 
@@ -1731,11 +1955,19 @@ function AgentLeadList() {
   const workspaceContext = useWorkspace()
   const navigate = useNavigate()
   const organisationId = getOrganisationId(workspaceContext)
+  const actor = useMemo(() => getActor({
+    ...(workspaceContext.profile || {}),
+    workspaceRole: workspaceContext.currentMembership?.workspace_role || workspaceContext.currentMembership?.organisation_role || workspaceContext.currentMembership?.role || workspaceContext.profile?.role,
+  }), [workspaceContext.currentMembership, workspaceContext.profile])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [rows, setRows] = useState([])
   const [assignmentMetrics, setAssignmentMetrics] = useState({ unassigned: 0, assigned: 0, overdue: 0, escalated: 0, byAgent: [] })
   const [filters, setFilters] = useState({ search: '', category: 'all', stage: 'all', source: 'all', agent: 'all', createdFrom: '', createdTo: '' })
+  const [createCategory, setCreateCategory] = useState('')
+  const [createForm, setCreateForm] = useState(EMPTY_LEAD_CREATE_FORM)
+  const [creatingLead, setCreatingLead] = useState(false)
+  const [createError, setCreateError] = useState('')
 
   const loadRows = useCallback(async () => {
     if (!organisationId) {
@@ -1773,10 +2005,102 @@ function AgentLeadList() {
   const recommendationRows = useMemo(() => rows.flatMap((row) => Array.isArray(row.recommendations) ? row.recommendations : []), [rows])
   const recommendationMetrics = useMemo(() => getRecommendationMetrics(recommendationRows), [recommendationRows])
   const pendingRecommendations = recommendationMetrics.pending + recommendationMetrics.accepted
+  const leadColumnHeader = getLeadColumnHeader(filters.category)
   const dueTodayRecommendations = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10)
     return recommendationRows.filter((item) => ['pending', 'accepted'].includes(String(item.status || '').toLowerCase()) && String(item.dueDate || item.due_date || '').slice(0, 10) === today).length
   }, [recommendationRows])
+
+  function openCreateLead(category = 'buyer') {
+    const normalizedCategory = normalizeCanonicalLeadCategory(category, 'other')
+    setCreateCategory(normalizedCategory)
+    setCreateError('')
+    setCreateForm({
+      ...EMPTY_LEAD_CREATE_FORM,
+      source: normalizedCategory === 'seller' ? 'Canvassing' : 'Manual Entry',
+      assignedAgent: actor.name || '',
+    })
+  }
+
+  function closeCreateLead() {
+    if (creatingLead) return
+    setCreateCategory('')
+    setCreateError('')
+    setCreateForm(EMPTY_LEAD_CREATE_FORM)
+  }
+
+  async function submitCreateLead(event) {
+    event.preventDefault()
+    if (!organisationId) {
+      setCreateError('Select an agency workspace before creating a lead.')
+      return
+    }
+    if (!normalizeText(createForm.name)) {
+      setCreateError('Add a name before creating this lead.')
+      return
+    }
+    if (createForm.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeText(createForm.email))) {
+      setCreateError('Add a valid email address or leave it blank.')
+      return
+    }
+
+    const category = normalizeCanonicalLeadCategory(createCategory, 'other')
+    const nameParts = splitName(createForm.name)
+    const assignedAgentName = normalizeText(createForm.assignedAgent)
+    const assignedAgent = {
+      id: actor.id,
+      userId: actor.userId || actor.id,
+      name: assignedAgentName || actor.name,
+      fullName: assignedAgentName || actor.fullName || actor.name,
+      email: actor.email,
+    }
+    const sellerStage = 'Contacted'
+
+    try {
+      setCreatingLead(true)
+      setCreateError('')
+      const createdLead = await createAgencyCrmLeadRecord(
+        organisationId,
+        {
+          assignedAgent,
+          assignedUserId: normalizeText(actor.userId || actor.id),
+          createdBy: normalizeText(actor.userId || actor.id),
+          contact: {
+            firstName: nameParts.firstName || 'Lead',
+            lastName: nameParts.lastName,
+            phone: normalizeText(createForm.phone),
+            email: normalizeText(createForm.email).toLowerCase(),
+            contactType: category,
+            notes: normalizeText(createForm.notes),
+          },
+          lead: {
+            leadCategory: category,
+            leadDirection: 'Inbound',
+            leadSource: normalizeLeadSourceOption(createForm.source),
+            stage: category === 'seller' ? sellerStage : 'New Lead',
+            status: category === 'seller' ? sellerStage : 'New Lead',
+            priority: 'Medium',
+            budget: category === 'buyer' ? Number(createForm.budget || 0) || 0 : 0,
+            areaInterest: category === 'buyer' ? normalizeText(createForm.areaInterest) : '',
+            propertyInterest: category === 'buyer' ? normalizeText(createForm.propertyInterest) : '',
+            sellerPropertyAddress: category === 'seller' ? normalizeText(createForm.sellerPropertyAddress) : '',
+            estimatedValue: category === 'seller' ? Number(createForm.estimatedValue || 0) || 0 : 0,
+            notes: normalizeText(createForm.notes),
+          },
+        },
+        { actor },
+      )
+      await loadRows()
+      setCreateCategory('')
+      setCreateError('')
+      setCreateForm(EMPTY_LEAD_CREATE_FORM)
+      if (createdLead?.leadId) navigate(`/pipeline/leads/${createdLead.leadId}`)
+    } catch (createLeadError) {
+      setCreateError(createLeadError?.message || 'Unable to create this lead right now.')
+    } finally {
+      setCreatingLead(false)
+    }
+  }
 
   return (
     <main className={pageShell}>
@@ -1784,12 +2108,22 @@ function AgentLeadList() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Agent Workspace</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-slate-950">Leads</h1>
-          <p className="mt-1 max-w-3xl text-sm text-slate-500">Scan ownership, stage, activity, next action, and lifecycle links from one operational view.</p>
+          <p className="mt-1 max-w-3xl text-sm text-slate-500">Buyer and seller lead views share one CRM system, with the table adapting to the active pipeline context.</p>
         </div>
-        <button type="button" onClick={loadRows} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
-          <RefreshCw size={15} />
-          Refresh
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <CreateLeadDropdown
+            activeCategory={filters.category}
+            onCreate={openCreateLead}
+            onImport={() => navigate('/pipeline/enquiries')}
+          />
+          <button type="button" onClick={() => navigate('/pipeline/enquiries')} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+            Import
+          </button>
+          <button type="button" onClick={loadRows} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+            <RefreshCw size={15} />
+            Refresh
+          </button>
+        </div>
       </header>
 
       <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-[repeat(4,minmax(120px,1fr))_minmax(320px,1.4fr)]">
@@ -1809,9 +2143,9 @@ function AgentLeadList() {
       </section>
 
       <section className={`${panelClass} p-4`}>
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="grid gap-3">
           <LeadCategoryFilter filters={filters} rows={rows} onChange={setFilters} />
-          <span className="text-sm font-semibold text-slate-500">{visibleRows.length} visible</span>
+          <LeadViewSummary category={filters.category} visibleCount={visibleRows.length} />
         </div>
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1.2fr)_repeat(4,minmax(130px,1fr))]">
           <label className="relative block">
@@ -1849,22 +2183,20 @@ function AgentLeadList() {
           <div className="hidden lg:block">
             <table className="w-full table-fixed text-left text-sm">
               <colgroup>
-                <col className="w-[26%]" />
-                <col className="w-[11%]" />
-                <col className="w-[13%]" />
+                <col className="w-[32%]" />
+                <col className="w-[12%]" />
                 <col className="w-[15%]" />
+                <col className="w-[18%]" />
                 <col className="w-[15%]" />
-                <col className="w-[9%]" />
-                <col className="w-[11%]" />
+                <col className="w-[8%]" />
               </colgroup>
               <thead className="bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-400">
                 <tr>
-                  <th className="px-3 py-2.5 font-semibold">Lead</th>
+                  <th className="px-3 py-2.5 font-semibold">{leadColumnHeader}</th>
                   <th className="px-3 py-2.5 font-semibold">Stage</th>
                   <th className="px-3 py-2.5 font-semibold">Owner</th>
                   <th className="px-3 py-2.5 font-semibold">Latest Activity</th>
                   <th className="px-3 py-2.5 font-semibold">Next Action</th>
-                  <th className="px-3 py-2.5 font-semibold">Lifecycle</th>
                   <th className="px-3 py-2.5 text-right font-semibold">Action</th>
                 </tr>
               </thead>
@@ -1876,7 +2208,7 @@ function AgentLeadList() {
                   return (
                     <tr key={row.leadId} className="align-middle hover:bg-slate-50/80">
                       <td className="px-3 py-3">
-                        <LeadIdentityBlock row={row} onOpen={openRow} />
+                        <LeadIdentityBlock row={row} onOpen={openRow} activeCategory={filters.category} />
                       </td>
                       <td className="px-3 py-3">
                         <StatusPill tone={getStageTone(row.stage)}>{row.stage}</StatusPill>
@@ -1895,9 +2227,6 @@ function AgentLeadList() {
                         <span className="mt-1 block truncate text-xs text-slate-500">{nextDate ? formatDate(nextDate) : 'Recommended next step'}</span>
                       </td>
                       <td className="px-3 py-3">
-                        <LifecycleIndicator row={row} />
-                      </td>
-                      <td className="px-3 py-3">
                         <RowActionMenu row={row} onOpen={openRow} />
                       </td>
                     </tr>
@@ -1914,7 +2243,7 @@ function AgentLeadList() {
               return (
                 <article key={`card-${row.leadId}`} className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                   <div className="flex items-start justify-between gap-3">
-                    <LeadIdentityBlock row={row} onOpen={openRow} />
+                    <LeadIdentityBlock row={row} onOpen={openRow} activeCategory={filters.category} />
                     <StatusPill tone={getStageTone(row.stage)}>{row.stage}</StatusPill>
                   </div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -1933,10 +2262,6 @@ function AgentLeadList() {
                       <p className="mt-1 truncate text-sm font-semibold text-slate-800">{getNextAction(row)}</p>
                       <p className="mt-1 text-xs text-slate-500">{nextDate ? formatDate(nextDate) : 'Recommended next step'}</p>
                     </div>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Lifecycle</p>
-                      <div className="mt-1"><LifecycleIndicator row={row} /></div>
-                    </div>
                   </div>
                   <div className="mt-3 flex justify-end">
                     <RowActionMenu row={row} onOpen={openRow} />
@@ -1948,7 +2273,7 @@ function AgentLeadList() {
           {!visibleRows.length ? (
             <div className="p-5">
               <EmptyLeadResults
-                onCreate={() => navigate('/pipeline')}
+                onCreate={openCreateLead}
                 onImport={() => navigate('/pipeline/enquiries')}
                 onAdjustFilters={() => setFilters({ search: '', category: 'all', stage: 'all', source: 'all', agent: 'all', createdFrom: '', createdTo: '' })}
               />
@@ -1956,6 +2281,16 @@ function AgentLeadList() {
           ) : null}
         </section>
       ) : null}
+      <LeadCreateModal
+        open={Boolean(createCategory)}
+        category={createCategory}
+        form={createForm}
+        setForm={setCreateForm}
+        saving={creatingLead}
+        error={createError}
+        onClose={closeCreateLead}
+        onSubmit={submitCreateLead}
+      />
     </main>
   )
 }
@@ -2437,6 +2772,140 @@ function OfferTransactionList({ offers = [], transactions = [], convertedTransac
   )
 }
 
+function formatSellerJourneyValue(item = {}) {
+  if (item.type === 'currency') return formatCurrency(item.value)
+  return [item.value || '—', item.suffix].filter(Boolean).join(' ')
+}
+
+function SellerJourneyPanel({ journey = null }) {
+  if (!journey) return <EmptyState title="Seller journey unavailable" copy="This seller lead could not be mapped to the existing seller journey service." />
+  return (
+    <section className={`${panelClass} p-5`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Listing Journey</h2>
+          <p className="mt-1 text-sm text-slate-500">Seller leads progress toward a listing, not buyer matching.</p>
+        </div>
+        <StatusPill tone={journey.listingLive ? 'green' : journey.listingCreated ? 'amber' : 'blue'}>{journey.status?.summary || journey.stage?.label || 'Contacted'}</StatusPill>
+      </div>
+      <div className="mt-5 grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+        {(journey.kpis || []).map((item) => (
+          <div key={item.key} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">{item.label}</p>
+            <p className="mt-1 truncate text-sm font-semibold text-slate-950">{formatSellerJourneyValue(item)}</p>
+          </div>
+        ))}
+      </div>
+      <ol className="mt-5 grid gap-2 lg:grid-cols-6">
+        {(journey.steps || []).map((step) => (
+          <li key={step.key} className={`rounded-xl border p-3 ${step.current ? 'border-blue-200 bg-blue-50' : step.completed ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50'}`}>
+            <p className={`text-sm font-semibold ${step.current ? 'text-blue-800' : step.completed ? 'text-emerald-800' : 'text-slate-500'}`}>{step.label}</p>
+            <p className="mt-1 text-xs font-medium text-slate-500">{step.status || step.state}</p>
+          </li>
+        ))}
+      </ol>
+      <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
+        <h3 className="text-sm font-semibold text-slate-950">Listing Status</h3>
+        <div className="mt-3 grid gap-2 sm:grid-cols-5">
+          {(journey.listingJourney || []).map((step) => (
+            <div key={step.key} className={`rounded-xl px-3 py-2 text-xs font-semibold ${step.current ? 'bg-blue-50 text-blue-700' : step.completed ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-50 text-slate-500'}`}>
+              {step.label}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function SellerReadinessPanel({ readiness = null }) {
+  if (!readiness) return <EmptyState title="Seller readiness unavailable" copy="No seller readiness summary could be generated for this lead." />
+  return (
+    <section className={`${panelClass} p-5`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Readiness</h2>
+          <p className="mt-1 text-sm text-slate-500">What must happen before this seller can become a live listing.</p>
+        </div>
+        <StatusPill tone={readiness.readiness === 'completed' ? 'green' : readiness.readiness === 'blocked' ? 'red' : 'amber'}>{readiness.readinessLabel}</StatusPill>
+      </div>
+      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {(readiness.kpis || []).map((item) => (
+          <div key={item.key} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">{item.label}</p>
+            <p className="mt-1 truncate text-sm font-semibold text-slate-950">{formatSellerJourneyValue(item)}</p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <h3 className="text-sm font-semibold text-slate-950">Next Action</h3>
+          <p className="mt-2 text-base font-semibold text-slate-900">{readiness.nextAction?.label || 'Review seller journey'}</p>
+          {readiness.nextAction?.reason ? <p className="mt-1 text-sm text-slate-500">{readiness.nextAction.reason}</p> : null}
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <h3 className="text-sm font-semibold text-slate-950">Blockers</h3>
+          <div className="mt-2 space-y-2">
+            {readiness.blockers?.length ? readiness.blockers.map((blocker) => (
+              <p key={blocker.id || blocker.label} className="rounded-xl bg-white px-3 py-2 text-sm font-semibold text-slate-700">{blocker.label}</p>
+            )) : <p className="text-sm text-slate-500">No blockers recorded.</p>}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function SellerDocumentsPanel({ journey = null }) {
+  const documents = journey?.documents || []
+  return (
+    <section className={`${panelClass} p-5`}>
+      <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Documents</h2>
+      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {documents.length ? documents.map((document) => (
+          <article key={document.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-sm font-semibold text-slate-950">{document.label}</p>
+              <StatusPill tone={document.status === 'Approved' || document.status === 'Uploaded' ? 'green' : 'amber'}>{document.status}</StatusPill>
+            </div>
+            {document.url ? <a href={document.url} className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-blue-700">Open document <ExternalLink size={13} /></a> : null}
+          </article>
+        )) : <EmptyState title="No seller documents" copy="Seller document requirements will appear from the existing seller journey." />}
+      </div>
+    </section>
+  )
+}
+
+function SellerActionsPanel({ journey = null, readiness = null, onOpenListing, onOpenTimeline }) {
+  const actions = readiness?.actions?.length ? readiness.actions : journey?.actions || []
+  return (
+    <section className={`${panelClass} p-5`}>
+      <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Seller Actions</h2>
+      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {actions.length ? actions.map((action) => {
+          const canOpenListing = ['create_listing', 'open_listing', 'complete_listing', 'activate_listing'].includes(action.id)
+          const canOpenTimeline = action.id === 'open_timeline' || action.id === 'contact_seller'
+          return (
+            <button
+              key={action.id}
+              type="button"
+              disabled={action.disabled}
+              onClick={() => {
+                if (canOpenListing) onOpenListing?.()
+                else if (canOpenTimeline) onOpenTimeline?.()
+              }}
+              className={`rounded-2xl border p-4 text-left ${action.primary ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-800'} disabled:cursor-not-allowed disabled:opacity-50`}
+            >
+              <span className="block text-sm font-semibold">{action.label}</span>
+              <span className={`mt-1 block text-xs font-medium ${action.primary ? 'text-slate-200' : 'text-slate-500'}`}>{action.reason || (action.primary ? 'Recommended next step' : 'Seller workflow action')}</span>
+            </button>
+          )
+        }) : <EmptyState title="No seller actions" copy="Seller actions will appear when the journey service can derive the next step." />}
+      </div>
+    </section>
+  )
+}
+
 function OwnershipCard({ organisationId, lead, actor, onSaved }) {
   const [agentId, setAgentId] = useState(lead.assignedAgentId || '')
   const [queueId, setQueueId] = useState(lead.assignedQueueId || 'unassigned')
@@ -2568,6 +3037,66 @@ function AgentLeadWorkspace() {
   const row = data?.row || null
   const sourceInfo = row ? getLeadSourceInfo(row) : null
   const workspaceAnalytics = row ? buildLeadWorkspaceAnalyticsSummary(row) : null
+  const leadCategory = row ? normalizeLeadCategory(row) : 'other'
+  const isSellerLeadWorkspace = leadCategory === 'seller'
+  const linkedSellerListing = useMemo(() => {
+    if (!row) return null
+    return (row.listings || data?.listings || []).find((listing) => {
+      const listingId = normalizeText(listing?.id || listing?.listingId || listing?.listing_id)
+      const leadListingId = normalizeText(row.listingId || row.listing_id || row.privateListingId || row.private_listing_id)
+      const sellerLeadId = normalizeText(listing?.sellerLeadId || listing?.seller_lead_id || listing?.originatingCrmLeadId || listing?.originating_crm_lead_id || listing?.leadId || listing?.lead_id)
+      return (leadListingId && listingId === leadListingId) || sellerLeadId === row.leadId
+    }) || row.listings?.[0] || null
+  }, [data?.listings, row])
+  const sellerJourney = useMemo(() => {
+    if (!row || !isSellerLeadWorkspace) return null
+    return buildSellerJourney({
+      lead: row,
+      contact: row.contact || {},
+      appointments: row.appointments || [],
+      listing: linkedSellerListing,
+    })
+  }, [isSellerLeadWorkspace, linkedSellerListing, row])
+  const sellerReadiness = useMemo(() => {
+    if (!row || !isSellerLeadWorkspace) return null
+    return buildSellerReadinessSummary({
+      lead: row,
+      contact: row.contact || {},
+      appointments: row.appointments || [],
+      listing: linkedSellerListing,
+      journey: sellerJourney,
+    })
+  }, [isSellerLeadWorkspace, linkedSellerListing, row, sellerJourney])
+  const tabs = useMemo(() => isSellerLeadWorkspace
+    ? [
+      { key: 'overview', label: 'Overview' },
+      { key: 'listing_journey', label: 'Listing Journey' },
+      { key: 'readiness', label: 'Readiness' },
+      { key: 'timeline', label: 'Timeline' },
+      { key: 'documents', label: 'Documents' },
+      { key: 'appointments', label: 'Appointments' },
+      { key: 'seller_actions', label: 'Seller Actions' },
+    ]
+    : [
+      { key: 'overview', label: 'Overview' },
+      { key: 'requirements', label: 'Requirements' },
+      { key: 'saved_searches', label: 'Saved Searches' },
+      { key: 'suggestions', label: 'Suggestions' },
+      { key: 'listings', label: 'Listings' },
+      { key: 'recommendations', label: 'Recommendations' },
+      { key: 'timeline', label: 'Timeline' },
+      { key: 'tasks', label: 'Tasks' },
+      { key: 'appointments', label: 'Appointments' },
+      { key: 'offers', label: 'Offers' },
+    ], [isSellerLeadWorkspace])
+
+  useEffect(() => {
+    if (!row) return
+    if (!tabs.some((tab) => tab.key === activeTab)) {
+      setActiveTab(isSellerLeadWorkspace ? 'listing_journey' : 'overview')
+    }
+  }, [activeTab, isSellerLeadWorkspace, row, tabs])
+
   const openShareFromRecommendation = useCallback((recommendation) => {
     const metadata = recommendation?.metadata || {}
     const targetListingId = metadata.listingId || metadata.listing_id || metadata.listingIds?.[0] || metadata.listing_ids?.[0]
@@ -2586,18 +3115,6 @@ function AgentLeadWorkspace() {
       recommendationId: recommendation.recommendationId,
     })
   }, [data?.listingInterests, data?.suggestions, row?.listingInterests, row?.suggestions])
-  const tabs = [
-    { key: 'overview', label: 'Overview' },
-    { key: 'requirements', label: 'Requirements' },
-    { key: 'saved_searches', label: 'Saved Searches' },
-    { key: 'suggestions', label: 'Suggestions' },
-    { key: 'listings', label: 'Listings' },
-    { key: 'recommendations', label: 'Recommendations' },
-    { key: 'timeline', label: 'Timeline' },
-    { key: 'tasks', label: 'Tasks' },
-    { key: 'appointments', label: 'Appointments' },
-    { key: 'offers', label: 'Offers' },
-  ]
 
   return (
     <main className={pageShell}>
@@ -2620,16 +3137,32 @@ function AgentLeadWorkspace() {
               <div className="flex flex-wrap gap-2">
                 <StatusPill tone={getStageTone(row.stage)}>{row.stage}</StatusPill>
                 <StatusPill>{row.source}</StatusPill>
+                <StatusPill tone={getLeadCategoryTone(row)}>{getLeadCategoryLabel(row)}</StatusPill>
+                {isSellerLeadWorkspace && sellerJourney?.listingCreated ? <StatusPill tone="amber">Listing Created</StatusPill> : null}
+                {isSellerLeadWorkspace && sellerJourney?.listingLive ? <StatusPill tone="green">Listing Live</StatusPill> : null}
                 {row.transactionCount || row.convertedTransactionId ? <StatusPill tone="green">Converted</StatusPill> : null}
               </div>
             </div>
             <div className="mt-5 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-              <Metric label="Response Time" value={workspaceAnalytics?.responseTimeLabel || 'Pending'} icon={Clock3} />
-              <Metric label="Touchpoints" value={workspaceAnalytics?.touchpoints || 0} icon={MessageSquarePlus} />
-              <Metric label="Matches" value={workspaceAnalytics?.matches || 0} icon={Home} />
-              <Metric label="Viewings" value={workspaceAnalytics?.viewings || 0} icon={CalendarDays} />
-              <Metric label="Offers" value={workspaceAnalytics?.offers || 0} icon={FileText} />
-              <Metric label="Transactions" value={row.transactionCount || (row.convertedTransactionId ? 1 : 0)} icon={CheckCircle2} />
+              {isSellerLeadWorkspace ? (
+                <>
+                  <Metric label="Current Stage" value={sellerJourney?.stage?.label || 'Contacted'} icon={Tag} />
+                  <Metric label="Days In Stage" value={sellerJourney?.daysInCurrentStage || 0} icon={Clock3} />
+                  <Metric label="Mandate" value={sellerJourney?.mandateStatus || 'not_started'} icon={FileText} />
+                  <Metric label="Listing" value={sellerJourney?.listingCreated ? 'Created' : 'Not Created'} icon={Home} />
+                  <Metric label="Documents" value={sellerJourney?.documentsOutstanding || 0} icon={FileText} />
+                  <Metric label="Next Action" value={sellerReadiness?.nextAction?.label || 'Review'} icon={CheckCircle2} />
+                </>
+              ) : (
+                <>
+                  <Metric label="Response Time" value={workspaceAnalytics?.responseTimeLabel || 'Pending'} icon={Clock3} />
+                  <Metric label="Touchpoints" value={workspaceAnalytics?.touchpoints || 0} icon={MessageSquarePlus} />
+                  <Metric label="Matches" value={workspaceAnalytics?.matches || 0} icon={Home} />
+                  <Metric label="Viewings" value={workspaceAnalytics?.viewings || 0} icon={CalendarDays} />
+                  <Metric label="Offers" value={workspaceAnalytics?.offers || 0} icon={FileText} />
+                  <Metric label="Transactions" value={row.transactionCount || (row.convertedTransactionId ? 1 : 0)} icon={CheckCircle2} />
+                </>
+              )}
             </div>
           </header>
 
@@ -2658,12 +3191,23 @@ function AgentLeadWorkspace() {
                 <Field label="Last Updated" value={formatDateTime(row.updatedAt)} />
                 <Field label="Contact Id" value={row.contactId || 'No contact link'} />
                 <Field label="Listing Id" value={row.listingId || 'No listing link'} />
-                <Field label="Converted Transaction" value={row.convertedTransactionId || 'Not converted'} />
-                <Field label="Legacy Budget" value={row.budget ? formatCurrency(row.budget) : '—'} />
-                <Field label="Area Interest" value={row.areaInterest || row.area_interest} />
-                <Field label="Property Interest" value={row.propertyInterest || row.property_interest} />
+                {isSellerLeadWorkspace ? (
+                  <>
+                    <Field label="Property" value={getLeadContextSummary(row)} />
+                    <Field label="Mandate" value={sellerJourney?.mandateStatus || 'not_started'} />
+                    <Field label="Listing Status" value={sellerJourney?.listingCreated ? sellerJourney?.listingLive ? 'Live' : 'Draft' : 'Not created'} />
+                    <Field label="Seller Portal" value={sellerJourney?.sellerPortalStatus || 'Not opened'} />
+                  </>
+                ) : (
+                  <>
+                    <Field label="Converted Transaction" value={row.convertedTransactionId || 'Not converted'} />
+                    <Field label="Legacy Budget" value={row.budget ? formatCurrency(row.budget) : '—'} />
+                    <Field label="Area Interest" value={row.areaInterest || row.area_interest} />
+                    <Field label="Property Interest" value={row.propertyInterest || row.property_interest} />
+                  </>
+                )}
               </dl>
-              <CommunicationHealthCard lead={row} />
+              {!isSellerLeadWorkspace ? <CommunicationHealthCard lead={row} /> : null}
               {row.notes ? <p className="mt-5 whitespace-pre-wrap rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">{row.notes}</p> : null}
               <section className="mt-5">
                 <div className="flex items-center justify-between gap-3">
@@ -2681,7 +3225,31 @@ function AgentLeadWorkspace() {
             </section>
           ) : null}
 
-          {activeTab === 'requirements' ? (
+          {activeTab === 'listing_journey' && isSellerLeadWorkspace ? (
+            <SellerJourneyPanel journey={sellerJourney} />
+          ) : null}
+
+          {activeTab === 'readiness' && isSellerLeadWorkspace ? (
+            <SellerReadinessPanel readiness={sellerReadiness} />
+          ) : null}
+
+          {activeTab === 'documents' && isSellerLeadWorkspace ? (
+            <SellerDocumentsPanel journey={sellerJourney} />
+          ) : null}
+
+          {activeTab === 'seller_actions' && isSellerLeadWorkspace ? (
+            <SellerActionsPanel
+              journey={sellerJourney}
+              readiness={sellerReadiness}
+              onOpenListing={() => {
+                if (linkedSellerListing?.id) navigate(`/agent/listings/${linkedSellerListing.id}`)
+                else navigate('/listings')
+              }}
+              onOpenTimeline={() => setActiveTab('timeline')}
+            />
+          ) : null}
+
+          {activeTab === 'requirements' && !isSellerLeadWorkspace ? (
             <LeadRequirementsPanel
               organisationId={organisationId}
               lead={row}
@@ -2691,7 +3259,7 @@ function AgentLeadWorkspace() {
             />
           ) : null}
 
-          {activeTab === 'suggestions' ? (
+          {activeTab === 'suggestions' && !isSellerLeadWorkspace ? (
             <LeadSuggestionsPanel
               organisationId={organisationId}
               lead={row}
@@ -2702,7 +3270,7 @@ function AgentLeadWorkspace() {
             />
           ) : null}
 
-          {activeTab === 'saved_searches' ? (
+          {activeTab === 'saved_searches' && !isSellerLeadWorkspace ? (
             <SavedSearchesPanel
               organisationId={organisationId}
               lead={row}
@@ -2724,7 +3292,7 @@ function AgentLeadWorkspace() {
             />
           ) : null}
 
-          {activeTab === 'recommendations' ? (
+          {activeTab === 'recommendations' && !isSellerLeadWorkspace ? (
             <LeadRecommendationsPanel
               recommendations={data?.recommendations || row.recommendations || []}
               actor={actor}
@@ -2733,7 +3301,7 @@ function AgentLeadWorkspace() {
             />
           ) : null}
 
-          {activeTab === 'tasks' ? (
+          {activeTab === 'tasks' && !isSellerLeadWorkspace ? (
             <section className={`${panelClass} p-5`}>
               <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Tasks</h2>
               <TaskForm organisationId={organisationId} leadId={row.leadId} actor={actor} onSaved={loadWorkspace} />
@@ -2741,7 +3309,7 @@ function AgentLeadWorkspace() {
             </section>
           ) : null}
 
-          {activeTab === 'listings' ? (
+          {activeTab === 'listings' && !isSellerLeadWorkspace ? (
             <LeadListingInterestsPanel
               organisationId={organisationId}
               lead={row}
@@ -2760,7 +3328,7 @@ function AgentLeadWorkspace() {
             </section>
           ) : null}
 
-          {activeTab === 'offers' ? (
+          {activeTab === 'offers' && !isSellerLeadWorkspace ? (
             <section className={`${panelClass} p-5`}>
               <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Offers / Transactions</h2>
               <div className="mt-5"><OfferTransactionList offers={row.offers} transactions={row.transactions} convertedTransactionId={row.convertedTransactionId} /></div>

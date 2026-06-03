@@ -168,6 +168,7 @@ export const APP_NAV_BY_ROLE = {
     { key: 'clients', label: 'Clients', to: '/bond/clients', navSection: 'main', activeMatch: ['/bond/clients', '/clients'] },
     { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners'] },
     { key: 'partner_intelligence', label: 'Partner Intelligence', to: '/bond/partner-intelligence', navSection: 'main', activeMatch: ['/bond/partner-intelligence'] },
+    { key: 'consultant_performance', label: 'Consultant Performance', to: '/bond/consultant-performance', navSection: 'main', activeMatch: ['/bond/consultant-performance'] },
     { key: 'bond_reports', label: 'Reports', to: '/bond/reports', navSection: 'main', activeMatch: ['/bond/reports', '/reports'] },
     { key: 'bond_organisation', label: 'Organisation', to: '/bond/organisation', navSection: 'main', activeMatch: ['/bond/organisation'] },
     { key: 'settings', label: 'Settings', to: '/settings', navSection: 'secondary' },
@@ -279,6 +280,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
       return [
         { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
         { key: 'applications', label: 'My Applications', to: '/bond/applications?scope=mine', navSection: 'main', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
+        { key: 'consultant_performance', label: 'Consultant Performance', to: '/bond/consultant-performance', navSection: 'main', activeMatch: ['/bond/consultant-performance'] },
         { key: 'clients', label: 'Clients', to: '/bond/clients', navSection: 'main', activeMatch: ['/bond/clients', '/clients'] },
         { key: 'tasks', label: 'Tasks', to: '/bond/tasks', navSection: 'main', activeMatch: ['/bond/tasks'] },
         { key: 'settings', label: 'Settings', to: '/settings', navSection: 'secondary' },
@@ -301,6 +303,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
             { key: 'bond_consultants', label: 'Consultants', to: '/bond/organisation?view=consultants' },
           ],
         },
+        { key: 'consultant_performance', label: 'Consultant Performance', to: '/bond/consultant-performance', navSection: 'main', activeMatch: ['/bond/consultant-performance'] },
         { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners'] },
         { key: 'partner_intelligence', label: 'Partner Intelligence', to: '/bond/partner-intelligence', navSection: 'main', activeMatch: ['/bond/partner-intelligence'] },
         { key: 'bond_reports', label: 'Reports', to: '/bond/reports', navSection: 'main', activeMatch: ['/bond/reports', '/reports'] },
@@ -323,6 +326,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
             { key: 'bond_consultants', label: 'Consultants', to: '/bond/organisation?view=consultants' },
           ],
         },
+        { key: 'consultant_performance', label: 'Consultant Performance', to: '/bond/consultant-performance', navSection: 'main', activeMatch: ['/bond/consultant-performance'] },
         { key: 'partner_intelligence', label: 'Partner Intelligence', to: '/bond/partner-intelligence', navSection: 'main', activeMatch: ['/bond/partner-intelligence'] },
       ]
     }
@@ -341,6 +345,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
             { key: 'bond_consultants', label: 'Consultants', to: '/bond/organisation?view=consultants' },
           ],
         },
+        { key: 'consultant_performance', label: 'Consultant Performance', to: '/bond/consultant-performance', navSection: 'main', activeMatch: ['/bond/consultant-performance'] },
         { key: 'partner_intelligence', label: 'Partner Intelligence', to: '/bond/partner-intelligence', navSection: 'main', activeMatch: ['/bond/partner-intelligence'] },
       ]
     }
@@ -349,6 +354,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
       return [
         { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
         { key: 'applications', label: 'My Applications', to: '/bond/applications?scope=mine', navSection: 'main', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
+        { key: 'consultant_performance', label: 'Consultant Performance', to: '/bond/consultant-performance', navSection: 'main', activeMatch: ['/bond/consultant-performance'] },
         { key: 'clients', label: 'Clients', to: '/bond/clients', navSection: 'main', activeMatch: ['/bond/clients', '/clients'] },
         { key: 'tasks', label: 'Tasks', to: '/bond/tasks', navSection: 'main', activeMatch: ['/bond/tasks'] },
       ]
