@@ -35,6 +35,8 @@ try {
   assert.equal(page.canAccessOrganisationView('regions', snapshot), false)
   assert.equal(page.canAccessOrganisationView('branches', snapshot), true)
   assert.equal(page.canAccessOrganisationView('consultants', snapshot), false)
+  assert.equal(page.canAccessOrganisationView('overview', { organisationScope: { scopeLevel: 'consultant' }, capabilities: {} }), false)
+  assert.equal(page.canAccessOrganisationView('overview', { organisationScope: { scopeLevel: 'hq' }, capabilities: {} }), true)
 
   const rows = [
     { id: 'derived-region-visible-scope', region: 'Visible Scope' },

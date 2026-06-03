@@ -88,6 +88,15 @@ import {
   uploadPrivateListingMediaAsset,
 } from '../services/privateListingService'
 import { listListingLeadInterests } from '../services/leadListingInterestService'
+import { listListingPropertyShares } from '../services/leadPropertySharingService'
+import { listCommunicationDeliveries } from '../services/communicationDeliveryService'
+import { buildListingWorkspaceAnalyticsSummary } from '../services/leadAnalyticsService'
+import {
+  acceptSuggestion,
+  generateSuggestionsForListing,
+  getSuggestionsForListing,
+  rejectSuggestion,
+} from '../services/leadSuggestionService'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 
@@ -509,12 +518,12 @@ function formatStatusLabel(value) {
 
 function statusClass(status) {
   const key = String(status || '').trim().toLowerCase()
-  if (key === 'approved' || key === 'completed' || key === 'accepted') return 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
-  if (key === 'uploaded' || key === 'under_review' || key === 'agent_review' || key === 'sent_to_seller' || key === 'seller_viewed' || key === 'reviewed' || key === 'in_progress') {
+  if (key === 'approved' || key === 'completed' || key === 'accepted' || key === 'delivered') return 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
+  if (key === 'uploaded' || key === 'under_review' || key === 'agent_review' || key === 'sent_to_seller' || key === 'seller_viewed' || key === 'reviewed' || key === 'in_progress' || key === 'sent') {
     return 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]'
   }
   if (key === 'changes_requested' || key === 'countered') return 'border-[#f1dfb8] bg-[#fff8e8] text-[#8a641d]'
-  if (key === 'rejected' || key === 'expired') return 'border-[#f6d7d7] bg-[#fff5f5] text-[#b42318]'
+  if (key === 'rejected' || key === 'expired' || key === 'failed') return 'border-[#f6d7d7] bg-[#fff5f5] text-[#b42318]'
   if (key === 'submitted') return 'border-[#e6dcf7] bg-[#faf7ff] text-[#6d46a1]'
   return 'border-[#dbe4ef] bg-[#f8fbff] text-[#48627f]'
 }
@@ -906,8 +915,17 @@ function AgentListingDetail() {
   })
   const [viewings, setViewings] = useState([])
   const [interestedLeadRows, setInterestedLeadRows] = useState([])
+  const [sentPropertyRows, setSentPropertyRows] = useState([])
+  const [communicationDeliveryRows, setCommunicationDeliveryRows] = useState([])
+  const [sentPropertiesLoading, setSentPropertiesLoading] = useState(false)
+  const [sentPropertiesError, setSentPropertiesError] = useState('')
   const [interestedLeadsLoading, setInterestedLeadsLoading] = useState(false)
   const [interestedLeadsError, setInterestedLeadsError] = useState('')
+  const [suggestedLeadRows, setSuggestedLeadRows] = useState([])
+  const [suggestedLeadsLoading, setSuggestedLeadsLoading] = useState(false)
+  const [suggestedLeadsError, setSuggestedLeadsError] = useState('')
+  const [suggestionActionId, setSuggestionActionId] = useState('')
+  const [suggestionActionMessage, setSuggestionActionMessage] = useState('')
   const [showViewingForm, setShowViewingForm] = useState(false)
   const [viewingForm, setViewingForm] = useState({
     buyerLeadId: '',
@@ -1006,36 +1024,133 @@ function AgentListingDetail() {
     }
   }, [listingOrganisationId, listingRecord?.id, offersRefreshTick])
 
-  useEffect(() => {
+  const refreshInterestedLeads = useCallback(async () => {
     if (!listingOrganisationId || !listingRecord?.id || !isSupabaseConfigured) {
       setInterestedLeadRows([])
       setInterestedLeadsError('')
       setInterestedLeadsLoading(false)
       return
     }
-    let cancelled = false
-    setInterestedLeadsLoading(true)
-    setInterestedLeadsError('')
-    listListingLeadInterests({
-      organisationId: listingOrganisationId,
-      listingId: listingRecord.id,
-    })
-      .then((rows) => {
-        if (!cancelled) setInterestedLeadRows(Array.isArray(rows) ? rows : [])
+    try {
+      setInterestedLeadsLoading(true)
+      setInterestedLeadsError('')
+      const rows = await listListingLeadInterests({
+        organisationId: listingOrganisationId,
+        listingId: listingRecord.id,
       })
-      .catch((error) => {
-        if (!cancelled) {
-          setInterestedLeadRows([])
-          setInterestedLeadsError(error?.message || 'Unable to load interested leads.')
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setInterestedLeadsLoading(false)
-      })
-    return () => {
-      cancelled = true
+      setInterestedLeadRows(Array.isArray(rows) ? rows : [])
+    } catch (error) {
+      setInterestedLeadRows([])
+      setInterestedLeadsError(error?.message || 'Unable to load interested leads.')
+    } finally {
+      setInterestedLeadsLoading(false)
     }
   }, [listingOrganisationId, listingRecord?.id])
+
+  useEffect(() => {
+    void refreshInterestedLeads()
+  }, [refreshInterestedLeads])
+
+  const refreshSentProperties = useCallback(async () => {
+    if (!listingOrganisationId || !listingRecord?.id || !isSupabaseConfigured) {
+      setSentPropertyRows([])
+      setCommunicationDeliveryRows([])
+      setSentPropertiesError('')
+      setSentPropertiesLoading(false)
+      return
+    }
+    try {
+      setSentPropertiesLoading(true)
+      setSentPropertiesError('')
+      const rows = await listListingPropertyShares({
+        organisationId: listingOrganisationId,
+        listingId: listingRecord.id,
+      })
+      const deliveries = await listCommunicationDeliveries({
+        organisationId: listingOrganisationId,
+        listingId: listingRecord.id,
+      }).catch(() => [])
+      setSentPropertyRows(Array.isArray(rows) ? rows : [])
+      setCommunicationDeliveryRows(Array.isArray(deliveries) ? deliveries : [])
+    } catch (error) {
+      setSentPropertyRows([])
+      setCommunicationDeliveryRows([])
+      setSentPropertiesError(error?.message || 'Unable to load sent property history.')
+    } finally {
+      setSentPropertiesLoading(false)
+    }
+  }, [listingOrganisationId, listingRecord?.id])
+
+  useEffect(() => {
+    void refreshSentProperties()
+  }, [refreshSentProperties])
+
+  const refreshListingSuggestions = useCallback(async () => {
+    if (!listingOrganisationId || !listingRecord?.id || !isSupabaseConfigured) {
+      setSuggestedLeadRows([])
+      setSuggestedLeadsError('')
+      setSuggestedLeadsLoading(false)
+      return
+    }
+    try {
+      setSuggestedLeadsLoading(true)
+      setSuggestedLeadsError('')
+      const rows = await getSuggestionsForListing({
+        organisationId: listingOrganisationId,
+        listingId: listingRecord.id,
+      })
+      setSuggestedLeadRows(Array.isArray(rows) ? rows : [])
+    } catch (error) {
+      setSuggestedLeadRows([])
+      setSuggestedLeadsError(error?.message || 'Unable to load suggested leads.')
+    } finally {
+      setSuggestedLeadsLoading(false)
+    }
+  }, [listingOrganisationId, listingRecord?.id])
+
+  useEffect(() => {
+    void refreshListingSuggestions()
+  }, [refreshListingSuggestions])
+
+  async function handleListingSuggestionAction(action, suggestion) {
+    try {
+      setSuggestionActionId(suggestion.suggestionId)
+      setSuggestedLeadsError('')
+      setSuggestionActionMessage('')
+      if (action === 'accept') {
+        await acceptSuggestion({ suggestionId: suggestion.suggestionId }, { actor: profile })
+        setSuggestionActionMessage('Suggestion accepted and added to Interested Leads.')
+      } else {
+        await rejectSuggestion({ suggestionId: suggestion.suggestionId, reason: 'Rejected by agent from Listing Workspace.' }, { actor: profile })
+        setSuggestionActionMessage('Suggestion rejected.')
+      }
+      await refreshListingSuggestions()
+      if (action === 'accept') await refreshInterestedLeads()
+    } catch (error) {
+      setSuggestedLeadsError(error?.message || 'Unable to update suggested lead.')
+    } finally {
+      setSuggestionActionId('')
+    }
+  }
+
+  async function regenerateListingSuggestions() {
+    try {
+      setSuggestionActionId('generate')
+      setSuggestedLeadsError('')
+      setSuggestionActionMessage('')
+      const generated = await generateSuggestionsForListing({
+        organisationId: listingOrganisationId,
+        listingId: listingRecord.id,
+        force: true,
+      })
+      setSuggestionActionMessage(`${generated.length} suggested lead${generated.length === 1 ? '' : 's'} generated.`)
+      await refreshListingSuggestions()
+    } catch (error) {
+      setSuggestedLeadsError(error?.message || 'Unable to generate suggested leads.')
+    } finally {
+      setSuggestionActionId('')
+    }
+  }
 
   const refreshListingViewings = useCallback(async () => {
     if (!listingId) return
@@ -1070,6 +1185,15 @@ function AgentListingDetail() {
       window.removeEventListener('itg:agency-crm-updated', refreshViewings)
     }
   }, [listingId, refreshListingViewings])
+
+  const listingAnalyticsSummary = useMemo(() => buildListingWorkspaceAnalyticsSummary({
+    interests: interestedLeadRows,
+    viewings,
+    offers: canonicalListingOffers,
+    transactions: [],
+    propertyShares: sentPropertyRows,
+    communicationDeliveries: communicationDeliveryRows,
+  }), [canonicalListingOffers, communicationDeliveryRows, interestedLeadRows, sentPropertyRows, viewings])
 
   useEffect(() => {
     if (!listingRecord) return
@@ -4088,6 +4212,91 @@ function AgentListingDetail() {
           <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
+                <h3 className="text-[1rem] font-semibold text-[#142132]">Suggested Leads</h3>
+                <p className="mt-1 text-sm text-[#607387]">Automated requirement-to-listing suggestions. Accepting creates a canonical interested lead record.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex w-fit rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
+                  {suggestedLeadRows.length} suggested
+                </span>
+                <Button size="sm" type="button" variant="secondary" onClick={regenerateListingSuggestions} disabled={suggestionActionId === 'generate' || !listingOrganisationId || !listingRecord?.id}>
+                  {suggestionActionId === 'generate' ? <Loader2 size={14} className="animate-spin" /> : <TrendingUp size={14} />}
+                  Generate
+                </Button>
+              </div>
+            </div>
+            {suggestionActionMessage ? (
+              <div className="mt-4 rounded-[14px] border border-[#d8eddf] bg-[#ecfaf1] px-3 py-2 text-sm text-[#1f7d44]">{suggestionActionMessage}</div>
+            ) : null}
+            {suggestedLeadsError ? (
+              <div className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">{suggestedLeadsError}</div>
+            ) : null}
+            <div className="mt-4 space-y-3">
+              {suggestedLeadsLoading ? (
+                <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4 text-sm text-[#607387]">Loading suggested leads...</div>
+              ) : null}
+              {!suggestedLeadsLoading && suggestedLeadRows.length ? suggestedLeadRows.map((suggestion) => {
+                const lead = suggestion.lead || {}
+                const reasons = Array.isArray(suggestion.reasons) ? suggestion.reasons : []
+                const status = String(suggestion.status || 'pending').replace(/_/g, ' ')
+                return (
+                  <article key={suggestion.suggestionId} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                    <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-semibold text-[#22374d]">{lead.name || 'Unnamed lead'}</p>
+                          <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
+                            {Math.round(Number(suggestion.score || 0))}% match
+                          </span>
+                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusClass(suggestion.status)}`}>
+                            {status}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm text-[#607387]">{lead.email || 'Email pending'} • {lead.phone || 'Phone pending'}</p>
+                        <p className="mt-1 text-xs text-[#6b7d93]">{suggestion.requirementSummary || 'Requirement summary pending'} • Generated {formatDate(suggestion.generatedAt)}</p>
+                        {reasons.length ? (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {reasons.slice(0, 4).map((reason, index) => (
+                              <span key={`${suggestion.suggestionId}-reason-${index}`} className="rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
+                                {typeof reason === 'string' ? reason : reason?.label || reason?.reason || 'Match reason'}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {suggestion.leadId ? (
+                          <Button size="sm" type="button" variant="secondary" onClick={() => navigate(`/pipeline/leads/${suggestion.leadId}`)}>
+                            Open Lead
+                          </Button>
+                        ) : null}
+                        {suggestion.status === 'pending' ? (
+                          <>
+                            <Button size="sm" type="button" onClick={() => handleListingSuggestionAction('accept', suggestion)} disabled={suggestionActionId === suggestion.suggestionId}>
+                              {suggestionActionId === suggestion.suggestionId ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                              Accept
+                            </Button>
+                            <Button size="sm" type="button" variant="secondary" onClick={() => handleListingSuggestionAction('reject', suggestion)} disabled={suggestionActionId === suggestion.suggestionId}>
+                              Reject
+                            </Button>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  </article>
+                )
+              }) : null}
+              {!suggestedLeadsLoading && !suggestedLeadRows.length ? (
+                <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-5 text-sm text-[#6b7d93]">
+                  No automated lead suggestions for this listing yet.
+                </div>
+              ) : null}
+            </div>
+          </section>
+
+          <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
                 <h3 className="text-[1.05rem] font-semibold text-[#142132]">Viewings</h3>
                 <p className="mt-1 text-sm text-[#607387]">Appointment requests, confirmations, and post-viewing feedback linked to this listing.</p>
               </div>
@@ -4239,6 +4448,21 @@ function AgentListingDetail() {
             {interestedLeadsError ? (
               <div className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">{interestedLeadsError}</div>
             ) : null}
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+              {[
+                ['Total Enquiries', listingAnalyticsSummary.totalEnquiries],
+                ['Matched Leads', listingAnalyticsSummary.matchedLeads],
+                ['Sent To Leads', listingAnalyticsSummary.sentToLeads],
+                ['Viewings', listingAnalyticsSummary.viewings],
+                ['Offers', listingAnalyticsSummary.offers],
+                ['Transactions', listingAnalyticsSummary.transactions],
+              ].map(([label, value]) => (
+                <article key={label} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-3">
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</p>
+                  <strong className="mt-2 block text-[1.35rem] font-semibold tracking-[-0.04em] text-[#142132]">{value}</strong>
+                </article>
+              ))}
+            </div>
             <div className="mt-4 space-y-3">
               {interestedLeadsLoading ? (
                 <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4 text-sm text-[#607387]">Loading interested leads...</div>
@@ -4273,6 +4497,69 @@ function AgentListingDetail() {
               {!interestedLeadsLoading && !interestedLeadRows.length ? (
                 <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-5 text-sm text-[#6b7d93]">
                   No canonical interested leads linked yet.
+                </div>
+              ) : null}
+            </div>
+          </section>
+
+          <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="text-[1rem] font-semibold text-[#142132]">Sent To Leads</h3>
+                <p className="mt-1 text-sm text-[#607387]">Agent-approved property shares logged from lead communication events.</p>
+              </div>
+              <span className="inline-flex w-fit rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
+                {sentPropertyRows.length} sent
+              </span>
+            </div>
+            {sentPropertiesError ? (
+              <div className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">{sentPropertiesError}</div>
+            ) : null}
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              {[
+                ['Times Shared', listingAnalyticsSummary.deliveryTimesShared || sentPropertyRows.length],
+                ['Unique Buyers', listingAnalyticsSummary.deliveryUniqueBuyers],
+                ['Sent', listingAnalyticsSummary.deliverySent],
+                ['Delivered', listingAnalyticsSummary.deliveryDelivered],
+                ['Failed', listingAnalyticsSummary.deliveryFailed],
+              ].map(([label, value]) => (
+                <article key={label} className="rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-3">
+                  <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</p>
+                  <strong className="mt-2 block text-[1.1rem] font-semibold tracking-[-0.035em] text-[#142132]">{value || 0}</strong>
+                </article>
+              ))}
+            </div>
+            <div className="mt-4 space-y-3">
+              {sentPropertiesLoading ? (
+                <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4 text-sm text-[#607387]">Loading sent property history...</div>
+              ) : null}
+              {!sentPropertiesLoading && sentPropertyRows.length ? sentPropertyRows.map((share) => (
+                <article key={share.shareId || share.communicationId} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-[#22374d]">{share.leadName || share.leadId || 'Lead details pending'}</p>
+                      <p className="mt-1 text-sm text-[#607387]">{share.leadEmail || 'Email pending'} • {share.leadPhone || 'Phone pending'}</p>
+                      <p className="mt-1 text-xs text-[#6b7d93]">Sent {formatDate(share.sentAt)} • Agent {share.agentId || 'Unknown'}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
+                        {share.channel || 'channel pending'}
+                      </span>
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusClass(share.status)}`}>
+                        {share.status || 'pending'}
+                      </span>
+                      {share.leadId ? (
+                        <Button size="sm" type="button" variant="secondary" onClick={() => navigate(`/pipeline/leads/${share.leadId}`)}>
+                          Open Lead
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                </article>
+              )) : null}
+              {!sentPropertiesLoading && !sentPropertyRows.length ? (
+                <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-5 text-sm text-[#6b7d93]">
+                  This listing has not been sent to any leads from Bridge yet.
                 </div>
               ) : null}
             </div>

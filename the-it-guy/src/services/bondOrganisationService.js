@@ -6,6 +6,7 @@ import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { getWorkspaceHierarchy } from './bondWorkspaceHierarchyService'
 import { filterDemoBondApplications, getBondTransactionTrackerSnapshot } from './bondCommandCenterService'
+import { logBondOrganisationScope, resolveBondOrganisationScope } from './bondOrganisationScopeResolver'
 
 export const BOND_ORGANISATION_STRUCTURE_TYPES = Object.freeze({
   independent: 'independent',
@@ -30,6 +31,30 @@ const MANAGEMENT_SCOPE_LEVELS = new Set([
   BOND_SCOPE_LEVELS.branch,
   BOND_SCOPE_LEVELS.team,
 ])
+const REGION_MANAGER_ROLES = new Set(['regional_manager', 'hq_manager', 'manager', 'director', 'owner'])
+const BRANCH_MANAGER_ROLES = new Set(['branch_manager', 'regional_manager', 'manager', 'director', 'owner'])
+const CONSULTANT_ROLES = new Set(['consultant', 'bond_originator', 'processor', 'admin_staff'])
+const REGION_STATUS_VALUES = new Set(['active', 'inactive'])
+const LOCAL_REGION_STORE = new Map()
+const LOCAL_BRANCH_STORE = new Map()
+const LOCAL_CONSULTANT_STORE = new Map()
+const LOCAL_ACTIVITY_STORE = new Map()
+const LOCAL_APPLICATION_OWNERSHIP_STORE = new Map()
+
+export const BOND_ORGANISATION_ACTIVITY_EVENTS = Object.freeze({
+  regionCreated: 'REGION_CREATED',
+  regionUpdated: 'REGION_UPDATED',
+  regionManagerAssigned: 'REGION_MANAGER_ASSIGNED',
+  branchCreated: 'BRANCH_CREATED',
+  branchUpdated: 'BRANCH_UPDATED',
+  branchManagerAssigned: 'BRANCH_MANAGER_ASSIGNED',
+  branchMovedRegion: 'BRANCH_MOVED_REGION',
+  consultantCreated: 'CONSULTANT_CREATED',
+  consultantUpdated: 'CONSULTANT_UPDATED',
+  consultantAssignedBranch: 'CONSULTANT_ASSIGNED_BRANCH',
+  consultantDeactivated: 'CONSULTANT_DEACTIVATED',
+  applicationReassigned: 'APPLICATION_REASSIGNED',
+})
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -37,6 +62,10 @@ function normalizeText(value) {
 
 function normalizeLower(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function normalizeUpper(value) {
+  return normalizeText(value).toUpperCase()
 }
 
 function normalizeStructureType(value, fallback = BOND_ORGANISATION_STRUCTURE_TYPES.independent) {
@@ -48,6 +77,11 @@ function isActiveRecord(record = {}) {
   if (record.active === false || record.is_active === false) return false
   const status = normalizeLower(record.status)
   return !status || ['active', 'accepted'].includes(status)
+}
+
+function isInactiveRecord(record = {}) {
+  if (record.active === false || record.is_active === false) return true
+  return normalizeLower(record.status) === 'inactive'
 }
 
 function isReadRestrictedError(error = {}) {
@@ -66,6 +100,10 @@ function getUserName(user = {}) {
       [user.first_name || user.firstName, user.last_name || user.lastName].map(normalizeText).filter(Boolean).join(' ') ||
       user.email,
   ) || 'Team member'
+}
+
+function getUserId(user = {}) {
+  return normalizeText(user.user_id || user.userId || user.id)
 }
 
 function getUnitType(unit = {}) {
@@ -94,11 +132,11 @@ function getUserRegionId(user = {}) {
 }
 
 function getRowRegionId(row = {}) {
-  return normalizeText(row.regionId || row.region_id)
+  return normalizeText(row.assignedRegionId || row.assigned_region_id || row.regionId || row.region_id)
 }
 
 function getRowUnitId(row = {}) {
-  return normalizeText(row.workspaceUnitId || row.workspace_unit_id || row.branchId || row.branch_id || row.teamId || row.team_id)
+  return normalizeText(row.assignedBranchId || row.assigned_branch_id || row.workspaceUnitId || row.workspace_unit_id || row.branchId || row.branch_id || row.teamId || row.team_id)
 }
 
 function buildLookup(rows = []) {
@@ -131,9 +169,10 @@ function getStructureLabel(structureType = '') {
   return BOND_ORGANISATION_STRUCTURE_OPTIONS.find((option) => option.value === structureType)?.label || 'Organisation'
 }
 
-function resolveCapabilities(context = {}) {
+function resolveCapabilities(context = {}, organisationScope = null) {
   const resolved = resolvePermissionContext(context)
-  const scopeLevel = normalizeLower(resolved.scopeLevel) || BOND_SCOPE_LEVELS.assigned
+  const scope = organisationScope || resolveBondOrganisationScope({ ...context, resolvedPermissionContext: resolved })
+  const scopeLevel = normalizeLower(scope.permissionScopeLevel) || BOND_SCOPE_LEVELS.assigned
   const canSetUpStructure = (
     can(PERMISSIONS.manageBondWorkspace, context) ||
     can(PERMISSIONS.manageBondRegions, context) ||
@@ -145,6 +184,8 @@ function resolveCapabilities(context = {}) {
   return {
     resolved,
     scopeLevel,
+    organisationLevel: scope.scopeLevel,
+    organisationScope: scope,
     userEmail: normalizeLower(context.email || context.user?.email || context.authState?.user?.email || context.profile?.email),
     userName: normalizeLower(
       context.name ||
@@ -157,11 +198,18 @@ function resolveCapabilities(context = {}) {
           .join(' '),
     ),
     canSetUpStructure,
-    canViewRegions: scopeLevel === BOND_SCOPE_LEVELS.workspaceHq,
-    canViewBranches: [BOND_SCOPE_LEVELS.workspaceHq, BOND_SCOPE_LEVELS.region, BOND_SCOPE_LEVELS.branch, BOND_SCOPE_LEVELS.team].includes(scopeLevel),
+    canViewRegions: Boolean(scope.canViewRegions),
+    canViewBranches: Boolean(scope.canViewBranches),
     canViewTeams: MANAGEMENT_SCOPE_LEVELS.has(scopeLevel),
-    canViewConsultants: MANAGEMENT_SCOPE_LEVELS.has(scopeLevel),
-    canViewApplications: can(PERMISSIONS.viewApplications, context),
+    canViewConsultants: Boolean(scope.canViewConsultants),
+    canViewPartners: Boolean(scope.canViewPartners),
+    canViewReports: Boolean(scope.canViewReports),
+    canViewApplications: Boolean(scope.canViewApplications && can(PERMISSIONS.viewApplications, context)),
+    canManageRegions: scope.scopeLevel === 'hq' && canSetUpStructure,
+    canManageBranches: ['hq', 'region'].includes(scope.scopeLevel),
+    canMoveBranches: scope.scopeLevel === 'hq',
+    canManageConsultants: ['hq', 'region', 'branch'].includes(scope.scopeLevel),
+    canReassignApplications: ['hq', 'region', 'branch'].includes(scope.scopeLevel),
   }
 }
 
@@ -211,7 +259,7 @@ function scopeApplicationRows(rows = [], capabilities = {}) {
   const scopedEmail = normalizeLower(capabilities.userEmail)
   const scopedName = normalizeLower(capabilities.userName)
   const scopedRows = rows.filter((row) => {
-    const assignedUserId = normalizeText(row.assignedUserId || row.assigned_user_id)
+    const assignedUserId = normalizeText(row.assignedConsultantId || row.assigned_consultant_id || row.assignedUserId || row.assigned_user_id)
     const assignedEmail = normalizeLower(row.assignedUserEmail || row.assigned_user_email || row.assignedBondOriginatorEmail)
     const consultant = normalizeLower(row.consultant)
     return (
@@ -232,11 +280,20 @@ function enrichApplicationRows(rows = [], { regions = [], branches = [], teams =
     const unitId = getRowUnitId(row)
     const unit = unitById.get(unitId)
     const region = regionById.get(regionId || normalizeText(unit?.region_id || unit?.regionId))
+    const branchId = getUnitType(unit) === WORKSPACE_UNIT_TYPES.branch ? unitId : normalizeText(row.assignedBranchId || row.assigned_branch_id || row.branchId || row.branch_id)
+    const resolvedRegionId = regionId || normalizeText(region?.id)
+    const assignedConsultantId = normalizeText(row.assignedConsultantId || row.assigned_consultant_id || row.assignedUserId || row.assigned_user_id)
     return {
       ...row,
-      regionId: regionId || normalizeText(region?.id),
+      assignedConsultantId,
+      assigned_consultant_id: assignedConsultantId,
+      assignedBranchId: branchId,
+      assigned_branch_id: branchId,
+      assignedRegionId: resolvedRegionId,
+      assigned_region_id: resolvedRegionId,
+      regionId: resolvedRegionId,
       region: normalizeText(row.region || region?.name) || 'Unassigned',
-      branchId: getUnitType(unit) === WORKSPACE_UNIT_TYPES.branch ? unitId : normalizeText(row.branchId || row.branch_id),
+      branchId,
       branch: normalizeText(row.branch || (getUnitType(unit) === WORKSPACE_UNIT_TYPES.branch ? unit?.name : '')) || 'Unassigned',
       teamId: getUnitType(unit) === WORKSPACE_UNIT_TYPES.team ? unitId : normalizeText(row.teamId || row.team_id),
       team: normalizeText(row.team || (getUnitType(unit) === WORKSPACE_UNIT_TYPES.team ? unit?.name : '')) || 'Unassigned',
@@ -339,7 +396,7 @@ function buildTabs({
     { key: 'regions', label: 'Regions', showIf: capabilities.canViewRegions },
     { key: 'branches', label: capabilities.scopeLevel === BOND_SCOPE_LEVELS.branch ? 'My Branch' : 'Branches', showIf: capabilities.canViewBranches },
     { key: 'consultants', label: 'Consultants', showIf: capabilities.canViewConsultants },
-    { key: 'applications', label: 'Applications', alwaysShow: true },
+    { key: 'partners', label: 'Partners', showIf: capabilities.canViewPartners },
     { key: 'permissions', label: 'Permissions', showIf: capabilities.canSetUpStructure },
     { key: 'settings', label: 'Settings', showIf: capabilities.scopeLevel === BOND_SCOPE_LEVELS.workspaceHq && capabilities.canSetUpStructure },
   ]
@@ -396,8 +453,13 @@ function getBranchApplicationRows(branch = {}, applications = []) {
 
 function getConsultantApplicationRows(consultant = {}, applications = []) {
   const name = normalizeLower(consultant.name)
-  const userId = normalizeText(consultant.user_id || consultant.userId)
-  return applications.filter((row) => normalizeLower(row.consultant) === name || normalizeText(row.assignedUserId || row.assigned_user_id) === userId)
+  const userId = getUserId(consultant)
+  const email = normalizeLower(consultant.email)
+  return applications.filter((row) => (
+    normalizeLower(row.consultant) === name ||
+    normalizeText(row.assignedConsultantId || row.assigned_consultant_id || row.assignedUserId || row.assigned_user_id) === userId ||
+    normalizeLower(row.assignedUserEmail || row.assigned_user_email || row.assignedBondOriginatorEmail) === email
+  ))
 }
 
 function getStatusFromPressure({ activeApplications = 0, pendingDocs = 0, avgLeadTime = 0, lastActivityAt = '' } = {}) {
@@ -413,6 +475,611 @@ function getManagerName(managerId = '', users = []) {
   return manager?.name || 'Unassigned'
 }
 
+function getUserRole(user = {}) {
+  return normalizeLower(user.workspace_role || user.workspaceRole || user.organisation_role || user.organisationRole || user.role)
+}
+
+function getRegionManagerId(region = {}) {
+  return normalizeText(region.manager_user_id || region.managerUserId || region.manager_id || region.managerId)
+}
+
+function getRegionOrganisationId(region = {}) {
+  return normalizeText(region.organisationId || region.organisation_id || region.workspace_id || region.workspaceId)
+}
+
+function getRegionStatus(region = {}) {
+  if (isInactiveRecord(region)) return 'inactive'
+  const status = normalizeLower(region.status)
+  return REGION_STATUS_VALUES.has(status) ? status : 'active'
+}
+
+function getBranchManagerId(branch = {}) {
+  return normalizeText(branch.manager_user_id || branch.managerUserId || branch.manager_id || branch.managerId)
+}
+
+function getBranchRegionId(branch = {}) {
+  return normalizeText(branch.region_id || branch.regionId)
+}
+
+function getBranchOrganisationId(branch = {}) {
+  return normalizeText(branch.organisationId || branch.organisation_id || branch.workspace_id || branch.workspaceId)
+}
+
+function getBranchStatus(branch = {}) {
+  if (isInactiveRecord(branch)) return 'inactive'
+  const status = normalizeLower(branch.status)
+  return REGION_STATUS_VALUES.has(status) ? status : 'active'
+}
+
+function getConsultantStatus(consultant = {}) {
+  if (isInactiveRecord(consultant)) return 'inactive'
+  const status = normalizeLower(consultant.status)
+  return REGION_STATUS_VALUES.has(status) ? status : 'active'
+}
+
+function getConsultantRole(consultant = {}) {
+  const role = normalizeLower(consultant.role || consultant.workspace_role || consultant.workspaceRole || consultant.organisation_role || consultant.organisationRole)
+  return CONSULTANT_ROLES.has(role) ? role : 'consultant'
+}
+
+function getConsultantBranchId(consultant = {}) {
+  return normalizeText(
+    consultant.workspace_unit_id ||
+      consultant.workspaceUnitId ||
+      consultant.branch_id ||
+      consultant.branchId ||
+      consultant.primary_branch_id ||
+      consultant.primaryBranchId,
+  )
+}
+
+function getConsultantRegionId(consultant = {}) {
+  return normalizeText(consultant.region_id || consultant.regionId)
+}
+
+function normalizeBranchRow(branch = {}, fallbackWorkspaceId = '') {
+  const branchId = normalizeText(branch.id || branch.branch_id || branch.branchId || branch.workspace_unit_id || branch.workspaceUnitId)
+  const status = getBranchStatus(branch)
+  return {
+    ...branch,
+    id: branchId,
+    organisationId: getBranchOrganisationId(branch) || normalizeText(fallbackWorkspaceId),
+    organisation_id: getBranchOrganisationId(branch) || normalizeText(fallbackWorkspaceId),
+    workspace_id: getBranchOrganisationId(branch) || normalizeText(fallbackWorkspaceId),
+    regionId: getBranchRegionId(branch),
+    region_id: getBranchRegionId(branch),
+    unit_type: WORKSPACE_UNIT_TYPES.branch,
+    unitType: WORKSPACE_UNIT_TYPES.branch,
+    name: normalizeText(branch.name || branch.branch) || 'Branch',
+    code: normalizeUpper(branch.code || branch.branch_code || branch.branchCode),
+    managerUserId: getBranchManagerId(branch),
+    manager_user_id: getBranchManagerId(branch),
+    officeLocation: normalizeText(branch.officeLocation || branch.office_location || branch.location),
+    office_location: normalizeText(branch.office_location || branch.officeLocation || branch.location),
+    contactEmail: normalizeText(branch.contactEmail || branch.contact_email),
+    contact_email: normalizeText(branch.contact_email || branch.contactEmail),
+    contactNumber: normalizeText(branch.contactNumber || branch.contact_number || branch.phone || branch.phone_number),
+    contact_number: normalizeText(branch.contact_number || branch.contactNumber || branch.phone || branch.phone_number),
+    status,
+    active: status === 'active',
+    notes: normalizeText(branch.notes || branch.description),
+    description: normalizeText(branch.description || branch.notes),
+    createdAt: branch.createdAt || branch.created_at || '',
+    created_at: branch.created_at || branch.createdAt || '',
+    updatedAt: branch.updatedAt || branch.updated_at || '',
+    updated_at: branch.updated_at || branch.updatedAt || '',
+  }
+}
+
+function normalizeRegionRow(region = {}, fallbackWorkspaceId = '') {
+  const regionId = normalizeText(region.id || region.region_id || region.regionId)
+  const status = getRegionStatus(region)
+  return {
+    ...region,
+    id: regionId,
+    organisationId: getRegionOrganisationId(region) || normalizeText(fallbackWorkspaceId),
+    organisation_id: getRegionOrganisationId(region) || normalizeText(fallbackWorkspaceId),
+    name: normalizeText(region.name || region.region) || 'Region',
+    code: normalizeUpper(region.code || region.region_code || region.regionCode),
+    managerUserId: getRegionManagerId(region),
+    manager_user_id: getRegionManagerId(region),
+    status,
+    active: status === 'active',
+    notes: normalizeText(region.notes || region.description),
+    description: normalizeText(region.description || region.notes),
+    createdAt: region.createdAt || region.created_at || '',
+    created_at: region.created_at || region.createdAt || '',
+    updatedAt: region.updatedAt || region.updated_at || '',
+    updated_at: region.updated_at || region.updatedAt || '',
+  }
+}
+
+function normalizeConsultantRow(consultant = {}, fallbackWorkspaceId = '') {
+  const userId = getUserId(consultant)
+  const id = normalizeText(consultant.id || userId || consultant.email)
+  const status = getConsultantStatus(consultant)
+  const role = getConsultantRole(consultant)
+  const firstName = normalizeText(consultant.firstName || consultant.first_name)
+  const lastName = normalizeText(consultant.lastName || consultant.last_name)
+  const name = getUserName({
+    ...consultant,
+    firstName,
+    first_name: firstName,
+    lastName,
+    last_name: lastName,
+  })
+  const branchId = getConsultantBranchId(consultant)
+  const regionId = getConsultantRegionId(consultant)
+  return {
+    ...consultant,
+    id,
+    organisationId: normalizeText(consultant.organisationId || consultant.organisation_id || consultant.workspace_id || fallbackWorkspaceId),
+    organisation_id: normalizeText(consultant.organisation_id || consultant.organisationId || consultant.workspace_id || fallbackWorkspaceId),
+    userId: userId || id,
+    user_id: userId || id,
+    firstName,
+    first_name: firstName,
+    lastName,
+    last_name: lastName,
+    name,
+    email: normalizeLower(consultant.email),
+    mobileNumber: normalizeText(consultant.mobileNumber || consultant.mobile_number || consultant.phone || consultant.phone_number),
+    mobile_number: normalizeText(consultant.mobile_number || consultant.mobileNumber || consultant.phone || consultant.phone_number),
+    role,
+    workspaceRole: role,
+    workspace_role: role,
+    organisationRole: role,
+    organisation_role: role,
+    branchId,
+    branch_id: branchId,
+    workspaceUnitId: branchId,
+    workspace_unit_id: branchId,
+    regionId,
+    region_id: regionId,
+    employeeNumber: normalizeText(consultant.employeeNumber || consultant.employee_number),
+    employee_number: normalizeText(consultant.employee_number || consultant.employeeNumber),
+    status,
+    active: status === 'active',
+    createdAt: consultant.createdAt || consultant.created_at || '',
+    created_at: consultant.created_at || consultant.createdAt || '',
+    updatedAt: consultant.updatedAt || consultant.updated_at || '',
+    updated_at: consultant.updated_at || consultant.updatedAt || '',
+  }
+}
+
+function getLocalRegions(workspaceId = '') {
+  return [...(LOCAL_REGION_STORE.get(normalizeText(workspaceId)) || [])]
+}
+
+function setLocalRegions(workspaceId = '', rows = []) {
+  LOCAL_REGION_STORE.set(normalizeText(workspaceId), rows.map((row) => normalizeRegionRow(row, workspaceId)))
+}
+
+function getLocalBranches(workspaceId = '') {
+  return [...(LOCAL_BRANCH_STORE.get(normalizeText(workspaceId)) || [])]
+}
+
+function setLocalBranches(workspaceId = '', rows = []) {
+  LOCAL_BRANCH_STORE.set(normalizeText(workspaceId), rows.map((row) => normalizeBranchRow(row, workspaceId)))
+}
+
+function getLocalConsultants(workspaceId = '') {
+  return [...(LOCAL_CONSULTANT_STORE.get(normalizeText(workspaceId)) || [])]
+}
+
+function setLocalConsultants(workspaceId = '', rows = []) {
+  LOCAL_CONSULTANT_STORE.set(normalizeText(workspaceId), rows.map((row) => normalizeConsultantRow(row, workspaceId)))
+}
+
+function getLocalApplicationOwnership(workspaceId = '') {
+  return LOCAL_APPLICATION_OWNERSHIP_STORE.get(normalizeText(workspaceId)) || new Map()
+}
+
+function setLocalApplicationOwnership(workspaceId = '', key = '', patch = {}) {
+  const safeWorkspaceId = normalizeText(workspaceId)
+  const safeKey = normalizeText(key)
+  if (!safeWorkspaceId || !safeKey) return
+  const ownership = new Map(getLocalApplicationOwnership(safeWorkspaceId))
+  ownership.set(safeKey, { ...(ownership.get(safeKey) || {}), ...patch })
+  LOCAL_APPLICATION_OWNERSHIP_STORE.set(safeWorkspaceId, ownership)
+}
+
+function getApplicationKey(row = {}) {
+  return normalizeText(row.key || row.id || row.applicationId || row.application_id || row.transactionId || row.transaction_id || row.transaction?.id)
+}
+
+function applyLocalApplicationOwnership(workspaceId = '', rows = []) {
+  const ownership = getLocalApplicationOwnership(workspaceId)
+  if (!ownership.size) return rows
+  return rows.map((row) => {
+    const patch = ownership.get(getApplicationKey(row))
+    return patch ? { ...row, ...patch } : row
+  })
+}
+
+function getLocalActivity(workspaceId = '') {
+  return [...(LOCAL_ACTIVITY_STORE.get(normalizeText(workspaceId)) || [])]
+}
+
+function setLocalActivity(workspaceId = '', rows = []) {
+  LOCAL_ACTIVITY_STORE.set(normalizeText(workspaceId), rows)
+}
+
+function createLocalRegionId(name = '') {
+  const slug = normalizeLower(name).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'region'
+  return `region-${slug}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+}
+
+function createLocalBranchId(name = '') {
+  const slug = normalizeLower(name).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'branch'
+  return `branch-${slug}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+}
+
+function createLocalConsultantId(email = '', name = '') {
+  const slug = normalizeLower(email || name).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'consultant'
+  return `consultant-${slug}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+}
+
+function createValidationError(message = 'Validation failed', fieldErrors = {}) {
+  const error = new Error(message)
+  error.code = 'validation_error'
+  error.fieldErrors = fieldErrors
+  return error
+}
+
+function createPermissionError() {
+  const error = new Error('You do not have permission to manage regions.')
+  error.code = 'permission_denied'
+  return error
+}
+
+function createBranchPermissionError() {
+  const error = new Error('You do not have permission to manage branches.')
+  error.code = 'permission_denied'
+  return error
+}
+
+function createConsultantPermissionError() {
+  const error = new Error('You do not have permission to manage consultants.')
+  error.code = 'permission_denied'
+  return error
+}
+
+function assertCanManageRegions(context = {}, data = {}) {
+  const scope = resolveBondOrganisationScope(context, data)
+  if (scope.scopeLevel !== 'hq') throw createPermissionError()
+  return scope
+}
+
+function assertCanManageBranch(context = {}, data = {}, branch = null, targetRegionId = '') {
+  const scope = resolveBondOrganisationScope(context, data)
+  if (scope.scopeLevel === 'hq') return scope
+  const safeRegionId = normalizeText(targetRegionId || getBranchRegionId(branch || {}))
+  if (scope.scopeLevel === 'region' && (scope.regionIds || []).map(normalizeText).includes(safeRegionId)) return scope
+  throw createBranchPermissionError()
+}
+
+function assertCanCreateBranch(context = {}, data = {}, regionId = '') {
+  return assertCanManageBranch(context, data, null, regionId)
+}
+
+function assertCanMoveBranch(context = {}, data = {}) {
+  const scope = resolveBondOrganisationScope(context, data)
+  if (scope.scopeLevel !== 'hq') throw createBranchPermissionError()
+  return scope
+}
+
+function assertCanManageConsultant(context = {}, data = {}, consultant = null, targetBranchId = '') {
+  const scope = resolveBondOrganisationScope(context, data)
+  if (scope.scopeLevel === 'hq') return scope
+  const branchId = normalizeText(targetBranchId || getConsultantBranchId(consultant || {}))
+  const branch = (data.branches || []).find((row) => normalizeText(row.id) === branchId)
+  const regionId = normalizeText(targetBranchId ? getBranchRegionId(branch || {}) : getConsultantRegionId(consultant || {}) || getBranchRegionId(branch || {}))
+  if (scope.scopeLevel === 'region' && (scope.regionIds || []).map(normalizeText).includes(regionId)) return scope
+  if (scope.scopeLevel === 'branch' && (scope.branchIds || []).map(normalizeText).includes(branchId)) return scope
+  throw createConsultantPermissionError()
+}
+
+function canViewRegion(regionId = '', scope = {}) {
+  if (scope.scopeLevel === 'hq') return true
+  if (scope.scopeLevel === 'region') return (scope.regionIds || []).map(normalizeText).includes(normalizeText(regionId))
+  return false
+}
+
+function canViewBranch(branchId = '', scope = {}) {
+  if (scope.scopeLevel === 'hq') return true
+  if (scope.branchIds === 'ALL') return true
+  if (scope.scopeLevel === 'region' || scope.scopeLevel === 'branch') return (scope.branchIds || []).map(normalizeText).includes(normalizeText(branchId))
+  return false
+}
+
+function canViewConsultant(consultant = {}, scope = {}) {
+  const consultantId = getUserId(consultant)
+  if (scope.scopeLevel === 'hq') return true
+  if (scope.consultantIds === 'ALL') return true
+  if (scope.scopeLevel === 'region') return (scope.regionIds || []).map(normalizeText).includes(getConsultantRegionId(consultant))
+  if (scope.scopeLevel === 'branch') return (scope.branchIds || []).map(normalizeText).includes(getConsultantBranchId(consultant))
+  return (scope.consultantIds || []).map(normalizeText).includes(consultantId)
+}
+
+function validateRegionPayload(payload = {}, existingRegions = [], options = {}) {
+  const fieldErrors = {}
+  const name = normalizeText(payload.name || payload.regionName)
+  const code = normalizeUpper(payload.code || payload.regionCode)
+  const status = normalizeLower(payload.status || 'active')
+  const managerUserId = normalizeText(payload.managerUserId || payload.manager_user_id)
+  const editingRegionId = normalizeText(options.regionId)
+
+  if (!name) fieldErrors.name = 'Region name is required.'
+  if (name && name.length < 2) fieldErrors.name = 'Region name must be at least 2 characters.'
+  if (code) {
+    const duplicate = existingRegions.find((region) => (
+      normalizeText(region.id) !== editingRegionId &&
+      normalizeUpper(region.code || region.region_code || region.regionCode) === code
+    ))
+    if (duplicate) fieldErrors.code = 'Region code must be unique within this organisation.'
+  }
+  if (!REGION_STATUS_VALUES.has(status)) fieldErrors.status = 'Status must be Active or Inactive.'
+  if (managerUserId && options.users) {
+    const manager = options.users.find((user) => normalizeText(user.user_id || user.userId || user.id) === managerUserId)
+    if (!manager) {
+      fieldErrors.managerUserId = 'Regional manager must be a valid user in this organisation.'
+    } else if (!REGION_MANAGER_ROLES.has(getUserRole(manager))) {
+      fieldErrors.managerUserId = 'Selected user does not have a compatible region manager role.'
+    }
+  }
+
+  if (Object.keys(fieldErrors).length) {
+    throw createValidationError('Region validation failed.', fieldErrors)
+  }
+
+  return {
+    name,
+    code,
+    managerUserId,
+    notes: normalizeText(payload.notes || payload.description),
+    status,
+  }
+}
+
+function validateEmail(value = '') {
+  const safeValue = normalizeText(value)
+  return !safeValue || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(safeValue)
+}
+
+function validatePhone(value = '') {
+  const safeValue = normalizeText(value)
+  return !safeValue || /^[+()\d\s.-]{7,24}$/.test(safeValue)
+}
+
+function validateBranchPayload(payload = {}, existingBranches = [], options = {}) {
+  const fieldErrors = {}
+  const name = normalizeText(payload.name || payload.branchName)
+  const code = normalizeUpper(payload.code || payload.branchCode)
+  const regionId = normalizeText(payload.regionId || payload.region_id)
+  const status = normalizeLower(payload.status || 'active')
+  const managerUserId = normalizeText(payload.managerUserId || payload.manager_user_id)
+  const editingBranchId = normalizeText(options.branchId)
+
+  if (!name) fieldErrors.name = 'Branch name is required.'
+  if (name && name.length < 2) fieldErrors.name = 'Branch name must be at least 2 characters.'
+  if (!regionId) fieldErrors.regionId = 'Region is required.'
+  if (regionId && options.regions && !options.regions.some((region) => normalizeText(region.id) === regionId)) {
+    fieldErrors.regionId = 'Selected region does not exist.'
+  }
+  if (code) {
+    const duplicate = existingBranches.find((branch) => (
+      normalizeText(branch.id) !== editingBranchId &&
+      normalizeUpper(branch.code || branch.branch_code || branch.branchCode) === code
+    ))
+    if (duplicate) fieldErrors.code = 'Branch code must be unique within this organisation.'
+  }
+  if (!REGION_STATUS_VALUES.has(status)) fieldErrors.status = 'Status must be Active or Inactive.'
+  if (!validateEmail(payload.contactEmail || payload.contact_email)) fieldErrors.contactEmail = 'Enter a valid contact email.'
+  if (!validatePhone(payload.contactNumber || payload.contact_number)) fieldErrors.contactNumber = 'Enter a valid contact number.'
+  if (managerUserId && options.users) {
+    const manager = options.users.find((user) => normalizeText(user.user_id || user.userId || user.id) === managerUserId)
+    if (!manager) {
+      fieldErrors.managerUserId = 'Branch manager must be a valid user in this organisation.'
+    } else if (!BRANCH_MANAGER_ROLES.has(getUserRole(manager))) {
+      fieldErrors.managerUserId = 'Selected user does not have a compatible branch manager role.'
+    }
+  }
+
+  if (Object.keys(fieldErrors).length) {
+    throw createValidationError('Branch validation failed.', fieldErrors)
+  }
+
+  return {
+    name,
+    regionId,
+    code,
+    managerUserId,
+    officeLocation: normalizeText(payload.officeLocation || payload.office_location),
+    contactEmail: normalizeText(payload.contactEmail || payload.contact_email),
+    contactNumber: normalizeText(payload.contactNumber || payload.contact_number),
+    notes: normalizeText(payload.notes || payload.description),
+    status,
+  }
+}
+
+function validateConsultantPayload(payload = {}, existingConsultants = [], options = {}) {
+  const fieldErrors = {}
+  const firstName = normalizeText(payload.firstName || payload.first_name)
+  const lastName = normalizeText(payload.lastName || payload.last_name)
+  const email = normalizeLower(payload.email)
+  const mobileNumber = normalizeText(payload.mobileNumber || payload.mobile_number || payload.phone)
+  const role = normalizeLower(payload.role || payload.workspaceRole || payload.workspace_role || 'consultant')
+  const branchId = normalizeText(payload.branchId || payload.branch_id || payload.workspaceUnitId || payload.workspace_unit_id)
+  const employeeNumber = normalizeText(payload.employeeNumber || payload.employee_number)
+  const status = normalizeLower(payload.status || 'active')
+  const editingConsultantId = normalizeText(options.consultantId)
+
+  if (!firstName) fieldErrors.firstName = 'First name is required.'
+  if (!lastName) fieldErrors.lastName = 'Last name is required.'
+  if (!email) fieldErrors.email = 'Email is required.'
+  if (email && !validateEmail(email)) fieldErrors.email = 'Enter a valid email.'
+  if (email) {
+    const duplicate = existingConsultants.find((consultant) => (
+      normalizeText(consultant.id) !== editingConsultantId &&
+      getUserId(consultant) !== editingConsultantId &&
+      normalizeLower(consultant.email) === email
+    ))
+    if (duplicate) fieldErrors.email = 'Email must be unique within this organisation.'
+  }
+  if (mobileNumber && !validatePhone(mobileNumber)) fieldErrors.mobileNumber = 'Enter a valid mobile number.'
+  if (!CONSULTANT_ROLES.has(role)) fieldErrors.role = 'Role must be a valid consultant role.'
+  if (!branchId) fieldErrors.branchId = 'Branch is required.'
+  const branch = (options.branches || []).find((row) => normalizeText(row.id) === branchId)
+  if (branchId && !branch) fieldErrors.branchId = 'Selected branch does not exist.'
+  if (!REGION_STATUS_VALUES.has(status)) fieldErrors.status = 'Status must be Active or Inactive.'
+
+  if (Object.keys(fieldErrors).length) {
+    throw createValidationError('Consultant validation failed.', fieldErrors)
+  }
+
+  return {
+    firstName,
+    lastName,
+    name: [firstName, lastName].filter(Boolean).join(' '),
+    email,
+    mobileNumber,
+    role,
+    branchId,
+    regionId: normalizeText(branch?.regionId || branch?.region_id),
+    employeeNumber,
+    status,
+  }
+}
+
+function mapRegionToPersistencePayload(region = {}, workspaceId = '') {
+  return {
+    workspace_id: normalizeText(workspaceId),
+    name: region.name,
+    code: region.code || null,
+    manager_user_id: region.managerUserId || null,
+    description: region.notes || null,
+    active: region.status !== 'inactive',
+  }
+}
+
+function mapBranchToPersistencePayload(branch = {}, workspaceId = '') {
+  return {
+    workspace_id: normalizeText(workspaceId),
+    region_id: normalizeText(branch.regionId),
+    parent_unit_id: null,
+    unit_type: WORKSPACE_UNIT_TYPES.branch,
+    name: branch.name,
+    code: branch.code || null,
+    manager_user_id: branch.managerUserId || null,
+    description: [
+      branch.notes,
+      branch.officeLocation ? `Office: ${branch.officeLocation}` : '',
+      branch.contactEmail ? `Email: ${branch.contactEmail}` : '',
+      branch.contactNumber ? `Phone: ${branch.contactNumber}` : '',
+    ].filter(Boolean).join('\n') || null,
+    active: branch.status !== 'inactive',
+  }
+}
+
+function mapConsultantToPersistencePayload(consultant = {}, workspaceId = '') {
+  return {
+    organisation_id: normalizeText(workspaceId),
+    user_id: normalizeText(consultant.userId || consultant.user_id) || null,
+    first_name: consultant.firstName,
+    last_name: consultant.lastName,
+    email: consultant.email,
+    role: consultant.role,
+    workspace_role: consultant.role,
+    organisation_role: consultant.role,
+    status: consultant.status,
+    scope_level: BOND_SCOPE_LEVELS.assigned,
+    region_id: consultant.regionId || null,
+    workspace_unit_id: consultant.branchId || null,
+    branch_id: consultant.branchId || null,
+    updated_at: new Date().toISOString(),
+  }
+}
+
+function mapRegionActivity(event = {}, workspaceId = '') {
+  const createdAt = event.createdAt || event.created_at || new Date().toISOString()
+  return {
+    id: normalizeText(event.id) || `activity-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+    organisationId: normalizeText(event.organisationId || event.organisation_id || workspaceId),
+    organisation_id: normalizeText(event.organisation_id || event.organisationId || workspaceId),
+    eventType: normalizeText(event.eventType || event.event_type),
+    event_type: normalizeText(event.event_type || event.eventType),
+    regionId: normalizeText(event.regionId || event.region_id),
+    region_id: normalizeText(event.region_id || event.regionId),
+    branchId: normalizeText(event.branchId || event.branch_id),
+    branch_id: normalizeText(event.branch_id || event.branchId),
+    consultantId: normalizeText(event.consultantId || event.consultant_id),
+    consultant_id: normalizeText(event.consultant_id || event.consultantId),
+    applicationIds: Array.isArray(event.applicationIds || event.application_ids) ? event.applicationIds || event.application_ids : [],
+    application_ids: Array.isArray(event.application_ids || event.applicationIds) ? event.application_ids || event.applicationIds : [],
+    actorUserId: normalizeText(event.actorUserId || event.actor_user_id),
+    actor_user_id: normalizeText(event.actor_user_id || event.actorUserId),
+    previousValue: event.previousValue ?? event.previous_value ?? null,
+    previous_value: event.previous_value ?? event.previousValue ?? null,
+    newValue: event.newValue ?? event.new_value ?? null,
+    new_value: event.new_value ?? event.newValue ?? null,
+    createdAt,
+    created_at: createdAt,
+  }
+}
+
+function getActivityLabel(eventType = '') {
+  if (eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.regionCreated) return 'Region created'
+  if (eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.regionUpdated) return 'Region updated'
+  if (eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.regionManagerAssigned) return 'Regional manager assigned'
+  if (eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.branchCreated) return 'Branch created'
+  if (eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.branchUpdated) return 'Branch updated'
+  if (eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.branchManagerAssigned) return 'Branch manager assigned'
+  if (eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.branchMovedRegion) return 'Branch moved region'
+  if (eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.consultantCreated) return 'Consultant created'
+  if (eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.consultantUpdated) return 'Consultant updated'
+  if (eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.consultantAssignedBranch) return 'Consultant assigned branch'
+  if (eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.consultantDeactivated) return 'Consultant deactivated'
+  if (eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.applicationReassigned) return 'Application reassigned'
+  return 'Organisation updated'
+}
+
+function getActivityDescription(event = {}, regions = [], users = [], branches = []) {
+  const region = regions.find((item) => normalizeText(item.id) === normalizeText(event.regionId || event.region_id))
+  const regionName = normalizeText(region?.name || event.newValue?.name || event.previousValue?.name) || 'Region'
+  const branch = branches.find((item) => normalizeText(item.id) === normalizeText(event.branchId || event.branch_id))
+  const branchName = normalizeText(branch?.name || event.newValue?.name || event.previousValue?.name) || 'Branch'
+  const consultant = users.find((user) => getUserId(user) === normalizeText(event.consultantId || event.consultant_id || event.newValue?.id || event.newValue?.userId || event.newValue?.user_id))
+  const consultantName = normalizeText(consultant?.name || event.newValue?.name || event.previousValue?.name) || 'Consultant'
+  if (event.eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.regionManagerAssigned) {
+    const managerId = normalizeText(event.newValue?.managerUserId || event.newValue?.manager_user_id)
+    const manager = users.find((user) => normalizeText(user.user_id || user.userId || user.id) === managerId)
+    return `${getUserName(manager || {})} assigned as regional manager for ${regionName}`
+  }
+  if (event.eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.regionCreated) return `${regionName} region created`
+  if (event.eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.regionUpdated) return `${regionName} region updated`
+  if (event.eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.branchManagerAssigned) {
+    const managerId = normalizeText(event.newValue?.managerUserId || event.newValue?.manager_user_id)
+    const manager = users.find((user) => normalizeText(user.user_id || user.userId || user.id) === managerId)
+    return `${getUserName(manager || {})} assigned as branch manager for ${branchName}`
+  }
+  if (event.eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.branchMovedRegion) {
+    const toRegion = regions.find((item) => normalizeText(item.id) === normalizeText(event.newValue?.regionId || event.newValue?.region_id))
+    return `${branchName} moved to ${toRegion?.name || 'another region'}`
+  }
+  if (event.eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.branchCreated) return `${branchName} branch created`
+  if (event.eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.branchUpdated) return `${branchName} branch updated`
+  if (event.eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.consultantCreated) return `${consultantName} added as a consultant`
+  if (event.eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.consultantUpdated) return `${consultantName} consultant record updated`
+  if (event.eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.consultantAssignedBranch) return `${consultantName} assigned to ${branchName}`
+  if (event.eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.consultantDeactivated) return `${consultantName} deactivated`
+  if (event.eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.applicationReassigned) {
+    const count = Number(event.newValue?.applicationCount || event.applicationIds?.length || 0)
+    return `${count || 'Applications'} reassigned from ${event.previousValue?.name || 'one consultant'} to ${event.newValue?.name || consultantName}`
+  }
+  return `${regionName} organisation record updated`
+}
+
 function getScopedRegionBranchRows(region = {}, branches = []) {
   const regionId = normalizeText(region.id || region.regionId || region.region_id)
   const regionName = normalizeText(region.name)
@@ -422,7 +1089,7 @@ function getScopedRegionBranchRows(region = {}, branches = []) {
   ))
 }
 
-export function getVisibleOrganisationScope({ capabilities = {}, regions = [], branches = [], consultants = [], applications = [] } = {}) {
+export function getVisibleOrganisationScope({ capabilities = {}, regions = [], branches = [], consultants = [], applications = [], activityEvents = [] } = {}) {
   const scopeLevel = capabilities.scopeLevel || BOND_SCOPE_LEVELS.assigned
   return {
     scopeLevel,
@@ -439,6 +1106,7 @@ export function getVisibleOrganisationScope({ capabilities = {}, regions = [], b
     branches,
     consultants,
     applications,
+    activityEvents,
   }
 }
 
@@ -449,19 +1117,35 @@ export function getBranchPerformance(scope = {}) {
     const pendingDocs = rows.filter(isPendingDocs).length
     const leadTime = averageNumber(rows.map(getApplicationLeadDays))
     const bottleneck = getMostCommon(rows.map(getApplicationBottleneck)) || 'Clear'
+    const branchId = normalizeText(branch.id)
+    const submittedApplications = rows.filter(isApplicationSubmitted).length
+    const unassignedApplications = rows.filter(isApplicationUnassigned).length
     return {
-      id: branch.id,
+      id: branchId,
       branch: branch.name,
-      regionId: normalizeText(branch.region_id || branch.regionId),
+      name: branch.name,
+      code: normalizeUpper(branch.code),
+      regionId: getBranchRegionId(branch),
       region: branch.region || 'Unassigned',
+      managerUserId: getBranchManagerId(branch),
       manager: normalizeText(branch.manager_name || branch.managerName) || getManagerName(branch.manager_user_id || branch.managerUserId, scope.consultants),
-      consultants: (scope.consultants || []).filter((user) => getUserUnitId(user) === normalizeText(branch.id)).length,
+      officeLocation: normalizeText(branch.officeLocation || branch.office_location),
+      contactEmail: normalizeText(branch.contactEmail || branch.contact_email),
+      contactNumber: normalizeText(branch.contactNumber || branch.contact_number),
+      notes: normalizeText(branch.notes || branch.description),
+      consultants: (scope.consultants || []).filter((user) => getUserUnitId(user) === branchId).length,
+      consultantCount: (scope.consultants || []).filter((user) => getUserUnitId(user) === branchId).length,
       activeApplications: rows.length,
+      submittedApplications,
       pendingDocs,
+      pendingDocuments: pendingDocs,
+      unassignedApplications,
       avgLeadTime: leadTime,
+      averageTurnaround: leadTime,
       approvalRate: percent(approved, rows.length),
       bottleneck,
-      status: getStatusFromPressure({ activeApplications: rows.length, pendingDocs, avgLeadTime: leadTime, lastActivityAt: rows[0]?.lastActivityAt }),
+      status: getBranchStatus(branch),
+      healthStatus: getStatusFromPressure({ activeApplications: rows.length, pendingDocs, avgLeadTime: leadTime, lastActivityAt: rows[0]?.lastActivityAt }),
     }
   })
 }
@@ -478,25 +1162,36 @@ export function getRegionPerformance(scope = {}, branchPerformance = []) {
     const approved = regionRows.filter(isApplicationApproved).length
     const pendingDocs = regionRows.filter(isPendingDocs).length
     const leadTime = averageNumber(regionRows.map(getApplicationLeadDays))
+    const managerUserId = getRegionManagerId(region)
     const consultants = (scope.consultants || []).filter((user) => (
       normalizeText(user.regionId || user.region_id) === normalizeText(region.id) ||
-      regionBranchIds.has(getUserUnitId(user))
+      regionBranchIds.has(getUserUnitId(user)) ||
+      normalizeText(user.user_id || user.userId || user.id) === managerUserId
     )).length
+    const submittedApplications = regionRows.filter(isApplicationSubmitted).length
     return {
       id: region.id,
       region: region.name,
+      name: region.name,
+      code: normalizeUpper(region.code),
+      notes: normalizeText(region.notes || region.description),
+      managerUserId,
       manager: normalizeText(region.manager_name || region.managerName) || getManagerName(region.manager_user_id || region.managerUserId, scope.consultants),
       branches: regionBranches.length,
       consultants,
       activeApplications: regionRows.length,
+      submittedApplications,
       pendingDocs,
+      pendingDocuments: pendingDocs,
       avgLeadTime: leadTime,
+      averageTurnaround: leadTime,
       approvalRate: percent(approved, regionRows.length),
       bottleneck:
         getMostCommon(regionRows.map(getApplicationBottleneck)) ||
         effectiveBranchPerformance.find((branch) => normalizeText(branch.regionId) === normalizeText(region.id))?.bottleneck ||
         'Clear',
-      status: getStatusFromPressure({ activeApplications: regionRows.length, pendingDocs, avgLeadTime: leadTime, lastActivityAt: regionRows[0]?.lastActivityAt }),
+      status: getRegionStatus(region),
+      healthStatus: getStatusFromPressure({ activeApplications: regionRows.length, pendingDocs, avgLeadTime: leadTime, lastActivityAt: regionRows[0]?.lastActivityAt }),
     }
   })
 }
@@ -506,6 +1201,7 @@ export function getConsultantPerformance(scope = {}) {
     const rows = getConsultantApplicationRows(consultant, scope.applications)
     const approved = rows.filter(isApplicationApproved).length
     const pendingDocs = rows.filter(isPendingDocs).length
+    const submittedApplications = rows.filter(isApplicationSubmitted).length
     const leadTime = averageNumber(rows.map(getApplicationLeadDays))
     const newThisMonth = rows.filter((row) => {
       const date = new Date(row.lastActivityAt || '')
@@ -521,14 +1217,19 @@ export function getConsultantPerformance(scope = {}) {
       region: branch?.region || consultant.region || 'Unassigned',
       branchId: normalizeText(branch?.id || consultant.workspaceUnitId || consultant.workspace_unit_id),
       branch: branch?.name || consultant.branch || 'Unassigned',
+      role: consultant.workspaceRole || consultant.role || 'consultant',
+      status: getConsultantStatus(consultant),
       activeApplications: rows.length,
+      submittedApplications,
       newThisMonth,
       pendingDocs,
+      pendingDocuments: pendingDocs,
       avgLeadTime: leadTime,
+      averageTurnaround: leadTime,
       approvalRate: percent(approved, rows.length),
       lastActivity: rows[0]?.lastActivityLabel || 'No recent activity',
-      status: getStatusFromPressure({ activeApplications: rows.length, pendingDocs, avgLeadTime: leadTime, lastActivityAt: rows[0]?.lastActivityAt }),
-      role: consultant.workspaceRole,
+      healthStatus: getStatusFromPressure({ activeApplications: rows.length, pendingDocs, avgLeadTime: leadTime, lastActivityAt: rows[0]?.lastActivityAt }),
+      capacityStatus: getConsultantCapacity(rows.length),
       scope: consultant.scope_level || consultant.scopeLevel || '',
     }
   })
@@ -549,6 +1250,245 @@ export function getOrganisationKpis(scope = {}) {
     activeApplications: applications.length,
     approvalRate: percent(approved, applications.length),
     avgLeadTime: averageNumber(applications.map(getApplicationLeadDays)),
+  }
+}
+
+function isApplicationSubmitted(row = {}) {
+  const signal = normalizeLower(`${row.status || ''} ${row.financeStageKey || ''} ${row.financeStageLabel || ''} ${row.registrationStatus || ''} ${row.nextAction || ''}`)
+  return signal.includes('submitted') || signal.includes('submission') || signal.includes('bank feedback') || signal.includes('approved') || signal.includes('grant')
+}
+
+function isApplicationUnassigned(row = {}) {
+  const assignedUserId = normalizeText(row.assignedConsultantId || row.assigned_consultant_id || row.assignedUserId || row.assigned_user_id)
+  const consultant = normalizeLower(row.consultant)
+  return !assignedUserId && (!consultant || consultant === 'unassigned' || consultant === 'unassigned consultant')
+}
+
+function getBranchRowsForRegion(region = {}, branchPerformance = []) {
+  const regionId = normalizeText(region.id)
+  const regionName = normalizeText(region.name || region.region)
+  return branchPerformance.filter((branch) => (
+    normalizeText(branch.regionId) === regionId ||
+    normalizeText(branch.region) === regionName
+  ))
+}
+
+function getOverviewSetupState(scope = {}) {
+  if (!(scope.regions || []).length) {
+    return {
+      key: 'regions',
+      title: 'Set up your organisation structure',
+      description: 'Start by creating your first region. After that, you can add branches, assign managers, and add consultants.',
+      actionLabel: 'Add Region',
+      actionIntent: 'add-bond-region',
+    }
+  }
+  if (!(scope.branches || []).length) {
+    return {
+      key: 'branches',
+      title: 'Add your first branch',
+      description: 'Branches sit inside regions and hold consultants and applications.',
+      actionLabel: 'Add Branch',
+      actionIntent: 'add-bond-branch',
+    }
+  }
+  if (!(scope.consultants || []).length) {
+    return {
+      key: 'consultants',
+      title: 'Add consultants',
+      description: 'Consultants own applications and manage buyer finance progress.',
+      actionLabel: 'Add Consultant',
+      actionIntent: 'invite-bond-user',
+    }
+  }
+  return null
+}
+
+function getApplicationStatusLabel(row = {}) {
+  const signal = normalizeLower(`${row.financeStageLabel || ''} ${row.status || ''} ${row.registrationStatus || ''}`)
+  if (signal.includes('approved') || signal.includes('grant')) return 'Approved'
+  if (signal.includes('submitted')) return 'Submitted'
+  if (signal.includes('document') || signal.includes('doc')) return 'Pending Documents'
+  if (signal.includes('feedback') || signal.includes('bank')) return 'Bank Feedback'
+  if (signal.includes('declined') || signal.includes('rejected')) return 'Declined'
+  return normalizeText(row.financeStageLabel || row.status) || 'In Progress'
+}
+
+export function getOrganisationOverview({
+  scope = {},
+  branchPerformance = [],
+  regionPerformance = [],
+  consultantPerformance = [],
+  recentActivity = [],
+} = {}) {
+  const applications = scope.applications || []
+  const activeApplications = applications.length
+  const submittedApplications = applications.filter(isApplicationSubmitted).length
+  const pendingDocumentApplications = applications.filter(isPendingDocs).length
+  const unassignedApplications = applications.filter(isApplicationUnassigned).length
+  const approvedApplications = applications.filter(isApplicationApproved).length
+  const approvalRate = percent(approvedApplications, applications.length)
+  const averageTurnaround = averageNumber(applications.map(getApplicationLeadDays))
+  const totalRegions = scope.regions?.length || 0
+  const totalBranches = scope.branches?.length || 0
+  const totalConsultants = scope.consultants?.length || 0
+  const setupState = getOverviewSetupState(scope)
+
+  const branchesById = new Map((scope.branches || []).map((branch) => [normalizeText(branch.id), branch]))
+  const branchRows = (scope.branches || []).map((branch) => {
+    const performance = branchPerformance.find((row) => normalizeText(row.id) === normalizeText(branch.id)) || {}
+    const branchId = normalizeText(branch.id)
+    return {
+      id: branchId,
+      name: normalizeText(branch.name || branch.branch) || 'Branch',
+      regionId: normalizeText(branch.region_id || branch.regionId),
+      region: normalizeText(branch.region || branchesById.get(branchId)?.region) || 'Unassigned',
+      manager: normalizeText(branch.manager_name || branch.managerName || performance.manager),
+      hasManager: Boolean(normalizeText(branch.manager_user_id || branch.managerUserId || branch.manager_name || branch.managerName || performance.manager) && normalizeLower(performance.manager) !== 'unassigned'),
+      consultants: performance.consultants || (scope.consultants || []).filter((consultant) => getUserUnitId(consultant) === branchId).length,
+      activeApplications: performance.activeApplications || 0,
+      approvalRate: performance.approvalRate || 0,
+      avgLeadTime: performance.avgLeadTime || 0,
+      status: performance.status || 'Healthy',
+      href: getBondBranchWorkspaceRoute(branchId),
+    }
+  })
+
+  const structure = {
+    regions: (scope.regions || []).map((region) => {
+      const rows = getBranchRowsForRegion(region, branchPerformance)
+      const regionBranches = branchRows.filter((branch) => (
+        normalizeText(branch.regionId) === normalizeText(region.id) ||
+        normalizeText(branch.region) === normalizeText(region.name || region.region)
+      ))
+      const performance = regionPerformance.find((row) => normalizeText(row.id) === normalizeText(region.id)) || {}
+      return {
+        id: normalizeText(region.id),
+        name: normalizeText(region.name || region.region) || 'Region',
+        consultants: performance.consultants || regionBranches.reduce((sum, branch) => sum + Number(branch.consultants || 0), 0),
+        activeApplications: performance.activeApplications || rows.reduce((sum, row) => sum + Number(row.activeApplications || 0), 0),
+        branches: regionBranches,
+        href: getBondRegionWorkspaceRoute(normalizeText(region.id)),
+      }
+    }),
+    directBranches: branchRows.filter((branch) => !normalizeText(branch.regionId)),
+  }
+
+  const alerts = []
+  ;(scope.regions || []).forEach((region) => {
+    const regionBranches = branchRows.filter((branch) => normalizeText(branch.regionId) === normalizeText(region.id))
+    if (!regionBranches.length) {
+      alerts.push({
+        key: `region-no-branches-${region.id}`,
+        title: normalizeText(region.name) || 'Region',
+        description: 'No branches have been created in this region.',
+        actionLabel: 'Add Branch',
+        actionIntent: 'add-bond-branch',
+        href: getBondRegionWorkspaceRoute(region.id),
+      })
+    }
+  })
+  branchRows.forEach((branch) => {
+    if (!branch.hasManager) {
+      alerts.push({
+        key: `branch-no-manager-${branch.id}`,
+        title: branch.name,
+        description: 'No branch manager assigned.',
+        actionLabel: 'Assign Manager',
+        actionIntent: 'assign-bond-branch-manager',
+        href: branch.href,
+      })
+    }
+    if (!branch.consultants) {
+      alerts.push({
+        key: `branch-no-consultants-${branch.id}`,
+        title: branch.name,
+        description: 'No consultants assigned to this branch.',
+        actionLabel: 'Add Consultant',
+        actionIntent: 'invite-bond-user',
+        href: branch.href,
+      })
+    }
+  })
+  consultantPerformance.forEach((consultant) => {
+    if (Number(consultant.activeApplications || 0) >= 25) {
+      alerts.push({
+        key: `consultant-overloaded-${consultant.id}`,
+        title: consultant.consultant,
+        description: `${consultant.activeApplications} active applications need workload review.`,
+        actionLabel: 'Review Workload',
+        actionIntent: 'review-bond-scopes',
+        href: getBondOrganisationRouteForTab('consultants', { consultantId: consultant.id }),
+      })
+    }
+  })
+  if (pendingDocumentApplications) {
+    alerts.push({
+      key: 'pending-documents',
+      title: 'Applications waiting for documents',
+      description: `${pendingDocumentApplications} applications are blocked on buyer documents.`,
+      actionLabel: 'Review Documents',
+      actionIntent: '',
+      href: '/bond/applications?view=awaiting-docs',
+    })
+  }
+  if (unassignedApplications) {
+    alerts.push({
+      key: 'unassigned-applications',
+      title: 'Applications with no consultant assigned',
+      description: `${unassignedApplications} applications need consultant ownership.`,
+      actionLabel: 'Assign Consultant',
+      actionIntent: 'assign-bond-user-branch',
+      href: '/bond/applications',
+    })
+  }
+
+  const applicationsByStatus = [...applications.reduce((map, row) => {
+    const status = getApplicationStatusLabel(row)
+    map.set(status, (map.get(status) || 0) + 1)
+    return map
+  }, new Map()).entries()].map(([label, value]) => ({ label, value }))
+
+  const sortedBranches = [...branchPerformance].sort((left, right) => Number(right.approvalRate || 0) - Number(left.approvalRate || 0))
+  const workloadValues = consultantPerformance.map((row) => Number(row.activeApplications || 0))
+  const workloadSpread = workloadValues.length
+    ? `${Math.min(...workloadValues)}-${Math.max(...workloadValues)} active files`
+    : 'No workload yet'
+
+  return {
+    metrics: {
+      totalRegions,
+      totalBranches,
+      totalConsultants,
+      activeApplications,
+      submittedApplications,
+      pendingDocumentApplications,
+      unassignedApplications,
+      approvalRate,
+      averageTurnaround,
+    },
+    setupState,
+    summaryCards: [
+      { key: 'regions', label: 'Regions', value: totalRegions, description: totalRegions ? 'Active regional groups' : 'No regions created yet', trend: 'Trend coming soon' },
+      { key: 'branches', label: 'Branches', value: totalBranches, description: totalBranches && totalRegions ? `Across ${totalRegions} active regions` : 'No branches created yet', trend: 'Trend coming soon' },
+      { key: 'consultants', label: 'Consultants', value: totalConsultants, description: totalConsultants ? 'Active consultant roster' : 'No consultants added yet', trend: 'Trend coming soon' },
+      { key: 'activeApplications', label: 'Active Applications', value: activeApplications, description: activeApplications ? 'Scoped application workload' : 'No active applications yet', trend: 'Trend coming soon' },
+      { key: 'submittedApplications', label: 'Applications Submitted', value: submittedApplications, description: submittedApplications ? 'Files submitted or beyond' : 'No submissions yet', trend: 'Trend coming soon' },
+      { key: 'approvalRate', label: 'Approval Rate', value: `${approvalRate}%`, description: applications.length ? 'Approved applications in scope' : 'Awaiting approvals', trend: 'Trend coming soon' },
+      { key: 'averageTurnaround', label: 'Average Turnaround', value: averageTurnaround ? `${averageTurnaround} days` : 'Tracking', description: averageTurnaround ? 'Average file movement time' : 'No turnaround data yet', trend: 'Trend coming soon' },
+      { key: 'pendingDocuments', label: 'Pending Documents', value: pendingDocumentApplications, description: pendingDocumentApplications ? 'Applications blocked on docs' : 'No document blockers', trend: 'Trend coming soon' },
+    ],
+    structure,
+    alerts: alerts.slice(0, 8),
+    performance: {
+      applicationsByStatus,
+      topPerformingBranch: sortedBranches[0] || null,
+      lowestPerformingBranch: sortedBranches.length ? sortedBranches[sortedBranches.length - 1] : null,
+      consultantWorkloadSpread: workloadSpread,
+      averageApprovalRate: approvalRate,
+      averageTurnaround,
+    },
+    recentActivity,
   }
 }
 
@@ -640,7 +1580,27 @@ export function getOperationalHealth(scope = {}, branchPerformance = []) {
 }
 
 export function getRecentOrganisationActivity(scope = {}) {
-  return (scope.applications || []).slice(0, 8).map((row, index) => ({
+  const regionEvents = (scope.activityEvents || []).map((event) => {
+    const mapped = mapRegionActivity(event)
+    const actor = (scope.consultants || []).find((user) => normalizeText(user.user_id || user.userId || user.id) === normalizeText(mapped.actorUserId))
+    const region = (scope.regions || []).find((item) => normalizeText(item.id) === normalizeText(mapped.regionId))
+    const branch = (scope.branches || []).find((item) => normalizeText(item.id) === normalizeText(mapped.branchId))
+    const consultant = (scope.consultants || []).find((item) => getUserId(item) === normalizeText(mapped.consultantId || mapped.consultant_id) || normalizeText(item.id) === normalizeText(mapped.consultantId || mapped.consultant_id))
+    const isBranchEvent = normalizeText(mapped.branchId)
+    const isConsultantEvent = normalizeText(mapped.consultantId || mapped.consultant_id)
+    return {
+      id: mapped.id,
+      timestamp: mapped.createdAt ? new Date(mapped.createdAt).toLocaleDateString('en-ZA', { month: 'short', day: 'numeric' }) : 'Recently',
+      actor: actor ? getUserName(actor) : 'HQ',
+      branch: normalizeText(branch?.name || consultant?.branch) || (isBranchEvent ? 'Branch' : 'Organisation'),
+      region: normalizeText(region?.name || mapped.newValue?.region || mapped.previousValue?.region || mapped.newValue?.name || mapped.previousValue?.name) || 'Region',
+      type: getActivityLabel(mapped.eventType),
+      description: getActivityDescription(mapped, scope.regions || [], scope.consultants || [], scope.branches || []),
+      href: isConsultantEvent ? getBondConsultantWorkspaceRoute(isConsultantEvent) : isBranchEvent ? getBondBranchWorkspaceRoute(mapped.branchId || branch?.id) : getBondRegionWorkspaceRoute(mapped.regionId || region?.id),
+      createdAt: mapped.createdAt,
+    }
+  })
+  const applicationEvents = (scope.applications || []).map((row, index) => ({
     id: row.key || `${row.client}-${index}`,
     timestamp: row.lastActivityLabel || 'Recently',
     actor: row.consultant || 'Bond desk',
@@ -649,7 +1609,11 @@ export function getRecentOrganisationActivity(scope = {}) {
     type: row.financeStageLabel || 'Application movement',
     description: `${row.client || 'A client'} moved to ${row.financeStageLabel || 'the next stage'}`,
     href: row.transactionId ? `/bond/files/${row.transactionId}` : '/bond/applications',
+    createdAt: row.lastActivityAt || row.createdAt || '',
   }))
+  return [...regionEvents, ...applicationEvents]
+    .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())
+    .slice(0, 8)
 }
 
 async function fetchOrganisationUsers(workspaceId = '') {
@@ -666,6 +1630,17 @@ async function fetchOrganisationUsers(workspaceId = '') {
     throw error
   }
   return (data || []).filter(isActiveRecord)
+}
+
+async function fetchConsultantRows(workspaceId = '') {
+  const safeWorkspaceId = normalizeText(workspaceId)
+  const localRows = getLocalConsultants(safeWorkspaceId)
+  const users = await fetchOrganisationUsers(safeWorkspaceId)
+  const persistedRows = users
+    .filter((user) => CONSULTANT_ROLES.has(getConsultantRole(user)) || getConsultantBranchId(user))
+    .map((row) => normalizeConsultantRow(row, safeWorkspaceId))
+  const persistedIds = new Set(persistedRows.map((row) => normalizeText(row.id)))
+  return [...persistedRows, ...localRows.filter((row) => !persistedIds.has(normalizeText(row.id)))]
 }
 
 async function fetchSettings() {
@@ -688,6 +1663,896 @@ async function fetchHierarchy(workspaceId = '') {
   }
 }
 
+async function fetchRegionRows(workspaceId = '') {
+  const safeWorkspaceId = normalizeText(workspaceId)
+  const localRows = getLocalRegions(safeWorkspaceId)
+  if (!isSupabaseConfigured || !supabase || !safeWorkspaceId) return localRows
+
+  const { data, error } = await supabase
+    .from('workspace_regions')
+    .select('id, workspace_id, name, code, manager_user_id, description, active, created_at, updated_at')
+    .eq('workspace_id', safeWorkspaceId)
+
+  if (error) {
+    if (isMissingTableError(error, 'workspace_regions') || isReadRestrictedError(error)) return localRows
+    throw error
+  }
+  const persistedRows = (data || []).map((row) => normalizeRegionRow(row, safeWorkspaceId))
+  const persistedIds = new Set(persistedRows.map((row) => normalizeText(row.id)))
+  return [...persistedRows, ...localRows.filter((row) => !persistedIds.has(normalizeText(row.id)))]
+}
+
+async function fetchBranchRows(workspaceId = '') {
+  const safeWorkspaceId = normalizeText(workspaceId)
+  const localRows = getLocalBranches(safeWorkspaceId)
+  if (!isSupabaseConfigured || !supabase || !safeWorkspaceId) return localRows
+
+  const { data, error } = await supabase
+    .from('workspace_units')
+    .select('id, workspace_id, region_id, parent_unit_id, unit_type, name, code, description, manager_user_id, active, created_at, updated_at')
+    .eq('workspace_id', safeWorkspaceId)
+    .eq('unit_type', WORKSPACE_UNIT_TYPES.branch)
+
+  if (error) {
+    if (isMissingTableError(error, 'workspace_units') || isReadRestrictedError(error)) return localRows
+    throw error
+  }
+  const persistedRows = (data || []).map((row) => normalizeBranchRow(row, safeWorkspaceId))
+  const persistedIds = new Set(persistedRows.map((row) => normalizeText(row.id)))
+  return [...persistedRows, ...localRows.filter((row) => !persistedIds.has(normalizeText(row.id)))]
+}
+
+async function fetchActivityRows(workspaceId = '') {
+  return getLocalActivity(workspaceId)
+}
+
+async function fetchManagerUsers(workspaceId = '', options = {}) {
+  if (Array.isArray(options.users)) return options.users
+  return fetchOrganisationUsers(workspaceId)
+}
+
+async function getAllRegionRows(workspaceId = '', options = {}) {
+  const safeWorkspaceId = normalizeText(workspaceId)
+  if (Array.isArray(options.regions)) return options.regions.map((row) => normalizeRegionRow(row, safeWorkspaceId))
+  if (options.forceLocal) return getLocalRegions(safeWorkspaceId)
+  return fetchRegionRows(safeWorkspaceId)
+}
+
+async function getAllBranchRows(workspaceId = '', options = {}) {
+  const safeWorkspaceId = normalizeText(workspaceId)
+  if (Array.isArray(options.branches)) return options.branches.map((row) => normalizeBranchRow(row, safeWorkspaceId))
+  if (options.forceLocal) return getLocalBranches(safeWorkspaceId)
+  return fetchBranchRows(safeWorkspaceId)
+}
+
+async function getAllConsultantRows(workspaceId = '', options = {}) {
+  const safeWorkspaceId = normalizeText(workspaceId)
+  if (Array.isArray(options.consultants) || Array.isArray(options.users)) {
+    const optionRows = (options.consultants || options.users || []).map((row) => normalizeConsultantRow(row, safeWorkspaceId))
+    const optionIds = new Set(optionRows.map((row) => normalizeText(row.id)))
+    return [...optionRows, ...getLocalConsultants(safeWorkspaceId).filter((row) => !optionIds.has(normalizeText(row.id)))]
+  }
+  if (options.forceLocal) return getLocalConsultants(safeWorkspaceId)
+  return fetchConsultantRows(safeWorkspaceId)
+}
+
+async function persistRegionActivity(workspaceId = '', event = {}) {
+  const mapped = mapRegionActivity(event, workspaceId)
+  setLocalActivity(workspaceId, [mapped, ...getLocalActivity(workspaceId)])
+  return mapped
+}
+
+async function updateBranchManagerScope(workspaceId = '', userId = '', branchId = '', regionId = '') {
+  const safeWorkspaceId = normalizeText(workspaceId)
+  const safeUserId = normalizeText(userId)
+  if (!isSupabaseConfigured || !supabase || !safeWorkspaceId || !safeUserId) return null
+  const { data, error } = await supabase
+    .from('organisation_users')
+    .update({
+      workspace_role: 'branch_manager',
+      role: 'branch_manager',
+      scope_level: BOND_SCOPE_LEVELS.branch,
+      region_id: normalizeText(regionId),
+      workspace_unit_id: normalizeText(branchId),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('organisation_id', safeWorkspaceId)
+    .eq('user_id', safeUserId)
+    .select('id, organisation_id, user_id, role, workspace_role, scope_level, region_id, workspace_unit_id')
+    .maybeSingle()
+
+  if (error && !isMissingTableError(error, 'organisation_users') && !isReadRestrictedError(error)) throw error
+  return data || null
+}
+
+async function updateRegionalManagerScope(workspaceId = '', userId = '', regionId = '') {
+  const safeWorkspaceId = normalizeText(workspaceId)
+  const safeUserId = normalizeText(userId)
+  if (!isSupabaseConfigured || !supabase || !safeWorkspaceId || !safeUserId) return null
+  const { data, error } = await supabase
+    .from('organisation_users')
+    .update({
+      workspace_role: 'regional_manager',
+      role: 'regional_manager',
+      scope_level: BOND_SCOPE_LEVELS.region,
+      region_id: normalizeText(regionId),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('organisation_id', safeWorkspaceId)
+    .eq('user_id', safeUserId)
+    .select('id, organisation_id, user_id, role, workspace_role, scope_level, region_id')
+    .maybeSingle()
+
+  if (error && !isMissingTableError(error, 'organisation_users') && !isReadRestrictedError(error)) throw error
+  return data || null
+}
+
+async function updateConsultantScope(workspaceId = '', userId = '', branchId = '', regionId = '', role = 'consultant') {
+  const safeWorkspaceId = normalizeText(workspaceId)
+  const safeUserId = normalizeText(userId)
+  if (!isSupabaseConfigured || !supabase || !safeWorkspaceId || !safeUserId) return null
+  const { data, error } = await supabase
+    .from('organisation_users')
+    .update({
+      workspace_role: role,
+      role,
+      scope_level: BOND_SCOPE_LEVELS.assigned,
+      region_id: normalizeText(regionId),
+      workspace_unit_id: normalizeText(branchId),
+      branch_id: normalizeText(branchId),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('organisation_id', safeWorkspaceId)
+    .eq('user_id', safeUserId)
+    .select('id, organisation_id, user_id, role, workspace_role, scope_level, region_id, workspace_unit_id, branch_id')
+    .maybeSingle()
+
+  if (error && !isMissingTableError(error, 'organisation_users') && !isReadRestrictedError(error)) throw error
+  return data || null
+}
+
+export async function getBondRegions(context = {}, workspaceId = '', options = {}) {
+  const safeWorkspaceId = normalizeText(workspaceId || context.workspaceId || context.currentWorkspace?.id)
+  const [regions, users, hierarchy, applicationSnapshot] = await Promise.all([
+    getAllRegionRows(safeWorkspaceId, options),
+    fetchManagerUsers(safeWorkspaceId, options),
+    options.hierarchy ? Promise.resolve(options.hierarchy) : fetchHierarchy(safeWorkspaceId),
+    options.applicationSnapshot ? Promise.resolve(options.applicationSnapshot) : getBondTransactionTrackerSnapshot(context, safeWorkspaceId, { ...options, status: 'all' }),
+  ])
+  const branches = (options.branches || hierarchy.units || []).filter((unit) => getUnitType(unit) === WORKSPACE_UNIT_TYPES.branch)
+  const applications = filterDemoBondApplications(applicationSnapshot.rows || options.applications || [], { includeDemoRows: options.includeDemoRows !== false })
+  const organisationScope = resolveBondOrganisationScope({ ...context, workspaceId: safeWorkspaceId }, {
+    regions,
+    branches,
+    consultants: users,
+    applications,
+  })
+  const capabilities = resolveCapabilities({ ...context, workspaceId: safeWorkspaceId }, organisationScope)
+  const visibleRegions = scopeRegions(regions, capabilities)
+  const visibleScope = getVisibleOrganisationScope({
+    capabilities,
+    regions: visibleRegions,
+    branches,
+    consultants: users.map((user) => ({ ...user, name: getUserName(user) })),
+    applications,
+  })
+  return getRegionPerformance(visibleScope, getBranchPerformance(visibleScope))
+}
+
+export async function createBondRegion(payload = {}, context = {}, workspaceId = '', options = {}) {
+  const safeWorkspaceId = normalizeText(workspaceId || context.workspaceId || context.currentWorkspace?.id)
+  const existingRegions = await getAllRegionRows(safeWorkspaceId, options)
+  const users = await fetchManagerUsers(safeWorkspaceId, options)
+  assertCanManageRegions({ ...context, workspaceId: safeWorkspaceId }, { regions: existingRegions, consultants: users })
+  const validated = validateRegionPayload(payload, existingRegions, { users })
+  const now = new Date().toISOString()
+
+  if (isSupabaseConfigured && supabase && safeWorkspaceId && !options.forceLocal) {
+    const { data, error } = await supabase
+      .from('workspace_regions')
+      .insert(mapRegionToPersistencePayload(validated, safeWorkspaceId))
+      .select('id, workspace_id, name, code, manager_user_id, description, active, created_at, updated_at')
+      .single()
+    if (error && !isMissingTableError(error, 'workspace_regions')) throw error
+    if (data) {
+      const region = normalizeRegionRow(data, safeWorkspaceId)
+      await persistRegionActivity(safeWorkspaceId, {
+        eventType: BOND_ORGANISATION_ACTIVITY_EVENTS.regionCreated,
+        regionId: region.id,
+        actorUserId: context.userId || context.profile?.id || context.currentMembership?.user_id,
+        previousValue: null,
+        newValue: region,
+      })
+      return region
+    }
+  }
+
+  const region = normalizeRegionRow({
+    id: payload.id || createLocalRegionId(validated.name),
+    organisationId: safeWorkspaceId,
+    ...validated,
+    manager_user_id: validated.managerUserId,
+    active: validated.status !== 'inactive',
+    createdAt: now,
+    updatedAt: now,
+  }, safeWorkspaceId)
+  setLocalRegions(safeWorkspaceId, [...existingRegions, region])
+  await persistRegionActivity(safeWorkspaceId, {
+    eventType: BOND_ORGANISATION_ACTIVITY_EVENTS.regionCreated,
+    regionId: region.id,
+    actorUserId: context.userId || context.profile?.id || context.currentMembership?.user_id,
+    previousValue: null,
+    newValue: region,
+  })
+  return region
+}
+
+export async function updateBondRegion(regionId = '', payload = {}, context = {}, workspaceId = '', options = {}) {
+  const safeWorkspaceId = normalizeText(workspaceId || context.workspaceId || context.currentWorkspace?.id)
+  const safeRegionId = normalizeText(regionId)
+  const existingRegions = await getAllRegionRows(safeWorkspaceId, options)
+  const users = await fetchManagerUsers(safeWorkspaceId, options)
+  assertCanManageRegions({ ...context, workspaceId: safeWorkspaceId }, { regions: existingRegions, consultants: users })
+  const previous = existingRegions.find((region) => normalizeText(region.id) === safeRegionId)
+  if (!previous) throw createValidationError('Region not found.', { regionId: 'Region could not be found.' })
+  const validated = validateRegionPayload({ ...previous, ...payload }, existingRegions, { users, regionId: safeRegionId })
+  const updated = normalizeRegionRow({
+    ...previous,
+    ...validated,
+    manager_user_id: validated.managerUserId,
+    active: validated.status !== 'inactive',
+    updatedAt: new Date().toISOString(),
+  }, safeWorkspaceId)
+
+  if (isSupabaseConfigured && supabase && !options.forceLocal) {
+    const { data, error } = await supabase
+      .from('workspace_regions')
+      .update(mapRegionToPersistencePayload(updated, safeWorkspaceId))
+      .eq('id', safeRegionId)
+      .eq('workspace_id', safeWorkspaceId)
+      .select('id, workspace_id, name, code, manager_user_id, description, active, created_at, updated_at')
+      .single()
+    if (error && !isMissingTableError(error, 'workspace_regions')) throw error
+    if (data) {
+      const region = normalizeRegionRow(data, safeWorkspaceId)
+      await persistRegionActivity(safeWorkspaceId, {
+        eventType: BOND_ORGANISATION_ACTIVITY_EVENTS.regionUpdated,
+        regionId: region.id,
+        actorUserId: context.userId || context.profile?.id || context.currentMembership?.user_id,
+        previousValue: previous,
+        newValue: region,
+      })
+      return region
+    }
+  }
+
+  setLocalRegions(safeWorkspaceId, existingRegions.map((region) => (normalizeText(region.id) === safeRegionId ? updated : region)))
+  await persistRegionActivity(safeWorkspaceId, {
+    eventType: BOND_ORGANISATION_ACTIVITY_EVENTS.regionUpdated,
+    regionId: updated.id,
+    actorUserId: context.userId || context.profile?.id || context.currentMembership?.user_id,
+    previousValue: previous,
+    newValue: updated,
+  })
+  return updated
+}
+
+export async function assignBondRegionManager(regionId = '', userId = '', context = {}, workspaceId = '', options = {}) {
+  const safeUserId = normalizeText(userId)
+  const users = await fetchManagerUsers(workspaceId || context.workspaceId || context.currentWorkspace?.id, options)
+  const manager = users.find((user) => normalizeText(user.user_id || user.userId || user.id) === safeUserId)
+  if (!manager) throw createValidationError('Region validation failed.', { managerUserId: 'Regional manager must be a valid user in this organisation.' })
+  if (!REGION_MANAGER_ROLES.has(getUserRole(manager))) {
+    throw createValidationError('Region validation failed.', { managerUserId: 'Selected user does not have a compatible region manager role.' })
+  }
+  const region = await updateBondRegion(regionId, { managerUserId: safeUserId }, context, workspaceId, options)
+  if (!options.forceLocal) {
+    await updateRegionalManagerScope(workspaceId || context.workspaceId || context.currentWorkspace?.id, safeUserId, regionId)
+  }
+  await persistRegionActivity(workspaceId || context.workspaceId || context.currentWorkspace?.id, {
+    eventType: BOND_ORGANISATION_ACTIVITY_EVENTS.regionManagerAssigned,
+    regionId,
+    actorUserId: context.userId || context.profile?.id || context.currentMembership?.user_id,
+    previousValue: null,
+    newValue: { managerUserId: safeUserId },
+  })
+  return region
+}
+
+export function getBondRegionWorkspace(regionId = '', scope = {}) {
+  const safeRegionId = normalizeText(regionId)
+  const organisationScope = scope.organisationScope || scope.scope || {}
+  if (organisationScope.scopeLevel && !canViewRegion(safeRegionId, organisationScope)) {
+    throw createPermissionError()
+  }
+  const regions = scope.regions || []
+  const region = regions.find((row) => normalizeText(row.id) === safeRegionId)
+  if (!region) return null
+  const managerName = getManagerName(getRegionManagerId(region), scope.consultants || [])
+  const visibleScope = {
+    ...scope,
+    regions: [region],
+    branches: (scope.branches || []).filter((branch) => normalizeText(branch.region_id || branch.regionId) === safeRegionId),
+    consultants: scope.consultants || [],
+    applications: (scope.applications || []).filter((row) => normalizeText(row.regionId || row.region_id) === safeRegionId),
+  }
+  const branchPerformance = getBranchPerformance(visibleScope)
+  const row = getRegionPerformance(visibleScope, branchPerformance)[0] || {}
+  return {
+    id: safeRegionId,
+    region: {
+      ...region,
+      manager: managerName,
+      managerName,
+    },
+    metrics: {
+      branches: row.branches || 0,
+      consultants: row.consultants || 0,
+      activeApplications: row.activeApplications || 0,
+      submittedApplications: row.submittedApplications || 0,
+      pendingDocuments: row.pendingDocuments || 0,
+      approvalRate: row.approvalRate || 0,
+      averageTurnaround: row.averageTurnaround || 0,
+    },
+    branchPerformance,
+    tabs: ['Overview', 'Branches', 'Consultants', 'Applications', 'Performance', 'Settings'],
+  }
+}
+
+export function getBondRegionWorkspaceRoute(regionId = '') {
+  return `/bond/organisation/regions/${encodeURIComponent(normalizeText(regionId))}`
+}
+
+export async function getBondBranches(context = {}, workspaceId = '', options = {}) {
+  const safeWorkspaceId = normalizeText(workspaceId || context.workspaceId || context.currentWorkspace?.id)
+  const [regions, branches, users, applicationSnapshot] = await Promise.all([
+    getAllRegionRows(safeWorkspaceId, options),
+    getAllBranchRows(safeWorkspaceId, options),
+    fetchManagerUsers(safeWorkspaceId, options),
+    options.applicationSnapshot ? Promise.resolve(options.applicationSnapshot) : getBondTransactionTrackerSnapshot(context, safeWorkspaceId, { ...options, status: 'all' }),
+  ])
+  const applications = filterDemoBondApplications(applicationSnapshot.rows || options.applications || [], { includeDemoRows: options.includeDemoRows !== false })
+  const organisationScope = resolveBondOrganisationScope({ ...context, workspaceId: safeWorkspaceId }, {
+    regions,
+    branches,
+    consultants: users,
+    applications,
+  })
+  const capabilities = resolveCapabilities({ ...context, workspaceId: safeWorkspaceId }, organisationScope)
+  const regionById = buildLookup(regions)
+  const visibleBranches = scopeUnits(branches, capabilities).map((branch) => ({
+    ...branch,
+    region: regionById.get(getBranchRegionId(branch))?.name || branch.region || 'Unassigned',
+  }))
+  const visibleScope = getVisibleOrganisationScope({
+    capabilities,
+    regions: scopeRegions(regions, capabilities),
+    branches: visibleBranches,
+    consultants: scopeUsers(users, capabilities).map((user) => ({ ...user, name: getUserName(user) })),
+    applications: scopeApplicationRows(applications, capabilities),
+  })
+  return getBranchPerformance(visibleScope)
+}
+
+export async function createBondBranch(payload = {}, context = {}, workspaceId = '', options = {}) {
+  const safeWorkspaceId = normalizeText(workspaceId || context.workspaceId || context.currentWorkspace?.id)
+  const [regions, existingBranches, users] = await Promise.all([
+    getAllRegionRows(safeWorkspaceId, options),
+    getAllBranchRows(safeWorkspaceId, options),
+    fetchManagerUsers(safeWorkspaceId, options),
+  ])
+  const regionId = normalizeText(payload.regionId || payload.region_id)
+  assertCanCreateBranch({ ...context, workspaceId: safeWorkspaceId }, { regions, branches: existingBranches, consultants: users }, regionId)
+  const validated = validateBranchPayload(payload, existingBranches, { regions, users })
+  const now = new Date().toISOString()
+
+  if (isSupabaseConfigured && supabase && safeWorkspaceId && !options.forceLocal) {
+    const { data, error } = await supabase
+      .from('workspace_units')
+      .insert(mapBranchToPersistencePayload(validated, safeWorkspaceId))
+      .select('id, workspace_id, region_id, parent_unit_id, unit_type, name, code, description, manager_user_id, active, created_at, updated_at')
+      .single()
+    if (error && !isMissingTableError(error, 'workspace_units')) throw error
+    if (data) {
+      const branch = normalizeBranchRow(data, safeWorkspaceId)
+      await persistRegionActivity(safeWorkspaceId, {
+        eventType: BOND_ORGANISATION_ACTIVITY_EVENTS.branchCreated,
+        regionId: branch.regionId,
+        branchId: branch.id,
+        actorUserId: context.userId || context.profile?.id || context.currentMembership?.user_id,
+        previousValue: null,
+        newValue: branch,
+      })
+      return branch
+    }
+  }
+
+  const branch = normalizeBranchRow({
+    id: payload.id || createLocalBranchId(validated.name),
+    organisationId: safeWorkspaceId,
+    workspace_id: safeWorkspaceId,
+    ...validated,
+    region_id: validated.regionId,
+    manager_user_id: validated.managerUserId,
+    active: validated.status !== 'inactive',
+    createdAt: now,
+    updatedAt: now,
+  }, safeWorkspaceId)
+  setLocalBranches(safeWorkspaceId, [...existingBranches, branch])
+  await persistRegionActivity(safeWorkspaceId, {
+    eventType: BOND_ORGANISATION_ACTIVITY_EVENTS.branchCreated,
+    regionId: branch.regionId,
+    branchId: branch.id,
+    actorUserId: context.userId || context.profile?.id || context.currentMembership?.user_id,
+    previousValue: null,
+    newValue: branch,
+  })
+  return branch
+}
+
+export async function updateBondBranch(branchId = '', payload = {}, context = {}, workspaceId = '', options = {}) {
+  const safeWorkspaceId = normalizeText(workspaceId || context.workspaceId || context.currentWorkspace?.id)
+  const safeBranchId = normalizeText(branchId)
+  const [regions, existingBranches, users] = await Promise.all([
+    getAllRegionRows(safeWorkspaceId, options),
+    getAllBranchRows(safeWorkspaceId, options),
+    fetchManagerUsers(safeWorkspaceId, options),
+  ])
+  const previous = existingBranches.find((branch) => normalizeText(branch.id) === safeBranchId)
+  if (!previous) throw createValidationError('Branch not found.', { branchId: 'Branch could not be found.' })
+  assertCanManageBranch({ ...context, workspaceId: safeWorkspaceId }, { regions, branches: existingBranches, consultants: users }, previous, payload.regionId || previous.regionId)
+  const validated = validateBranchPayload({ ...previous, ...payload }, existingBranches, { regions, users, branchId: safeBranchId })
+  const updated = normalizeBranchRow({
+    ...previous,
+    ...validated,
+    region_id: validated.regionId,
+    manager_user_id: validated.managerUserId,
+    active: validated.status !== 'inactive',
+    updatedAt: new Date().toISOString(),
+  }, safeWorkspaceId)
+
+  if (isSupabaseConfigured && supabase && !options.forceLocal) {
+    const { data, error } = await supabase
+      .from('workspace_units')
+      .update(mapBranchToPersistencePayload(updated, safeWorkspaceId))
+      .eq('id', safeBranchId)
+      .eq('workspace_id', safeWorkspaceId)
+      .select('id, workspace_id, region_id, parent_unit_id, unit_type, name, code, description, manager_user_id, active, created_at, updated_at')
+      .single()
+    if (error && !isMissingTableError(error, 'workspace_units')) throw error
+    if (data) {
+      const branch = normalizeBranchRow(data, safeWorkspaceId)
+      await persistRegionActivity(safeWorkspaceId, {
+        eventType: BOND_ORGANISATION_ACTIVITY_EVENTS.branchUpdated,
+        regionId: branch.regionId,
+        branchId: branch.id,
+        actorUserId: context.userId || context.profile?.id || context.currentMembership?.user_id,
+        previousValue: previous,
+        newValue: branch,
+      })
+      return branch
+    }
+  }
+
+  setLocalBranches(safeWorkspaceId, existingBranches.map((branch) => (normalizeText(branch.id) === safeBranchId ? updated : branch)))
+  await persistRegionActivity(safeWorkspaceId, {
+    eventType: BOND_ORGANISATION_ACTIVITY_EVENTS.branchUpdated,
+    regionId: updated.regionId,
+    branchId: updated.id,
+    actorUserId: context.userId || context.profile?.id || context.currentMembership?.user_id,
+    previousValue: previous,
+    newValue: updated,
+  })
+  return updated
+}
+
+export async function assignBondBranchManager(branchId = '', userId = '', context = {}, workspaceId = '', options = {}) {
+  const safeWorkspaceId = normalizeText(workspaceId || context.workspaceId || context.currentWorkspace?.id)
+  const safeUserId = normalizeText(userId)
+  const users = await fetchManagerUsers(safeWorkspaceId, options)
+  const manager = users.find((user) => normalizeText(user.user_id || user.userId || user.id) === safeUserId)
+  if (!manager) throw createValidationError('Branch validation failed.', { managerUserId: 'Branch manager must be a valid user in this organisation.' })
+  if (!BRANCH_MANAGER_ROLES.has(getUserRole(manager))) {
+    throw createValidationError('Branch validation failed.', { managerUserId: 'Selected user does not have a compatible branch manager role.' })
+  }
+  const branch = await updateBondBranch(branchId, { managerUserId: safeUserId }, context, safeWorkspaceId, options)
+  if (!options.forceLocal) {
+    await updateBranchManagerScope(safeWorkspaceId, safeUserId, branchId, branch.regionId)
+  }
+  await persistRegionActivity(safeWorkspaceId, {
+    eventType: BOND_ORGANISATION_ACTIVITY_EVENTS.branchManagerAssigned,
+    regionId: branch.regionId,
+    branchId,
+    actorUserId: context.userId || context.profile?.id || context.currentMembership?.user_id,
+    previousValue: null,
+    newValue: { managerUserId: safeUserId },
+  })
+  return branch
+}
+
+export async function moveBondBranchToRegion(branchId = '', regionId = '', context = {}, workspaceId = '', options = {}) {
+  const safeWorkspaceId = normalizeText(workspaceId || context.workspaceId || context.currentWorkspace?.id)
+  const [regions, existingBranches, users] = await Promise.all([
+    getAllRegionRows(safeWorkspaceId, options),
+    getAllBranchRows(safeWorkspaceId, options),
+    fetchManagerUsers(safeWorkspaceId, options),
+  ])
+  const safeRegionId = normalizeText(regionId)
+  const previous = existingBranches.find((branch) => normalizeText(branch.id) === normalizeText(branchId))
+  if (!previous) throw createValidationError('Branch not found.', { branchId: 'Branch could not be found.' })
+  assertCanMoveBranch({ ...context, workspaceId: safeWorkspaceId }, { regions, branches: existingBranches, consultants: users })
+  if (!regions.some((region) => normalizeText(region.id) === safeRegionId)) {
+    throw createValidationError('Branch validation failed.', { regionId: 'Selected region does not exist.' })
+  }
+  const branch = await updateBondBranch(branchId, { regionId: safeRegionId }, context, safeWorkspaceId, { ...options, users, regions })
+  await persistRegionActivity(safeWorkspaceId, {
+    eventType: BOND_ORGANISATION_ACTIVITY_EVENTS.branchMovedRegion,
+    regionId: safeRegionId,
+    branchId,
+    actorUserId: context.userId || context.profile?.id || context.currentMembership?.user_id,
+    previousValue: previous,
+    newValue: branch,
+  })
+  return branch
+}
+
+export function getBondBranchWorkspace(branchId = '', scope = {}) {
+  const safeBranchId = normalizeText(branchId)
+  const organisationScope = scope.organisationScope || scope.scope || {}
+  if (organisationScope.scopeLevel && !canViewBranch(safeBranchId, organisationScope)) {
+    throw createBranchPermissionError()
+  }
+  const branch = (scope.branches || []).find((row) => normalizeText(row.id) === safeBranchId)
+  if (!branch) return null
+  const branchRows = getBranchApplicationRows(branch, scope.applications || [])
+  const performance = getBranchPerformance({ ...scope, branches: [branch], applications: branchRows })[0] || {}
+  const region = (scope.regions || []).find((row) => normalizeText(row.id) === getBranchRegionId(branch))
+  const activityEvents = (scope.activityEvents || []).filter((event) => normalizeText(event.branchId || event.branch_id) === safeBranchId)
+  return {
+    id: safeBranchId,
+    branch: {
+      ...branch,
+      region: region?.name || branch.region || 'Unassigned',
+      manager: performance.manager || getManagerName(getBranchManagerId(branch), scope.consultants || []),
+    },
+    metrics: {
+      consultants: performance.consultants || 0,
+      activeApplications: performance.activeApplications || 0,
+      submittedApplications: performance.submittedApplications || 0,
+      pendingDocuments: performance.pendingDocuments || 0,
+      approvalRate: performance.approvalRate || 0,
+      averageTurnaround: performance.averageTurnaround || 0,
+      unassignedApplications: performance.unassignedApplications || 0,
+      applicationsWaitingForDocuments: performance.pendingDocuments || 0,
+      applicationsWithoutConsultant: performance.unassignedApplications || 0,
+      applicationsSubmittedThisMonth: branchRows.filter((row) => {
+        const date = new Date(row.lastActivityAt || row.createdAt || '')
+        const now = new Date()
+        return isApplicationSubmitted(row) && !Number.isNaN(date.getTime()) && date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()
+      }).length,
+      branchHealth: performance.healthStatus || 'Healthy',
+    },
+    recentActivity: getRecentOrganisationActivity({ ...scope, applications: branchRows, activityEvents }).slice(0, 6),
+    tabs: ['Overview', 'Consultants', 'Applications', 'Performance', 'Settings'],
+  }
+}
+
+export function getBondBranchWorkspaceRoute(branchId = '') {
+  return `/bond/organisation/branches/${encodeURIComponent(normalizeText(branchId))}`
+}
+
+function getConsultantCapacity(activeApplications = 0) {
+  const count = Number(activeApplications || 0)
+  if (count <= 10) return 'Light'
+  if (count <= 25) return 'Normal'
+  if (count <= 40) return 'Busy'
+  return 'Overloaded'
+}
+
+function getConsultantWorkloadBreakdown(rows = []) {
+  const labels = [
+    { key: 'newApplications', label: 'New Applications', match: (signal) => signal.includes('new') || signal.includes('intake') || signal.includes('pre') },
+    { key: 'documentsReceived', label: 'Documents Received', match: (signal) => signal.includes('document') || signal.includes('docs') },
+    { key: 'applicationsSubmitted', label: 'Applications Submitted', match: (signal) => signal.includes('submit') },
+    { key: 'feedbackReceived', label: 'Feedback Received', match: (signal) => signal.includes('feedback') || signal.includes('bank') },
+    { key: 'quoteApproved', label: 'Quote Approved', match: (signal) => signal.includes('quote') || signal.includes('approved') || signal.includes('grant') },
+    { key: 'instructionSent', label: 'Instruction Sent', match: (signal) => signal.includes('instruction') || signal.includes('instruct') },
+  ]
+  return labels.map((item) => ({
+    key: item.key,
+    label: item.label,
+    value: rows.filter((row) => item.match(normalizeLower(`${row.financeStageKey || ''} ${row.financeStageLabel || ''} ${row.status || ''} ${row.nextAction || ''}`))).length,
+  }))
+}
+
+function getConsultantPerformanceMetrics(rows = []) {
+  const approved = rows.filter(isApplicationApproved).length
+  const declined = rows.filter((row) => normalizeLower(`${row.status || ''} ${row.financeStageKey || ''} ${row.financeStageLabel || ''}`).includes('declin')).length
+  const submitted = rows.filter(isApplicationSubmitted).length
+  const pendingDocs = rows.filter(isPendingDocs).length
+  return {
+    activeApplications: rows.length,
+    submittedApplications: submitted,
+    approvalRate: percent(approved, rows.length),
+    declineRate: percent(declined, rows.length),
+    averageTurnaround: averageNumber(rows.map(getApplicationLeadDays)),
+    pendingDocuments: pendingDocs,
+    averageBankResponseTime: averageNumber(rows.filter((row) => normalizeLower(row.financeStageKey || row.financeStageLabel).includes('bank')).map(getApplicationLeadDays)),
+    quoteAcceptanceRate: percent(approved, submitted || rows.length),
+    lastActivity: rows[0]?.lastActivityLabel || 'No recent activity',
+  }
+}
+
+async function getConsultantServiceData(context = {}, workspaceId = '', options = {}) {
+  const safeWorkspaceId = normalizeText(workspaceId || context.workspaceId || context.currentWorkspace?.id)
+  const [regions, branches, consultants, applicationSnapshot] = await Promise.all([
+    getAllRegionRows(safeWorkspaceId, options),
+    getAllBranchRows(safeWorkspaceId, options),
+    getAllConsultantRows(safeWorkspaceId, options),
+    options.applicationSnapshot
+      ? Promise.resolve(options.applicationSnapshot)
+      : options.forceLocal
+        ? Promise.resolve({ rows: options.applications || [] })
+        : getBondTransactionTrackerSnapshot(context, safeWorkspaceId, { ...options, status: 'all' }),
+  ])
+  const rawRows = filterDemoBondApplications(applicationSnapshot.rows || options.applications || [], { includeDemoRows: options.includeDemoRows !== false })
+  const applications = enrichApplicationRows(applyLocalApplicationOwnership(safeWorkspaceId, rawRows), { regions, branches })
+  return { safeWorkspaceId, regions, branches, consultants, applications }
+}
+
+export async function getBondConsultants(context = {}, workspaceId = '', options = {}) {
+  const { safeWorkspaceId, regions, branches, consultants, applications } = await getConsultantServiceData(context, workspaceId, options)
+  const organisationScope = resolveBondOrganisationScope({ ...context, workspaceId: safeWorkspaceId }, { regions, branches, consultants, applications })
+  const capabilities = resolveCapabilities({ ...context, workspaceId: safeWorkspaceId }, organisationScope)
+  const regionById = buildLookup(regions)
+  const visibleBranches = scopeUnits(branches, capabilities).map((branch) => ({
+    ...branch,
+    region: regionById.get(getBranchRegionId(branch))?.name || branch.region || 'Unassigned',
+  }))
+  const visibleScope = getVisibleOrganisationScope({
+    capabilities,
+    regions: scopeRegions(regions, capabilities),
+    branches: visibleBranches,
+    consultants: scopeUsers(consultants, capabilities).map((user) => normalizeConsultantRow({ ...user, name: getUserName(user) }, safeWorkspaceId)),
+    applications: scopeApplicationRows(applications, capabilities),
+  })
+  return getConsultantPerformance(visibleScope)
+}
+
+export async function createBondConsultant(payload = {}, context = {}, workspaceId = '', options = {}) {
+  const { safeWorkspaceId, regions, branches, consultants } = await getConsultantServiceData(context, workspaceId, options)
+  const validated = validateConsultantPayload(payload, consultants, { branches })
+  assertCanManageConsultant({ ...context, workspaceId: safeWorkspaceId }, { regions, branches, consultants }, null, validated.branchId)
+  const now = new Date().toISOString()
+  const consultant = normalizeConsultantRow({
+    id: payload.id || payload.userId || payload.user_id || createLocalConsultantId(validated.email, validated.name),
+    organisationId: safeWorkspaceId,
+    user_id: payload.userId || payload.user_id || payload.id || '',
+    ...validated,
+    workspace_unit_id: validated.branchId,
+    region_id: validated.regionId,
+    active: validated.status !== 'inactive',
+    createdAt: now,
+    updatedAt: now,
+  }, safeWorkspaceId)
+
+  if (isSupabaseConfigured && supabase && safeWorkspaceId && !options.forceLocal && normalizeText(consultant.userId)) {
+    const { data, error } = await supabase
+      .from('organisation_users')
+      .upsert(mapConsultantToPersistencePayload(consultant, safeWorkspaceId), { onConflict: 'organisation_id,email' })
+      .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, scope_level, region_id, workspace_unit_id, branch_id, primary_branch_id, created_at, updated_at')
+      .single()
+    if (error && !isMissingTableError(error, 'organisation_users')) throw error
+    if (data) {
+      const persisted = normalizeConsultantRow(data, safeWorkspaceId)
+      await persistRegionActivity(safeWorkspaceId, {
+        eventType: BOND_ORGANISATION_ACTIVITY_EVENTS.consultantCreated,
+        regionId: persisted.regionId,
+        branchId: persisted.branchId,
+        consultantId: persisted.id,
+        actorUserId: context.userId || context.profile?.id || context.currentMembership?.user_id,
+        previousValue: null,
+        newValue: persisted,
+      })
+      return persisted
+    }
+  }
+
+  const existingWithoutDuplicate = consultants.filter((row) => normalizeText(row.id) !== consultant.id && normalizeLower(row.email) !== consultant.email)
+  setLocalConsultants(safeWorkspaceId, [...existingWithoutDuplicate, consultant])
+  await persistRegionActivity(safeWorkspaceId, {
+    eventType: BOND_ORGANISATION_ACTIVITY_EVENTS.consultantCreated,
+    regionId: consultant.regionId,
+    branchId: consultant.branchId,
+    consultantId: consultant.id,
+    actorUserId: context.userId || context.profile?.id || context.currentMembership?.user_id,
+    previousValue: null,
+    newValue: consultant,
+  })
+  return consultant
+}
+
+export async function updateBondConsultant(consultantId = '', payload = {}, context = {}, workspaceId = '', options = {}) {
+  const { safeWorkspaceId, regions, branches, consultants } = await getConsultantServiceData(context, workspaceId, options)
+  const safeConsultantId = normalizeText(consultantId)
+  const previous = consultants.find((consultant) => normalizeText(consultant.id) === safeConsultantId || getUserId(consultant) === safeConsultantId)
+  if (!previous) throw createValidationError('Consultant not found.', { consultantId: 'Consultant could not be found.' })
+  const validated = validateConsultantPayload({ ...previous, ...payload }, consultants, { branches, consultantId: safeConsultantId })
+  assertCanManageConsultant({ ...context, workspaceId: safeWorkspaceId }, { regions, branches, consultants }, previous, validated.branchId)
+  const updated = normalizeConsultantRow({
+    ...previous,
+    ...validated,
+    workspace_unit_id: validated.branchId,
+    branch_id: validated.branchId,
+    region_id: validated.regionId,
+    active: validated.status !== 'inactive',
+    updatedAt: new Date().toISOString(),
+  }, safeWorkspaceId)
+
+  if (isSupabaseConfigured && supabase && !options.forceLocal && normalizeText(updated.userId)) {
+    const { data, error } = await supabase
+      .from('organisation_users')
+      .update(mapConsultantToPersistencePayload(updated, safeWorkspaceId))
+      .eq('organisation_id', safeWorkspaceId)
+      .eq('user_id', normalizeText(updated.userId))
+      .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, scope_level, region_id, workspace_unit_id, branch_id, primary_branch_id, created_at, updated_at')
+      .maybeSingle()
+    if (error && !isMissingTableError(error, 'organisation_users')) throw error
+    if (data) {
+      const persisted = normalizeConsultantRow(data, safeWorkspaceId)
+      await persistRegionActivity(safeWorkspaceId, {
+        eventType: BOND_ORGANISATION_ACTIVITY_EVENTS.consultantUpdated,
+        regionId: persisted.regionId,
+        branchId: persisted.branchId,
+        consultantId: persisted.id,
+        actorUserId: context.userId || context.profile?.id || context.currentMembership?.user_id,
+        previousValue: previous,
+        newValue: persisted,
+      })
+      return persisted
+    }
+  }
+
+  setLocalConsultants(safeWorkspaceId, consultants.map((row) => (normalizeText(row.id) === safeConsultantId || getUserId(row) === safeConsultantId ? updated : row)))
+  await persistRegionActivity(safeWorkspaceId, {
+    eventType: BOND_ORGANISATION_ACTIVITY_EVENTS.consultantUpdated,
+    regionId: updated.regionId,
+    branchId: updated.branchId,
+    consultantId: updated.id,
+    actorUserId: context.userId || context.profile?.id || context.currentMembership?.user_id,
+    previousValue: previous,
+    newValue: updated,
+  })
+  return updated
+}
+
+export async function assignConsultantToBranch(consultantId = '', branchId = '', context = {}, workspaceId = '', options = {}) {
+  const { safeWorkspaceId, regions, branches, consultants } = await getConsultantServiceData(context, workspaceId, options)
+  const safeBranchId = normalizeText(branchId)
+  const branch = branches.find((row) => normalizeText(row.id) === safeBranchId)
+  if (!branch) throw createValidationError('Consultant validation failed.', { branchId: 'Selected branch does not exist.' })
+  const previous = consultants.find((consultant) => normalizeText(consultant.id) === normalizeText(consultantId) || getUserId(consultant) === normalizeText(consultantId))
+  if (!previous) throw createValidationError('Consultant not found.', { consultantId: 'Consultant could not be found.' })
+  assertCanManageConsultant({ ...context, workspaceId: safeWorkspaceId }, { regions, branches, consultants }, previous, safeBranchId)
+  const updated = await updateBondConsultant(consultantId, { branchId: safeBranchId }, context, safeWorkspaceId, { ...options, regions, branches, consultants })
+  if (!options.forceLocal) {
+    await updateConsultantScope(safeWorkspaceId, getUserId(updated), safeBranchId, getBranchRegionId(branch), updated.role)
+  }
+  await persistRegionActivity(safeWorkspaceId, {
+    eventType: BOND_ORGANISATION_ACTIVITY_EVENTS.consultantAssignedBranch,
+    regionId: getBranchRegionId(branch),
+    branchId: safeBranchId,
+    consultantId: updated.id,
+    actorUserId: context.userId || context.profile?.id || context.currentMembership?.user_id,
+    previousValue: previous,
+    newValue: updated,
+  })
+  return updated
+}
+
+export async function reassignApplications(fromId = '', toId = '', applicationIds = [], context = {}, workspaceId = '', options = {}) {
+  const { safeWorkspaceId, regions, branches, consultants, applications } = await getConsultantServiceData(context, workspaceId, options)
+  const fromConsultant = consultants.find((consultant) => normalizeText(consultant.id) === normalizeText(fromId) || getUserId(consultant) === normalizeText(fromId))
+  const toConsultant = consultants.find((consultant) => normalizeText(consultant.id) === normalizeText(toId) || getUserId(consultant) === normalizeText(toId))
+  if (!fromConsultant) throw createValidationError('Consultant not found.', { fromId: 'Source consultant could not be found.' })
+  if (!toConsultant) throw createValidationError('Consultant not found.', { toId: 'Target consultant could not be found.' })
+  assertCanManageConsultant({ ...context, workspaceId: safeWorkspaceId }, { regions, branches, consultants }, fromConsultant)
+  assertCanManageConsultant({ ...context, workspaceId: safeWorkspaceId }, { regions, branches, consultants }, toConsultant)
+  const selectedIds = new Set((applicationIds || []).map(normalizeText).filter(Boolean))
+  const fromRows = getConsultantApplicationRows(fromConsultant, applications)
+  const selectedRows = selectedIds.size ? fromRows.filter((row) => selectedIds.has(getApplicationKey(row))) : fromRows
+  const toBranch = branches.find((branch) => normalizeText(branch.id) === getConsultantBranchId(toConsultant))
+  const patch = {
+    assignedConsultantId: getUserId(toConsultant),
+    assigned_consultant_id: getUserId(toConsultant),
+    assignedUserId: getUserId(toConsultant),
+    assigned_user_id: getUserId(toConsultant),
+    assignedUserEmail: toConsultant.email,
+    assigned_user_email: toConsultant.email,
+    consultant: toConsultant.name,
+    assignedBranchId: getConsultantBranchId(toConsultant),
+    assigned_branch_id: getConsultantBranchId(toConsultant),
+    branchId: getConsultantBranchId(toConsultant),
+    workspaceUnitId: getConsultantBranchId(toConsultant),
+    workspace_unit_id: getConsultantBranchId(toConsultant),
+    branch: toBranch?.name || toConsultant.branch || 'Unassigned',
+    assignedRegionId: getConsultantRegionId(toConsultant) || getBranchRegionId(toBranch),
+    assigned_region_id: getConsultantRegionId(toConsultant) || getBranchRegionId(toBranch),
+    regionId: getConsultantRegionId(toConsultant) || getBranchRegionId(toBranch),
+  }
+  selectedRows.forEach((row) => setLocalApplicationOwnership(safeWorkspaceId, getApplicationKey(row), patch))
+  await persistRegionActivity(safeWorkspaceId, {
+    eventType: BOND_ORGANISATION_ACTIVITY_EVENTS.applicationReassigned,
+    regionId: patch.regionId,
+    branchId: patch.branchId,
+    consultantId: getUserId(toConsultant),
+    applicationIds: selectedRows.map(getApplicationKey),
+    actorUserId: context.userId || context.profile?.id || context.currentMembership?.user_id,
+    previousValue: { id: getUserId(fromConsultant), name: fromConsultant.name },
+    newValue: { id: getUserId(toConsultant), name: toConsultant.name, applicationCount: selectedRows.length },
+  })
+  return selectedRows.map((row) => ({ ...row, ...patch }))
+}
+
+export async function deactivateConsultant(consultantId = '', context = {}, workspaceId = '', options = {}) {
+  const { safeWorkspaceId, regions, branches, consultants, applications } = await getConsultantServiceData(context, workspaceId, options)
+  const consultant = consultants.find((row) => normalizeText(row.id) === normalizeText(consultantId) || getUserId(row) === normalizeText(consultantId))
+  if (!consultant) throw createValidationError('Consultant not found.', { consultantId: 'Consultant could not be found.' })
+  assertCanManageConsultant({ ...context, workspaceId: safeWorkspaceId }, { regions, branches, consultants }, consultant)
+  const activeRows = getConsultantApplicationRows(consultant, applications)
+  if (activeRows.length) {
+    throw createValidationError(`This consultant owns ${activeRows.length} active applications. Reassign before deactivation.`, {
+      activeApplications: 'Reassign active applications before deactivation.',
+    })
+  }
+  const updated = await updateBondConsultant(consultantId, { status: 'inactive' }, context, safeWorkspaceId, { ...options, regions, branches, consultants })
+  await persistRegionActivity(safeWorkspaceId, {
+    eventType: BOND_ORGANISATION_ACTIVITY_EVENTS.consultantDeactivated,
+    regionId: updated.regionId,
+    branchId: updated.branchId,
+    consultantId: updated.id,
+    actorUserId: context.userId || context.profile?.id || context.currentMembership?.user_id,
+    previousValue: consultant,
+    newValue: updated,
+  })
+  return updated
+}
+
+export function getBondConsultantWorkspace(consultantId = '', scope = {}) {
+  const safeConsultantId = normalizeText(consultantId)
+  const consultant = (scope.consultants || []).find((row) => normalizeText(row.id) === safeConsultantId || getUserId(row) === safeConsultantId)
+  if (!consultant) return null
+  const organisationScope = scope.organisationScope || scope.scope || {}
+  if (organisationScope.scopeLevel && !canViewConsultant(consultant, organisationScope)) {
+    throw createConsultantPermissionError()
+  }
+  const branch = (scope.branches || []).find((row) => normalizeText(row.id) === getConsultantBranchId(consultant))
+  const region = (scope.regions || []).find((row) => normalizeText(row.id) === (getConsultantRegionId(consultant) || getBranchRegionId(branch)))
+  const applicationRows = getConsultantApplicationRows(consultant, scope.applications || [])
+  const metrics = getConsultantPerformanceMetrics(applicationRows)
+  const activityEvents = (scope.activityEvents || []).filter((event) => normalizeText(event.consultantId || event.consultant_id) === safeConsultantId || normalizeText(event.consultantId || event.consultant_id) === getUserId(consultant))
+  return {
+    id: safeConsultantId,
+    consultant: {
+      ...consultant,
+      branch: branch?.name || consultant.branch || 'Unassigned',
+      region: region?.name || consultant.region || 'Unassigned',
+    },
+    metrics: {
+      ...metrics,
+      capacityStatus: getConsultantCapacity(metrics.activeApplications),
+    },
+    workloadBreakdown: getConsultantWorkloadBreakdown(applicationRows),
+    applications: applicationRows,
+    recentActivity: getRecentOrganisationActivity({ ...scope, applications: applicationRows, activityEvents }).slice(0, 6),
+    tabs: ['Overview', 'Applications', 'Activity', 'Performance', 'Settings'],
+  }
+}
+
+export function getBondConsultantWorkspaceRoute(consultantId = '') {
+  return `/bond/organisation/consultants/${encodeURIComponent(normalizeText(consultantId))}`
+}
+
 export function buildBondOrganisationSnapshot({
   context = {},
   workspaceId = '',
@@ -699,23 +2564,21 @@ export function buildBondOrganisationSnapshot({
 } = {}) {
   const safeWorkspaceId = normalizeText(workspaceId)
   const includeDemoRows = options.includeDemoRows !== false
-  const capabilities = resolveCapabilities({ ...context, workspaceId: safeWorkspaceId })
 
-  const allRegions = (hierarchy.regions || []).filter(isActiveRecord)
-  const allUnits = (hierarchy.units || []).filter(isActiveRecord)
+  const allRegions = (options.regions || hierarchy.regions || []).map((region) => normalizeRegionRow(region, safeWorkspaceId))
+  const allConsultants = (options.consultants || users || []).map((user) => normalizeConsultantRow(user, safeWorkspaceId))
+  const hierarchyUnits = hierarchy.units || []
+  const sourceBranches = (options.branches || hierarchyUnits.filter((unit) => getUnitType(unit) === WORKSPACE_UNIT_TYPES.branch))
+    .map((branch) => normalizeBranchRow(branch, safeWorkspaceId))
+  const branchIds = new Set(sourceBranches.map((branch) => normalizeText(branch.id)))
+  const allUnits = [
+    ...sourceBranches,
+    ...hierarchyUnits
+      .filter((unit) => getUnitType(unit) !== WORKSPACE_UNIT_TYPES.branch && !branchIds.has(normalizeText(unit.id)))
+      .filter(isActiveRecord),
+  ]
   const allBranches = allUnits.filter((unit) => getUnitType(unit) === WORKSPACE_UNIT_TYPES.branch)
   const allTeams = allUnits.filter((unit) => getUnitType(unit) === WORKSPACE_UNIT_TYPES.team || !getUnitType(unit))
-  const scopedRegions = scopeRegions(allRegions, capabilities)
-  const scopedUnits = scopeUnits(allUnits, capabilities)
-  const scopedBranches = scopedUnits.filter((unit) => getUnitType(unit) === WORKSPACE_UNIT_TYPES.branch)
-  const scopedTeams = scopedUnits.filter((unit) => getUnitType(unit) === WORKSPACE_UNIT_TYPES.team || !getUnitType(unit))
-  const scopedUsers = scopeUsers(users, capabilities).map((user) => ({
-    ...user,
-    name: getUserName(user),
-    workspaceRole: normalizeText(user.workspace_role || user.workspaceRole || user.organisation_role || user.organisationRole || user.role),
-    regionId: getUserRegionId(user),
-    workspaceUnitId: getUserUnitId(user),
-  }))
 
   const explicitStructureType = resolveStructureTypeFromSettings(settingsContext.organisationSettings)
   const structureType = inferStructureType({
@@ -723,16 +2586,38 @@ export function buildBondOrganisationSnapshot({
     regions: allRegions,
     branches: allBranches,
     teams: allTeams,
-    users,
+    users: allConsultants,
   })
-  const filteredApplicationRows = filterDemoBondApplications(applicationSnapshot.rows || [], {
+  const filteredApplicationRows = applyLocalApplicationOwnership(safeWorkspaceId, filterDemoBondApplications(applicationSnapshot.rows || [], {
     includeDemoRows,
-  })
+  }))
   const enrichedApplicationRows = enrichApplicationRows(filteredApplicationRows, {
     regions: allRegions,
     branches: allBranches,
     teams: allTeams,
   })
+  const organisationScope = resolveBondOrganisationScope(
+    { ...context, workspaceId: safeWorkspaceId },
+    {
+      regions: allRegions,
+      branches: allBranches,
+      consultants: allConsultants,
+      applications: enrichedApplicationRows,
+    },
+  )
+  logBondOrganisationScope(organisationScope, context)
+  const capabilities = resolveCapabilities({ ...context, workspaceId: safeWorkspaceId }, organisationScope)
+  const scopedRegions = scopeRegions(allRegions, capabilities)
+  const scopedUnits = scopeUnits(allUnits, capabilities)
+  const scopedBranches = scopedUnits.filter((unit) => getUnitType(unit) === WORKSPACE_UNIT_TYPES.branch)
+  const scopedTeams = scopedUnits.filter((unit) => getUnitType(unit) === WORKSPACE_UNIT_TYPES.team || !getUnitType(unit))
+  const scopedUsers = scopeUsers(allConsultants, capabilities).map((user) => ({
+    ...user,
+    name: getUserName(user),
+    workspaceRole: normalizeText(user.workspace_role || user.workspaceRole || user.organisation_role || user.organisationRole || user.role),
+    regionId: getUserRegionId(user),
+    workspaceUnitId: getUserUnitId(user),
+  }))
   let scopedApplications = scopeApplicationRows(enrichedApplicationRows, capabilities)
   const regionById = buildLookup(allRegions)
   const usedDerivedBranches = !scopedBranches.length && scopedApplications.length && capabilities.canViewBranches
@@ -765,7 +2650,7 @@ export function buildBondOrganisationSnapshot({
   if (usedDerivedConsultants) {
     visibleConsultants = buildDerivedConsultantsFromApplications(scopedApplications, scopedBranchesWithRegions)
   }
-  const hasMultipleUsers = scopedUsers.length > 1 || users.length > 1
+  const hasMultipleUsers = scopedUsers.length > 1 || allConsultants.length > 1
   const tabs = buildTabs({ capabilities })
   const visibleScope = getVisibleOrganisationScope({
     capabilities,
@@ -773,6 +2658,7 @@ export function buildBondOrganisationSnapshot({
     branches: scopedBranchesWithRegions,
     consultants: visibleConsultants,
     applications: scopedApplications,
+    activityEvents: options.activityEvents || [],
   })
   const branchPerformance = getBranchPerformance(visibleScope)
   const regionPerformance = getRegionPerformance(visibleScope, branchPerformance)
@@ -780,6 +2666,43 @@ export function buildBondOrganisationSnapshot({
   const hierarchyTree = getHierarchyTree(visibleScope)
   const operationalHealth = getOperationalHealth(visibleScope, branchPerformance)
   const recentActivity = getRecentOrganisationActivity(visibleScope)
+  const regionWorkspaces = Object.fromEntries(
+    visibleRegions.map((region) => [
+      normalizeText(region.id),
+      getBondRegionWorkspace(normalizeText(region.id), {
+        ...visibleScope,
+        organisationScope,
+      }),
+    ]),
+  )
+  const branchWorkspaces = Object.fromEntries(
+    scopedBranchesWithRegions.map((branch) => [
+      normalizeText(branch.id),
+      getBondBranchWorkspace(normalizeText(branch.id), {
+        ...visibleScope,
+        organisationScope,
+      }),
+    ]),
+  )
+  const consultantWorkspaces = Object.fromEntries(
+    visibleConsultants.map((consultant) => [
+      normalizeText(consultant.id || consultant.user_id || consultant.userId),
+      getBondConsultantWorkspace(normalizeText(consultant.id || consultant.user_id || consultant.userId), {
+        ...visibleScope,
+        organisationScope,
+      }),
+    ]),
+  )
+  const overview = getOrganisationOverview({
+    scope: visibleScope,
+    branchPerformance,
+    regionPerformance,
+    regionWorkspaces,
+    branchWorkspaces,
+    consultantWorkspaces,
+    consultantPerformance,
+    recentActivity,
+  })
   const kpis = getOrganisationKpis(visibleScope)
 
   return {
@@ -788,6 +2711,7 @@ export function buildBondOrganisationSnapshot({
     structureType,
     structureLabel: getStructureLabel(structureType),
     isIndependentWorkspace: structureType === BOND_ORGANISATION_STRUCTURE_TYPES.independent && !hasMultipleUsers,
+    organisationScope,
     capabilities,
     tabs,
     regions: visibleRegions,
@@ -799,7 +2723,9 @@ export function buildBondOrganisationSnapshot({
     kpis,
     regionPerformance,
     hierarchyTree,
+    overview,
     branchPerformance,
+    consultantWorkspaces,
     consultantPerformance,
     operationalHealth,
     recentActivity,
@@ -826,15 +2752,19 @@ export function buildBondOrganisationSnapshot({
 
 export async function getBondOrganisationSnapshot(context = {}, workspaceId = '', options = {}) {
   const safeWorkspaceId = normalizeText(workspaceId)
-  const [settingsContext, hierarchy, users, applicationSnapshot] = await Promise.all([
+  const [settingsContext, hierarchy, users, consultantRows, applicationSnapshot, regions, branches, activityEvents] = await Promise.all([
     fetchSettings(),
     fetchHierarchy(safeWorkspaceId),
     fetchOrganisationUsers(safeWorkspaceId),
+    getAllConsultantRows(safeWorkspaceId, options),
     getBondTransactionTrackerSnapshot(context, safeWorkspaceId, {
       ...options,
       status: 'all',
       developmentId: options.developmentId || 'all',
     }),
+    getAllRegionRows(safeWorkspaceId, options),
+    getAllBranchRows(safeWorkspaceId, options),
+    fetchActivityRows(safeWorkspaceId),
   ])
 
   return buildBondOrganisationSnapshot({
@@ -842,14 +2772,21 @@ export async function getBondOrganisationSnapshot(context = {}, workspaceId = ''
     workspaceId: safeWorkspaceId,
     settingsContext,
     hierarchy,
-    users,
+    users: consultantRows.length ? consultantRows : users,
     applicationSnapshot,
-    options,
+    options: {
+      ...options,
+      regions,
+      branches,
+      consultants: consultantRows.length ? consultantRows : options.consultants,
+      activityEvents: options.activityEvents || activityEvents,
+    },
   })
 }
 
 export function getBondOrganisationRouteForTab(tabKey = 'overview', options = {}) {
   if (tabKey === 'applications') return '/bond/organisation/applications'
+  if (tabKey === 'consultants' && normalizeText(options.consultantId)) return getBondConsultantWorkspaceRoute(options.consultantId)
 
   const params = new URLSearchParams()
   params.set('view', normalizeText(tabKey || 'overview'))
@@ -859,3 +2796,28 @@ export function getBondOrganisationRouteForTab(tabKey = 'overview', options = {}
 
   return `/bond/organisation?${params.toString()}`
 }
+
+export const __bondOrganisationServiceTestUtils = Object.freeze({
+  clearRegionStores() {
+    LOCAL_REGION_STORE.clear()
+    LOCAL_BRANCH_STORE.clear()
+    LOCAL_CONSULTANT_STORE.clear()
+    LOCAL_ACTIVITY_STORE.clear()
+    LOCAL_APPLICATION_OWNERSHIP_STORE.clear()
+  },
+  getActivityRows(workspaceId = '') {
+    return getLocalActivity(workspaceId)
+  },
+  getRegionRows(workspaceId = '') {
+    return getLocalRegions(workspaceId)
+  },
+  getBranchRows(workspaceId = '') {
+    return getLocalBranches(workspaceId)
+  },
+  getConsultantRows(workspaceId = '') {
+    return getLocalConsultants(workspaceId)
+  },
+  getApplicationOwnershipRows(workspaceId = '') {
+    return [...getLocalApplicationOwnership(workspaceId).entries()]
+  },
+})

@@ -1526,6 +1526,10 @@ export async function createPrivateListing(payload = {}, options = {}) {
     },
   }).catch(() => {})
 
+  void import('./suggestionGenerationService')
+    .then(({ queueListingSuggestionGeneration }) => queueListingSuggestionGeneration(listingWithRequirements))
+    .catch((generationError) => console.warn('[privateListingService] listing suggestion generation skipped', generationError))
+
   return { listing: listingWithRequirements, existing: false }
 }
 
@@ -1622,7 +1626,28 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [normalizedId]) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, [normalizedId]) : Promise.resolve(new Map()),
   ])
-  return mapPrivateListingRow(updateQuery.data, onboardingMap, requirementsMap, documentsMap)
+  const updatedListing = mapPrivateListingRow(updateQuery.data, onboardingMap, requirementsMap, documentsMap)
+  const importantFields = [
+    'askingPrice',
+    'asking_price',
+    'suburb',
+    'bedrooms',
+    'bathrooms',
+    'listingStatus',
+    'listing_status',
+    'propertyType',
+    'property_type',
+    'propertyCategory',
+    'property_category',
+    'city',
+    'province',
+  ]
+  if (importantFields.some((field) => Object.prototype.hasOwnProperty.call(payload, field))) {
+    void import('./suggestionGenerationService')
+      .then(({ queueListingSuggestionGeneration }) => queueListingSuggestionGeneration(updatedListing, { force: true }))
+      .catch((generationError) => console.warn('[privateListingService] listing suggestion regeneration skipped', generationError))
+  }
+  return updatedListing
 }
 
 export async function deletePrivateListing(listingId, { organisationId = null } = {}) {

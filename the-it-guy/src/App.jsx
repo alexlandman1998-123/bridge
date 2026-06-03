@@ -51,6 +51,7 @@ const AgentIntelligencePipelinePage = lazy(() => import('./pages/agent-intellige
 const AgentIntelligencePricingPage = lazy(() => import('./pages/agent-intelligence/PricingPage'))
 const AgentListingDetail = lazy(() => import('./pages/AgentListingDetail'))
 const AgentListings = lazy(() => import('./pages/AgentListings'))
+const AgentEnquiriesPage = lazy(() => import('./pages/AgentEnquiriesPage'))
 const AgentLeadsPage = lazy(() => import('./pages/AgentLeadsPage'))
 const AgentReportingPage = lazy(() => import('./pages/AgentReportingPage'))
 const AgentsPage = lazy(() => import('./pages/Agents'))
@@ -1659,6 +1660,30 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/bond/organisation/regions/:regionId"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <BondOrganisationPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/organisation/branches/:branchId"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <BondOrganisationPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/organisation/consultants/:consultantId"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <BondOrganisationPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/bond/organisation/applications"
                 element={
                   <RoleRoute allowedRoles={['bond_originator']}>
@@ -1787,6 +1812,14 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['agent']}>
                     <AgentLeadsPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/pipeline/enquiries"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <AgentEnquiriesPage />
                   </RoleRoute>
                 }
               />

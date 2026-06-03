@@ -56,6 +56,7 @@ const ICON_BY_KEY = {
   new_transaction: PlusCircle,
   pipeline: KanbanSquare,
   leads: Users,
+  enquiries: ClipboardList,
   pipeline_overview: KanbanSquare,
   pipeline_leads: KanbanSquare,
   pipeline_canvassing: ClipboardList,

@@ -1,21 +1,28 @@
+/* eslint-disable react-refresh/only-export-components */
 import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Building2,
+  Download,
+  Eye,
   Clock3,
+  Pencil,
   FileText,
   Network,
   Plus,
+  RefreshCw,
   Search,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
+  UserCheck,
   UserPlus,
   Users,
+  X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import BondEmptyState from '../../components/bond/BondEmptyState'
 import BondPageShell from '../../components/bond/BondPageShell'
 import BondSectionCard from '../../components/bond/BondSectionCard'
@@ -23,8 +30,23 @@ import BondTransactionStatusBadge from '../../components/bond/BondTransactionSta
 import BondViewTabs from '../../components/bond/BondViewTabs'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import {
+  assignBondRegionManager,
+  assignBondBranchManager,
+  assignConsultantToBranch,
+  createBondBranch,
+  createBondConsultant,
+  createBondRegion,
+  getBondBranchWorkspaceRoute,
+  getBondConsultantWorkspaceRoute,
+  getBondRegionWorkspaceRoute,
   getBondOrganisationRouteForTab,
   getBondOrganisationSnapshot,
+  deactivateConsultant,
+  moveBondBranchToRegion,
+  reassignApplications,
+  updateBondBranch,
+  updateBondConsultant,
+  updateBondRegion,
 } from '../../services/bondOrganisationService'
 
 const FALLBACK_ORGANISATION_TABS = Object.freeze([
@@ -32,7 +54,7 @@ const FALLBACK_ORGANISATION_TABS = Object.freeze([
   { key: 'regions', label: 'Regions' },
   { key: 'branches', label: 'Branches' },
   { key: 'consultants', label: 'Consultants' },
-  { key: 'applications', label: 'Applications' },
+  { key: 'partners', label: 'Partners' },
 ])
 
 const VALID_ORGANISATION_VIEWS = Object.freeze([
@@ -41,9 +63,32 @@ const VALID_ORGANISATION_VIEWS = Object.freeze([
   'branches',
   'consultants',
   'applications',
+  'partners',
 ])
 
-const DEFAULT_BOND_ORGANISATION_SERVICE = Object.freeze({ getBondOrganisationSnapshot })
+const DEFAULT_BOND_ORGANISATION_SERVICE = Object.freeze({
+  getBondOrganisationSnapshot,
+  createBondRegion,
+  updateBondRegion,
+  assignBondRegionManager,
+  createBondBranch,
+  updateBondBranch,
+  assignBondBranchManager,
+  moveBondBranchToRegion,
+  createBondConsultant,
+  updateBondConsultant,
+  assignConsultantToBranch,
+  reassignApplications,
+  deactivateConsultant,
+})
+const REGION_MANAGER_UI_ROLES = new Set(['regional_manager', 'hq_manager', 'manager', 'director', 'owner'])
+const BRANCH_MANAGER_UI_ROLES = new Set(['branch_manager', 'regional_manager', 'manager', 'director', 'owner'])
+const CONSULTANT_ROLE_OPTIONS = Object.freeze([
+  { value: 'consultant', label: 'Consultant' },
+  { value: 'bond_originator', label: 'Bond Originator' },
+  { value: 'processor', label: 'Processor' },
+  { value: 'admin_staff', label: 'Admin Staff' },
+])
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -98,60 +143,44 @@ export function resolveRouteView(location) {
 
 export function canAccessOrganisationView(view = 'overview', snapshot = null) {
   if (!snapshot) return false
-  if (view === 'overview') return true
+  if (view === 'overview') return snapshot?.organisationScope?.scopeLevel !== 'consultant'
   if (view === 'applications') return true
   if (view === 'regions') return Boolean(snapshot?.capabilities?.canViewRegions)
   if (view === 'branches') return Boolean(snapshot?.capabilities?.canViewBranches)
   if (view === 'consultants') return Boolean(snapshot?.capabilities?.canViewConsultants)
+  if (view === 'partners') return Boolean(snapshot?.capabilities?.canViewPartners)
   return false
 }
 
 function getUnavailableStateCopy(view = 'overview') {
   if (view === 'regions') {
     return {
-      title: 'Regions unavailable',
+      title: 'Organisation access required',
       description: 'Your current workspace scope does not include region management access.',
     }
   }
   if (view === 'branches') {
     return {
-      title: 'Branches unavailable',
+      title: 'Organisation access required',
       description: 'Your current workspace scope does not include branch management access.',
     }
   }
   if (view === 'consultants') {
     return {
-      title: 'Consultants unavailable',
+      title: 'Organisation access required',
       description: 'Your current workspace scope does not include consultant management access.',
     }
   }
+  if (view === 'partners') {
+    return {
+      title: 'Organisation access required',
+      description: 'Your current workspace scope does not include partner management access.',
+    }
+  }
   return {
-    title: 'This view is unavailable',
+    title: 'Organisation access required',
     description: 'Your current workspace scope does not include access to this organisation workspace.',
   }
-}
-
-function getConsultantApplicationMatches(consultant = null, rows = []) {
-  if (!consultant) return { rows: [], inferred: false }
-
-  const consultantId = normalizeText(consultant.id)
-  const consultantEmail = normalizeText(consultant.email).toLowerCase()
-  const consultantName = normalizeText(consultant.consultant || consultant.name).toLowerCase()
-  let inferred = false
-
-  const matchedRows = rows.filter((row) => {
-    const assignedUserId = normalizeText(row.assignedUserId || row.assigned_user_id)
-    const assignedEmail = normalizeText(row.assignedUserEmail || row.assigned_user_email || row.assignedBondOriginatorEmail).toLowerCase()
-    const assignedConsultant = normalizeText(row.consultant).toLowerCase()
-    const exactMatch =
-      (consultantId && assignedUserId === consultantId) ||
-      (consultantEmail && assignedEmail === consultantEmail)
-    const nameMatch = Boolean(consultantName && assignedConsultant === consultantName)
-    if (nameMatch && !exactMatch) inferred = true
-    return exactMatch || nameMatch
-  })
-
-  return { rows: matchedRows, inferred }
 }
 
 export function resolveSelectedHierarchyRow(selectedId = '', rows = [], candidateKeys = []) {
@@ -244,6 +273,13 @@ function buildCommandActions({ view, canManage, navigate, regionSelected = false
   if (!canManage) return []
 
   const settingsRoute = '/settings/organisation'
+  if (view === 'overview') {
+    return [
+      { label: 'Add Region', icon: Plus, to: `${settingsRoute}?intent=add-bond-region`, variant: 'primary' },
+      { label: 'Add Branch', icon: Building2, to: `${settingsRoute}?intent=add-bond-branch` },
+      { label: 'Add Consultant', icon: UserPlus, to: `${settingsRoute}?intent=invite-bond-user` },
+    ]
+  }
   if (view === 'regions') {
     return [
       { label: 'Add Region', icon: Plus, to: `${settingsRoute}?intent=add-bond-region` },
@@ -309,7 +345,7 @@ function OrganisationCommandHeader({
           ? 'Manage branch capacity, consultant allocation, and branch application performance.'
           : view === 'regions'
             ? 'Manage regional coverage, branch grouping, and regional application performance.'
-        : 'Manage your national structure, branch performance, and operational activity.'
+        : 'Manage your bond origination network, branch structure, consultant workload, and application performance.'
 
   return (
     <section className="rounded-[26px] border border-[#dbe5f0] bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.04)]">
@@ -365,6 +401,220 @@ function OrganisationViewUnavailable({ view = 'overview' }) {
     <SectionShell eyebrow="Organisation Scope" title={copy.title} description={copy.description}>
       <BondEmptyState compact title={copy.title} description={copy.description} />
     </SectionShell>
+  )
+}
+
+function OrganisationManagementPlaceholder({ type = 'regions' }) {
+  const copy = type === 'branches'
+    ? {
+        title: 'Add your first branch',
+        description: 'Branches sit inside regions and hold consultants and applications.',
+      }
+    : type === 'consultants'
+      ? {
+          title: 'Add consultants',
+          description: 'Consultants own applications and manage buyer finance progress.',
+        }
+      : {
+          title: 'Set up your organisation structure',
+          description: 'Start by creating your first region. After that, you can add branches, assign managers, and add consultants.',
+        }
+  return (
+    <SectionShell eyebrow="Organisation Setup" title={copy.title} description={copy.description}>
+      <BondEmptyState compact title={copy.title} description={copy.description} />
+    </SectionShell>
+  )
+}
+
+function getSettingsIntentRoute(intent = '') {
+  const safeIntent = normalizeText(intent)
+  return safeIntent ? `/settings/organisation?intent=${encodeURIComponent(safeIntent)}` : '/settings/organisation'
+}
+
+function OrganisationSetupState({ setupState = null, navigate = () => {}, canManage = false }) {
+  if (!setupState) return null
+  return (
+    <SectionShell
+      eyebrow="Next Setup Step"
+      title={setupState.title}
+      description={setupState.description}
+      action={canManage ? (
+        <CommandButton icon={Plus} variant="primary" onClick={() => navigate(getSettingsIntentRoute(setupState.actionIntent))}>
+          {setupState.actionLabel}
+        </CommandButton>
+      ) : null}
+    >
+      <div className="rounded-[18px] border border-[#dbe5f0] bg-[#fbfdff] px-4 py-4 text-sm leading-6 text-[#60758d]">
+        {setupState.description}
+      </div>
+    </SectionShell>
+  )
+}
+
+function OverviewSummaryCards({ cards = [] }) {
+  return (
+    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      {cards.map((card) => (
+        <article key={card.key} className="rounded-[22px] border border-[#dbe5f0] bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+          <p className="text-sm font-semibold text-[#64748b]">{card.label}</p>
+          <p className="mt-3 text-3xl font-semibold leading-none text-[#142132]">{card.value}</p>
+          <p className="mt-3 min-h-[2.5rem] text-sm leading-5 text-[#60758d]">{card.description}</p>
+          <p className="mt-4 border-t border-[#edf2f7] pt-3 text-xs font-semibold uppercase tracking-[0.12em] text-[#91a3b5]">{card.trend || 'Trend coming soon'}</p>
+        </article>
+      ))}
+    </section>
+  )
+}
+
+function OrganisationStructureSnapshot({ structure = {}, navigate = () => {} }) {
+  const regions = structure.regions || []
+  const directBranches = structure.directBranches || []
+  if (!regions.length && !directBranches.length) {
+    return (
+      <SectionShell eyebrow="Structure" title="Organisation Structure" description="Create your first region to start shaping the network.">
+        <BondEmptyState compact title="No organisation structure yet." description="Regions, branches, consultants, and application workload will appear here." />
+      </SectionShell>
+    )
+  }
+
+  return (
+    <SectionShell eyebrow="Structure" title="Organisation Structure" description="A quick hierarchy view of regions, branches, consultants, and active application load.">
+      <div className="space-y-4">
+        {regions.map((region) => (
+          <article key={region.id || region.name} className="rounded-[20px] border border-[#dbe5f0] bg-[#fbfdff] p-5">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-base font-semibold text-[#142132]">{region.name}</p>
+                <p className="mt-1 text-sm text-[#60758d]">{region.consultants} consultants · {region.activeApplications} active applications</p>
+              </div>
+              <button type="button" onClick={() => navigate(region.href)} className="inline-flex items-center gap-2 text-sm font-semibold text-[#24518a]">
+                View <ArrowRight size={14} />
+              </button>
+            </div>
+            <div className="mt-4 space-y-2 border-l border-[#dbe5f0] pl-4">
+              {(region.branches || []).map((branch) => (
+                <div key={branch.id || branch.name} className="flex flex-col gap-2 rounded-[16px] border border-[#e1e9f2] bg-white px-4 py-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-[#142132]">{branch.name}</p>
+                    <p className="mt-1 text-xs text-[#71869d]">{branch.consultants} consultants · {branch.activeApplications} active applications</p>
+                  </div>
+                  <button type="button" onClick={() => navigate(branch.href)} className="inline-flex items-center gap-2 text-sm font-semibold text-[#24518a]">
+                    View <ArrowRight size={14} />
+                  </button>
+                </div>
+              ))}
+              {!region.branches?.length ? <BondEmptyState compact title="No branches in this region." description="Add a branch to start building this regional network." /> : null}
+            </div>
+          </article>
+        ))}
+        {directBranches.map((branch) => (
+          <article key={branch.id || branch.name} className="flex flex-col gap-2 rounded-[18px] border border-[#dbe5f0] bg-[#fbfdff] p-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-[#142132]">{branch.name}</p>
+              <p className="mt-1 text-xs text-[#71869d]">{branch.consultants} consultants · {branch.activeApplications} active applications</p>
+            </div>
+            <button type="button" onClick={() => navigate(branch.href)} className="inline-flex items-center gap-2 text-sm font-semibold text-[#24518a]">
+              View <ArrowRight size={14} />
+            </button>
+          </article>
+        ))}
+      </div>
+    </SectionShell>
+  )
+}
+
+function NeedsAttention({ alerts = [], navigate = () => {}, canManage = false }) {
+  return (
+    <SectionShell eyebrow="Operational Gaps" title="Needs Attention" description="Setup and workload issues that HQ should resolve next.">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {alerts.map((alert) => (
+          <article key={alert.key} className="rounded-[18px] border border-[#fed7aa] bg-[#fffaf4] p-4">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#fed7aa] bg-white text-[#d97706]">
+              <AlertTriangle size={17} />
+            </span>
+            <p className="mt-4 text-sm font-semibold text-[#142132]">{alert.title}</p>
+            <p className="mt-2 text-sm leading-5 text-[#8a5b2b]">{alert.description}</p>
+            {canManage ? (
+              <button
+                type="button"
+                onClick={() => navigate(alert.actionIntent ? getSettingsIntentRoute(alert.actionIntent) : alert.href)}
+                className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#9a5b13]"
+              >
+                {alert.actionLabel}
+                <ArrowRight size={14} />
+              </button>
+            ) : null}
+          </article>
+        ))}
+        {!alerts.length ? <BondEmptyState compact title="No immediate organisation gaps." description="Manager assignments, workload pressure, and setup gaps will appear here." /> : null}
+      </div>
+    </SectionShell>
+  )
+}
+
+function PerformanceSnapshot({ performance = {} }) {
+  const statuses = performance.applicationsByStatus || []
+  const maxStatus = Math.max(1, ...statuses.map((item) => Number(item.value || 0)))
+  return (
+    <SectionShell eyebrow="Performance" title="Performance Snapshot" description="Lightweight indicators for application distribution, branch performance, and consultant workload.">
+      <div className="grid gap-5 xl:grid-cols-[1.25fr_1fr]">
+        <div className="space-y-3">
+          <p className="text-sm font-semibold text-[#142132]">Applications by status</p>
+          {statuses.map((item) => (
+            <div key={item.label} className="grid grid-cols-[minmax(120px,180px)_1fr_auto] items-center gap-3">
+              <span className="text-sm text-[#60758d]">{item.label}</span>
+              <span className="h-2 overflow-hidden rounded-full bg-[#e7eef6]">
+                <span className="block h-full rounded-full bg-[#24518a]" style={{ width: `${Math.max(6, (Number(item.value || 0) / maxStatus) * 100)}%` }} />
+              </span>
+              <span className="text-sm font-semibold text-[#142132]">{item.value}</span>
+            </div>
+          ))}
+          {!statuses.length ? <BondEmptyState compact title="No application status data yet." description="Status spread will appear as applications enter the workflow." /> : null}
+        </div>
+        <div className="grid gap-3">
+          <SummaryMetric label="Top Performing Branch" value={performance.topPerformingBranch?.branch || 'No branch data'} emphasis />
+          <SummaryMetric label="Lowest Performing Branch" value={performance.lowestPerformingBranch?.branch || 'No branch data'} emphasis />
+          <SummaryMetric label="Consultant Workload Spread" value={performance.consultantWorkloadSpread || 'No workload yet'} emphasis />
+          <SummaryMetric label="Average Approval Rate" value={`${Math.round(Number(performance.averageApprovalRate || 0))}%`} emphasis />
+          <SummaryMetric label="Average Turnaround" value={performance.averageTurnaround ? `${performance.averageTurnaround} days` : 'Tracking'} emphasis />
+        </div>
+      </div>
+    </SectionShell>
+  )
+}
+
+function RecentOrganisationActivity({ rows = [] }) {
+  return (
+    <SectionShell eyebrow="Activity" title="Recent Organisation Activity" description="Recent structure, assignment, and application ownership changes.">
+      <div className="divide-y divide-[#edf2f7] overflow-hidden rounded-[18px] border border-[#e1e9f2]">
+        {rows.map((row) => (
+          <a key={row.id} href={row.href} className="flex flex-col gap-2 bg-white px-4 py-4 transition hover:bg-[#fbfdff] sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-[#142132]">{row.description}</p>
+              <p className="mt-1 text-xs text-[#71869d]">{row.actor} · {row.branch} · {row.region}</p>
+            </div>
+            <span className="text-xs font-semibold text-[#60758d]">{row.timestamp}</span>
+          </a>
+        ))}
+        {!rows.length ? (
+          <BondEmptyState compact title="No organisation activity yet." description="Changes to regions, branches, consultants and assignments will appear here." />
+        ) : null}
+      </div>
+    </SectionShell>
+  )
+}
+
+function OrganisationOverviewDashboard({ snapshot = {}, navigate = () => {}, canManage = false }) {
+  const overview = snapshot.overview || {}
+  return (
+    <>
+      <OverviewSummaryCards cards={overview.summaryCards || []} />
+      <OrganisationSetupState setupState={overview.setupState} navigate={navigate} canManage={canManage} />
+      <OrganisationStructureSnapshot structure={overview.structure || {}} navigate={navigate} />
+      <NeedsAttention alerts={overview.alerts || []} navigate={navigate} canManage={canManage} />
+      <PerformanceSnapshot performance={overview.performance || {}} />
+      <RecentOrganisationActivity rows={overview.recentActivity || []} />
+    </>
   )
 }
 
@@ -677,17 +927,227 @@ function OrganisationSettingsPanel({ canManage = false, onOpenSettings = () => {
   )
 }
 
+function FieldError({ message = '' }) {
+  return message ? <p className="mt-1 text-xs font-semibold text-[#b42318]">{message}</p> : null
+}
+
+function RegionFormModal({
+  modal = null,
+  managerOptions = [],
+  onChange = () => {},
+  onClose = () => {},
+  onSubmit = () => {},
+}) {
+  if (!modal?.mode) return null
+  const isAssign = modal.mode === 'assign'
+  const isEdit = modal.mode === 'edit'
+  const title = isAssign ? 'Assign Regional Manager' : isEdit ? 'Edit Region' : 'Add Region'
+  const description = isAssign
+    ? 'Choose the user who should own this region.'
+    : isEdit
+      ? 'Update the regional record for this bond origination network.'
+      : 'Create a new region for this bond origination network.'
+  const submitLabel = isAssign ? 'Assign Manager' : isEdit ? 'Save Region' : 'Create Region'
+  const values = modal.values || {}
+  const fieldErrors = modal.fieldErrors || {}
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/35 px-4 backdrop-blur-sm">
+      <div className="max-h-[calc(100dvh-32px)] w-full max-w-2xl overflow-y-auto rounded-[24px] border border-white bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.22)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7d90a5]">Regions</p>
+            <h2 className="mt-2 text-xl font-semibold text-[#142132]">{title}</h2>
+            <p className="mt-2 text-sm leading-6 text-[#60758d]">{description}</p>
+          </div>
+          <button type="button" onClick={onClose} className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#d9e4ef] text-[#60758d] transition hover:bg-[#f8fbff]">
+            <X size={16} />
+          </button>
+        </div>
+
+        {modal.error ? (
+          <p className="mt-4 rounded-[14px] border border-[#fecaca] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#9f2a2a]">{modal.error}</p>
+        ) : null}
+
+        <div className="mt-5 grid gap-4">
+          {!isAssign ? (
+            <>
+              <label className="block">
+                <span className="text-sm font-semibold text-[#31475d]">Region Name</span>
+                <input
+                  value={values.name || ''}
+                  onChange={(event) => onChange('name', event.target.value)}
+                  className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]"
+                />
+                <FieldError message={fieldErrors.name} />
+              </label>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#31475d]">Region Code</span>
+                  <input
+                    value={values.code || ''}
+                    onChange={(event) => onChange('code', event.target.value.toUpperCase())}
+                    className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm uppercase text-[#142132] outline-none focus:border-[#9fb8d1]"
+                  />
+                  <FieldError message={fieldErrors.code} />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#31475d]">Status</span>
+                  <select
+                    value={values.status || 'active'}
+                    onChange={(event) => onChange('status', event.target.value)}
+                    className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]"
+                  >
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                  <FieldError message={fieldErrors.status} />
+                </label>
+              </div>
+            </>
+          ) : null}
+          <label className="block">
+            <span className="text-sm font-semibold text-[#31475d]">Regional Manager</span>
+            <select
+              value={values.managerUserId || ''}
+              onChange={(event) => onChange('managerUserId', event.target.value)}
+              className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]"
+            >
+              <option value="">No manager assigned</option>
+              {managerOptions.map((manager) => (
+                <option key={manager.id} value={manager.id}>{manager.name} · {manager.role}</option>
+              ))}
+            </select>
+            <FieldError message={fieldErrors.managerUserId} />
+          </label>
+          {!isAssign ? (
+            <label className="block">
+              <span className="text-sm font-semibold text-[#31475d]">Description / Notes</span>
+              <textarea
+                value={values.notes || ''}
+                onChange={(event) => onChange('notes', event.target.value)}
+                rows={4}
+                className="mt-2 w-full rounded-[12px] border border-[#d9e4ef] px-3 py-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]"
+              />
+              <FieldError message={fieldErrors.notes} />
+            </label>
+          ) : null}
+        </div>
+
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <CommandButton onClick={onClose}>Cancel</CommandButton>
+          <CommandButton icon={isAssign ? UserCheck : Plus} variant="primary" onClick={onSubmit}>
+            {modal.submitting ? 'Saving...' : submitLabel}
+          </CommandButton>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function RegionsWorkspace({
   rows = [],
-  selectedRegion = null,
-  staleSelection = false,
-  branchRows = [],
+  canManage = false,
   derived = false,
-  onSelectRegion = () => {},
-  onSelectBranch = () => {},
-  onBack = () => {},
+  onView = () => {},
+  onAdd = () => {},
+  onEdit = () => {},
+  onAssign = () => {},
+  onRefresh = () => {},
+  onExport = () => {},
 }) {
-  if (staleSelection) {
+  if (!rows.length) {
+    return (
+      <SectionShell
+        eyebrow="Regions"
+        title="Regions"
+        description="Manage the regional structure of your bond origination network."
+        action={canManage ? <CommandButton icon={Plus} variant="primary" onClick={onAdd}>Add Region</CommandButton> : null}
+      >
+        <BondEmptyState compact title="No regions yet" description="Create your first region to start building your branch and consultant structure." />
+      </SectionShell>
+    )
+  }
+
+  return (
+    <SectionShell
+      eyebrow="Regions"
+      title="Regions"
+      description="Manage the regional structure of your bond origination network."
+      action={(
+        <div className="flex flex-wrap gap-2">
+          {canManage ? <CommandButton icon={Plus} variant="primary" onClick={onAdd}>Add Region</CommandButton> : null}
+          <CommandButton icon={Download} onClick={onExport}>Export</CommandButton>
+          <CommandButton icon={RefreshCw} onClick={onRefresh}>Refresh</CommandButton>
+        </div>
+      )}
+    >
+      {derived ? (
+        <p className="mb-4 rounded-[16px] border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]">
+          No configured regions found. Showing regions inferred from current applications.
+        </p>
+      ) : null}
+      <div className="overflow-x-auto rounded-[18px] border border-[#e1e9f2]">
+        <table className="min-w-[1180px] border-collapse">
+          <thead>
+            <tr>
+              <HeaderCell>Region</HeaderCell>
+              <HeaderCell>Regional Manager</HeaderCell>
+              <HeaderCell>Branches</HeaderCell>
+              <HeaderCell>Consultants</HeaderCell>
+              <HeaderCell>Active Applications</HeaderCell>
+              <HeaderCell>Submitted Applications</HeaderCell>
+              <HeaderCell>Pending Documents</HeaderCell>
+              <HeaderCell>Approval Rate</HeaderCell>
+              <HeaderCell>Avg Turnaround</HeaderCell>
+              <HeaderCell>Status</HeaderCell>
+              <HeaderCell>Action</HeaderCell>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} className="border-t border-[#edf2f7] bg-white align-top transition hover:bg-[#fbfdff]">
+                <td className="px-4 py-4">
+                  <p className="text-sm font-semibold text-[#142132]">{row.region || row.name}</p>
+                  <p className="mt-1 text-xs text-[#71869d]">{row.code || 'No code'}</p>
+                </td>
+                <td className="px-4 py-4 text-sm text-[#17324d]">{row.manager || 'Unassigned'}</td>
+                <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{row.branches}</td>
+                <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{row.consultants}</td>
+                <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{row.activeApplications}</td>
+                <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{row.submittedApplications || 0}</td>
+                <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{row.pendingDocuments || row.pendingDocs || 0}</td>
+                <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{formatPercent(row.approvalRate)}</td>
+                <td className="px-4 py-4 text-sm text-[#17324d]">{formatLeadTime(row.averageTurnaround || row.avgLeadTime)}</td>
+                <td className="px-4 py-4"><StatusPill status={row.status || 'active'} /></td>
+                <td className="px-4 py-4">
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => onView(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#24518a]">
+                      <Eye size={13} /> View
+                    </button>
+                    {canManage ? (
+                      <>
+                        <button type="button" onClick={() => onEdit(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#31475d]">
+                          <Pencil size={13} /> Edit
+                        </button>
+                        <button type="button" onClick={() => onAssign(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#31475d]">
+                          <UserCheck size={13} /> Assign
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </SectionShell>
+  )
+}
+
+function RegionWorkspaceRoute({ workspace = null, onBack = () => {} }) {
+  if (!workspace) {
     return (
       <HierarchySelectionUnavailable
         title="Region no longer available."
@@ -697,100 +1157,277 @@ function RegionsWorkspace({
       />
     )
   }
-
-  if (!rows.length) {
-    return (
-      <SectionShell eyebrow="Regions" title="Regional Footprint" description="Regions will appear here once the hierarchy has been configured.">
-        <BondEmptyState compact title="No regions configured yet." description="Add a region and assign a regional manager to start building a national structure." />
-      </SectionShell>
-    )
-  }
-
-  if (selectedRegion) {
-    return (
+  const region = workspace.region || {}
+  const metrics = workspace.metrics || {}
+  const noManager = !normalizeText(region.managerUserId || region.manager_user_id)
+  const noBranches = !Number(metrics.branches || 0)
+  return (
+    <div className="space-y-6">
       <SectionShell
         eyebrow="Region Workspace"
-        title={selectedRegion.region}
-        description="High-level stats for the selected region, followed by every branch inside that region."
-        action={<BreadcrumbButton onClick={onBack}>Back to all regions</BreadcrumbButton>}
+        title={region.name || 'Region'}
+        description="Regional Manager, status, structure metrics, and regional application performance."
+        action={<BreadcrumbButton onClick={onBack}>Back to Regions</BreadcrumbButton>}
       >
-        {derived ? (
-          <p className="mb-4 rounded-[16px] border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]">
-            No configured regions found. Showing regions inferred from current applications.
-          </p>
-        ) : null}
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <SummaryMetric label="Regional Manager" value={selectedRegion.manager || 'Unassigned'} emphasis />
-          <SummaryMetric label="Branches" value={selectedRegion.branches} emphasis />
-          <SummaryMetric label="Consultants" value={selectedRegion.consultants} emphasis />
-          <SummaryMetric label="Active Files" value={selectedRegion.activeApplications} emphasis />
-          <SummaryMetric label="Lead Time" value={formatLeadTime(selectedRegion.avgLeadTime)} emphasis />
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <SummaryMetric label="Regional Manager" value={region.manager || region.managerName || 'Unassigned'} emphasis />
+          <SummaryMetric label="Status" value={region.status || 'active'} emphasis />
+          <SummaryMetric label="Code" value={region.code || 'No code'} emphasis />
+          <SummaryMetric label="Notes" value={region.notes || region.description || 'No notes'} />
         </div>
-        <div className="mt-5 space-y-4">
-          {branchRows.map((branch) => (
-            <SummaryCard
-              key={branch.id}
-              eyebrow="Branch"
-              title={branch.branch}
-              status={branch.status}
-              detail={`${branch.manager || 'Unassigned'} leads this branch. ${branch.bottleneck} is the main operational bottleneck.`}
-              stats={[
-                { label: 'Consultants', value: branch.consultants, emphasis: true },
-                { label: 'Active Files', value: branch.activeApplications, emphasis: true },
-                { label: 'Approval', value: formatPercent(branch.approvalRate), emphasis: true },
-                { label: 'Lead Time', value: formatLeadTime(branch.avgLeadTime), emphasis: true },
-              ]}
-              onClick={() => onSelectBranch(branch)}
-              ctaLabel="Open branch"
-            />
+      </SectionShell>
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <SummaryMetric label="Branches" value={metrics.branches || 0} emphasis />
+        <SummaryMetric label="Consultants" value={metrics.consultants || 0} emphasis />
+        <SummaryMetric label="Active Applications" value={metrics.activeApplications || 0} emphasis />
+        <SummaryMetric label="Submitted Applications" value={metrics.submittedApplications || 0} emphasis />
+        <SummaryMetric label="Pending Documents" value={metrics.pendingDocuments || 0} emphasis />
+        <SummaryMetric label="Approval Rate" value={formatPercent(metrics.approvalRate)} emphasis />
+        <SummaryMetric label="Average Turnaround" value={formatLeadTime(metrics.averageTurnaround)} emphasis />
+      </section>
+      {noManager ? <BondEmptyState compact title="No regional manager assigned" description="Assign a manager so this region has clear ownership." /> : null}
+      {noBranches ? <BondEmptyState compact title="No branches in this region yet" description="Branches will be added in Phase 4. Once branches exist, they will roll up into this region." /> : null}
+      <SectionShell eyebrow="Workspace Tabs" title="Region Workspace">
+        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+          {(workspace.tabs || []).map((tab) => (
+            <article key={tab} className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+              <p className="text-sm font-semibold text-[#142132]">{tab}</p>
+              <p className="mt-2 text-xs leading-5 text-[#60758d]">{tab === 'Overview' ? 'Showing real regional data.' : 'Coming in a later phase.'}</p>
+            </article>
           ))}
         </div>
       </SectionShell>
-    )
-  }
-
-  return (
-    <SectionShell eyebrow="Regions" title="Regional Footprint" description="Each region shows the manager, branch spread, consultant coverage, and top-line operating health.">
-      {derived ? (
-        <p className="mb-4 rounded-[16px] border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]">
-          No configured regions found. Showing regions inferred from current applications.
-        </p>
-      ) : null}
-      <div className="space-y-4">
-        {rows.map((row) => (
-          <SummaryCard
-            key={row.id}
-            eyebrow="Region"
-            title={row.region}
-            status={row.status}
-            detail={`${row.manager || 'Unassigned'} manages this region. ${row.bottleneck} is the current hotspot.`}
-            stats={[
-              { label: 'Branches', value: row.branches, emphasis: true },
-              { label: 'Consultants', value: row.consultants, emphasis: true },
-              { label: 'Active Files', value: row.activeApplications, emphasis: true },
-              { label: 'Approval', value: formatPercent(row.approvalRate), emphasis: true },
-            ]}
-            onClick={() => onSelectRegion(row)}
-            ctaLabel="Open region"
-          />
-        ))}
-      </div>
-    </SectionShell>
+    </div>
   )
 }
 
 function BranchesWorkspace({
   rows = [],
-  selectedBranch = null,
-  staleSelection = false,
-  consultantRows = [],
-  applicationRows = [],
+  canManage = false,
+  canMove = false,
   derived = false,
-  showRegionColumn = false,
-  onSelectBranch = () => {},
-  onBack = () => {},
+  onView = () => {},
+  onAdd = () => {},
+  onEdit = () => {},
+  onAssign = () => {},
+  onMove = () => {},
+  onRefresh = () => {},
+  onExport = () => {},
 }) {
-  if (staleSelection) {
+  if (!rows.length) {
+    return (
+      <SectionShell
+        eyebrow="Branches"
+        title="Branches"
+        description="Manage the branch structure of your bond origination network."
+        action={canManage ? <CommandButton icon={Plus} variant="primary" onClick={onAdd}>Add Branch</CommandButton> : null}
+      >
+        <BondEmptyState compact title="No branches yet" description="Create your first branch and assign it to a region." />
+      </SectionShell>
+    )
+  }
+
+  return (
+    <SectionShell
+      eyebrow="Branches"
+      title="Branches"
+      description="Manage the branch structure of your bond origination network."
+      action={(
+        <div className="flex flex-wrap gap-2">
+          {canManage ? <CommandButton icon={Plus} variant="primary" onClick={onAdd}>Add Branch</CommandButton> : null}
+          <CommandButton icon={Download} onClick={onExport}>Export</CommandButton>
+          <CommandButton icon={RefreshCw} onClick={onRefresh}>Refresh</CommandButton>
+        </div>
+      )}
+    >
+      {derived ? (
+        <p className="mb-4 rounded-[16px] border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]">
+          No configured branches found. Showing branches inferred from current applications.
+        </p>
+      ) : null}
+      <div className="overflow-x-auto rounded-[18px] border border-[#e1e9f2]">
+        <table className="min-w-[1180px] border-collapse">
+          <thead>
+            <tr>
+              <HeaderCell>Branch</HeaderCell>
+              <HeaderCell>Region</HeaderCell>
+              <HeaderCell>Branch Manager</HeaderCell>
+              <HeaderCell>Consultants</HeaderCell>
+              <HeaderCell>Active Applications</HeaderCell>
+              <HeaderCell>Submitted Applications</HeaderCell>
+              <HeaderCell>Pending Documents</HeaderCell>
+              <HeaderCell>Approval Rate</HeaderCell>
+              <HeaderCell>Average Turnaround</HeaderCell>
+              <HeaderCell>Status</HeaderCell>
+              <HeaderCell>Action</HeaderCell>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} className="border-t border-[#edf2f7] bg-white align-top transition hover:bg-[#fbfdff]">
+                <td className="px-4 py-4">
+                  <p className="text-sm font-semibold text-[#142132]">{row.branch || row.name}</p>
+                  <p className="mt-1 text-xs text-[#71869d]">{row.code || 'No code'}</p>
+                </td>
+                <td className="px-4 py-4 text-sm text-[#17324d]">{row.region || 'Unassigned'}</td>
+                <td className="px-4 py-4 text-sm text-[#17324d]">{row.manager || 'Unassigned'}</td>
+                <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{row.consultants}</td>
+                <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{row.activeApplications}</td>
+                <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{row.submittedApplications || 0}</td>
+                <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{row.pendingDocuments || row.pendingDocs || 0}</td>
+                <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{formatPercent(row.approvalRate)}</td>
+                <td className="px-4 py-4 text-sm text-[#17324d]">{formatLeadTime(row.averageTurnaround || row.avgLeadTime)}</td>
+                <td className="px-4 py-4"><StatusPill status={row.status || 'active'} /></td>
+                <td className="px-4 py-4">
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => onView(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#24518a]">
+                      <Eye size={13} /> View
+                    </button>
+                    {canManage ? (
+                      <>
+                        <button type="button" onClick={() => onEdit(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#31475d]">
+                          <Pencil size={13} /> Edit
+                        </button>
+                        <button type="button" onClick={() => onAssign(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#31475d]">
+                          <UserCheck size={13} /> Assign
+                        </button>
+                        {canMove ? (
+                          <button type="button" onClick={() => onMove(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#31475d]">
+                            <ArrowRight size={13} /> Move
+                          </button>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </SectionShell>
+  )
+}
+
+function BranchFormModal({
+  modal = null,
+  managerOptions = [],
+  regionOptions = [],
+  onChange = () => {},
+  onClose = () => {},
+  onSubmit = () => {},
+}) {
+  if (!modal?.mode) return null
+  const isAssign = modal.mode === 'assign'
+  const isMove = modal.mode === 'move'
+  const isEdit = modal.mode === 'edit'
+  const title = isAssign ? 'Assign Branch Manager' : isMove ? 'Move Branch' : isEdit ? 'Edit Branch' : 'Add Branch'
+  const description = isAssign
+    ? 'Choose the user who should own this branch.'
+    : isMove
+      ? 'Move this branch into another region.'
+      : isEdit
+        ? 'Update the branch record and operating details.'
+        : 'Create a branch within a region.'
+  const submitLabel = isAssign ? 'Assign Manager' : isMove ? 'Move Branch' : isEdit ? 'Save Branch' : 'Create Branch'
+  const values = modal.values || {}
+  const fieldErrors = modal.fieldErrors || {}
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/35 px-4 backdrop-blur-sm">
+      <div className="max-h-[calc(100dvh-32px)] w-full max-w-2xl overflow-y-auto rounded-[24px] border border-white bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.22)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7d90a5]">Branches</p>
+            <h2 className="mt-2 text-xl font-semibold text-[#142132]">{title}</h2>
+            <p className="mt-2 text-sm leading-6 text-[#60758d]">{description}</p>
+          </div>
+          <button type="button" onClick={onClose} className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#d9e4ef] text-[#60758d] transition hover:bg-[#f8fbff]">
+            <X size={16} />
+          </button>
+        </div>
+        {modal.error ? <p className="mt-4 rounded-[14px] border border-[#fecaca] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#9f2a2a]">{modal.error}</p> : null}
+        <div className="mt-5 grid gap-4">
+          {!isAssign && !isMove ? (
+            <label className="block">
+              <span className="text-sm font-semibold text-[#31475d]">Branch Name</span>
+              <input value={values.name || ''} onChange={(event) => onChange('name', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]" />
+              <FieldError message={fieldErrors.name} />
+            </label>
+          ) : null}
+          {!isAssign ? (
+            <label className="block">
+              <span className="text-sm font-semibold text-[#31475d]">Region</span>
+              <select value={values.regionId || ''} onChange={(event) => onChange('regionId', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]">
+                <option value="">Select region</option>
+                {regionOptions.map((region) => <option key={region.id} value={region.id}>{region.name}</option>)}
+              </select>
+              <FieldError message={fieldErrors.regionId} />
+            </label>
+          ) : null}
+          {!isMove ? (
+            <label className="block">
+              <span className="text-sm font-semibold text-[#31475d]">Branch Manager</span>
+              <select value={values.managerUserId || ''} onChange={(event) => onChange('managerUserId', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]">
+                <option value="">No manager assigned</option>
+                {managerOptions.map((manager) => <option key={manager.id} value={manager.id}>{manager.name} · {manager.role}</option>)}
+              </select>
+              <FieldError message={fieldErrors.managerUserId} />
+            </label>
+          ) : null}
+          {!isAssign && !isMove ? (
+            <>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#31475d]">Office Location</span>
+                  <input value={values.officeLocation || ''} onChange={(event) => onChange('officeLocation', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]" />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#31475d]">Branch Code</span>
+                  <input value={values.code || ''} onChange={(event) => onChange('code', event.target.value.toUpperCase())} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm uppercase text-[#142132] outline-none focus:border-[#9fb8d1]" />
+                  <FieldError message={fieldErrors.code} />
+                </label>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#31475d]">Contact Email</span>
+                  <input value={values.contactEmail || ''} onChange={(event) => onChange('contactEmail', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]" />
+                  <FieldError message={fieldErrors.contactEmail} />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#31475d]">Contact Number</span>
+                  <input value={values.contactNumber || ''} onChange={(event) => onChange('contactNumber', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]" />
+                  <FieldError message={fieldErrors.contactNumber} />
+                </label>
+              </div>
+              <label className="block">
+                <span className="text-sm font-semibold text-[#31475d]">Status</span>
+                <select value={values.status || 'active'} onChange={(event) => onChange('status', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]">
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+                <FieldError message={fieldErrors.status} />
+              </label>
+              <label className="block">
+                <span className="text-sm font-semibold text-[#31475d]">Notes</span>
+                <textarea value={values.notes || ''} onChange={(event) => onChange('notes', event.target.value)} rows={4} className="mt-2 w-full rounded-[12px] border border-[#d9e4ef] px-3 py-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]" />
+              </label>
+            </>
+          ) : null}
+        </div>
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <CommandButton onClick={onClose}>Cancel</CommandButton>
+          <CommandButton icon={isMove ? ArrowRight : isAssign ? UserCheck : Plus} variant="primary" onClick={onSubmit}>
+            {modal.submitting ? 'Saving...' : submitLabel}
+          </CommandButton>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BranchWorkspaceRoute({ workspace = null, onBack = () => {} }) {
+  if (!workspace) {
     return (
       <HierarchySelectionUnavailable
         title="Branch no longer available."
@@ -800,92 +1437,267 @@ function BranchesWorkspace({
       />
     )
   }
-
-  if (!rows.length) {
-    return (
-      <SectionShell eyebrow="Branches" title="Branch Footprint" description="Branches will appear here once the hierarchy has been configured.">
-        <BondEmptyState compact title="No branches configured yet." description="Add a branch and assign a manager to bring this workspace structure to life." />
+  const branch = workspace.branch || {}
+  const metrics = workspace.metrics || {}
+  return (
+    <div className="space-y-6">
+      <SectionShell
+        eyebrow="Branch Workspace"
+        title={branch.name || branch.branch || 'Branch'}
+        description="Branch summary, ownership, workload, and operating health."
+        action={<BreadcrumbButton onClick={onBack}>Back to Branches</BreadcrumbButton>}
+      >
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <SummaryMetric label="Region" value={branch.region || 'Unassigned'} emphasis />
+          <SummaryMetric label="Branch Manager" value={branch.manager || 'Unassigned'} emphasis />
+          <SummaryMetric label="Status" value={branch.status || 'active'} emphasis />
+          <SummaryMetric label="Branch Code" value={branch.code || 'No code'} />
+        </div>
       </SectionShell>
-    )
-  }
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <SummaryMetric label="Consultants" value={metrics.consultants || 0} emphasis />
+        <SummaryMetric label="Active Applications" value={metrics.activeApplications || 0} emphasis />
+        <SummaryMetric label="Submitted Applications" value={metrics.submittedApplications || 0} emphasis />
+        <SummaryMetric label="Pending Documents" value={metrics.pendingDocuments || 0} emphasis />
+        <SummaryMetric label="Approval Rate" value={formatPercent(metrics.approvalRate)} emphasis />
+        <SummaryMetric label="Average Turnaround" value={formatLeadTime(metrics.averageTurnaround)} emphasis />
+        <SummaryMetric label="Branch Health" value={metrics.branchHealth || 'Healthy'} emphasis />
+        <SummaryMetric label="Submitted This Month" value={metrics.applicationsSubmittedThisMonth || 0} emphasis />
+        <SummaryMetric label="Waiting For Documents" value={metrics.applicationsWaitingForDocuments || 0} />
+        <SummaryMetric label="Without Consultant" value={metrics.applicationsWithoutConsultant || 0} />
+      </section>
+      {!normalizeText(branch.managerUserId || branch.manager_user_id) ? <BondEmptyState compact title="No branch manager assigned" description="Assign ownership to improve accountability." /> : null}
+      {!Number(metrics.consultants || 0) ? <BondEmptyState compact title="No consultants assigned" description="Consultants will be added during Phase 5." /> : null}
+      <RecentOrganisationActivity rows={workspace.recentActivity || []} />
+      <SectionShell eyebrow="Workspace Tabs" title="Branch Workspace">
+        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+          {(workspace.tabs || []).map((tab) => (
+            <article key={tab} className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+              <p className="text-sm font-semibold text-[#142132]">{tab}</p>
+              <p className="mt-2 text-xs leading-5 text-[#60758d]">{tab === 'Overview' ? 'Showing real branch data.' : 'Coming in a later phase.'}</p>
+            </article>
+          ))}
+        </div>
+      </SectionShell>
+    </div>
+  )
+}
 
-  if (selectedBranch) {
-    return (
-      <div className="space-y-6">
-        <SectionShell
-          eyebrow="Branch Workspace"
-          title={selectedBranch.branch}
-          description="A branch detail view showing the manager, consultant roster, and file activity for this branch."
-          action={<BreadcrumbButton onClick={onBack}>Back to all branches</BreadcrumbButton>}
-        >
-          {derived ? (
-            <p className="mb-4 rounded-[16px] border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]">
-              No configured branches found. Showing branches inferred from current applications.
-            </p>
-          ) : null}
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            {showRegionColumn ? <SummaryMetric label="Region" value={selectedBranch.region || 'Unassigned'} emphasis /> : null}
-            <SummaryMetric label="Manager" value={selectedBranch.manager || 'Unassigned'} emphasis />
-            <SummaryMetric label="Consultants" value={selectedBranch.consultants} emphasis />
-            <SummaryMetric label="Active Files" value={selectedBranch.activeApplications} emphasis />
-            <SummaryMetric label="Approval" value={formatPercent(selectedBranch.approvalRate)} emphasis />
-          </div>
-        </SectionShell>
-
-        <SectionShell eyebrow="Consultant Roster" title="Branch Consultants" description="Everyone currently aligned to this branch.">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {consultantRows.map((consultant) => (
-              <article key={consultant.id} className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-[#142132]">{consultant.consultant}</p>
-                    <p className="mt-1 text-xs text-[#71869d]">{consultant.email || 'No email captured'}</p>
-                  </div>
-                  <StatusPill status={consultant.status} />
-                </div>
-                <div className="mt-4 grid gap-2">
-                  <SummaryMetric label="Active Files" value={consultant.activeApplications} emphasis />
-                  <SummaryMetric label="Approval" value={formatPercent(consultant.approvalRate)} emphasis />
-                  <SummaryMetric label="Lead Time" value={formatLeadTime(consultant.avgLeadTime)} />
-                </div>
-              </article>
-            ))}
-            {!consultantRows.length ? <BondEmptyState compact title="No consultants assigned yet." description="Invite or assign consultants to start managing branch flow here." /> : null}
-          </div>
-        </SectionShell>
-
-        <OrganisationApplicationsTable rows={applicationRows} showBranchColumn showRegionColumn={showRegionColumn} />
-      </div>
-    )
-  }
+function ConsultantFormModal({
+  modal = null,
+  branchOptions = [],
+  onChange = () => {},
+  onClose = () => {},
+  onSubmit = () => {},
+}) {
+  if (!modal?.mode) return null
+  const isAssign = modal.mode === 'assign'
+  const isEdit = modal.mode === 'edit'
+  const title = isAssign ? 'Assign Consultant' : isEdit ? 'Edit Consultant' : 'Add Consultant'
+  const description = isAssign
+    ? 'Move this consultant to a new branch.'
+    : isEdit
+      ? 'Update consultant details, branch assignment and operating status.'
+      : 'Create a consultant and assign them to a branch.'
+  const submitLabel = isAssign ? 'Assign Branch' : isEdit ? 'Save Consultant' : 'Create Consultant'
+  const values = modal.values || {}
+  const fieldErrors = modal.fieldErrors || {}
 
   return (
-    <SectionShell eyebrow="Branches" title="Branch Network" description="Branches show operational load, branch manager ownership, and the state of the current book.">
-      {derived ? (
-        <p className="mb-4 rounded-[16px] border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]">
-          No configured branches found. Showing branches inferred from current applications.
-        </p>
-      ) : null}
-      <div className="space-y-4">
-        {rows.map((row) => (
-          <SummaryCard
-            key={row.id}
-            eyebrow={showRegionColumn ? row.region || 'Branch' : 'Branch'}
-            title={row.branch}
-            status={row.status}
-            detail={`${row.manager || 'Unassigned'} leads this branch. ${row.bottleneck} is the biggest current pressure point.`}
-            stats={[
-              { label: 'Consultants', value: row.consultants, emphasis: true },
-              { label: 'Active Files', value: row.activeApplications, emphasis: true },
-              { label: 'Pending Docs', value: row.pendingDocs, emphasis: true },
-              { label: 'Lead Time', value: formatLeadTime(row.avgLeadTime), emphasis: true },
-            ]}
-            onClick={() => onSelectBranch(row)}
-            ctaLabel="Open branch"
-          />
-        ))}
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/35 px-4 backdrop-blur-sm">
+      <div className="max-h-[calc(100dvh-32px)] w-full max-w-2xl overflow-y-auto rounded-[24px] border border-white bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.22)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7d90a5]">Consultants</p>
+            <h2 className="mt-2 text-xl font-semibold text-[#142132]">{title}</h2>
+            <p className="mt-2 text-sm leading-6 text-[#60758d]">{description}</p>
+          </div>
+          <button type="button" onClick={onClose} className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#d9e4ef] text-[#60758d] transition hover:bg-[#f8fbff]">
+            <X size={16} />
+          </button>
+        </div>
+        {modal.error ? <p className="mt-4 rounded-[14px] border border-[#fecaca] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#9f2a2a]">{modal.error}</p> : null}
+        <div className="mt-5 grid gap-4">
+          {!isAssign ? (
+            <>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#31475d]">First Name</span>
+                  <input value={values.firstName || ''} onChange={(event) => onChange('firstName', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]" />
+                  <FieldError message={fieldErrors.firstName} />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#31475d]">Last Name</span>
+                  <input value={values.lastName || ''} onChange={(event) => onChange('lastName', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]" />
+                  <FieldError message={fieldErrors.lastName} />
+                </label>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#31475d]">Email</span>
+                  <input value={values.email || ''} onChange={(event) => onChange('email', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]" />
+                  <FieldError message={fieldErrors.email} />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#31475d]">Mobile Number</span>
+                  <input value={values.mobileNumber || ''} onChange={(event) => onChange('mobileNumber', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]" />
+                  <FieldError message={fieldErrors.mobileNumber} />
+                </label>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#31475d]">Role</span>
+                  <select value={values.role || 'consultant'} onChange={(event) => onChange('role', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]">
+                    {CONSULTANT_ROLE_OPTIONS.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
+                  </select>
+                  <FieldError message={fieldErrors.role} />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#31475d]">Employee Number</span>
+                  <input value={values.employeeNumber || ''} onChange={(event) => onChange('employeeNumber', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]" />
+                </label>
+              </div>
+            </>
+          ) : null}
+          <label className="block">
+            <span className="text-sm font-semibold text-[#31475d]">Branch</span>
+            <select value={values.branchId || ''} onChange={(event) => onChange('branchId', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]">
+              <option value="">Select branch</option>
+              {branchOptions.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+            </select>
+            <FieldError message={fieldErrors.branchId} />
+          </label>
+          {!isAssign ? (
+            <label className="block">
+              <span className="text-sm font-semibold text-[#31475d]">Status</span>
+              <select value={values.status || 'active'} onChange={(event) => onChange('status', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]">
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+              <FieldError message={fieldErrors.status} />
+            </label>
+          ) : null}
+        </div>
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <CommandButton onClick={onClose}>Cancel</CommandButton>
+          <CommandButton icon={isAssign ? Building2 : Plus} variant="primary" onClick={onSubmit}>
+            {modal.submitting ? 'Saving...' : submitLabel}
+          </CommandButton>
+        </div>
       </div>
-    </SectionShell>
+    </div>
+  )
+}
+
+function ReassignApplicationsModal({
+  modal = null,
+  consultantOptions = [],
+  onChange = () => {},
+  onClose = () => {},
+  onSubmit = () => {},
+}) {
+  if (!modal?.open) return null
+  const source = modal.consultant || {}
+  const values = modal.values || {}
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/35 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-xl rounded-[24px] border border-white bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.22)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7d90a5]">Application Ownership</p>
+            <h2 className="mt-2 text-xl font-semibold text-[#142132]">Reassign Applications</h2>
+            <p className="mt-2 text-sm leading-6 text-[#60758d]">Move active applications from {source.consultant || source.name || 'this consultant'} to another consultant.</p>
+          </div>
+          <button type="button" onClick={onClose} className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#d9e4ef] text-[#60758d] transition hover:bg-[#f8fbff]">
+            <X size={16} />
+          </button>
+        </div>
+        {modal.error ? <p className="mt-4 rounded-[14px] border border-[#fecaca] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#9f2a2a]">{modal.error}</p> : null}
+        <div className="mt-5 grid gap-4">
+          <SummaryMetric label="From" value={source.consultant || source.name || 'Consultant'} emphasis />
+          <label className="block">
+            <span className="text-sm font-semibold text-[#31475d]">To Consultant</span>
+            <select value={values.toId || ''} onChange={(event) => onChange('toId', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]">
+              <option value="">Select consultant</option>
+              {consultantOptions.filter((consultant) => normalizeText(consultant.id) !== normalizeText(source.id)).map((consultant) => (
+                <option key={consultant.id} value={consultant.id}>{consultant.name} · {consultant.branch || 'Unassigned branch'}</option>
+              ))}
+            </select>
+            <FieldError message={modal.fieldErrors?.toId} />
+          </label>
+          <label className="inline-flex items-center gap-3 text-sm font-semibold text-[#31475d]">
+            <input type="checkbox" checked={values.allActive !== false} onChange={(event) => onChange('allActive', event.target.checked)} />
+            Reassign all active applications
+          </label>
+        </div>
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <CommandButton onClick={onClose}>Cancel</CommandButton>
+          <CommandButton icon={ArrowRight} variant="primary" onClick={onSubmit}>
+            {modal.submitting ? 'Saving...' : 'Reassign Applications'}
+          </CommandButton>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ConsultantWorkspaceRoute({ workspace = null, onBack = () => {} }) {
+  if (!workspace) {
+    return (
+      <HierarchySelectionUnavailable
+        title="Consultant no longer available."
+        description="This consultant could not be found in the current organisation scope."
+        onBack={onBack}
+        backLabel="Back to Consultants"
+      />
+    )
+  }
+  const consultant = workspace.consultant || {}
+  const metrics = workspace.metrics || {}
+  return (
+    <div className="space-y-6">
+      <SectionShell
+        eyebrow="Consultant Workspace"
+        title={consultant.name || consultant.consultant || 'Consultant'}
+        description="Assigned applications, workload, activity, and consultant performance."
+        action={<BreadcrumbButton onClick={onBack}>Back to Consultants</BreadcrumbButton>}
+      >
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <SummaryMetric label="Role" value={consultant.role || 'consultant'} emphasis />
+          <SummaryMetric label="Branch" value={consultant.branch || 'Unassigned'} emphasis />
+          <SummaryMetric label="Region" value={consultant.region || 'Unassigned'} emphasis />
+          <SummaryMetric label="Status" value={consultant.status || 'active'} emphasis />
+          <SummaryMetric label="Capacity Status" value={metrics.capacityStatus || 'Light'} emphasis />
+        </div>
+      </SectionShell>
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <SummaryMetric label="Active Applications" value={metrics.activeApplications || 0} emphasis />
+        <SummaryMetric label="Applications Submitted" value={metrics.submittedApplications || 0} emphasis />
+        <SummaryMetric label="Pending Documents" value={metrics.pendingDocuments || 0} emphasis />
+        <SummaryMetric label="Approval Rate" value={formatPercent(metrics.approvalRate)} emphasis />
+        <SummaryMetric label="Decline Rate" value={formatPercent(metrics.declineRate)} />
+        <SummaryMetric label="Average Turnaround" value={formatLeadTime(metrics.averageTurnaround)} emphasis />
+        <SummaryMetric label="Bank Response" value={formatLeadTime(metrics.averageBankResponseTime)} />
+        <SummaryMetric label="Quote Acceptance" value={formatPercent(metrics.quoteAcceptanceRate)} />
+      </section>
+      <SectionShell eyebrow="Workload" title="Workload Breakdown">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+          {(workspace.workloadBreakdown || []).map((item) => <SummaryMetric key={item.key} label={item.label} value={item.value} emphasis />)}
+        </div>
+      </SectionShell>
+      <OrganisationApplicationsTable rows={workspace.applications || []} showBranchColumn showRegionColumn />
+      <RecentOrganisationActivity rows={workspace.recentActivity || []} />
+      <SectionShell eyebrow="Workspace Tabs" title="Consultant Workspace">
+        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+          {(workspace.tabs || []).map((tab) => (
+            <article key={tab} className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+              <p className="text-sm font-semibold text-[#142132]">{tab}</p>
+              <p className="mt-2 text-xs leading-5 text-[#60758d]">{tab === 'Overview' ? 'Showing real consultant data.' : 'Coming in a later phase.'}</p>
+            </article>
+          ))}
+        </div>
+      </SectionShell>
+    </div>
   )
 }
 
@@ -893,13 +1705,16 @@ function ConsultantsWorkspace({
   rows = [],
   branches = [],
   regions = [],
-  selectedConsultant = null,
-  staleSelection = false,
-  applicationRows = [],
-  inferredOwnership = false,
   derived = false,
-  onSelectConsultant = () => {},
-  onBack = () => {},
+  canManage = false,
+  onView = () => {},
+  onAdd = () => {},
+  onEdit = () => {},
+  onAssignBranch = () => {},
+  onReassign = () => {},
+  onDeactivate = () => {},
+  onRefresh = () => {},
+  onExport = () => {},
 }) {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
@@ -932,48 +1747,32 @@ function ConsultantsWorkspace({
     [branches],
   )
 
-  if (staleSelection) {
+  if (!rows.length) {
     return (
-      <HierarchySelectionUnavailable
-        title="Consultant no longer available."
-        description="This consultant could not be found in the current organisation scope."
-        onBack={onBack}
-        backLabel="Back to Consultants"
-      />
-    )
-  }
-
-  if (selectedConsultant) {
-    return (
-      <div className="space-y-6">
-        <SectionShell
-          eyebrow="Consultant Workspace"
-          title={selectedConsultant.consultant}
-          description="Assigned applications, workload, and the current performance pulse for this consultant."
-          action={<BreadcrumbButton onClick={onBack}>Back to all consultants</BreadcrumbButton>}
-        >
-          {inferredOwnership ? (
-            <p className="mb-4 rounded-[16px] border border-[#dbeafe] bg-[#eff6ff] px-4 py-3 text-sm text-[#1d4ed8]">
-              Application ownership is partially inferred from current assignment data.
-            </p>
-          ) : null}
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-            <SummaryMetric label="Region" value={selectedConsultant.region || 'Unassigned'} emphasis />
-            <SummaryMetric label="Branch" value={selectedConsultant.branch || 'Unassigned'} emphasis />
-            <SummaryMetric label="Active Applications" value={selectedConsultant.activeApplications} emphasis />
-            <SummaryMetric label="Approval Rate" value={formatPercent(selectedConsultant.approvalRate)} emphasis />
-            <SummaryMetric label="Avg Lead Time" value={formatLeadTime(selectedConsultant.avgLeadTime)} emphasis />
-            <SummaryMetric label="Current Workload" value={selectedConsultant.pendingDocs} emphasis />
-          </div>
-        </SectionShell>
-
-        <OrganisationApplicationsTable rows={applicationRows} showBranchColumn showRegionColumn />
-      </div>
+      <SectionShell
+        eyebrow="Consultants"
+        title="Consultants"
+        description="Manage consultant assignments, workload, ownership and performance."
+        action={canManage ? <CommandButton icon={Plus} variant="primary" onClick={onAdd}>Add Consultant</CommandButton> : null}
+      >
+        <BondEmptyState compact title="Add consultants" description="Consultants own applications and manage buyer finance progress." />
+      </SectionShell>
     )
   }
 
   return (
-    <SectionShell eyebrow="Consultants" title="Consultant Directory" description="Card view with quick filtering by region, branch, and workload state.">
+    <SectionShell
+      eyebrow="Consultants"
+      title="Consultants"
+      description="Manage consultant assignments, workload, ownership and performance."
+      action={(
+        <div className="flex flex-wrap gap-2">
+          {canManage ? <CommandButton icon={Plus} variant="primary" onClick={onAdd}>Add Consultant</CommandButton> : null}
+          <CommandButton icon={Download} onClick={onExport}>Export</CommandButton>
+          <CommandButton icon={RefreshCw} onClick={onRefresh}>Refresh</CommandButton>
+        </div>
+      )}
+    >
       {derived ? (
         <p className="mb-4 rounded-[16px] border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]">
           No configured consultants found. Showing consultants inferred from current applications.
@@ -991,9 +1790,8 @@ function ConsultantsWorkspace({
             onChange: setStatus,
             options: [
               { value: 'all', label: 'All Statuses' },
-              { value: 'Healthy', label: 'Healthy' },
-              { value: 'Needs Attention', label: 'Needs Attention' },
-              { value: 'Inactive', label: 'Inactive' },
+              { value: 'active', label: 'Active' },
+              { value: 'inactive', label: 'Inactive' },
             ],
           },
           {
@@ -1012,39 +1810,75 @@ function ConsultantsWorkspace({
           },
         ]}
       />
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {filteredRows.map((row) => (
-          <article key={row.id} className="rounded-[20px] border border-[#dbe5f0] bg-white p-5 shadow-[0_10px_26px_rgba(15,23,42,0.035)]">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-base font-semibold text-[#142132]">{row.consultant}</p>
-                <p className="mt-1 text-sm text-[#60758d]">{row.email || 'No email captured'}</p>
-              </div>
-              <StatusPill status={row.status} />
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#7d90a5]">
-              <span className="rounded-full border border-[#d9e4ef] bg-[#fbfdff] px-2.5 py-1">{row.region || 'Unassigned region'}</span>
-              <span className="rounded-full border border-[#d9e4ef] bg-[#fbfdff] px-2.5 py-1">{row.branch || 'Unassigned branch'}</span>
-              <span className="rounded-full border border-[#d9e4ef] bg-[#fbfdff] px-2.5 py-1">{row.role || 'Consultant'}</span>
-            </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <SummaryMetric label="Active Files" value={row.activeApplications} emphasis />
-              <SummaryMetric label="New This Month" value={row.newThisMonth} emphasis />
-              <SummaryMetric label="Pending Docs" value={row.pendingDocs} emphasis />
-              <SummaryMetric label="Approval" value={formatPercent(row.approvalRate)} emphasis />
-            </div>
-            <p className="mt-4 text-sm text-[#60758d]">Last activity: {row.lastActivity}</p>
-            <button
-              type="button"
-              onClick={() => onSelectConsultant(row)}
-              className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#24518a] transition hover:text-[#17324d]"
-            >
-              Open consultant
-              <ArrowRight size={14} />
-            </button>
-          </article>
-        ))}
-        {!filteredRows.length ? <BondEmptyState compact title="No consultants match these filters." description="Try a wider region or branch filter." /> : null}
+      <div className="overflow-x-auto rounded-[18px] border border-[#e1e9f2]">
+        <table className="min-w-[1320px] border-collapse">
+          <thead>
+            <tr>
+              <HeaderCell>Consultant</HeaderCell>
+              <HeaderCell>Branch</HeaderCell>
+              <HeaderCell>Region</HeaderCell>
+              <HeaderCell>Role</HeaderCell>
+              <HeaderCell>Status</HeaderCell>
+              <HeaderCell>Active Applications</HeaderCell>
+              <HeaderCell>Submitted Applications</HeaderCell>
+              <HeaderCell>Pending Documents</HeaderCell>
+              <HeaderCell>Approval Rate</HeaderCell>
+              <HeaderCell>Average Turnaround</HeaderCell>
+              <HeaderCell>Last Activity</HeaderCell>
+              <HeaderCell>Action</HeaderCell>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredRows.map((row) => (
+              <tr key={row.id} className="border-t border-[#edf2f7] bg-white align-top transition hover:bg-[#fbfdff]">
+                <td className="px-4 py-4">
+                  <p className="text-sm font-semibold text-[#142132]">{row.consultant || row.name}</p>
+                  <p className="mt-1 text-xs text-[#71869d]">{row.email || 'No email captured'}</p>
+                </td>
+                <td className="px-4 py-4 text-sm text-[#17324d]">{row.branch || 'Unassigned'}</td>
+                <td className="px-4 py-4 text-sm text-[#17324d]">{row.region || 'Unassigned'}</td>
+                <td className="px-4 py-4 text-sm text-[#17324d]">{row.role || 'consultant'}</td>
+                <td className="px-4 py-4"><StatusPill status={row.status || 'active'} /></td>
+                <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{row.activeApplications || 0}</td>
+                <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{row.submittedApplications || 0}</td>
+                <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{row.pendingDocuments || row.pendingDocs || 0}</td>
+                <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{formatPercent(row.approvalRate)}</td>
+                <td className="px-4 py-4 text-sm text-[#17324d]">{formatLeadTime(row.averageTurnaround || row.avgLeadTime)}</td>
+                <td className="px-4 py-4 text-sm text-[#60758d]">{row.lastActivity || 'No recent activity'}</td>
+                <td className="px-4 py-4">
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => onView(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#24518a]">
+                      <Eye size={13} /> View
+                    </button>
+                    {canManage ? (
+                      <>
+                        <button type="button" onClick={() => onEdit(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#31475d]">
+                          <Pencil size={13} /> Edit
+                        </button>
+                        <button type="button" onClick={() => onAssignBranch(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#31475d]">
+                          <Building2 size={13} /> Assign Branch
+                        </button>
+                        <button type="button" onClick={() => onReassign(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#31475d]">
+                          <ArrowRight size={13} /> Reassign
+                        </button>
+                        <button type="button" onClick={() => onDeactivate(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#f3d4d4] px-2.5 py-1.5 text-xs font-semibold text-[#8f2f2f]">
+                          Deactivate
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {!filteredRows.length ? (
+              <tr>
+                <td colSpan={12} className="px-4 py-6">
+                  <BondEmptyState compact title="No consultants match these filters." description="Try a wider region or branch filter." />
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
       </div>
     </SectionShell>
   )
@@ -1057,11 +1891,17 @@ export default function BondOrganisationPage({
   const workspaceId = resolveWorkspaceId(workspaceContext)
   const location = useLocation()
   const navigate = useNavigate()
+  const routeParams = useParams()
   const [state, setState] = useState({
     loading: true,
     error: '',
     snapshot: null,
   })
+  const [regionModal, setRegionModal] = useState({ mode: '', region: null, values: {}, fieldErrors: {}, error: '', submitting: false })
+  const [branchModal, setBranchModal] = useState({ mode: '', branch: null, values: {}, fieldErrors: {}, error: '', submitting: false })
+  const [consultantModal, setConsultantModal] = useState({ mode: '', consultant: null, values: {}, fieldErrors: {}, error: '', submitting: false })
+  const [reassignModal, setReassignModal] = useState({ open: false, consultant: null, values: {}, fieldErrors: {}, error: '', submitting: false })
+  const [notice, setNotice] = useState('')
 
   const loadOrganisation = useCallback(async () => {
     if (!workspaceId) {
@@ -1082,18 +1922,24 @@ export default function BondOrganisationPage({
   }, [service, workspaceContext, workspaceId])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadOrganisation()
   }, [loadOrganisation])
 
   const snapshot = state.snapshot
   const tabs = snapshot?.tabs || FALLBACK_ORGANISATION_TABS
-  const selectedView = resolveRouteView(location)
+  const regionWorkspaceId = normalizeText(routeParams.regionId)
+  const branchWorkspaceId = normalizeText(routeParams.branchId)
+  const consultantWorkspaceId = normalizeText(routeParams.consultantId)
+  const selectedView = consultantWorkspaceId ? 'consultants' : branchWorkspaceId ? 'branches' : regionWorkspaceId ? 'regions' : resolveRouteView(location)
   const params = useMemo(() => new URLSearchParams(location.search), [location.search])
-  const selectedRegionId = normalizeText(params.get('regionId'))
-  const selectedBranchId = normalizeText(params.get('branchId'))
-  const selectedConsultantId = normalizeText(params.get('consultantId'))
+  const selectedRegionId = regionWorkspaceId || normalizeText(params.get('regionId'))
+  const selectedBranchId = branchWorkspaceId || normalizeText(params.get('branchId'))
+  const selectedConsultantId = consultantWorkspaceId || normalizeText(params.get('consultantId'))
   const canManageOrganisation = scopeCanManage(snapshot)
+  const canManageRegions = Boolean(snapshot?.capabilities?.canManageRegions)
+  const canManageBranches = Boolean(snapshot?.capabilities?.canManageBranches)
+  const canMoveBranches = Boolean(snapshot?.capabilities?.canMoveBranches)
+  const canManageConsultants = Boolean(snapshot?.capabilities?.canManageConsultants)
   const canRenderSelectedView = canAccessOrganisationView(selectedView, snapshot)
 
   const selectedRegion = useMemo(
@@ -1107,25 +1953,6 @@ export default function BondOrganisationPage({
   const selectedConsultant = useMemo(
     () => resolveSelectedHierarchyRow(selectedConsultantId, snapshot?.consultantPerformance || [], ['consultant', 'name', 'email']),
     [selectedConsultantId, snapshot?.consultantPerformance],
-  )
-  const selectedRegionMissing = hasStaleHierarchySelection(selectedRegionId, selectedRegion)
-  const selectedBranchMissing = hasStaleHierarchySelection(selectedBranchId, selectedBranch)
-  const selectedConsultantMissing = hasStaleHierarchySelection(selectedConsultantId, selectedConsultant)
-  const regionBranches = useMemo(
-    () => (!selectedRegion ? [] : (snapshot?.branchPerformance || []).filter((row) => normalizeText(row.regionId) === normalizeText(selectedRegion.id))),
-    [selectedRegion, snapshot?.branchPerformance],
-  )
-  const branchConsultants = useMemo(
-    () => (!selectedBranch ? [] : (snapshot?.consultantPerformance || []).filter((row) => normalizeText(row.branchId) === normalizeText(selectedBranch.id))),
-    [selectedBranch, snapshot?.consultantPerformance],
-  )
-  const branchApplications = useMemo(
-    () => (!selectedBranch ? [] : (snapshot?.applications || []).filter((row) => normalizeText(row.branchId || row.workspaceUnitId) === normalizeText(selectedBranch.id))),
-    [selectedBranch, snapshot?.applications],
-  )
-  const consultantApplicationMatches = useMemo(
-    () => getConsultantApplicationMatches(selectedConsultant, snapshot?.applications || []),
-    [selectedConsultant, snapshot?.applications],
   )
   const viewKpis = useMemo(() => {
     if (!snapshot) return { items: [] }
@@ -1174,24 +2001,324 @@ export default function BondOrganisationPage({
     }
   }, [selectedBranch, selectedConsultant, selectedRegion, selectedView, snapshot])
 
+  const regionManagerOptions = useMemo(() => {
+    return (snapshot?.consultants || [])
+      .map((user) => {
+        const id = normalizeText(user.user_id || user.userId || user.id)
+        const role = normalizeText(user.workspaceRole || user.workspace_role || user.role)
+        return {
+          id,
+          name: normalizeText(user.name || user.email) || 'Team member',
+          role,
+        }
+      })
+      .filter((user) => user.id && REGION_MANAGER_UI_ROLES.has(user.role.toLowerCase()))
+  }, [snapshot?.consultants])
+
+  const branchManagerOptions = useMemo(() => {
+    return (snapshot?.consultants || [])
+      .map((user) => {
+        const id = normalizeText(user.user_id || user.userId || user.id)
+        const role = normalizeText(user.workspaceRole || user.workspace_role || user.role)
+        return {
+          id,
+          name: normalizeText(user.name || user.email) || 'Team member',
+          role,
+        }
+      })
+      .filter((user) => user.id && BRANCH_MANAGER_UI_ROLES.has(user.role.toLowerCase()))
+  }, [snapshot?.consultants])
+
+  const branchRegionOptions = useMemo(
+    () => (snapshot?.regions || []).map((region) => ({ id: normalizeText(region.id), name: normalizeText(region.name || region.region) || 'Region' })),
+    [snapshot?.regions],
+  )
+  const consultantBranchOptions = useMemo(
+    () => (snapshot?.branches || []).map((branch) => ({ id: normalizeText(branch.id), name: normalizeText(branch.name || branch.branch) || 'Branch' })),
+    [snapshot?.branches],
+  )
+  const consultantOptions = useMemo(
+    () => (snapshot?.consultants || []).map((consultant) => ({
+      id: normalizeText(consultant.id || consultant.user_id || consultant.userId),
+      name: normalizeText(consultant.name || consultant.email) || 'Consultant',
+      branch: normalizeText(consultant.branch || consultant.branchId || consultant.workspaceUnitId),
+    })).filter((consultant) => consultant.id),
+    [snapshot?.consultants],
+  )
+
   function handleViewChange(nextView) {
     navigate(getBondOrganisationRouteForTab(nextView))
   }
 
   function openRegion(region) {
-    navigate(getBondOrganisationRouteForTab('regions', { regionId: region.id }))
+    navigate(getBondRegionWorkspaceRoute(region.id))
   }
 
   function openBranch(branch) {
-    navigate(getBondOrganisationRouteForTab('branches', { branchId: branch.id }))
+    navigate(getBondBranchWorkspaceRoute(branch.id))
   }
 
   function openConsultant(consultant) {
-    navigate(getBondOrganisationRouteForTab('consultants', { consultantId: consultant.id }))
+    navigate(getBondConsultantWorkspaceRoute(consultant.id))
   }
 
   function openSettings() {
     navigate('/settings/organisation')
+  }
+
+  function openRegionForm(mode = 'create', region = null) {
+    setNotice('')
+    setRegionModal({
+      mode,
+      region,
+      values: {
+        name: region?.name || region?.region || '',
+        code: region?.code || '',
+        managerUserId: region?.managerUserId || '',
+        notes: region?.notes || '',
+        status: normalizeText(region?.status) || 'active',
+      },
+      fieldErrors: {},
+      error: '',
+      submitting: false,
+    })
+  }
+
+  function updateRegionModalValue(field, value) {
+    setRegionModal((previous) => ({
+      ...previous,
+      values: {
+        ...previous.values,
+        [field]: value,
+      },
+      fieldErrors: {
+        ...previous.fieldErrors,
+        [field]: '',
+      },
+      error: '',
+    }))
+  }
+
+  async function submitRegionModal() {
+    if (!regionModal.mode || regionModal.submitting) return
+    setRegionModal((previous) => ({ ...previous, submitting: true, error: '', fieldErrors: {} }))
+    try {
+      if (regionModal.mode === 'create') {
+        await service.createBondRegion(regionModal.values, workspaceContext, workspaceId)
+        setNotice('Region created.')
+      } else if (regionModal.mode === 'edit') {
+        await service.updateBondRegion(regionModal.region?.id, regionModal.values, workspaceContext, workspaceId)
+        setNotice('Region updated.')
+      } else if (regionModal.mode === 'assign') {
+        await service.assignBondRegionManager(regionModal.region?.id, regionModal.values.managerUserId, workspaceContext, workspaceId)
+        setNotice('Regional manager assigned.')
+      }
+      setRegionModal({ mode: '', region: null, values: {}, fieldErrors: {}, error: '', submitting: false })
+      await loadOrganisation()
+    } catch (error) {
+      setRegionModal((previous) => ({
+        ...previous,
+        submitting: false,
+        error: String(error?.message || 'Could not save this region.'),
+        fieldErrors: error?.fieldErrors || {},
+      }))
+    }
+  }
+
+  function openBranchForm(mode = 'create', branch = null) {
+    setNotice('')
+    setBranchModal({
+      mode,
+      branch,
+      values: {
+        name: branch?.name || branch?.branch || '',
+        regionId: branch?.regionId || (mode === 'create' && branchRegionOptions.length === 1 ? branchRegionOptions[0].id : ''),
+        code: branch?.code || '',
+        managerUserId: branch?.managerUserId || '',
+        officeLocation: branch?.officeLocation || '',
+        contactEmail: branch?.contactEmail || '',
+        contactNumber: branch?.contactNumber || '',
+        notes: branch?.notes || '',
+        status: normalizeText(branch?.status) || 'active',
+      },
+      fieldErrors: {},
+      error: '',
+      submitting: false,
+    })
+  }
+
+  function updateBranchModalValue(field, value) {
+    setBranchModal((previous) => ({
+      ...previous,
+      values: {
+        ...previous.values,
+        [field]: value,
+      },
+      fieldErrors: {
+        ...previous.fieldErrors,
+        [field]: '',
+      },
+      error: '',
+    }))
+  }
+
+  async function submitBranchModal() {
+    if (!branchModal.mode || branchModal.submitting) return
+    setBranchModal((previous) => ({ ...previous, submitting: true, error: '', fieldErrors: {} }))
+    try {
+      if (branchModal.mode === 'create') {
+        await service.createBondBranch(branchModal.values, workspaceContext, workspaceId)
+        setNotice('Branch created.')
+      } else if (branchModal.mode === 'edit') {
+        await service.updateBondBranch(branchModal.branch?.id, branchModal.values, workspaceContext, workspaceId)
+        setNotice('Branch updated.')
+      } else if (branchModal.mode === 'assign') {
+        await service.assignBondBranchManager(branchModal.branch?.id, branchModal.values.managerUserId, workspaceContext, workspaceId)
+        setNotice('Branch manager assigned.')
+      } else if (branchModal.mode === 'move') {
+        await service.moveBondBranchToRegion(branchModal.branch?.id, branchModal.values.regionId, workspaceContext, workspaceId)
+        setNotice('Branch moved.')
+      }
+      setBranchModal({ mode: '', branch: null, values: {}, fieldErrors: {}, error: '', submitting: false })
+      await loadOrganisation()
+    } catch (error) {
+      setBranchModal((previous) => ({
+        ...previous,
+        submitting: false,
+        error: String(error?.message || 'Could not save this branch.'),
+        fieldErrors: error?.fieldErrors || {},
+      }))
+    }
+  }
+
+  function openConsultantForm(mode = 'create', consultant = null) {
+    setNotice('')
+    const nameParts = normalizeText(consultant?.consultant || consultant?.name).split(/\s+/)
+    setConsultantModal({
+      mode,
+      consultant,
+      values: {
+        firstName: consultant?.firstName || nameParts[0] || '',
+        lastName: consultant?.lastName || nameParts.slice(1).join(' ') || '',
+        email: consultant?.email || '',
+        mobileNumber: consultant?.mobileNumber || '',
+        role: normalizeText(consultant?.role) || 'consultant',
+        branchId: consultant?.branchId || (mode === 'create' && consultantBranchOptions.length === 1 ? consultantBranchOptions[0].id : ''),
+        employeeNumber: consultant?.employeeNumber || '',
+        status: normalizeText(consultant?.status) || 'active',
+      },
+      fieldErrors: {},
+      error: '',
+      submitting: false,
+    })
+  }
+
+  function updateConsultantModalValue(field, value) {
+    setConsultantModal((previous) => ({
+      ...previous,
+      values: {
+        ...previous.values,
+        [field]: value,
+      },
+      fieldErrors: {
+        ...previous.fieldErrors,
+        [field]: '',
+      },
+      error: '',
+    }))
+  }
+
+  async function submitConsultantModal() {
+    if (!consultantModal.mode || consultantModal.submitting) return
+    setConsultantModal((previous) => ({ ...previous, submitting: true, error: '', fieldErrors: {} }))
+    try {
+      if (consultantModal.mode === 'create') {
+        await service.createBondConsultant(consultantModal.values, workspaceContext, workspaceId)
+        setNotice('Consultant created.')
+      } else if (consultantModal.mode === 'edit') {
+        await service.updateBondConsultant(consultantModal.consultant?.id, consultantModal.values, workspaceContext, workspaceId)
+        setNotice('Consultant updated.')
+      } else if (consultantModal.mode === 'assign') {
+        await service.assignConsultantToBranch(consultantModal.consultant?.id, consultantModal.values.branchId, workspaceContext, workspaceId)
+        setNotice('Consultant assigned to branch.')
+      }
+      setConsultantModal({ mode: '', consultant: null, values: {}, fieldErrors: {}, error: '', submitting: false })
+      await loadOrganisation()
+    } catch (error) {
+      setConsultantModal((previous) => ({
+        ...previous,
+        submitting: false,
+        error: String(error?.message || 'Could not save this consultant.'),
+        fieldErrors: error?.fieldErrors || {},
+      }))
+    }
+  }
+
+  function openReassignApplications(consultant) {
+    setNotice('')
+    setReassignModal({
+      open: true,
+      consultant,
+      values: { toId: '', allActive: true },
+      fieldErrors: {},
+      error: '',
+      submitting: false,
+    })
+  }
+
+  function updateReassignModalValue(field, value) {
+    setReassignModal((previous) => ({
+      ...previous,
+      values: {
+        ...previous.values,
+        [field]: value,
+      },
+      fieldErrors: {
+        ...previous.fieldErrors,
+        [field]: '',
+      },
+      error: '',
+    }))
+  }
+
+  async function submitReassignApplications() {
+    if (!reassignModal.open || reassignModal.submitting) return
+    setReassignModal((previous) => ({ ...previous, submitting: true, error: '', fieldErrors: {} }))
+    try {
+      await service.reassignApplications(reassignModal.consultant?.id, reassignModal.values.toId, [], workspaceContext, workspaceId)
+      setNotice('Applications reassigned.')
+      setReassignModal({ open: false, consultant: null, values: {}, fieldErrors: {}, error: '', submitting: false })
+      await loadOrganisation()
+    } catch (error) {
+      setReassignModal((previous) => ({
+        ...previous,
+        submitting: false,
+        error: String(error?.message || 'Could not reassign applications.'),
+        fieldErrors: error?.fieldErrors || {},
+      }))
+    }
+  }
+
+  async function handleDeactivateConsultant(consultant) {
+    setNotice('')
+    try {
+      await service.deactivateConsultant(consultant.id, workspaceContext, workspaceId)
+      setNotice('Consultant deactivated.')
+      await loadOrganisation()
+    } catch (error) {
+      if (error?.fieldErrors?.activeApplications) {
+        setReassignModal({
+          open: true,
+          consultant,
+          values: { toId: '', allActive: true },
+          fieldErrors: {},
+          error: String(error?.message || 'Reassign active applications before deactivation.'),
+          submitting: false,
+        })
+        return
+      }
+      setNotice(String(error?.message || 'Could not deactivate consultant.'))
+    }
   }
 
   if (!workspaceId) {
@@ -1225,60 +2352,88 @@ export default function BondOrganisationPage({
 
       {snapshot ? (
         <>
-          {selectedView === 'overview' ? <OrganisationKpiStrip kpis={viewKpis} /> : canRenderSelectedView ? <OrganisationKpiStrip kpis={viewKpis} /> : null}
-          <BondViewTabs tabs={tabs} value={selectedView} counts={snapshot?.counts || {}} onChange={handleViewChange} />
+          {notice ? (
+            <section className="rounded-[16px] border border-[#ccebd8] bg-[#eefbf3] px-4 py-3 text-sm font-semibold text-[#1f7a4d]">
+              {notice}
+            </section>
+          ) : null}
+          {selectedView !== 'overview' && canRenderSelectedView ? <OrganisationKpiStrip kpis={viewKpis} /> : null}
+          {!regionWorkspaceId && !branchWorkspaceId && !consultantWorkspaceId ? <BondViewTabs tabs={tabs} value={selectedView} counts={snapshot?.counts || {}} onChange={handleViewChange} /> : null}
 
           {!canRenderSelectedView ? (
             <OrganisationViewUnavailable view={selectedView} />
           ) : null}
 
           {canRenderSelectedView && selectedView === 'overview' ? (
-            <>
-              <OperationalHealth items={snapshot.operationalHealth} />
-              <OrganisationHierarchy tree={snapshot.hierarchyTree} canManage={canManageOrganisation} />
-              <RecentActivity rows={snapshot.recentActivity} />
-            </>
+            <OrganisationOverviewDashboard snapshot={snapshot} navigate={navigate} canManage={canManageOrganisation} />
           ) : null}
 
-          {canRenderSelectedView && selectedView === 'regions' ? (
+          {canRenderSelectedView && selectedView === 'regions' && regionWorkspaceId ? (
+            <RegionWorkspaceRoute
+              workspace={snapshot.regionWorkspaces?.[regionWorkspaceId]}
+              onBack={() => navigate(getBondOrganisationRouteForTab('regions'))}
+            />
+          ) : null}
+
+          {canRenderSelectedView && selectedView === 'regions' && !regionWorkspaceId ? (
             <RegionsWorkspace
               rows={snapshot.regionPerformance || []}
-              selectedRegion={selectedRegion}
-              staleSelection={selectedRegionMissing}
-              branchRows={regionBranches}
+              canManage={canManageRegions}
               derived={Boolean(snapshot?.derivedSources?.regions)}
-              onSelectRegion={openRegion}
-              onSelectBranch={openBranch}
-              onBack={() => handleViewChange('regions')}
+              onView={openRegion}
+              onAdd={() => openRegionForm('create')}
+              onEdit={(row) => openRegionForm('edit', row)}
+              onAssign={(row) => openRegionForm('assign', row)}
+              onRefresh={loadOrganisation}
+              onExport={() => setNotice('Region export will be available in a later phase.')}
             />
           ) : null}
 
-          {canRenderSelectedView && selectedView === 'branches' ? (
+          {canRenderSelectedView && selectedView === 'branches' && branchWorkspaceId ? (
+            <BranchWorkspaceRoute
+              workspace={snapshot.branchWorkspaces?.[branchWorkspaceId]}
+              onBack={() => navigate(getBondOrganisationRouteForTab('branches'))}
+            />
+          ) : null}
+
+          {canRenderSelectedView && selectedView === 'branches' && !branchWorkspaceId ? (
             <BranchesWorkspace
               rows={snapshot.branchPerformance || []}
-              selectedBranch={selectedBranch}
-              staleSelection={selectedBranchMissing}
-              consultantRows={branchConsultants}
-              applicationRows={branchApplications}
+              canManage={canManageBranches}
+              canMove={canMoveBranches}
               derived={Boolean(snapshot?.derivedSources?.branches)}
-              showRegionColumn={snapshot.showRegionColumn}
-              onSelectBranch={openBranch}
-              onBack={() => handleViewChange('branches')}
+              onView={openBranch}
+              onAdd={() => openBranchForm('create')}
+              onEdit={(row) => openBranchForm('edit', row)}
+              onAssign={(row) => openBranchForm('assign', row)}
+              onMove={(row) => openBranchForm('move', row)}
+              onRefresh={loadOrganisation}
+              onExport={() => setNotice('Branch export will be available in a later phase.')}
             />
           ) : null}
 
-          {canRenderSelectedView && selectedView === 'consultants' ? (
+          {canRenderSelectedView && selectedView === 'consultants' && consultantWorkspaceId ? (
+            <ConsultantWorkspaceRoute
+              workspace={snapshot.consultantWorkspaces?.[consultantWorkspaceId]}
+              onBack={() => navigate(getBondOrganisationRouteForTab('consultants'))}
+            />
+          ) : null}
+
+          {canRenderSelectedView && selectedView === 'consultants' && !consultantWorkspaceId ? (
             <ConsultantsWorkspace
               rows={snapshot.consultantPerformance || []}
               branches={snapshot.branches || []}
               regions={snapshot.regions || []}
-              selectedConsultant={selectedConsultant}
-              staleSelection={selectedConsultantMissing}
-              applicationRows={consultantApplicationMatches.rows}
-              inferredOwnership={consultantApplicationMatches.inferred}
               derived={Boolean(snapshot?.derivedSources?.consultants)}
-              onSelectConsultant={openConsultant}
-              onBack={() => handleViewChange('consultants')}
+              canManage={canManageConsultants}
+              onView={openConsultant}
+              onAdd={() => openConsultantForm('create')}
+              onEdit={(row) => openConsultantForm('edit', row)}
+              onAssignBranch={(row) => openConsultantForm('assign', row)}
+              onReassign={openReassignApplications}
+              onDeactivate={handleDeactivateConsultant}
+              onRefresh={loadOrganisation}
+              onExport={() => setNotice('Consultant export will be available in a later phase.')}
             />
           ) : null}
 
@@ -1288,6 +2443,12 @@ export default function BondOrganisationPage({
               showBranchColumn={snapshot.showBranchColumn}
               showRegionColumn={snapshot.showRegionColumn}
             />
+          ) : null}
+
+          {canRenderSelectedView && selectedView === 'partners' ? (
+            <SectionShell eyebrow="Partners" title="Partners" description="Partner management remains read-only for this phase.">
+              <BondEmptyState compact title="Partner controls are coming in a later phase." description="Regions management is the functional organisation layer in Phase 3." />
+            </SectionShell>
           ) : null}
 
           {selectedView === 'permissions' ? (
@@ -1307,6 +2468,35 @@ export default function BondOrganisationPage({
       {state.loading ? (
         <BondEmptyState title="Loading organisation workspace..." description="We are assembling your hierarchy, scope, and applications view now." />
       ) : null}
+      <RegionFormModal
+        modal={regionModal}
+        managerOptions={regionManagerOptions}
+        onChange={updateRegionModalValue}
+        onClose={() => setRegionModal({ mode: '', region: null, values: {}, fieldErrors: {}, error: '', submitting: false })}
+        onSubmit={submitRegionModal}
+      />
+      <BranchFormModal
+        modal={branchModal}
+        managerOptions={branchManagerOptions}
+        regionOptions={branchRegionOptions}
+        onChange={updateBranchModalValue}
+        onClose={() => setBranchModal({ mode: '', branch: null, values: {}, fieldErrors: {}, error: '', submitting: false })}
+        onSubmit={submitBranchModal}
+      />
+      <ConsultantFormModal
+        modal={consultantModal}
+        branchOptions={consultantBranchOptions}
+        onChange={updateConsultantModalValue}
+        onClose={() => setConsultantModal({ mode: '', consultant: null, values: {}, fieldErrors: {}, error: '', submitting: false })}
+        onSubmit={submitConsultantModal}
+      />
+      <ReassignApplicationsModal
+        modal={reassignModal}
+        consultantOptions={consultantOptions}
+        onChange={updateReassignModalValue}
+        onClose={() => setReassignModal({ open: false, consultant: null, values: {}, fieldErrors: {}, error: '', submitting: false })}
+        onSubmit={submitReassignApplications}
+      />
     </BondPageShell>
   )
 }

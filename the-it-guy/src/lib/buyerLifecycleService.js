@@ -965,6 +965,25 @@ export async function updateCanonicalOfferStatus(offerId, status, { organisation
     }).catch(() => null)
   }
 
+  if ([OFFER_STATUS.SUBMITTED, OFFER_STATUS.ACCEPTED, OFFER_STATUS.REJECTED].includes(nextStatus) && data?.buyer_lead_id) {
+    void import('../services/leadActionEngineService')
+      .then(({ processOfferEvent }) => processOfferEvent({
+        organisationId: scopedOrganisationId,
+        leadId: data.buyer_lead_id,
+        contactId: data.buyer_contact_id,
+        assignedAgentId: actor?.id,
+        status: nextStatus,
+        offerId: data.id,
+        sourceEvent: `offer_${nextStatus}:${data.id}`,
+        metadata: {
+          offerId: data.id,
+          listingId: data.listing_id,
+          transactionId: data.transaction_id,
+        },
+      }, { actor }))
+      .catch((recommendationError) => console.warn('[buyerLifecycleService] offer recommendation skipped', recommendationError))
+  }
+
   return mapOfferDbRow(data)
 }
 

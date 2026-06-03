@@ -473,6 +473,22 @@ export async function scheduleViewingFromLeadListingInterest({
     { actor },
   )
   await updateLeadListingInterestStatus({ interestId: interest.interestId || interest.id, status: 'viewing_scheduled' }, { actor })
+  void import('./leadActionEngineService')
+    .then(({ processViewingEvent }) => processViewingEvent({
+      organisationId: scopedOrganisationId,
+      leadId: interest.leadId,
+      contactId: interest.contactId,
+      assignedAgentId: actor?.id,
+      eventType: 'viewing_scheduled',
+      status: 'scheduled',
+      appointmentId: appointment?.appointmentId || appointment?.appointment_id || appointment?.id,
+      sourceEvent: `viewing_scheduled:${appointment?.appointmentId || appointment?.appointment_id || appointment?.id || interest.interestId || interest.id}`,
+      metadata: {
+        interestId: interest.interestId || interest.id,
+        listingId: interest.listingId,
+      },
+    }, { actor }))
+    .catch((recommendationError) => console.warn('[leadListingInterestService] viewing recommendation skipped', recommendationError))
   return appointment
 }
 

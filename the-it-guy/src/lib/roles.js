@@ -93,6 +93,7 @@ export const APP_NAV_BY_ROLE = {
       activeMatch: ['/listings', '/agent/listings'],
     },
     { key: 'leads', label: 'Leads', to: '/pipeline/leads', activeMatch: ['/pipeline/leads'] },
+    { key: 'enquiries', label: 'Enquiries', to: '/pipeline/enquiries', activeMatch: ['/pipeline/enquiries'] },
     { key: 'transactions', label: 'Transactions', to: '/transactions' },
     { key: 'calendar', label: 'Calendar', to: '/pipeline/calendar', activeMatch: ['/pipeline/calendar', '/calendar'] },
     { key: 'clients', label: 'Clients', to: '/clients' },
@@ -320,8 +321,6 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
             { key: 'bond_consultants', label: 'Consultants', to: '/bond/organisation?view=consultants' },
           ],
         },
-        { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners'] },
-        { key: 'bond_reports', label: 'Reports', to: '/bond/reports', navSection: 'main', activeMatch: ['/bond/reports', '/reports'] },
       ]
     }
 
@@ -339,7 +338,6 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
             { key: 'bond_consultants', label: 'Consultants', to: '/bond/organisation?view=consultants' },
           ],
         },
-        { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners'] },
       ]
     }
 

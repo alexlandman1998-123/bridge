@@ -2,8 +2,18 @@ import { listAgencyCrmLeadContacts, fetchAgencyCrmLeadWorkspace } from '../lib/a
 import { listAppointmentsAsync } from '../lib/agencyPipelineService'
 import { listCanonicalOffersForLead } from '../lib/buyerLifecycleService'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { getLeadSlaStatus, listLeadAssignmentHistory, listLeadAssignmentMetrics } from './leadAssignmentService'
+import { buildCommunicationTimeline, listLeadCommunications } from './leadCommunicationService'
+import {
+  buildDefaultLeadCommunicationPreferences,
+  listCommunicationDeliveries,
+  normalizeLeadCommunicationPreferences,
+} from './communicationDeliveryService'
 import { listLeadListingInterests } from './leadListingInterestService'
+import { listLeadPropertyShares, listLeadSavedSearches } from './leadPropertySharingService'
+import { listRecommendations } from './leadRecommendationService'
 import { buildRequirementSummary, listLeadRequirements } from './leadRequirementService'
+import { getSuggestionsForLead } from './leadSuggestionService'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -150,6 +160,14 @@ export function buildAgentLeadRows({
   listings = [],
   listingInterests = [],
   requirements = [],
+  communications = [],
+  communicationDeliveries = [],
+  communicationPreferences = [],
+  suggestions = [],
+  recommendations = [],
+  savedSearches = [],
+  propertyShares = [],
+  assignmentHistory = [],
 } = {}) {
   const contactsById = new Map(contacts.map((contact) => [readId(contact, ['contactId', 'contact_id', 'id']), contact]).filter(([id]) => id))
   const normalizedOffers = offers.map(normalizeOffer).filter((offer) => offer.id || offer.leadId || offer.contactId || offer.listingId)
@@ -172,6 +190,36 @@ export function buildAgentLeadRows({
     const relatedTransactions = normalizedTransactions.filter((transaction) => matchesLeadContext(transaction, context))
     const relatedListings = normalizedListings.filter((listing) => matchesLeadContext(listing, context))
     const relatedListingInterests = listingInterests.filter((interest) => getLeadId(interest) === leadId || readId(interest, ['leadId', 'lead_id']) === leadId)
+    const relatedSuggestions = suggestions
+      .filter((suggestion) => getLeadId(suggestion) === leadId || readId(suggestion, ['leadId', 'lead_id']) === leadId)
+      .sort((left, right) => Number(right.score || 0) - Number(left.score || 0) || new Date(right.generatedAt || right.generated_at || 0).getTime() - new Date(left.generatedAt || left.generated_at || 0).getTime())
+    const relatedRecommendations = recommendations
+      .filter((recommendation) => getLeadId(recommendation) === leadId || readId(recommendation, ['leadId', 'lead_id']) === leadId)
+      .sort((left, right) => {
+        const statusRank = { pending: 0, accepted: 1, completed: 2, dismissed: 3, expired: 4 }
+        const leftStatus = normalizeLower(left.status)
+        const rightStatus = normalizeLower(right.status)
+        if ((statusRank[leftStatus] ?? 9) !== (statusRank[rightStatus] ?? 9)) return (statusRank[leftStatus] ?? 9) - (statusRank[rightStatus] ?? 9)
+        const leftDue = left.dueDate || left.due_date ? new Date(left.dueDate || left.due_date).getTime() : Number.POSITIVE_INFINITY
+        const rightDue = right.dueDate || right.due_date ? new Date(right.dueDate || right.due_date).getTime() : Number.POSITIVE_INFINITY
+        return leftDue - rightDue || new Date(right.createdAt || right.created_at || 0).getTime() - new Date(left.createdAt || left.created_at || 0).getTime()
+      })
+    const relatedSavedSearches = savedSearches
+      .filter((savedSearch) => getLeadId(savedSearch) === leadId || readId(savedSearch, ['leadId', 'lead_id']) === leadId)
+      .sort((left, right) => new Date(right.updatedAt || right.updated_at || right.createdAt || right.created_at || 0).getTime() - new Date(left.updatedAt || left.updated_at || left.createdAt || left.created_at || 0).getTime())
+    const relatedPropertyShares = propertyShares
+      .filter((share) => getLeadId(share) === leadId || readId(share, ['leadId', 'lead_id']) === leadId)
+      .sort((left, right) => new Date(right.sentAt || right.occurredAt || right.occurred_at || 0).getTime() - new Date(left.sentAt || left.occurredAt || left.occurred_at || 0).getTime())
+    const relatedCommunications = communications
+      .filter((communication) => getLeadId(communication) === leadId || readId(communication, ['leadId', 'lead_id']) === leadId)
+      .sort((left, right) => new Date(right.occurredAt || right.occurred_at || right.createdAt || right.created_at || 0).getTime() - new Date(left.occurredAt || left.occurred_at || left.createdAt || left.created_at || 0).getTime())
+    const relatedCommunicationDeliveries = communicationDeliveries
+      .filter((delivery) => getLeadId(delivery) === leadId || readId(delivery, ['leadId', 'lead_id']) === leadId)
+      .sort((left, right) => new Date(right.createdAt || right.created_at || right.preparedAt || right.prepared_at || 0).getTime() - new Date(left.createdAt || left.created_at || left.preparedAt || left.prepared_at || 0).getTime())
+    const relatedCommunicationPreferences = normalizeLeadCommunicationPreferences(
+      communicationPreferences.find((preferences) => getLeadId(preferences) === leadId || readId(preferences, ['leadId', 'lead_id']) === leadId) ||
+      buildDefaultLeadCommunicationPreferences({ organisationId: lead.organisationId || lead.organisation_id, leadId }),
+    )
     const relatedRequirements = requirements
       .map((requirement) => requirement?.requirementId || requirement?.requirement_id ? requirement : requirement)
       .filter((requirement) => getLeadId(requirement) === leadId || readId(requirement, ['leadId', 'lead_id']) === leadId)
@@ -182,6 +230,24 @@ export function buildAgentLeadRows({
     const primaryRequirement = relatedRequirements.find((requirement) => requirement.isPrimary || requirement.is_primary) || relatedRequirements[0] || null
     const nextTask = relatedTasks.find(isOpenTask) || null
     const latestActivity = relatedActivities[0] || null
+    const relatedAssignmentHistory = assignmentHistory
+      .filter((assignment) => getLeadId(assignment) === leadId || readId(assignment, ['leadId', 'lead_id']) === leadId)
+      .sort((left, right) => new Date(right.createdAt || right.created_at || 0).getTime() - new Date(left.createdAt || left.created_at || 0).getTime())
+    const communicationTimeline = buildCommunicationTimeline({
+      communications: relatedCommunications,
+      communicationDeliveries: relatedCommunicationDeliveries,
+      leadActivities: relatedActivities,
+      assignmentHistory: relatedAssignmentHistory,
+      tasks: relatedTasks,
+      appointments: relatedAppointments,
+      offers: relatedOffers,
+      transactions: relatedTransactions,
+    })
+    const assignedAt = lead?.assignedAt || lead?.assigned_at || null
+    const firstContactedAt = lead?.firstContactedAt || lead?.first_contacted_at || null
+    const responseTimeHours = assignedAt && firstContactedAt
+      ? Math.max(0, Math.round((new Date(firstContactedAt).getTime() - new Date(assignedAt).getTime()) / 360_000) / 10)
+      : null
 
     return {
       ...lead,
@@ -195,7 +261,17 @@ export function buildAgentLeadRows({
       source: normalizeText(lead?.leadSource || lead?.lead_source) || 'Unknown',
       stage: normalizeText(lead?.stage || lead?.status) || 'Unknown',
       status: normalizeText(lead?.status || lead?.stage) || 'Unknown',
+      assignedAgentId: readId(lead, ['assignedAgentId', 'assigned_agent_id', 'assignedUserId', 'assigned_user_id']),
       assignedAgent: normalizeText(lead?.assignedAgentName || lead?.assigned_agent_name || lead?.assignedAgentEmail || lead?.assigned_agent_email || lead?.assignedAgentId || lead?.assigned_agent_id) || 'Unassigned',
+      assignedQueueId: readId(lead, ['assignedQueueId', 'assigned_queue_id']),
+      assignedQueue: normalizeText(lead?.assignedQueueId || lead?.assigned_queue_id) || '—',
+      assignedAt,
+      firstContactedAt,
+      slaDueAt: lead?.slaDueAt || lead?.sla_due_at || null,
+      ownershipStatus: normalizeText(lead?.ownershipStatus || lead?.ownership_status) || 'awaiting_assignment',
+      slaStatus: getLeadSlaStatus(lead),
+      responseTimeHours,
+      assignmentHistory: relatedAssignmentHistory,
       createdAt: lead?.createdAt || lead?.created_at || null,
       updatedAt: lead?.updatedAt || lead?.updated_at || null,
       listingId,
@@ -210,6 +286,14 @@ export function buildAgentLeadRows({
       listings: relatedListings,
       listingInterests: relatedListingInterests,
       requirements: relatedRequirements,
+      communications: relatedCommunications,
+      communicationDeliveries: relatedCommunicationDeliveries,
+      communicationPreferences: relatedCommunicationPreferences,
+      suggestions: relatedSuggestions,
+      recommendations: relatedRecommendations,
+      savedSearches: relatedSavedSearches,
+      propertyShares: relatedPropertyShares,
+      communicationTimeline,
       primaryRequirement,
       requirementSummary: buildRequirementSummary(primaryRequirement),
       listingCount: Math.max(relatedListingInterests.length, relatedListings.length || (listingId ? 1 : 0)),
@@ -325,6 +409,56 @@ async function safeReadLeadRequirements(organisationId = '') {
   return Array.isArray(data) ? data : []
 }
 
+async function safeReadLeadCommunicationPreferences(organisationId = '') {
+  if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) return []
+  const { data, error } = await supabase
+    .from('lead_communication_preferences')
+    .select('*')
+    .eq('organisation_id', organisationId)
+    .order('updated_at', { ascending: false })
+    .limit(2000)
+  if (error) {
+    if (isRecoverableReadError(error, 'lead_communication_preferences')) return []
+    throw error
+  }
+  return Array.isArray(data) ? data : []
+}
+
+async function safeReadLeadOwnershipRows(organisationId = '') {
+  if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) return []
+  const { data, error } = await supabase
+    .from('leads')
+    .select('lead_id, assigned_queue_id, assigned_at, first_contacted_at, sla_due_at, ownership_status')
+    .eq('organisation_id', organisationId)
+    .limit(2000)
+  if (error) {
+    if (isRecoverableReadError(error, 'leads')) return []
+    throw error
+  }
+  return Array.isArray(data) ? data : []
+}
+
+function enrichLeadsWithOwnership(leads = [], ownershipRows = []) {
+  const ownershipById = new Map(ownershipRows.map((row) => [readId(row, ['lead_id', 'leadId']), row]).filter(([id]) => id))
+  return leads.map((lead) => {
+    const leadId = getLeadId(lead)
+    const ownership = ownershipById.get(leadId) || {}
+    return {
+      ...lead,
+      assignedQueueId: ownership.assigned_queue_id || lead.assignedQueueId,
+      assigned_queue_id: ownership.assigned_queue_id || lead.assigned_queue_id,
+      assignedAt: ownership.assigned_at || lead.assignedAt,
+      assigned_at: ownership.assigned_at || lead.assigned_at,
+      firstContactedAt: ownership.first_contacted_at || lead.firstContactedAt,
+      first_contacted_at: ownership.first_contacted_at || lead.first_contacted_at,
+      slaDueAt: ownership.sla_due_at || lead.slaDueAt,
+      sla_due_at: ownership.sla_due_at || lead.sla_due_at,
+      ownershipStatus: ownership.ownership_status || lead.ownershipStatus,
+      ownership_status: ownership.ownership_status || lead.ownership_status,
+    }
+  })
+}
+
 async function safeReadAppointments(organisationId = '') {
   try {
     return await listAppointmentsAsync(organisationId, { includeAll: true })
@@ -336,16 +470,23 @@ async function safeReadAppointments(organisationId = '') {
 
 export async function listAgentLeadWorkspaceRows({ organisationId = '' } = {}) {
   const snapshot = await listAgencyCrmLeadContacts(organisationId)
-  const [appointments, offers, transactions, listings, listingInterests, requirements] = await Promise.all([
+  const [appointments, offers, transactions, listings, listingInterests, requirements, recommendations, savedSearches, propertyShares, communicationDeliveries, communicationPreferences, ownershipRows, assignmentMetrics] = await Promise.all([
     safeReadAppointments(organisationId),
     safeReadAllOffers(organisationId),
     safeReadTransactions(organisationId),
     safeReadPrivateListings(organisationId),
     safeReadLeadListingInterests(organisationId),
     safeReadLeadRequirements(organisationId),
+    listRecommendations({ organisationId }).catch(() => []),
+    listLeadSavedSearches({ organisationId }).catch(() => []),
+    listLeadPropertyShares({ organisationId }).catch(() => []),
+    listCommunicationDeliveries({ organisationId }).catch(() => []),
+    safeReadLeadCommunicationPreferences(organisationId),
+    safeReadLeadOwnershipRows(organisationId),
+    listLeadAssignmentMetrics({ organisationId }).catch(() => ({ unassigned: 0, assigned: 0, overdue: 0, escalated: 0, byAgent: [] })),
   ])
   const rows = buildAgentLeadRows({
-    leads: snapshot.leads,
+    leads: enrichLeadsWithOwnership(snapshot.leads, ownershipRows),
     contacts: snapshot.contacts,
     leadActivities: snapshot.leadActivities,
     tasks: snapshot.tasks,
@@ -355,6 +496,11 @@ export async function listAgentLeadWorkspaceRows({ organisationId = '' } = {}) {
     listings,
     listingInterests,
     requirements,
+    recommendations,
+    savedSearches,
+    propertyShares,
+    communicationDeliveries,
+    communicationPreferences,
   })
   return {
     ...snapshot,
@@ -365,6 +511,12 @@ export async function listAgentLeadWorkspaceRows({ organisationId = '' } = {}) {
     listings: listings.map(normalizeListing),
     listingInterests,
     requirements,
+    recommendations,
+    savedSearches,
+    propertyShares,
+    communicationDeliveries,
+    communicationPreferences,
+    assignmentMetrics,
   }
 }
 
@@ -400,14 +552,23 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     if (!isRecoverableReadError(error, 'offers')) throw error
     offers = []
   }
-  const [transactions, listings, listingInterests, requirements] = await Promise.all([
+  const [transactions, listings, listingInterests, requirements, communications, suggestions, recommendations, savedSearches, propertyShares, communicationDeliveries, communicationPreferences, assignmentHistory, ownershipRows] = await Promise.all([
     safeReadTransactions(organisationId, context),
     safeReadPrivateListings(organisationId),
     listLeadListingInterests({ organisationId, leadId: context.leadId }),
     listLeadRequirements({ organisationId, leadId: context.leadId }),
+    listLeadCommunications({ organisationId, leadId: context.leadId }).catch(() => []),
+    getSuggestionsForLead({ organisationId, leadId: context.leadId }).catch(() => []),
+    listRecommendations({ organisationId, leadId: context.leadId }).catch(() => []),
+    listLeadSavedSearches({ organisationId, leadId: context.leadId }).catch(() => []),
+    listLeadPropertyShares({ organisationId, leadId: context.leadId }).catch(() => []),
+    listCommunicationDeliveries({ organisationId, leadId: context.leadId }).catch(() => []),
+    safeReadLeadCommunicationPreferences(organisationId),
+    listLeadAssignmentHistory({ organisationId, leadId: context.leadId }).catch(() => []),
+    safeReadLeadOwnershipRows(organisationId),
   ])
   const rows = buildAgentLeadRows({
-    leads: workspace.leads,
+    leads: enrichLeadsWithOwnership(workspace.leads, ownershipRows),
     contacts: workspace.contacts,
     leadActivities: workspace.leadActivities,
     tasks: workspace.tasks,
@@ -417,6 +578,14 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     listings,
     listingInterests,
     requirements,
+    communications,
+    suggestions,
+    recommendations,
+    savedSearches,
+    propertyShares,
+    communicationDeliveries,
+    communicationPreferences,
+    assignmentHistory,
   })
   return {
     ...workspace,
@@ -427,5 +596,14 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     listings: listings.map(normalizeListing).filter((listing) => matchesLeadContext(listing, context)),
     listingInterests,
     requirements,
+    communications,
+    suggestions,
+    recommendations,
+    savedSearches,
+    propertyShares,
+    communicationDeliveries,
+    communicationPreferences,
+    timeline: rows[0]?.communicationTimeline || [],
+    assignmentHistory,
   }
 }

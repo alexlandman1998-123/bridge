@@ -302,7 +302,21 @@ export async function createLeadRequirement(payload = {}, { actor = null } = {})
     .select('*')
     .single()
   if (error) throw error
-  return mapLeadRequirement(data)
+  const requirement = mapLeadRequirement(data)
+  void import('./suggestionGenerationService')
+    .then(({ queueRequirementSuggestionGeneration }) => queueRequirementSuggestionGeneration(requirement))
+    .catch((generationError) => console.warn('[leadRequirementService] suggestion generation skipped', generationError))
+  void import('./leadActionEngineService')
+    .then(({ processLeadEvent }) => processLeadEvent({
+      organisationId: requirement.organisationId,
+      leadId: requirement.leadId,
+      contactId: requirement.contactId,
+      eventType: 'requirement_created',
+      sourceEvent: `requirement_created:${requirement.requirementId}`,
+      metadata: { requirementId: requirement.requirementId },
+    }, { actor }))
+    .catch((recommendationError) => console.warn('[leadRequirementService] recommendation generation skipped', recommendationError))
+  return requirement
 }
 
 export async function updateLeadRequirement({ requirementId = '', updates = {} } = {}) {
@@ -320,7 +334,29 @@ export async function updateLeadRequirement({ requirementId = '', updates = {} }
     .select('*')
     .single()
   if (error) throw error
-  return mapLeadRequirement(data)
+  const requirement = mapLeadRequirement(data)
+  const importantFields = [
+    'budgetMin',
+    'budgetMax',
+    'budget_min',
+    'budget_max',
+    'areas',
+    'suburbs',
+    'bedroomsMin',
+    'bedrooms_min',
+    'bathroomsMin',
+    'bathrooms_min',
+    'propertyTypes',
+    'property_types',
+    'status',
+  ]
+  const shouldRegenerate = importantFields.some((field) => Object.prototype.hasOwnProperty.call(updates, field))
+  if (shouldRegenerate) {
+    void import('./suggestionGenerationService')
+      .then(({ queueRequirementSuggestionGeneration }) => queueRequirementSuggestionGeneration(requirement, { force: true }))
+      .catch((generationError) => console.warn('[leadRequirementService] suggestion regeneration skipped', generationError))
+  }
+  return requirement
 }
 
 export async function deleteLeadRequirement({ requirementId = '' } = {}) {

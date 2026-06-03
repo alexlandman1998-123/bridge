@@ -2,7 +2,7 @@ import {
   ArrowLeft,
   CalendarDays,
   CheckCircle2,
-  ClipboardList,
+  Clock3,
   ExternalLink,
   FileText,
   Home,
@@ -19,7 +19,7 @@ import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { createAgencyCrmLeadActivity, createAgencyCrmLeadTask } from '../lib/agencyCrmRepository'
+import { createAgencyCrmLeadTask } from '../lib/agencyCrmRepository'
 import {
   fetchAgentLeadWorkspace,
   filterAgentLeadRows,
@@ -55,6 +55,50 @@ import {
   addMatchesToLead,
   findListingsForRequirement,
 } from '../services/leadMatchingService'
+import {
+  assignLeadToAgent,
+  assignLeadToQueue,
+  autoAssignLead,
+  canManageLeadAssignment,
+  LEAD_ASSIGNMENT_QUEUES,
+  markLeadFirstContacted,
+} from '../services/leadAssignmentService'
+import {
+  filterCommunicationTimeline,
+  LEAD_COMMUNICATION_DIRECTIONS,
+  LEAD_COMMUNICATION_TYPES,
+  logCall,
+  logEmail,
+  logMeeting,
+  logNote,
+  logWhatsApp,
+} from '../services/leadCommunicationService'
+import {
+  createLeadSavedSearch,
+  disableLeadSavedSearch,
+  enableLeadSavedSearch,
+  previewPropertyMessage,
+  sendListingToLead,
+  updateLeadSavedSearch,
+} from '../services/leadPropertySharingService'
+import {
+  buildDefaultLeadCommunicationPreferences,
+  normalizeLeadCommunicationPreferences,
+} from '../services/communicationDeliveryService'
+import { listLeadCommunicationTemplates } from '../services/leadCommunicationTemplateService'
+import { buildLeadWorkspaceAnalyticsSummary } from '../services/leadAnalyticsService'
+import {
+  acceptRecommendation,
+  completeRecommendation,
+  convertRecommendationToTask,
+  dismissRecommendation as dismissLeadRecommendation,
+  getRecommendationMetrics,
+} from '../services/leadRecommendationService'
+import {
+  acceptSuggestion,
+  generateSuggestionsForLead,
+  rejectSuggestion,
+} from '../services/leadSuggestionService'
 
 const pageShell = 'mx-auto flex w-full max-w-[1480px] flex-col gap-5'
 const panelClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm'
@@ -83,6 +127,13 @@ function formatCurrency(value) {
   return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(number)
 }
 
+function formatDuration(seconds) {
+  const total = Number(seconds || 0)
+  if (!total) return ''
+  const minutes = Math.round(total / 60)
+  return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+}
+
 function parseListInput(value) {
   if (Array.isArray(value)) return value.map(normalizeText).filter(Boolean)
   return normalizeText(value).split(/[,;\n]/).map(normalizeText).filter(Boolean)
@@ -95,6 +146,25 @@ function listToInput(value) {
 function formatList(value) {
   const items = parseListInput(value)
   return items.length ? items.join(', ') : '—'
+}
+
+function isEnquiryActivity(activity = {}) {
+  const haystack = `${activity.activityType || activity.activity_type || ''} ${activity.activityNote || activity.activity_note || ''}`.toLowerCase()
+  return haystack.includes('enquiry') || haystack.includes('inquiry')
+}
+
+function getLeadSourceInfo(row = {}) {
+  const enquiryActivities = (Array.isArray(row.activities) ? row.activities : []).filter(isEnquiryActivity)
+  const firstActivity = enquiryActivities[enquiryActivities.length - 1] || null
+  const latestActivity = enquiryActivities[0] || null
+  const sourceFromType = (activity) => normalizeText(activity?.activityType || activity?.activity_type).replace(/enquiry received/i, '').trim()
+  return {
+    leadSource: row.source || row.leadSource || row.lead_source || 'Unknown',
+    originalSource: sourceFromType(firstActivity) || row.source || 'Unknown',
+    firstSource: sourceFromType(firstActivity) || row.source || 'Unknown',
+    latestSource: sourceFromType(latestActivity) || row.source || 'Unknown',
+    enquiryActivities,
+  }
 }
 
 function makeRequirementDraft(requirement = null, lead = null) {
@@ -173,6 +243,34 @@ function draftToRequirementPayload(draft = {}, lead = {}, organisationId = '', a
   }
 }
 
+function makeSavedSearchDraft(savedSearch = null, requirement = null) {
+  return {
+    savedSearchId: savedSearch?.savedSearchId || '',
+    searchName: savedSearch?.searchName || (requirement ? buildRequirementSummary(requirement) : ''),
+    requirementId: savedSearch?.requirementId || requirement?.requirementId || '',
+    active: savedSearch ? Boolean(savedSearch.active) : true,
+    consentGiven: savedSearch ? Boolean(savedSearch.consentGiven) : Boolean(requirement?.consentToReceiveMatches),
+    emailEnabled: savedSearch ? Boolean(savedSearch.emailEnabled) : true,
+    whatsappEnabled: savedSearch ? Boolean(savedSearch.whatsappEnabled) : false,
+    frequency: savedSearch?.frequency || 'manual_only',
+  }
+}
+
+function savedSearchPayloadFromDraft(draft = {}, lead = {}, organisationId = '') {
+  return {
+    organisationId,
+    lead,
+    leadId: lead.leadId,
+    requirementId: draft.requirementId,
+    searchName: draft.searchName || 'Saved Search',
+    active: draft.active,
+    consentGiven: draft.consentGiven,
+    emailEnabled: draft.emailEnabled,
+    whatsappEnabled: draft.whatsappEnabled,
+    frequency: draft.frequency || 'manual_only',
+  }
+}
+
 function getOrganisationId(workspaceContext = {}) {
   return normalizeText(workspaceContext.currentWorkspace?.id || workspaceContext.workspace?.id)
 }
@@ -184,6 +282,8 @@ function getActor(profile = {}) {
     email: normalizeText(profile?.email).toLowerCase(),
     name: normalizeText(profile?.fullName || profile?.full_name || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ')),
     fullName: normalizeText(profile?.fullName || profile?.full_name || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ')),
+    role: normalizeText(profile?.role || profile?.workspaceRole || profile?.workspace_role || profile?.organisationRole || profile?.organisation_role),
+    workspaceRole: normalizeText(profile?.workspaceRole || profile?.workspace_role || profile?.organisationRole || profile?.organisation_role || profile?.role),
   }
 }
 
@@ -207,6 +307,19 @@ function getStageTone(stage = '') {
   return 'slate'
 }
 
+function getSlaTone(status = '') {
+  const normalized = normalizeText(status).toLowerCase()
+  if (normalized === 'escalated' || normalized === 'overdue') return 'red'
+  if (normalized === 'due_soon') return 'amber'
+  if (normalized === 'contacted' || normalized === 'on_track') return 'green'
+  if (normalized === 'awaiting_assignment') return 'blue'
+  return 'slate'
+}
+
+function formatSlaStatus(status = '') {
+  return normalizeText(status).replace(/_/g, ' ') || 'Unknown'
+}
+
 function EmptyState({ title, copy }) {
   return (
     <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center">
@@ -222,6 +335,43 @@ function Field({ label, value }) {
       <dt className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">{label}</dt>
       <dd className="mt-1 truncate text-sm font-semibold text-slate-900">{value || '—'}</dd>
     </div>
+  )
+}
+
+function deliveryTone(status = '') {
+  const normalized = normalizeText(status).toLowerCase()
+  if (normalized === 'delivered' || normalized === 'sent') return 'green'
+  if (normalized === 'failed') return 'red'
+  if (normalized === 'queued' || normalized === 'prepared' || normalized === 'pending') return 'amber'
+  return 'slate'
+}
+
+function CommunicationHealthCard({ lead }) {
+  const preferences = normalizeLeadCommunicationPreferences(
+    lead?.communicationPreferences ||
+    buildDefaultLeadCommunicationPreferences({ organisationId: lead?.organisationId || lead?.organisation_id, leadId: lead?.leadId }),
+  )
+  const deliveries = Array.isArray(lead?.communicationDeliveries) ? lead.communicationDeliveries : []
+  const latestDelivery = deliveries[0] || null
+  const latestSuccess = deliveries.find((delivery) => ['delivered', 'sent'].includes(normalizeText(delivery.status).toLowerCase())) || null
+  return (
+    <section className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-950">Communication Status</h3>
+          <p className="mt-1 text-xs text-slate-500">Buyer channel preferences and latest delivery health.</p>
+        </div>
+        <StatusPill tone={preferences.propertyAlertsEnabled ? 'green' : 'amber'}>{preferences.propertyAlertsEnabled ? 'Alerts enabled' : 'Alerts paused'}</StatusPill>
+      </div>
+      <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Field label="Preferred Channel" value={preferences.preferredChannel} />
+        <Field label="Email Enabled" value={preferences.emailEnabled ? 'Yes' : 'No'} />
+        <Field label="WhatsApp Enabled" value={preferences.whatsappEnabled ? 'Yes' : 'No'} />
+        <Field label="Property Alerts" value={preferences.propertyAlertsEnabled ? 'Yes' : 'No'} />
+        <Field label="Last Communication" value={latestDelivery ? formatDateTime(latestDelivery.createdAt || latestDelivery.preparedAt) : 'None yet'} />
+        <Field label="Last Successful Delivery" value={latestSuccess ? formatDateTime(latestSuccess.deliveredAt || latestSuccess.sentAt || latestSuccess.createdAt) : 'None yet'} />
+      </dl>
+    </section>
   )
 }
 
@@ -765,12 +915,288 @@ function AddListingToLeadPanel({ organisationId, lead, requirements = [], actor,
   )
 }
 
-function LeadListingInterestsPanel({ organisationId, lead, interests = [], requirements = [], actor, onSaved }) {
+function SavedSearchesPanel({ organisationId, lead, requirements = [], savedSearches = [], propertyShares = [], actor, onSaved }) {
+  const primaryRequirement = requirements.find((requirement) => requirement.isPrimary) || requirements[0] || null
+  const [draft, setDraft] = useState(() => makeSavedSearchDraft(null, primaryRequirement))
+  const [editingId, setEditingId] = useState('')
+  const [workingId, setWorkingId] = useState('')
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const requirementById = useMemo(() => new Map(requirements.map((requirement) => [requirement.requirementId, requirement])), [requirements])
+
+  useEffect(() => {
+    if (!editingId) setDraft(makeSavedSearchDraft(null, primaryRequirement))
+  }, [editingId, primaryRequirement])
+
+  function updateDraft(key, value) {
+    setDraft((previous) => ({ ...previous, [key]: value }))
+  }
+
+  async function saveDraft(event) {
+    event.preventDefault()
+    try {
+      setWorkingId(editingId || 'create')
+      setError('')
+      setMessage('')
+      if (editingId) {
+        await updateLeadSavedSearch({ savedSearchId: editingId, updates: draft }, { actor })
+        setMessage('Saved search updated.')
+      } else {
+        await createLeadSavedSearch(savedSearchPayloadFromDraft(draft, lead, organisationId), { actor })
+        setMessage('Saved search created.')
+      }
+      setEditingId('')
+      await onSaved()
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to save this saved search.')
+    } finally {
+      setWorkingId('')
+    }
+  }
+
+  async function toggleSavedSearch(savedSearch, active) {
+    try {
+      setWorkingId(savedSearch.savedSearchId)
+      setError('')
+      if (active) await enableLeadSavedSearch({ savedSearchId: savedSearch.savedSearchId }, { actor })
+      else await disableLeadSavedSearch({ savedSearchId: savedSearch.savedSearchId }, { actor })
+      await onSaved()
+    } catch (toggleError) {
+      setError(toggleError?.message || 'Unable to update saved search.')
+    } finally {
+      setWorkingId('')
+    }
+  }
+
+  return (
+    <section className={`${panelClass} p-5`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Saved Searches</h2>
+          <p className="mt-1 text-sm text-slate-500">Buyer opt-in preferences for ongoing property updates. Agents still approve every send.</p>
+        </div>
+        <StatusPill tone="blue">{savedSearches.length} saved</StatusPill>
+      </div>
+      {message ? <p className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+      {error ? <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+
+      <form className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4" onSubmit={saveDraft}>
+        <div className="grid gap-3 lg:grid-cols-[1.4fr_1.2fr_150px]">
+          <input value={draft.searchName} onChange={(event) => updateDraft('searchName', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Search name" />
+          <select value={draft.requirementId} onChange={(event) => {
+            const requirement = requirementById.get(event.target.value)
+            setDraft((previous) => ({
+              ...previous,
+              requirementId: event.target.value,
+              searchName: previous.searchName || (requirement ? buildRequirementSummary(requirement) : ''),
+              consentGiven: previous.consentGiven || Boolean(requirement?.consentToReceiveMatches),
+            }))
+          }} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+            <option value="">No requirement link</option>
+            {requirements.map((requirement) => <option key={requirement.requirementId} value={requirement.requirementId}>{buildRequirementSummary(requirement)}</option>)}
+          </select>
+          <select value={draft.frequency} onChange={(event) => updateDraft('frequency', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+            <option value="manual_only">Manual only</option>
+            <option value="weekly">Weekly</option>
+            <option value="daily">Daily</option>
+          </select>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-4 text-sm font-semibold text-slate-600">
+          <label className="inline-flex items-center gap-2"><input type="checkbox" checked={draft.active} onChange={(event) => updateDraft('active', event.target.checked)} /> Active</label>
+          <label className="inline-flex items-center gap-2"><input type="checkbox" checked={draft.consentGiven} onChange={(event) => updateDraft('consentGiven', event.target.checked)} /> Consent recorded</label>
+          <label className="inline-flex items-center gap-2"><input type="checkbox" checked={draft.emailEnabled} onChange={(event) => updateDraft('emailEnabled', event.target.checked)} /> Email</label>
+          <label className="inline-flex items-center gap-2"><input type="checkbox" checked={draft.whatsappEnabled} onChange={(event) => updateDraft('whatsappEnabled', event.target.checked)} /> WhatsApp</label>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button type="submit" disabled={Boolean(workingId)} className="inline-flex min-h-10 items-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:bg-slate-300">{editingId ? 'Update Search' : 'Add Saved Search'}</button>
+          {editingId ? <button type="button" onClick={() => { setEditingId(''); setDraft(makeSavedSearchDraft(null, primaryRequirement)) }} className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700">Cancel</button> : null}
+        </div>
+      </form>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+        {savedSearches.length ? savedSearches.map((savedSearch) => {
+          const channelLabel = savedSearch.whatsappEnabled ? 'WhatsApp' : 'Email'
+          return (
+          <article key={savedSearch.savedSearchId} className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-950">{savedSearch.searchName}</p>
+                <p className="mt-1 text-xs text-slate-500">Frequency: {savedSearch.frequency.replace(/_/g, ' ')} · Channel: {channelLabel} · Consent Status: {savedSearch.consentGiven ? 'Recorded' : 'Missing'}</p>
+                <p className="mt-1 text-xs text-slate-500">Last sent {formatDateTime(savedSearch.lastSentAt)}</p>
+                {savedSearch.requirementId ? <p className="mt-1 text-xs text-slate-500">Requirement: {buildRequirementSummary(requirementById.get(savedSearch.requirementId))}</p> : null}
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                <StatusPill tone={savedSearch.active ? 'green' : 'slate'}>{savedSearch.active ? 'Active' : 'Paused'}</StatusPill>
+                <StatusPill tone={savedSearch.consentGiven ? 'green' : 'amber'}>{savedSearch.consentGiven ? 'Consent' : 'No consent'}</StatusPill>
+                <StatusPill tone={savedSearch.emailEnabled || savedSearch.whatsappEnabled ? 'blue' : 'red'}>{channelLabel}</StatusPill>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" onClick={() => { setEditingId(savedSearch.savedSearchId); setDraft(makeSavedSearchDraft(savedSearch, requirementById.get(savedSearch.requirementId))) }} className="inline-flex min-h-9 items-center rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700">Edit</button>
+              <button type="button" onClick={() => toggleSavedSearch(savedSearch, !savedSearch.active)} disabled={workingId === savedSearch.savedSearchId} className="inline-flex min-h-9 items-center rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700">{savedSearch.active ? 'Pause' : 'Enable'}</button>
+            </div>
+          </article>
+          )
+        }) : <EmptyState title="No saved searches yet" copy="Create a saved search when the buyer has opted into property updates." />}
+      </div>
+
+      <section className="mt-6">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-slate-950">Sent Properties</h3>
+          <StatusPill>{propertyShares.length} sent</StatusPill>
+        </div>
+        <div className="mt-3 grid gap-3">
+          {propertyShares.length ? propertyShares.map((share) => (
+            <article key={share.shareId || share.communicationId} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-slate-950">{share.subject || 'Property update'}</p>
+                  <p className="mt-1 text-xs text-slate-500">{share.listings?.map((listing) => listing.title).filter(Boolean).join(', ') || 'Listing details pending'}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <StatusPill>{share.channel || share.communicationType}</StatusPill>
+                  <StatusPill tone={deliveryTone(share.deliveryStatus || share.status)}>{share.deliveryStatus || share.status || 'pending'}</StatusPill>
+                  <StatusPill>{formatDateTime(share.sentAt || share.occurredAt)}</StatusPill>
+                </div>
+              </div>
+            </article>
+          )) : <EmptyState title="No properties sent yet" copy="Agent-approved property shares will appear here and in the communication timeline." />}
+        </div>
+      </section>
+    </section>
+  )
+}
+
+function PropertyShareDialog({ draft, organisationId = '', lead, requirements = [], savedSearches = [], actor, onClose, onSaved }) {
+  const [channel, setChannel] = useState(draft?.channel || 'email')
+  const [templateType, setTemplateType] = useState('property_match')
+  const [note, setNote] = useState('')
+  const [savedSearchId, setSavedSearchId] = useState('')
+  const [working, setWorking] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const templates = useMemo(() => listLeadCommunicationTemplates(), [])
+  const listing = draft?.listing || null
+  const requirement = useMemo(() => {
+    const id = draft?.requirementId || draft?.suggestion?.requirementId || ''
+    return requirements.find((item) => item.requirementId === id) || requirements.find((item) => item.isPrimary) || requirements[0] || null
+  }, [draft, requirements])
+  const savedSearch = useMemo(() => savedSearches.find((item) => item.savedSearchId === savedSearchId) || savedSearches.find((item) => item.requirementId && item.requirementId === requirement?.requirementId) || null, [requirement?.requirementId, savedSearchId, savedSearches])
+  const preview = useMemo(() => previewPropertyMessage({
+    lead,
+    listing,
+    requirement,
+    savedSearch,
+    channel,
+    templateType,
+    note,
+  }), [channel, lead, listing, note, requirement, savedSearch, templateType])
+
+  if (!draft || !listing) return null
+
+  async function sendShare() {
+    try {
+      setWorking(true)
+      setError('')
+      setMessage('')
+      const result = await sendListingToLead({
+        organisationId: organisationId || lead.organisationId || lead.organisation_id,
+        lead,
+        leadId: lead.leadId,
+        contactId: lead.contactId,
+        listing,
+        requirement,
+        requirementId: requirement?.requirementId,
+        savedSearch,
+        savedSearchId: savedSearch?.savedSearchId,
+        interestId: draft.interestId,
+        suggestionId: draft.suggestionId,
+        recommendationId: draft.recommendationId,
+        channel,
+        templateType,
+        note,
+      }, { actor })
+      if (!result.ok) {
+        setError(result.warning || 'Unable to send this property update.')
+        return
+      }
+      if (draft.recommendationId) await completeRecommendation({ recommendationId: draft.recommendationId }, { actor }).catch(() => null)
+      setMessage(result.status === 'sent' ? 'Property update sent and logged.' : 'Property update prepared and logged as pending.')
+      await onSaved()
+    } catch (sendError) {
+      setError(sendError?.message || 'Unable to send this property update.')
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+      <section className="max-h-[calc(100dvh-32px)] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Send To Buyer</h2>
+            <p className="mt-1 text-sm text-slate-500">Preview the property update before Bridge sends or prepares the outbound payload.</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600">Close</button>
+        </div>
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <p className="text-sm font-semibold text-slate-950">{listing.title || 'Listing details unavailable'}</p>
+          <p className="mt-1 text-sm text-slate-500">{[listing.address, listing.suburb, listing.city].filter(Boolean).join(', ') || 'Address pending'} · {formatCurrency(listing.price)}</p>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-1 text-sm font-semibold text-slate-600">
+            Channel
+            <select value={channel} onChange={(event) => setChannel(event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+              <option value="email">Email</option>
+              <option value="whatsapp">WhatsApp</option>
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm font-semibold text-slate-600">
+            Template
+            <select value={templateType} onChange={(event) => setTemplateType(event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+              {templates.map((template) => <option key={template.key} value={template.key}>{template.label}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm font-semibold text-slate-600 sm:col-span-2">
+            Saved Search
+            <select value={savedSearchId} onChange={(event) => setSavedSearchId(event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+              <option value="">Use requirement consent</option>
+              {savedSearches.map((item) => <option key={item.savedSearchId} value={item.savedSearchId}>{item.searchName}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm font-semibold text-slate-600 sm:col-span-2">
+            Optional note
+            <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" placeholder="Add a short agent note." />
+          </label>
+        </div>
+        {!preview.consent.ok ? <p className="mt-4 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-700">{preview.consent.warning}</p> : null}
+        {!preview.recipient ? <p className="mt-4 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-700">No {channel === 'whatsapp' ? 'phone number' : 'email address'} is available for this lead.</p> : null}
+        {message ? <p className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+        {error ? <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+        <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Message Preview</p>
+          <p className="mt-2 text-sm font-semibold text-slate-950">{preview.subject}</p>
+          <pre className="mt-3 whitespace-pre-wrap rounded-xl bg-slate-50 p-3 text-sm leading-6 text-slate-600">{preview.message}</pre>
+        </section>
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700">Cancel</button>
+          <button type="button" onClick={sendShare} disabled={working || !preview.consent.ok || !preview.recipient} className="inline-flex min-h-10 items-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:bg-slate-300">
+            {working ? 'Sending...' : 'Send'}
+          </button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function LeadListingInterestsPanel({ organisationId, lead, interests = [], requirements = [], actor, onSaved, onShare }) {
   const [noteDrafts, setNoteDrafts] = useState({})
   const [scheduleDrafts, setScheduleDrafts] = useState({})
   const [workingId, setWorkingId] = useState('')
   const [error, setError] = useState('')
   const requirementById = useMemo(() => new Map(requirements.map((requirement) => [requirement.requirementId, requirement])), [requirements])
+  const originalInterests = useMemo(() => interests.filter((interest) => interest.isOriginalEnquiry), [interests])
 
   async function handleAction(action, interest) {
     try {
@@ -839,6 +1265,34 @@ function LeadListingInterestsPanel({ organisationId, lead, interests = [], requi
         <AddListingToLeadPanel organisationId={organisationId} lead={lead} requirements={requirements} actor={actor} onSaved={onSaved} />
       </div>
       {error ? <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+      {originalInterests.length ? (
+        <section className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-950">Original Enquiry Listing</h3>
+              <p className="mt-1 text-sm text-slate-500">Listings the lead enquired about before any manual matching.</p>
+            </div>
+            <StatusPill tone="blue">{originalInterests.length} original</StatusPill>
+          </div>
+          <div className="mt-3 grid gap-3 lg:grid-cols-2">
+            {originalInterests.map((interest) => {
+              const listing = interest.listing || {}
+              return (
+                <article key={`original-${interest.interestId}`} className="rounded-2xl border border-blue-100 bg-white p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-950">{listing.title || 'Listing details unavailable'}</p>
+                      <p className="mt-1 text-xs text-slate-500">{[listing.address, listing.suburb, listing.city].filter(Boolean).join(', ') || 'Address pending'}</p>
+                      <p className="mt-1 text-xs font-semibold text-blue-700">{interest.source}</p>
+                    </div>
+                    <StatusPill tone="blue">Original Enquiry</StatusPill>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        </section>
+      ) : null}
       <div className="mt-5 grid gap-4">
         {interests.length ? interests.map((interest) => {
           const listing = interest.listing || {}
@@ -900,6 +1354,9 @@ function LeadListingInterestsPanel({ organisationId, lead, interests = [], requi
                     <button type="button" onClick={() => scheduleViewing(interest)} disabled={workingId === interest.interestId} className="rounded-xl bg-slate-900 px-3 text-sm font-semibold text-white disabled:bg-slate-300">Schedule</button>
                   </div>
                   <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <button type="button" onClick={() => onShare?.({ listing, requirementId: interest.requirementId, interestId: interest.interestId })} className="inline-flex min-h-10 items-center rounded-xl border border-blue-100 bg-blue-50 px-3 text-sm font-semibold text-blue-700">
+                      Send To Buyer
+                    </button>
                     {listing.id ? <Link to={`/agent/listings/${listing.id}`} className="inline-flex items-center gap-2 text-sm font-semibold text-blue-700">Open listing <ExternalLink size={13} /></Link> : null}
                     {interest.offers?.length ? <span className="text-sm font-semibold text-slate-600">{interest.offers.length} existing offer{interest.offers.length === 1 ? '' : 's'} linked</span> : <span className="text-sm text-slate-500">No existing offer linked</span>}
                   </div>
@@ -913,6 +1370,130 @@ function LeadListingInterestsPanel({ organisationId, lead, interests = [], requi
   )
 }
 
+function SuggestionReasonList({ reasons = [] }) {
+  const visibleReasons = Array.isArray(reasons) ? reasons.slice(0, 5) : []
+  if (!visibleReasons.length) return <p className="text-xs text-slate-500">No suggestion reasons stored.</p>
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      {visibleReasons.map((reason, index) => {
+        const text = typeof reason === 'string' ? reason : reason?.text || JSON.stringify(reason)
+        const type = typeof reason === 'string' ? 'match' : reason?.type || 'match'
+        const tone = type === 'match'
+          ? 'bg-emerald-50 text-emerald-700'
+          : type === 'missing'
+            ? 'bg-amber-50 text-amber-700'
+            : 'bg-rose-50 text-rose-700'
+        return <span key={`suggestion-reason-${index}`} className={`rounded-full px-2.5 py-1 text-xs font-semibold ${tone}`}>{text}</span>
+      })}
+    </div>
+  )
+}
+
+function LeadSuggestionsPanel({ organisationId, lead, suggestions = [], actor, onSaved, onShare }) {
+  const [workingId, setWorkingId] = useState('')
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const pendingSuggestions = suggestions.filter((suggestion) => suggestion.status === 'pending')
+
+  async function runAction(action, suggestion) {
+    try {
+      setWorkingId(suggestion.suggestionId)
+      setError('')
+      setMessage('')
+      if (action === 'accept') {
+        await acceptSuggestion({ suggestionId: suggestion.suggestionId }, { actor })
+        setMessage('Suggestion accepted and added to Interested Listings.')
+      } else {
+        await rejectSuggestion({ suggestionId: suggestion.suggestionId, reason: 'Rejected by agent from Lead Workspace.' }, { actor })
+        setMessage('Suggestion rejected.')
+      }
+      await onSaved()
+    } catch (actionError) {
+      setError(actionError?.message || 'Unable to update suggestion.')
+    } finally {
+      setWorkingId('')
+    }
+  }
+
+  async function regenerate() {
+    try {
+      setWorkingId('generate')
+      setError('')
+      setMessage('')
+      const generated = await generateSuggestionsForLead({ organisationId, leadId: lead.leadId, force: true })
+      setMessage(`${generated.length} suggestion${generated.length === 1 ? '' : 's'} generated.`)
+      await onSaved()
+    } catch (generationError) {
+      setError(generationError?.message || 'Unable to generate suggestions.')
+    } finally {
+      setWorkingId('')
+    }
+  }
+
+  return (
+    <section className={`${panelClass} p-5`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Suggestions</h2>
+          <p className="mt-1 text-sm text-slate-500">Automated listing recommendations. Agents must accept before a relationship becomes an interested listing.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <StatusPill tone="blue">{pendingSuggestions.length} pending</StatusPill>
+          <button type="button" onClick={regenerate} disabled={workingId === 'generate'} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:bg-slate-300">
+            {workingId === 'generate' ? 'Generating...' : 'Regenerate'}
+          </button>
+        </div>
+      </div>
+      {message ? <p className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+      {error ? <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+      <div className="mt-5 grid gap-4">
+        {suggestions.length ? suggestions.map((suggestion) => {
+          const listing = suggestion.listing || {}
+          const isPending = suggestion.status === 'pending'
+          return (
+            <article key={suggestion.suggestionId} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="grid gap-4 lg:grid-cols-[120px_1fr_auto]">
+                <div className="flex h-24 items-center justify-center overflow-hidden rounded-2xl bg-slate-100 text-slate-400">
+                  {listing.imageUrl ? <img src={listing.imageUrl} alt="" className="h-full w-full object-cover" /> : <Home size={22} />}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="truncate text-base font-semibold text-slate-950">{listing.title || 'Listing details unavailable'}</h3>
+                    <StatusPill tone={suggestion.status === 'accepted' ? 'green' : suggestion.status === 'rejected' ? 'red' : 'blue'}>{suggestion.status}</StatusPill>
+                    <StatusPill tone="green">{suggestion.score ?? 0}% score</StatusPill>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-500">{[listing.address, listing.suburb, listing.city].filter(Boolean).join(', ') || 'Address pending'}</p>
+                  <p className="mt-2 text-sm font-semibold text-blue-700">{formatCurrency(listing.price)}</p>
+                  <ListingSpecs listing={listing} />
+                  <p className="mt-2 text-xs font-semibold text-slate-500">Requirement: {suggestion.requirementSummary || 'Requirement summary unavailable'}</p>
+                  <SuggestionReasonList reasons={suggestion.reasons} />
+                  <p className="mt-3 text-xs font-semibold text-slate-500">Generated {formatDateTime(suggestion.generatedAt)}</p>
+                </div>
+                <div className="flex flex-col gap-2 lg:items-end">
+                  {listing.id ? <Link to={`/agent/listings/${listing.id}`} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700">Open Listing <ExternalLink size={13} /></Link> : null}
+                  {isPending ? (
+                    <>
+                      <button type="button" onClick={() => runAction('accept', suggestion)} disabled={workingId === suggestion.suggestionId} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-3 text-sm font-semibold text-white disabled:bg-slate-300">Accept</button>
+                      <button type="button" onClick={() => runAction('reject', suggestion)} disabled={workingId === suggestion.suggestionId} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-rose-100 bg-rose-50 px-3 text-sm font-semibold text-rose-700 disabled:opacity-60">Reject</button>
+                    </>
+                  ) : null}
+                  {listing.id ? (
+                    <button type="button" onClick={() => onShare?.({ listing, requirementId: suggestion.requirementId, suggestionId: suggestion.suggestionId })} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 px-3 text-sm font-semibold text-blue-700">
+                      Send To Buyer
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </article>
+          )
+        }) : (
+          <EmptyState title="No suggestions yet" copy="Suggestions are generated automatically when requirements or listings are created or updated. You can regenerate them manually here." />
+        )}
+      </div>
+    </section>
+  )
+}
+
 function AgentLeadList() {
   const workspaceContext = useWorkspace()
   const navigate = useNavigate()
@@ -920,11 +1501,13 @@ function AgentLeadList() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [rows, setRows] = useState([])
+  const [assignmentMetrics, setAssignmentMetrics] = useState({ unassigned: 0, assigned: 0, overdue: 0, escalated: 0, byAgent: [] })
   const [filters, setFilters] = useState({ search: '', stage: 'all', source: 'all', agent: 'all', createdFrom: '', createdTo: '' })
 
   const loadRows = useCallback(async () => {
     if (!organisationId) {
       setRows([])
+      setAssignmentMetrics({ unassigned: 0, assigned: 0, overdue: 0, escalated: 0, byAgent: [] })
       setLoading(false)
       setError('Select an agency workspace before loading leads.')
       return
@@ -934,8 +1517,10 @@ function AgentLeadList() {
       setError('')
       const result = await listAgentLeadWorkspaceRows({ organisationId })
       setRows(result.rows)
+      setAssignmentMetrics(result.assignmentMetrics || { unassigned: 0, assigned: 0, overdue: 0, escalated: 0, byAgent: [] })
     } catch (loadError) {
       setRows([])
+      setAssignmentMetrics({ unassigned: 0, assigned: 0, overdue: 0, escalated: 0, byAgent: [] })
       setError(loadError?.message || 'Unable to load leads right now.')
     } finally {
       setLoading(false)
@@ -948,12 +1533,12 @@ function AgentLeadList() {
 
   const options = useMemo(() => getLeadFilterOptions(rows), [rows])
   const visibleRows = useMemo(() => filterAgentLeadRows(rows, filters), [rows, filters])
-  const kpis = useMemo(() => ({
-    total: rows.length,
-    openTasks: rows.reduce((sum, row) => sum + row.tasks.filter((task) => !['completed', 'cancelled'].includes(String(task.status || '').toLowerCase())).length, 0),
-    viewings: rows.reduce((sum, row) => sum + row.appointmentCount, 0),
-    converted: rows.filter((row) => row.transactionCount || row.convertedTransactionId || String(row.stage || '').toLowerCase().includes('converted')).length,
-  }), [rows])
+  const recommendationRows = useMemo(() => rows.flatMap((row) => Array.isArray(row.recommendations) ? row.recommendations : []), [rows])
+  const recommendationMetrics = useMemo(() => getRecommendationMetrics(recommendationRows), [recommendationRows])
+  const dueTodayRecommendations = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    return recommendationRows.filter((item) => ['pending', 'accepted'].includes(String(item.status || '').toLowerCase()) && String(item.dueDate || item.due_date || '').slice(0, 10) === today).length
+  }, [recommendationRows])
 
   return (
     <main className={pageShell}>
@@ -970,10 +1555,24 @@ function AgentLeadList() {
       </header>
 
       <section className="grid gap-3 md:grid-cols-4">
-        <Metric label="Visible Leads" value={visibleRows.length} icon={UserRound} />
-        <Metric label="All Leads" value={kpis.total} icon={Tag} />
-        <Metric label="Linked Appointments" value={kpis.viewings} icon={CalendarDays} />
-        <Metric label="Converted / Tx" value={kpis.converted} icon={CheckCircle2} />
+        <Metric label="Unassigned Leads" value={assignmentMetrics.unassigned || 0} icon={UserRound} />
+        <Metric label="Assigned Leads" value={assignmentMetrics.assigned || 0} icon={Tag} />
+        <Metric label="Overdue Leads" value={assignmentMetrics.overdue || 0} icon={Clock3} />
+        <Metric label="Escalated Leads" value={assignmentMetrics.escalated || 0} icon={CheckCircle2} />
+      </section>
+
+      <section className={`${panelClass} p-4`}>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">My Recommendations</p>
+            <h2 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-slate-950">Recommended Next Actions</h2>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[520px]">
+            <Metric label="Urgent" value={recommendationMetrics.urgent || 0} icon={CheckCircle2} />
+            <Metric label="Due Today" value={dueTodayRecommendations} icon={Clock3} />
+            <Metric label="Overdue" value={recommendationMetrics.overdue || 0} icon={Clock3} />
+          </div>
+        </div>
       </section>
 
       <section className={`${panelClass} p-4`}>
@@ -1018,7 +1617,7 @@ function AgentLeadList() {
                   <th className="px-4 py-3 font-semibold">Requirement</th>
                   <th className="px-4 py-3 font-semibold">Source</th>
                   <th className="px-4 py-3 font-semibold">Status / Stage</th>
-                  <th className="px-4 py-3 font-semibold">Owner</th>
+                  <th className="px-4 py-3 font-semibold">Owner / SLA</th>
                   <th className="px-4 py-3 font-semibold">Latest Activity</th>
                   <th className="px-4 py-3 font-semibold">Next Follow-up</th>
                   <th className="px-4 py-3 font-semibold">Created</th>
@@ -1040,7 +1639,14 @@ function AgentLeadList() {
                     </td>
                     <td className="px-4 py-4 text-slate-700">{row.source}</td>
                     <td className="px-4 py-4"><StatusPill tone={getStageTone(row.stage)}>{row.stage}</StatusPill></td>
-                    <td className="px-4 py-4 text-slate-700">{row.assignedAgent}</td>
+                    <td className="px-4 py-4 text-slate-700">
+                      <span className="block font-semibold text-slate-800">{row.assignedAgent}</span>
+                      <span className="mt-1 block text-xs text-slate-500">Queue: {row.assignedQueue || '—'}</span>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <StatusPill tone={getSlaTone(row.slaStatus)}>{formatSlaStatus(row.slaStatus)}</StatusPill>
+                        {row.responseTimeHours !== null ? <StatusPill tone="green">{row.responseTimeHours}h response</StatusPill> : null}
+                      </div>
+                    </td>
                     <td className="px-4 py-4 text-slate-600">
                       <span className="block font-medium text-slate-800">{row.latestActivity?.activityType || row.latestActivity?.activity_type || 'No activity'}</span>
                       <span className="mt-1 block max-w-[220px] truncate text-xs text-slate-500">{row.latestActivity?.activityNote || row.latestActivity?.activity_note || formatDateTime(row.latestActivity?.activityDate || row.latestActivity?.activity_date, '')}</span>
@@ -1072,34 +1678,6 @@ function AgentLeadList() {
         </section>
       ) : null}
     </main>
-  )
-}
-
-function ActivityForm({ organisationId, leadId, actor, onSaved }) {
-  const [note, setNote] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  async function submit(event) {
-    event.preventDefault()
-    if (!normalizeText(note)) return
-    try {
-      setSaving(true)
-      await createAgencyCrmLeadActivity(organisationId, leadId, { activityType: 'Note', activityNote: note, outcome: 'Logged from Lead Workspace' }, { actor })
-      setNote('')
-      await onSaved()
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <form onSubmit={submit} className="mt-4 flex flex-col gap-2 sm:flex-row">
-      <input value={note} onChange={(event) => setNote(event.target.value)} className="min-h-11 flex-1 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-300" placeholder="Add an activity note" />
-      <button type="submit" disabled={saving || !normalizeText(note)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
-        <MessageSquarePlus size={15} />
-        Add Activity
-      </button>
-    </form>
   )
 }
 
@@ -1149,6 +1727,242 @@ function TimelineList({ items = [] }) {
   )
 }
 
+function CommunicationQuickLogForm({ organisationId, lead, actor, onSaved }) {
+  const [type, setType] = useState('call')
+  const [draft, setDraft] = useState({
+    direction: 'outbound',
+    subject: '',
+    summary: '',
+    message: '',
+    durationMinutes: '',
+    outcome: '',
+    followUpRequired: false,
+    nextAction: '',
+    occurredAt: '',
+    hasAttachments: false,
+    isPrivate: false,
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    setDraft((previous) => ({
+      ...previous,
+      direction: type === 'note' ? 'internal' : type === 'system' ? 'system' : previous.direction === 'internal' ? 'outbound' : previous.direction,
+      subject: type === 'call' || type === 'whatsapp' || type === 'note' ? '' : previous.subject,
+    }))
+  }, [type])
+
+  function update(field, value) {
+    setDraft((previous) => ({ ...previous, [field]: value }))
+  }
+
+  async function submit(event) {
+    event.preventDefault()
+    if (!normalizeText(draft.summary) && !normalizeText(draft.message) && !normalizeText(draft.subject)) return
+    const payload = {
+      organisationId,
+      leadId: lead.leadId,
+      contactId: lead.contactId,
+      agentId: actor?.id,
+      direction: draft.direction,
+      subject: draft.subject,
+      summary: draft.summary,
+      message: draft.message,
+      durationMinutes: draft.durationMinutes,
+      outcome: draft.outcome,
+      followUpRequired: draft.followUpRequired,
+      nextAction: draft.nextAction,
+      occurredAt: draft.occurredAt || new Date().toISOString(),
+      hasAttachments: draft.hasAttachments,
+      isPrivate: draft.isPrivate,
+      source: 'manual',
+    }
+    const handlers = {
+      call: logCall,
+      email: logEmail,
+      whatsapp: logWhatsApp,
+      meeting: logMeeting,
+      note: logNote,
+    }
+    try {
+      setSaving(true)
+      setError('')
+      await (handlers[type] || logNote)(payload, { actor })
+      setDraft({
+        direction: type === 'note' ? 'internal' : 'outbound',
+        subject: '',
+        summary: '',
+        message: '',
+        durationMinutes: '',
+        outcome: '',
+        followUpRequired: false,
+        nextAction: '',
+        occurredAt: '',
+        hasAttachments: false,
+        isPrivate: false,
+      })
+      await onSaved()
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to log communication.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-950">Quick Logging</h3>
+          <p className="mt-1 text-sm text-slate-500">Manual logs only. This does not send emails, WhatsApps, SMSes, or alerts.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {[
+            ['call', 'Log Call'],
+            ['email', 'Log Email'],
+            ['whatsapp', 'Log WhatsApp'],
+            ['note', 'Add Note'],
+            ['meeting', 'Log Meeting'],
+          ].map(([key, label]) => (
+            <button key={key} type="button" onClick={() => setType(key)} className={`min-h-9 rounded-xl px-3 text-xs font-semibold ${type === key ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <select value={draft.direction} onChange={(event) => update('direction', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" disabled={type === 'note'}>
+          {LEAD_COMMUNICATION_DIRECTIONS.filter((option) => type === 'note' ? option === 'internal' : option !== 'system').map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+        <input type="datetime-local" value={draft.occurredAt} onChange={(event) => update('occurredAt', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" aria-label="Occurred at" />
+        {type === 'call' ? <input value={draft.durationMinutes} onChange={(event) => update('durationMinutes', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Duration minutes" /> : null}
+        {type === 'call' ? (
+          <select value={draft.outcome} onChange={(event) => update('outcome', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+            <option value="">Outcome</option>
+            {['No Answer', 'Interested', 'Not Interested', 'Call Back Later', 'Viewing Booked', 'Offer Discussed'].map((option) => <option key={option} value={option}>{option}</option>)}
+          </select>
+        ) : null}
+        {(type === 'email' || type === 'meeting') ? <input value={draft.subject} onChange={(event) => update('subject', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Subject" /> : null}
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <textarea value={draft.summary} onChange={(event) => update('summary', event.target.value)} className="min-h-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" placeholder="Summary" />
+        <textarea value={draft.message} onChange={(event) => update('message', event.target.value)} className="min-h-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" placeholder={type === 'whatsapp' ? 'Message snippet' : 'Detail or notes'} />
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto_auto_auto] md:items-center">
+        <input value={draft.nextAction} onChange={(event) => update('nextAction', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Next action" />
+        <label className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
+          <input type="checkbox" checked={draft.followUpRequired} onChange={(event) => update('followUpRequired', event.target.checked)} />
+          Follow-up required
+        </label>
+        <label className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
+          <input type="checkbox" checked={draft.hasAttachments} onChange={(event) => update('hasAttachments', event.target.checked)} />
+          Attachment
+        </label>
+        <label className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
+          <input type="checkbox" checked={draft.isPrivate} onChange={(event) => update('isPrivate', event.target.checked)} />
+          Private note
+        </label>
+      </div>
+
+      {error ? <p className="mt-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+      <div className="mt-4 flex justify-end">
+        <button type="submit" disabled={saving || (!normalizeText(draft.summary) && !normalizeText(draft.message) && !normalizeText(draft.subject))} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:bg-slate-300">
+          <MessageSquarePlus size={15} />
+          {saving ? 'Logging...' : `Save ${type === 'note' ? 'Note' : type.replace(/^\w/, (letter) => letter.toUpperCase())}`}
+        </button>
+      </div>
+    </form>
+  )
+}
+
+function CommunicationTimelineCard({ item }) {
+  const duration = formatDuration(item.metadata?.durationSeconds)
+  const detailLines = [
+    item.subject ? `Subject: ${item.subject}` : '',
+    item.summary || item.message,
+    item.metadata?.outcome ? `Outcome: ${item.metadata.outcome}` : '',
+    item.metadata?.nextAction ? `Next action: ${item.metadata.nextAction}` : '',
+  ].filter(Boolean)
+
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <strong className="text-sm text-slate-950">{item.title}</strong>
+            <StatusPill>{item.communicationType}</StatusPill>
+            <StatusPill tone={item.direction === 'inbound' ? 'blue' : item.direction === 'outbound' ? 'green' : 'slate'}>{item.direction}</StatusPill>
+            {item.metadata?.isPrivate ? <StatusPill tone="amber">Private</StatusPill> : null}
+            {duration ? <StatusPill tone="blue">{duration}</StatusPill> : null}
+          </div>
+          {detailLines.length ? (
+            <div className="mt-3 space-y-1">
+              {detailLines.map((line, index) => <p key={`${item.id}-line-${index}`} className="whitespace-pre-wrap text-sm leading-6 text-slate-600">{line}</p>)}
+            </div>
+          ) : <p className="mt-3 text-sm text-slate-500">No detail captured.</p>}
+        </div>
+        <span className="shrink-0 text-xs font-semibold text-slate-500">{formatDateTime(item.occurredAt)}</span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+        {item.status ? <span>Status: {item.status}</span> : null}
+        {item.source ? <span>Source: {item.source}</span> : null}
+        {item.agentId ? <span>Agent: {item.agentId}</span> : null}
+        {item.kind !== 'communication' ? <span>From {item.kind}</span> : null}
+      </div>
+    </article>
+  )
+}
+
+function CommunicationTimelinePanel({ organisationId, lead, actor, timeline = [], onSaved }) {
+  const [filters, setFilters] = useState({ search: '', type: 'all', direction: 'all', agentId: '', dateFrom: '', dateTo: '' })
+  const visibleItems = useMemo(() => filterCommunicationTimeline(timeline, filters), [filters, timeline])
+
+  return (
+    <section className={`${panelClass} p-5`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Timeline</h2>
+          <p className="mt-1 text-sm text-slate-500">Calls, emails, WhatsApps, notes, tasks, assignment history, enquiries, appointments, offers, and transaction links in date order.</p>
+        </div>
+        <StatusPill>{visibleItems.length} visible</StatusPill>
+      </div>
+
+      <div className="mt-5">
+        <CommunicationQuickLogForm organisationId={organisationId} lead={lead} actor={actor} onSaved={onSaved} />
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(220px,1.3fr)_repeat(5,minmax(130px,1fr))]">
+        <label className="relative block">
+          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input value={filters.search} onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-blue-300" placeholder="Search timeline" />
+        </label>
+        <select value={filters.type} onChange={(event) => setFilters((previous) => ({ ...previous, type: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+          <option value="all">All types</option>
+          {LEAD_COMMUNICATION_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
+          {['activity', 'assignment', 'task', 'appointment', 'offer', 'transaction'].map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+        <select value={filters.direction} onChange={(event) => setFilters((previous) => ({ ...previous, direction: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+          <option value="all">All directions</option>
+          {LEAD_COMMUNICATION_DIRECTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+        <input value={filters.agentId} onChange={(event) => setFilters((previous) => ({ ...previous, agentId: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Agent id" />
+        <input type="date" value={filters.dateFrom} onChange={(event) => setFilters((previous) => ({ ...previous, dateFrom: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" aria-label="Timeline from" />
+        <input type="date" value={filters.dateTo} onChange={(event) => setFilters((previous) => ({ ...previous, dateTo: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" aria-label="Timeline to" />
+      </div>
+
+      <div className="mt-5 space-y-3">
+        {visibleItems.length ? visibleItems.map((item) => <CommunicationTimelineCard key={item.id} item={item} />) : (
+          <EmptyState title="No timeline events match these filters" copy="Clear the search or log the first call, email, WhatsApp, meeting, or note." />
+        )}
+      </div>
+    </section>
+  )
+}
+
 function TaskList({ items = [] }) {
   if (!items.length) return <EmptyState title="No tasks linked" copy="Open and completed follow-ups linked to this lead will appear here." />
   return (
@@ -1164,6 +1978,116 @@ function TaskList({ items = [] }) {
         </div>
       ))}
     </div>
+  )
+}
+
+function getRecommendationTone(value = '') {
+  const normalized = normalizeText(value).toLowerCase()
+  if (normalized === 'urgent' || normalized === 'overdue') return 'red'
+  if (normalized === 'high' || normalized === 'pending') return 'amber'
+  if (normalized === 'completed' || normalized === 'accepted') return 'green'
+  if (normalized === 'dismissed' || normalized === 'expired') return 'slate'
+  return 'blue'
+}
+
+function getRecommendationAgeLabel(recommendation = {}) {
+  const createdAt = recommendation.createdAt || recommendation.created_at
+  if (!createdAt) return 'Age unknown'
+  const created = new Date(createdAt)
+  if (Number.isNaN(created.getTime())) return 'Age unknown'
+  const days = Math.floor((Date.now() - created.getTime()) / 86_400_000)
+  if (days <= 0) return 'Today'
+  if (days === 1) return '1 day old'
+  return `${days} days old`
+}
+
+function LeadRecommendationsPanel({ recommendations = [], actor, onSaved, onShare }) {
+  const [workingId, setWorkingId] = useState('')
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+
+  async function runRecommendationAction(action, recommendation) {
+    try {
+      setWorkingId(`${recommendation.recommendationId}:${action}`)
+      setMessage('')
+      setError('')
+      if (action === 'accept') {
+        await acceptRecommendation({ recommendationId: recommendation.recommendationId }, { actor })
+        setMessage('Recommendation accepted.')
+      } else if (action === 'dismiss') {
+        await dismissLeadRecommendation({ recommendationId: recommendation.recommendationId, reason: 'Dismissed from Lead Workspace.' }, { actor })
+        setMessage('Recommendation dismissed.')
+      } else if (action === 'complete') {
+        await completeRecommendation({ recommendationId: recommendation.recommendationId }, { actor })
+        setMessage('Recommendation completed.')
+      } else if (action === 'task') {
+        await convertRecommendationToTask({ recommendationId: recommendation.recommendationId }, { actor })
+        setMessage('Recommendation converted to a task.')
+      }
+      await onSaved()
+    } catch (actionError) {
+      setError(actionError?.message || 'Unable to update recommendation.')
+    } finally {
+      setWorkingId('')
+    }
+  }
+
+  const pendingCount = recommendations.filter((item) => ['pending', 'accepted'].includes(String(item.status || '').toLowerCase())).length
+
+  return (
+    <section className={`${panelClass} p-5`}>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Recommendations</h2>
+          <p className="mt-1 text-sm text-slate-500">Recommended next actions generated from lead events, inactivity, suggestions, viewings, offers, and communication history.</p>
+        </div>
+        <StatusPill tone="amber">{pendingCount} active</StatusPill>
+      </div>
+      {message ? <p className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+      {error ? <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+      <div className="mt-5 grid gap-3">
+        {recommendations.length ? recommendations.map((recommendation) => {
+          const active = ['pending', 'accepted'].includes(String(recommendation.status || '').toLowerCase())
+          return (
+            <article key={recommendation.recommendationId} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-base font-semibold text-slate-950">{recommendation.title || 'Recommended action'}</h3>
+                    <StatusPill tone={getRecommendationTone(recommendation.priority)}>{recommendation.priority || 'medium'}</StatusPill>
+                    <StatusPill tone={getRecommendationTone(recommendation.status)}>{recommendation.status || 'pending'}</StatusPill>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{recommendation.description || 'No description captured.'}</p>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1">Due {formatDate(recommendation.dueDate || recommendation.due_date)}</span>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1">{recommendation.sourceEvent || recommendation.source_event || 'manual'}</span>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1">{getRecommendationAgeLabel(recommendation)}</span>
+                    {recommendation.taskId ? <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">Task linked</span> : null}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 xl:justify-end">
+                  {active ? (
+                    <>
+                      {recommendation.status === 'pending' ? (
+                        <button type="button" onClick={() => runRecommendationAction('accept', recommendation)} disabled={workingId.startsWith(recommendation.recommendationId)} className="inline-flex min-h-10 items-center rounded-xl bg-slate-900 px-3 text-sm font-semibold text-white disabled:bg-slate-300">Accept</button>
+                      ) : null}
+                      <button type="button" onClick={() => runRecommendationAction('task', recommendation)} disabled={workingId.startsWith(recommendation.recommendationId) || Boolean(recommendation.taskId)} className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 disabled:opacity-60">Convert To Task</button>
+                      {String(recommendation.recommendationType || recommendation.recommendation_type) === 'send_property' ? (
+                        <button type="button" onClick={() => onShare?.(recommendation)} disabled={workingId.startsWith(recommendation.recommendationId)} className="inline-flex min-h-10 items-center rounded-xl border border-blue-100 bg-blue-50 px-3 text-sm font-semibold text-blue-700 disabled:opacity-60">Send Property</button>
+                      ) : null}
+                      <button type="button" onClick={() => runRecommendationAction('complete', recommendation)} disabled={workingId.startsWith(recommendation.recommendationId)} className="inline-flex min-h-10 items-center rounded-xl border border-emerald-100 bg-emerald-50 px-3 text-sm font-semibold text-emerald-700 disabled:opacity-60">Complete</button>
+                      <button type="button" onClick={() => runRecommendationAction('dismiss', recommendation)} disabled={workingId.startsWith(recommendation.recommendationId)} className="inline-flex min-h-10 items-center rounded-xl border border-rose-100 bg-rose-50 px-3 text-sm font-semibold text-rose-700 disabled:opacity-60">Dismiss</button>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            </article>
+          )
+        }) : (
+          <EmptyState title="No recommendations yet" copy="Bridge will create recommended actions from lead events, suggestions, viewings, offers, communication logs, and inactivity checks." />
+        )}
+      </div>
+    </section>
   )
 }
 
@@ -1234,16 +2158,114 @@ function OfferTransactionList({ offers = [], transactions = [], convertedTransac
   )
 }
 
+function OwnershipCard({ organisationId, lead, actor, onSaved }) {
+  const [agentId, setAgentId] = useState(lead.assignedAgentId || '')
+  const [queueId, setQueueId] = useState(lead.assignedQueueId || 'unassigned')
+  const [saving, setSaving] = useState('')
+  const [error, setError] = useState('')
+  const canManage = canManageLeadAssignment(actor, lead)
+
+  useEffect(() => {
+    setAgentId(lead.assignedAgentId || '')
+    setQueueId(lead.assignedQueueId || 'unassigned')
+  }, [lead.assignedAgentId, lead.assignedQueueId])
+
+  async function run(label, action) {
+    try {
+      setSaving(label)
+      setError('')
+      await action()
+      await onSaved()
+    } catch (actionError) {
+      setError(actionError?.message || 'Unable to update assignment.')
+    } finally {
+      setSaving('')
+    }
+  }
+
+  return (
+    <section className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-950">Ownership</h3>
+          <p className="mt-1 text-sm text-slate-500">Responsible owner, queue, and first-contact SLA for this lead.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <StatusPill tone={getSlaTone(lead.slaStatus)}>{formatSlaStatus(lead.slaStatus)}</StatusPill>
+          <StatusPill>{formatSlaStatus(lead.ownershipStatus)}</StatusPill>
+        </div>
+      </div>
+
+      <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Field label="Assigned Agent" value={lead.assignedAgent || 'Unassigned'} />
+        <Field label="Assigned Team" value={lead.assignedQueue || '—'} />
+        <Field label="Assigned Date" value={formatDateTime(lead.assignedAt)} />
+        <Field label="Response SLA" value={formatDateTime(lead.slaDueAt)} />
+        <Field label="First Contacted" value={formatDateTime(lead.firstContactedAt)} />
+        <Field label="Response Time" value={lead.responseTimeHours !== null ? `${lead.responseTimeHours}h` : '—'} />
+        <Field label="Agent Id" value={lead.assignedAgentId || '—'} />
+        <Field label="Queue Id" value={lead.assignedQueueId || '—'} />
+      </dl>
+
+      {error ? <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+
+      {canManage ? (
+        <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_180px_auto_auto_auto]">
+          <input value={agentId} onChange={(event) => setAgentId(event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" placeholder="Agent user id" />
+          <select value={queueId} onChange={(event) => setQueueId(event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+            {LEAD_ASSIGNMENT_QUEUES.map((queue) => <option key={queue} value={queue}>{queue.replace(/_/g, ' ')}</option>)}
+          </select>
+          <button type="button" disabled={Boolean(saving) || !agentId} onClick={() => run('agent', () => assignLeadToAgent({ organisationId, leadId: lead.leadId, agentId, reason: 'Assigned from Lead Workspace' }, { actor }))} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-slate-900 px-3 text-sm font-semibold text-white disabled:bg-slate-300">
+            Assign
+          </button>
+          <button type="button" disabled={Boolean(saving)} onClick={() => run('queue', () => assignLeadToQueue({ organisationId, leadId: lead.leadId, queueId, reason: 'Assigned to queue from Lead Workspace' }, { actor }))} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 disabled:opacity-60">
+            Assign Queue
+          </button>
+          <button type="button" disabled={Boolean(saving)} onClick={() => run('auto', () => autoAssignLead({ organisationId, leadId: lead.leadId }, { actor }))} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 px-3 text-sm font-semibold text-blue-700 disabled:opacity-60">
+            Auto-Assign
+          </button>
+        </div>
+      ) : null}
+
+      {canManage ? (
+        <div className="mt-3">
+          <button type="button" disabled={Boolean(saving) || Boolean(lead.firstContactedAt)} onClick={() => run('contacted', () => markLeadFirstContacted({ organisationId, leadId: lead.leadId }, { actor }))} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-sm font-semibold text-emerald-700 disabled:opacity-60">
+            Mark First Contacted
+          </button>
+        </div>
+      ) : null}
+
+      <details className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+        <summary className="cursor-pointer text-sm font-semibold text-slate-950">View History</summary>
+        <div className="mt-3 divide-y divide-slate-100">
+          {lead.assignmentHistory?.length ? lead.assignmentHistory.map((item) => (
+            <div key={item.assignmentId || `${item.createdAt}-${item.reason}`} className="grid gap-2 py-3 text-sm sm:grid-cols-[150px_1fr]">
+              <span className="font-semibold text-slate-500">{formatDateTime(item.createdAt)}</span>
+              <span className="text-slate-700">
+                {item.reason || 'Assignment updated'} · {item.previousAgentId || item.previousQueueId || 'none'} → {item.newAgentId || item.newQueueId || 'none'}
+              </span>
+            </div>
+          )) : <p className="py-3 text-sm text-slate-500">No assignment history yet.</p>}
+        </div>
+      </details>
+    </section>
+  )
+}
+
 function AgentLeadWorkspace() {
   const { leadId } = useParams()
   const navigate = useNavigate()
   const workspaceContext = useWorkspace()
   const organisationId = getOrganisationId(workspaceContext)
-  const actor = useMemo(() => getActor(workspaceContext.profile), [workspaceContext.profile])
+  const actor = useMemo(() => getActor({
+    ...(workspaceContext.profile || {}),
+    workspaceRole: workspaceContext.currentMembership?.workspace_role || workspaceContext.currentMembership?.organisation_role || workspaceContext.currentMembership?.role || workspaceContext.profile?.role,
+  }), [workspaceContext.currentMembership, workspaceContext.profile])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [data, setData] = useState(null)
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState('timeline')
+  const [shareDraft, setShareDraft] = useState(null)
 
   const loadWorkspace = useCallback(async () => {
     if (!organisationId || !leadId) return
@@ -1265,14 +2287,37 @@ function AgentLeadWorkspace() {
   }, [loadWorkspace])
 
   const row = data?.row || null
+  const sourceInfo = row ? getLeadSourceInfo(row) : null
+  const workspaceAnalytics = row ? buildLeadWorkspaceAnalyticsSummary(row) : null
+  const openShareFromRecommendation = useCallback((recommendation) => {
+    const metadata = recommendation?.metadata || {}
+    const targetListingId = metadata.listingId || metadata.listing_id || metadata.listingIds?.[0] || metadata.listing_ids?.[0]
+    const interest = (row?.listingInterests || data?.listingInterests || []).find((item) => item.listingId === targetListingId)
+    const suggestion = (row?.suggestions || data?.suggestions || []).find((item) => item.listingId === targetListingId)
+    const listing = interest?.listing || suggestion?.listing || null
+    if (!listing) {
+      setActiveTab('listings')
+      return
+    }
+    setShareDraft({
+      listing,
+      requirementId: metadata.requirementId || metadata.requirement_id || interest?.requirementId || suggestion?.requirementId,
+      interestId: interest?.interestId,
+      suggestionId: suggestion?.suggestionId,
+      recommendationId: recommendation.recommendationId,
+    })
+  }, [data?.listingInterests, data?.suggestions, row?.listingInterests, row?.suggestions])
   const tabs = [
     { key: 'overview', label: 'Overview' },
     { key: 'requirements', label: 'Requirements' },
+    { key: 'saved_searches', label: 'Saved Searches' },
+    { key: 'suggestions', label: 'Suggestions' },
     { key: 'listings', label: 'Listings' },
-    { key: 'activity', label: 'Notes & Activity' },
+    { key: 'recommendations', label: 'Recommendations' },
+    { key: 'timeline', label: 'Timeline' },
     { key: 'tasks', label: 'Tasks' },
     { key: 'appointments', label: 'Appointments' },
-    { key: 'offers', label: 'Offers / Transactions' },
+    { key: 'offers', label: 'Offers' },
   ]
 
   return (
@@ -1299,11 +2344,12 @@ function AgentLeadWorkspace() {
                 {row.transactionCount || row.convertedTransactionId ? <StatusPill tone="green">Converted</StatusPill> : null}
               </div>
             </div>
-            <div className="mt-5 grid gap-3 md:grid-cols-5">
-              <Metric label="Requirements" value={row.requirements?.length || 0} icon={ClipboardList} />
-              <Metric label="Listings" value={row.listingInterests?.length || row.listingCount || 0} icon={Home} />
-              <Metric label="Appointments" value={row.appointmentCount} icon={CalendarDays} />
-              <Metric label="Offers" value={row.offerCount} icon={FileText} />
+            <div className="mt-5 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+              <Metric label="Response Time" value={workspaceAnalytics?.responseTimeLabel || 'Pending'} icon={Clock3} />
+              <Metric label="Touchpoints" value={workspaceAnalytics?.touchpoints || 0} icon={MessageSquarePlus} />
+              <Metric label="Matches" value={workspaceAnalytics?.matches || 0} icon={Home} />
+              <Metric label="Viewings" value={workspaceAnalytics?.viewings || 0} icon={CalendarDays} />
+              <Metric label="Offers" value={workspaceAnalytics?.offers || 0} icon={FileText} />
               <Metric label="Transactions" value={row.transactionCount || (row.convertedTransactionId ? 1 : 0)} icon={CheckCircle2} />
             </div>
           </header>
@@ -1319,10 +2365,14 @@ function AgentLeadWorkspace() {
           {activeTab === 'overview' ? (
             <section className={`${panelClass} p-5`}>
               <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Overview</h2>
+              <OwnershipCard organisationId={organisationId} lead={row} actor={actor} onSaved={loadWorkspace} />
               <dl className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
                 <Field label="Phone" value={row.phone || 'No phone'} />
                 <Field label="Email" value={row.email || 'No email'} />
-                <Field label="Source" value={row.source} />
+                <Field label="Lead Source" value={sourceInfo?.leadSource || row.source} />
+                <Field label="Original Source" value={sourceInfo?.originalSource} />
+                <Field label="First Source" value={sourceInfo?.firstSource} />
+                <Field label="Latest Source" value={sourceInfo?.latestSource} />
                 <Field label="Status" value={row.status} />
                 <Field label="Assigned Agent" value={row.assignedAgent} />
                 <Field label="Created" value={formatDate(row.createdAt)} />
@@ -1334,7 +2384,21 @@ function AgentLeadWorkspace() {
                 <Field label="Area Interest" value={row.areaInterest || row.area_interest} />
                 <Field label="Property Interest" value={row.propertyInterest || row.property_interest} />
               </dl>
+              <CommunicationHealthCard lead={row} />
               {row.notes ? <p className="mt-5 whitespace-pre-wrap rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">{row.notes}</p> : null}
+              <section className="mt-5">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-slate-950">Enquiry History</h3>
+                  <StatusPill>{sourceInfo?.enquiryActivities?.length || 0} enquiries</StatusPill>
+                </div>
+                <div className="mt-3">
+                  {sourceInfo?.enquiryActivities?.length ? (
+                    <TimelineList items={sourceInfo.enquiryActivities} />
+                  ) : (
+                    <EmptyState title="No enquiry history yet" copy="External Property24, Private Property, website, WhatsApp, referral, and import enquiries will appear here once ingested." />
+                  )}
+                </div>
+              </section>
             </section>
           ) : null}
 
@@ -1348,12 +2412,46 @@ function AgentLeadWorkspace() {
             />
           ) : null}
 
-          {activeTab === 'activity' ? (
-            <section className={`${panelClass} p-5`}>
-              <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Notes & Activity</h2>
-              <ActivityForm organisationId={organisationId} leadId={row.leadId} actor={actor} onSaved={loadWorkspace} />
-              <div className="mt-5"><TimelineList items={row.activities} /></div>
-            </section>
+          {activeTab === 'suggestions' ? (
+            <LeadSuggestionsPanel
+              organisationId={organisationId}
+              lead={row}
+              suggestions={data?.suggestions || row.suggestions || []}
+              actor={actor}
+              onSaved={loadWorkspace}
+              onShare={setShareDraft}
+            />
+          ) : null}
+
+          {activeTab === 'saved_searches' ? (
+            <SavedSearchesPanel
+              organisationId={organisationId}
+              lead={row}
+              requirements={data?.requirements || row.requirements || []}
+              savedSearches={data?.savedSearches || row.savedSearches || []}
+              propertyShares={data?.propertyShares || row.propertyShares || []}
+              actor={actor}
+              onSaved={loadWorkspace}
+            />
+          ) : null}
+
+          {activeTab === 'timeline' ? (
+            <CommunicationTimelinePanel
+              organisationId={organisationId}
+              lead={row}
+              actor={actor}
+              timeline={data?.timeline || row.communicationTimeline || []}
+              onSaved={loadWorkspace}
+            />
+          ) : null}
+
+          {activeTab === 'recommendations' ? (
+            <LeadRecommendationsPanel
+              recommendations={data?.recommendations || row.recommendations || []}
+              actor={actor}
+              onSaved={loadWorkspace}
+              onShare={openShareFromRecommendation}
+            />
           ) : null}
 
           {activeTab === 'tasks' ? (
@@ -1372,6 +2470,7 @@ function AgentLeadWorkspace() {
               requirements={data?.requirements || row.requirements || []}
               actor={actor}
               onSaved={loadWorkspace}
+              onShare={setShareDraft}
             />
           ) : null}
 
@@ -1389,6 +2488,21 @@ function AgentLeadWorkspace() {
             </section>
           ) : null}
         </>
+      ) : null}
+      {shareDraft && row ? (
+        <PropertyShareDialog
+          draft={shareDraft}
+          organisationId={organisationId}
+          lead={row}
+          requirements={data?.requirements || row.requirements || []}
+          savedSearches={data?.savedSearches || row.savedSearches || []}
+          actor={actor}
+          onClose={() => setShareDraft(null)}
+          onSaved={async () => {
+            setShareDraft(null)
+            await loadWorkspace()
+          }}
+        />
       ) : null}
     </main>
   )
