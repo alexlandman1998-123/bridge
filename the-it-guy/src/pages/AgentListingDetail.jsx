@@ -517,9 +517,9 @@ function SnapshotRow({ label, value }) {
 
 function CompactSnapshotRow({ label, value }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-[#edf2f7] py-2 last:border-b-0">
-      <span className="text-[0.72rem] font-semibold text-[#6b7d93]">{label}</span>
-      <span className="min-w-0 truncate text-right text-[0.8rem] font-semibold text-[#142132]">{value || '—'}</span>
+    <div className="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)] items-center gap-3 border-b border-[#edf2f7] py-2 last:border-b-0">
+      <span className="min-w-0 text-[0.72rem] font-semibold leading-5 text-[#6b7d93]">{label}</span>
+      <span className="min-w-0 break-words text-right text-[0.8rem] font-semibold leading-5 text-[#142132]">{value || '—'}</span>
     </div>
   )
 }
@@ -543,13 +543,13 @@ function StatusPill({ status = '', label = '' }) {
 function InfoTile({ icon = Info, label, value, status = '' }) {
   const Icon = icon
   return (
-    <div className="flex min-w-0 items-center gap-3 rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-3.5 py-3">
+    <div className="flex min-w-0 items-start gap-3 rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-3.5 py-3">
       <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-[#eef5fb] text-[#1f4f78]">
         <Icon size={17} />
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">{label}</p>
-        <p className="mt-1 truncate text-sm font-semibold text-[#243d56]" title={String(value || '—')}>{value || '—'}</p>
+        <p className="mt-1 break-words text-sm font-semibold leading-5 text-[#243d56]" title={String(value || '—')}>{value || '—'}</p>
       </div>
       {status ? <StatusPill status={status} /> : null}
     </div>
@@ -4142,9 +4142,9 @@ function AgentListingDetail() {
 
           {sellerWorkspaceTab === 'overview' ? (
             <section className="space-y-5">
-              <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
+              <div className="grid gap-5 min-[1680px]:grid-cols-[minmax(0,1fr)_minmax(400px,440px)]">
                 <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                  <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="grid gap-5 min-[1280px]:grid-cols-[minmax(0,1fr)_clamp(150px,18vw,240px)] min-[1280px]:items-start">
                     <div className="min-w-0">
                       <button
                         type="button"
@@ -4160,7 +4160,7 @@ function AgentListingDetail() {
                         <span className="text-[#c0cad5]">•</span>
                         <span>{marketingDraft.propertyType || listingRecord.propertyType || 'Property type pending'}</span>
                       </div>
-                      <div className="mt-5 grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                      <div className="mt-5 grid gap-x-6 gap-y-3 min-[820px]:grid-cols-2">
                         <CompactSnapshotRow label="Pipeline Value" value={formatCurrency(marketingDraft.price || listingRecord.askingPrice)} />
                         <CompactSnapshotRow label="Listing ID" value={marketingDraft.listingCode || listingRecord.listingReference || listingRecord.id} />
                         <CompactSnapshotRow label="Assigned Agent" value={listingRecord.assignedAgentName || listingRecord.assignedAgent || listingRecord.assignedAgentEmail || 'Unassigned'} />
@@ -4180,7 +4180,7 @@ function AgentListingDetail() {
                         <CompactSnapshotRow label="Last Updated" value={formatDate(mandateWorkspace.lastUpdated)} />
                       </div>
                     </div>
-                    <div className="h-32 w-full shrink-0 overflow-hidden rounded-[18px] border border-[#dfe8f2] bg-[#eef4fa] lg:w-44">
+                    <div className="h-32 min-h-0 w-full overflow-hidden rounded-[18px] border border-[#dfe8f2] bg-[#eef4fa] min-[1280px]:h-full min-[1280px]:max-h-44">
                       {getImageBlock(coverImage?.url || '', listingRecord.listingTitle)}
                     </div>
                   </div>
@@ -4209,16 +4209,16 @@ function AgentListingDetail() {
                     />
                     <CompactSnapshotRow label="Last Updated" value={formatDate(mandateWorkspace.lastUpdated)} />
                   </div>
-                  <div className="mt-auto grid gap-2 pt-5 sm:grid-cols-2">
+                  <div className="mt-auto grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2 pt-5">
                     {mandateWorkspace.signedUrl ? (
-                      <a href={mandateWorkspace.signedUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center justify-center rounded-lg bg-[#123955] px-3 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(18,57,85,0.14)]">
+                      <a href={mandateWorkspace.signedUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center rounded-lg bg-[#123955] px-3 py-2 text-center text-sm font-semibold leading-5 text-white shadow-[0_10px_22px_rgba(18,57,85,0.14)]">
                         Download Mandate
                       </a>
                     ) : (
                       <Button size="sm" disabled title="No signed mandate file is linked yet.">Download Mandate</Button>
                     )}
                     {mandateWorkspace.viewUrl ? (
-                      <a href={mandateWorkspace.viewUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center justify-center rounded-lg border border-[#dbe6f2] bg-white px-3 text-sm font-semibold text-[#2f4862]">
+                      <a href={mandateWorkspace.viewUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center rounded-lg border border-[#dbe6f2] bg-white px-3 py-2 text-center text-sm font-semibold leading-5 text-[#2f4862]">
                         View Mandate
                       </a>
                     ) : (
@@ -4242,7 +4242,7 @@ function AgentListingDetail() {
 
               <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
                 <h3 className="text-base font-semibold text-[#142132]">Key Information</h3>
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-3">
                   {keyInformationItems.map((item) => (
                     <InfoTile key={item.label} icon={item.icon} label={item.label} value={item.value} status={item.status} />
                   ))}
@@ -4250,24 +4250,24 @@ function AgentListingDetail() {
               </article>
 
               <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                <div className="flex flex-col gap-5 xl:flex-row xl:items-center">
-                  <div className="flex items-center gap-4">
+                <div className="grid gap-5 min-[1500px]:grid-cols-[minmax(240px,300px)_minmax(0,1fr)] min-[1500px]:items-center">
+                  <div className="flex flex-wrap items-center gap-4">
                     <div
-                      className="grid h-24 w-24 shrink-0 place-items-center rounded-full"
+                      className="grid h-20 w-20 shrink-0 place-items-center rounded-full sm:h-24 sm:w-24"
                       style={{ background: `conic-gradient(#1f7d44 ${sellerReadinessPercent * 3.6}deg, #e5edf6 0deg)` }}
                     >
-                      <div className="grid h-16 w-16 place-items-center rounded-full bg-white text-lg font-semibold text-[#142132]">
+                      <div className="grid h-14 w-14 place-items-center rounded-full bg-white text-base font-semibold text-[#142132] sm:h-16 sm:w-16 sm:text-lg">
                         {sellerReadinessPercent}%
                       </div>
                     </div>
-                    <div>
+                    <div className="min-w-[180px]">
                       <h3 className="text-base font-semibold text-[#142132]">Seller Onboarding Progress</h3>
                       <p className="mt-1 text-sm text-[#607387]">{sellerOnboardingCompletedCount} of {sellerOnboardingSteps.length} completed</p>
                     </div>
                   </div>
-                  <div className="grid flex-1 gap-2 md:grid-cols-4 xl:grid-cols-7">
+                  <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(128px,1fr))] gap-2">
                     {sellerOnboardingSteps.map((step) => (
-                      <div key={step.key} className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-3">
+                      <div key={step.key} className="min-h-[118px] rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-3">
                         <div className={`grid h-7 w-7 place-items-center rounded-full ${
                           step.state === 'completed'
                             ? 'bg-[#ecfaf1] text-[#1f7d44]'
