@@ -22,6 +22,7 @@ import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { createAgencyCrmLeadActivity, createAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
+import { leadCategoryLabel, normalizeLeadCategory } from '../lib/leadCategory'
 import { readAgentPrivateListings } from '../lib/agentListingStorage'
 import {
   CANVASSING_UPDATED_EVENT,
@@ -278,17 +279,14 @@ function splitProspectName(prospect = {}) {
   }
 }
 
-function resolveLeadCategoryFromProspect(prospectType, fallback = 'Buyer') {
-  const normalized = normalizeText(prospectType).toLowerCase()
-  if (normalized.includes('seller')) return 'Seller'
-  if (normalized.includes('buyer')) return 'Buyer'
-  return fallback
+function resolveLeadCategoryFromProspect(prospectType, fallback = 'buyer') {
+  return normalizeLeadCategory(prospectType, normalizeLeadCategory(fallback, 'buyer'))
 }
 
 function resolveDefaultLeadCategory(prospect) {
   const type = normalizeText(prospect?.prospectType).toLowerCase()
-  if (type.includes('seller')) return 'Seller'
-  return 'Buyer'
+  if (type.includes('seller')) return 'seller'
+  return 'buyer'
 }
 
 function resolveProspectAudience(prospect = {}) {
@@ -298,7 +296,7 @@ function resolveProspectAudience(prospect = {}) {
   return 'buyer'
 }
 
-function buildLeadPayloadFromProspect(prospect = {}, leadCategory = 'Buyer', currentAgent = {}, leadId = '') {
+function buildLeadPayloadFromProspect(prospect = {}, leadCategory = 'buyer', currentAgent = {}, leadId = '') {
   const { firstName, lastName } = splitProspectName(prospect)
   const normalizedCategory = resolveLeadCategoryFromProspect(leadCategory, resolveDefaultLeadCategory(prospect))
   const linkedListingId = resolveListingIdFromProspect(prospect)
@@ -1008,8 +1006,8 @@ function PipelineCanvassingPage() {
         agentName: currentAgent.fullName || null,
         activityType: 'Note',
         activityNote: existingConvertedLeadId
-          ? `${leadCategory} lead link repaired from converted prospect`
-          : `Prospect converted to ${leadCategory} lead`,
+          ? `${leadCategoryLabel(leadCategory)} lead link repaired from converted prospect`
+          : `Prospect converted to ${leadCategoryLabel(leadCategory)} lead`,
         outcome: targetLeadId,
         activityDate: new Date().toISOString(),
         createdAt: new Date().toISOString(),

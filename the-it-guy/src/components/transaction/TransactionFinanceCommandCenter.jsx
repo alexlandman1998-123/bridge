@@ -67,6 +67,84 @@ function getStatusTone(status = '') {
   return 'border-[#dbe5ef] bg-[#fbfdff] text-[#61758a]'
 }
 
+function getOwnershipValue(sources = [], fallback = 'Unassigned') {
+  return sources.map((value) => String(value || '').trim()).find(Boolean) || fallback
+}
+
+function buildApplicationOwnershipCard(transaction = {}, workspace = {}) {
+  const application = workspace.bond?.applications?.[0] || {}
+  return {
+    consultant: getOwnershipValue([
+      transaction.assignedConsultantName,
+      transaction.assigned_consultant_name,
+      transaction.assignedBondOriginatorName,
+      transaction.assigned_bond_originator_name,
+      transaction.assigned_agent,
+      application.originatorName,
+      application.assignedUserName,
+      application.assigned_user_name,
+      application.assignedUserEmail,
+      application.assigned_user_email,
+    ]),
+    branch: getOwnershipValue([
+      transaction.assignedBranchName,
+      transaction.assigned_branch_name,
+      transaction.branch,
+      transaction.branch_name,
+      application.branch,
+      application.assignedBranchName,
+      application.assigned_branch_name,
+      transaction.assignedBranchId,
+      transaction.assigned_branch_id,
+      application.assignedBranchId,
+      application.assigned_branch_id,
+    ]),
+    region: getOwnershipValue([
+      transaction.assignedRegionName,
+      transaction.assigned_region_name,
+      transaction.region,
+      transaction.region_name,
+      application.region,
+      application.assignedRegionName,
+      application.assigned_region_name,
+      transaction.assignedRegionId,
+      transaction.assigned_region_id,
+      application.assignedRegionId,
+      application.assigned_region_id,
+    ]),
+    assignedAt: getOwnershipValue([
+      transaction.assignedAt,
+      transaction.assigned_at,
+      application.assignedAt,
+      application.assigned_at,
+      application.scope_metadata?.assignedAt,
+    ], 'Not assigned yet'),
+    method: getOwnershipValue([
+      transaction.assignmentMethod,
+      transaction.assignment_method,
+      transaction.bond_assignment_method,
+      application.assignmentMethod,
+      application.assignment_method,
+      application.bond_assignment_method,
+      application.scope_metadata?.method,
+    ], 'Not assigned'),
+    routingSource: getOwnershipValue([
+      transaction.routingSource,
+      transaction.routing_source,
+      application.routingSource,
+      application.routing_source,
+      application.scope_metadata?.routingSource,
+    ], 'Not captured'),
+    routingRule: getOwnershipValue([
+      transaction.routingRuleId,
+      transaction.routing_rule_id,
+      application.routingRuleId,
+      application.routing_rule_id,
+      application.scope_metadata?.routingRuleId,
+    ], 'No rule'),
+  }
+}
+
 const SUMMARY_ICONS = {
   finance_type: Landmark,
   finance_owner: UserRound,
@@ -822,6 +900,7 @@ function FinanceCommandCenter({
   const hasBondWorkflow = workspace.financeType === 'bond' || workspace.financeType === 'combination'
   const hasCashWorkflow = workspace.financeType === 'cash' || workspace.financeType === 'combination'
   const hasDeveloperWorkflow = workspace.financeType === 'developer'
+  const applicationOwnership = buildApplicationOwnershipCard(transaction, workspace)
   const financeCommandCard = (
     <SectionCard
       title="Finance Command"
@@ -880,6 +959,31 @@ function FinanceCommandCenter({
       </div>
 
       <ProgressRail groups={workspace.railGroups} />
+
+      {hasBondWorkflow ? (
+        <SectionCard
+          title="Application Owner"
+          copy="Consultant, branch, region, assignment timing, and routing method."
+          actions={<UserRound size={16} className="text-[#6d8197]" />}
+        >
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-7">
+            {[
+              { label: 'Consultant', value: applicationOwnership.consultant },
+              { label: 'Branch', value: applicationOwnership.branch },
+              { label: 'Region', value: applicationOwnership.region },
+              { label: 'Assigned', value: formatDate(applicationOwnership.assignedAt, applicationOwnership.assignedAt) },
+              { label: 'Method', value: title(applicationOwnership.method) },
+              { label: 'Routing Source', value: title(applicationOwnership.routingSource) },
+              { label: 'Routing Rule', value: applicationOwnership.routingRule },
+            ].map((item) => (
+              <article key={item.label} className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] px-3 py-3">
+                <span className="block text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[#8ca0b6]">{item.label}</span>
+                <strong className="mt-1 block text-sm font-semibold leading-5 text-[#142132]">{item.value}</strong>
+              </article>
+            ))}
+          </div>
+        </SectionCard>
+      ) : null}
 
       {hasBondWorkflow ? (
         <SectionCard

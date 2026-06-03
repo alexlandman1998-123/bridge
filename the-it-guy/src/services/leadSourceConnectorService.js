@@ -1,5 +1,6 @@
 import { createOrUpdateLeadFromEnquiry, normalizeLeadSource, recordLeadIngestionFailure } from './leadIngestionService'
 import { getOrganisationPrivateListings } from './privateListingService'
+import { inferLeadCategoryFromSource, normalizeLeadCategory } from '../lib/leadCategory'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -129,7 +130,10 @@ export function buildCanonicalLeadPayload(payload = {}, sourceName = 'Other') {
     listingId: normalizeText(payload.listingId || payload.listing_id || payload.privateListingId || payload.private_listing_id),
     receivedAt: normalizeTimestamp(payload.receivedAt || payload.received_at || payload.createdAt || payload.created_at || payload.timestamp),
     enquiryTimestamp: normalizeTimestamp(payload.receivedAt || payload.received_at || payload.createdAt || payload.created_at || payload.timestamp),
-    leadCategory: normalizeText(payload.leadCategory || payload.lead_category) || 'Buyer',
+    leadCategory: normalizeLeadCategory(
+      payload.leadCategory || payload.lead_category,
+      inferLeadCategoryFromSource(payload.source || sourceName, 'other'),
+    ),
     leadDirection: normalizeText(payload.leadDirection || payload.lead_direction) || 'Inbound',
     budget: payload.budgetMax ?? payload.budget_max ?? payload.budget,
     budgetMax: payload.budgetMax ?? payload.budget_max ?? payload.budget,
@@ -197,7 +201,9 @@ export function mapWebsitePayload(payload = {}) {
     ...mapCommonContactPayload(payload, 'Website'),
     source: 'Website',
     externalReference: buildExternalReference(pickFirst(payload, ['externalReference', 'external_reference', 'submissionId', 'submission_id', 'id', 'reference']), 'WEB'),
-    leadCategory: isSellerIntent ? 'Seller' : pickFirst(payload, ['leadCategory', 'lead_category']) || 'Buyer',
+    leadCategory: isSellerIntent
+      ? 'seller'
+      : normalizeLeadCategory(pickFirst(payload, ['leadCategory', 'lead_category']), inferLeadCategoryFromSource('Website', 'buyer')),
     propertyType: pickFirst(payload, ['propertyType', 'property_type', 'propertyInterest', 'property_interest']),
     intentType: isSellerIntent ? 'sell' : 'buy',
     rawPayload: payload,

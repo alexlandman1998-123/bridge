@@ -96,7 +96,7 @@ try {
     email: 'seller@example.test',
     suburb: 'Benoni',
   })
-  assert.equal(valuation.leadCategory, 'Seller')
+  assert.equal(valuation.leadCategory, 'seller')
   assert.equal(valuation.requirement.intentType, 'sell')
 
   const p24 = mapProperty24Payload({

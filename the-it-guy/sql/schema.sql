@@ -446,7 +446,7 @@ create table if not exists leads (
   organisation_id uuid not null references organisations(id) on delete cascade,
   assigned_agent_id uuid references profiles(id) on delete set null,
   contact_id uuid references contacts(contact_id) on delete set null,
-  lead_category text not null default 'Buyer',
+  lead_category text not null default 'other' check (lead_category in ('buyer', 'seller', 'other')),
   lead_direction text not null default 'Inbound',
   lead_source text not null default 'Other',
   stage text not null default 'New Lead',
@@ -467,7 +467,7 @@ create table if not exists leads (
 alter table if exists leads add column if not exists organisation_id uuid references organisations(id) on delete cascade;
 alter table if exists leads add column if not exists assigned_agent_id uuid references profiles(id) on delete set null;
 alter table if exists leads add column if not exists contact_id uuid references contacts(contact_id) on delete set null;
-alter table if exists leads add column if not exists lead_category text not null default 'Buyer';
+alter table if exists leads add column if not exists lead_category text not null default 'other' check (lead_category in ('buyer', 'seller', 'other'));
 alter table if exists leads add column if not exists lead_direction text not null default 'Inbound';
 alter table if exists leads add column if not exists lead_source text not null default 'Other';
 alter table if exists leads add column if not exists stage text not null default 'New Lead';

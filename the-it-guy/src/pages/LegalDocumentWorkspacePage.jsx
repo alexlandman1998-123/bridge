@@ -18,6 +18,7 @@ import {
 import { documentPacketBelongsToLead, resolveDocumentPacketStatus } from '../core/documents/packetStatusResolver'
 import { OTP_DOCUMENT_TYPES } from '../core/transactions/salesWorkflow'
 import { addLeadActivity, getAgencyPipelineSnapshot, listAgencyLeads, updateAgencyLead } from '../lib/agencyPipelineService'
+import { inferLeadCategoryFromRecord } from '../lib/leadCategory'
 import {
   createDocumentPacket,
   fetchDocumentPacket,
@@ -148,7 +149,7 @@ function buildLooseLeadContextFromRoute({ organisationId = '', leadId = '' } = {
   const lead = {
     leadId: normalizedLeadId,
     organisationId: normalizeText(organisationId) || null,
-    leadCategory: 'Seller',
+    leadCategory: 'seller',
     stage: 'Mandate Draft',
     status: 'Mandate Draft',
     sellerPropertyAddress: '',
@@ -263,7 +264,7 @@ async function fetchLeadContextFromSupabase({ organisationId = '', leadId = '' }
     assignedAgentName: '',
     assignedAgentEmail: '',
     contactId,
-    leadCategory: normalizeText(row?.lead_category) || 'Buyer',
+    leadCategory: inferLeadCategoryFromRecord(row, 'other'),
     leadDirection: normalizeText(row?.lead_direction) || 'Inbound',
     leadSource: normalizeText(row?.lead_source) || 'Other',
     stage: normalizeText(row?.stage) || 'New Lead',

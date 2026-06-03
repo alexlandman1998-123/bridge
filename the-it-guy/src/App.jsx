@@ -99,6 +99,7 @@ const BondDevelopmentsPage = lazy(() => import('./pages/bond/BondDevelopmentsPag
 const BondTransactionsPage = lazy(() => import('./pages/bond/BondTransactionsPage'))
 const BondModuleHubPage = lazy(() => import('./pages/bond/BondModuleHubPage'))
 const BondOrganisationPage = lazy(() => import('./pages/bond/BondOrganisationPage'))
+const BondPartnerCollaborationPage = lazy(() => import('./pages/bond/BondPartnerCollaborationPage'))
 const CommercialLayout = lazy(() => import('./modules/commercial/components/CommercialLayout'))
 const CommercialActivityPage = lazy(() => import('./modules/commercial/pages/CommercialActivityPage'))
 const CommercialBrokerPerformancePage = lazy(() => import('./modules/commercial/pages/CommercialBrokerPerformancePage'))
@@ -145,6 +146,7 @@ const Pipeline = lazy(() => import('./pages/Pipeline'))
 const PipelineCanvassingPage = lazy(() => import('./pages/PipelineCanvassingPage'))
 const PipelineOverviewPage = lazy(() => import('./pages/PipelineOverviewPage'))
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'))
+const PartnerPortalPage = lazy(() => import('./pages/PartnerPortalPage'))
 const PartnersPage = lazy(() => import('./pages/PartnersPage'))
 const PlatformDiagnosticsPage = lazy(() => import('./pages/PlatformDiagnosticsPage'))
 const WorkflowMigrationValidationPage = lazy(() => import('./pages/WorkflowMigrationValidationPage'))
@@ -1652,6 +1654,16 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/bond/partner-inbox"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <AppErrorBoundary scope="bond-partner-inbox" title="Partner inbox failed to load">
+                      <BondPartnerCollaborationPage />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/bond/organisation"
                 element={
                   <RoleRoute allowedRoles={['bond_originator']}>
@@ -1677,6 +1689,14 @@ function AppRoutes() {
               />
               <Route
                 path="/bond/organisation/consultants/:consultantId"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <BondOrganisationPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/organisation/partners/:partnerId"
                 element={
                   <RoleRoute allowedRoles={['bond_originator']}>
                     <BondOrganisationPage />
@@ -2164,6 +2184,8 @@ function AppRoutes() {
               </TokenRouteGate>
             }
           />
+          <Route path="/partner-portal/:token" element={<TokenRouteGate><AppErrorBoundary scope="partner-portal-route" title="Partner portal failed to load"><PartnerPortalPage /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/partners/portal/:token" element={<TokenRouteGate><AppErrorBoundary scope="partner-portal-route" title="Partner portal failed to load"><PartnerPortalPage /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/sign/:token" element={<SignerPortal />} />
           <Route path="/appointment-rsvp/:token" element={<AppointmentRsvpPage />} />
           <Route path="/client/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />

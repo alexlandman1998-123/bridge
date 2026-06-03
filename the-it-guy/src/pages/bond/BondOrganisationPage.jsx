@@ -12,6 +12,7 @@ import {
   Network,
   Plus,
   RefreshCw,
+  Route,
   Search,
   Settings,
   ShieldCheck,
@@ -48,6 +49,19 @@ import {
   updateBondConsultant,
   updateBondRegion,
 } from '../../services/bondOrganisationService'
+import {
+  createBondPartner,
+  getBondPartnerWorkspaceRoute,
+  inviteBondPartner,
+  resendBondPartnerInvite,
+  setPartnerRoutingDefaults,
+  updateBondPartner,
+} from '../../services/bondPartnerManagementService'
+import {
+  createRoutingRule,
+  disableRoutingRule,
+  updateRoutingRule,
+} from '../../services/bondRoutingRulesService'
 
 const FALLBACK_ORGANISATION_TABS = Object.freeze([
   { key: 'overview', label: 'Overview' },
@@ -55,6 +69,7 @@ const FALLBACK_ORGANISATION_TABS = Object.freeze([
   { key: 'branches', label: 'Branches' },
   { key: 'consultants', label: 'Consultants' },
   { key: 'partners', label: 'Partners' },
+  { key: 'routing-rules', label: 'Routing Rules' },
 ])
 
 const VALID_ORGANISATION_VIEWS = Object.freeze([
@@ -64,6 +79,7 @@ const VALID_ORGANISATION_VIEWS = Object.freeze([
   'consultants',
   'applications',
   'partners',
+  'routing-rules',
 ])
 
 const DEFAULT_BOND_ORGANISATION_SERVICE = Object.freeze({
@@ -80,6 +96,14 @@ const DEFAULT_BOND_ORGANISATION_SERVICE = Object.freeze({
   assignConsultantToBranch,
   reassignApplications,
   deactivateConsultant,
+  createRoutingRule,
+  updateRoutingRule,
+  disableRoutingRule,
+  createBondPartner,
+  updateBondPartner,
+  inviteBondPartner,
+  resendBondPartnerInvite,
+  setPartnerRoutingDefaults,
 })
 const REGION_MANAGER_UI_ROLES = new Set(['regional_manager', 'hq_manager', 'manager', 'director', 'owner'])
 const BRANCH_MANAGER_UI_ROLES = new Set(['branch_manager', 'regional_manager', 'manager', 'director', 'owner'])
@@ -88,6 +112,21 @@ const CONSULTANT_ROLE_OPTIONS = Object.freeze([
   { value: 'bond_originator', label: 'Bond Originator' },
   { value: 'processor', label: 'Processor' },
   { value: 'admin_staff', label: 'Admin Staff' },
+])
+const PARTNER_TYPE_OPTIONS = Object.freeze([
+  { value: 'agency', label: 'Agency' },
+  { value: 'development', label: 'Development' },
+  { value: 'referral_partner', label: 'Referral Partner' },
+  { value: 'developer', label: 'Developer' },
+  { value: 'attorney', label: 'Attorney' },
+  { value: 'internal_source', label: 'Internal Source' },
+])
+const PARTNER_STATUS_OPTIONS = Object.freeze([
+  { value: 'draft', label: 'Draft' },
+  { value: 'invited', label: 'Invited' },
+  { value: 'active', label: 'Active' },
+  { value: 'paused', label: 'Paused' },
+  { value: 'disabled', label: 'Disabled' },
 ])
 
 function normalizeText(value) {
@@ -149,6 +188,7 @@ export function canAccessOrganisationView(view = 'overview', snapshot = null) {
   if (view === 'branches') return Boolean(snapshot?.capabilities?.canViewBranches)
   if (view === 'consultants') return Boolean(snapshot?.capabilities?.canViewConsultants)
   if (view === 'partners') return Boolean(snapshot?.capabilities?.canViewPartners)
+  if (view === 'routing-rules') return Boolean(snapshot?.capabilities?.canViewRoutingRules)
   return false
 }
 
@@ -175,6 +215,12 @@ function getUnavailableStateCopy(view = 'overview') {
     return {
       title: 'Organisation access required',
       description: 'Your current workspace scope does not include partner management access.',
+    }
+  }
+  if (view === 'routing-rules') {
+    return {
+      title: 'Organisation access required',
+      description: 'Your current workspace scope does not include routing rules access.',
     }
   }
   return {
@@ -301,6 +347,20 @@ function buildCommandActions({ view, canManage, navigate, regionSelected = false
       { label: 'Scope Permissions', icon: Settings, to: `${settingsRoute}?intent=review-bond-scopes` },
     ]
   }
+  if (view === 'partners') {
+    return [
+      { label: 'Add Partner', icon: Plus, to: `${settingsRoute}?intent=add-bond-partner`, variant: 'primary' },
+      { label: 'Invite Partner', icon: UserPlus, to: `${settingsRoute}?intent=invite-bond-partner` },
+      { label: 'Routing Defaults', icon: Route, to: `${settingsRoute}?intent=review-bond-partner-defaults` },
+    ]
+  }
+  if (view === 'routing-rules') {
+    return [
+      { label: 'Add Routing Rule', icon: Plus, to: `${settingsRoute}?intent=add-bond-routing-rule`, variant: 'primary' },
+      { label: 'Partner Defaults', icon: Route, to: `${settingsRoute}?intent=review-bond-partner-defaults` },
+      { label: 'Company Fallback', icon: SlidersHorizontal, to: `${settingsRoute}?intent=company-fallback-branch` },
+    ]
+  }
   return [
     { label: 'Add Branch', icon: Plus, to: `${settingsRoute}?intent=add-bond-branch` },
     { label: 'Invite User', icon: UserPlus, to: `${settingsRoute}?intent=invite-bond-user`, variant: 'primary' },
@@ -314,6 +374,7 @@ function OrganisationCommandHeader({
   regionTitle = '',
   branchTitle = '',
   consultantTitle = '',
+  partnerTitle = '',
   navigate = () => {},
 }) {
   const canManage = scopeCanManage(snapshot)
@@ -324,23 +385,33 @@ function OrganisationCommandHeader({
     regionSelected: Boolean(regionTitle),
     branchSelected: Boolean(branchTitle),
   })
-  const title = consultantTitle || branchTitle || regionTitle || (
+  const title = partnerTitle || consultantTitle || branchTitle || regionTitle || (
     view === 'regions'
       ? 'Regions'
       : view === 'branches'
         ? 'Branches'
         : view === 'consultants'
           ? 'Consultants'
+          : view === 'partners'
+            ? 'Partners'
+          : view === 'routing-rules'
+            ? 'Routing Rules'
           : 'Organisation'
   )
-  const subtitle = consultantTitle
-    ? 'Review this consultant’s workload, assigned applications, and current operating momentum.'
+  const subtitle = partnerTitle
+    ? 'Review this partner relationship, routing defaults, applications, and performance.'
+    : consultantTitle
+      ? 'Review this consultant’s workload, assigned applications, and current operating momentum.'
     : branchTitle
     ? 'Review branch pressure, the consultant roster, and file flow for this branch.'
     : regionTitle
       ? 'Monitor the region structure, branch coverage, and high-level performance.'
-      : view === 'consultants'
+        : view === 'partners'
+          ? 'Manage agency, development, and referral partners that send bond applications.'
+        : view === 'consultants'
         ? 'Manage consultant workload, application ownership, and performance.'
+        : view === 'routing-rules'
+          ? 'Define partner, development, regional, overflow, and company fallback routing defaults.'
         : view === 'branches'
           ? 'Manage branch capacity, consultant allocation, and branch application performance.'
           : view === 'regions'
@@ -1159,6 +1230,7 @@ function RegionWorkspaceRoute({ workspace = null, onBack = () => {} }) {
   }
   const region = workspace.region || {}
   const metrics = workspace.metrics || {}
+  const regionCapacity = workspace.regionCapacity || {}
   const noManager = !normalizeText(region.managerUserId || region.manager_user_id)
   const noBranches = !Number(metrics.branches || 0)
   return (
@@ -1187,6 +1259,36 @@ function RegionWorkspaceRoute({ workspace = null, onBack = () => {} }) {
       </section>
       {noManager ? <BondEmptyState compact title="No regional manager assigned" description="Assign a manager so this region has clear ownership." /> : null}
       {noBranches ? <BondEmptyState compact title="No branches in this region yet" description="Branches will be added in Phase 4. Once branches exist, they will roll up into this region." /> : null}
+      <SectionShell eyebrow="Capacity" title="Region Workload Overview">
+        {(regionCapacity.branches || []).length ? (
+          <div className="overflow-x-auto rounded-[18px] border border-[#e1e9f2]">
+            <table className="min-w-[720px] border-collapse">
+              <thead>
+                <tr>
+                  <HeaderCell>Branch</HeaderCell>
+                  <HeaderCell>Applications</HeaderCell>
+                  <HeaderCell>Consultants</HeaderCell>
+                  <HeaderCell>Avg Capacity</HeaderCell>
+                  <HeaderCell>Status</HeaderCell>
+                </tr>
+              </thead>
+              <tbody>
+                {(regionCapacity.branches || []).map((row) => (
+                  <tr key={row.branchId} className="border-t border-[#edf2f7] bg-white">
+                    <td className="px-4 py-4 text-sm font-semibold text-[#142132]">{row.branch}</td>
+                    <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{row.applications || 0}</td>
+                    <td className="px-4 py-4 text-sm text-[#17324d]">{row.consultants || 0}</td>
+                    <td className="px-4 py-4 text-sm text-[#17324d]">{row.averageCapacity || 0}</td>
+                    <td className="px-4 py-4"><StatusPill status={row.capacityStatus || 'Light'} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <BondEmptyState compact title="No workload to show yet" description="Branch capacity will appear once consultants and applications are assigned." />
+        )}
+      </SectionShell>
       <SectionShell eyebrow="Workspace Tabs" title="Region Workspace">
         <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
           {(workspace.tabs || []).map((tab) => (
@@ -1306,6 +1408,634 @@ function BranchesWorkspace({
         </table>
       </div>
     </SectionShell>
+  )
+}
+
+function getPartnerWorkspaceApplicationReference(row = {}) {
+  return formatApplicationReference(row)
+}
+
+function PartnersWorkspace({
+  rows = [],
+  canManage = false,
+  onView = () => {},
+  onAdd = () => {},
+  onEdit = () => {},
+  onRouting = () => {},
+  onInvite = () => {},
+  onDisable = () => {},
+  onRefresh = () => {},
+  onExport = () => {},
+}) {
+  return (
+    <div className="space-y-6">
+      <SectionShell
+        eyebrow="Partners"
+        title="Partners"
+        description="Manage agency, development, and referral partners that send bond applications."
+        action={(
+          <div className="flex flex-wrap gap-2">
+            {canManage ? <CommandButton icon={Plus} variant="primary" onClick={onAdd}>Add Partner</CommandButton> : null}
+            {canManage && rows.length ? <CommandButton icon={UserPlus} onClick={() => onInvite(rows[0])}>Invite Partner</CommandButton> : null}
+            <CommandButton icon={RefreshCw} onClick={onRefresh}>Refresh</CommandButton>
+            <CommandButton icon={Download} onClick={onExport}>Export</CommandButton>
+          </div>
+        )}
+      >
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <SummaryMetric label="Partners" value={rows.length} emphasis />
+          <SummaryMetric label="Applications Sent" value={rows.reduce((sum, row) => sum + Number(row.applicationsSent || 0), 0)} emphasis />
+          <SummaryMetric label="Active Applications" value={rows.reduce((sum, row) => sum + Number(row.activeApplications || 0), 0)} />
+          <SummaryMetric label="Approval Rate" value={formatPercent(rows.length ? rows.reduce((sum, row) => sum + Number(row.approvalRate || 0), 0) / rows.length : 0)} />
+          <SummaryMetric label="Routing Defaults" value={rows.filter((row) => row.defaultBranchId || row.defaultConsultantId).length} />
+        </div>
+      </SectionShell>
+
+      <SectionShell eyebrow="Management" title="Partner Management">
+        {!rows.length ? (
+          <BondEmptyState
+            compact
+            title="No partners yet"
+            description="Add your first agency, development, or referral partner to start tracking where bond applications come from."
+            action={canManage ? <CommandButton icon={Plus} variant="primary" onClick={onAdd}>Add Partner</CommandButton> : null}
+          />
+        ) : (
+          <div className="overflow-x-auto rounded-[18px] border border-[#e1e9f2]">
+            <table className="min-w-[1180px] border-collapse">
+              <thead>
+                <tr>
+                  <HeaderCell>Partner</HeaderCell>
+                  <HeaderCell>Type</HeaderCell>
+                  <HeaderCell>Status</HeaderCell>
+                  <HeaderCell>Default Region</HeaderCell>
+                  <HeaderCell>Default Branch</HeaderCell>
+                  <HeaderCell>Default Consultant</HeaderCell>
+                  <HeaderCell>Applications Sent</HeaderCell>
+                  <HeaderCell>Active Applications</HeaderCell>
+                  <HeaderCell>Approval Rate</HeaderCell>
+                  <HeaderCell>Avg Turnaround</HeaderCell>
+                  <HeaderCell>Last Activity</HeaderCell>
+                  <HeaderCell>Action</HeaderCell>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.id} className="border-t border-[#edf2f7] bg-white align-top transition hover:bg-[#fbfdff]">
+                    <td className="px-4 py-4">
+                      <p className="text-sm font-semibold text-[#142132]">{row.name}</p>
+                      <p className="mt-1 text-xs text-[#71869d]">{row.primaryContactEmail || row.primaryContactName || 'No primary contact'}</p>
+                    </td>
+                    <td className="px-4 py-4 text-sm text-[#17324d]">{row.typeLabel || row.type}</td>
+                    <td className="px-4 py-4"><StatusPill status={row.statusLabel || row.status} /></td>
+                    <td className="px-4 py-4 text-sm text-[#17324d]">{row.defaultRegion || 'Fallback'}</td>
+                    <td className="px-4 py-4 text-sm text-[#17324d]">{row.defaultBranch || 'Fallback'}</td>
+                    <td className="px-4 py-4 text-sm text-[#17324d]">{row.defaultConsultant || 'Workload balanced'}</td>
+                    <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{row.applicationsSent || 0}</td>
+                    <td className="px-4 py-4 text-sm text-[#17324d]">{row.activeApplications || 0}</td>
+                    <td className="px-4 py-4 text-sm text-[#17324d]">{formatPercent(row.approvalRate)}</td>
+                    <td className="px-4 py-4 text-sm text-[#17324d]">{formatLeadTime(row.averageTurnaround)}</td>
+                    <td className="px-4 py-4 text-sm text-[#60758d]">{row.lastActivity || 'No activity yet'}</td>
+                    <td className="px-4 py-4">
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => onView(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#31475d]">
+                          <Eye size={13} /> View
+                        </button>
+                        {canManage ? (
+                          <>
+                            <button type="button" onClick={() => onEdit(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#31475d]">
+                              <Pencil size={13} /> Edit
+                            </button>
+                            <button type="button" onClick={() => onRouting(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#31475d]">
+                              <Route size={13} /> Set Routing
+                            </button>
+                            <button type="button" onClick={() => onInvite(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#31475d]">
+                              <UserPlus size={13} /> Invite
+                            </button>
+                            {row.status !== 'disabled' ? (
+                              <button type="button" onClick={() => onDisable(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#f1d0d0] px-2.5 py-1.5 text-xs font-semibold text-[#9f2a2a]">
+                                <X size={13} /> Disable
+                              </button>
+                            ) : null}
+                          </>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionShell>
+    </div>
+  )
+}
+
+function PartnerWorkspaceRoute({
+  workspace = null,
+  canManage = false,
+  onBack = () => {},
+  onEdit = () => {},
+  onRouting = () => {},
+  onInvite = () => {},
+}) {
+  if (!workspace) {
+    return (
+      <SectionShell eyebrow="Partner" title="Partner workspace">
+        <BondEmptyState compact title="Partner not found." description="This partner is outside your current scope or no longer exists." action={<CommandButton icon={ArrowLeft} onClick={onBack}>Back to Partners</CommandButton>} />
+      </SectionShell>
+    )
+  }
+  const partner = workspace.partner || {}
+  const metrics = workspace.metrics || {}
+  const routing = workspace.routingDefaults || {}
+  return (
+    <div className="space-y-6">
+      <SectionShell
+        eyebrow="Partner Workspace"
+        title={partner.name}
+        description={`${partner.typeLabel || partner.type} partner · ${partner.statusLabel || partner.status}`}
+        action={(
+          <div className="flex flex-wrap gap-2">
+            <CommandButton icon={ArrowLeft} onClick={onBack}>Back</CommandButton>
+            {canManage ? <CommandButton icon={Pencil} onClick={() => onEdit(partner)}>Edit Partner</CommandButton> : null}
+            {canManage ? <CommandButton icon={Route} onClick={() => onRouting(partner)}>Set Routing</CommandButton> : null}
+            {canManage ? <CommandButton icon={UserPlus} onClick={() => onInvite(partner)}>Invite</CommandButton> : null}
+          </div>
+        )}
+      >
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <SummaryMetric label="Applications Sent" value={metrics.applicationsSent || 0} emphasis />
+          <SummaryMetric label="Active Applications" value={metrics.activeApplications || 0} emphasis />
+          <SummaryMetric label="Applications Submitted" value={metrics.submittedApplications || 0} />
+          <SummaryMetric label="Approvals" value={metrics.approvals || 0} />
+          <SummaryMetric label="Approval Rate" value={formatPercent(metrics.approvalRate)} />
+          <SummaryMetric label="Avg Turnaround" value={formatLeadTime(metrics.averageTurnaround)} />
+          <SummaryMetric label="Bank Response" value={formatLeadTime(metrics.averageBankResponseTime)} />
+          <SummaryMetric label="Last Application" value={metrics.lastApplicationDate || 'No applications yet'} />
+        </div>
+      </SectionShell>
+
+      <SectionShell eyebrow="Routing" title="Default Routing">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <SummaryMetric label="Region" value={routing.defaultRegion || 'Fallback'} emphasis />
+          <SummaryMetric label="Branch" value={routing.defaultBranch || 'Fallback'} emphasis />
+          <SummaryMetric label="Consultant" value={routing.defaultConsultant || 'Workload balanced'} />
+          <SummaryMetric label="Routing Rule" value={routing.routingRuleLabel || 'Fallback path'} />
+        </div>
+        {!routing.defaultBranchId && !routing.defaultConsultantId ? (
+          <div className="mt-4">
+            <BondEmptyState compact title="No routing default set" description="Applications from this partner will use the routing rules fallback path." action={canManage ? <CommandButton icon={Route} onClick={() => onRouting(partner)}>Set Routing Default</CommandButton> : null} />
+          </div>
+        ) : null}
+      </SectionShell>
+
+      <SectionShell eyebrow="Applications" title="Partner Applications">
+        {!workspace.applications?.length ? (
+          <BondEmptyState compact title="No applications from this partner yet" description="Once this partner starts sending buyers, their applications will appear here." />
+        ) : (
+          <div className="overflow-x-auto rounded-[18px] border border-[#e1e9f2]">
+            <table className="min-w-[920px] border-collapse">
+              <thead>
+                <tr>
+                  <HeaderCell>Buyer</HeaderCell>
+                  <HeaderCell>Property</HeaderCell>
+                  <HeaderCell>Application Reference</HeaderCell>
+                  <HeaderCell>Consultant</HeaderCell>
+                  <HeaderCell>Branch</HeaderCell>
+                  <HeaderCell>Status</HeaderCell>
+                  <HeaderCell>Submitted Date</HeaderCell>
+                  <HeaderCell>Last Activity</HeaderCell>
+                  <HeaderCell>Action</HeaderCell>
+                </tr>
+              </thead>
+              <tbody>
+                {workspace.applications.map((row) => (
+                  <tr key={row.key || row.id || row.transactionId} className="border-t border-[#edf2f7] bg-white align-top">
+                    <td className="px-4 py-4 text-sm font-semibold text-[#142132]">{row.client || row.buyerName || row.buyer?.name || 'Buyer pending'}</td>
+                    <td className="px-4 py-4 text-sm text-[#17324d]">{row.property || row.address || row.propertyAddress || 'Property pending'}</td>
+                    <td className="px-4 py-4 text-sm text-[#17324d]">{getPartnerWorkspaceApplicationReference(row)}</td>
+                    <td className="px-4 py-4 text-sm text-[#17324d]">{row.consultant || row.assignedConsultantId || row.assignedUserId || 'Unassigned'}</td>
+                    <td className="px-4 py-4 text-sm text-[#17324d]">{row.branch || row.branchId || 'Unassigned'}</td>
+                    <td className="px-4 py-4"><BondTransactionStatusBadge status={row.status} label={row.financeStageLabel || row.status || 'In progress'} /></td>
+                    <td className="px-4 py-4 text-sm text-[#60758d]">{row.submittedAt || row.submitted_at || row.createdAt || 'Not submitted'}</td>
+                    <td className="px-4 py-4 text-sm text-[#60758d]">{row.lastActivityLabel || row.lastActivityAt || 'No activity'}</td>
+                    <td className="px-4 py-4">
+                      {row.transactionId ? (
+                        <a href={`/bond/files/${row.transactionId}`} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#31475d]">
+                          <Eye size={13} /> Open
+                        </a>
+                      ) : (
+                        <span className="text-xs font-semibold text-[#71869d]">Read-only</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionShell>
+
+      <SectionShell eyebrow="Activity" title="Partner Activity">
+        {!workspace.recentActivity?.length ? (
+          <BondEmptyState compact title="No partner activity yet" description="Invites, acceptance, routing defaults, and partner changes will appear here." />
+        ) : (
+          <div className="divide-y divide-[#edf2f7] overflow-hidden rounded-[18px] border border-[#e1e9f2]">
+            {workspace.recentActivity.map((event) => (
+              <div key={event.id} className="bg-white px-4 py-4">
+                <p className="text-sm font-semibold text-[#142132]">{event.eventType || event.event_type}</p>
+                <p className="mt-1 text-xs text-[#71869d]">{event.createdAt || event.created_at}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionShell>
+    </div>
+  )
+}
+
+function RoutingRulesTable({ title = '', sourceLabel = 'Source', rows = [], canManage = false, onEdit = () => {}, onDisable = () => {} }) {
+  return (
+    <SectionShell eyebrow="Routing" title={title}>
+      {!rows.length ? (
+        <BondEmptyState compact title={`No ${title.toLowerCase()} yet`} description="Create routing defaults so applications can flow without manual ownership decisions." />
+      ) : (
+        <div className="overflow-x-auto rounded-[18px] border border-[#e1e9f2]">
+          <table className="min-w-[900px] border-collapse">
+            <thead>
+              <tr>
+                <HeaderCell>{sourceLabel}</HeaderCell>
+                <HeaderCell>Branch</HeaderCell>
+                <HeaderCell>Consultant</HeaderCell>
+                <HeaderCell>Applications Routed</HeaderCell>
+                <HeaderCell>Priority</HeaderCell>
+                <HeaderCell>Status</HeaderCell>
+                <HeaderCell>Action</HeaderCell>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id} className="border-t border-[#edf2f7] bg-white align-top transition hover:bg-[#fbfdff]">
+                  <td className="px-4 py-4">
+                    <p className="text-sm font-semibold text-[#142132]">{row.sourceName || row.name || 'Routing source'}</p>
+                    <p className="mt-1 text-xs text-[#71869d]">{row.sourceId || row.ruleType}</p>
+                  </td>
+                  <td className="px-4 py-4 text-sm text-[#17324d]">{row.branch || row.branchId || 'Unassigned'}</td>
+                  <td className="px-4 py-4 text-sm text-[#17324d]">{row.consultant || row.consultantId || 'Workload balanced'}</td>
+                  <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{row.applicationsRouted || 0}</td>
+                  <td className="px-4 py-4 text-sm text-[#17324d]">{row.priority || 100}</td>
+                  <td className="px-4 py-4"><StatusPill status={row.status || 'active'} /></td>
+                  <td className="px-4 py-4">
+                    <div className="flex flex-wrap gap-2">
+                      {canManage ? (
+                        <>
+                          <button type="button" onClick={() => onEdit(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#31475d]">
+                            <Pencil size={13} /> Edit
+                          </button>
+                          {row.status !== 'disabled' ? (
+                            <button type="button" onClick={() => onDisable(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#f1d0d0] px-2.5 py-1.5 text-xs font-semibold text-[#9f2a2a]">
+                              <X size={13} /> Disable
+                            </button>
+                          ) : null}
+                        </>
+                      ) : (
+                        <span className="text-xs font-semibold text-[#71869d]">Read-only</span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </SectionShell>
+  )
+}
+
+function RoutingRulesWorkspace({
+  dashboard = {},
+  canManage = false,
+  onAdd = () => {},
+  onEdit = () => {},
+  onDisable = () => {},
+  onRefresh = () => {},
+}) {
+  const fallback = dashboard.companyFallback || null
+  const performance = dashboard.performance || {}
+  return (
+    <div className="space-y-6">
+      <SectionShell
+        eyebrow="Routing Rules"
+        title="Partner Routing Rules"
+        description="Control agency, development, regional, overflow, and company fallback routing defaults."
+        action={(
+          <div className="flex flex-wrap gap-2">
+            {canManage ? <CommandButton icon={Plus} variant="primary" onClick={onAdd}>Add Routing Rule</CommandButton> : null}
+            <CommandButton icon={RefreshCw} onClick={onRefresh}>Refresh</CommandButton>
+          </div>
+        )}
+      >
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <SummaryMetric label="Agency Rules" value={dashboard.agencyRules?.length || 0} emphasis />
+          <SummaryMetric label="Development Rules" value={dashboard.developmentRules?.length || 0} emphasis />
+          <SummaryMetric label="Regional Rules" value={dashboard.regionalRules?.length || 0} emphasis />
+          <SummaryMetric label="Company Fallback" value={fallback?.fallbackBranch || 'Not set'} emphasis />
+          <SummaryMetric label="Fallback Capacity" value={fallback ? fallback.currentCapacity || 0 : 0} />
+        </div>
+      </SectionShell>
+      <RoutingRulesTable title="Agency Rules" sourceLabel="Agency" rows={dashboard.agencyRules || []} canManage={canManage} onEdit={onEdit} onDisable={onDisable} />
+      <RoutingRulesTable title="Development Rules" sourceLabel="Development" rows={dashboard.developmentRules || []} canManage={canManage} onEdit={onEdit} onDisable={onDisable} />
+      <RoutingRulesTable title="Regional Rules" sourceLabel="Region" rows={dashboard.regionalRules || []} canManage={canManage} onEdit={onEdit} onDisable={onDisable} />
+      <SectionShell eyebrow="Reporting" title="Routing Effectiveness">
+        {(performance.routingEffectiveness || []).length ? (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            {(performance.routingEffectiveness || []).map((row) => (
+              <SummaryMetric key={row.method} label={`${row.method} · ${row.approvalRate || 0}% approval`} value={row.volume || 0} emphasis />
+            ))}
+          </div>
+        ) : (
+          <BondEmptyState compact title="No routing performance yet" description="Routing effectiveness appears once applications are assigned through routing rules." />
+        )}
+      </SectionShell>
+    </div>
+  )
+}
+
+function PartnerFormModal({
+  modal = null,
+  regionOptions = [],
+  branchOptions = [],
+  consultantOptions = [],
+  onChange = () => {},
+  onClose = () => {},
+  onSubmit = () => {},
+}) {
+  if (!modal?.mode) return null
+  const values = modal.values || {}
+  const fieldErrors = modal.fieldErrors || {}
+  const isEdit = modal.mode === 'edit'
+  const isRouting = modal.mode === 'routing'
+  const isInvite = modal.mode === 'invite'
+  const title = isInvite ? 'Invite Partner' : isRouting ? 'Set Routing Default' : isEdit ? 'Edit Partner' : 'Add Partner'
+  const description = isInvite
+    ? 'Send a partnership invitation to the primary contact.'
+    : isRouting
+      ? 'Choose where applications from this partner should enter the bond origination network.'
+      : isEdit
+        ? 'Update partner details, relationship status, and contact information.'
+        : 'Create an agency, development, or referral partner for this bond organisation.'
+  const submitLabel = isInvite ? 'Send Invite' : isRouting ? 'Save Routing Default' : isEdit ? 'Save Partner' : 'Create Partner'
+  const selectedBranch = branchOptions.find((branch) => normalizeText(branch.id) === normalizeText(values.defaultBranchId))
+  const selectedConsultant = consultantOptions.find((consultant) => normalizeText(consultant.id) === normalizeText(values.defaultConsultantId))
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/35 px-4 backdrop-blur-sm">
+      <div className="max-h-[calc(100dvh-32px)] w-full max-w-2xl overflow-y-auto rounded-[24px] border border-white bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.22)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7d90a5]">Partners</p>
+            <h2 className="mt-2 text-xl font-semibold text-[#142132]">{title}</h2>
+            <p className="mt-2 text-sm leading-6 text-[#60758d]">{description}</p>
+          </div>
+          <button type="button" onClick={onClose} className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#d9e4ef] text-[#60758d] transition hover:bg-[#f8fbff]">
+            <X size={16} />
+          </button>
+        </div>
+
+        {modal.error ? (
+          <div className="mt-4 rounded-[14px] border border-[#f1d0d0] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#9f2a2a]">
+            {modal.error}
+          </div>
+        ) : null}
+
+        <div className="mt-5 grid gap-4">
+          {isInvite ? (
+            <label className="text-sm font-semibold text-[#31475d]">
+              Invitation Email *
+              <input value={values.invitedEmail || ''} onChange={(event) => onChange('invitedEmail', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm font-medium outline-none focus:border-[#9fb8d1]" />
+              <FieldError message={fieldErrors.invitedEmail} />
+            </label>
+          ) : null}
+
+          {!isInvite && !isRouting ? (
+            <>
+              <label className="text-sm font-semibold text-[#31475d]">
+                Partner Name *
+                <input value={values.name || ''} onChange={(event) => onChange('name', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm font-medium outline-none focus:border-[#9fb8d1]" />
+                <FieldError message={fieldErrors.name} />
+              </label>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="text-sm font-semibold text-[#31475d]">
+                  Partner Type *
+                  <select value={values.type || 'agency'} onChange={(event) => onChange('type', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm font-medium outline-none focus:border-[#9fb8d1]">
+                    {PARTNER_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                  <FieldError message={fieldErrors.type} />
+                </label>
+                <label className="text-sm font-semibold text-[#31475d]">
+                  Status
+                  <select value={values.status || 'draft'} onChange={(event) => onChange('status', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm font-medium outline-none focus:border-[#9fb8d1]">
+                    {PARTNER_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="text-sm font-semibold text-[#31475d]">
+                  Primary Contact Name
+                  <input value={values.primaryContactName || ''} onChange={(event) => onChange('primaryContactName', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm font-medium outline-none focus:border-[#9fb8d1]" />
+                </label>
+                <label className="text-sm font-semibold text-[#31475d]">
+                  Primary Contact Email
+                  <input value={values.primaryContactEmail || ''} onChange={(event) => onChange('primaryContactEmail', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm font-medium outline-none focus:border-[#9fb8d1]" />
+                  <FieldError message={fieldErrors.primaryContactEmail} />
+                </label>
+              </div>
+              <label className="text-sm font-semibold text-[#31475d]">
+                Primary Contact Number
+                <input value={values.primaryContactNumber || ''} onChange={(event) => onChange('primaryContactNumber', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm font-medium outline-none focus:border-[#9fb8d1]" />
+                <FieldError message={fieldErrors.primaryContactNumber} />
+              </label>
+            </>
+          ) : null}
+
+          {!isInvite ? (
+            <>
+              <div className="grid gap-4 md:grid-cols-3">
+                <label className="text-sm font-semibold text-[#31475d]">
+                  Default Region
+                  <select value={values.defaultRegionId || ''} onChange={(event) => onChange('defaultRegionId', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm font-medium outline-none focus:border-[#9fb8d1]">
+                    <option value="">Fallback</option>
+                    {regionOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+                  </select>
+                  <FieldError message={fieldErrors.defaultRegionId} />
+                </label>
+                <label className="text-sm font-semibold text-[#31475d]">
+                  Default Branch
+                  <select value={values.defaultBranchId || ''} onChange={(event) => onChange('defaultBranchId', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm font-medium outline-none focus:border-[#9fb8d1]">
+                    <option value="">Fallback</option>
+                    {branchOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+                  </select>
+                  <FieldError message={fieldErrors.defaultBranchId} />
+                </label>
+                <label className="text-sm font-semibold text-[#31475d]">
+                  Default Consultant
+                  <select value={values.defaultConsultantId || ''} onChange={(event) => onChange('defaultConsultantId', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm font-medium outline-none focus:border-[#9fb8d1]">
+                    <option value="">Workload balanced</option>
+                    {consultantOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+                  </select>
+                  <FieldError message={fieldErrors.defaultConsultantId} />
+                </label>
+              </div>
+              <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d90a5]">Routing Preview</p>
+                <p className="mt-2 text-sm text-[#142132]">{selectedBranch?.name || 'Fallback branch'} → {selectedConsultant?.name || 'Workload balanced consultant'}</p>
+                <p className="mt-1 text-sm text-[#60758d]">Saving this default will create or update the partner routing rule used by the assignment engine.</p>
+              </div>
+            </>
+          ) : null}
+
+          {!isInvite && !isRouting ? (
+            <label className="text-sm font-semibold text-[#31475d]">
+              Notes
+              <textarea value={values.notes || ''} onChange={(event) => onChange('notes', event.target.value)} rows={4} className="mt-2 w-full rounded-[12px] border border-[#d9e4ef] px-3 py-3 text-sm font-medium outline-none focus:border-[#9fb8d1]" />
+            </label>
+          ) : null}
+        </div>
+
+        <div className="mt-6 flex flex-wrap justify-end gap-2">
+          {isRouting ? (
+            <button type="button" onClick={() => {
+              onChange('defaultRegionId', '')
+              onChange('defaultBranchId', '')
+              onChange('defaultConsultantId', '')
+            }} className="rounded-[12px] border border-[#d9e4ef] bg-white px-4 py-2.5 text-sm font-semibold text-[#31475d] transition hover:bg-[#f8fbff]">
+              Clear Default
+            </button>
+          ) : null}
+          <button type="button" onClick={onClose} className="rounded-[12px] border border-[#d9e4ef] bg-white px-4 py-2.5 text-sm font-semibold text-[#31475d] transition hover:bg-[#f8fbff]">
+            Cancel
+          </button>
+          <button type="button" onClick={onSubmit} disabled={modal.submitting} className="rounded-[12px] border border-[#143250] bg-[#143250] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#183b5e] disabled:cursor-not-allowed disabled:opacity-60">
+            {modal.submitting ? 'Saving...' : submitLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RoutingRuleModal({
+  modal = null,
+  regionOptions = [],
+  branchOptions = [],
+  consultantOptions = [],
+  consultantRows = [],
+  onChange = () => {},
+  onClose = () => {},
+  onSubmit = () => {},
+}) {
+  if (!modal?.mode) return null
+  const values = modal.values || {}
+  const isEdit = modal.mode === 'edit'
+  const selectedBranch = branchOptions.find((branch) => normalizeText(branch.id) === normalizeText(values.branchId))
+  const selectedConsultant = consultantOptions.find((consultant) => normalizeText(consultant.id) === normalizeText(values.consultantId))
+  const consultantPerformance = consultantRows.find((row) => normalizeText(row.id) === normalizeText(values.consultantId))
+  const fieldErrors = modal.fieldErrors || {}
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/35 px-4 backdrop-blur-sm">
+      <div className="max-h-[calc(100dvh-32px)] w-full max-w-2xl overflow-y-auto rounded-[24px] border border-white bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.22)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7d90a5]">Routing Rules</p>
+            <h2 className="mt-2 text-xl font-semibold text-[#142132]">{isEdit ? 'Edit Routing Rule' : 'Add Routing Rule'}</h2>
+            <p className="mt-2 text-sm leading-6 text-[#60758d]">Define how partner and development applications should enter the organisation hierarchy.</p>
+          </div>
+          <button type="button" onClick={onClose} className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#d9e4ef] text-[#60758d] transition hover:bg-[#f8fbff]">
+            <X size={16} />
+          </button>
+        </div>
+        {modal.error ? <p className="mt-4 rounded-[14px] border border-[#fecaca] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#9f2a2a]">{modal.error}</p> : null}
+        <div className="mt-5 grid gap-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="block">
+              <span className="text-sm font-semibold text-[#31475d]">Rule Type</span>
+              <select value={values.ruleType || 'agency'} onChange={(event) => onChange('ruleType', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]">
+                <option value="agency">Agency</option>
+                <option value="development">Development</option>
+                <option value="region">Region</option>
+                <option value="company">Company</option>
+              </select>
+              <FieldError message={fieldErrors.ruleType} />
+            </label>
+            <label className="block">
+              <span className="text-sm font-semibold text-[#31475d]">Status</span>
+              <select value={values.status || 'active'} onChange={(event) => onChange('status', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]">
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </label>
+          </div>
+          {values.ruleType !== 'company' ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="block">
+                <span className="text-sm font-semibold text-[#31475d]">Partner / Source</span>
+                <input value={values.sourceName || ''} onChange={(event) => onChange('sourceName', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]" />
+                <FieldError message={fieldErrors.sourceName} />
+              </label>
+              <label className="block">
+                <span className="text-sm font-semibold text-[#31475d]">Source ID</span>
+                <input value={values.sourceId || ''} onChange={(event) => onChange('sourceId', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]" />
+              </label>
+            </div>
+          ) : null}
+          <div className="grid gap-4 md:grid-cols-3">
+            <label className="block">
+              <span className="text-sm font-semibold text-[#31475d]">Region</span>
+              <select value={values.regionId || ''} onChange={(event) => onChange('regionId', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]">
+                <option value="">Select region</option>
+                {regionOptions.map((region) => <option key={region.id} value={region.id}>{region.name}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-sm font-semibold text-[#31475d]">Branch</span>
+              <select value={values.branchId || ''} onChange={(event) => onChange('branchId', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]">
+                <option value="">Select branch</option>
+                {branchOptions.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+              </select>
+              <FieldError message={fieldErrors.branchId} />
+            </label>
+            <label className="block">
+              <span className="text-sm font-semibold text-[#31475d]">Consultant</span>
+              <select value={values.consultantId || ''} onChange={(event) => onChange('consultantId', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]">
+                <option value="">Workload balanced</option>
+                {consultantOptions.map((consultant) => <option key={consultant.id} value={consultant.id}>{consultant.name}</option>)}
+              </select>
+            </label>
+          </div>
+          <label className="block">
+            <span className="text-sm font-semibold text-[#31475d]">Priority</span>
+            <input type="number" value={values.priority || 100} onChange={(event) => onChange('priority', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]" />
+          </label>
+          <section className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7d90a5]">Routing Preview</p>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <SummaryMetric label="Partner" value={values.ruleType === 'company' ? 'Company Fallback' : values.sourceName || 'Not set'} emphasis />
+              <SummaryMetric label="Rule" value={selectedBranch?.name || 'Select branch'} emphasis />
+              <SummaryMetric label="Consultant" value={selectedConsultant?.name || 'Workload balanced'} emphasis />
+              <SummaryMetric label="Current Capacity" value={consultantPerformance?.activeApplications || 0} emphasis />
+            </div>
+          </section>
+        </div>
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <CommandButton onClick={onClose}>Cancel</CommandButton>
+          <CommandButton icon={Route} variant="primary" onClick={onSubmit}>
+            {modal.submitting ? 'Saving...' : isEdit ? 'Save Rule' : 'Create Rule'}
+          </CommandButton>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -1439,6 +2169,7 @@ function BranchWorkspaceRoute({ workspace = null, onBack = () => {} }) {
   }
   const branch = workspace.branch || {}
   const metrics = workspace.metrics || {}
+  const branchCapacity = workspace.branchCapacity || {}
   return (
     <div className="space-y-6">
       <SectionShell
@@ -1468,6 +2199,39 @@ function BranchWorkspaceRoute({ workspace = null, onBack = () => {} }) {
       </section>
       {!normalizeText(branch.managerUserId || branch.manager_user_id) ? <BondEmptyState compact title="No branch manager assigned" description="Assign ownership to improve accountability." /> : null}
       {!Number(metrics.consultants || 0) ? <BondEmptyState compact title="No consultants assigned" description="Consultants will be added during Phase 5." /> : null}
+      <SectionShell eyebrow="Capacity" title="Branch Capacity">
+        {(branchCapacity.consultants || []).length ? (
+          <div className="overflow-x-auto rounded-[18px] border border-[#e1e9f2]">
+            <table className="min-w-[720px] border-collapse">
+              <thead>
+                <tr>
+                  <HeaderCell>Consultant</HeaderCell>
+                  <HeaderCell>Applications</HeaderCell>
+                  <HeaderCell>Submitted</HeaderCell>
+                  <HeaderCell>Pending Documents</HeaderCell>
+                  <HeaderCell>Status</HeaderCell>
+                </tr>
+              </thead>
+              <tbody>
+                {(branchCapacity.consultants || []).map((row) => (
+                  <tr key={row.consultantId} className="border-t border-[#edf2f7] bg-white">
+                    <td className="px-4 py-4">
+                      <p className="text-sm font-semibold text-[#142132]">{row.consultant}</p>
+                      <p className="mt-1 text-xs text-[#71869d]">{row.status || 'active'}</p>
+                    </td>
+                    <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{row.activeApplications || 0}</td>
+                    <td className="px-4 py-4 text-sm text-[#17324d]">{row.submittedApplications || 0}</td>
+                    <td className="px-4 py-4 text-sm text-[#17324d]">{row.pendingDocuments || 0}</td>
+                    <td className="px-4 py-4"><StatusPill status={row.capacityStatus || 'Light'} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <BondEmptyState compact title="No consultant workload yet" description="Consultant capacity will appear once consultants are assigned to this branch." />
+        )}
+      </SectionShell>
       <RecentOrganisationActivity rows={workspace.recentActivity || []} />
       <SectionShell eyebrow="Workspace Tabs" title="Branch Workspace">
         <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
@@ -1900,6 +2664,8 @@ export default function BondOrganisationPage({
   const [regionModal, setRegionModal] = useState({ mode: '', region: null, values: {}, fieldErrors: {}, error: '', submitting: false })
   const [branchModal, setBranchModal] = useState({ mode: '', branch: null, values: {}, fieldErrors: {}, error: '', submitting: false })
   const [consultantModal, setConsultantModal] = useState({ mode: '', consultant: null, values: {}, fieldErrors: {}, error: '', submitting: false })
+  const [routingModal, setRoutingModal] = useState({ mode: '', rule: null, values: {}, fieldErrors: {}, error: '', submitting: false })
+  const [partnerModal, setPartnerModal] = useState({ mode: '', partner: null, values: {}, fieldErrors: {}, error: '', submitting: false })
   const [reassignModal, setReassignModal] = useState({ open: false, consultant: null, values: {}, fieldErrors: {}, error: '', submitting: false })
   const [notice, setNotice] = useState('')
 
@@ -1930,16 +2696,20 @@ export default function BondOrganisationPage({
   const regionWorkspaceId = normalizeText(routeParams.regionId)
   const branchWorkspaceId = normalizeText(routeParams.branchId)
   const consultantWorkspaceId = normalizeText(routeParams.consultantId)
-  const selectedView = consultantWorkspaceId ? 'consultants' : branchWorkspaceId ? 'branches' : regionWorkspaceId ? 'regions' : resolveRouteView(location)
+  const partnerWorkspaceId = normalizeText(routeParams.partnerId)
+  const selectedView = partnerWorkspaceId ? 'partners' : consultantWorkspaceId ? 'consultants' : branchWorkspaceId ? 'branches' : regionWorkspaceId ? 'regions' : resolveRouteView(location)
   const params = useMemo(() => new URLSearchParams(location.search), [location.search])
   const selectedRegionId = regionWorkspaceId || normalizeText(params.get('regionId'))
   const selectedBranchId = branchWorkspaceId || normalizeText(params.get('branchId'))
   const selectedConsultantId = consultantWorkspaceId || normalizeText(params.get('consultantId'))
+  const selectedPartnerId = partnerWorkspaceId || normalizeText(params.get('partnerId'))
   const canManageOrganisation = scopeCanManage(snapshot)
   const canManageRegions = Boolean(snapshot?.capabilities?.canManageRegions)
   const canManageBranches = Boolean(snapshot?.capabilities?.canManageBranches)
   const canMoveBranches = Boolean(snapshot?.capabilities?.canMoveBranches)
   const canManageConsultants = Boolean(snapshot?.capabilities?.canManageConsultants)
+  const canManagePartners = Boolean(snapshot?.capabilities?.canManagePartners)
+  const canManageRoutingRules = Boolean(snapshot?.capabilities?.canManageRoutingRules)
   const canRenderSelectedView = canAccessOrganisationView(selectedView, snapshot)
 
   const selectedRegion = useMemo(
@@ -1953,6 +2723,10 @@ export default function BondOrganisationPage({
   const selectedConsultant = useMemo(
     () => resolveSelectedHierarchyRow(selectedConsultantId, snapshot?.consultantPerformance || [], ['consultant', 'name', 'email']),
     [selectedConsultantId, snapshot?.consultantPerformance],
+  )
+  const selectedPartner = useMemo(
+    () => resolveSelectedHierarchyRow(selectedPartnerId, snapshot?.partnerPerformance || [], ['name', 'primaryContactEmail']),
+    [selectedPartnerId, snapshot?.partnerPerformance],
   )
   const viewKpis = useMemo(() => {
     if (!snapshot) return { items: [] }
@@ -1989,6 +2763,28 @@ export default function BondOrganisationPage({
         ],
       }
     }
+    if (selectedView === 'routing-rules') {
+      const routing = snapshot?.routingDashboard || {}
+      return {
+        items: [
+          { key: 'agencyRules', label: 'Agency Rules', value: routing.agencyRules?.length || 0, icon: Route },
+          { key: 'developmentRules', label: 'Development Rules', value: routing.developmentRules?.length || 0, icon: Building2 },
+          { key: 'regionalRules', label: 'Regional Rules', value: routing.regionalRules?.length || 0, icon: Network },
+          { key: 'fallback', label: 'Fallback Branch', value: routing.companyFallback ? 1 : 0, icon: SlidersHorizontal },
+        ],
+      }
+    }
+    if (selectedView === 'partners') {
+      const subject = selectedPartner || {}
+      return {
+        items: [
+          { key: 'partners', label: 'Partners', value: selectedPartner ? 1 : (snapshot?.counts?.partners || 0), icon: Building2 },
+          { key: 'applicationsSent', label: 'Applications Sent', value: selectedPartner ? subject.applicationsSent || 0 : (snapshot?.partnerPerformance || []).reduce((sum, row) => sum + Number(row.applicationsSent || 0), 0), icon: FileText },
+          { key: 'activeApplications', label: 'Active Applications', value: selectedPartner ? subject.activeApplications || 0 : (snapshot?.partnerPerformance || []).reduce((sum, row) => sum + Number(row.activeApplications || 0), 0), icon: Users },
+          { key: 'approvalRate', label: 'Approval Rate', value: formatPercent(selectedPartner ? subject.approvalRate : 0), icon: ShieldCheck },
+        ],
+      }
+    }
     return {
       items: [
         { key: 'regions', label: 'Regions', value: snapshot?.kpis?.regions || 0, icon: Network },
@@ -1999,7 +2795,7 @@ export default function BondOrganisationPage({
         { key: 'avgLeadTime', label: 'Avg Lead Time', value: formatLeadTime(snapshot?.kpis?.avgLeadTime), icon: Clock3 },
       ],
     }
-  }, [selectedBranch, selectedConsultant, selectedRegion, selectedView, snapshot])
+  }, [selectedBranch, selectedConsultant, selectedPartner, selectedRegion, selectedView, snapshot])
 
   const regionManagerOptions = useMemo(() => {
     return (snapshot?.consultants || [])
@@ -2062,8 +2858,161 @@ export default function BondOrganisationPage({
     navigate(getBondConsultantWorkspaceRoute(consultant.id))
   }
 
+  function openPartner(partner) {
+    navigate(getBondPartnerWorkspaceRoute(partner.id))
+  }
+
   function openSettings() {
     navigate('/settings/organisation')
+  }
+
+  function openRoutingRuleForm(mode = 'create', rule = null) {
+    setNotice('')
+    setRoutingModal({
+      mode,
+      rule,
+      values: {
+        ruleType: rule?.ruleType || 'agency',
+        sourceId: rule?.sourceId || '',
+        sourceName: rule?.sourceName || '',
+        regionId: rule?.regionId || '',
+        branchId: rule?.branchId || '',
+        consultantId: rule?.consultantId || '',
+        priority: rule?.priority || 100,
+        status: rule?.status || 'active',
+      },
+      fieldErrors: {},
+      error: '',
+      submitting: false,
+    })
+  }
+
+  function updateRoutingModalValue(field, value) {
+    setRoutingModal((previous) => ({
+      ...previous,
+      values: {
+        ...previous.values,
+        [field]: value,
+      },
+      fieldErrors: {
+        ...previous.fieldErrors,
+        [field]: '',
+      },
+      error: '',
+    }))
+  }
+
+  async function submitRoutingRuleModal() {
+    if (!routingModal.mode || routingModal.submitting) return
+    setRoutingModal((previous) => ({ ...previous, submitting: true, error: '', fieldErrors: {} }))
+    try {
+      if (routingModal.mode === 'create') {
+        await service.createRoutingRule(routingModal.values, workspaceContext, workspaceId)
+        setNotice('Routing rule created.')
+      } else {
+        await service.updateRoutingRule(routingModal.rule?.id, routingModal.values, workspaceContext, workspaceId)
+        setNotice('Routing rule updated.')
+      }
+      setRoutingModal({ mode: '', rule: null, values: {}, fieldErrors: {}, error: '', submitting: false })
+      await loadOrganisation()
+    } catch (error) {
+      setRoutingModal((previous) => ({
+        ...previous,
+        submitting: false,
+        error: String(error?.message || 'Could not save this routing rule.'),
+        fieldErrors: error?.fieldErrors || {},
+      }))
+    }
+  }
+
+  async function handleDisableRoutingRule(rule) {
+    setNotice('')
+    try {
+      await service.disableRoutingRule(rule.id, workspaceContext, workspaceId)
+      setNotice('Routing rule disabled.')
+      await loadOrganisation()
+    } catch (error) {
+      setNotice(String(error?.message || 'Could not disable routing rule.'))
+    }
+  }
+
+  function openPartnerForm(mode = 'create', partner = null) {
+    setNotice('')
+    setPartnerModal({
+      mode,
+      partner,
+      values: {
+        name: partner?.name || '',
+        type: partner?.type || partner?.partnerType || 'agency',
+        primaryContactName: partner?.primaryContactName || '',
+        primaryContactEmail: partner?.primaryContactEmail || '',
+        primaryContactNumber: partner?.primaryContactNumber || '',
+        defaultRegionId: partner?.defaultRegionId || '',
+        defaultBranchId: partner?.defaultBranchId || '',
+        defaultConsultantId: partner?.defaultConsultantId || '',
+        invitedEmail: partner?.primaryContactEmail || '',
+        status: normalizeText(partner?.status) || 'draft',
+        notes: partner?.notes || '',
+      },
+      fieldErrors: {},
+      error: '',
+      submitting: false,
+    })
+  }
+
+  function updatePartnerModalValue(field, value) {
+    setPartnerModal((previous) => ({
+      ...previous,
+      values: {
+        ...previous.values,
+        [field]: value,
+      },
+      fieldErrors: {
+        ...previous.fieldErrors,
+        [field]: '',
+      },
+      error: '',
+    }))
+  }
+
+  async function submitPartnerModal() {
+    if (!partnerModal.mode || partnerModal.submitting) return
+    setPartnerModal((previous) => ({ ...previous, submitting: true, error: '', fieldErrors: {} }))
+    try {
+      if (partnerModal.mode === 'create') {
+        await service.createBondPartner(partnerModal.values, workspaceContext, workspaceId)
+        setNotice('Partner created.')
+      } else if (partnerModal.mode === 'edit') {
+        await service.updateBondPartner(partnerModal.partner?.id, partnerModal.values, workspaceContext, workspaceId)
+        setNotice('Partner updated.')
+      } else if (partnerModal.mode === 'routing') {
+        await service.setPartnerRoutingDefaults(partnerModal.partner?.id, partnerModal.values, workspaceContext, workspaceId)
+        setNotice('Partner routing default updated.')
+      } else if (partnerModal.mode === 'invite') {
+        await service.inviteBondPartner(partnerModal.partner?.id, partnerModal.values.invitedEmail, workspaceContext, workspaceId)
+        setNotice('Partner invitation sent.')
+      }
+      setPartnerModal({ mode: '', partner: null, values: {}, fieldErrors: {}, error: '', submitting: false })
+      await loadOrganisation()
+    } catch (error) {
+      setPartnerModal((previous) => ({
+        ...previous,
+        submitting: false,
+        error: String(error?.message || 'Could not save this partner.'),
+        fieldErrors: error?.fieldErrors || {},
+      }))
+    }
+  }
+
+  async function handleDisablePartner(partner) {
+    setNotice('')
+    try {
+      await service.updateBondPartner(partner.id, { ...partner, status: 'disabled' }, workspaceContext, workspaceId)
+      setNotice('Partner disabled.')
+      await loadOrganisation()
+    } catch (error) {
+      setNotice(String(error?.message || 'Could not disable partner.'))
+    }
   }
 
   function openRegionForm(mode = 'create', region = null) {
@@ -2347,6 +3296,7 @@ export default function BondOrganisationPage({
         regionTitle={selectedView === 'regions' ? selectedRegion?.region || '' : ''}
         branchTitle={selectedView === 'branches' ? selectedBranch?.branch || '' : ''}
         consultantTitle={selectedView === 'consultants' ? selectedConsultant?.consultant || '' : ''}
+        partnerTitle={selectedView === 'partners' ? selectedPartner?.name || '' : ''}
         navigate={navigate}
       />
 
@@ -2358,7 +3308,7 @@ export default function BondOrganisationPage({
             </section>
           ) : null}
           {selectedView !== 'overview' && canRenderSelectedView ? <OrganisationKpiStrip kpis={viewKpis} /> : null}
-          {!regionWorkspaceId && !branchWorkspaceId && !consultantWorkspaceId ? <BondViewTabs tabs={tabs} value={selectedView} counts={snapshot?.counts || {}} onChange={handleViewChange} /> : null}
+          {!regionWorkspaceId && !branchWorkspaceId && !consultantWorkspaceId && !partnerWorkspaceId ? <BondViewTabs tabs={tabs} value={selectedView} counts={snapshot?.counts || {}} onChange={handleViewChange} /> : null}
 
           {!canRenderSelectedView ? (
             <OrganisationViewUnavailable view={selectedView} />
@@ -2445,10 +3395,41 @@ export default function BondOrganisationPage({
             />
           ) : null}
 
-          {canRenderSelectedView && selectedView === 'partners' ? (
-            <SectionShell eyebrow="Partners" title="Partners" description="Partner management remains read-only for this phase.">
-              <BondEmptyState compact title="Partner controls are coming in a later phase." description="Regions management is the functional organisation layer in Phase 3." />
-            </SectionShell>
+          {canRenderSelectedView && selectedView === 'partners' && partnerWorkspaceId ? (
+            <PartnerWorkspaceRoute
+              workspace={snapshot.partnerWorkspaces?.[partnerWorkspaceId]}
+              canManage={canManagePartners}
+              onBack={() => navigate(getBondOrganisationRouteForTab('partners'))}
+              onEdit={(row) => openPartnerForm('edit', row)}
+              onRouting={(row) => openPartnerForm('routing', row)}
+              onInvite={(row) => openPartnerForm('invite', row)}
+            />
+          ) : null}
+
+          {canRenderSelectedView && selectedView === 'partners' && !partnerWorkspaceId ? (
+            <PartnersWorkspace
+              rows={snapshot.partnerPerformance || []}
+              canManage={canManagePartners}
+              onView={openPartner}
+              onAdd={() => openPartnerForm('create')}
+              onEdit={(row) => openPartnerForm('edit', row)}
+              onRouting={(row) => openPartnerForm('routing', row)}
+              onInvite={(row) => openPartnerForm('invite', row)}
+              onDisable={handleDisablePartner}
+              onRefresh={loadOrganisation}
+              onExport={() => setNotice('Partner export will be available in a later phase.')}
+            />
+          ) : null}
+
+          {canRenderSelectedView && selectedView === 'routing-rules' ? (
+            <RoutingRulesWorkspace
+              dashboard={snapshot.routingDashboard || {}}
+              canManage={canManageRoutingRules}
+              onAdd={() => openRoutingRuleForm('create')}
+              onEdit={(row) => openRoutingRuleForm('edit', row)}
+              onDisable={handleDisableRoutingRule}
+              onRefresh={loadOrganisation}
+            />
           ) : null}
 
           {selectedView === 'permissions' ? (
@@ -2482,6 +3463,25 @@ export default function BondOrganisationPage({
         onChange={updateBranchModalValue}
         onClose={() => setBranchModal({ mode: '', branch: null, values: {}, fieldErrors: {}, error: '', submitting: false })}
         onSubmit={submitBranchModal}
+      />
+      <RoutingRuleModal
+        modal={routingModal}
+        regionOptions={branchRegionOptions}
+        branchOptions={consultantBranchOptions}
+        consultantOptions={consultantOptions}
+        consultantRows={snapshot?.consultantPerformance || []}
+        onChange={updateRoutingModalValue}
+        onClose={() => setRoutingModal({ mode: '', rule: null, values: {}, fieldErrors: {}, error: '', submitting: false })}
+        onSubmit={submitRoutingRuleModal}
+      />
+      <PartnerFormModal
+        modal={partnerModal}
+        regionOptions={branchRegionOptions}
+        branchOptions={consultantBranchOptions}
+        consultantOptions={consultantOptions}
+        onChange={updatePartnerModalValue}
+        onClose={() => setPartnerModal({ mode: '', partner: null, values: {}, fieldErrors: {}, error: '', submitting: false })}
+        onSubmit={submitPartnerModal}
       />
       <ConsultantFormModal
         modal={consultantModal}

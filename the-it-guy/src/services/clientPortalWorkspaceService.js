@@ -25,6 +25,8 @@ import {
 import { getTransactionWorkflowReadModel } from './transactionWorkflowReadModelService'
 import { getSellerOnboardingByToken } from './privateListingService'
 import { generateSellerDocumentRequirements } from '../lib/privateListingRequirementEngine'
+import { buildSellerJourney } from './sellerJourneyService.js'
+import { buildSellerReadinessSummary } from './sellerReadinessService.js'
 import {
   getCanonicalRequirementsForContext,
   isCanonicalDocumentWorkspaceEnabled,
@@ -185,6 +187,154 @@ function mapSellerPortalAppointment(row = {}) {
   }
 }
 
+function normalizeSellerDocumentStatus(status = '') {
+  const normalized = normalizeValue(status).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  if (['approved', 'verified', 'accepted'].includes(normalized)) return 'Approved'
+  if (['uploaded', 'received', 'submitted', 'pending', 'pending_review'].includes(normalized)) return 'Uploaded'
+  if (['required', 'missing', 'not_uploaded', 'outstanding', 'rejected'].includes(normalized)) return 'Outstanding'
+  return normalized ? String(status).replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Required'
+}
+
+function sellerStepStateToPortalState(step = {}) {
+  if (step.current) return 'current'
+  if (step.completed) return 'completed'
+  return 'upcoming'
+}
+
+function sellerPortalStageMessage(journey = {}) {
+  const key = journey?.stage?.key || 'contacted'
+  const messages = {
+    contacted: 'Your agent has your seller details and will coordinate the next step with you.',
+    appointment_valuation: 'Your valuation appointment is the next milestone for preparing your sale.',
+    mandate_sent: 'Your mandate has been prepared and is ready for review or signing.',
+    mandate_signed: 'Your signed mandate is on file and your listing can move forward.',
+    listing_created: 'Your listing has been created and is being prepared for the market.',
+    listing_live: 'Your listing is live and your agent can share buyer interest and offers here.',
+  }
+  return messages[key] || 'Your agent is coordinating the next seller milestone.'
+}
+
+function sellerPortalStatusCards({ journey = null, documentCenter = null, requiredDocuments = [], documents = [], offers = [] } = {}) {
+  const requirementRows = Array.isArray(documentCenter?.requiredDocuments) ? documentCenter.requiredDocuments : requiredDocuments
+  const uploadedRows = Array.isArray(documentCenter?.uploadedDocuments) ? documentCenter.uploadedDocuments : documents
+  const outstandingRequired = (Array.isArray(requirementRows) ? requirementRows : []).filter((item) => {
+    const status = normalizeSellerDocumentStatus(item?.status || item?.documentStatus || item?.document_status)
+    return status === 'Required' || status === 'Outstanding' || item?.complete === false
+  }).length
+  const uploadedCount = (Array.isArray(uploadedRows) ? uploadedRows : []).length
+  const activeOffers = (Array.isArray(offers) ? offers : []).filter((offer) => !['rejected', 'withdrawn', 'expired'].includes(normalizeValue(offer?.status || offer?.workflowStatus || offer?.workflow_status)))
+  return [
+    {
+      key: 'appointment',
+      label: 'Appointment / Valuation',
+      value: journey?.valuationStatus || 'Not scheduled',
+    },
+    {
+      key: 'mandate',
+      label: 'Mandate',
+      value: journey?.kpis?.find((item) => item.key === 'mandate')?.value || 'Not started',
+    },
+    {
+      key: 'listing',
+      label: 'Listing Status',
+      value: journey?.kpis?.find((item) => item.key === 'listing')?.value || 'Not created',
+    },
+    {
+      key: 'documents',
+      label: 'Documents',
+      value: outstandingRequired ? `${outstandingRequired} Outstanding` : uploadedCount ? `${uploadedCount} Uploaded` : 'Required',
+    },
+    {
+      key: 'offers',
+      label: 'Offers',
+      value: activeOffers.length ? `${activeOffers.length} Received` : 'No offers yet',
+    },
+  ]
+}
+
+function sellerFriendlyBlocker(blocker = {}) {
+  const messages = {
+    missing_seller_contact: 'Confirm seller contact details',
+    missing_property_address: 'Confirm property address',
+    valuation_not_completed: 'Complete valuation appointment',
+    mandate_not_generated: 'Mandate is being prepared',
+    mandate_signature_outstanding: 'Review mandate',
+    mandate_not_signed: 'Review mandate',
+    required_documents_missing: 'Upload required documents',
+    listing_photos_incomplete: 'Listing photos still in progress',
+    listing_description_incomplete: 'Listing description still in progress',
+    listing_pricing_incomplete: 'Listing pricing still in progress',
+    listing_compliance_incomplete: 'Upload required documents',
+    listing_visibility_incomplete: 'Listing draft in progress',
+  }
+  return {
+    key: blocker.id || blocker.label || 'seller_blocker',
+    label: messages[blocker.id] || blocker.sellerMessage || blocker.label || 'Your agent is working on the next step',
+    state: blocker.severity === 'blocked' ? 'blocked' : 'action_required',
+  }
+}
+
+export function buildSellerPortalJourneyView({ journey = null, documentCenter = null, requiredDocuments = [], documents = [], offers = [] } = {}) {
+  if (!journey?.isSeller) return null
+  const readiness = buildSellerReadinessSummary({
+    lead: {
+      leadCategory: 'seller',
+      sellerPropertyAddress: journey.kpis?.find((item) => item.key === 'property')?.value || '',
+      listingId: journey.listing?.id || journey.listing?.listingId || '',
+    },
+    contact: { email: 'seller-portal' },
+    listing: journey.listing || {},
+    documents,
+    journey,
+  })
+  const stages = (journey.steps || []).map((step) => ({
+    key: step.key,
+    label: step.label,
+    state: sellerStepStateToPortalState(step),
+    status: step.status || '',
+  }))
+  const completedCount = stages.filter((step) => step.state === 'completed').length
+  const currentIndex = Math.max(0, stages.findIndex((step) => step.state === 'current'))
+  const progressPercent = stages.length ? Math.round(((completedCount + 1) / stages.length) * 100) : 0
+  const currentStage = stages[currentIndex] || stages[0] || { key: 'contacted', label: 'Contacted', state: 'current' }
+  const statusCards = [
+    {
+      key: 'readiness',
+      label: 'Readiness',
+      value: readiness.readinessLabel || 'In progress',
+    },
+    ...sellerPortalStatusCards({ journey, documentCenter, requiredDocuments, documents, offers }),
+  ]
+  return {
+    currentStage,
+    progressPercent: Math.max(0, Math.min(100, progressPercent)),
+    stages,
+    statusCards,
+    readiness: {
+      status: readiness.readiness,
+      label: readiness.readinessLabel,
+      nextAction: readiness.nextAction?.label || '',
+      blockers: (readiness.blockers || []).map(sellerFriendlyBlocker),
+    },
+    documents: (Array.isArray(journey.documents) ? journey.documents : []).map((document) => ({
+      ...document,
+      status: normalizeSellerDocumentStatus(document.status),
+    })),
+    stageMeta: {
+      progressPercent: Math.max(0, Math.min(100, progressPercent)),
+      currentStage: {
+        ...currentStage,
+        message: sellerPortalStageMessage(journey),
+        nextStepTitle: readiness.nextAction?.label || journey.nextRecommendedAction?.label || 'Review your sale progress',
+        nextStepDescription: sellerPortalStageMessage(journey),
+        primaryRoute: currentStage.key === 'listing_live' ? 'offers' : currentStage.key.includes('mandate') ? 'documents' : 'overview',
+        primaryAction: currentStage.key === 'listing_live' ? 'Review offers' : currentStage.key.includes('mandate') ? 'Open documents' : 'View overview',
+      },
+      stages,
+    },
+  }
+}
+
 function resolveSellerPortalWorkflowStage(listing = {}, onboarding = {}, status = '') {
   const stageSignals = [
     listing?.transactionId,
@@ -263,13 +413,58 @@ async function fetchSellerClientPortalDataByToken(token) {
   const sellerLeadId = listing?.sellerLeadId || listing?.seller_lead_id || null
   const mandatePacket = mapSellerMandatePacket(context?.mandatePacket || listing?.mandatePacket || null)
   const mandatePacketId = mandatePacket?.id || listing?.mandatePacketId || listing?.mandate_packet_id || null
-  const sellerPortalStage = resolveSellerPortalWorkflowStage(listing, onboarding, status)
   const requiredDocuments = getSellerRequiredDocuments(listing, formData)
     .map((item) => mapSellerRequiredDocument(item))
   const documents = (Array.isArray(listing?.documents) ? listing.documents : [])
     .map((item) => mapSellerUploadedDocument(item))
   const appointments = (Array.isArray(context?.appointments) ? context.appointments : [])
     .map((item) => mapSellerPortalAppointment(item))
+  const rawOffers = [
+    ...(Array.isArray(context?.offers) ? context.offers : []),
+    ...(Array.isArray(listing?.offers) ? listing.offers : []),
+  ]
+  const sellerLead = {
+    id: sellerLeadId || `seller-${listingId || token}`,
+    leadId: sellerLeadId || `seller-${listingId || token}`,
+    leadCategory: 'seller',
+    sellerPropertyAddress: propertyAddress,
+    estimatedValue: listing?.estimatedValue || listing?.estimated_value || listing?.askingPrice || listing?.asking_price || formData?.estimatedValue,
+    listingId,
+    mandatePacketId,
+    sellerOnboardingToken: token,
+    sellerOnboardingStatus: status,
+    createdAt: onboarding?.created_at || listing?.createdAt || listing?.created_at,
+    updatedAt: onboarding?.submitted_at || listing?.updatedAt || listing?.updated_at,
+  }
+  const sellerJourney = buildSellerJourney({
+    lead: sellerLead,
+    contact: {
+      name: sellerName,
+      phone: formData.sellerPhone || listing?.seller?.phone || '',
+      email: formData.sellerEmail || listing?.seller?.email || '',
+    },
+    appointments,
+    listing: {
+      ...listing,
+      id: listingId,
+      sellerLeadId: sellerLead.leadId,
+      mandatePacketId,
+    },
+    mandatePacketStatus: mandatePacket ? {
+      packet: mandatePacket.packet || mandatePacket,
+      state: mandatePacket.state,
+      versions: mandatePacket.version ? [mandatePacket.version] : [],
+    } : null,
+    mandatePacket: mandatePacket?.packet || mandatePacket,
+    documents,
+  })
+  const sellerPortalJourney = buildSellerPortalJourneyView({
+    journey: sellerJourney,
+    requiredDocuments,
+    documents,
+    offers: rawOffers,
+  })
+  const sellerPortalStage = sellerJourney?.stage?.key || resolveSellerPortalWorkflowStage(listing, onboarding, status)
   const sellerVisibleExternalLinks = normalizeSellerVisibleExternalLinks([
     ...(Array.isArray(listing?.externalLinks) ? listing.externalLinks : []),
     ...(Array.isArray(listing?.listingExternalLinks) ? listing.listingExternalLinks : []),
@@ -322,6 +517,9 @@ async function fetchSellerClientPortalDataByToken(token) {
       email: formData.sellerEmail || listing?.seller?.email || '',
     },
     appointments,
+    offers: rawOffers,
+    sellerJourney,
+    sellerPortalJourney,
     stage: sellerPortalStage,
     mainStage: sellerPortalStage,
     lastUpdated: listing?.updatedAt || onboarding?.submitted_at || listing?.createdAt || new Date().toISOString(),
@@ -377,6 +575,9 @@ async function fetchSellerClientPortalDataByToken(token) {
       mandatePacketId,
       mandatePacket,
       sellerWorkspaceToken: token,
+      sellerJourney,
+      sellerPortalJourney,
+      offers: rawOffers,
     },
     otpPacket: null,
     attorneyRolePlayers: null,
@@ -1177,6 +1378,28 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     ...buildDocumentCenter(portalData, workspaceMode),
     canonicalRequirements,
   }
+  const sellerPortalJourney = workspaceMode === 'selling'
+    ? buildSellerPortalJourneyView({
+      journey: portalData?.sellerJourney || portalData?.activeSellingContext?.sellerJourney || null,
+      documentCenter,
+      requiredDocuments: portalData?.requiredDocuments || portalData?.requiredDocumentChecklist || [],
+      documents: portalData?.documents || [],
+      offers: [
+        ...(Array.isArray(portalData?.offers) ? portalData.offers : []),
+        ...(Array.isArray(portalData?.activeSellingContext?.offers) ? portalData.activeSellingContext.offers : []),
+      ],
+    })
+    : null
+  if (sellerPortalJourney) {
+    portalData = {
+      ...portalData,
+      sellerPortalJourney,
+      activeSellingContext: {
+        ...(portalData?.activeSellingContext || {}),
+        sellerPortalJourney,
+      },
+    }
+  }
   const appointments = Array.isArray(portalData?.appointments) ? portalData.appointments : []
   const lifecycle = buildLifecycle(portalData)
   const timeline = buildTimeline(portalData)
@@ -1341,6 +1564,8 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     workflowSummary,
     activityFeed,
     notifications,
+    sellerJourney: portalData?.sellerJourney || portalData?.activeSellingContext?.sellerJourney || null,
+    sellerPortalJourney,
     educationalContent: {
       ...educationalContent,
       currentStage: {

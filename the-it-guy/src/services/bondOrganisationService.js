@@ -7,6 +7,15 @@ import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { getWorkspaceHierarchy } from './bondWorkspaceHierarchyService'
 import { filterDemoBondApplications, getBondTransactionTrackerSnapshot } from './bondCommandCenterService'
 import { logBondOrganisationScope, resolveBondOrganisationScope } from './bondOrganisationScopeResolver'
+import { getBranchCapacity, getRegionCapacity } from './bondApplicationAssignmentService'
+import { getRoutingRules, getRoutingRulesDashboard } from './bondRoutingRulesService'
+import {
+  getBondPartnerActivityEvents,
+  getAllBondPartnerRows,
+  getBondPartnerWorkspaceRoute,
+  getBondPartnerWorkspace,
+  getBondPartners,
+} from './bondPartnerManagementService'
 
 export const BOND_ORGANISATION_STRUCTURE_TYPES = Object.freeze({
   independent: 'independent',
@@ -202,7 +211,8 @@ function resolveCapabilities(context = {}, organisationScope = null) {
     canViewBranches: Boolean(scope.canViewBranches),
     canViewTeams: MANAGEMENT_SCOPE_LEVELS.has(scopeLevel),
     canViewConsultants: Boolean(scope.canViewConsultants),
-    canViewPartners: Boolean(scope.canViewPartners),
+    canViewPartners: ['hq', 'region', 'branch', 'consultant'].includes(scope.scopeLevel) || Boolean(scope.canViewPartners),
+    canViewRoutingRules: ['hq', 'region', 'branch', 'consultant'].includes(scope.scopeLevel),
     canViewReports: Boolean(scope.canViewReports),
     canViewApplications: Boolean(scope.canViewApplications && can(PERMISSIONS.viewApplications, context)),
     canManageRegions: scope.scopeLevel === 'hq' && canSetUpStructure,
@@ -210,6 +220,8 @@ function resolveCapabilities(context = {}, organisationScope = null) {
     canMoveBranches: scope.scopeLevel === 'hq',
     canManageConsultants: ['hq', 'region', 'branch'].includes(scope.scopeLevel),
     canReassignApplications: ['hq', 'region', 'branch'].includes(scope.scopeLevel),
+    canManagePartners: scope.scopeLevel === 'hq' && canSetUpStructure,
+    canManageRoutingRules: scope.scopeLevel === 'hq' && canSetUpStructure,
   }
 }
 
@@ -397,6 +409,7 @@ function buildTabs({
     { key: 'branches', label: capabilities.scopeLevel === BOND_SCOPE_LEVELS.branch ? 'My Branch' : 'Branches', showIf: capabilities.canViewBranches },
     { key: 'consultants', label: 'Consultants', showIf: capabilities.canViewConsultants },
     { key: 'partners', label: 'Partners', showIf: capabilities.canViewPartners },
+    { key: 'routing-rules', label: 'Routing Rules', showIf: capabilities.canViewRoutingRules },
     { key: 'permissions', label: 'Permissions', showIf: capabilities.canSetUpStructure },
     { key: 'settings', label: 'Settings', showIf: capabilities.scopeLevel === BOND_SCOPE_LEVELS.workspaceHq && capabilities.canSetUpStructure },
   ]
@@ -1041,6 +1054,7 @@ function getActivityLabel(eventType = '') {
   if (eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.consultantAssignedBranch) return 'Consultant assigned branch'
   if (eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.consultantDeactivated) return 'Consultant deactivated'
   if (eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.applicationReassigned) return 'Application reassigned'
+  if (normalizeText(eventType).startsWith('PARTNER_')) return 'Partner updated'
   return 'Organisation updated'
 }
 
@@ -1051,6 +1065,7 @@ function getActivityDescription(event = {}, regions = [], users = [], branches =
   const branchName = normalizeText(branch?.name || event.newValue?.name || event.previousValue?.name) || 'Branch'
   const consultant = users.find((user) => getUserId(user) === normalizeText(event.consultantId || event.consultant_id || event.newValue?.id || event.newValue?.userId || event.newValue?.user_id))
   const consultantName = normalizeText(consultant?.name || event.newValue?.name || event.previousValue?.name) || 'Consultant'
+  const partnerName = normalizeText(event.newValue?.partner?.name || event.newValue?.name || event.previousValue?.name || event.source)
   if (event.eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.regionManagerAssigned) {
     const managerId = normalizeText(event.newValue?.managerUserId || event.newValue?.manager_user_id)
     const manager = users.find((user) => normalizeText(user.user_id || user.userId || user.id) === managerId)
@@ -1076,6 +1091,13 @@ function getActivityDescription(event = {}, regions = [], users = [], branches =
   if (event.eventType === BOND_ORGANISATION_ACTIVITY_EVENTS.applicationReassigned) {
     const count = Number(event.newValue?.applicationCount || event.applicationIds?.length || 0)
     return `${count || 'Applications'} reassigned from ${event.previousValue?.name || 'one consultant'} to ${event.newValue?.name || consultantName}`
+  }
+  if (normalizeText(event.eventType).startsWith('PARTNER_')) {
+    if (event.eventType === 'PARTNER_INVITED') return `${partnerName || 'Partner'} invited`
+    if (event.eventType === 'PARTNER_ACCEPTED') return `${partnerName || 'Partner'} accepted the partnership`
+    if (event.eventType === 'PARTNER_ROUTING_DEFAULT_UPDATED') return `${partnerName || 'Partner'} routing default updated`
+    if (event.eventType === 'PARTNER_DISABLED') return `${partnerName || 'Partner'} disabled`
+    return `${partnerName || 'Partner'} partner record updated`
   }
   return `${regionName} organisation record updated`
 }
@@ -1978,6 +2000,12 @@ export function getBondRegionWorkspace(regionId = '', scope = {}) {
   }
   const branchPerformance = getBranchPerformance(visibleScope)
   const row = getRegionPerformance(visibleScope, branchPerformance)[0] || {}
+  const regionCapacity = getRegionCapacity(safeRegionId, {}, '', {
+    regions: scope.regions || [],
+    branches: scope.branches || [],
+    consultants: scope.consultants || [],
+    applications: scope.applications || [],
+  })
   return {
     id: safeRegionId,
     region: {
@@ -1995,6 +2023,7 @@ export function getBondRegionWorkspace(regionId = '', scope = {}) {
       averageTurnaround: row.averageTurnaround || 0,
     },
     branchPerformance,
+    regionCapacity,
     tabs: ['Overview', 'Branches', 'Consultants', 'Applications', 'Performance', 'Settings'],
   }
 }
@@ -2208,6 +2237,12 @@ export function getBondBranchWorkspace(branchId = '', scope = {}) {
   const performance = getBranchPerformance({ ...scope, branches: [branch], applications: branchRows })[0] || {}
   const region = (scope.regions || []).find((row) => normalizeText(row.id) === getBranchRegionId(branch))
   const activityEvents = (scope.activityEvents || []).filter((event) => normalizeText(event.branchId || event.branch_id) === safeBranchId)
+  const branchCapacity = getBranchCapacity(safeBranchId, {}, '', {
+    regions: scope.regions || [],
+    branches: scope.branches || [],
+    consultants: scope.consultants || [],
+    applications: scope.applications || [],
+  })
   return {
     id: safeBranchId,
     branch: {
@@ -2232,6 +2267,7 @@ export function getBondBranchWorkspace(branchId = '', scope = {}) {
       }).length,
       branchHealth: performance.healthStatus || 'Healthy',
     },
+    branchCapacity,
     recentActivity: getRecentOrganisationActivity({ ...scope, applications: branchRows, activityEvents }).slice(0, 6),
     tabs: ['Overview', 'Consultants', 'Applications', 'Performance', 'Settings'],
   }
@@ -2652,13 +2688,18 @@ export function buildBondOrganisationSnapshot({
   }
   const hasMultipleUsers = scopedUsers.length > 1 || allConsultants.length > 1
   const tabs = buildTabs({ capabilities })
+  const partnerActivityEvents = getBondPartnerActivityEvents(context, safeWorkspaceId, options)
+  const combinedActivityEvents = [
+    ...(options.activityEvents || []),
+    ...partnerActivityEvents,
+  ]
   const visibleScope = getVisibleOrganisationScope({
     capabilities,
     regions: visibleRegions,
     branches: scopedBranchesWithRegions,
     consultants: visibleConsultants,
     applications: scopedApplications,
-    activityEvents: options.activityEvents || [],
+    activityEvents: combinedActivityEvents,
   })
   const branchPerformance = getBranchPerformance(visibleScope)
   const regionPerformance = getRegionPerformance(visibleScope, branchPerformance)
@@ -2693,6 +2734,29 @@ export function buildBondOrganisationSnapshot({
       }),
     ]),
   )
+  const partners = capabilities.canViewPartners ? getBondPartners(context, safeWorkspaceId, {
+    ...options,
+    organisationScope,
+    regions: visibleRegions,
+    branches: scopedBranchesWithRegions,
+    consultants: visibleConsultants,
+    applications: scopedApplications,
+    routingRules: options.routingRules || [],
+  }) : []
+  const partnerWorkspaces = Object.fromEntries(
+    partners.map((partner) => [
+      normalizeText(partner.id),
+      getBondPartnerWorkspace(normalizeText(partner.id), context, safeWorkspaceId, {
+        ...options,
+        organisationScope,
+        regions: visibleRegions,
+        branches: scopedBranchesWithRegions,
+        consultants: visibleConsultants,
+        applications: scopedApplications,
+        routingRules: options.routingRules || [],
+      }),
+    ]),
+  )
   const overview = getOrganisationOverview({
     scope: visibleScope,
     branchPerformance,
@@ -2704,6 +2768,15 @@ export function buildBondOrganisationSnapshot({
     recentActivity,
   })
   const kpis = getOrganisationKpis(visibleScope)
+  const routingDashboard = getRoutingRulesDashboard(context, safeWorkspaceId, {
+    ...options,
+    regions: visibleRegions,
+    branches: scopedBranchesWithRegions,
+    consultants: visibleConsultants,
+    partners,
+    applications: scopedApplications,
+    routingRules: options.routingRules || [],
+  })
 
   return {
     workspaceId: safeWorkspaceId,
@@ -2726,9 +2799,12 @@ export function buildBondOrganisationSnapshot({
     overview,
     branchPerformance,
     consultantWorkspaces,
+    partnerWorkspaces,
     consultantPerformance,
+    partnerPerformance: partners,
     operationalHealth,
     recentActivity,
+    routingDashboard,
     applicationSnapshot: {
       ...applicationSnapshot,
       rows: scopedApplications,
@@ -2738,6 +2814,7 @@ export function buildBondOrganisationSnapshot({
       branches: scopedBranchesWithRegions.length,
       teams: scopedTeams.length,
       consultants: visibleConsultants.length,
+      partners: partners.length,
       applications: scopedApplications.length,
     },
     derivedSources: {
@@ -2752,7 +2829,7 @@ export function buildBondOrganisationSnapshot({
 
 export async function getBondOrganisationSnapshot(context = {}, workspaceId = '', options = {}) {
   const safeWorkspaceId = normalizeText(workspaceId)
-  const [settingsContext, hierarchy, users, consultantRows, applicationSnapshot, regions, branches, activityEvents] = await Promise.all([
+  const [settingsContext, hierarchy, users, consultantRows, applicationSnapshot, regions, branches, partners, activityEvents, routingRules] = await Promise.all([
     fetchSettings(),
     fetchHierarchy(safeWorkspaceId),
     fetchOrganisationUsers(safeWorkspaceId),
@@ -2764,7 +2841,9 @@ export async function getBondOrganisationSnapshot(context = {}, workspaceId = ''
     }),
     getAllRegionRows(safeWorkspaceId, options),
     getAllBranchRows(safeWorkspaceId, options),
+    getAllBondPartnerRows(safeWorkspaceId, options),
     fetchActivityRows(safeWorkspaceId),
+    getRoutingRules(context, safeWorkspaceId, options),
   ])
 
   return buildBondOrganisationSnapshot({
@@ -2778,8 +2857,10 @@ export async function getBondOrganisationSnapshot(context = {}, workspaceId = ''
       ...options,
       regions,
       branches,
+      partners,
       consultants: consultantRows.length ? consultantRows : options.consultants,
       activityEvents: options.activityEvents || activityEvents,
+      routingRules,
     },
   })
 }
@@ -2787,12 +2868,14 @@ export async function getBondOrganisationSnapshot(context = {}, workspaceId = ''
 export function getBondOrganisationRouteForTab(tabKey = 'overview', options = {}) {
   if (tabKey === 'applications') return '/bond/organisation/applications'
   if (tabKey === 'consultants' && normalizeText(options.consultantId)) return getBondConsultantWorkspaceRoute(options.consultantId)
+  if (tabKey === 'partners' && normalizeText(options.partnerId)) return getBondPartnerWorkspaceRoute(options.partnerId)
 
   const params = new URLSearchParams()
   params.set('view', normalizeText(tabKey || 'overview'))
   if (normalizeText(options.regionId)) params.set('regionId', normalizeText(options.regionId))
   if (normalizeText(options.branchId)) params.set('branchId', normalizeText(options.branchId))
   if (normalizeText(options.consultantId)) params.set('consultantId', normalizeText(options.consultantId))
+  if (normalizeText(options.partnerId)) params.set('partnerId', normalizeText(options.partnerId))
 
   return `/bond/organisation?${params.toString()}`
 }

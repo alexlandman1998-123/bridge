@@ -45,6 +45,12 @@ function formatHours(value) {
   return number < 24 ? `${number.toFixed(number % 1 ? 1 : 0)}h` : `${(number / 24).toFixed(1)}d`
 }
 
+function formatDays(value) {
+  const number = Number(value || 0)
+  if (!number) return '0d'
+  return `${number.toFixed(number % 1 ? 1 : 0)}d`
+}
+
 function MetricCard({ label, value, icon: Icon, tone = 'slate' }) {
   const tones = {
     slate: 'bg-slate-50 text-slate-500',
@@ -103,7 +109,7 @@ function downloadCsv(type, analytics) {
 function ExportButtons({ analytics }) {
   return (
     <div className="flex flex-wrap gap-2">
-      {['funnel', 'sources', 'agents', 'listings', 'suggestions', 'recommendations', 'property_shares', 'communication_deliveries', 'leads'].map((type) => (
+      {['funnel', 'sources', 'agents', 'listings', 'seller_funnel', 'seller_sources', 'seller_agents', 'seller_branches', 'suggestions', 'recommendations', 'property_shares', 'communication_deliveries', 'leads'].map((type) => (
         <button
           key={type}
           type="button"
@@ -159,6 +165,48 @@ function FunnelSection({ stages = [] }) {
         ))}
       </div>
     </section>
+  )
+}
+
+function SellerFunnelSection({ stages = [] }) {
+  const max = Math.max(...stages.map((stage) => stage.volume), 1)
+  return (
+    <div className="mt-5 grid gap-3">
+      {stages.map((stage) => (
+        <article key={stage.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-3">
+                <h3 className="text-sm font-semibold text-slate-950">{stage.label}</h3>
+                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600">{formatNumber(stage.volume)} sellers</span>
+                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">{formatNumber(stage.activeCount)} active here</span>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+                <div className="h-full rounded-full bg-emerald-600" style={{ width: `${Math.max(3, (stage.volume / max) * 100)}%` }} />
+              </div>
+            </div>
+            <dl className="grid min-w-[360px] grid-cols-4 gap-2 text-right text-xs">
+              <div>
+                <dt className="font-semibold uppercase tracking-[0.08em] text-slate-400">Conversion</dt>
+                <dd className="mt-1 font-semibold text-slate-800">{formatPercent(stage.conversionPercent)}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold uppercase tracking-[0.08em] text-slate-400">Drop-off</dt>
+                <dd className="mt-1 font-semibold text-slate-800">{formatPercent(stage.dropOffPercent)}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold uppercase tracking-[0.08em] text-slate-400">From prior</dt>
+                <dd className="mt-1 font-semibold text-slate-800">{formatDays(stage.averageDaysFromPrevious)}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold uppercase tracking-[0.08em] text-slate-400">From lead</dt>
+                <dd className="mt-1 font-semibold text-slate-800">{formatDays(stage.averageDaysFromLead)}</dd>
+              </div>
+            </dl>
+          </div>
+        </article>
+      ))}
+    </div>
   )
 }
 
@@ -250,6 +298,21 @@ function AgentReportingPage() {
     return (analytics?.listings || []).filter((row) => !keyword || row.title.toLowerCase().includes(keyword) || row.listingId.toLowerCase().includes(keyword))
   }, [analytics?.listings, search])
 
+  const filteredSellerSources = useMemo(() => {
+    const keyword = search.toLowerCase()
+    return (analytics?.seller?.sources || []).filter((row) => !keyword || row.source.toLowerCase().includes(keyword))
+  }, [analytics?.seller?.sources, search])
+
+  const filteredSellerAgents = useMemo(() => {
+    const keyword = search.toLowerCase()
+    return (analytics?.seller?.agents || []).filter((row) => !keyword || row.agentName.toLowerCase().includes(keyword) || row.agentId.toLowerCase().includes(keyword))
+  }, [analytics?.seller?.agents, search])
+
+  const filteredSellerBranches = useMemo(() => {
+    const keyword = search.toLowerCase()
+    return (analytics?.seller?.branches || []).filter((row) => !keyword || row.branchName.toLowerCase().includes(keyword) || row.branchId.toLowerCase().includes(keyword))
+  }, [analytics?.seller?.branches, search])
+
   return (
     <main className={pageShell}>
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -300,6 +363,104 @@ function AgentReportingPage() {
           </section>
 
           <FunnelSection stages={analytics.funnel} />
+
+          <section className={`${panelClass} overflow-hidden p-5`}>
+            <SectionHeader
+              eyebrow="Seller Funnel"
+              title="Seller Journey Analytics"
+              copy="Seller lead, valuation, mandate, and listing-live metrics derived from the existing seller journey service."
+            />
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+              <MetricCard label="Seller Leads" value={formatNumber(analytics.seller?.overview?.sellerLeads)} icon={Users} tone="blue" />
+              <MetricCard label="Valuations Booked" value={formatNumber(analytics.seller?.overview?.valuationsScheduled)} icon={CalendarDays} tone="amber" />
+              <MetricCard label="Valuations Done" value={formatNumber(analytics.seller?.overview?.valuationsCompleted)} icon={CheckCircle2} tone="green" />
+              <MetricCard label="Mandates Sent" value={formatNumber(analytics.seller?.overview?.mandatesSent)} icon={MessageSquareText} tone="blue" />
+              <MetricCard label="Mandates Signed" value={formatNumber(analytics.seller?.overview?.mandatesSigned)} icon={CheckCircle2} tone="green" />
+              <MetricCard label="Listings Live" value={formatNumber(analytics.seller?.overview?.listingsLive)} icon={TrendingUp} tone="green" />
+              <MetricCard label="Avg Live Time" value={formatDays(analytics.seller?.overview?.averageDaysToListingLive)} icon={Clock3} tone="amber" />
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+              <MetricCard label="Ready For Listing" value={formatNumber(analytics.seller?.overview?.readyForListing)} icon={CheckCircle2} tone="green" />
+              <MetricCard label="Blocked Listings" value={formatNumber(analytics.seller?.overview?.blockedListings)} icon={TrendingUp} tone="red" />
+              <MetricCard label="Signature Wait" value={formatNumber(analytics.seller?.overview?.mandatesAwaitingSignature)} icon={MessageSquareText} tone="amber" />
+              <MetricCard label="Awaiting Activation" value={formatNumber(analytics.seller?.overview?.listingsAwaitingActivation)} icon={BriefcaseBusiness} tone="amber" />
+              <MetricCard label="Avg To Mandate" value={formatDays(analytics.seller?.overview?.averageDaysToMandate)} icon={Clock3} tone="blue" />
+              <MetricCard label="Avg To Listing" value={formatDays(analytics.seller?.overview?.averageDaysToListing)} icon={Clock3} tone="blue" />
+              <MetricCard label="Blocked Sellers" value={formatNumber(analytics.seller?.overview?.readinessDistribution?.blocked)} icon={TrendingUp} tone="red" />
+            </div>
+            <SellerFunnelSection stages={analytics.seller?.funnel || []} />
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <MetricCard label="Mandate Conversion" value={formatPercent(analytics.seller?.overview?.mandateConversionRate)} icon={TrendingUp} tone="green" />
+              <MetricCard label="Listing Live Conversion" value={formatPercent(analytics.seller?.overview?.listingLiveConversionRate)} icon={TrendingUp} tone="green" />
+              <MetricCard label="Listings Created" value={formatNumber(analytics.seller?.overview?.listingsCreated)} icon={BriefcaseBusiness} tone="blue" />
+            </div>
+            <div className="mt-5 grid gap-5 xl:grid-cols-2">
+              <TrendList
+                title="Most Common Seller Blockers"
+                rows={analytics.seller?.readiness?.commonBlockers || []}
+              />
+              <TrendList
+                title="Readiness Distribution"
+                rows={Object.entries(analytics.seller?.readiness?.distribution || {}).map(([label, count]) => ({ label: label.replace(/_/g, ' '), count }))}
+              />
+            </div>
+            <div className="mt-6 grid gap-5 xl:grid-cols-2">
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                <div className="border-b border-slate-100 px-4 py-3">
+                  <h3 className="text-sm font-semibold text-slate-950">Seller Source Performance</h3>
+                </div>
+                <DataTable
+                  rows={filteredSellerSources}
+                  emptyTitle="No seller source data yet"
+                  emptyCopy="Seller source metrics appear once seller leads are captured."
+                  columns={[
+                    { key: 'source', label: 'Source' },
+                    { key: 'sellerLeads', label: 'Leads', render: (row) => formatNumber(row.sellerLeads) },
+                    { key: 'valuationsScheduled', label: 'Valuations', render: (row) => formatNumber(row.valuationsScheduled) },
+                    { key: 'mandatesSigned', label: 'Mandates Signed', render: (row) => formatNumber(row.mandatesSigned) },
+                    { key: 'listingsLive', label: 'Listings Live', render: (row) => formatNumber(row.listingsLive) },
+                    { key: 'listingLiveConversionPercent', label: 'Live %', render: (row) => formatPercent(row.listingLiveConversionPercent) },
+                  ]}
+                />
+              </div>
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                <div className="border-b border-slate-100 px-4 py-3">
+                  <h3 className="text-sm font-semibold text-slate-950">Seller Agent Performance</h3>
+                </div>
+                <DataTable
+                  rows={filteredSellerAgents}
+                  emptyTitle="No seller agent data yet"
+                  emptyCopy="Seller ownership metrics appear once seller leads are assigned."
+                  columns={[
+                    { key: 'agentName', label: 'Agent' },
+                    { key: 'sellerLeads', label: 'Leads', render: (row) => formatNumber(row.sellerLeads) },
+                    { key: 'valuationsCompleted', label: 'Valuations Done', render: (row) => formatNumber(row.valuationsCompleted) },
+                    { key: 'mandatesSigned', label: 'Mandates Signed', render: (row) => formatNumber(row.mandatesSigned) },
+                    { key: 'listingsLive', label: 'Listings Live', render: (row) => formatNumber(row.listingsLive) },
+                    { key: 'averageDaysToListingLive', label: 'Avg Live Time', render: (row) => formatDays(row.averageDaysToListingLive) },
+                  ]}
+                />
+              </div>
+            </div>
+            {filteredSellerBranches.length ? (
+              <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                <div className="border-b border-slate-100 px-4 py-3">
+                  <h3 className="text-sm font-semibold text-slate-950">Seller Branch Performance</h3>
+                </div>
+                <DataTable
+                  rows={filteredSellerBranches}
+                  columns={[
+                    { key: 'branchName', label: 'Branch' },
+                    { key: 'sellerLeads', label: 'Leads', render: (row) => formatNumber(row.sellerLeads) },
+                    { key: 'valuationsScheduled', label: 'Valuations', render: (row) => formatNumber(row.valuationsScheduled) },
+                    { key: 'mandatesSigned', label: 'Mandates Signed', render: (row) => formatNumber(row.mandatesSigned) },
+                    { key: 'listingsLive', label: 'Listings Live', render: (row) => formatNumber(row.listingsLive) },
+                    { key: 'listingLiveConversionPercent', label: 'Live %', render: (row) => formatPercent(row.listingLiveConversionPercent) },
+                  ]}
+                />
+              </div>
+            ) : null}
+          </section>
 
           <section className={`${panelClass} overflow-hidden p-5`}>
             <SectionHeader eyebrow="Sources" title="Source Performance" copy="Enquiries, created leads, qualified leads, viewings, offers, transactions, and registrations by source." />

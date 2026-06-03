@@ -2579,6 +2579,60 @@ function SellerListingDistribution({ links = [] }) {
   )
 }
 
+function SellerStatusCards({ cards = [] }) {
+  if (!cards.length) return null
+  const icons = [CalendarClock, FileSignature, Home, FileText, MessageCircle]
+  return (
+    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      {cards.map((card, index) => {
+        const Icon = icons[index] || CheckCircle2
+        return (
+          <article key={card.key || card.label} className="rounded-[18px] border border-[#dbe5ef] bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">{card.label}</p>
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-[#eef7f4] text-[#0f8d69]">
+                <Icon size={17} />
+              </span>
+            </div>
+            <strong className="mt-3 block truncate text-[1.02rem] font-semibold text-[#142132]" title={String(card.value || '')}>
+              {card.value || 'Awaiting update'}
+            </strong>
+          </article>
+        )
+      })}
+    </section>
+  )
+}
+
+function SellerPortalReadiness({ readiness = null }) {
+  const blockers = Array.isArray(readiness?.blockers) ? readiness.blockers : []
+  if (!readiness && !blockers.length) return null
+  return (
+    <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">What Happens Next</h2>
+          <p className="mt-1 text-sm leading-6 text-[#64748b]">{readiness?.nextAction || readiness?.label || 'Your agent is coordinating the next step.'}</p>
+        </div>
+        <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-3 py-1 text-[0.68rem] font-semibold text-[#35546c]">
+          {readiness?.label || 'In progress'}
+        </span>
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        {blockers.length ? blockers.slice(0, 4).map((blocker) => (
+          <div key={blocker.key} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+            <p className="text-sm font-semibold text-[#142132]">{blocker.label}</p>
+          </div>
+        )) : (
+          <div className="rounded-[14px] border border-[#d8eddf] bg-[#ecfaf1] px-3.5 py-3 text-sm font-semibold text-[#1f7d44]">
+            No action needed from you right now.
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function SellerSupportCard({ sellerAgentPhone, sellerAgentEmail }) {
   const contactAction = sellerAgentEmail
     ? { label: 'Contact support', href: `mailto:${sellerAgentEmail}` }
@@ -2623,6 +2677,8 @@ function SellerPortalDashboard({
   sellerVisibleListingLinks,
   sellerStageMeta,
   sellerStageDates,
+  sellerStatusCards,
+  sellerReadiness,
   token,
   workspaceNavigationScope,
 }) {
@@ -2643,6 +2699,8 @@ function SellerPortalDashboard({
         token={token}
         workspaceNavigationScope={workspaceNavigationScope}
       />
+      <SellerStatusCards cards={sellerStatusCards} />
+      <SellerPortalReadiness readiness={sellerReadiness} />
       <section className="grid gap-5 xl:grid-cols-2">
         <SellerDetailsCard sellerSummaryItems={sellerSummaryItems} currentStageLabel={sellerStageMeta.currentStage.label} />
         <SellerNextStepCard
@@ -3984,7 +4042,13 @@ function ClientPortal() {
   const activeSellerOfferCount = sellerOfferItems.filter((offer) =>
     !['rejected', 'withdrawn', 'expired'].includes(normalizeSellerPortalKey(offer.status)),
   ).length
-  const sellerStageMeta = getSellerPortalStageMeta({
+  const sharedSellerPortalJourney =
+    workspaceData?.sellerPortalJourney ||
+    portal?.sellerPortalJourney ||
+    portal?.activeSellingContext?.sellerPortalJourney ||
+    activeSellingContext?.sellerPortalJourney ||
+    null
+  const fallbackSellerStageMeta = getSellerPortalStageMeta({
     ...(portal?.transaction || {}),
     portal,
     context: activeSellingContext,
@@ -4005,6 +4069,11 @@ function ClientPortal() {
     sellerOfferCount: activeSellerOfferCount,
     hasOffers: activeSellerOfferCount > 0,
   })
+  const sellerStageMeta = sharedSellerPortalJourney?.stageMeta || fallbackSellerStageMeta
+  const sellerStatusCards = Array.isArray(sharedSellerPortalJourney?.statusCards)
+    ? sharedSellerPortalJourney.statusCards
+    : []
+  const sellerPortalReadiness = sharedSellerPortalJourney?.readiness || null
   const sellerCurrentStage = sellerStageMeta.currentStage.label
   const sellerProgressPercent = sellerStageMeta.progressPercent
   const missingRequired = Math.max(
@@ -6154,6 +6223,8 @@ function ClientPortal() {
                       sellerVisibleListingLinks={sellerVisibleListingLinks}
                       sellerStageMeta={sellerStageMeta}
                       sellerStageDates={sellerStageDates}
+                      sellerStatusCards={sellerStatusCards}
+                      sellerReadiness={sellerPortalReadiness}
                       token={token}
                       workspaceNavigationScope={workspaceNavigationScope}
                     />

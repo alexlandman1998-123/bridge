@@ -17,6 +17,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { createAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
+import { inferLeadCategoryFromRecord, normalizeLeadCategory } from '../lib/leadCategory'
 import { readAgentPrivateListings } from '../lib/agentListingStorage'
 import { createAppointmentAsync } from '../lib/agencyPipelineService'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
@@ -794,7 +795,7 @@ function QuickCreateDropdown({ className = '' }) {
               notes: normalizeText(form.notes),
             },
             lead: {
-              leadCategory: normalizeText(form.leadType) || 'Buyer',
+              leadCategory: normalizeLeadCategory(form.leadType, 'buyer'),
               leadDirection: 'Inbound',
               leadSource: normalizeLeadSource(form.source),
               stage: 'New Lead',
@@ -811,7 +812,7 @@ function QuickCreateDropdown({ className = '' }) {
       } else if (activeType === 'prospect') {
         const nameParts = splitName(form.name)
         const prospectType = normalizeText(form.prospectType) || 'Buyer'
-        const leadCategory = prospectType.toLowerCase().includes('seller') ? 'Seller' : 'Buyer'
+        const leadCategory = inferLeadCategoryFromRecord({ leadCategory: prospectType, leadSource: 'Manual Entry' }, 'buyer')
         await createAgencyCrmLeadRecord(
           organisationId,
           {

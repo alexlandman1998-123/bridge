@@ -8,6 +8,7 @@ import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { createLeadRequirement, listLeadRequirements } from './leadRequirementService'
 import { upsertLeadListingInterest } from './leadListingInterestService'
 import { autoAssignLead } from './leadAssignmentService'
+import { inferLeadCategoryFromRecord, inferLeadCategoryFromSource, normalizeLeadCategory } from '../lib/leadCategory'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const ACTIVE_LEAD_BLOCKLIST = ['converted', 'lost', 'archived', 'closed', 'dead']
@@ -102,6 +103,10 @@ export function normalizeEnquiryPayload(payload = {}, defaultSource = 'Other') {
   const rawName = normalizeText(payload.name || payload.fullName || contact.name || contact.fullName || [contact.firstName, contact.lastName].filter(Boolean).join(' '))
   const nameParts = splitName(rawName)
   const source = normalizeLeadSource(payload.source || payload.leadSource || lead.leadSource || defaultSource)
+  const leadCategory = normalizeLeadCategory(
+    lead.leadCategory || payload.leadCategory || payload.lead_category,
+    inferLeadCategoryFromSource(source, 'other'),
+  )
   const email = normalizeEmail(payload.email || contact.email || payload.fromEmail)
   const phone = normalizePhone(payload.phone || contact.phone || payload.mobile || payload.fromPhone)
   const externalReference = normalizeText(payload.externalReference || payload.external_reference || payload.enquiryId || payload.enquiry_id || payload.id || payload.reference)
@@ -122,7 +127,7 @@ export function normalizeEnquiryPayload(payload = {}, defaultSource = 'Other') {
     },
     lead: {
       leadId: normalizeText(lead.leadId || lead.lead_id),
-      leadCategory: normalizeText(lead.leadCategory || payload.leadCategory) || 'Buyer',
+      leadCategory,
       leadDirection: normalizeText(lead.leadDirection || payload.leadDirection) || 'Inbound',
       leadSource: source,
       stage: normalizeText(lead.stage || payload.stage) || 'New Lead',
@@ -438,7 +443,8 @@ export async function createOrUpdateLeadFromEnquiry(payload = {}, { actor = null
     const { lead, reusedLead } = await createOrReuseLead({ enquiry, contact: existingContact, listing, actor })
     const contactId = existingContact?.contact_id || lead.contactId
     const existingRequirements = await listLeadRequirements({ organisationId: enquiry.organisationId, leadId: lead.leadId }).catch(() => [])
-    const requirementPayload = buildRequirementPayload(enquiry, { ...lead, contactId }, existingRequirements)
+    const isBuyerLead = inferLeadCategoryFromRecord(lead, enquiry.lead.leadCategory) === 'buyer'
+    const requirementPayload = isBuyerLead ? buildRequirementPayload(enquiry, { ...lead, contactId }, existingRequirements) : null
     const requirement = requirementPayload ? await createLeadRequirement(requirementPayload, { actor }).catch(() => null) : existingRequirements[0] || null
 
     const activity = await createAgencyCrmLeadActivity(

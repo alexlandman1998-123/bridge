@@ -8,6 +8,13 @@ import {
 } from './communicationDeliveryService'
 import { getCommunicationProviderHealth } from './communicationProviderService'
 import { getRecommendationMetrics } from './leadRecommendationService'
+import { inferLeadCategoryFromRecord } from '../lib/leadCategory'
+import {
+  buildSellerJourney,
+  isSellerLead,
+  isSellerValuationAppointment,
+} from './sellerJourneyService.js'
+import { getSellerReadiness } from './sellerReadinessService.js'
 
 const SOURCE_VALUES = ['Property24', 'Private Property', 'Website', 'WhatsApp', 'Referral', 'Facebook', 'Google', 'Walk-In', 'Manual Import', 'Other']
 
@@ -63,6 +70,11 @@ function hoursBetween(start, end) {
   const endMs = new Date(end || 0).getTime()
   if (!start || !end || Number.isNaN(startMs) || Number.isNaN(endMs) || endMs < startMs) return null
   return Math.round(((endMs - startMs) / 3_600_000) * 10) / 10
+}
+
+function daysBetweenDates(start, end) {
+  const hours = hoursBetween(start, end)
+  return hours === null ? null : Math.round((hours / 24) * 10) / 10
 }
 
 function average(values = []) {
@@ -176,7 +188,7 @@ async function safeRead(table, select = '*', { organisationId = '', organisation
 
 async function fetchLeadAnalyticsSnapshot({ organisationId = '' } = {}) {
   const crm = await listAgencyCrmLeadContacts(organisationId).catch(() => ({ leads: [], contacts: [], leadActivities: [], tasks: [] }))
-  const [ingestionLogs, requirements, interests, suggestions, recommendations, communications, communicationDeliveries, appointments, offers, transactions, listings] = await Promise.all([
+  const [ingestionLogs, requirements, interests, suggestions, recommendations, communications, communicationDeliveries, appointments, offers, transactions, listings, documentPackets] = await Promise.all([
     safeRead('lead_ingestion_logs', '*', { organisationId, order: 'created_at' }),
     safeRead('lead_requirements', '*', { organisationId, order: 'updated_at' }),
     safeRead('lead_listing_interests', '*', { organisationId, order: 'updated_at' }),
@@ -188,6 +200,7 @@ async function fetchLeadAnalyticsSnapshot({ organisationId = '' } = {}) {
     safeRead('offers', '*', { organisationId, order: 'updated_at' }),
     safeRead('transactions', '*', { organisationId, order: 'updated_at' }),
     safeRead('private_listings', '*', { organisationId, order: 'updated_at' }),
+    safeRead('document_packets', '*', { organisationId, order: 'updated_at' }),
   ])
 
   let canonicalOffers = []
@@ -216,6 +229,7 @@ async function fetchLeadAnalyticsSnapshot({ organisationId = '' } = {}) {
     offers: offers.length ? offers : canonicalOffers,
     transactions,
     listings,
+    documentPackets,
   }
 }
 
@@ -565,11 +579,319 @@ export function getLeadPipelineMetrics(data = {}) {
   }
 }
 
+export function getLeadCategoryMetrics(data = {}) {
+  const counts = { combined: 0, buyer: 0, seller: 0, other: 0 }
+  for (const lead of data.leads || []) {
+    const category = inferLeadCategoryFromRecord(lead, 'other')
+    counts.combined += 1
+    counts[category] = (counts[category] || 0) + 1
+  }
+  return counts
+}
+
+function getSellerLinkedLeadIds(row = {}) {
+  return [
+    row?.sellerLeadId,
+    row?.seller_lead_id,
+    row?.originatingCrmLeadId,
+    row?.originating_crm_lead_id,
+    row?.leadId,
+    row?.lead_id,
+    row?.relatedEntityId,
+    row?.related_entity_id,
+    row?.crmLeadId,
+    row?.crm_lead_id,
+  ].map(normalizeText).filter(Boolean)
+}
+
+function getSellerLeadIdFromPacket(packet = {}) {
+  const context = packet?.source_context_json && typeof packet.source_context_json === 'object'
+    ? packet.source_context_json
+    : packet?.sourceContextJson && typeof packet.sourceContextJson === 'object'
+      ? packet.sourceContextJson
+      : {}
+  return readId(packet, ['sellerLeadId', 'seller_lead_id', 'leadId', 'lead_id', 'crmLeadId', 'crm_lead_id', 'relatedEntityId', 'related_entity_id']) ||
+    readId(context, ['sellerLeadId', 'seller_lead_id', 'leadId', 'lead_id', 'crmLeadId', 'crm_lead_id'])
+}
+
+function getSellerListingForLead(lead = {}, listings = []) {
+  const leadId = getLeadId(lead)
+  const leadListingId = readId(lead, ['listingId', 'listing_id', 'privateListingId', 'private_listing_id'])
+  return (Array.isArray(listings) ? listings : []).find((listing) => {
+    const listingId = getListingId(listing)
+    if (leadListingId && listingId && leadListingId === listingId) return true
+    return Boolean(leadId && getSellerLinkedLeadIds(listing).includes(leadId))
+  }) || null
+}
+
+function getSellerAppointmentsForLead(lead = {}, appointments = []) {
+  const leadId = getLeadId(lead)
+  return (Array.isArray(appointments) ? appointments : []).filter((appointment) =>
+    isSellerValuationAppointment(appointment) &&
+    (getLeadId(appointment) === leadId || getSellerLinkedLeadIds(appointment).includes(leadId)),
+  )
+}
+
+function getMandatePacketForLead(lead = {}, packets = []) {
+  const leadId = getLeadId(lead)
+  const packetId = readId(lead, ['mandatePacketId', 'mandate_packet_id'])
+  return (Array.isArray(packets) ? packets : []).find((packet) => {
+    const id = readId(packet, ['id', 'packetId', 'packet_id'])
+    return (packetId && id && packetId === id) || (leadId && getSellerLeadIdFromPacket(packet) === leadId)
+  }) || null
+}
+
+function dateFromRows(row = {}, keys = []) {
+  return readDate(row || {}, keys)
+}
+
+function sourceContext(packet = {}) {
+  return packet?.source_context_json && typeof packet.source_context_json === 'object'
+    ? packet.source_context_json
+    : packet?.sourceContextJson && typeof packet.sourceContextJson === 'object'
+      ? packet.sourceContextJson
+      : {}
+}
+
+function firstDate(...dates) {
+  return dates.find(Boolean) || null
+}
+
+function getSellerJourneyAnalyticsRows(data = {}) {
+  return (data.leads || []).filter(isSellerLead).map((lead) => {
+    const leadId = getLeadId(lead)
+    const appointments = getSellerAppointmentsForLead(lead, data.appointments || [])
+    const listing = getSellerListingForLead(lead, data.listings || [])
+    const packet = getMandatePacketForLead(lead, data.documentPackets || [])
+    const mandatePacketStatus = packet ? { packet, state: packet.status || packet.packetStatus || packet.packet_status } : null
+    const journey = buildSellerJourney({ lead, appointments, listing, mandatePacketStatus, mandatePacket: packet })
+    const readiness = getSellerReadiness({ lead, appointments, listing, mandatePacketStatus, mandatePacket: packet, journey })
+    const valuationAppointment = journey.valuationAppointment
+    const context = sourceContext(packet || {})
+    const leadCreatedAt = dateFromRows(lead, ['createdAt', 'created_at'])
+    const valuationScheduledAt = valuationAppointment
+      ? dateFromRows(valuationAppointment, ['scheduledAt', 'scheduled_at', 'dateTime', 'date_time', 'startTime', 'start_time', 'createdAt', 'created_at'])
+      : null
+    const valuationCompletedAt = journey.valuationStatus === 'Completed'
+      ? firstDate(
+        dateFromRows(valuationAppointment, ['completedAt', 'completed_at']),
+        valuationScheduledAt,
+      )
+      : null
+    const mandateSentAt = ['sent', 'signed'].includes(journey.mandateStatus)
+      ? firstDate(
+        dateFromRows(packet, ['sentAt', 'sent_at', 'createdAt', 'created_at']),
+        dateFromRows(context, ['mandateSentAt', 'mandate_sent_at']),
+        dateFromRows(lead, ['updatedAt', 'updated_at']),
+      )
+      : null
+    const mandateSignedAt = journey.mandateStatus === 'signed'
+      ? firstDate(
+        dateFromRows(packet, ['signedAt', 'signed_at', 'updatedAt', 'updated_at']),
+        dateFromRows(context, ['mandateSignedAt', 'mandate_signed_at']),
+      )
+      : null
+    const listingCreatedAt = journey.listingCreated
+      ? firstDate(
+        dateFromRows(listing, ['createdAt', 'created_at']),
+        dateFromRows(lead, ['listingCreatedAt', 'listing_created_at', 'updatedAt', 'updated_at']),
+      )
+      : null
+    const listingLiveAt = journey.listingLive
+      ? firstDate(
+        dateFromRows(listing, ['activatedAt', 'activated_at', 'publishedAt', 'published_at', 'liveAt', 'live_at', 'updatedAt', 'updated_at']),
+        listingCreatedAt,
+      )
+      : null
+    return {
+      lead,
+      leadId,
+      journey,
+      readiness,
+      source: normalizeSource(lead.leadSource || lead.lead_source || lead.source),
+      agentId: readId(lead, ['assignedAgentId', 'assigned_agent_id', 'assignedUserId', 'assigned_user_id']) || 'unassigned',
+      agentName: normalizeText(lead.assignedAgentName || lead.assigned_agent_name || lead.assignedAgentEmail || lead.assigned_agent_email || 'Unassigned'),
+      branchId: readId(lead, ['branchId', 'branch_id', 'officeId', 'office_id', 'organisationBranchId', 'organisation_branch_id']) || 'unassigned',
+      branchName: normalizeText(lead.branchName || lead.branch_name || lead.officeName || lead.office_name || 'Unassigned'),
+      dates: {
+        seller_leads: leadCreatedAt,
+        contacted: firstDate(dateFromRows(lead, ['firstContactedAt', 'first_contacted_at']), leadCreatedAt),
+        valuations_scheduled: valuationScheduledAt,
+        valuations_completed: valuationCompletedAt,
+        mandates_sent: mandateSentAt,
+        mandates_signed: mandateSignedAt,
+        listings_created: listingCreatedAt,
+        listings_live: listingLiveAt,
+      },
+    }
+  })
+}
+
+const SELLER_FUNNEL_STAGES = [
+  { key: 'seller_leads', label: 'Seller Leads', test: () => true },
+  { key: 'contacted', label: 'Contacted', test: () => true },
+  { key: 'valuations_scheduled', label: 'Valuations Scheduled', test: (row) => Boolean(row.journey.valuationAppointment) },
+  { key: 'valuations_completed', label: 'Valuations Completed', test: (row) => row.journey.valuationStatus === 'Completed' },
+  { key: 'mandates_sent', label: 'Mandates Sent', test: (row) => ['sent', 'signed'].includes(row.journey.mandateStatus) },
+  { key: 'mandates_signed', label: 'Mandates Signed', test: (row) => row.journey.mandateStatus === 'signed' },
+  { key: 'listings_created', label: 'Listings Created', test: (row) => row.journey.listingCreated },
+  { key: 'listings_live', label: 'Listings Live', test: (row) => row.journey.listingLive },
+]
+
+const SELLER_FUNNEL_ACTIVE_STAGE_KEYS = {
+  seller_leads: 'contacted',
+  contacted: 'contacted',
+  valuations_scheduled: 'appointment_valuation',
+  valuations_completed: 'appointment_valuation',
+  mandates_sent: 'mandate_sent',
+  mandates_signed: 'mandate_signed',
+  listings_created: 'listing_created',
+  listings_live: 'listing_live',
+}
+
+export function getSellerFunnelMetrics(data = {}) {
+  const rows = getSellerJourneyAnalyticsRows(data)
+  const currentByStage = rows.reduce((map, row) => {
+    increment(map, row.journey.stage?.key || 'contacted')
+    return map
+  }, new Map())
+  return SELLER_FUNNEL_STAGES.map((stage, index) => {
+    const matchingRows = rows.filter(stage.test)
+    const previousStage = index === 0 ? stage : SELLER_FUNNEL_STAGES[index - 1]
+    const previousRows = index === 0 ? matchingRows : rows.filter(previousStage.test)
+    const firstCount = rows.length
+    const leadStageDays = matchingRows
+      .map((row) => daysBetweenDates(row.dates.seller_leads, row.dates[stage.key]))
+      .filter((value) => value !== null)
+    const previousStageDays = matchingRows
+      .map((row) => daysBetweenDates(row.dates[previousStage.key], row.dates[stage.key]))
+      .filter((value) => value !== null)
+    const volume = matchingRows.length
+    return {
+      key: stage.key,
+      label: stage.label,
+      count: volume,
+      volume,
+      activeCount: currentByStage.get(SELLER_FUNNEL_ACTIVE_STAGE_KEYS[stage.key] || stage.key) || 0,
+      conversionPercent: index === 0 ? 100 : percent(volume, previousRows.length),
+      overallConversionPercent: percent(volume, firstCount),
+      dropOffPercent: index === 0 ? 0 : Math.max(0, 100 - percent(volume, previousRows.length)),
+      averageDaysFromPrevious: average(previousStageDays),
+      averageDaysFromLead: average(leadStageDays),
+      averageTimeInStageHours: average(previousStageDays) * 24,
+    }
+  })
+}
+
+function buildSellerPerformanceRows(rows = [], keyFn, labelKeys = {}) {
+  const groups = groupRows(rows, keyFn)
+  return [...groups.entries()].map(([key, groupedRows]) => {
+    const first = groupedRows[0] || {}
+    const listingsLiveRows = groupedRows.filter((row) => row.journey.listingLive)
+    const averageDaysToListingLive = average(listingsLiveRows
+      .map((row) => daysBetweenDates(row.dates.seller_leads, row.dates.listings_live))
+      .filter((value) => value !== null))
+    return {
+      id: key,
+      source: labelKeys.source ? key : undefined,
+      agentId: labelKeys.agent ? key : undefined,
+      agentName: labelKeys.agent ? first.agentName : undefined,
+      branchId: labelKeys.branch ? key : undefined,
+      branchName: labelKeys.branch ? first.branchName : undefined,
+      sellerLeads: groupedRows.length,
+      valuationsScheduled: groupedRows.filter((row) => Boolean(row.journey.valuationAppointment)).length,
+      valuationsCompleted: groupedRows.filter((row) => row.journey.valuationStatus === 'Completed').length,
+      mandatesSent: groupedRows.filter((row) => ['sent', 'signed'].includes(row.journey.mandateStatus)).length,
+      mandatesSigned: groupedRows.filter((row) => row.journey.mandateStatus === 'signed').length,
+      listingsCreated: groupedRows.filter((row) => row.journey.listingCreated).length,
+      listingsLive: listingsLiveRows.length,
+      mandateConversionPercent: percent(groupedRows.filter((row) => row.journey.mandateStatus === 'signed').length, groupedRows.length),
+      listingLiveConversionPercent: percent(listingsLiveRows.length, groupedRows.length),
+      averageDaysToListingLive,
+    }
+  }).sort((left, right) => right.sellerLeads - left.sellerLeads || right.listingsLive - left.listingsLive)
+}
+
+export function getSellerSourceMetrics(data = {}) {
+  return buildSellerPerformanceRows(getSellerJourneyAnalyticsRows(data), (row) => row.source, { source: true })
+}
+
+export function getSellerAgentMetrics(data = {}) {
+  return buildSellerPerformanceRows(getSellerJourneyAnalyticsRows(data), (row) => row.agentId || 'unassigned', { agent: true })
+}
+
+export function getSellerBranchMetrics(data = {}) {
+  return buildSellerPerformanceRows(getSellerJourneyAnalyticsRows(data), (row) => row.branchId || 'unassigned', { branch: true })
+}
+
+export function getSellerAnalyticsMetrics(data = {}) {
+  const rows = getSellerJourneyAnalyticsRows(data)
+  const funnel = getSellerFunnelMetrics(data)
+  const liveRows = rows.filter((row) => row.journey.listingLive)
+  const signedMandateRows = rows.filter((row) => row.journey.mandateStatus === 'signed')
+  const listingCreatedRows = rows.filter((row) => row.journey.listingCreated)
+  const readinessDistribution = rows.reduce((map, row) => {
+    const status = row.readiness?.readinessStatus || 'ready'
+    map[status] = (map[status] || 0) + 1
+    return map
+  }, { ready: 0, action_required: 0, blocked: 0, completed: 0 })
+  const blockerCounts = new Map()
+  rows.forEach((row) => {
+    ;(row.readiness?.blockers || []).forEach((blocker) => increment(blockerCounts, blocker.label))
+  })
+  const activeSellersByStage = rows.reduce((map, row) => {
+    const stage = row.journey.stage?.label || 'Contacted'
+    map[stage] = (map[stage] || 0) + 1
+    return map
+  }, {})
+  return {
+    overview: {
+      sellerLeads: rows.length,
+      valuationsScheduled: rows.filter((row) => Boolean(row.journey.valuationAppointment)).length,
+      valuationsCompleted: rows.filter((row) => row.journey.valuationStatus === 'Completed').length,
+      mandatesSent: rows.filter((row) => ['sent', 'signed'].includes(row.journey.mandateStatus)).length,
+      mandatesSigned: rows.filter((row) => row.journey.mandateStatus === 'signed').length,
+      listingsCreated: rows.filter((row) => row.journey.listingCreated).length,
+      listingsLive: liveRows.length,
+      readyForListing: rows.filter((row) => row.readiness?.nextAction?.id === 'create_listing' && row.readiness?.readinessStatus === 'ready').length,
+      blockedListings: rows.filter((row) => row.journey.listingCreated && row.readiness?.readinessStatus === 'blocked').length,
+      mandatesAwaitingSignature: rows.filter((row) => row.journey.mandateStatus === 'sent').length,
+      listingsAwaitingActivation: rows.filter((row) => row.journey.listingCreated && !row.journey.listingLive).length,
+      mandateConversionRate: percent(rows.filter((row) => row.journey.mandateStatus === 'signed').length, rows.length),
+      listingLiveConversionRate: percent(liveRows.length, rows.length),
+      averageDaysToMandate: average(signedMandateRows
+        .map((row) => daysBetweenDates(row.dates.seller_leads, row.dates.mandates_signed))
+        .filter((value) => value !== null)),
+      averageDaysToListing: average(listingCreatedRows
+        .map((row) => daysBetweenDates(row.dates.seller_leads, row.dates.listings_created))
+        .filter((value) => value !== null)),
+      averageDaysToListingLive: average(liveRows
+        .map((row) => daysBetweenDates(row.dates.seller_leads, row.dates.listings_live))
+        .filter((value) => value !== null)),
+      activeSellersByStage,
+      readinessDistribution,
+    },
+    funnel,
+    sources: getSellerSourceMetrics(data),
+    agents: getSellerAgentMetrics(data),
+    branches: getSellerBranchMetrics(data),
+    readiness: {
+      distribution: readinessDistribution,
+      commonBlockers: topEntries(blockerCounts, 8),
+    },
+  }
+}
+
 export function buildLeadAnalyticsModel(data = {}) {
+  const categoryMetrics = getLeadCategoryMetrics(data)
+  const seller = getSellerAnalyticsMetrics(data)
   return {
     generatedAt: new Date().toISOString(),
     overview: {
       totalLeads: (data.leads || []).length,
+      buyerLeads: categoryMetrics.buyer,
+      sellerLeads: categoryMetrics.seller,
+      otherLeads: categoryMetrics.other,
       totalEnquiries: (data.ingestionLogs || []).length,
       totalRequirements: (data.requirements || []).length,
       totalMatches: (data.interests || []).length,
@@ -579,7 +901,9 @@ export function buildLeadAnalyticsModel(data = {}) {
       totalViewings: (data.appointments || []).length,
       totalOffers: (data.offers || []).length,
       totalTransactions: (data.transactions || []).length,
+      sellerListingsLive: seller.overview.listingsLive,
     },
+    categories: categoryMetrics,
     funnel: getLeadFunnelMetrics(data),
     sources: getLeadSourceMetrics(data),
     conversion: getLeadConversionMetrics(data),
@@ -594,6 +918,7 @@ export function buildLeadAnalyticsModel(data = {}) {
     suggestions: getSuggestionMetrics(data),
     recommendations: getRecommendationMetrics(data.recommendations || []),
     pipeline: getLeadPipelineMetrics(data),
+    seller,
   }
 }
 
@@ -632,6 +957,10 @@ export async function getRequirementGapMetricsAsync({ organisationId = '' } = {}
 
 export async function getLeadPipelineMetricsAsync({ organisationId = '' } = {}) {
   return getLeadPipelineMetrics(await fetchLeadAnalyticsSnapshot({ organisationId }))
+}
+
+export async function getLeadCategoryMetricsAsync({ organisationId = '' } = {}) {
+  return getLeadCategoryMetrics(await fetchLeadAnalyticsSnapshot({ organisationId }))
 }
 
 export function buildLeadWorkspaceAnalyticsSummary(lead = {}) {
@@ -696,6 +1025,14 @@ export function buildLeadAnalyticsCsvExport(type = 'funnel', analytics = {}) {
               ? Object.entries(analytics.communicationPerformance || {}).filter(([, value]) => !Array.isArray(value) && typeof value !== 'object').map(([metric, value]) => ({ metric, value }))
               : normalizedType === 'property_shares'
               ? Object.entries(analytics.propertyShares || {}).map(([metric, value]) => ({ metric, value }))
+              : normalizedType === 'seller_funnel'
+                ? analytics.seller?.funnel || []
+                : normalizedType === 'seller_sources'
+                  ? analytics.seller?.sources || []
+                  : normalizedType === 'seller_agents'
+                    ? analytics.seller?.agents || []
+                    : normalizedType === 'seller_branches'
+                      ? analytics.seller?.branches || []
               : normalizedType === 'leads'
                 ? Object.entries(analytics.pipeline || {}).map(([metric, value]) => ({ metric, value }))
                 : analytics.funnel || []
@@ -712,6 +1049,7 @@ export const __leadAnalyticsServiceTestUtils = {
   getCommunicationMetrics,
   getCommunicationPerformanceMetrics,
   getLeadConversionMetrics,
+  getLeadCategoryMetrics,
   getLeadFunnelMetrics,
   getLeadPipelineMetrics,
   getLeadSourceMetrics,
@@ -720,6 +1058,11 @@ export const __leadAnalyticsServiceTestUtils = {
   getRecommendationMetrics,
   getPropertyShareMetrics,
   getResponseTimeMetrics,
+  getSellerAgentMetrics,
+  getSellerAnalyticsMetrics,
+  getSellerBranchMetrics,
+  getSellerFunnelMetrics,
+  getSellerSourceMetrics,
   getSuggestionMetrics,
   median,
   percent,

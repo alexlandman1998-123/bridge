@@ -8,6 +8,7 @@ import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { isUnsafeFallbackAllowed } from '../../lib/envValidation'
+import { inferLeadCategoryFromRecord, leadCategoryLabel, normalizeLeadCategory } from '../../lib/leadCategory'
 import { CANVASSING_UPDATED_EVENT, listCanvassingWorkspace } from '../../lib/canvassingRepository'
 import {
   ACTIVITY_TYPES,
@@ -67,7 +68,9 @@ import {
 } from '../../lib/agentListingStorage'
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
-import { createPrivateListing, createPrivateListingActivity, getOrganisationPrivateListings, getSellerOnboardingByToken, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
+import { activatePrivateListing, createPrivateListing, createPrivateListingActivity, getOrganisationPrivateListings, getSellerOnboardingByToken, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
+import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
+import { buildSellerReadinessSummary } from '../../services/sellerReadinessService'
 import { generatePacketVersion, generateSigningLinks, listPacketTemplates, prepareSigningFields } from '../../core/documents/packetService'
 import { createDocumentPacket, fetchDocumentPacket, listDocumentPackets } from '../../lib/documentPacketsApi'
 import {
@@ -1064,11 +1067,10 @@ function getLeadStageTone(value = '') {
 }
 
 function getLeadCategoryMeta(lead = {}, contact = {}) {
-  const signal = normalizeText(lead?.leadCategory || lead?.leadDirection || contact?.contactType).toLowerCase()
-  if (signal.includes('tenant')) return { label: 'Tenant', className: 'border-[#d7e4f5] bg-[#f2f7ff] text-[#315f8f]' }
-  if (signal.includes('investor')) return { label: 'Investor', className: 'border-[#ded8f6] bg-[#f5f2ff] text-[#5f4a9b]' }
-  if (signal.includes('seller') || signal.includes('landlord')) return { label: 'Seller Lead', className: 'border-[#f0dfb8] bg-[#fff8eb] text-[#8a641d]' }
-  return { label: 'Buyer Lead', className: 'border-[#cfe8dc] bg-[#effaf3] text-[#2d6b4a]' }
+  const category = resolveLeadCategoryView({ ...lead, contactType: contact?.contactType })
+  if (category === 'seller') return { label: 'Seller', className: 'border-[#f0dfb8] bg-[#fff8eb] text-[#8a641d]' }
+  if (category === 'other') return { label: 'Other', className: 'border-[#ded8f6] bg-[#f5f2ff] text-[#5f4a9b]' }
+  return { label: 'Buyer', className: 'border-[#cfe8dc] bg-[#effaf3] text-[#2d6b4a]' }
 }
 
 function getLeadStatusMeta(lead = {}, funnelStage = '') {
@@ -1405,7 +1407,7 @@ function mapPrivateListingToLeadFallback(listing = {}) {
     assignedAgentName: normalizeText(listing?.assignedAgentName),
     assignedAgentEmail: normalizeText(listing?.assignedAgentEmail),
     contactId: `contact_${leadIdSeed}`,
-    leadCategory: 'Seller',
+    leadCategory: 'seller',
     leadDirection: 'Inbound',
     leadSource: 'Seller Onboarding',
     stage: isCompleted ? 'Onboarding Completed' : onboardingStatus ? 'Onboarding Sent' : 'Lead',
@@ -1844,7 +1846,7 @@ const NEW_LEAD_DEFAULTS = {
   lastName: '',
   phone: '',
   email: '',
-  leadCategory: 'Buyer',
+  leadCategory: 'buyer',
   leadDirection: 'Inbound',
   leadSource: MANUAL_LEAD_SOURCE_OPTIONS[0],
   stage: 'Lead',
@@ -1864,6 +1866,7 @@ const NEW_LEAD_DEFAULTS = {
 
 const DEFAULT_LEAD_FILTER = {
   search: '',
+  category: 'all',
   source: 'all',
   stage: 'all',
   agent: 'all',
@@ -1871,36 +1874,12 @@ const DEFAULT_LEAD_FILTER = {
 }
 
 function resolveLeadCategoryView(value = '') {
-  const signal = typeof value === 'object' && value !== null
-    ? [
-        value?.leadCategory,
-        value?.lead_category,
-        value?.leadDirection,
-        value?.lead_direction,
-        value?.contactType,
-        value?.contact_type,
-        value?.sellerPropertyAddress,
-        value?.seller_property_address,
-        value?.sellerOnboardingStatus,
-        value?.seller_onboarding_status,
-        value?.sellerOnboardingToken,
-        value?.seller_onboarding_token,
-        value?.sellerLeadId,
-        value?.seller_lead_id,
-        value?.sellerWorkflowLeadId,
-        value?.seller_workflow_lead_id,
-        value?.listingId,
-        value?.listing_id,
-        value?.privateListingId,
-        value?.private_listing_id,
-      ].map(normalizeText).join(' ')
-    : normalizeText(value)
-  const normalized = normalizeKey(signal).replace(/[_-]+/g, ' ')
-  return normalized.includes('seller') || normalized.includes('landlord') || normalized.includes('mandate') ? 'seller' : 'buyer'
+  if (typeof value === 'object' && value !== null) return inferLeadCategoryFromRecord(value, 'other')
+  return normalizeLeadCategory(value, 'other')
 }
 
 function leadCategoryLabelForView(value = '') {
-  return resolveLeadCategoryView(value) === 'seller' ? 'Seller' : 'Buyer'
+  return leadCategoryLabel(resolveLeadCategoryView(value))
 }
 
 const LEAD_DETAIL_DEFAULTS = {
@@ -1977,7 +1956,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const routeLeadHydrationRef = useRef('')
   const isCalendarMode = initialViewMode === 'calendar'
   const isOverviewMode = initialViewMode === 'overview'
-  const [leadTypeView, setLeadTypeView] = useState('buyer')
+  const [leadTypeView, setLeadTypeView] = useState('all')
   const [pipelineViewMode, setPipelineViewMode] = useState('table')
   const [draggingPipelineCardId, setDraggingPipelineCardId] = useState('')
   const draggingPipelineCardRef = useRef('')
@@ -2695,7 +2674,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (isCalendarMode) return
     setLeadForm((previous) => ({
       ...previous,
-      leadCategory: leadTypeView === 'seller' ? 'Seller' : 'Buyer',
+      leadCategory: leadTypeView === 'seller' ? 'seller' : 'buyer',
     }))
   }, [isCalendarMode, leadTypeView])
 
@@ -2824,7 +2803,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const leadSourceOptions = MANUAL_LEAD_SOURCE_OPTIONS
 
   const filteredLeads = useMemo(() => {
-    const categoryValue = leadTypeView === 'seller' ? 'seller' : 'buyer'
     const visibleRows = records.leads.filter((lead) => {
       const canvassingProspect = (Array.isArray(canvassingStore.prospects) ? canvassingStore.prospects : [])
         .find((prospect) => normalizeText(prospect?.id) === normalizeText(lead?.canvassingProspectId))
@@ -2832,7 +2810,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         records.contacts.find((row) => normalizeText(row?.contactId) === normalizeText(lead?.contactId)) ||
         buildLeadContactFallback(lead) ||
         buildCanvassingProspectContactFallback(canvassingProspect)
-      const categoryMatch = resolveLeadCategoryView(lead) === categoryValue
+      const resolvedCategory = resolveLeadCategoryView(lead)
+      const categoryMatch = leadTypeView === 'all' ? true : resolvedCategory === leadTypeView
       const searchMatch = leadFilter.search
         ? [
             contact?.firstName,
@@ -2902,11 +2881,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const leadTableEnd = Math.min(filteredLeads.length, leadTableCurrentPage * LEAD_TABLE_PAGE_SIZE)
 
   const availableLeadSources = useMemo(() => {
-    const targetCategory = leadTypeView === 'seller' ? 'seller' : 'buyer'
     return Array.from(
       new Set(
         records.leads
-          .filter((lead) => normalizeText(lead?.leadCategory).toLowerCase() === targetCategory)
+          .filter((lead) => leadTypeView === 'all' ? true : resolveLeadCategoryView(lead) === leadTypeView)
           .map((lead) => normalizeText(lead?.leadSource))
           .filter(Boolean),
       ),
@@ -3364,6 +3342,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     !selectedLeadIsSeller &&
     shouldShowFinanceReadinessSection(selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || selectedLead || {})
   const selectedLeadShowBondReadinessCta = shouldShowBondReadinessCta(selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || selectedLead || {})
+
+  useEffect(() => {
+    if (!selectedLead) return
+    if (selectedLeadIsSeller && ['appointments', 'offers', 'tasks'].includes(leadWorkspaceTab)) {
+      setLeadWorkspaceTab('overview')
+    }
+    if (!selectedLeadIsSeller && ['documents', 'listing_journey'].includes(leadWorkspaceTab)) {
+      setLeadWorkspaceTab('overview')
+    }
+  }, [leadWorkspaceTab, selectedLead, selectedLeadIsSeller])
   const selectedLeadFinanceIntelligenceSource = useMemo(() => ({
     transaction: selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || {
       id: selectedLeadLinkedTransactionId,
@@ -3413,7 +3401,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     setFinanceReadinessForm(financeFormFromSummary(selectedLeadFinanceReadinessSummary))
-  }, [selectedLead?.leadId, selectedLeadIsSeller, selectedLeadFinanceReadinessSummary])
+  }, [selectedLead, selectedLead?.leadId, selectedLeadIsSeller, selectedLeadFinanceReadinessSummary])
 
   useEffect(() => {
     if (!selectedLead || !selectedLeadIsSeller || selectedLeadOnboardingCompleted || !organisationId) return
@@ -3806,6 +3794,81 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       })
     }
 
+    if (selectedLeadIsSeller && selectedLead) {
+      timelineRows.push({
+        id: `seller-created:${selectedLead.leadId || 'selected'}`,
+        sourceType: 'system',
+        sourceLabel: 'Seller Lead Created',
+        title: 'Seller lead entered the pipeline',
+        description: normalizeText(selectedLead.sellerPropertyAddress || selectedLead.propertyInterest || selectedLead.areaInterest),
+        actorName: 'System Update',
+        timestamp: selectedLead.createdAt || selectedLead.updatedAt || new Date().toISOString(),
+        status: 'Seller',
+      })
+
+      for (const appointment of selectedLeadAppointments) {
+        const appointmentSignal = normalizeKey([
+          appointment?.appointmentType,
+          appointment?.customTypeLabel,
+          appointment?.title,
+          appointment?.linkedWorkflow,
+          appointment?.linkedWorkflowStage,
+        ].filter(Boolean).join(' '))
+        if (!appointmentSignal.includes('seller') && !appointmentSignal.includes('valuation') && !appointmentSignal.includes('appraisal')) continue
+        const statusKey = normalizeKey(appointment?.status)
+        const completed = statusKey.includes('complete') || appointment?.completedAt
+        timelineRows.push({
+          id: `seller-valuation:${appointment.appointmentId || appointment.id || appointment.dateTime || appointment.createdAt}`,
+          sourceType: 'appointment',
+          sourceLabel: completed ? 'Valuation Completed' : 'Valuation Scheduled',
+          title: getAppointmentTypeLabel(appointment.appointmentType) || appointment.title || 'Seller valuation',
+          description: normalizeText(appointment.outcomeSummary || appointment.agentNotes || appointment.notes || appointment.location),
+          actorName: normalizeText(appointment.assignedAgentName || appointment.assignedAgentEmail) || currentAgent.fullName || 'Agent',
+          timestamp: appointment.updatedAt || appointment.completedAt || appointment.createdAt || appointment.dateTime || new Date().toISOString(),
+          dueDate: appointment.dateTime || appointment.date || '',
+          status: completed ? 'Completed' : normalizeText(appointment.status || 'Scheduled'),
+          original: appointment,
+        })
+      }
+
+      const mandateLabel = selectedLeadMandateSignedEvidence
+        ? 'Mandate Signed'
+        : normalizeText(selectedLead?.mandateStatus || selectedLead?.mandate_status || selectedLead?.stage || selectedLead?.status).toLowerCase().includes('sent')
+          ? 'Mandate Sent'
+          : normalizeText(selectedLead?.mandatePacketId || selectedLead?.mandate_packet_id || mandatePacketStatus?.packet?.id)
+            ? 'Mandate Generated'
+            : ''
+      if (mandateLabel) {
+        timelineRows.push({
+          id: `seller-mandate:${selectedLead.leadId || 'selected'}`,
+          sourceType: 'offer',
+          sourceLabel: mandateLabel,
+          title: mandateLabel,
+          description: normalizeText(mandatePacketStatus?.packet?.title || selectedLead?.mandatePacketId || selectedLead?.mandate_packet_id),
+          actorName: currentAgent.fullName || 'Agent',
+          timestamp: mandatePacketStatus?.packet?.updated_at || mandatePacketStatus?.packet?.created_at || selectedLead.updatedAt || selectedLead.createdAt || new Date().toISOString(),
+          status: mandateLabel.replace('Mandate ', ''),
+        })
+      }
+
+      const listingId = normalizeText(selectedLead?.listingId || selectedLead?.listing_id || selectedLead?.privateListingId || selectedLead?.private_listing_id)
+      if (listingId) {
+        const listingLive = normalizeKey(selectedLeadEffectiveLifecycleStage).includes('listing_live') ||
+          normalizeKey(selectedLeadEffectiveLifecycleStage).includes('listing_active') ||
+          normalizeKey(selectedLead?.listingStatus || selectedLead?.listing_status).includes('active')
+        timelineRows.push({
+          id: `seller-listing:${listingId}`,
+          sourceType: 'system',
+          sourceLabel: listingLive ? 'Listing Activated' : 'Listing Created',
+          title: listingLive ? 'Seller listing is live' : 'Seller listing created',
+          description: listingId,
+          actorName: 'System Update',
+          timestamp: selectedLead.updatedAt || selectedLead.createdAt || new Date().toISOString(),
+          status: listingLive ? 'Live' : 'Draft',
+        })
+      }
+    }
+
     return timelineRows.sort((left, right) => {
       const leftTime = new Date(left.timestamp || left.dueDate || 0).getTime()
       const rightTime = new Date(right.timestamp || right.dueDate || 0).getTime()
@@ -3817,9 +3880,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadActivities,
     selectedLeadAppointments,
     selectedLeadAssignedAgentLabel,
+    selectedLeadEffectiveLifecycleStage,
+    selectedLeadIsSeller,
+    selectedLeadMandateSignedEvidence,
     selectedLeadNotes,
     selectedLeadOffers,
     selectedLeadTasks,
+    mandatePacketStatus,
   ])
 
   const selectedLeadFilteredTimeline = useMemo(() => {
@@ -4231,6 +4298,43 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     [appointmentListingById, appointmentListingByLabel],
   )
 
+  const selectedLeadLinkedListing = useMemo(
+    () => (selectedLead ? resolveLeadLinkedListing(selectedLead) : null),
+    [resolveLeadLinkedListing, selectedLead],
+  )
+
+  const selectedSellerJourney = useMemo(() => buildSellerJourney({
+    lead: selectedLead || {},
+    contact: selectedLeadContact || {},
+    appointments: selectedLeadAppointments,
+    listing: selectedLeadLinkedListing,
+    mandatePacketStatus,
+    documents: selectedLeadLinkedListing?.documents || [],
+  }), [
+    mandatePacketStatus,
+    selectedLead,
+    selectedLeadAppointments,
+    selectedLeadContact,
+    selectedLeadLinkedListing,
+  ])
+
+  const selectedSellerReadiness = useMemo(() => buildSellerReadinessSummary({
+    lead: selectedLead || {},
+    contact: selectedLeadContact || {},
+    appointments: selectedLeadAppointments,
+    listing: selectedLeadLinkedListing,
+    mandatePacketStatus,
+    documents: selectedLeadLinkedListing?.documents || [],
+    journey: selectedSellerJourney,
+  }), [
+    mandatePacketStatus,
+    selectedLead,
+    selectedLeadAppointments,
+    selectedLeadContact,
+    selectedLeadLinkedListing,
+    selectedSellerJourney,
+  ])
+
   const resolveAppointmentListingLabel = useCallback(
     (listingId) => {
       const id = normalizeText(listingId)
@@ -4637,8 +4741,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [filteredLeads, records.deals, records.tasks])
 
   const leadPageSummary = useMemo(() => {
-    const targetCategory = leadTypeView === 'seller' ? 'seller' : 'buyer'
-    const allCategoryLeads = records.leads.filter((lead) => resolveLeadCategoryView(lead) === targetCategory)
+    const allCategoryLeads = records.leads.filter((lead) => leadTypeView === 'all' ? true : resolveLeadCategoryView(lead) === leadTypeView)
     const now = new Date()
     const weekStart = new Date(now)
     weekStart.setDate(now.getDate() - 6)
@@ -4653,6 +4756,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       filtered: filteredLeads.length,
     }
   }, [filteredLeads.length, leadTypeView, records.leads])
+
+  const leadCategoryCounts = useMemo(() => {
+    return records.leads.reduce((counts, lead) => {
+      const category = resolveLeadCategoryView(lead)
+      counts[category] = (counts[category] || 0) + 1
+      counts.all += 1
+      return counts
+    }, { all: 0, buyer: 0, seller: 0, other: 0 })
+  }, [records.leads])
+
+  const leadTypeViewTitle = leadTypeView === 'all' ? 'All Leads' : `${leadCategoryLabel(leadTypeView)} Leads`
+
+  const sellerJourneyMetrics = useMemo(() => getSellerJourneyMetrics({
+    leads: records.leads,
+    appointments: records.appointments,
+    listings: appointmentListingOptions,
+  }), [appointmentListingOptions, records.appointments, records.leads])
 
   const principalReporting = useMemo(
     () =>
@@ -4772,10 +4892,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   function openLeadForm(category = leadTypeView) {
     setError('')
+    const formCategory = ['buyer', 'seller'].includes(resolveLeadCategoryView(category)) ? resolveLeadCategoryView(category) : 'buyer'
     setLeadForm({
       ...NEW_LEAD_DEFAULTS,
       leadSource: MANUAL_LEAD_SOURCE_OPTIONS[0] || 'Other',
-      leadCategory: leadCategoryLabelForView(category),
+      leadCategory: formCategory,
     })
     setSelectedAgentId(normalizeText(currentAgent.id || currentAgent.email))
     setShowLeadForm(true)
@@ -4820,7 +4941,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           branchId: normalizeText(assignedAgent?.branchId),
           assignedUserId: normalizeText(assignedAgent?.userId || assignedAgent?.id),
           createdBy: normalizeText(currentAgent.userId || currentAgent.id),
-          leadCategory: leadForm.leadCategory,
+          leadCategory: normalizeLeadCategory(leadForm.leadCategory, 'other'),
           leadDirection: leadForm.leadDirection,
           leadSource: leadForm.leadSource,
           stage: leadForm.stage,
@@ -4901,8 +5022,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const targetLead = records.leads.find((lead) => normalizeText(lead?.leadId) === normalizeText(leadId)) || selectedLead || null
     const nextStage = normalizeText(stage)
     const movedAt = new Date().toISOString()
-    const leadCategoryKey = normalizeKey(targetLead?.leadCategory)
-    const isBuyerLead = !leadCategoryKey.includes('seller') && !leadCategoryKey.includes('landlord')
+    const isBuyerLead = resolveLeadCategoryView(targetLead) === 'buyer'
     const isBuyerStageMove = isBuyerLead && (isBuyerWorkflowStage(targetLead?.stage || targetLead?.status) || isBuyerWorkflowStage(nextStage))
 
     if (isBuyerStageMove) {
@@ -6510,6 +6630,112 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     await reloadRecords(organisationId)
   }
 
+  async function handleActivateSellerListing() {
+    const listingId = normalizeText(selectedLeadLinkedListing?.id || selectedLead?.listingId)
+    if (!listingId) {
+      setError('Create or link a listing before activating it.')
+      return
+    }
+    try {
+      if (isSupabaseConfigured && isUuidLike(listingId)) {
+        await activatePrivateListing(listingId)
+      } else {
+        updateAgentSellerLead(normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId), (row) => ({
+          ...row,
+          listingStatus: LISTING_STATUS.LISTING_ACTIVE,
+        }))
+      }
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
+        stage: 'Listing Live',
+        status: 'Listing Live',
+        listingId,
+      })
+      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType: 'Listing Activated',
+        activityNote: 'Listing was activated for market.',
+        outcome: 'Listing Live',
+        activityDate: new Date().toISOString(),
+      }, { actor: currentAgent })
+      setMessage('Listing activated.')
+      setError('')
+      await reloadRecords(organisationId)
+    } catch (activationError) {
+      setError(activationError?.message || 'Unable to activate this listing yet.')
+    }
+  }
+
+  function handleSellerJourneyAction(actionId) {
+    const id = normalizeText(actionId)
+    if (id === 'contact_seller') {
+      const phone = normalizeText(selectedLeadContact?.phone || selectedLead?.sellerPhone || selectedLead?.phone).replace(/[^\d+]/g, '')
+      const email = normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email)
+      if (phone && typeof window !== 'undefined') {
+        window.open(`https://wa.me/${phone.replace(/^\+/, '')}`, '_blank', 'noopener,noreferrer')
+        return
+      }
+      if (email && typeof window !== 'undefined') {
+        window.location.href = `mailto:${email}`
+      }
+      return
+    }
+    if (id === 'schedule_valuation') {
+      if (selectedSellerJourney?.valuationAppointment) {
+        handleOpenAppointmentModal(selectedSellerJourney.valuationAppointment)
+      } else {
+        handleScheduleSellerAppointment()
+      }
+      return
+    }
+    if (id === 'open_appointment' || id === 'mark_valuation_complete') {
+      if (selectedSellerJourney?.valuationAppointment) {
+        handleOpenAppointmentModal(selectedSellerJourney.valuationAppointment)
+      } else {
+        handleScheduleSellerAppointment()
+      }
+      return
+    }
+    if (id === 'open_timeline') {
+      setLeadWorkspaceTab('activity')
+      return
+    }
+    if (id === 'open_documents') {
+      setLeadWorkspaceTab('documents')
+      return
+    }
+    if (id === 'capture_property_address') {
+      setLeadWorkspaceTab('overview')
+      setLeadForm((previous) => ({
+        ...previous,
+        leadCategory: 'seller',
+        sellerPropertyAddress: normalizeText(selectedLead?.sellerPropertyAddress || selectedLead?.seller_property_address || selectedLead?.propertyInterest || selectedLead?.property_interest),
+      }))
+      return
+    }
+    if (['generate_mandate', 'send_mandate', 'view_signing_status', 'view_mandate', 'check_signature_status', 'resend_mandate'].includes(id)) {
+      void handleSelectedLeadMandatePrimaryAction()
+      return
+    }
+    if (id === 'create_listing') {
+      void handleCreateListingFromSellerLead()
+      return
+    }
+    if (id === 'open_listing' || id === 'complete_listing' || id === 'view_enquiries' || id === 'view_performance' || id === 'monitor_performance') {
+      const listingId = normalizeText(selectedLeadLinkedListing?.id || selectedLead?.listingId)
+      if (listingId) navigate(`/listings/${listingId}`)
+      return
+    }
+    if (id === 'activate_listing') {
+      void handleActivateSellerListing()
+      return
+    }
+    if (id === 'open_seller_portal') {
+      const token = normalizeText(selectedLead?.sellerOnboardingToken || selectedLeadLinkedListing?.sellerOnboarding?.token)
+      const link = token ? buildSellerClientPortalLink(token) : ''
+      if (link && typeof window !== 'undefined') window.open(link, '_blank', 'noopener,noreferrer')
+    }
+  }
+
   function handleCalendarShift(direction) {
     setCalendarCursorDate((previous) => {
       const next = new Date(previous)
@@ -6613,6 +6839,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         },
       )
+      if (selectedLeadIsSeller && selectedLead?.leadId && normalizeKey(updatePayload.status).includes('complete')) {
+        await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
+          stage: 'Appointment Completed',
+          status: 'Valuation Completed',
+        })
+        await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+          agent: currentAgent,
+          activityType: 'Valuation Completed',
+          activityNote: normalizeText(updatePayload.notes || updatePayload.title) || 'Seller valuation completed.',
+          outcome: 'completed',
+          activityDate: new Date().toISOString(),
+        }, { actor: currentAgent })
+      }
       setMessage('Appointment updated.')
       setAppointmentModalOpen(false)
       await reloadRecords(organisationId)
@@ -8505,7 +8744,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 <button
                   type="button"
                   className="inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#405b75] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe]"
-                  onClick={() => setLeadFilter({ search: '', source: 'all', stage: 'all', agent: 'all', sort: 'newest' })}
+                  onClick={() => setLeadFilter({ ...DEFAULT_LEAD_FILTER })}
                 >
                   <Filter size={15} />
                   Reset
@@ -8528,7 +8767,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   <div className="min-w-0">
                     <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Lead Pipeline</p>
                     <h3 className="mt-0.5 text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">
-                      {leadTypeView === 'seller' ? 'Seller Leads' : 'Buyer Leads'}
+                      {leadTypeViewTitle}
                     </h3>
                     <p className="mt-0.5 text-[0.78rem] font-medium text-[#60758b]">
                       {leadPageSummary.filtered} visible · {metrics.followUpsDueToday} follow-ups today
@@ -8558,24 +8797,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     </button>
                   </div>
                   <div className="inline-flex items-center rounded-[12px] border border-[#dbe4ee] bg-white p-0.5 shadow-[0_8px_18px_rgba(24,45,68,0.045)]">
-                    <button
-                      type="button"
-                      onClick={() => setLeadTypeView('buyer')}
-                      className={`rounded-[10px] px-3 py-1.5 text-xs font-semibold transition ${
-                        leadTypeView === 'buyer' ? 'bg-[#163247] text-white shadow-[0_8px_18px_rgba(22,50,71,0.18)]' : 'text-[#51667f] hover:text-[#1f4f78]'
-                      }`}
-                    >
-                      Buyer Leads
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setLeadTypeView('seller')}
-                      className={`rounded-[10px] px-3 py-1.5 text-xs font-semibold transition ${
-                        leadTypeView === 'seller' ? 'bg-[#163247] text-white shadow-[0_8px_18px_rgba(22,50,71,0.18)]' : 'text-[#51667f] hover:text-[#1f4f78]'
-                      }`}
-                    >
-                      Seller Leads
-                    </button>
+                    {[
+                      ['all', 'All Leads', leadCategoryCounts.all],
+                      ['buyer', 'Buyer Leads', leadCategoryCounts.buyer],
+                      ['seller', 'Seller Leads', leadCategoryCounts.seller],
+                      ['other', 'Other', leadCategoryCounts.other],
+                    ].map(([key, label, count]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setLeadTypeView(key)}
+                        className={`rounded-[10px] px-3 py-1.5 text-xs font-semibold transition ${
+                          leadTypeView === key ? 'bg-[#163247] text-white shadow-[0_8px_18px_rgba(22,50,71,0.18)]' : 'text-[#51667f] hover:text-[#1f4f78]'
+                        }`}
+                      >
+                        {label} <span className="tabular-nums opacity-75">{count}</span>
+                      </button>
+                    ))}
                   </div>
                   <button type="button" className="inline-flex min-h-[34px] items-center justify-center rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-[#405b75] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe]" aria-label="More lead actions">
                     <MoreHorizontal size={17} />
@@ -8586,13 +8824,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               {!isLeadWorkspaceRoute ? (
                 <div className="shrink-0 border-b border-[rgba(15,23,42,0.06)] bg-white/95 px-3 py-2 backdrop-blur sm:px-4">
                   <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-2 text-[0.78rem]">
-                    {[
-                      ['Leads', leadOperationalSummary.total],
-                      ['Need Attention', leadOperationalSummary.needAttention],
-                      ['Overdue', leadOperationalSummary.overdue],
-                      ['New Today', leadOperationalSummary.newToday],
-                      ['Converted MTD', leadOperationalSummary.convertedMtd],
-                    ].map(([label, value]) => (
+                    {(leadTypeView === 'seller'
+                      ? [
+                          ['Seller Leads', sellerJourneyMetrics.sellerLeads],
+                          ['Valuations', sellerJourneyMetrics.valuationsScheduled],
+                          ['Completed', sellerJourneyMetrics.valuationsCompleted],
+                          ['Mandates Sent', sellerJourneyMetrics.mandatesSent],
+                          ['Mandates Signed', sellerJourneyMetrics.mandatesSigned],
+                          ['Listings Live', sellerJourneyMetrics.listingsLive],
+                        ]
+                      : [
+                          ['Leads', leadOperationalSummary.total],
+                          ['Need Attention', leadOperationalSummary.needAttention],
+                          ['Overdue', leadOperationalSummary.overdue],
+                          ['New Today', leadOperationalSummary.newToday],
+                          ['Converted MTD', leadOperationalSummary.convertedMtd],
+                        ]).map(([label, value]) => (
                       <div key={label} className="flex items-baseline gap-1.5">
                         <span className="font-semibold tabular-nums text-[#102236]">{value}</span>
                         <span className="font-medium text-[#73879c]">{label}</span>
@@ -8706,7 +8953,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         </p>
                                       </div>
                                       <span className="shrink-0 rounded-full bg-[#edf4fb] px-2 py-0.5 text-[0.58rem] font-bold uppercase tracking-[0.05em] text-[#325a7a]">
-                                        {lead.leadCategory || 'Lead'}
+                                        {leadCategoryLabelForView(lead)}
                                       </span>
                                     </div>
                                     <div className="mt-2 flex items-center justify-between gap-2">
@@ -8797,6 +9044,25 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const categoryMeta = getLeadCategoryMeta(lead, leadContact)
                         const statusMeta = getLeadStatusMeta(lead, funnelStage)
                         const linkedListing = resolveLeadLinkedListing(lead)
+                        const sellerAppointments = isSeller
+                          ? records.appointments.filter((row) => normalizeLeadIdentityKey(row?.leadId || row?.relatedEntityId) === leadId)
+                          : []
+                        const sellerJourney = isSeller
+                          ? buildSellerJourney({ lead, contact: leadContact || {}, appointments: sellerAppointments, listing: linkedListing })
+                          : null
+                        const sellerReadiness = isSeller
+                          ? buildSellerReadinessSummary({ lead, contact: leadContact || {}, appointments: sellerAppointments, listing: linkedListing, journey: sellerJourney })
+                          : null
+                        const sellerStageLabel = sellerJourney?.status?.summary || sellerJourney?.stage?.label || 'Contacted'
+                        const sellerPropertyLabel = sellerJourney?.kpis?.find((item) => item.key === 'property')?.value || normalizeText(lead?.sellerPropertyAddress || lead?.propertyInterest) || 'Property not captured'
+                        const sellerEstimatedValue = sellerJourney?.kpis?.find((item) => item.key === 'estimated_value')?.value || 0
+                        const sellerEstimatedLabel = sellerEstimatedValue ? formatCurrency(sellerEstimatedValue) : 'Value not captured'
+                        const sellerValuationLabel = sellerJourney?.valuationStatus || 'Not scheduled'
+                        const sellerMandateLabel = sellerJourney?.kpis?.find((item) => item.key === 'mandate')?.value || 'Not started'
+                        const sellerListingLabel = sellerJourney?.kpis?.find((item) => item.key === 'listing')?.value || 'Not created'
+                        const sellerDaysInStageLabel = `${sellerJourney?.daysInCurrentStage || 0} days`
+                        const sellerReadinessLabel = sellerReadiness?.readinessLabel || 'Review seller'
+                        const sellerNextActionLabel = sellerReadiness?.nextAction?.label || 'Review seller journey'
                         const opportunity = getLeadOpportunityPreview(lead, linkedTransaction, isSeller, linkedListing)
                         const actionMeta = getLeadNextActionMeta(lead, leadTasks, linkedAppointment, nextStep)
                         const latestActivityTitle = normalizeText(latestActivity?.activityType || latestActivity?.activityNote || linkedAppointment?.title)
@@ -8850,7 +9116,25 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               </div>
                             </td>
                             <td className="px-3 py-4 align-top">
-                              {opportunity.hasListing ? (
+                              {isSeller ? (
+                                <div className="grid min-w-0 gap-2">
+                                  <div className="flex min-w-0 items-start gap-2.5">
+                                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] bg-[#edf7f0] text-[#2d7a52]">
+                                      <Home size={16} />
+                                    </span>
+                                    <div className="min-w-0">
+                                      <p className="break-words text-[13px] font-semibold leading-5 text-slate-950">{sellerPropertyLabel}</p>
+                                      <p className="mt-0.5 text-[12px] font-semibold text-[#1f4f78]">{sellerStageLabel}</p>
+                                      <p className="mt-0.5 text-[12px] font-medium text-slate-500">{sellerEstimatedLabel}</p>
+                                    </div>
+                                  </div>
+                                  <div className="grid gap-1 text-[11px] font-semibold text-slate-500">
+                                    <span>Valuation: <span className="text-slate-800">{sellerValuationLabel}</span></span>
+                                    <span>Mandate: <span className="text-slate-800">{sellerMandateLabel}</span></span>
+                                    <span>Listing: <span className="text-slate-800">{sellerListingLabel}</span></span>
+                                  </div>
+                                </div>
+                              ) : opportunity.hasListing ? (
                                 <div className="flex min-w-0 items-start gap-2.5">
                                   <div className="relative grid h-12 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border border-slate-200 bg-slate-100" style={{ backgroundImage: `linear-gradient(135deg, ${agentColor}1f, #f8fafc 72%)` }}>
                                     <Home size={16} className="text-slate-400" />
@@ -8886,6 +9170,37 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               )}
                             </td>
                             <td className="px-3 py-4 align-top">
+                              {isSeller ? (
+                                <div className="grid min-w-0 gap-3">
+                                  <div>
+                                    <span className="inline-flex rounded-full border border-[#cfe4d8] bg-[#edf8f1] px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.08em] text-[#237348]">
+                                      {sellerStageLabel}
+                                    </span>
+                                    <p className="mt-1.5 text-[11px] font-medium leading-4 text-slate-400">
+                                      Next: {sellerNextActionLabel}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-[14px] border border-[#dbe7f2] bg-[#fbfdff] px-3 py-2.5">
+                                    <p className="text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-slate-400">Seller readiness</p>
+                                    <div className="mt-2 grid gap-1.5">
+                                      {[
+                                        ['Readiness', sellerReadinessLabel],
+                                        ['Property', sellerPropertyLabel],
+                                        ['Estimated', sellerEstimatedLabel],
+                                        ['Valuation', sellerValuationLabel],
+                                        ['Mandate', sellerMandateLabel],
+                                        ['Listing', sellerListingLabel],
+                                        ['Days in stage', sellerDaysInStageLabel],
+                                      ].map(([label, value]) => (
+                                        <div key={label} className="flex min-w-0 items-center justify-between gap-2 text-[12px]">
+                                          <span className="font-medium text-slate-500">{label}</span>
+                                          <span className="min-w-0 truncate font-semibold text-slate-800" title={String(value)}>{value}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
                               <div className="grid min-w-0 gap-3">
                                 <div>
                                   <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.08em] ${statusMeta.className}`}>{statusMeta.label}</span>
@@ -8905,6 +9220,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   </div>
                                 </div>
                               </div>
+                              )}
                             </td>
                             <td className="px-3 py-4 align-top">
                               <div className="grid min-w-0 gap-3">
@@ -8941,29 +9257,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   <button
                                     type="button"
                                     className={quickActionButtonClass}
-                                    aria-label={`Book viewing for ${leadName}`}
-                                    title="Book Viewing"
+                                    aria-label={`${isSeller ? 'Open seller journey' : 'Book viewing'} for ${leadName}`}
+                                    title={isSeller ? 'Open Seller Journey' : 'Book Viewing'}
                                     onClick={() => {
                                       setSelectedLeadId(lead.leadId)
-                                      setLeadWorkspaceTab('appointments')
+                                      setLeadWorkspaceTab(isSeller ? 'listing_journey' : 'appointments')
                                       navigate(`/pipeline/leads/${lead.leadId}`)
                                     }}
                                   >
                                     <CalendarDays size={14} />
                                   </button>
-                                  <button
-                                    type="button"
-                                    className={quickActionButtonClass}
-                                    aria-label={`Generate OTP for ${leadName}`}
-                                    title="Generate OTP"
-                                    onClick={() => {
-                                      setSelectedLeadId(lead.leadId)
-                                      setLeadWorkspaceTab('offers')
-                                      navigate(`/pipeline/leads/${lead.leadId}`)
-                                    }}
-                                  >
-                                    <CheckSquare size={14} />
-                                  </button>
+                                  {!isSeller ? (
+                                    <button
+                                      type="button"
+                                      className={quickActionButtonClass}
+                                      aria-label={`Generate OTP for ${leadName}`}
+                                      title="Generate OTP"
+                                      onClick={() => {
+                                        setSelectedLeadId(lead.leadId)
+                                        setLeadWorkspaceTab('offers')
+                                        navigate(`/pipeline/leads/${lead.leadId}`)
+                                      }}
+                                    >
+                                      <CheckSquare size={14} />
+                                    </button>
+                                  ) : null}
                                   {!isSeller ? (
                                     <button
                                       type="button"
@@ -9013,14 +9331,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             <h4 className="mt-4 text-[1rem] font-semibold tracking-[-0.02em] text-slate-900">
                               {leadPageSummary.total > 0
                                 ? 'No leads match these filters'
-                                : leadTypeView === 'seller' ? 'No seller leads yet' : 'No buyer leads yet'}
+                                : `No ${leadTypeViewTitle.toLowerCase()} yet`}
                             </h4>
                             <p className="mt-2 text-sm leading-6 text-slate-500">
                               {leadPageSummary.total > 0
                                 ? 'Clear the search or filters to show the leads already in this pipeline.'
                                 : leadTypeView === 'seller'
                                 ? 'Create your first seller lead manually or convert a canvassing prospect when they are ready to sell.'
-                                : 'Create your first buyer lead manually or connect listings to start capturing enquiries automatically.'}
+                                : leadTypeView === 'buyer'
+                                  ? 'Create your first buyer lead manually or connect listings to start capturing enquiries automatically.'
+                                  : leadTypeView === 'other'
+                                    ? 'Leads that cannot be classified as buyer or seller will appear here.'
+                                    : 'Create your first lead manually or connect enquiry sources to start capturing leads automatically.'}
                             </p>
                             <button
                               type="button"
@@ -9146,7 +9468,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <h4 className="mt-4 text-[1.05rem] font-semibold tracking-[-0.025em] text-[#142132]">
                       {leadPageSummary.total > 0
                         ? 'No leads match these filters'
-                        : leadTypeView === 'seller' ? 'No seller leads yet' : 'No buyer leads yet'}
+                        : `No ${leadTypeViewTitle.toLowerCase()} yet`}
                     </h4>
                     <p className="mt-2 text-sm leading-6 text-[#60758b]">
                       {leadPageSummary.total > 0 ? 'Clear the search or filters to show the leads already in this pipeline.' : 'Create your first lead to start building the pipeline.'}
@@ -9424,21 +9746,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                   {selectedLead ? (
                     <div className="mt-6 grid overflow-hidden rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] sm:grid-cols-2 xl:grid-cols-4">
-                      {[
-                        ['Activities', selectedLeadUnifiedTimeline.length, MessageCircle],
-                        ['Appointments', selectedLeadAppointments.length, CalendarDays],
-                        ['Offers', selectedLeadOfferSummary.total, CheckSquare],
-                        ['Lead Health', `${selectedLeadWorkflowHealth.percent}%`, TrendingUp],
-                      ].map(([label, value, Icon]) => (
+                      {(selectedLeadIsSeller
+                        ? (selectedSellerReadiness.kpis || selectedSellerJourney.workspaceKpis || selectedSellerJourney.kpis).slice(0, 4).map((item, index) => [
+                            item.label,
+                            item.type === 'currency' ? formatCurrency(item.value) : item.suffix ? `${item.value} ${item.suffix}` : item.value,
+                            [Home, TrendingUp, CheckSquare, Columns3][index] || Home,
+                          ])
+                        : [
+                            ['Activities', selectedLeadUnifiedTimeline.length, MessageCircle],
+                            ['Appointments', selectedLeadAppointments.length, CalendarDays],
+                            ['Offers', selectedLeadOfferSummary.total, CheckSquare],
+                            ['Lead Health', `${selectedLeadWorkflowHealth.percent}%`, TrendingUp],
+                          ]).map(([label, value, Icon]) => (
                         <div key={label} className="flex items-center gap-3 border-b border-[#e2ebf4] px-4 py-4 last:border-b-0 sm:[&:nth-child(odd)]:border-r xl:border-b-0 xl:border-r xl:last:border-r-0">
                           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-white text-[#315b7a] shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
 	                            {createElement(Icon, { className: 'h-4 w-4' })}
                           </span>
                           <div className="min-w-0">
                             <p className="text-[0.7rem] font-semibold uppercase text-[#7d93aa]">{label}</p>
-                            <p className="mt-0.5 text-[1.35rem] font-semibold tracking-[-0.04em] text-[#102033]">{value}</p>
+                            <p className="mt-0.5 truncate text-[1.35rem] font-semibold tracking-[-0.04em] text-[#102033]" title={String(value)}>{value}</p>
                           </div>
-                          {label === 'Lead Health' ? (
+                          {!selectedLeadIsSeller && label === 'Lead Health' ? (
                             <div className="ml-auto h-10 w-10 shrink-0 rounded-full bg-[conic-gradient(#2f7b9e_var(--lead-health),#e2ebf4_0)] p-1" style={{ '--lead-health': `${selectedLeadWorkflowHealth.percent}%` }}>
                               <div className="h-full w-full rounded-full bg-white" />
                             </div>
@@ -9452,24 +9780,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 {selectedLead ? (
                   <div className="overflow-x-auto border-t border-[#e3ebf4] bg-[#fbfdff]" role="tablist" aria-label="Lead workspace sections">
                     <div className="grid min-w-[640px] grid-cols-4">
-                      {[
+                      {(selectedLeadIsSeller ? [
                         { key: 'overview', label: 'Overview', meta: '' },
-                        {
-                          key: 'activity',
-                          label: 'Activity',
-                          meta: selectedLeadUnifiedTimeline.length,
-                        },
-                        {
-                          key: 'appointments',
-                          label: 'Appointments',
-                          meta: selectedLeadAppointments.length,
-                        },
-                        {
-                          key: 'offers',
-                          label: 'Offers',
-                          meta: selectedLeadOfferSummary.total,
-                        },
-                      ].map((tab) => {
+                        { key: 'activity', label: 'Timeline', meta: selectedLeadUnifiedTimeline.length },
+                        { key: 'documents', label: 'Documents', meta: '' },
+                        { key: 'listing_journey', label: 'Listing Journey', meta: '' },
+                      ] : [
+                        { key: 'overview', label: 'Overview', meta: '' },
+                        { key: 'activity', label: 'Timeline', meta: selectedLeadUnifiedTimeline.length },
+                        { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
+                        { key: 'offers', label: 'Offers', meta: selectedLeadOfferSummary.total },
+                      ]).map((tab) => {
                         const isActive = leadWorkspaceTab === tab.key
                         return (
                           <button
@@ -9521,6 +9842,148 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   <div className="space-y-6">
                   {leadWorkspaceTab === 'overview' ? (
                   <div className="space-y-6">
+                    {selectedLeadIsSeller ? (
+                      <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.06)] sm:p-8" data-testid="seller-journey-overview">
+                        <div className="flex flex-wrap items-start justify-between gap-5">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Seller Journey</p>
+                            <h2 className="mt-2 text-[1.45rem] font-semibold tracking-[-0.035em] text-[#102033]">
+                              {selectedSellerJourney.status.summary || 'Contacted'}
+                            </h2>
+                            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#60758b]">
+                              Stage is derived from seller appointments, mandate state, and linked listing state.
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-[#cfe4d8] bg-[#edf8f1] px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] text-[#237348]">
+                            {selectedSellerJourney.stage.label}
+                          </span>
+                        </div>
+
+                        <div className="mt-6 grid gap-3 lg:grid-cols-6" data-testid="seller-journey-rail">
+                          {selectedSellerJourney.steps.map((step) => (
+                            <div
+                              key={step.key}
+                              className={`rounded-[16px] border px-3 py-3 ${
+                                step.state === 'current'
+                                  ? 'border-[#87c7a0] bg-[#f0fbf4]'
+                                  : step.state === 'completed'
+                                    ? 'border-[#d7eadf] bg-[#fbfefc]'
+                                    : 'border-[#e1eaf4] bg-[#fbfdff]'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className={`h-2.5 w-2.5 rounded-full ${step.state === 'upcoming' ? 'bg-[#cfdbe8]' : 'bg-[#2f9b69]'}`} />
+                                <span className="text-[0.68rem] font-bold uppercase tracking-[0.08em] text-[#5f7389]">
+                                  {step.state === 'current' ? 'Current' : step.state === 'completed' ? 'Completed' : 'Upcoming'}
+                                </span>
+                              </div>
+                              <p className="mt-2 min-h-[38px] text-sm font-semibold leading-5 text-[#203a54]">{step.label}</p>
+                              {step.status ? <p className="mt-1 text-xs font-semibold text-[#60758b]">{step.status}</p> : null}
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]" data-testid="seller-readiness-card">
+                          <div className={`rounded-[18px] border px-4 py-4 ${
+                            selectedSellerReadiness.readiness === 'completed'
+                              ? 'border-[#cfe4d8] bg-[#edf8f1]'
+                              : selectedSellerReadiness.readiness === 'blocked'
+                                ? 'border-[#f1d0cb] bg-[#fff5f3]'
+                                : selectedSellerReadiness.readiness === 'action_required'
+                                  ? 'border-[#f1dcae] bg-[#fff9ed]'
+                                  : 'border-[#cfe4d8] bg-[#f4fbf6]'
+                          }`}>
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Readiness</p>
+                            <h3 className="mt-2 text-lg font-semibold tracking-[-0.03em] text-[#18324b]">{selectedSellerReadiness.readinessLabel}</h3>
+                            <p className="mt-2 text-sm leading-6 text-[#60758b]">
+                              Next best action: <span className="font-semibold text-[#203a54]">{selectedSellerReadiness.nextAction?.label || 'Review seller journey'}</span>
+                            </p>
+                          </div>
+                          <div className="rounded-[18px] border border-[#e1eaf4] bg-[#fbfdff] px-4 py-4" data-testid="seller-blockers-list">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Blockers</p>
+                              <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-[#60758b]">{selectedSellerReadiness.blockers.length}</span>
+                            </div>
+                            <div className="mt-3 grid gap-2">
+                              {selectedSellerReadiness.blockers.length ? selectedSellerReadiness.blockers.slice(0, 4).map((blocker) => (
+                                <div key={blocker.id} className="flex items-start gap-2 rounded-[12px] border border-[#e6eef7] bg-white px-3 py-2">
+                                  <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${blocker.severity === 'blocked' ? 'bg-[#d96b5f]' : 'bg-[#d79d3f]'}`} />
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-[#203a54]">{blocker.label}</p>
+                                    <p className="mt-0.5 text-xs text-[#6a8098]">{blocker.category.replace(/_/g, ' ')}</p>
+                                  </div>
+                                </div>
+                              )) : (
+                                <p className="rounded-[12px] border border-[#d7eadf] bg-white px-3 py-3 text-sm font-semibold text-[#237348]">No blockers found.</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-7" data-testid="seller-kpi-cards">
+                          {(selectedSellerReadiness.kpis || selectedSellerJourney.workspaceKpis || selectedSellerJourney.kpis).map((item) => {
+                            const value = item.type === 'currency'
+                              ? formatCurrency(item.value)
+                              : item.suffix
+                                ? `${item.value} ${item.suffix}`
+                                : item.value
+                            return (
+                              <div key={item.key} className="rounded-[16px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-3">
+                                <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#8496aa]">{item.label}</p>
+                                <p className="mt-1 truncate text-sm font-semibold text-[#203a54]" title={String(value)}>{value}</p>
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        {selectedSellerJourney.listingCreated ? (
+                          <div className="mt-6 rounded-[18px] border border-[#e1eaf4] bg-[#fbfdff] p-4" data-testid="seller-listing-readiness">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div>
+                                <h3 className="text-base font-semibold text-[#18324b]">Listing Readiness</h3>
+                                <p className="mt-1 text-xs text-[#6a8098]">Uses the linked listing fields already captured in Bridge.</p>
+                              </div>
+                              <span className="rounded-full bg-white px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] text-[#315b7a]">
+                                {selectedSellerReadiness.listingReadiness.percent}% complete
+                              </span>
+                            </div>
+                            <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                              {selectedSellerReadiness.listingReadiness.items.map((item) => (
+                                <div key={item.key} className={`rounded-[14px] border px-3 py-3 ${item.complete ? 'border-[#d7eadf] bg-white' : 'border-[#f1dcae] bg-[#fffaf0]'}`}>
+                                  <p className="text-sm font-semibold text-[#203a54]">{item.label}</p>
+                                  <p className={`mt-1 text-xs font-semibold ${item.complete ? 'text-[#237348]' : 'text-[#9a6416]'}`}>{item.complete ? 'Complete' : 'Incomplete'}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        <div className="mt-6 rounded-[18px] border border-[#e1eaf4] bg-[#fbfdff] p-4" data-testid="seller-actions-panel">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <h3 className="text-base font-semibold text-[#18324b]">Seller Actions</h3>
+                              <p className="mt-1 text-xs text-[#6a8098]">Actions reuse the existing appointment, mandate, listing, and portal flows.</p>
+                            </div>
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {selectedSellerReadiness.actions.map((action) => (
+                              <Button
+                                key={action.id}
+                                type="button"
+                                size="sm"
+                                variant={action.primary ? 'primary' : 'secondary'}
+                                disabled={action.disabled}
+                                title={action.disabled ? action.reason : action.label}
+                                onClick={() => handleSellerJourneyAction(action.id)}
+                              >
+                                {action.label}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      </section>
+                    ) : null}
+
                     <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.06)] sm:p-8">
                       <div className="flex flex-wrap items-start justify-between gap-6">
                         <div>
@@ -10738,6 +11201,94 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </div>
                   ) : null}
 
+                  {leadWorkspaceTab === 'documents' ? (
+                  <div className="space-y-4">
+                    <section className="rounded-[18px] border border-[#e1eaf4] bg-white p-5 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Seller Documents</p>
+                          <h4 className="mt-1 text-lg font-semibold text-[#18324b]">Documents</h4>
+                          <p className="mt-1 text-sm text-[#6a8098]">{selectedLeadDisplayName}</p>
+                        </div>
+                        <Upload className="h-4 w-4 text-[#7890a8]" />
+                      </div>
+                      <div className="mt-4 grid gap-3 md:grid-cols-3">
+                        {[
+                          ['Mandate', selectedSellerJourney.kpis.find((item) => item.key === 'mandate')?.value || 'Not started'],
+                          ['Onboarding status', normalizeText(selectedLead?.sellerOnboardingStatus || selectedLead?.seller_onboarding_status) || 'Not started'],
+                          ['Listing', selectedSellerJourney.kpis.find((item) => item.key === 'listing')?.value || 'Not created'],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-3">
+                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#8496aa]">{label}</p>
+                            <p className="mt-1 break-all text-sm font-semibold text-[#203a54]">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-4 grid gap-2" data-testid="seller-documents-list">
+                        {selectedSellerJourney.documents.map((document) => (
+                          <div key={document.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-4 py-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-[#203a54]">{document.label}</p>
+                              <p className="mt-0.5 text-xs font-medium text-[#6a8098]">{document.status || 'Not uploaded'}</p>
+                            </div>
+                            {document.url ? (
+                              <a href={document.url} target="_blank" rel="noreferrer" className="inline-flex min-h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3]">
+                                Open
+                              </a>
+                            ) : (
+                              <span className="rounded-full bg-[#eef3f7] px-2.5 py-1 text-xs font-semibold text-[#7b8ca2]">Pending</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  </div>
+                  ) : null}
+
+                  {leadWorkspaceTab === 'listing_journey' ? (
+                  <div className="space-y-4">
+                    <section className="rounded-[18px] border border-[#e1eaf4] bg-white p-5 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Seller Flow</p>
+                          <h4 className="mt-1 text-lg font-semibold text-[#18324b]">Listing Journey</h4>
+                          <p className="mt-1 text-sm text-[#6a8098]">{selectedLeadPropertyLabel}</p>
+                        </div>
+                        {selectedSellerJourney.listingCreated ? (
+                          <Button type="button" size="sm" variant="secondary" onClick={() => handleSellerJourneyAction('open_listing')}>
+                            Open Listing
+                          </Button>
+                        ) : null}
+                      </div>
+                      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        {[
+                          ['Listing Address', selectedSellerJourney.kpis.find((item) => item.key === 'property')?.value || selectedLeadPropertyLabel],
+                          ['Listing Status', selectedSellerJourney.kpis.find((item) => item.key === 'listing')?.value || 'Not created'],
+                          ['Visibility', normalizeText(selectedLeadLinkedListing?.listingVisibility || selectedLeadLinkedListing?.listing_visibility || selectedLeadLinkedListing?.visibility) || 'Internal'],
+                          ['Created Date', formatDate(selectedLeadLinkedListing?.createdAt || selectedLeadLinkedListing?.created_at || selectedLead?.updatedAt || selectedLead?.createdAt)],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-3">
+                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#8496aa]">{label}</p>
+                            <p className="mt-1 break-words text-sm font-semibold text-[#203a54]">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-5 rounded-[16px] border border-[#e6eef7] bg-[#fbfdff] p-4">
+                        <div className="grid gap-3 md:grid-cols-5" data-testid="listing-journey-card">
+                          {selectedSellerJourney.listingJourney.map((step) => {
+                            return (
+                              <div key={step.key} className={`flex items-center gap-2 rounded-[12px] border px-3 py-2 ${step.state === 'current' ? 'border-[#87c7a0] bg-[#f0fbf4]' : 'border-[#e0e8f2] bg-white'}`}>
+                                <span className={`h-2.5 w-2.5 rounded-full ${step.state === 'upcoming' ? 'bg-[#cfdbe8]' : 'bg-[#2f9b69]'}`} />
+                                <span className="text-sm font-semibold text-[#203a54]">{step.label}</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+                  ) : null}
+
                   </div>
 
                   {leadWorkspaceTab === 'activity' ? (
@@ -11154,9 +11705,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             <div className="mt-2 inline-flex items-center rounded-full border border-[#dbe4ee] bg-white p-1">
               <button
                 type="button"
-                onClick={() => updateLeadFormField('leadCategory', 'Buyer')}
+                onClick={() => updateLeadFormField('leadCategory', 'buyer')}
                 className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                  normalizeText(leadForm.leadCategory).toLowerCase() === 'buyer'
+                  normalizeLeadCategory(leadForm.leadCategory, 'other') === 'buyer'
                     ? 'bg-[#1f4f78] text-white'
                     : 'text-[#51667f] hover:text-[#1f4f78]'
                 }`}
@@ -11165,9 +11716,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               </button>
               <button
                 type="button"
-                onClick={() => setLeadForm((previous) => ({ ...previous, leadCategory: 'Seller', linkedListing: '' }))}
+                onClick={() => setLeadForm((previous) => ({ ...previous, leadCategory: 'seller', linkedListing: '' }))}
                 className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                  normalizeText(leadForm.leadCategory).toLowerCase() === 'seller'
+                  normalizeLeadCategory(leadForm.leadCategory, 'other') === 'seller'
                     ? 'bg-[#1f4f78] text-white'
                     : 'text-[#51667f] hover:text-[#1f4f78]'
                 }`}
@@ -11207,7 +11758,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             ) : null}
           </div>
 
-          {normalizeText(leadForm.leadCategory).toLowerCase() === 'seller' ? (
+          {normalizeLeadCategory(leadForm.leadCategory, 'other') === 'seller' ? (
             <div className="grid gap-2 md:grid-cols-2">
               <Field placeholder="Property Area (optional)" value={leadForm.propertyArea} onChange={(event) => updateLeadFormField('propertyArea', event.target.value)} />
               <Field placeholder="Property Type (optional)" value={leadForm.propertyType} onChange={(event) => updateLeadFormField('propertyType', event.target.value)} />

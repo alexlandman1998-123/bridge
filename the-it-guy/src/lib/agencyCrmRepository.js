@@ -12,6 +12,7 @@ import {
 import { isUnsafeFallbackAllowed } from './envValidation'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 import { assertResolvedWorkspaceContext } from '../services/workspaceResolutionService'
+import { inferLeadCategoryFromRecord, normalizeLeadCategory } from './leadCategory'
 
 const LEGACY_LEAD_SELECT_FIELDS =
   'lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, lead_direction, lead_source, stage, status, priority, budget, area_interest, property_interest, seller_property_address, estimated_value, notes, converted_transaction_id, created_at, updated_at'
@@ -120,7 +121,7 @@ function mapSupabaseLead(row = {}) {
     assignedAgentName: '',
     assignedAgentEmail: '',
     contactId: normalizeText(row?.contact_id),
-    leadCategory: normalizeText(row?.lead_category) || 'Buyer',
+    leadCategory: inferLeadCategoryFromRecord(row, 'other'),
     leadDirection: normalizeText(row?.lead_direction) || 'Inbound',
     leadSource: normalizeText(row?.lead_source) || 'Other',
     stage: normalizeText(row?.stage) || 'New Lead',
@@ -216,7 +217,7 @@ function buildLocalLeadAndContactRows(payload = {}, organisationId = '') {
     assignedAgentName: normalizeText(assignedAgent?.name || assignedAgent?.fullName),
     assignedAgentEmail: normalizeText(assignedAgent?.email).toLowerCase(),
     contactId,
-    leadCategory: normalizeText(leadPayload?.leadCategory) || 'Buyer',
+    leadCategory: inferLeadCategoryFromRecord(leadPayload, 'other'),
     leadDirection: normalizeText(leadPayload?.leadDirection) || 'Inbound',
     leadSource: normalizeText(leadPayload?.leadSource) || 'Other',
     stage: normalizeText(leadPayload?.stage) || 'New Lead',
@@ -376,7 +377,7 @@ function buildRemoteLeadUpdatePayload(patch = {}) {
   if (hasOwn(patch, 'createdBy')) corePayload.created_by = normalizeNullableUuid(patch.createdBy)
   if (hasOwn(patch, 'assignedAgentId')) corePayload.assigned_agent_id = normalizeNullableUuid(patch.assignedAgentId)
   if (hasOwn(patch, 'contactId')) corePayload.contact_id = normalizeNullableUuid(patch.contactId)
-  if (hasOwn(patch, 'leadCategory')) corePayload.lead_category = normalizeText(patch.leadCategory) || 'Buyer'
+  if (hasOwn(patch, 'leadCategory')) corePayload.lead_category = normalizeLeadCategory(patch.leadCategory, 'other')
   if (hasOwn(patch, 'leadDirection')) corePayload.lead_direction = normalizeText(patch.leadDirection) || 'Inbound'
   if (hasOwn(patch, 'leadSource')) corePayload.lead_source = normalizeText(patch.leadSource) || 'Other'
   if (hasOwn(patch, 'stage')) corePayload.stage = normalizeText(patch.stage) || 'New Lead'
@@ -428,7 +429,7 @@ function buildRemoteLeadCreatePayload(lead = {}, workspaceId = '', actor = null)
     created_by: resolvedCreatedBy,
     assigned_agent_id: resolvedAssignedAgentId,
     contact_id: normalizeText(lead.contactId) || null,
-    lead_category: normalizeText(lead.leadCategory) || 'Buyer',
+    lead_category: inferLeadCategoryFromRecord(lead, 'other'),
     lead_direction: normalizeText(lead.leadDirection) || 'Inbound',
     lead_source: normalizeText(lead.leadSource) || 'Other',
     stage: normalizeText(lead.stage) || 'New Lead',
@@ -773,7 +774,7 @@ export async function ensureAgencyCrmLeadRecordPersisted(organisationId, lead = 
       lead: {
         leadId: normalizedLeadId,
         contactId,
-        leadCategory: normalizeText(lead?.leadCategory || lead?.lead_category) || 'Buyer',
+        leadCategory: inferLeadCategoryFromRecord(lead, 'other'),
         leadDirection: normalizeText(lead?.leadDirection || lead?.lead_direction) || 'Inbound',
         leadSource: normalizeText(lead?.leadSource || lead?.lead_source) || 'Other',
         stage: normalizeText(lead?.stage || lead?.currentStage || lead?.current_stage) || 'New Lead',

@@ -32,6 +32,7 @@ import {
   BUYER_LIFECYCLE_EVENTS,
   isBuyerLifecycleAppointment,
 } from './buyerLifecycleService'
+import { inferLeadCategoryFromRecord, normalizeLeadCategory } from './leadCategory'
 
 const STORAGE_PREFIX = 'itg:agency-crm:v1'
 const CRM_UPDATED_EVENT = 'itg:agency-crm-updated'
@@ -42,7 +43,7 @@ const APPOINTMENTS_DEMO_FALLBACK_REASON = {
 }
 
 export const LEAD_DIRECTIONS = ['Inbound', 'Outbound']
-export const LEAD_CATEGORIES = ['Buyer', 'Seller', 'Landlord', 'Tenant', 'Investor', 'Developer', 'Other']
+export const LEAD_CATEGORIES = ['buyer', 'seller', 'other']
 export const LEAD_STAGES = [
   ...BUYER_LEAD_STAGES,
   'Lead',
@@ -197,14 +198,14 @@ const OUTBOUND_SELLER_SOURCES = [
   'Other',
 ]
 
-export function getLeadSourceOptions({ leadDirection = 'Inbound', leadCategory = 'Buyer' } = {}) {
+export function getLeadSourceOptions({ leadDirection = 'Inbound', leadCategory = 'buyer' } = {}) {
   const direction = normalizeLabel(leadDirection)
-  const category = normalizeLabel(leadCategory)
+  const category = normalizeLeadCategory(leadCategory, 'buyer')
   if (direction === 'Outbound') {
-    if (category === 'Seller') return OUTBOUND_SELLER_SOURCES
+    if (category === 'seller') return OUTBOUND_SELLER_SOURCES
     return OUTBOUND_BUYER_SOURCES
   }
-  if (category === 'Seller') return INBOUND_SELLER_SOURCES
+  if (category === 'seller') return INBOUND_SELLER_SOURCES
   return INBOUND_BUYER_SOURCES
 }
 
@@ -985,7 +986,7 @@ function normalizeLeadRecord(lead = {}, organisationId) {
     assignedAgentEmail: normalizeText(lead.assignedAgentEmail).toLowerCase(),
     assignedAgentPhone: normalizeText(lead.assignedAgentPhone),
     contactId: normalizeText(lead.contactId),
-    leadCategory: normalizeListValue(lead.leadCategory, LEAD_CATEGORIES, 'Buyer'),
+    leadCategory: inferLeadCategoryFromRecord(lead, 'other'),
     leadDirection: normalizeListValue(lead.leadDirection, LEAD_DIRECTIONS, 'Inbound'),
     leadSource: normalizeText(lead.leadSource) || 'Other',
     stage: normalizeListValue(lead.stage, LEAD_STAGES, 'Lead'),
@@ -1198,7 +1199,7 @@ export function createAgencyLead(organisationId, payload = {}, { actor = null } 
   const draftLeadForTombstone = {
     ...(payload || {}),
     contactId: contact.contactId,
-    leadCategory: payload?.leadCategory || 'Buyer',
+    leadCategory: inferLeadCategoryFromRecord(payload, 'other'),
   }
   const newLeadKeys = getLeadDeletionKeys(draftLeadForTombstone, store)
   store.deletedLeadKeys = (store.deletedLeadKeys || []).filter((key) => !newLeadKeys.has(normalizeText(key)))
@@ -1225,7 +1226,7 @@ export function createAgencyLead(organisationId, payload = {}, { actor = null } 
       assignedAgentName: assignedAgent.name || null,
       assignedAgentEmail: assignedAgent.email || null,
       contactId: contact.contactId,
-      leadCategory: leadPayload?.leadCategory || 'Buyer',
+      leadCategory: inferLeadCategoryFromRecord(leadPayload, 'other'),
       leadDirection: leadPayload?.leadDirection || 'Inbound',
       leadSource: leadPayload?.leadSource || 'Other',
       stage: leadPayload?.stage || 'Lead',
