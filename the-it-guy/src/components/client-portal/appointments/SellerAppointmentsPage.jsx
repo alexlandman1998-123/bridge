@@ -1,16 +1,18 @@
 import {
-  Bell,
   CalendarClock,
   Camera,
   CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Home,
+  MapPin,
   MoreVertical,
   PenLine,
   Phone,
   Plus,
   RefreshCw,
-  ShieldCheck,
   UserRoundCheck,
   UsersRound,
   Video,
@@ -33,6 +35,38 @@ function formatTime(value) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function formatEndTime(appointment = {}) {
+  if (appointment.endTime) return formatTime(appointment.endTime)
+  const start = new Date(appointment.startTime || '')
+  if (Number.isNaN(start.getTime())) return 'Time TBC'
+  return formatTime(new Date(start.getTime() + (appointment.durationMinutes || 60) * 60000).toISOString())
+}
+
+function formatNextAppointmentDetail(appointment) {
+  if (!appointment?.startTime) return 'No upcoming'
+  const date = new Date(appointment.startTime)
+  if (Number.isNaN(date.getTime())) return 'No upcoming'
+  const today = new Date()
+  const isToday = date.toDateString() === today.toDateString()
+  const tomorrow = new Date(today)
+  tomorrow.setDate(today.getDate() + 1)
+  const dayLabel = isToday
+    ? 'Today'
+    : date.toDateString() === tomorrow.toDateString()
+      ? 'Tomorrow'
+      : formatDate(appointment.startTime, { weekday: 'short', day: '2-digit', month: 'short' })
+  return `Next: ${dayLabel}, ${formatTime(appointment.startTime)}`
+}
+
+function getLocalDateKey(value) {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function getStatusLabel(status = '') {
@@ -94,21 +128,27 @@ function AgentAvatar({ agent }) {
   )
 }
 
-function DateBlock({ value }) {
+function DateBlock({ appointment }) {
+  const value = appointment?.startTime
   const date = value ? new Date(value) : null
   const isValid = date && !Number.isNaN(date.getTime())
   return (
-    <div className="flex min-h-[92px] w-[88px] shrink-0 flex-col items-center justify-center rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] text-center">
-      <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#10a06e]">
-        {isValid ? date.toLocaleDateString('en-ZA', { month: 'short' }) : 'Date'}
+    <div className="flex min-h-[232px] w-full flex-col items-center justify-center rounded-[16px] border-r border-[#e1e9f2] bg-[#fbfdff] px-4 py-5 text-center sm:w-[118px]">
+      <span className="text-[0.72rem] font-semibold uppercase text-[#10a06e]">
+        {isValid ? date.toLocaleDateString('en-ZA', { weekday: 'short' }) : 'Date'}
       </span>
-      <strong className="mt-1 text-[1.45rem] font-semibold leading-none text-[#142132]">
+      <strong className="mt-2 text-[2rem] font-semibold leading-none text-[#142132]">
         {isValid ? date.toLocaleDateString('en-ZA', { day: '2-digit' }) : '--'}
       </strong>
-      <span className="mt-1 text-xs font-semibold uppercase text-[#38536d]">
-        {isValid ? date.toLocaleDateString('en-ZA', { weekday: 'short' }) : 'TBC'}
+      <span className="mt-2 text-xs font-semibold uppercase text-[#38536d]">
+        {isValid ? date.toLocaleDateString('en-ZA', { month: 'short' }) : 'TBC'}
       </span>
-      <span className="mt-1 text-xs font-medium text-[#142132]">{formatTime(value)}</span>
+      <span className="my-4 h-px w-4 bg-[#c8d5e3]" />
+      <span className="text-sm font-semibold text-[#142132]">{formatTime(value)}</span>
+      <span className="my-2 h-px w-3 bg-[#d8e2ee]" />
+      <span className="text-sm font-semibold text-[#142132]">
+        {appointment ? formatEndTime(appointment) : 'Time TBC'}
+      </span>
     </div>
   )
 }
@@ -120,49 +160,45 @@ function SellerAppointmentCard({ appointment, onConfirm, onReschedule, pendingAc
   const canReschedule = !completed && appointment.status !== 'cancelled'
 
   return (
-    <article className="grid gap-3 rounded-[18px] border border-[#dbe5ef] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:grid-cols-[88px_1fr]">
-      <DateBlock value={appointment.startTime} />
-      <div className="min-w-0 rounded-[15px] border border-[#edf2f7] bg-[#fcfdff] px-4 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] bg-[#eaf8f1] text-[#10a06e]">
-              <AppointmentTypeIcon type={appointment.appointmentType} />
-            </span>
-            <div className="min-w-0">
-              <h3 className="text-base font-semibold tracking-[-0.02em] text-[#142132]">{appointment.appointmentType}</h3>
-              <p className="mt-1 max-w-2xl text-sm leading-6 text-[#52677f]">{appointment.description}</p>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold text-[#38536d]">
-                <span className="rounded-full bg-[#eef4fb] px-2.5 py-1">{appointment.durationMinutes} min</span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-[#eef4fb] px-2.5 py-1">
-                  <MethodIcon method={appointment.method} />
-                  {appointment.methodLabel}
+    <article className="grid overflow-hidden rounded-[18px] border border-[#dbe5ef] bg-white shadow-[0_10px_26px_rgba(15,23,42,0.045)] sm:grid-cols-[118px_1fr]">
+      <DateBlock appointment={appointment} />
+      <div className="min-w-0 px-5 py-5 sm:px-6">
+        <div className="flex min-w-0 items-start gap-4">
+          <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] bg-[#eaf8f1] text-[#10a06e]">
+            <AppointmentTypeIcon type={appointment.appointmentType} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-lg font-semibold text-[#142132]">{appointment.appointmentType}</h3>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#52677f]">{appointment.description}</p>
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-[#38536d]">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#f0f5fa] px-3 py-1.5">
+                <Clock3 size={13} />
+                {appointment.durationMinutes} min
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#f0f5fa] px-3 py-1.5">
+                <MethodIcon method={appointment.method} />
+                {appointment.methodLabel}
+              </span>
+              {appointment.location ? (
+                <span className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[#f0f5fa] px-3 py-1.5">
+                  <MapPin size={13} />
+                  <span className="truncate">{appointment.location}</span>
                 </span>
-                {appointment.location ? <span className="rounded-full bg-[#eef4fb] px-2.5 py-1">{appointment.location}</span> : null}
-              </div>
+              ) : null}
             </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.68rem] font-semibold ${getStatusClasses(appointment.status)}`}>
-              {getStatusLabel(appointment.status)}
-            </span>
-            <button
-              type="button"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#7b8ca2] transition hover:bg-[#eef4fb] hover:text-[#31506a]"
-              aria-label="Appointment actions"
-              title="Appointment actions"
-            >
-              <MoreVertical size={16} />
-            </button>
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm text-[#38536d]">
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-[#38536d]">
+            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.68rem] font-semibold ${getStatusClasses(appointment.status)}`}>
+              {getStatusLabel(appointment.status)}
+            </span>
             <span>with {appointment.assignedAgent.name}</span>
             <AgentAvatar agent={appointment.assignedAgent} />
           </div>
           {!completed ? (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex items-center gap-2">
               {canConfirm ? (
                 <button
                   type="button"
@@ -178,11 +214,19 @@ function SellerAppointmentCard({ appointment, onConfirm, onReschedule, pendingAc
                   type="button"
                   disabled={actionBusy}
                   onClick={() => onReschedule?.(appointment.raw || appointment)}
-                  className="inline-flex min-h-[36px] items-center justify-center rounded-[10px] border border-[#d5e1ee] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-70"
+                  className="inline-flex min-h-[38px] items-center justify-center rounded-[10px] border border-[#d5e1ee] bg-white px-4 py-1.5 text-xs font-semibold text-[#21384d] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   {actionBusy && pendingAction.endsWith(':reschedule') ? 'Sending...' : 'Request new time'}
                 </button>
               ) : null}
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[#7b8ca2] transition hover:bg-[#eef4fb] hover:text-[#31506a]"
+                aria-label="Appointment actions"
+                title="Appointment actions"
+              >
+                <MoreVertical size={17} />
+              </button>
             </div>
           ) : null}
         </div>
@@ -192,11 +236,8 @@ function SellerAppointmentCard({ appointment, onConfirm, onReschedule, pendingAc
 }
 
 function SellerAppointmentKpiCards({ summary }) {
-  const nextLabel = summary.nextAppointment
-    ? `Next: ${formatDate(summary.nextAppointment.startTime, { weekday: 'short', day: '2-digit', month: 'short' })}`
-    : 'No upcoming'
   const cards = [
-    { label: 'Upcoming', count: summary.upcomingCount, detail: nextLabel, icon: CalendarClock, tone: 'green' },
+    { label: 'Upcoming', count: summary.upcomingCount, detail: formatNextAppointmentDetail(summary.nextAppointment), icon: CalendarClock, tone: 'green' },
     { label: 'Completed', count: summary.completedCount, detail: 'This month', icon: CheckCircle2, tone: 'blue' },
     { label: 'Awaiting confirmation', count: summary.awaitingConfirmationCount, detail: summary.awaitingConfirmationCount ? 'Needs response' : 'No pending', icon: Clock3, tone: 'amber' },
     { label: 'Reschedule requests', count: summary.rescheduleRequestCount, detail: summary.rescheduleRequestCount ? 'In progress' : 'No requests', icon: RefreshCw, tone: 'sky' },
@@ -210,19 +251,19 @@ function SellerAppointmentKpiCards({ summary }) {
   }
 
   return (
-    <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       {cards.map((card) => {
         const Icon = card.icon
         return (
-          <article key={card.label} className="rounded-[22px] border border-[#dbe5ef] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+          <article key={card.label} className="min-h-[118px] rounded-[18px] border border-[#dbe5ef] bg-white p-5 shadow-[0_10px_26px_rgba(15,23,42,0.045)]">
             <div className="flex items-center gap-4">
-              <span className={`inline-flex h-12 w-12 items-center justify-center rounded-[16px] ${toneClasses[card.tone]}`}>
-                <Icon size={21} />
+              <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] ${toneClasses[card.tone]}`}>
+                <Icon size={20} />
               </span>
-              <div>
+              <div className="min-w-0">
                 <strong className="block text-[1.55rem] font-semibold leading-none text-[#142132]">{card.count}</strong>
                 <span className="mt-1 block text-sm font-medium text-[#4f647b]">{card.label}</span>
-                <span className="mt-1 block text-xs font-semibold text-[#38536d]">{card.detail}</span>
+                <span className="mt-1 block truncate text-xs font-semibold text-[#38536d]">{card.detail}</span>
               </div>
             </div>
           </article>
@@ -234,21 +275,21 @@ function SellerAppointmentKpiCards({ summary }) {
 
 function SellerUpcomingAppointments({ appointments, onConfirm, onReschedule, pendingAction }) {
   return (
-    <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+    <section className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.05)] sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-[1.16rem] font-semibold tracking-[-0.03em] text-[#142132]">Upcoming Appointments</h2>
+          <h2 className="text-[1.16rem] font-semibold text-[#142132]">Upcoming Appointments</h2>
           <p className="mt-1 text-sm leading-6 text-[#64748b]">Your next scheduled appointments and meetings.</p>
         </div>
         <button
           type="button"
-          className="inline-flex min-h-[38px] items-center rounded-[11px] border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#21384d]"
+          className="inline-flex min-h-[38px] items-center rounded-[11px] border border-[#dbe5ef] bg-white px-4 py-1.5 text-xs font-semibold text-[#21384d] shadow-[0_8px_18px_rgba(15,23,42,0.04)]"
         >
-          All appointments
+          View all appointments
         </button>
       </div>
 
-      <div className="mt-5 space-y-3">
+      <div className="mt-5 space-y-4">
         {appointments.length ? (
           appointments.map((appointment) => (
             <SellerAppointmentCard
@@ -264,7 +305,7 @@ function SellerUpcomingAppointments({ appointments, onConfirm, onReschedule, pen
             <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-[16px] bg-[#eef4fb] text-[#35546c]">
               <CalendarClock size={22} />
             </span>
-            <h3 className="mt-3 text-base font-semibold tracking-[-0.02em] text-[#142132]">No appointments scheduled yet.</h3>
+            <h3 className="mt-3 text-base font-semibold text-[#142132]">No appointments scheduled yet.</h3>
             <p className="mx-auto mt-1 max-w-[560px] text-sm leading-6 text-[#6b7d93]">
               The team will schedule an appointment when the next step requires it.
             </p>
@@ -296,22 +337,40 @@ function SellerAppointmentCalendar({ events }) {
   events.forEach((event) => {
     const date = new Date(event.date)
     if (Number.isNaN(date.getTime())) return
-    const key = date.toISOString().slice(0, 10)
+    const key = getLocalDateKey(date)
     eventMap.set(key, [...(eventMap.get(key) || []), event])
   })
 
   return (
-    <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+    <section className="rounded-[22px] border border-[#dbe5ef] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Calendar</h2>
-        <span className="text-sm font-semibold text-[#38536d]">{monthLabel}</span>
+        <h2 className="text-[1.08rem] font-semibold text-[#142132]">Calendar</h2>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#6b7d93] transition hover:bg-[#f1f5f9] hover:text-[#142132]"
+            aria-label="Previous month"
+            title="Previous month"
+          >
+            <ChevronLeft size={17} />
+          </button>
+          <span className="min-w-[116px] text-center text-sm font-semibold text-[#38536d]">{monthLabel}</span>
+          <button
+            type="button"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#6b7d93] transition hover:bg-[#f1f5f9] hover:text-[#142132]"
+            aria-label="Next month"
+            title="Next month"
+          >
+            <ChevronRight size={17} />
+          </button>
+        </div>
       </div>
-      <div className="mt-4 grid grid-cols-7 gap-1 text-center text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">
+      <div className="mt-7 grid grid-cols-7 gap-2 text-center text-[0.68rem] font-semibold uppercase text-[#7b8ca2]">
         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => <span key={day}>{day}</span>)}
       </div>
-      <div className="mt-2 grid grid-cols-7 gap-1 text-center text-sm">
+      <div className="mt-4 grid grid-cols-7 gap-x-2 gap-y-4 text-center text-sm">
         {days.map((day) => {
-          const key = day.toISOString().slice(0, 10)
+          const key = getLocalDateKey(day)
           const dayEvents = eventMap.get(key) || []
           const inMonth = day.getMonth() === monthDate.getMonth()
           const hasUpcoming = dayEvents.some((event) => event.status !== 'completed' && event.status !== 'reschedule_requested')
@@ -321,7 +380,7 @@ function SellerAppointmentCalendar({ events }) {
           return (
             <div
               key={key}
-              className={`flex min-h-[38px] flex-col items-center justify-center rounded-full font-medium ${
+              className={`mx-auto flex h-10 w-10 flex-col items-center justify-center rounded-full font-medium ${
                 highlighted
                   ? hasUpcoming
                     ? 'bg-[#20b982] text-white'
@@ -341,7 +400,7 @@ function SellerAppointmentCalendar({ events }) {
           )
         })}
       </div>
-      <div className="mt-5 grid gap-2 text-xs font-medium text-[#52677f] sm:grid-cols-3">
+      <div className="mt-8 grid gap-2 text-xs font-medium text-[#52677f] sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
         <span className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-[#20b982]" />Upcoming</span>
         <span className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-[#5b8def]" />Completed</span>
         <span className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-[#d97706]" />Reschedule requested</span>
@@ -352,65 +411,62 @@ function SellerAppointmentCalendar({ events }) {
 
 function SellerCompletedAppointments({ appointments, pendingAction }) {
   return (
-    <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-      <div>
-        <h2 className="text-[1.16rem] font-semibold tracking-[-0.03em] text-[#142132]">Completed Appointments</h2>
-        <p className="mt-1 text-sm leading-6 text-[#64748b]">Your past appointments and meetings.</p>
+    <section className="rounded-[18px] border border-[#dbe5ef] bg-white px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-[1.16rem] font-semibold text-[#142132]">Completed Appointments</h2>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="inline-flex min-h-[36px] items-center justify-center rounded-[10px] border border-[#dbe5ef] bg-white px-4 py-1.5 text-xs font-semibold text-[#21384d] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+          >
+            View all
+          </button>
+          <button
+            type="button"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-[#dbe5ef] bg-white text-[#38536d] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+            aria-label="Toggle completed appointments"
+            title="Toggle completed appointments"
+          >
+            <ChevronDown size={16} />
+          </button>
+        </div>
       </div>
-      <div className="mt-5 space-y-3">
-        {appointments.length ? (
-          appointments.map((appointment) => (
+      {appointments.length ? (
+        <div className="mt-4 space-y-3">
+          {appointments.map((appointment) => (
             <SellerAppointmentCard key={appointment.id} appointment={appointment} pendingAction={pendingAction} completed />
-          ))
-        ) : (
-          <article className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-5 py-6 text-center text-sm leading-6 text-[#6b7d93]">
-            Completed appointments will appear here once meetings are finished.
-          </article>
-        )}
-      </div>
+          ))}
+        </div>
+      ) : null}
     </section>
   )
 }
 
-function SellerAppointmentSupportCards({ nextAppointment, onReschedule }) {
+function SellerReschedulePrompt({ nextAppointment, onReschedule }) {
   return (
-    <section className="grid gap-4">
-      <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-        <span className="inline-flex h-12 w-12 items-center justify-center rounded-[16px] bg-[#fff4e6] text-[#f97316]">
-          <CalendarClock size={22} />
-        </span>
-        <h2 className="mt-4 text-base font-semibold tracking-[-0.02em] text-[#142132]">Need to reschedule?</h2>
-        <p className="mt-2 text-sm leading-6 text-[#52677f]">
-          Can&apos;t make it to an appointment? Request a new time and we&apos;ll coordinate with your agent.
-        </p>
+    <section className="rounded-[18px] border border-[#dbe5ef] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] bg-[#eef6ff] text-[#2563eb]">
+            <RefreshCw size={21} />
+          </span>
+          <div>
+            <h2 className="text-base font-semibold text-[#142132]">Need to reschedule?</h2>
+            <p className="mt-1 text-sm leading-6 text-[#52677f]">
+              Send a request to find a time that works better for you.
+            </p>
+          </div>
+        </div>
         <button
           type="button"
           disabled={!nextAppointment}
           onClick={() => nextAppointment && onReschedule?.(nextAppointment.raw || nextAppointment)}
           title={!nextAppointment ? 'No appointment selected to reschedule.' : undefined}
-          className="mt-4 inline-flex min-h-[38px] items-center justify-center rounded-[10px] border border-[#d5e1ee] bg-white px-3 py-1.5 text-xs font-semibold text-[#21384d] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-55"
+          className="inline-flex min-h-[38px] items-center justify-center rounded-[10px] border border-[#d5e1ee] bg-white px-4 py-1.5 text-xs font-semibold text-[#21384d] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-55"
         >
-          Request reschedule
+          Request new time
         </button>
-      </article>
-
-      <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-        <span className="inline-flex h-12 w-12 items-center justify-center rounded-[16px] bg-[#f1edff] text-[#6d5dfc]">
-          <Bell size={22} />
-        </span>
-        <h2 className="mt-4 text-base font-semibold tracking-[-0.02em] text-[#142132]">Stay informed</h2>
-        <p className="mt-2 text-sm leading-6 text-[#52677f]">
-          We&apos;ll notify you of any changes or new appointments.
-        </p>
-        <button
-          type="button"
-          disabled
-          title="Notification preferences coming soon."
-          className="mt-4 inline-flex min-h-[38px] cursor-not-allowed items-center justify-center rounded-[10px] border border-[#d5e1ee] bg-white px-3 py-1.5 text-xs font-semibold text-[#21384d] opacity-55"
-        >
-          Notification preferences
-        </button>
-      </article>
+      </div>
     </section>
   )
 }
@@ -429,7 +485,7 @@ function SellerAppointmentsPage({
     <section className="mx-auto w-full max-w-[1440px] space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-[1.85rem] font-semibold tracking-[-0.04em] text-[#142132]">Appointments</h1>
+          <h1 className="text-[1.85rem] font-semibold text-[#142132]">Appointments</h1>
           <p className="mt-1 text-sm leading-6 text-[#52677f]">View and manage appointments related to your property sale.</p>
         </div>
         <button
@@ -460,18 +516,14 @@ function SellerAppointmentsPage({
             onConfirm={onConfirmAppointment}
             onReschedule={onRescheduleAppointment}
           />
-          <SellerCompletedAppointments appointments={appointmentData.completedAppointments} pendingAction={pendingAction} />
-          <p className="flex items-center gap-2 px-1 text-xs font-medium text-[#64748b]">
-            <ShieldCheck size={14} />
-            Your information is secure and only shared with your transaction team.
-          </p>
-        </div>
-        <aside className="space-y-5">
-          <SellerAppointmentCalendar events={appointmentData.calendarEvents} />
-          <SellerAppointmentSupportCards
+          <SellerReschedulePrompt
             nextAppointment={appointmentData.summary.nextAppointment}
             onReschedule={onRescheduleAppointment}
           />
+          <SellerCompletedAppointments appointments={appointmentData.completedAppointments} pendingAction={pendingAction} />
+        </div>
+        <aside>
+          <SellerAppointmentCalendar events={appointmentData.calendarEvents} />
         </aside>
       </section>
     </section>

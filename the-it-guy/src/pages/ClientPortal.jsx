@@ -1564,6 +1564,22 @@ function normalizeSellerPortalKey(value = '') {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, '_')
 }
 
+function normalizeSellerVisibleListingLinks(items = []) {
+  return (Array.isArray(items) ? items : [])
+    .filter((item) => {
+      const status = normalizeSellerPortalKey(item?.status || '')
+      const visible = item?.visibleToSeller ?? item?.visible_to_seller
+      return Boolean(item?.url || item?.listingUrl) && (visible === true || status === 'live' || status === 'published')
+    })
+    .map((item, index) => ({
+      id: String(item.id || item.key || `${item.platform || 'listing'}-${index}`),
+      platform: String(item.platform || item.platformName || 'Listing platform').trim(),
+      url: String(item.url || item.listingUrl || '').trim(),
+      status: String(item.status || 'Live').trim(),
+      publishedAt: item.publishedAt || item.published_at || '',
+    }))
+}
+
 function getFriendlySellerStatusLabel(value = '', fallback = 'Awaiting update') {
   const normalized = normalizeSellerPortalKey(value)
   if (!normalized) return fallback
@@ -2526,6 +2542,43 @@ function SellerRecentActivity({ items }) {
   )
 }
 
+function SellerListingDistribution({ links = [] }) {
+  if (!links.length) return null
+
+  return (
+    <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Where Your Property Is Listed</h2>
+          <p className="mt-1 text-sm leading-6 text-[#64748b]">Live listing links your agent has shared with you.</p>
+        </div>
+        <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#4f647b]">
+          {links.length} live
+        </span>
+      </div>
+      <div className="mt-4 grid gap-3">
+        {links.map((link) => (
+          <div key={link.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-[#142132]">{link.platform}</p>
+              <p className="mt-1 text-xs font-medium text-[#7b8ca2]">Published {formatShortPortalDate(link.publishedAt, 'recently')}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center rounded-full border border-[#d8eddf] bg-[#ecfaf1] px-2.5 py-1 text-[0.68rem] font-semibold text-[#1f7d44]">
+                {link.status || 'Live'}
+              </span>
+              <a href={link.url} target="_blank" rel="noreferrer" className="inline-flex min-h-[38px] items-center gap-2 rounded-[12px] bg-[#10253a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#1a3b5a]">
+                Open listing
+                <ArrowRight size={14} />
+              </a>
+            </div>
+          </div>
+        ))}
+      </div>
+    </article>
+  )
+}
+
 function SellerSupportCard({ sellerAgentPhone, sellerAgentEmail }) {
   const contactAction = sellerAgentEmail
     ? { label: 'Contact support', href: `mailto:${sellerAgentEmail}` }
@@ -2567,6 +2620,7 @@ function SellerPortalDashboard({
   sellerNextStep,
   sellerQuickActions,
   sellerActivityItems,
+  sellerVisibleListingLinks,
   sellerStageMeta,
   sellerStageDates,
   token,
@@ -2602,6 +2656,7 @@ function SellerPortalDashboard({
         <SellerQuickActions actions={sellerQuickActions} token={token} workspaceNavigationScope={workspaceNavigationScope} />
         <SellerRecentActivity items={sellerActivityItems} />
       </section>
+      <SellerListingDistribution links={sellerVisibleListingLinks} />
       <SellerSupportCard sellerAgentPhone={sellerAgentPhone} sellerAgentEmail={sellerAgentEmail} />
     </section>
   )
@@ -5036,6 +5091,13 @@ function ClientPortal() {
     { label: 'Agent / Agency', value: sellerAgentName },
     { label: 'Last updated', value: sellerLastUpdatedLabel },
   ]
+  const sellerVisibleListingLinks = normalizeSellerVisibleListingLinks([
+    ...(Array.isArray(activeSellingContext?.externalListingLinks) ? activeSellingContext.externalListingLinks : []),
+    ...(Array.isArray(activeSellingContext?.listingExternalLinks) ? activeSellingContext.listingExternalLinks : []),
+    ...(Array.isArray(portal?.activeSellingContext?.externalListingLinks) ? portal.activeSellingContext.externalListingLinks : []),
+    ...(Array.isArray(portal?.activeSellingContext?.listingExternalLinks) ? portal.activeSellingContext.listingExternalLinks : []),
+    ...(Array.isArray(portal?.listing?.externalLinks) ? portal.listing.externalLinks : []),
+  ])
   const acceptedSellerOffer = sellerOfferItems.find((offer) => ['accepted', 'converted_to_transaction'].includes(normalizeSellerPortalKey(offer.status)))
   const sellerStageDates = {
     mandate_signed: formatShortPortalDate(
@@ -6089,6 +6151,7 @@ function ClientPortal() {
                       sellerNextStep={sellerNextStep}
                       sellerQuickActions={sellerQuickActions}
                       sellerActivityItems={sellerActivityItems}
+                      sellerVisibleListingLinks={sellerVisibleListingLinks}
                       sellerStageMeta={sellerStageMeta}
                       sellerStageDates={sellerStageDates}
                       token={token}

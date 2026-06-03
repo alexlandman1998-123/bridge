@@ -41,6 +41,27 @@ function normalizeValue(value = '') {
   return String(value || '').trim().toLowerCase()
 }
 
+function isSellerVisibleExternalLinkStatus(status = '') {
+  const normalized = normalizeValue(status)
+  return normalized === 'live' || normalized === 'published'
+}
+
+function normalizeSellerVisibleExternalLinks(items = []) {
+  return (Array.isArray(items) ? items : [])
+    .filter((item) => {
+      const status = item?.status || ''
+      const visible = item?.visibleToSeller ?? item?.visible_to_seller
+      return Boolean(item?.url || item?.listingUrl) && (visible === true || isSellerVisibleExternalLinkStatus(status))
+    })
+    .map((item, index) => ({
+      id: String(item.id || item.key || `${item.platform || 'listing'}-${index}`),
+      platform: String(item.platform || item.platformName || 'Listing platform').trim(),
+      url: String(item.url || item.listingUrl || '').trim(),
+      status: String(item.status || 'Live').trim(),
+      publishedAt: item.publishedAt || item.published_at || '',
+    }))
+}
+
 function isSellerOnboardingToken(token = '') {
   return normalizeValue(token).startsWith('seller-')
 }
@@ -249,6 +270,13 @@ async function fetchSellerClientPortalDataByToken(token) {
     .map((item) => mapSellerUploadedDocument(item))
   const appointments = (Array.isArray(context?.appointments) ? context.appointments : [])
     .map((item) => mapSellerPortalAppointment(item))
+  const sellerVisibleExternalLinks = normalizeSellerVisibleExternalLinks([
+    ...(Array.isArray(listing?.externalLinks) ? listing.externalLinks : []),
+    ...(Array.isArray(listing?.listingExternalLinks) ? listing.listingExternalLinks : []),
+    ...(Array.isArray(listing?.propertyDetails?.externalLinks) ? listing.propertyDetails.externalLinks : []),
+    ...(Array.isArray(listing?.marketing?.externalLinks) ? listing.marketing.externalLinks : []),
+    ...(Array.isArray(formData.externalListingLinks) ? formData.externalListingLinks : []),
+  ])
 
   return {
     link: {
@@ -258,7 +286,11 @@ async function fetchSellerClientPortalDataByToken(token) {
       buyer_id: null,
       is_active: true,
     },
-    listing,
+    listing: {
+      ...listing,
+      externalLinks: sellerVisibleExternalLinks,
+      listingExternalLinks: sellerVisibleExternalLinks,
+    },
     settings: {
       client_portal_enabled: true,
       snag_reporting_enabled: false,
@@ -340,6 +372,8 @@ async function fetchSellerClientPortalDataByToken(token) {
       mandateStatus: mandatePacket?.state || listing?.mandateStatus || listing?.mandate_status || '',
       sellerLeadId,
       listingId,
+      externalListingLinks: sellerVisibleExternalLinks,
+      listingExternalLinks: sellerVisibleExternalLinks,
       mandatePacketId,
       mandatePacket,
       sellerWorkspaceToken: token,

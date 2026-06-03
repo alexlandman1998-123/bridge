@@ -209,6 +209,31 @@ function normalizeLeadLink(value) {
   return normalized || null
 }
 
+function isSellerVisibleExternalLinkStatus(status = '') {
+  const normalized = normalizeText(status).toLowerCase()
+  return normalized === 'live' || normalized === 'published'
+}
+
+function normalizeListingExternalLinks(items = []) {
+  return (Array.isArray(items) ? items : [])
+    .filter((item) => item?.url || item?.listing_url || item?.platform)
+    .map((item, index) => {
+      const status = normalizeText(item.status || 'Draft') || 'Draft'
+      return {
+        id: normalizeText(item.id || item.key || `external-link-${index + 1}`),
+        platform: normalizeText(item.platform || item.platform_name || 'Other') || 'Other',
+        url: normalizeText(item.url || item.listing_url || item.listingUrl),
+        status,
+        publishedAt: item.publishedAt || item.published_at || '',
+        lastCheckedAt: item.lastCheckedAt || item.last_checked_at || '',
+        notes: normalizeText(item.notes),
+        visibleToSeller: item.visibleToSeller === undefined && item.visible_to_seller === undefined
+          ? isSellerVisibleExternalLinkStatus(status)
+          : Boolean(item.visibleToSeller ?? item.visible_to_seller),
+      }
+    })
+}
+
 function normalizeNumber(value) {
   if (value === null || value === undefined || value === '') return null
   const parsed = Number(value)
@@ -713,6 +738,13 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   const onboardingFeatures = Array.isArray(onboardingFormData.features)
     ? onboardingFormData.features.map((item) => normalizeText(item)).filter(Boolean)
     : []
+  const externalListingLinks = normalizeListingExternalLinks(
+    row.external_links ||
+      row.listing_external_links ||
+      onboardingFormData.externalListingLinks ||
+      onboardingFormData.externalLinks ||
+      [],
+  )
   const quickAddMandateDates = extractQuickAddMandateDates(row.internal_listing_notes || row.description)
   const primaryMandateDocument = documentRows.find((documentRow) => isMandateDocumentRow(documentRow)) || null
   const mandateSignedDate = pickFirstText(
@@ -794,6 +826,8 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     privatePropertyStatus: row.private_property_status || onboardingFormData.privatePropertyStatus || 'not_published',
     bridgeListingStatus: row.bridge_listing_status || onboardingFormData.bridgeListingStatus || 'not_published',
     bridgeListingPublicUrl: row.bridge_listing_public_url || onboardingFormData.bridgeListingPublicUrl || '',
+    externalLinks: externalListingLinks,
+    listingExternalLinks: externalListingLinks,
     listingPreviewDescription,
     internalListingNotes: row.internal_listing_notes || onboardingNotes,
     // Compatibility shape used by existing listing UI while migration is underway.
@@ -823,6 +857,8 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
       notes: onboardingNotes,
       status: listingStatus,
       source: row.listing_source || '',
+      externalLinks: externalListingLinks,
+      listingExternalLinks: externalListingLinks,
     },
     propertyDetails: {
       headline: row.title || '',
@@ -864,6 +900,8 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
       privatePropertyStatus: row.private_property_status || onboardingFormData.privatePropertyStatus || 'not_published',
       bridgeListingStatus: row.bridge_listing_status || onboardingFormData.bridgeListingStatus || 'not_published',
       bridgeListingPublicUrl: row.bridge_listing_public_url || onboardingFormData.bridgeListingPublicUrl || '',
+      externalLinks: externalListingLinks,
+      listingExternalLinks: externalListingLinks,
     },
     documentRequirements: requirementRows,
     documents: documentRows,
@@ -1116,6 +1154,20 @@ function mapSellerClientPortalPayload(payload) {
   const listingRow = payload?.listing && typeof payload.listing === 'object' ? payload.listing : null
   const onboardingRow = payload?.onboarding && typeof payload.onboarding === 'object' ? payload.onboarding : null
   if (!listingRow?.id || !onboardingRow?.private_listing_id) return null
+  const payloadExternalLinks = normalizeListingExternalLinks(
+    payload?.externalListingLinks ||
+      payload?.external_listing_links ||
+      payload?.externalLinks ||
+      payload?.external_links ||
+      listingRow.external_links ||
+      listingRow.listing_external_links ||
+      [],
+  )
+  const listingForMap = {
+    ...listingRow,
+    external_links: payloadExternalLinks.length ? payloadExternalLinks : listingRow.external_links,
+    listing_external_links: payloadExternalLinks.length ? payloadExternalLinks : listingRow.listing_external_links,
+  }
   const onboardingMap = new Map([[String(onboardingRow.private_listing_id), onboardingRow]])
   const requirements = normalizeRequirementRows(Array.isArray(payload?.requirements) ? payload.requirements : [])
   const documents = normalizeDocumentRows(Array.isArray(payload?.documents) ? payload.documents : [])
@@ -1130,10 +1182,10 @@ function mapSellerClientPortalPayload(payload) {
     appointments,
     mandatePacket,
     listing: mapPrivateListingRow(
-      listingRow,
+      listingForMap,
       onboardingMap,
-      new Map([[String(listingRow.id), requirements]]),
-      new Map([[String(listingRow.id), documents]]),
+      new Map([[String(listingForMap.id), requirements]]),
+      new Map([[String(listingForMap.id), documents]]),
     ),
   }
 }
@@ -1717,6 +1769,132 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
     return null
   })
   return update.data
+}
+
+export async function syncPrivateListingDistributionData(listingId, payload = {}) {
+  const client = requireClient()
+  const normalizedId = normalizeUuid(listingId)
+  if (!normalizedId) throw new Error('Listing id is required.')
+
+  const publicationData = payload.publicationData && typeof payload.publicationData === 'object'
+    ? payload.publicationData
+    : {}
+  const media = payload.media && typeof payload.media === 'object' ? payload.media : {}
+  const externalLinks = normalizeListingExternalLinks(payload.externalLinks)
+  const galleryImages = normalizeMediaItems(media.galleryImages)
+  const floorplans = normalizeMediaItems(media.floorplans)
+  const videoLink = normalizeText(media.videoLink)
+  const virtualTourLink = normalizeText(media.virtualTourLink)
+
+  const publicationPayload = {
+    listing_id: normalizedId,
+    title: normalizeNullableText(publicationData.title),
+    address: normalizeNullableText(publicationData.address),
+    suburb: normalizeNullableText(publicationData.suburb),
+    province: normalizeNullableText(publicationData.province),
+    property_type: normalizeNullableText(publicationData.propertyType),
+    listing_type: normalizeText(publicationData.listingType) === 'Rental' ? 'Rental' : 'Sale',
+    asking_price: normalizeNumber(publicationData.askingPrice),
+    bedrooms: normalizeNumber(publicationData.bedrooms),
+    bathrooms: normalizeNumber(publicationData.bathrooms),
+    garages: normalizeNumber(publicationData.garages),
+    parking_bays: normalizeNumber(publicationData.parkingBays),
+    floor_size: normalizeNumber(publicationData.floorSize),
+    erf_size: normalizeNumber(publicationData.erfSize),
+    rates_taxes: normalizeNumber(publicationData.ratesTaxes),
+    levies: normalizeNumber(publicationData.levies),
+    description: normalizeNullableText(publicationData.description),
+    features: Array.isArray(publicationData.features) ? publicationData.features : [],
+    amenities: Array.isArray(publicationData.amenities) ? publicationData.amenities : [],
+    status: ['Draft', 'Ready', 'Published', 'Archived'].includes(normalizeText(publicationData.status))
+      ? normalizeText(publicationData.status)
+      : 'Draft',
+  }
+
+  const mediaRows = [
+    ...galleryImages.map((item, index) => ({
+      listing_id: normalizedId,
+      media_type: 'image',
+      file_url: normalizeText(item.url || item.signedUrl || item.publicUrl),
+      caption: normalizeNullableText(item.label || item.name),
+      sort_order: index,
+      is_cover: normalizeText(item.id) === normalizeText(media.coverImageId) || (!media.coverImageId && index === 0),
+    })),
+    ...floorplans.map((item, index) => ({
+      listing_id: normalizedId,
+      media_type: 'floor_plan',
+      file_url: normalizeText(item.url || item.signedUrl || item.publicUrl),
+      caption: normalizeNullableText(item.label || item.name),
+      sort_order: index,
+      is_cover: false,
+    })),
+    ...(videoLink ? [{
+      listing_id: normalizedId,
+      media_type: 'video',
+      file_url: videoLink,
+      caption: 'Video link',
+      sort_order: galleryImages.length + floorplans.length,
+      is_cover: false,
+    }] : []),
+    ...(virtualTourLink ? [{
+      listing_id: normalizedId,
+      media_type: 'virtual_tour',
+      file_url: virtualTourLink,
+      caption: 'Virtual tour link',
+      sort_order: galleryImages.length + floorplans.length + (videoLink ? 1 : 0),
+      is_cover: false,
+    }] : []),
+  ].filter((item) => item.file_url)
+
+  const externalLinkRows = externalLinks
+    .filter((item) => item.url)
+    .map((item) => ({
+      listing_id: normalizedId,
+      platform: item.platform || 'Other',
+      url: item.url,
+      status: item.status || 'Draft',
+      published_at: item.publishedAt || null,
+      last_checked_at: item.lastCheckedAt || null,
+      notes: normalizeNullableText(item.notes),
+      visible_to_seller: item.visibleToSeller,
+    }))
+
+  const publication = await client
+    .from('listing_publication_data')
+    .upsert(publicationPayload, { onConflict: 'listing_id' })
+    .select('*')
+    .single()
+  if (publication.error) {
+    if (isMissingTableError(publication.error, 'listing_publication_data')) return { skipped: true, reason: 'distribution_tables_missing' }
+    throw publication.error
+  }
+
+  const deleteMedia = await client.from('listing_media').delete().eq('listing_id', normalizedId)
+  if (deleteMedia.error) {
+    if (isMissingTableError(deleteMedia.error, 'listing_media')) return { skipped: true, reason: 'distribution_tables_missing' }
+    throw deleteMedia.error
+  }
+  if (mediaRows.length) {
+    const insertMedia = await client.from('listing_media').insert(mediaRows)
+    if (insertMedia.error) throw insertMedia.error
+  }
+
+  const deleteLinks = await client.from('listing_external_links').delete().eq('listing_id', normalizedId)
+  if (deleteLinks.error) {
+    if (isMissingTableError(deleteLinks.error, 'listing_external_links')) return { skipped: true, reason: 'distribution_tables_missing' }
+    throw deleteLinks.error
+  }
+  if (externalLinkRows.length) {
+    const insertLinks = await client.from('listing_external_links').insert(externalLinkRows)
+    if (insertLinks.error) throw insertLinks.error
+  }
+
+  return {
+    skipped: false,
+    publication: publication.data,
+    mediaCount: mediaRows.length,
+    externalLinkCount: externalLinkRows.length,
+  }
 }
 
 export async function getPrivateListing(listingId, options = {}) {
