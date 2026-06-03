@@ -272,6 +272,7 @@ function HeaderBar({ onLogout, user }) {
       location.pathname === '/bond/pipeline' ||
       location.pathname === '/bond/applications' ||
       location.pathname === '/bond/transactions' ||
+      location.pathname === '/bond/partner-intelligence' ||
       location.pathname === '/bond/organisation' ||
       location.pathname.startsWith('/bond/organisation/') ||
       location.pathname === '/bond/tasks' ||

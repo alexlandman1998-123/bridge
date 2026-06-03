@@ -167,6 +167,7 @@ export const APP_NAV_BY_ROLE = {
     { key: 'bond_developments', label: 'Developments', to: '/bond/developments', navSection: 'main', activeMatch: ['/bond/developments', '/developments'] },
     { key: 'clients', label: 'Clients', to: '/bond/clients', navSection: 'main', activeMatch: ['/bond/clients', '/clients'] },
     { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners'] },
+    { key: 'partner_intelligence', label: 'Partner Intelligence', to: '/bond/partner-intelligence', navSection: 'main', activeMatch: ['/bond/partner-intelligence'] },
     { key: 'bond_reports', label: 'Reports', to: '/bond/reports', navSection: 'main', activeMatch: ['/bond/reports', '/reports'] },
     { key: 'bond_organisation', label: 'Organisation', to: '/bond/organisation', navSection: 'main', activeMatch: ['/bond/organisation'] },
     { key: 'settings', label: 'Settings', to: '/settings', navSection: 'secondary' },
@@ -301,6 +302,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
           ],
         },
         { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners'] },
+        { key: 'partner_intelligence', label: 'Partner Intelligence', to: '/bond/partner-intelligence', navSection: 'main', activeMatch: ['/bond/partner-intelligence'] },
         { key: 'bond_reports', label: 'Reports', to: '/bond/reports', navSection: 'main', activeMatch: ['/bond/reports', '/reports'] },
         { key: 'settings', label: 'Settings', to: '/settings', navSection: 'secondary' },
       ]
@@ -321,6 +323,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
             { key: 'bond_consultants', label: 'Consultants', to: '/bond/organisation?view=consultants' },
           ],
         },
+        { key: 'partner_intelligence', label: 'Partner Intelligence', to: '/bond/partner-intelligence', navSection: 'main', activeMatch: ['/bond/partner-intelligence'] },
       ]
     }
 
@@ -338,6 +341,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
             { key: 'bond_consultants', label: 'Consultants', to: '/bond/organisation?view=consultants' },
           ],
         },
+        { key: 'partner_intelligence', label: 'Partner Intelligence', to: '/bond/partner-intelligence', navSection: 'main', activeMatch: ['/bond/partner-intelligence'] },
       ]
     }
 
