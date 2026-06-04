@@ -77,6 +77,34 @@ for (const copy of ['Listing Journey', 'Readiness', 'Seller Actions', 'Seller le
 for (const copy of ['Send Seller Onboarding', 'Generate Mandate', 'Seller onboarding must be submitted before generating a mandate']) {
   assert.match(pageSource, new RegExp(copy), `seller leads workspace should restore seller onboarding and mandate action copy for ${copy}`)
 }
+for (const copy of [
+  'SellerLeadWorkspaceLayout',
+  'SellerWorkspaceHero',
+  'SellerJourneyHeroPanel',
+  'SellerNextActionPanel',
+  'SellerKpiRow',
+  'SellerDocumentsSummaryCard',
+  'SellerOwnershipSummaryCard',
+  'SellerCommunicationCard',
+  'SellerTimelinePanel',
+  'Next Best Action',
+  'Documents Complete',
+  'Lead Age',
+  'Mandate Status',
+  'Listing Status',
+  'Preferred Channel',
+  'Email Alerts',
+  'WhatsApp Alerts',
+  'Last Contact',
+]) {
+  assert.match(pageSource, new RegExp(copy), `seller lead workspace consolidation should render ${copy}`)
+}
+assert.match(pageSource, /lg:grid-cols-\[minmax\(0,7fr\)_minmax\(280px,3fr\)\]/)
+assert.match(pageSource, /grid items-stretch gap-6 lg:grid-cols-2/)
+const sellerDetailsSource = pageSource.slice(pageSource.indexOf('function SellerDetailsCard'), pageSource.indexOf('function SellerDocumentsSummaryCard'))
+assert.doesNotMatch(sellerDetailsSource, /Legacy Budget|Area Interest|Property Interest|Property Alerts|Saved Searches/)
+const sellerCommunicationSource = pageSource.slice(pageSource.indexOf('function SellerCommunicationCard'), pageSource.indexOf('function SellerTimelinePanel'))
+assert.doesNotMatch(sellerCommunicationSource, /Property Alerts|Buyer Preferences|Saved Searches/)
 assert.match(pageSource, /CreateLeadDropdown/)
 assert.match(pageSource, /LeadCreateModal/)
 assert.match(pageSource, /sendSellerOnboarding/)

@@ -103,6 +103,7 @@ const BondPartnerCollaborationPage = lazy(() => import('./pages/bond/BondPartner
 const BondPartnerIntelligencePage = lazy(() => import('./pages/bond/BondPartnerIntelligencePage'))
 const BondConsultantPerformancePage = lazy(() => import('./pages/bond/BondConsultantPerformancePage'))
 const BondBranchOperationsPage = lazy(() => import('./pages/bond/BondBranchOperationsPage'))
+const BondRegionalOperationsPage = lazy(() => import('./pages/bond/BondRegionalOperationsPage'))
 const CommercialLayout = lazy(() => import('./modules/commercial/components/CommercialLayout'))
 const CommercialActivityPage = lazy(() => import('./modules/commercial/pages/CommercialActivityPage'))
 const CommercialBrokerPerformancePage = lazy(() => import('./modules/commercial/pages/CommercialBrokerPerformancePage'))
@@ -1692,6 +1693,16 @@ function AppRoutes() {
                   <RoleRoute allowedRoles={['bond_originator']}>
                     <AppErrorBoundary scope="bond-branch-operations" title="Branch operations failed to load">
                       <BondBranchOperationsPage />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/regional-operations"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <AppErrorBoundary scope="bond-regional-operations" title="Regional operations failed to load">
+                      <BondRegionalOperationsPage />
                     </AppErrorBoundary>
                   </RoleRoute>
                 }

@@ -2975,6 +2975,433 @@ function SellerActionsPanel({
   )
 }
 
+function getSellerPortalToken(row = {}, listing = null) {
+  return normalizeText(
+    row?.sellerOnboardingToken ||
+    row?.seller_onboarding_token ||
+    row?.sellerOnboarding?.token ||
+    listing?.sellerOnboarding?.token ||
+    listing?.sellerOnboardingToken ||
+    listing?.seller_onboarding_token,
+  )
+}
+
+function getSellerDocumentCompletion(documents = []) {
+  const rows = Array.isArray(documents) ? documents : []
+  if (!rows.length) return { complete: 0, total: 0, percent: 0 }
+  const complete = rows.filter((document) => {
+    const status = normalizeText(document.status || document.documentStatus || document.document_status).toLowerCase()
+    return Boolean(document.url) || ['approved', 'uploaded', 'verified', 'accepted', 'complete', 'completed', 'signed'].includes(status)
+  }).length
+  return {
+    complete,
+    total: rows.length,
+    percent: Math.round((complete / rows.length) * 100),
+  }
+}
+
+function SellerWorkspaceCard({ title, action, children, className = '', id = '' }) {
+  return (
+    <section id={id || undefined} className={`${panelClass} flex h-full min-h-[220px] flex-col p-5 ${className}`}>
+      <div className="flex min-h-8 items-start justify-between gap-4">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">{title}</h2>
+        {action}
+      </div>
+      <div className="mt-4 flex flex-1 flex-col">{children}</div>
+    </section>
+  )
+}
+
+function SellerInfoRow({ label, value }) {
+  return (
+    <div className="flex min-h-8 items-center justify-between gap-4 border-b border-slate-100 py-2 last:border-b-0">
+      <dt className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">{label}</dt>
+      <dd className="min-w-0 truncate text-right text-sm font-semibold text-slate-900">{value || '—'}</dd>
+    </div>
+  )
+}
+
+function SellerAvatar({ name = '' }) {
+  const initials = normalizeText(name)
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'SL'
+  return (
+    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-lg font-semibold text-white">
+      {initials}
+    </div>
+  )
+}
+
+function SellerWorkspaceHero({
+  row,
+  journey,
+  readiness,
+  listing = null,
+  onboardingStatus = '',
+  sendingOnboarding = false,
+  onSendSellerOnboarding,
+  onGenerateMandate,
+  onOpenListing,
+}) {
+  const portalToken = getSellerPortalToken(row, listing)
+  const hasListing = Boolean(journey?.listingCreated || listing?.id || row?.listingId || row?.listing_id)
+  const listingActionLabel = hasListing ? 'Open Listing' : 'Create Listing'
+  const mandateReady = sellerOnboardingIsSubmitted(onboardingStatus)
+
+  return (
+    <header className={`${panelClass} p-5`}>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,auto)]">
+        <div className="flex min-w-0 gap-4">
+          <SellerAvatar name={row.name} />
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Seller Lead</p>
+            <h1 className="mt-1 truncate text-3xl font-semibold tracking-[-0.045em] text-slate-950">{row.name}</h1>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm font-medium text-slate-500">
+              <span className="inline-flex items-center gap-1.5"><Phone size={14} />{row.phone || 'No phone'}</span>
+              <span className="inline-flex min-w-0 items-center gap-1.5"><Mail size={14} /><span className="max-w-[260px] truncate">{row.email || 'No email'}</span></span>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <StatusPill tone="green">Seller Lead</StatusPill>
+              <StatusPill>{row.source || 'Unknown source'}</StatusPill>
+              <StatusPill>{formatDate(row.createdAt, 'No created date')}</StatusPill>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <dl className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <dt className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Assigned Agent</dt>
+              <dd className="mt-1 truncate text-sm font-semibold text-slate-950">{getOwnerName(row)}</dd>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <dt className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Current Stage</dt>
+              <dd className="mt-1 truncate text-sm font-semibold text-slate-950">{journey?.stage?.label || row.stage || 'Contacted'}</dd>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <dt className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Readiness</dt>
+              <dd className="mt-1 truncate text-sm font-semibold text-slate-950">{readiness?.readinessLabel || 'Review'}</dd>
+            </div>
+          </dl>
+
+          <div className="flex flex-wrap justify-start gap-2 lg:justify-end">
+            <button type="button" onClick={onOpenListing} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white">
+              {listingActionLabel}
+            </button>
+            <Link
+              to={portalToken ? `/seller/onboarding/${encodeURIComponent(portalToken)}` : '#'}
+              aria-disabled={!portalToken}
+              className={`inline-flex min-h-10 items-center justify-center rounded-xl border px-4 text-sm font-semibold ${portalToken ? 'border-slate-200 bg-white text-slate-700' : 'pointer-events-none border-slate-200 bg-slate-50 text-slate-400'}`}
+            >
+              Open Seller Portal
+            </Link>
+            <button
+              type="button"
+              onClick={onGenerateMandate}
+              disabled={!mandateReady}
+              title={!mandateReady ? 'Seller onboarding must be submitted before opening the mandate workspace.' : 'Open mandate workspace'}
+              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              View Mandate
+            </button>
+            <details className="relative">
+              <summary className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50" aria-label="More seller actions">
+                <MoreVertical size={17} />
+              </summary>
+              <div className="absolute right-0 z-20 mt-2 w-56 rounded-xl border border-slate-200 bg-white p-1 text-sm font-semibold text-slate-700 shadow-lg">
+                <button type="button" onClick={() => onSendSellerOnboarding?.()} disabled={sendingOnboarding} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-50">
+                  {sendingOnboarding ? 'Sending...' : sellerOnboardingActionLabel(onboardingStatus)}
+                </button>
+                <button type="button" onClick={onGenerateMandate} disabled={!mandateReady} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-50">
+                  Generate Mandate
+                </button>
+              </div>
+            </details>
+          </div>
+        </div>
+      </div>
+    </header>
+  )
+}
+
+function SellerJourneyHeroPanel({ journey = null }) {
+  if (!journey) return <EmptyState title="Seller journey unavailable" copy="This seller lead could not be mapped to the existing seller journey service." />
+  return (
+    <section className={`${panelClass} flex h-full min-h-[260px] flex-col p-5`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">Seller Journey</h2>
+          <p className="mt-2 text-xl font-semibold tracking-[-0.035em] text-slate-950">{journey.status?.summary || journey.stage?.label || 'Contacted'}</p>
+        </div>
+        <StatusPill tone={journey.listingLive ? 'green' : journey.listingCreated ? 'amber' : 'blue'}>{journey.stage?.status || journey.status?.status || 'Active'}</StatusPill>
+      </div>
+      <ol className="mt-6 grid flex-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        {(journey.steps || []).map((step) => (
+          <li key={step.key} className={`flex min-h-[118px] flex-col justify-between rounded-2xl border p-4 ${step.current ? 'border-blue-200 bg-blue-50' : step.completed ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50'}`}>
+            <span className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold ${step.current ? 'bg-blue-600 text-white' : step.completed ? 'bg-emerald-600 text-white' : 'bg-white text-slate-400'}`}>
+              {step.completed ? '✓' : ''}
+            </span>
+            <div>
+              <p className={`text-sm font-semibold ${step.current ? 'text-blue-800' : step.completed ? 'text-emerald-800' : 'text-slate-600'}`}>{step.label}</p>
+              <p className="mt-1 text-xs font-medium text-slate-500">{step.status || step.state}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+
+function SellerNextActionPanel({ readiness = null, onPrimaryAction, onOpenListing, onOpenTimeline }) {
+  const nextAction = readiness?.nextAction || {}
+  const blocker = nextAction.blocker || readiness?.blockers?.[0]
+  const actionCopy = blocker?.sellerMessage || blocker?.label || nextAction.reason || 'Property ready for the next seller workflow step.'
+  return (
+    <section className={`${panelClass} flex h-full min-h-[260px] flex-col p-5`}>
+      <div>
+        <h2 className="text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">Next Best Action</h2>
+        <p className="mt-4 text-2xl font-semibold tracking-[-0.045em] text-slate-950">{nextAction.label || 'Review Seller Journey'}</p>
+        <p className="mt-3 text-sm leading-6 text-slate-500">{actionCopy}</p>
+      </div>
+      <div className="mt-auto pt-6">
+        <button
+          type="button"
+          disabled={nextAction.disabled}
+          onClick={() => {
+            if (['create_listing', 'open_listing', 'complete_listing', 'activate_listing'].includes(nextAction.id)) onOpenListing?.()
+            else if (nextAction.id === 'open_documents') document.getElementById('seller-documents')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            else if (['generate_mandate', 'send_mandate', 'view_mandate', 'check_signature_status', 'resend_mandate'].includes(nextAction.id)) onPrimaryAction?.()
+            else if (['contact_seller', 'open_timeline'].includes(nextAction.id)) onOpenTimeline?.()
+            else onPrimaryAction?.()
+          }}
+          className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          {nextAction.label || 'Review Seller'}
+        </button>
+        <p className="mt-3 text-xs font-semibold text-slate-400">{readiness?.readinessLabel || 'Seller readiness pending'}</p>
+      </div>
+    </section>
+  )
+}
+
+function SellerKpiRow({ row, journey = null }) {
+  const cards = [
+    { label: 'Lead Age', value: `${Math.max(0, Number(journey?.kpis?.find((item) => item.key === 'lead_age')?.value || 0))} Days` },
+    { label: 'Mandate Status', value: formatSellerJourneyValue({ value: journey?.mandateStatus || 'not_started' }).replace(/_/g, ' ') },
+    { label: 'Listing Status', value: journey?.listingCreated ? journey?.listingLive ? 'Live' : 'Draft' : 'Not Created' },
+    { label: 'Offers', value: `${row.offers?.length || row.offerCount || 0} Offers` },
+  ]
+  return (
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {cards.map((card) => (
+        <article key={card.label} className={`${panelClass} flex min-h-[116px] flex-col justify-between p-5`}>
+          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">{card.label}</p>
+          <strong className="mt-4 block truncate text-2xl font-semibold tracking-[-0.045em] capitalize text-slate-950">{card.value}</strong>
+        </article>
+      ))}
+    </section>
+  )
+}
+
+function SellerDetailsCard({ row, sourceInfo, journey }) {
+  return (
+    <SellerWorkspaceCard title="Seller Details">
+      <dl className="flex flex-1 flex-col">
+        <SellerInfoRow label="Property" value={getLeadContextSummary(row)} />
+        <SellerInfoRow label="Estimated Value" value={formatCurrency(row.estimatedValue || row.estimated_value)} />
+        <SellerInfoRow label="Source" value={sourceInfo?.leadSource || row.source} />
+        <SellerInfoRow label="Created" value={formatDate(row.createdAt)} />
+        <SellerInfoRow label="Portal" value={journey?.sellerPortalStatus || 'Not opened'} />
+      </dl>
+    </SellerWorkspaceCard>
+  )
+}
+
+function SellerDocumentsSummaryCard({ journey = null }) {
+  const documents = journey?.documents || []
+  const completion = getSellerDocumentCompletion(documents)
+  return (
+    <SellerWorkspaceCard
+      className="scroll-mt-6"
+      title="Documents"
+      action={<StatusPill tone={completion.percent >= 80 ? 'green' : completion.percent ? 'amber' : 'slate'}>{completion.percent}%</StatusPill>}
+      id="seller-documents"
+    >
+      <div className="flex items-baseline justify-between gap-4">
+        <p className="text-lg font-semibold tracking-[-0.035em] text-slate-950">Documents Complete</p>
+        <span className="text-sm font-semibold text-slate-500">{completion.complete}/{completion.total}</span>
+      </div>
+      <div className="mt-4 flex flex-1 flex-col justify-between gap-2">
+        {documents.length ? documents.map((document) => {
+          const complete = getSellerDocumentCompletion([document]).percent === 100
+          return (
+            <div key={document.id} className="flex min-h-8 items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+              <span className="truncate text-sm font-semibold text-slate-700">{document.label}</span>
+              <span className={`text-sm font-semibold ${complete ? 'text-emerald-600' : 'text-rose-500'}`}>{complete ? '✓' : '✗'}</span>
+            </div>
+          )
+        }) : <p className="text-sm text-slate-500">No seller documents linked.</p>}
+      </div>
+    </SellerWorkspaceCard>
+  )
+}
+
+function SellerOwnershipSummaryCard({ organisationId, lead, actor, onSaved }) {
+  const [agentId, setAgentId] = useState(lead.assignedAgentId || '')
+  const [queueId, setQueueId] = useState(lead.assignedQueueId || 'unassigned')
+  const [saving, setSaving] = useState('')
+  const [error, setError] = useState('')
+  const canManage = canManageLeadAssignment(actor, lead)
+
+  useEffect(() => {
+    setAgentId(lead.assignedAgentId || '')
+    setQueueId(lead.assignedQueueId || 'unassigned')
+  }, [lead.assignedAgentId, lead.assignedQueueId])
+
+  async function run(label, action) {
+    try {
+      setSaving(label)
+      setError('')
+      await action()
+      await onSaved()
+    } catch (actionError) {
+      setError(actionError?.message || 'Unable to update assignment.')
+    } finally {
+      setSaving('')
+    }
+  }
+
+  return (
+    <SellerWorkspaceCard title="Ownership" action={<StatusPill tone={getSlaTone(lead.slaStatus)}>{formatSlaStatus(lead.slaStatus)}</StatusPill>}>
+      <dl className="flex flex-1 flex-col">
+        <SellerInfoRow label="Agent" value={getOwnerName(lead)} />
+        <SellerInfoRow label="Queue" value={lead.assignedQueue || 'No queue'} />
+        <SellerInfoRow label="SLA" value={formatDateTime(lead.slaDueAt)} />
+        <SellerInfoRow label="Assigned Date" value={formatDateTime(lead.assignedAt)} />
+      </dl>
+      {error ? <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+      {canManage ? (
+        <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-700">Manage Assignment</summary>
+          <div className="mt-3 grid gap-3">
+            <input value={agentId} onChange={(event) => setAgentId(event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" placeholder="Agent user id" />
+            <select value={queueId} onChange={(event) => setQueueId(event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+              {LEAD_ASSIGNMENT_QUEUES.map((queue) => <option key={queue} value={queue}>{queue.replace(/_/g, ' ')}</option>)}
+            </select>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <button type="button" disabled={Boolean(saving) || !agentId} onClick={() => run('agent', () => assignLeadToAgent({ organisationId, leadId: lead.leadId, agentId, reason: 'Assigned from Lead Workspace' }, { actor }))} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-3 text-sm font-semibold text-white disabled:bg-slate-300">Assign</button>
+              <button type="button" disabled={Boolean(saving)} onClick={() => run('queue', () => assignLeadToQueue({ organisationId, leadId: lead.leadId, queueId, reason: 'Assigned to queue from Lead Workspace' }, { actor }))} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 disabled:opacity-60">Queue</button>
+              <button type="button" disabled={Boolean(saving)} onClick={() => run('auto', () => autoAssignLead({ organisationId, leadId: lead.leadId }, { actor }))} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 px-3 text-sm font-semibold text-blue-700 disabled:opacity-60">Auto</button>
+            </div>
+          </div>
+        </details>
+      ) : null}
+    </SellerWorkspaceCard>
+  )
+}
+
+function SellerCommunicationCard({ lead }) {
+  const preferences = normalizeLeadCommunicationPreferences(
+    lead?.communicationPreferences ||
+    buildDefaultLeadCommunicationPreferences({ organisationId: lead?.organisationId || lead?.organisation_id, leadId: lead?.leadId }),
+  )
+  const deliveries = Array.isArray(lead?.communicationDeliveries) ? lead.communicationDeliveries : []
+  const latestDelivery = deliveries[0] || null
+  const latestActivityDate = getLatestActivityDate(lead.latestActivity)
+  return (
+    <SellerWorkspaceCard title="Communication">
+      <dl className="flex flex-1 flex-col">
+        <SellerInfoRow label="Preferred Channel" value={preferences.preferredChannel || 'Email'} />
+        <SellerInfoRow label="Email Alerts" value={preferences.emailEnabled ? 'Enabled' : 'Paused'} />
+        <SellerInfoRow label="WhatsApp Alerts" value={preferences.whatsappEnabled ? 'Enabled' : 'Paused'} />
+        <SellerInfoRow label="Last Contact" value={formatDateTime(latestDelivery?.createdAt || latestDelivery?.preparedAt || latestActivityDate, 'None yet')} />
+      </dl>
+    </SellerWorkspaceCard>
+  )
+}
+
+function SellerTimelinePanel({ timeline = [] }) {
+  const items = (Array.isArray(timeline) ? timeline : []).slice(0, 8)
+  return (
+    <section id="seller-timeline" className={`${panelClass} scroll-mt-6 p-5`}>
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">Timeline</h2>
+        <StatusPill>{items.length} events</StatusPill>
+      </div>
+      <div className="mt-4 divide-y divide-slate-100">
+        {items.length ? items.map((item, index) => {
+          const title = normalizeText(item.title || item.activityType || item.activity_type || item.type) || 'Lead Updated'
+          const description = normalizeText(item.description || item.activityNote || item.activity_note || item.outcome) || 'Seller workflow activity'
+          const timestamp = item.timestamp || item.activityDate || item.activity_date || item.createdAt || item.created_at
+          return (
+            <article key={item.id || item.activityId || `${title}-${timestamp}-${index}`} className="grid min-h-[72px] gap-4 py-4 sm:grid-cols-[36px_minmax(0,1fr)_150px] sm:items-center">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-500"><Clock3 size={16} /></span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-950">{title}</p>
+                <p className="mt-1 truncate text-sm text-slate-500">{description}</p>
+              </div>
+              <time className="text-sm font-semibold text-slate-500 sm:text-right">{formatRelativeTime(timestamp, 'No date')}</time>
+            </article>
+          )
+        }) : <EmptyState title="No seller timeline yet" copy="Seller contact, onboarding, mandate, listing, and document events will appear here." />}
+      </div>
+    </section>
+  )
+}
+
+function SellerLeadWorkspaceLayout({
+  row,
+  sourceInfo,
+  sellerJourney,
+  sellerReadiness,
+  linkedSellerListing,
+  sellerOnboardingStatus,
+  sendingSellerOnboarding,
+  sellerActionError,
+  sellerActionMessage,
+  organisationId,
+  actor,
+  timeline,
+  onSaved,
+  onSendSellerOnboarding,
+  onGenerateMandate,
+  onOpenListing,
+  onOpenTimeline,
+}) {
+  return (
+    <div className="space-y-6">
+      <SellerWorkspaceHero
+        row={row}
+        journey={sellerJourney}
+        readiness={sellerReadiness}
+        listing={linkedSellerListing}
+        onboardingStatus={sellerOnboardingStatus}
+        sendingOnboarding={sendingSellerOnboarding}
+        onSendSellerOnboarding={onSendSellerOnboarding}
+        onGenerateMandate={onGenerateMandate}
+        onOpenListing={onOpenListing}
+      />
+      {sellerActionError ? <p className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{sellerActionError}</p> : null}
+      {sellerActionMessage ? <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{sellerActionMessage}</p> : null}
+      <div className="grid items-stretch gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(280px,3fr)]">
+        <SellerJourneyHeroPanel journey={sellerJourney} />
+        <SellerNextActionPanel readiness={sellerReadiness} onPrimaryAction={onGenerateMandate} onOpenListing={onOpenListing} onOpenTimeline={onOpenTimeline} />
+      </div>
+      <SellerKpiRow row={row} journey={sellerJourney} />
+      <div className="grid items-stretch gap-6 lg:grid-cols-2">
+        <SellerDetailsCard row={row} sourceInfo={sourceInfo} journey={sellerJourney} />
+        <SellerDocumentsSummaryCard journey={sellerJourney} />
+        <SellerOwnershipSummaryCard organisationId={organisationId} lead={row} actor={actor} onSaved={onSaved} />
+        <SellerCommunicationCard lead={row} />
+      </div>
+      <SellerTimelinePanel timeline={timeline} />
+    </div>
+  )
+}
+
 function OwnershipCard({ organisationId, lead, actor, onSaved }) {
   const [agentId, setAgentId] = useState(lead.assignedAgentId || '')
   const [queueId, setQueueId] = useState(lead.assignedQueueId || 'unassigned')
@@ -3271,6 +3698,11 @@ function AgentLeadWorkspace() {
     navigate(`/pipeline/leads/${row.leadId}/legal/mandate?mode=generate&returnTo=${returnTo}`)
   }, [linkedSellerListing, navigate, row])
 
+  const openSellerListing = useCallback(() => {
+    if (linkedSellerListing?.id) navigate(`/agent/listings/${linkedSellerListing.id}`)
+    else navigate('/listings')
+  }, [linkedSellerListing?.id, navigate])
+
   return (
     <main className={pageShell}>
       <button type="button" onClick={() => navigate('/pipeline/leads')} className="inline-flex w-fit items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-950">
@@ -3282,6 +3714,28 @@ function AgentLeadWorkspace() {
       {!loading && !error && !row ? <EmptyState title="Lead not found" copy="This lead was not returned by the existing lead repository for the selected workspace." /> : null}
       {row ? (
         <>
+          {isSellerLeadWorkspace ? (
+            <SellerLeadWorkspaceLayout
+              row={row}
+              sourceInfo={sourceInfo}
+              sellerJourney={sellerJourney}
+              sellerReadiness={sellerReadiness}
+              linkedSellerListing={linkedSellerListing}
+              sellerOnboardingStatus={sellerOnboardingStatus}
+              sendingSellerOnboarding={sendingSellerOnboarding}
+              sellerActionError={sellerActionError}
+              sellerActionMessage={sellerActionMessage}
+              organisationId={organisationId}
+              actor={actor}
+              timeline={data?.timeline || row.communicationTimeline || []}
+              onSaved={loadWorkspace}
+              onSendSellerOnboarding={sendSellerOnboardingForLead}
+              onGenerateMandate={openMandateWorkspace}
+              onOpenListing={openSellerListing}
+              onOpenTimeline={() => setActiveTab('timeline')}
+            />
+          ) : (
+            <>
           <header className={`${panelClass} p-5`}>
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
@@ -3522,6 +3976,8 @@ function AgentLeadWorkspace() {
               <div className="mt-5"><OfferTransactionList offers={row.offers} transactions={row.transactions} convertedTransactionId={row.convertedTransactionId} /></div>
             </section>
           ) : null}
+            </>
+          )}
         </>
       ) : null}
       {shareDraft && row ? (

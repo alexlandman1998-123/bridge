@@ -44,6 +44,7 @@
     "test:bond-partner-intelligence": "node src/services/__tests__/bondPartnerIntelligenceService.test.js",
     "test:bond-consultant-performance": "node src/services/__tests__/bondConsultantPerformanceService.test.js",
     "test:bond-branch-operations": "node src/services/__tests__/bondBranchOperationsService.test.js",
+    "test:bond-regional-operations": "node src/services/__tests__/bondRegionalOperationsService.test.js",
     "test:finance-readiness": "node src/core/finance/__tests__/financeReadinessSelectors.test.js",
     "test:finance-intelligence": "node src/services/__tests__/financeIntelligenceService.test.js",
     "test:reporting-role-logic": "node scripts/reporting-role-logic.test.mjs",
