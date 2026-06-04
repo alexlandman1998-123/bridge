@@ -171,6 +171,7 @@ export const APP_NAV_BY_ROLE = {
     { key: 'consultant_performance', label: 'Consultant Performance', to: '/bond/consultant-performance', navSection: 'main', activeMatch: ['/bond/consultant-performance'] },
     { key: 'branch_operations', label: 'Branch Operations', to: '/bond/branch-operations', navSection: 'main', activeMatch: ['/bond/branch-operations'] },
     { key: 'regional_operations', label: 'Regional Operations', to: '/bond/regional-operations', navSection: 'main', activeMatch: ['/bond/regional-operations'] },
+    { key: 'hq_command_centre', label: 'HQ Command Centre', to: '/bond/hq-command-centre', navSection: 'main', activeMatch: ['/bond/hq-command-centre'] },
     { key: 'bond_reports', label: 'Reports', to: '/bond/reports', navSection: 'main', activeMatch: ['/bond/reports', '/reports'] },
     { key: 'bond_organisation', label: 'Organisation', to: '/bond/organisation', navSection: 'main', activeMatch: ['/bond/organisation'] },
     { key: 'settings', label: 'Settings', to: '/settings', navSection: 'secondary' },
@@ -213,7 +214,7 @@ export function getNavItemsForRole(role) {
 
 const AGENT_LEADERSHIP_KEYWORDS = ['principal', 'headquarters', 'hq', 'admin', 'branch manager', 'office manager']
 const MANAGEMENT_MEMBERSHIP_ROLES = new Set(['super_admin', 'principal', 'admin', 'branch_manager'])
-const BOND_HQ_ROLES = new Set(['owner', 'principal', 'director', 'partner', 'hq_manager', 'manager', 'admin', 'admin_staff', 'bond_hq_admin', 'bond_hq_manager'])
+const BOND_HQ_ROLES = new Set(['owner', 'principal', 'director', 'partner', 'hq_manager', 'manager', 'admin', 'admin_staff', 'bond_hq_admin', 'bond_hq_manager', 'national_manager', 'bond_national_manager'])
 const BOND_REGIONAL_ROLES = new Set(['regional_manager', 'bond_regional_manager'])
 const BOND_BRANCH_ROLES = new Set(['branch_manager', 'bond_branch_manager', 'team_lead', 'bond_team_lead'])
 const BOND_CONSULTANT_ROLES = new Set(['bond_originator', 'consultant', 'bond_consultant', 'processor', 'bond_processor'])
@@ -308,6 +309,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
         { key: 'consultant_performance', label: 'Consultant Performance', to: '/bond/consultant-performance', navSection: 'main', activeMatch: ['/bond/consultant-performance'] },
         { key: 'branch_operations', label: 'Branch Operations', to: '/bond/branch-operations', navSection: 'main', activeMatch: ['/bond/branch-operations'] },
         { key: 'regional_operations', label: 'Regional Operations', to: '/bond/regional-operations', navSection: 'main', activeMatch: ['/bond/regional-operations'] },
+        { key: 'hq_command_centre', label: 'HQ Command Centre', to: '/bond/hq-command-centre', navSection: 'main', activeMatch: ['/bond/hq-command-centre'] },
         { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners'] },
         { key: 'partner_intelligence', label: 'Partner Intelligence', to: '/bond/partner-intelligence', navSection: 'main', activeMatch: ['/bond/partner-intelligence'] },
         { key: 'bond_reports', label: 'Reports', to: '/bond/reports', navSection: 'main', activeMatch: ['/bond/reports', '/reports'] },

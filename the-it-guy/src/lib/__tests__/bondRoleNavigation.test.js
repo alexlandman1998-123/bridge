@@ -19,7 +19,7 @@ try {
 
     assert.deepEqual(
       hqItems.map((item) => item.label),
-      ['Dashboard', 'Applications', 'Organisation', 'Consultant Performance', 'Branch Operations', 'Regional Operations', 'Partners', 'Partner Intelligence', 'Reports', 'Settings'],
+      ['Dashboard', 'Applications', 'Organisation', 'Consultant Performance', 'Branch Operations', 'Regional Operations', 'HQ Command Centre', 'Partners', 'Partner Intelligence', 'Reports', 'Settings'],
     )
     assert.deepEqual(hqItems.find((item) => item.key === 'bond_organisation')?.children.map((item) => item.label), ['Regions', 'Branches', 'Consultants'])
 
