@@ -320,6 +320,8 @@ function normalizeDocumentLabel(document = {}) {
   const raw = firstPresent(
     document?.requirementName,
     document?.requirement_name,
+    document?.requirementKey,
+    document?.requirement_key,
     document?.documentName,
     document?.document_name,
     document?.documentType,
@@ -331,18 +333,142 @@ function normalizeDocumentLabel(document = {}) {
   return raw.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
+function documentSignals(document = {}) {
+  return [
+    document?.id,
+    document?.documentId,
+    document?.document_id,
+    document?.requirementId,
+    document?.requirement_id,
+    document?.requirementKey,
+    document?.requirement_key,
+    document?.canonicalRequirementInstanceId,
+    document?.canonical_requirement_instance_id,
+    document?.documentType,
+    document?.document_type,
+    document?.category,
+    document?.documentName,
+    document?.document_name,
+    document?.name,
+    document?.title,
+    document?.fileName,
+    document?.file_name,
+  ].map(normalizeKey).filter(Boolean)
+}
+
+function requirementSignals(requirement = {}) {
+  return [
+    requirement?.id,
+    requirement?.requirementId,
+    requirement?.requirement_id,
+    requirement?.key,
+    requirement?.requirementKey,
+    requirement?.requirement_key,
+    requirement?.canonicalRequirementInstanceId,
+    requirement?.canonical_requirement_instance_id,
+    requirement?.label,
+    requirement?.requirementName,
+    requirement?.requirement_name,
+    requirement?.name,
+    requirement?.documentType,
+    requirement?.document_type,
+    requirement?.category,
+  ].map(normalizeKey).filter(Boolean)
+}
+
+function requirementIsActive(requirement = {}) {
+  const status = normalizeKey(requirement?.status || requirement?.requiredDocumentStatus || requirement?.required_document_status)
+  return requirement?.isRequired !== false &&
+    requirement?.is_required !== false &&
+    !['not_required', 'waived', 'cancelled', 'archived'].includes(status)
+}
+
+function normalizeRequirementLabel(requirement = {}) {
+  return normalizeDocumentLabel({
+    requirementName: requirement?.label || requirement?.requirementName || requirement?.requirement_name || requirement?.name,
+    requirementKey: requirement?.key || requirement?.requirementKey || requirement?.requirement_key,
+  })
+}
+
+function documentMatchesRequirement(document = {}, requirement = {}) {
+  const documentKeys = documentSignals(document)
+  const requirementKeys = requirementSignals(requirement)
+  return requirementKeys.some((requirementKey) =>
+    documentKeys.some((documentKey) =>
+      documentKey === requirementKey ||
+      documentKey.includes(requirementKey) ||
+      requirementKey.includes(documentKey),
+    ),
+  )
+}
+
+function documentHasFile(document = {}) {
+  return Boolean(firstPresent(
+    document?.url,
+    document?.fileUrl,
+    document?.file_url,
+    document?.publicUrl,
+    document?.public_url,
+    document?.signedUrl,
+    document?.signed_url,
+    document?.storagePath,
+    document?.storage_path,
+    document?.filePath,
+    document?.file_path,
+  ))
+}
+
+function normalizeSellerDocumentRow(document = {}, index = 0, overrides = {}) {
+  const status = firstPresent(
+    overrides.status,
+    document?.status,
+    document?.documentStatus,
+    document?.document_status,
+    documentHasFile(document) ? 'uploaded' : '',
+  )
+  return {
+    id: firstPresent(overrides.id, document?.id, document?.documentId, document?.document_id) || `seller-doc-${index}`,
+    label: overrides.label || normalizeDocumentLabel(document),
+    status: normalizeDocumentStatusLabel(status),
+    url: firstPresent(document?.url, document?.fileUrl, document?.file_url, document?.publicUrl, document?.public_url, document?.signedUrl, document?.signed_url),
+    original: overrides.original || document,
+  }
+}
+
 export function buildSellerDocuments({ listing = {}, documents = [] } = {}) {
   const existingDocs = [
     ...(Array.isArray(documents) ? documents : []),
     ...(Array.isArray(listing?.documents) ? listing.documents : []),
   ]
-  const rows = existingDocs.map((document, index) => ({
-    id: firstPresent(document?.id, document?.documentId, document?.document_id) || `seller-doc-${index}`,
-    label: normalizeDocumentLabel(document),
-    status: normalizeDocumentStatusLabel(firstPresent(document?.status, document?.documentStatus, document?.document_status) || 'uploaded'),
-    url: firstPresent(document?.url, document?.fileUrl, document?.file_url, document?.publicUrl, document?.public_url),
-    original: document,
-  }))
+  const activeRequirements = (Array.isArray(listing?.documentRequirements) ? listing.documentRequirements : [])
+    .filter(requirementIsActive)
+  if (activeRequirements.length) {
+    const matchedIndexes = new Set()
+    const requirementRows = activeRequirements.map((requirement, index) => {
+      const matchIndex = existingDocs.findIndex((document) => documentMatchesRequirement(document, requirement))
+      const match = matchIndex >= 0 ? existingDocs[matchIndex] : null
+      if (matchIndex >= 0) matchedIndexes.add(matchIndex)
+      return match
+        ? normalizeSellerDocumentRow(match, index, {
+          id: firstPresent(requirement?.id, requirement?.requirementId, requirement?.requirement_id, match?.id) || `seller-requirement-${index}`,
+          label: normalizeRequirementLabel(requirement),
+          original: { requirement, document: match },
+        })
+        : {
+          id: firstPresent(requirement?.id, requirement?.requirementId, requirement?.requirement_id) || `seller-requirement-${index}`,
+          label: normalizeRequirementLabel(requirement),
+          status: 'Outstanding',
+          url: '',
+          original: { requirement, document: null },
+        }
+    })
+    const extraRows = existingDocs
+      .filter((_, index) => !matchedIndexes.has(index))
+      .map((document, index) => normalizeSellerDocumentRow(document, index + requirementRows.length))
+    return [...requirementRows, ...extraRows]
+  }
+
+  const rows = existingDocs.map((document, index) => normalizeSellerDocumentRow(document, index))
   const mandateUrl = firstPresent(listing?.mandateUrl, listing?.mandate?.documentUrl, listing?.mandate?.signedUrl, listing?.signedMandateUrl)
   if (mandateUrl && !rows.some((row) => normalizeKey(row.label).includes('mandate'))) {
     rows.push({ id: 'mandate-document', label: 'Mandate', status: labelMandate(normalizeKey(listing?.mandateStatus || listing?.mandate?.status)), url: mandateUrl, original: listing?.mandate || {} })

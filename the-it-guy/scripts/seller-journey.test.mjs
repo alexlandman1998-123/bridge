@@ -89,6 +89,53 @@ const baseLead = {
 }
 
 {
+  const journey = buildSellerJourney({
+    lead: { ...baseLead, listingId: 'listing-docs-1' },
+    listing: {
+      id: 'listing-docs-1',
+      originatingCrmLeadId: 'lead-1',
+      listingStatus: 'seller_lead',
+      mandateStatus: 'signed',
+      documentRequirements: [
+        { id: 'req-id', requirement_key: 'seller_id_document', requirement_name: 'Seller ID Document', status: 'required', is_required: true },
+        { id: 'req-rates', requirement_key: 'rates_account', requirement_name: 'Rates Account', status: 'required', is_required: true },
+      ],
+      documents: [
+        { id: 'doc-id', requirement_id: 'req-id', document_type: 'seller_id_document', status: 'uploaded', storage_path: 'private-listings/listing-docs-1/id.pdf' },
+        { id: 'doc-rates', canonical_requirement_instance_id: 'canonical-rates', document_type: 'rates_account', status: 'approved', file_url: '/rates.pdf' },
+      ],
+    },
+    documents: [],
+  })
+  assert.equal(journey.documents.length, 2)
+  assert.equal(journey.documentsOutstanding, 0)
+  assert.equal(journey.documents.find((item) => item.label === 'Seller ID Document').status, 'Uploaded')
+  assert.equal(journey.documents.find((item) => item.label === 'Rates Account').status, 'Approved')
+}
+
+{
+  const journey = buildSellerJourney({
+    lead: { ...baseLead, listingId: 'listing-docs-2' },
+    listing: {
+      id: 'listing-docs-2',
+      originatingCrmLeadId: 'lead-1',
+      listingStatus: 'seller_lead',
+      documentRequirements: [
+        { id: 'req-title', requirement_key: 'title_deed', requirement_name: 'Title Deed', status: 'required', is_required: true },
+        { id: 'req-poa', requirement_key: 'proof_of_address', requirement_name: 'Proof Of Address', status: 'required', is_required: true },
+      ],
+      documents: [
+        { id: 'doc-title', document_type: 'title_deed', status: 'uploaded', file_url: '/title.pdf' },
+      ],
+    },
+  })
+  assert.equal(journey.documents.length, 2)
+  assert.equal(journey.documentsOutstanding, 1)
+  assert.equal(journey.documents.find((item) => item.label === 'Title Deed').status, 'Uploaded')
+  assert.equal(journey.documents.find((item) => item.label === 'Proof Of Address').status, 'Outstanding')
+}
+
+{
   const metrics = getSellerJourneyMetrics({
     leads: [
       baseLead,

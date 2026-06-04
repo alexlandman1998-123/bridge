@@ -14,6 +14,7 @@ import { listLeadPropertyShares, listLeadSavedSearches } from './leadPropertySha
 import { listRecommendations } from './leadRecommendationService'
 import { buildRequirementSummary, listLeadRequirements } from './leadRequirementService'
 import { getSuggestionsForLead } from './leadSuggestionService'
+import { getPrivateListing } from './privateListingService'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -381,6 +382,21 @@ async function safeReadPrivateListings(organisationId = '') {
   return Array.isArray(data) ? data : []
 }
 
+async function safeReadHydratedPrivateListing(listingId = '') {
+  if (!isSupabaseConfigured || !supabase) return null
+  if (!isUuidLike(listingId)) return null
+  try {
+    return await getPrivateListing(listingId, { includeRequirementsAndDocuments: true })
+  } catch (error) {
+    if (isRecoverableReadError(error, 'private_listings') || isRecoverableReadError(error, 'private_listing_documents')) return null
+    throw error
+  }
+}
+
+function getNormalizedListingId(row = {}) {
+  return normalizeText(row?.id || row?.listingId || row?.listing_id || row?.privateListingId || row?.private_listing_id)
+}
+
 async function safeReadLeadListingInterests(organisationId = '') {
   if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) return []
   const { data, error } = await supabase
@@ -569,6 +585,17 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     listLeadAssignmentHistory({ organisationId, leadId: context.leadId }).catch(() => []),
     safeReadLeadOwnershipRows(organisationId),
   ])
+  const normalizedListings = listings.map(normalizeListing)
+  const linkedListing = normalizedListings.find((listing) => matchesLeadContext(listing, context)) || null
+  const hydratedLinkedListing = await safeReadHydratedPrivateListing(context.listingId || linkedListing?.id || linkedListing?.listingId)
+  const hydratedListing = hydratedLinkedListing ? normalizeListing(hydratedLinkedListing) : null
+  const hydratedListingId = getNormalizedListingId(hydratedListing)
+  const workspaceListings = normalizedListings
+    .map((listing) => (hydratedListingId && getNormalizedListingId(listing) === hydratedListingId ? hydratedListing : listing))
+    .filter((listing) => matchesLeadContext(listing, context))
+  if (hydratedListing && !workspaceListings.some((listing) => getNormalizedListingId(listing) === hydratedListingId)) {
+    workspaceListings.push(hydratedListing)
+  }
   const rows = buildAgentLeadRows({
     leads: enrichLeadsWithOwnership(workspace.leads, ownershipRows),
     contacts: workspace.contacts,
@@ -577,7 +604,7 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     appointments,
     offers,
     transactions,
-    listings,
+    listings: workspaceListings,
     listingInterests,
     requirements,
     communications,
@@ -595,7 +622,7 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     appointments,
     offers: offers.map(normalizeOffer),
     transactions: transactions.map(normalizeTransaction).filter((transaction) => matchesLeadContext(transaction, context)),
-    listings: listings.map(normalizeListing).filter((listing) => matchesLeadContext(listing, context)),
+    listings: workspaceListings,
     listingInterests,
     requirements,
     communications,
