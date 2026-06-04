@@ -277,6 +277,8 @@ function HeaderBar({ onLogout, user }) {
       location.pathname === '/bond/branch-operations' ||
       location.pathname === '/bond/regional-operations' ||
       location.pathname === '/bond/hq-command-centre' ||
+      location.pathname === '/bond/banks' ||
+      location.pathname.startsWith('/bond/banks/') ||
       location.pathname === '/bond/organisation' ||
       location.pathname.startsWith('/bond/organisation/') ||
       location.pathname === '/bond/tasks' ||

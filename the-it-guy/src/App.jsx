@@ -105,6 +105,7 @@ const BondConsultantPerformancePage = lazy(() => import('./pages/bond/BondConsul
 const BondBranchOperationsPage = lazy(() => import('./pages/bond/BondBranchOperationsPage'))
 const BondRegionalOperationsPage = lazy(() => import('./pages/bond/BondRegionalOperationsPage'))
 const BondHQCommandCentrePage = lazy(() => import('./pages/bond/BondHQCommandCentrePage'))
+const BondBankRelationshipsPage = lazy(() => import('./pages/bond/BondBankRelationshipsPage'))
 const CommercialLayout = lazy(() => import('./modules/commercial/components/CommercialLayout'))
 const CommercialActivityPage = lazy(() => import('./modules/commercial/pages/CommercialActivityPage'))
 const CommercialBrokerPerformancePage = lazy(() => import('./modules/commercial/pages/CommercialBrokerPerformancePage'))
@@ -1714,6 +1715,26 @@ function AppRoutes() {
                   <RoleRoute allowedRoles={['bond_originator']}>
                     <AppErrorBoundary scope="bond-hq-command-centre" title="HQ command centre failed to load">
                       <BondHQCommandCentrePage />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/banks"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <AppErrorBoundary scope="bond-bank-relationships" title="Bank relationships failed to load">
+                      <BondBankRelationshipsPage />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/banks/:bankId"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <AppErrorBoundary scope="bond-bank-workspace" title="Bank workspace failed to load">
+                      <BondBankRelationshipsPage />
                     </AppErrorBoundary>
                   </RoleRoute>
                 }

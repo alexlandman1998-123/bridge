@@ -26,6 +26,7 @@ import {
   generateExecutiveReport,
   getHQCommandCentreDashboard,
 } from '../../services/bondHQCommandCentreService'
+import { getBankDashboard } from '../../services/bondBankRelationshipService'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -174,6 +175,13 @@ export default function BondHQCommandCentrePage() {
     }
   }, [workspaceContext, options])
   const dashboard = dashboardState.dashboard
+  const bankState = useMemo(() => {
+    try {
+      return { dashboard: getBankDashboard(workspaceContext, options), error: '' }
+    } catch (error) {
+      return { dashboard: null, error: String(error?.message || 'Could not load bank intelligence.') }
+    }
+  }, [workspaceContext, options])
 
   function refresh() {
     setNotice('HQ Command Centre refreshed.')
@@ -490,6 +498,28 @@ export default function BondHQCommandCentrePage() {
             />
           </Section>
         </div>
+
+        {bankState.dashboard ? (
+          <Section title="Executive Bank Dashboard" icon={Banknote}>
+            <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <MiniStat label="Bank Health" value={Math.round(bankState.dashboard.scorecards.reduce((sum, row) => sum + Number(row.healthScore || 0), 0) / (bankState.dashboard.scorecards.length || 1))} />
+              <MiniStat label="Bank Escalations" value={bankState.dashboard.summary.escalations} />
+              <MiniStat label="Bank Approval Trend" value={formatPercent(bankState.dashboard.summary.approvalRate)} />
+              <MiniStat label="Active Banks" value={bankState.dashboard.summary.activeBanks} />
+            </div>
+            <DataTable
+              rows={bankState.dashboard.rankings.bestOverall.slice(0, 5)}
+              columns={[
+                { key: 'bankName', label: 'Bank' },
+                { key: 'healthScore', label: 'Health' },
+                { key: 'approvalRate', label: 'Approval Rate', render: (row) => formatPercent(row.approvalRate) },
+                { key: 'averageResponseTime', label: 'Response', render: (row) => formatHours(row.averageResponseTime) },
+                { key: 'escalations', label: 'Escalations' },
+                { key: 'relationshipHealth', label: 'Status', render: (row) => <StatusPill status={row.relationshipHealth} /> },
+              ]}
+            />
+          </Section>
+        ) : null}
 
         <div className="grid gap-6 xl:grid-cols-2">
           <Section title="Executive Forecast" icon={LineChart}>

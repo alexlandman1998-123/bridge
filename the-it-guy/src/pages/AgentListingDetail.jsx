@@ -2671,57 +2671,52 @@ function AgentListingDetail() {
     }
   }, [listingLeads, listingRecord, marketingDraft.price, metrics, offerRows.length, offerSummary.highest, viewings])
 
-  const listingFunnel = useMemo(() => {
-    const steps = [
-      { key: 'views', label: 'Views', value: listingPerformance.totalViews, icon: Eye },
-      { key: 'leads', label: 'Leads', value: listingPerformance.leadCount, icon: Users },
-      { key: 'viewings', label: 'Viewings', value: listingPerformance.scheduledViewings, icon: CalendarDays },
-      { key: 'offers', label: 'Offers', value: listingPerformance.offerCount, icon: HandCoins },
-      { key: 'sale', label: 'Sale', value: listingPerformance.acceptedSales, icon: CheckCircle2 },
-    ]
+  const listingConversionMetrics = useMemo(() => {
     const rate = (from, to) => (from ? (to / from) * 100 : 0)
-    return {
-      steps,
-      rates: [
-        { label: 'Views to Leads', value: rate(listingPerformance.totalViews, listingPerformance.leadCount) },
-        { label: 'Leads to Viewings', value: rate(listingPerformance.leadCount, listingPerformance.scheduledViewings) },
-        { label: 'Viewings to Offers', value: rate(listingPerformance.scheduledViewings, listingPerformance.offerCount) },
-        { label: 'Offers to Sale', value: rate(listingPerformance.offerCount, listingPerformance.acceptedSales) },
-        { label: 'Overall Conversion', value: rate(listingPerformance.totalViews, listingPerformance.acceptedSales) },
-      ],
-    }
+    return [
+      {
+        label: 'Lead Conversion',
+        value: rate(listingPerformance.totalViews, listingPerformance.leadCount),
+        meta: 'Leads from views',
+      },
+      {
+        label: 'Viewing Conversion',
+        value: rate(listingPerformance.leadCount, listingPerformance.scheduledViewings),
+        meta: 'Viewings from leads',
+      },
+      {
+        label: 'Offer Conversion',
+        value: rate(listingPerformance.scheduledViewings, listingPerformance.offerCount),
+        meta: 'Offers from viewings',
+      },
+    ]
   }, [listingPerformance])
 
-  const leadSourceAnalytics = useMemo(() => {
-    const knownSources = ['Property24', 'Private Property', 'Facebook', 'Referral', 'Bridge', 'Website', 'WhatsApp', 'Manual Capture', 'Social Media', 'Google Ads']
-    const normalizeSource = (value) => {
-      const source = String(value || '').trim().toLowerCase()
-      if (source.includes('property24')) return 'Property24'
-      if (source.includes('private')) return 'Private Property'
-      if (source.includes('facebook')) return 'Facebook'
-      if (source.includes('referral')) return 'Referral'
-      if (source.includes('bridge')) return 'Bridge'
-      if (source.includes('website') || source.includes('web')) return 'Website'
-      if (source.includes('whatsapp')) return 'WhatsApp'
-      if (source.includes('google')) return 'Google Ads'
-      if (source.includes('social')) return 'Social Media'
-      return source ? formatFieldLabel(source) : 'Manual Capture'
+  const offerPriceOverview = useMemo(() => {
+    const askingPrice = Number(marketingDraft.price || listingRecord?.askingPrice || 0) || 0
+    const timestampFor = (offer) => {
+      const timestamp = new Date(offer?.offerDate || offer?.submittedAt || offer?.updatedAt || offer?.updated_at || offer?.createdAt || offer?.created_at || 0).getTime()
+      return Number.isFinite(timestamp) ? timestamp : 0
     }
-    const counts = new Map(knownSources.map((source) => [source, 0]))
-    for (const lead of listingLeads) {
-      const source = normalizeSource(lead?.source || lead?.leadSource || lead?.channel)
-      counts.set(source, (counts.get(source) || 0) + 1)
+    const latestOffer = [...offerRows].sort((left, right) => timestampFor(right) - timestampFor(left))[0] || null
+    const latestOfferAmount = Number(latestOffer?.offerPrice || 0) || 0
+    const highestOffer = listingPerformance.highestOffer || 0
+    const averageOffer = listingPerformance.averageOffer || 0
+    const comparisonBase = Math.max(askingPrice, highestOffer, averageOffer, latestOfferAmount, 1)
+    const differenceToAsking = highestOffer && askingPrice ? highestOffer - askingPrice : 0
+    return {
+      askingPrice,
+      highestOffer,
+      latestOffer: latestOfferAmount,
+      averageOffer,
+      offerCount: listingPerformance.offerCount,
+      differenceToAsking,
+      askingFill: (askingPrice / comparisonBase) * 100,
+      highestFill: (highestOffer / comparisonBase) * 100,
+      averageFill: (averageOffer / comparisonBase) * 100,
+      latestFill: (latestOfferAmount / comparisonBase) * 100,
     }
-    const total = Array.from(counts.values()).reduce((sum, value) => sum + value, 0)
-    return Array.from(counts.entries())
-      .filter(([, value]) => value > 0)
-      .map(([label, value], index) => ({
-        label,
-        value,
-        share: total ? Math.round((value / total) * 100) : 0,
-        color: ['#1f4f78', '#2f8f6b', '#1769d1', '#c58b35', '#7c5cc4'][index % 5],
-      }))
-  }, [listingLeads])
+  }, [listingPerformance, listingRecord?.askingPrice, marketingDraft.price, offerRows])
 
   const listingIntelligenceActivity = useMemo(() => {
     const items = []
@@ -2751,6 +2746,12 @@ function AgentListingDetail() {
 
   const sellerCommunicationMetrics = useMemo(() => {
     const lastOfferShare = offerRows.find((offer) => offer?.sentToSellerAt || normalizeOfferWorkflowStatus(offer?.status) === OFFER_WORKFLOW_STATUS.SELLER_REVIEW)
+    const portalViewedAt = firstDraftValue(
+      listingRecord?.sellerOnboarding?.lastViewedAt,
+      listingRecord?.sellerOnboarding?.viewedAt,
+      listingRecord?.sellerOnboarding?.portalViewedAt,
+      listingRecord?.sellerOnboarding?.submittedAt,
+    )
     const lastUpdate = firstDraftValue(
       lastOfferShare?.sentToSellerAt,
       listingRecord?.sellerReport?.lastSentAt,
@@ -2758,13 +2759,30 @@ function AgentListingDetail() {
       mandateWorkspace.signedDate,
       listingRecord?.updatedAt,
     )
+    const unreadMessages = Number(
+      listingRecord?.sellerMessages?.unreadCount ||
+        listingRecord?.sellerCommunication?.unreadCount ||
+        listingRecord?.unreadSellerMessages ||
+        0,
+    ) || 0
+    const uploadedDocuments = sellerDocumentTrackerRows.filter((document) => document.uploaded).length ||
+      (Array.isArray(listingRecord?.documents) ? listingRecord.documents.length : 0)
     return {
       lastUpdate,
+      portalViewedAt,
+      lastLogin: firstDraftValue(
+        listingRecord?.sellerOnboarding?.lastLoginAt,
+        listingRecord?.sellerOnboarding?.last_login_at,
+        listingRecord?.sellerOnboarding?.lastAccessedAt,
+        portalViewedAt,
+      ),
+      unreadMessages,
+      uploadedDocuments,
       offersShared: offerRows.filter((offer) => offer?.sentToSellerAt || [OFFER_WORKFLOW_STATUS.SELLER_REVIEW, OFFER_WORKFLOW_STATUS.SELLER_VIEWED, OFFER_WORKFLOW_STATUS.ACCEPTED].includes(normalizeOfferWorkflowStatus(offer?.status))).length,
       viewingsShared: viewings.filter((item) => [VIEWING_STATUS.CONFIRMED, VIEWING_STATUS.COMPLETED].includes(String(item?.status || '').trim().toLowerCase())).length,
       reportsSent: Number(listingRecord?.sellerReport?.sentCount || listingRecord?.sellerReportsSent || 0) || 0,
     }
-  }, [listingRecord, mandateWorkspace.signedDate, offerRows, viewings])
+  }, [listingRecord, mandateWorkspace.signedDate, offerRows, sellerDocumentTrackerRows, viewings])
 
   function updateMarketingDraft(key, value) {
     setMarketingDraft((previous) => ({ ...previous, [key]: value }))
@@ -4943,170 +4961,76 @@ function AgentListingDetail() {
           </nav>
 
           {sellerWorkspaceTab === 'overview' ? (
-            <section className="space-y-5">
-              <div className="grid gap-5 min-[1680px]:grid-cols-[minmax(0,1fr)_minmax(400px,440px)]">
-                <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h2 className="text-base font-semibold text-[#142132]">Listing Summary</h2>
-                      <p className="mt-1 text-sm text-[#607387]">Core listing facts and mandate reference.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => navigate('/listings')}
-                      className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#5f7894] hover:text-[#1f4f78]"
-                    >
-                      <ArrowLeft size={13} />
-                      Back
-                    </button>
-                  </div>
-                  <div className="mt-5 grid gap-x-8 gap-y-2 min-[820px]:grid-cols-2">
-                    <CompactSnapshotRow label="Property Type" value={marketingDraft.propertyType || listingRecord.propertyType || 'Not captured'} />
-                    <CompactSnapshotRow label="Mandate Status" value={mandateWorkspace.label} />
-                    <CompactSnapshotRow label="Pipeline Value" value={formatCurrency(marketingDraft.price || listingRecord.askingPrice)} />
-                    <CompactSnapshotRow label="Signed Date" value={formatDate(mandateWorkspace.signedDate)} />
-                    <CompactSnapshotRow label="Listing ID" value={marketingDraft.listingCode || listingRecord.listingReference || listingRecord.id} />
-                    <CompactSnapshotRow label="Expiry Date" value={formatDate(mandateWorkspace.expiryDate)} />
-                    <CompactSnapshotRow label="Assigned Agent" value={listingRecord.assignedAgentName || listingRecord.assignedAgent || listingRecord.assignedAgentEmail || 'Unassigned'} />
-                    <CompactSnapshotRow label="Last Updated" value={formatDate(mandateWorkspace.lastUpdated)} />
-                  </div>
-                </article>
-
-                <article className="flex flex-col rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Mandate Status</p>
-                      <StatusPill status={mandateWorkspace.isSigned ? 'done' : mandateWorkspace.isExpired ? 'missing' : 'pending'} label={mandateWorkspace.label} />
-                    </div>
-                    <FileText className="h-5 w-5 text-[#41627f]" />
-                  </div>
-                  <div className="mt-4">
-                    <CompactSnapshotRow label="Signed Date" value={formatDate(mandateWorkspace.signedDate)} />
-                    <CompactSnapshotRow label="Expiry Date" value={formatDate(mandateWorkspace.expiryDate)} />
-                    <CompactSnapshotRow
-                      label="Days Until Expiry"
-                      value={
-                        mandateWorkspace.daysUntilExpiry === null
-                          ? 'Not captured'
-                          : mandateWorkspace.daysUntilExpiry < 0
-                            ? `${Math.abs(mandateWorkspace.daysUntilExpiry)} days expired`
-                            : `${mandateWorkspace.daysUntilExpiry} days`
-                      }
-                    />
-                    <CompactSnapshotRow label="Last Updated" value={formatDate(mandateWorkspace.lastUpdated)} />
-                  </div>
-                  <div className="mt-auto grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2 pt-5">
-                    {mandateWorkspace.signedUrl ? (
-                      <a href={mandateWorkspace.signedUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center rounded-lg bg-[#123955] px-3 py-2 text-center text-sm font-semibold leading-5 text-white shadow-[0_10px_22px_rgba(18,57,85,0.14)]">
-                        Download Mandate
-                      </a>
-                    ) : (
-                      <Button size="sm" disabled title="No signed mandate file is linked yet.">Download Mandate</Button>
-                    )}
-                    {mandateWorkspace.viewUrl ? (
-                      <a href={mandateWorkspace.viewUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center rounded-lg border border-[#dbe6f2] bg-white px-3 py-2 text-center text-sm font-semibold leading-5 text-[#2f4862]">
-                        View Mandate
-                      </a>
-                    ) : (
-                      <Button size="sm" variant="secondary" disabled>View Mandate</Button>
-                    )}
-                    <Button size="sm" variant="secondary" onClick={() => void handleResendSellerClientPortalLink()} disabled={resendingSellerPortalLink}>
-                      {resendingSellerPortalLink ? 'Sending...' : 'Resend Portal Link'}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={mandateWorkspace.isSigned}
-                      onClick={() => setDetailMessage('Regenerate Mandate is available from the mandate generation workflow.')}
-                      title={mandateWorkspace.isSigned ? 'A signed mandate already exists, so regeneration is disabled.' : 'Regenerate the mandate from the mandate generation workflow.'}
-                    >
-                      Regenerate Mandate
-                    </Button>
-                  </div>
-                </article>
-              </div>
-
+            <section className="space-y-6">
               <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                <h3 className="text-base font-semibold text-[#142132]">Key Information</h3>
-                <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-3">
-                  {keyInformationItems.map((item) => (
-                    <InfoTile key={item.label} icon={item.icon} label={item.label} value={item.value} status={item.status} />
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <h2 className="text-base font-semibold text-[#142132]">Listing Performance</h2>
+                    <p className="mt-1 text-sm text-[#607387]">A focused read on buyer attention, conversion, and market movement.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/listings')}
+                    className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#5f7894] hover:text-[#1f4f78]"
+                  >
+                    <ArrowLeft size={13} />
+                    Back
+                  </button>
+                </div>
+
+                <div className="mt-5 grid items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  {[
+                    { label: 'Views', value: formatCompactNumber(listingPerformance.totalViews), meta: `${formatCompactNumber(listingPerformance.portalViews)} portal / ${formatCompactNumber(listingPerformance.bridgeViews)} Bridge`, icon: Eye },
+                    { label: 'Leads', value: formatCompactNumber(listingPerformance.leadCount), meta: `${formatCompactNumber(listingPerformance.newThisWeek)} new this week`, icon: Users },
+                    { label: 'Viewings', value: formatCompactNumber(listingPerformance.scheduledViewings), meta: `${formatCompactNumber(listingPerformance.completedViewings)} completed`, icon: CalendarDays },
+                    { label: 'Offers', value: formatCompactNumber(listingPerformance.offerCount), meta: `${formatCompactNumber(metrics.pendingOffers)} active / pending`, icon: HandCoins },
+                    { label: 'Days Mkt', value: formatCompactNumber(listingPerformance.daysOnMarket), meta: `${formatCompactNumber(listingPerformance.areaAverageDays)} day area avg`, icon: BarChart3 },
+                  ].map((card) => {
+                    const Icon = card.icon
+                    return (
+                      <div key={card.label} className="flex h-full min-h-[128px] flex-col justify-between rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{card.label}</p>
+                          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[11px] bg-[#eef5fb] text-[#1f4f78]">
+                            <Icon size={15} />
+                          </span>
+                        </div>
+                        <p className="mt-4 text-2xl font-semibold text-[#10243a]">{card.value}</p>
+                        <p className="mt-2 text-sm leading-5 text-[#607387]">{card.meta}</p>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <div className="mt-5 grid items-stretch gap-3 md:grid-cols-3">
+                  {listingConversionMetrics.map((metric) => (
+                    <div key={metric.label} className="flex min-h-[86px] items-center justify-between gap-4 rounded-[16px] border border-[#e5edf6] bg-white px-4 py-3">
+                      <div>
+                        <p className="text-sm font-semibold text-[#243d56]">{metric.label}</p>
+                        <p className="mt-1 text-xs font-medium text-[#607387]">{metric.meta}</p>
+                      </div>
+                      <p className="shrink-0 text-xl font-semibold text-[#1f4f78]">{formatPercentValue(metric.value)}</p>
+                    </div>
                   ))}
                 </div>
               </article>
 
               <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                <h3 className="text-base font-semibold text-[#142132]">Listing Performance</h3>
-                <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,190px),1fr))] gap-3">
-                  {[
-                    {
-                      label: 'Property Views',
-                      value: formatCompactNumber(listingPerformance.totalViews),
-                      icon: Eye,
-                      rows: [
-                        ['Portal Views', formatCompactNumber(listingPerformance.portalViews)],
-                        ['Bridge Views', formatCompactNumber(listingPerformance.bridgeViews)],
-                      ],
-                    },
-                    {
-                      label: 'Leads',
-                      value: formatCompactNumber(listingPerformance.leadCount),
-                      icon: Users,
-                      rows: [
-                        ['New this week', formatCompactNumber(listingPerformance.newThisWeek)],
-                        ['Qualified', formatCompactNumber(listingPerformance.qualifiedLeads)],
-                        ['Converted', formatCompactNumber(listingPerformance.convertedLeads)],
-                      ],
-                    },
-                    {
-                      label: 'Viewings',
-                      value: formatCompactNumber(listingPerformance.scheduledViewings),
-                      icon: CalendarDays,
-                      rows: [
-                        ['Completed', formatCompactNumber(listingPerformance.completedViewings)],
-                        ['Upcoming', formatCompactNumber(listingPerformance.upcomingViewings)],
-                        ['No Shows', formatCompactNumber(listingPerformance.noShows)],
-                      ],
-                    },
-                    {
-                      label: 'Offers',
-                      value: formatCompactNumber(listingPerformance.offerCount),
-                      icon: HandCoins,
-                      rows: [
-                        ['Highest Offer', listingPerformance.highestOffer ? formatMoneyValue(listingPerformance.highestOffer) : '—'],
-                        ['Average Offer', listingPerformance.averageOffer ? formatMoneyValue(listingPerformance.averageOffer) : '—'],
-                        ['Offer to Ask Ratio', formatPercentValue(listingPerformance.offerToAskRatio)],
-                      ],
-                    },
-                    {
-                      label: 'Days on Market',
-                      value: formatCompactNumber(listingPerformance.daysOnMarket),
-                      icon: BarChart3,
-                      rows: [
-                        ['Area Average', `${formatCompactNumber(listingPerformance.areaAverageDays)} days`],
-                        ['Performance', listingPerformance.daysPerformance >= 0 ? `${formatPercentValue(listingPerformance.daysPerformance, 0)} faster` : `${formatPercentValue(Math.abs(listingPerformance.daysPerformance), 0)} slower`],
-                      ],
-                    },
-                  ].map((card) => {
-                    const Icon = card.icon
+                <h3 className="text-base font-semibold text-[#142132]">Key Information</h3>
+                <div className="mt-5 grid gap-x-7 md:grid-cols-2 xl:grid-cols-4">
+                  {keyInformationItems.map((item) => {
+                    const Icon = item.icon
                     return (
-                      <div key={card.label} className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-[#142132]">{card.label}</p>
-                            <p className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-[#10243a]">{card.value}</p>
+                      <div key={item.label} className="flex min-h-[82px] items-start gap-3 border-b border-[#e7edf5] py-3">
+                        <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-[11px] bg-[#eef5fb] text-[#1f4f78]">
+                          <Icon size={15} />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">{item.label}</p>
+                            {item.status ? <StatusPill status={item.status} /> : null}
                           </div>
-                          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#eef5fb] text-[#1769d1]">
-                            <Icon size={18} />
-                          </span>
-                        </div>
-                        <div className="mt-4 space-y-2 border-t border-[#e5edf6] pt-3">
-                          {card.rows.map(([label, value]) => (
-                            <div key={label} className="flex items-center justify-between gap-3 text-xs">
-                              <span className="text-[#607387]">{label}</span>
-                              <span className="text-right font-semibold text-[#142132]">{value}</span>
-                            </div>
-                          ))}
+                          <p className="mt-1 break-words text-sm font-semibold leading-5 text-[#243d56]">{item.value || 'Not captured'}</p>
                         </div>
                       </div>
                     )
@@ -5114,90 +5038,88 @@ function AgentListingDetail() {
                 </div>
               </article>
 
-              <section className="grid gap-5 min-[1280px]:grid-cols-[1.15fr_0.85fr] min-[1540px]:grid-cols-[1.2fr_0.9fr_0.9fr]">
-                <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                  <h3 className="text-base font-semibold text-[#142132]">Listing Funnel</h3>
-                  <p className="mt-1 text-sm text-[#607387]">Track performance from views to sale.</p>
-                  <div className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(92px,1fr))] gap-3">
-                    {listingFunnel.steps.map((step, index) => {
-                      const Icon = step.icon
-                      return (
-                        <div key={step.key} className="relative rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-3 text-center">
-                          {index > 0 ? <span className="absolute -left-3 top-1/2 hidden -translate-y-1/2 text-[#91a2b5] min-[900px]:block">→</span> : null}
-                          <p className="text-xs font-semibold text-[#607387]">{step.label}</p>
-                          <span className="mx-auto mt-3 grid h-9 w-9 place-items-center rounded-full bg-[#eef5fb] text-[#1769d1]"><Icon size={16} /></span>
-                          <p className="mt-3 text-lg font-semibold text-[#10243a]">{formatCompactNumber(step.value)}</p>
-                        </div>
-                      )
-                    })}
+              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold text-[#142132]">Offer vs Asking Price</h3>
+                    <p className="mt-1 text-sm text-[#607387]">Offer quality against the seller's current asking position.</p>
                   </div>
-                  <div className="mt-5 grid gap-2 sm:grid-cols-2">
-                    {listingFunnel.rates.map((rate) => (
-                      <div key={rate.label} className="flex items-center justify-between gap-3 rounded-[12px] bg-[#f8fbfd] px-3 py-2 text-xs">
-                        <span className="font-semibold text-[#607387]">{rate.label}</span>
-                        <span className="font-semibold text-[#142132]">{formatPercentValue(rate.value, rate.value < 1 ? 2 : 1)}</span>
+                  <StatusPill status={offerPriceOverview.offerCount ? 'done' : 'pending'} label={`${formatCompactNumber(offerPriceOverview.offerCount)} offer${offerPriceOverview.offerCount === 1 ? '' : 's'}`} />
+                </div>
+
+                <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+                  <div className="space-y-4">
+                    {[
+                      { label: 'Asking Price', value: formatCurrency(offerPriceOverview.askingPrice), fill: offerPriceOverview.askingFill, color: '#1f4f78' },
+                      { label: 'Highest Offer', value: offerPriceOverview.highestOffer ? formatMoneyValue(offerPriceOverview.highestOffer) : '—', fill: offerPriceOverview.highestFill, color: '#2f8f6b' },
+                      { label: 'Latest Offer', value: offerPriceOverview.latestOffer ? formatMoneyValue(offerPriceOverview.latestOffer) : '—', fill: offerPriceOverview.latestFill, color: '#1769d1' },
+                      { label: 'Average Offer', value: offerPriceOverview.averageOffer ? formatMoneyValue(offerPriceOverview.averageOffer) : '—', fill: offerPriceOverview.averageFill, color: '#c58b35' },
+                    ].map((row) => (
+                      <div key={row.label}>
+                        <div className="flex items-center justify-between gap-4 text-sm">
+                          <span className="font-semibold text-[#425970]">{row.label}</span>
+                          <span className="text-right font-semibold text-[#142132]">{row.value}</span>
+                        </div>
+                        <div className="mt-2 h-3 overflow-hidden rounded-full bg-[#e8eef5]">
+                          <div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, row.fill))}%`, backgroundColor: row.color }} />
+                        </div>
                       </div>
                     ))}
                   </div>
-                </article>
 
-                <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                  <h3 className="text-base font-semibold text-[#142132]">Lead Sources</h3>
-                  <p className="mt-1 text-sm text-[#607387]">Percentage breakdown by channel.</p>
-                  {leadSourceAnalytics.length ? (
-                    <div className="mt-5 flex flex-col gap-5 sm:flex-row sm:items-center">
-                      <div className="relative mx-auto h-32 w-32 shrink-0 rounded-full" style={buildDonutStyle(leadSourceAnalytics)}>
-                        <div className="absolute inset-7 grid place-items-center rounded-full bg-white text-center shadow-inner">
-                          <span className="text-lg font-semibold text-[#142132]">{formatCompactNumber(listingPerformance.leadCount)}</span>
-                          <span className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Leads</span>
-                        </div>
+                  <div className="grid items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                    {[
+                      { label: 'Highest Offer', value: offerPriceOverview.highestOffer ? formatMoneyValue(offerPriceOverview.highestOffer) : '—' },
+                      { label: 'Latest Offer', value: offerPriceOverview.latestOffer ? formatMoneyValue(offerPriceOverview.latestOffer) : '—' },
+                      { label: 'Average Offer', value: offerPriceOverview.averageOffer ? formatMoneyValue(offerPriceOverview.averageOffer) : '—' },
+                      {
+                        label: 'Difference to Asking',
+                        value: offerPriceOverview.offerCount && offerPriceOverview.askingPrice
+                          ? `${offerPriceOverview.differenceToAsking > 0 ? '+' : ''}${formatMoneyValue(offerPriceOverview.differenceToAsking)}`
+                          : '—',
+                      },
+                      { label: 'Offer Count', value: formatCompactNumber(offerPriceOverview.offerCount) },
+                    ].map((item) => (
+                      <div key={item.label} className="flex min-h-[62px] items-center justify-between gap-4 border-b border-[#e7edf5] py-2.5 last:border-b-0">
+                        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#8294aa]">{item.label}</span>
+                        <span className="text-right text-sm font-semibold text-[#142132]">{item.value}</span>
                       </div>
-                      <div className="min-w-0 flex-1 space-y-2">
-                        {leadSourceAnalytics.map((source) => (
-                          <div key={source.label} className="flex items-center justify-between gap-3 text-sm">
-                            <span className="inline-flex min-w-0 items-center gap-2 text-[#425970]">
-                              <i className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: source.color }} />
-                              <span className="truncate">{source.label}</span>
-                            </span>
-                            <span className="shrink-0 font-semibold text-[#142132]">{source.value} ({source.share}%)</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="mt-5 rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-5 text-sm text-[#607387]">
-                      No lead-source data captured yet.
-                    </div>
-                  )}
-                </article>
-
-                <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                  <h3 className="text-base font-semibold text-[#142132]">Offer vs Asking Price</h3>
-                  <p className="mt-1 text-sm text-[#607387]">Summary of all offers received.</p>
-                  <div className="mt-5 flex justify-center">
-                    <div className="grid h-36 w-36 place-items-center rounded-full" style={{ background: `conic-gradient(#2f8f6b ${Math.min(100, listingPerformance.offerToAskRatio) * 3.6}deg, #e5edf6 0deg)` }}>
-                      <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center">
-                        <span className="text-xl font-semibold text-[#142132]">{formatPercentValue(listingPerformance.offerToAskRatio)}</span>
-                        <span className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Offer Ratio</span>
-                      </div>
-                    </div>
+                    ))}
                   </div>
-                  <div className="mt-5">
-                    <CompactSnapshotRow label="Asking Price" value={formatCurrency(marketingDraft.price || listingRecord.askingPrice)} />
-                    <CompactSnapshotRow label="Highest Offer" value={listingPerformance.highestOffer ? formatMoneyValue(listingPerformance.highestOffer) : '—'} />
-                    <CompactSnapshotRow label="Average Offer" value={listingPerformance.averageOffer ? formatMoneyValue(listingPerformance.averageOffer) : '—'} />
+                </div>
+              </article>
+
+              <section className="grid items-stretch gap-6 min-[1100px]:grid-cols-2">
+                <article className="flex h-full flex-col rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                  <h3 className="text-base font-semibold text-[#142132]">Seller Communication</h3>
+                  <div className="mt-5 grid gap-x-6 sm:grid-cols-2">
+                    <CompactSnapshotRow label="Portal Viewed" value={sellerCommunicationMetrics.portalViewedAt ? formatDate(sellerCommunicationMetrics.portalViewedAt) : 'Not viewed'} />
+                    <CompactSnapshotRow label="Last Login" value={sellerCommunicationMetrics.lastLogin ? formatDate(sellerCommunicationMetrics.lastLogin) : 'No login yet'} />
+                    <CompactSnapshotRow label="Unread Messages" value={formatCompactNumber(sellerCommunicationMetrics.unreadMessages)} />
+                    <CompactSnapshotRow label="Documents Uploaded" value={formatCompactNumber(sellerCommunicationMetrics.uploadedDocuments)} />
+                  </div>
+                  <div className="mt-auto grid gap-2 pt-5 sm:grid-cols-2">
+                    {listingRecord?.sellerOnboarding?.link ? (
+                      <a href={listingRecord.sellerOnboarding.link} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 py-2 text-sm font-semibold text-[#1f4f78]">
+                        Open Seller Portal
+                        <ExternalLink size={14} />
+                      </a>
+                    ) : (
+                      <Button size="sm" variant="secondary" disabled>Open Seller Portal</Button>
+                    )}
+                    <Button size="sm" onClick={() => void handleResendSellerClientPortalLink()} disabled={resendingSellerPortalLink}>
+                      {resendingSellerPortalLink ? 'Sending...' : 'Resend Seller Link'}
+                    </Button>
                   </div>
                 </article>
-              </section>
 
-              <section className="grid gap-5 min-[1280px]:grid-cols-[1fr_0.8fr]">
-                <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                <article className="flex h-full flex-col rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
                   <h3 className="text-base font-semibold text-[#142132]">Recent Activity</h3>
                   <div className="mt-4 space-y-3">
                     {listingIntelligenceActivity.length ? listingIntelligenceActivity.map((item) => {
                       const Icon = item.icon || FolderKanban
                       return (
-                        <div key={`${item.title}-${item.timestamp}`} className="flex items-center gap-3 rounded-[14px] border border-[#e5edf6] bg-[#fbfdff] px-3 py-2.5">
+                        <div key={`${item.title}-${item.timestamp}`} className="flex items-center gap-3 border-b border-[#e7edf5] pb-3 last:border-b-0 last:pb-0">
                           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[11px] bg-[#eef5fb] text-[#1769d1]"><Icon size={15} /></span>
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-semibold text-[#243d56]">{item.title}</p>
@@ -5212,22 +5134,6 @@ function AgentListingDetail() {
                       </div>
                     )}
                   </div>
-                </article>
-
-                <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                  <h3 className="text-base font-semibold text-[#142132]">Seller Communication</h3>
-                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                    <FieldDisplay label="Last Seller Update" value={formatDate(sellerCommunicationMetrics.lastUpdate)} />
-                    <FieldDisplay label="Offers Shared" value={formatCompactNumber(sellerCommunicationMetrics.offersShared)} />
-                    <FieldDisplay label="Viewings Shared" value={formatCompactNumber(sellerCommunicationMetrics.viewingsShared)} />
-                    <FieldDisplay label="Activity Reports Sent" value={formatCompactNumber(sellerCommunicationMetrics.reportsSent)} />
-                  </div>
-                  {listingRecord?.sellerOnboarding?.link ? (
-                    <a href={listingRecord.sellerOnboarding.link} target="_blank" rel="noreferrer" className="mt-5 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 py-2 text-sm font-semibold text-[#1f4f78]">
-                      Open Seller Portal
-                      <ExternalLink size={14} />
-                    </a>
-                  ) : null}
                 </article>
               </section>
             </section>
