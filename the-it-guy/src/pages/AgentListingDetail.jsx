@@ -1119,6 +1119,15 @@ function AgentListingDetail() {
   const [marketingDraft, setMarketingDraft] = useState(() => buildPropertyDraft(null))
   const [externalLinkDraft, setExternalLinkDraft] = useState(() => createExternalLinkDraft())
   const [sellerWorkspaceTab, setSellerWorkspaceTab] = useState('overview')
+  const [commissionDraft, setCommissionDraft] = useState({
+    percentage: '',
+    amount: '',
+    vatHandling: '',
+    mandateTerms: '',
+    paymentResponsibility: '',
+    notes: '',
+  })
+  const [savingCommission, setSavingCommission] = useState(false)
   const [rolePlayersDraft, setRolePlayersDraft] = useState({
     attorney: 'Bridge Conveyancing',
     bondOriginator: 'Bridge Finance',
@@ -2737,6 +2746,37 @@ function AgentListingDetail() {
     }
   }, [listingRecord, marketingDraft.price, sellerFormData])
 
+  useEffect(() => {
+    setCommissionDraft({
+      percentage: commissionWorkspace.percentage ? String(commissionWorkspace.percentage) : '',
+      amount: commissionWorkspace.amount ? String(commissionWorkspace.amount) : '',
+      vatHandling: commissionWorkspace.vatHandling === 'Not captured' ? '' : commissionWorkspace.vatHandling,
+      mandateTerms: commissionWorkspace.mandateTerms || '',
+      paymentResponsibility: commissionWorkspace.paymentResponsibility || '',
+      notes: commissionWorkspace.notes || '',
+    })
+  }, [
+    commissionWorkspace.amount,
+    commissionWorkspace.mandateTerms,
+    commissionWorkspace.notes,
+    commissionWorkspace.paymentResponsibility,
+    commissionWorkspace.percentage,
+    commissionWorkspace.vatHandling,
+  ])
+
+  const commissionDraftPreview = useMemo(() => {
+    const percentage = Number(commissionDraft.percentage || 0) || 0
+    const amount = Number(commissionDraft.amount || 0) || 0
+    const price = Number(marketingDraft.price || listingRecord?.askingPrice || 0) || 0
+    const estimatedExVat = amount || (price && percentage ? (price * percentage) / 100 : 0)
+    const vatHandling = String(commissionDraft.vatHandling || '').trim().toLowerCase()
+    const vatIncluded = vatHandling.includes('incl') || vatHandling === 'yes' || vatHandling === 'inclusive'
+    return {
+      estimatedExVat,
+      estimatedInclVat: vatIncluded ? estimatedExVat : estimatedExVat ? estimatedExVat * 1.15 : 0,
+    }
+  }, [commissionDraft.amount, commissionDraft.percentage, commissionDraft.vatHandling, listingRecord?.askingPrice, marketingDraft.price])
+
   const mandateActivityItems = useMemo(() => {
     const items = []
     const add = (title, timestamp, copy, icon = FolderKanban) => {
@@ -3049,6 +3089,89 @@ function AgentListingDetail() {
 
   function updateMarketingDraft(key, value) {
     setMarketingDraft((previous) => ({ ...previous, [key]: value }))
+  }
+
+  function updateCommissionDraft(key, value) {
+    setCommissionDraft((previous) => ({ ...previous, [key]: value }))
+  }
+
+  async function saveCommissionDraft() {
+    if (!listingRecord?.id) return
+    setSavingCommission(true)
+    setDetailMessage('')
+    setDetailError('')
+    const percentage = Number(commissionDraft.percentage || 0) || 0
+    const amount = Number(commissionDraft.amount || 0) || 0
+    const now = new Date().toISOString()
+    const commissionPatch = {
+      percentage,
+      commission_percentage: percentage,
+      amount,
+      commission_amount: amount,
+      vat: String(commissionDraft.vatHandling || '').trim(),
+      vat_handling: String(commissionDraft.vatHandling || '').trim(),
+      mandateTerms: String(commissionDraft.mandateTerms || '').trim(),
+      mandate_terms: String(commissionDraft.mandateTerms || '').trim(),
+      paymentResponsibility: String(commissionDraft.paymentResponsibility || '').trim(),
+      payment_responsibility: String(commissionDraft.paymentResponsibility || '').trim(),
+      notes: String(commissionDraft.notes || '').trim(),
+      commission_notes: String(commissionDraft.notes || '').trim(),
+      updatedAt: now,
+      updated_at: now,
+      updatedBy: String(profile?.id || profile?.email || 'agent').trim(),
+      source: 'agent_workspace',
+    }
+    const formPatch = {
+      commissionPercentage: percentage ? String(percentage) : '',
+      commission_percent: percentage ? String(percentage) : '',
+      mandateCommissionPercentage: percentage ? String(percentage) : '',
+      commissionAmount: amount ? String(amount) : '',
+      commission_amount: amount ? String(amount) : '',
+      vatHandling: commissionPatch.vat,
+      mandateTerms: commissionPatch.mandateTerms,
+      paymentResponsibility: commissionPatch.paymentResponsibility,
+      commissionNotes: commissionPatch.notes,
+      commissionUpdatedAt: now,
+      commissionUpdatedBy: commissionPatch.updatedBy,
+    }
+    const localListing = patchListing((row) => ({
+      ...row,
+      commission: {
+        ...(row?.commission || {}),
+        ...commissionPatch,
+      },
+      sellerOnboarding: {
+        ...(row?.sellerOnboarding || {}),
+        formData: {
+          ...((row?.sellerOnboarding?.formData && typeof row.sellerOnboarding.formData === 'object') ? row.sellerOnboarding.formData : {}),
+          ...formPatch,
+        },
+      },
+      updatedAt: now,
+    }))
+    try {
+      if (isSupabaseConfigured && localListing?.id) {
+        const savedOnboarding = await updatePrivateListingOnboardingFormData(localListing.id, {
+          ...((localListing?.sellerOnboarding?.formData && typeof localListing.sellerOnboarding.formData === 'object') ? localListing.sellerOnboarding.formData : {}),
+          ...formPatch,
+        })
+        if (savedOnboarding?.form_data) {
+          setPrivateListings((rows) => upsertListingRecord(rows, {
+            ...localListing,
+            sellerOnboarding: {
+              ...(localListing?.sellerOnboarding || {}),
+              status: savedOnboarding.status || localListing?.sellerOnboarding?.status,
+              formData: savedOnboarding.form_data,
+            },
+          }))
+        }
+      }
+      setDetailMessage('Commission details saved and synced across the seller profile.')
+    } catch (error) {
+      setDetailError(error?.message || 'Commission details saved locally, but Supabase could not be updated.')
+    } finally {
+      setSavingCommission(false)
+    }
   }
 
   function updateViewingForm(key, value) {
@@ -5874,30 +5997,89 @@ function AgentListingDetail() {
 
           {sellerWorkspaceTab === 'commission' ? (
             <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-              {commissionWorkspace.hasData ? (
-                <>
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    <FieldDisplay label="Commission Percentage" value={commissionWorkspace.percentage ? `${commissionWorkspace.percentage}%` : 'Not captured'} />
-                    <FieldDisplay label="Commission Amount" value={commissionWorkspace.amount ? formatMoneyValue(commissionWorkspace.amount) : commissionWorkspace.estimatedExVat ? formatMoneyValue(commissionWorkspace.estimatedExVat) : 'Not captured'} />
-                    <FieldDisplay label="VAT Handling" value={commissionWorkspace.vatHandling} />
-                    <FieldDisplay label="Mandate Terms" value={commissionWorkspace.mandateTerms} />
-                    <FieldDisplay label="Payment Responsibility" value={commissionWorkspace.paymentResponsibility} />
-                    <FieldDisplay label="Last Updated Source" value={commissionWorkspace.lastUpdatedSource} />
-                  </div>
-                  <div className="mt-4 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                    <p className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Notes or Special Conditions</p>
-                    <p className="mt-2 text-sm leading-6 text-[#607387]">{commissionWorkspace.notes || 'No notes captured.'}</p>
-                  </div>
-                </>
-              ) : (
-                <div className="flex flex-col gap-4 rounded-[18px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-6 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h3 className="text-base font-semibold text-[#142132]">No commission structure captured yet.</h3>
-                    <p className="mt-1 text-sm text-[#607387]">Commission can be captured from onboarding, mandate terms, or the listing record.</p>
-                  </div>
-                  <Button variant="secondary" onClick={() => setActiveTab('property_details')}>Capture Commission Details</Button>
+              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-[#142132]">Commission Details</h3>
+                  <p className="mt-1 text-sm text-[#607387]">Edit the canonical mandate commercial terms used by the seller profile and document workflows.</p>
                 </div>
-              )}
+                <div className="flex flex-wrap gap-2">
+                  <StatusPill status={commissionWorkspace.hasData ? 'done' : 'pending'} label={commissionWorkspace.hasData ? 'Captured' : 'Not captured'} />
+                  <Button size="sm" onClick={() => void saveCommissionDraft()} disabled={savingCommission}>
+                    <FileText size={15} />
+                    {savingCommission ? 'Saving...' : 'Save Commission Details'}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Commission Percentage</span>
+                  <Field
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={commissionDraft.percentage}
+                    onChange={(event) => updateCommissionDraft('percentage', event.target.value)}
+                    placeholder="5"
+                  />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Commission Amount</span>
+                  <Field
+                    type="number"
+                    min="0"
+                    step="1000"
+                    value={commissionDraft.amount}
+                    onChange={(event) => updateCommissionDraft('amount', event.target.value)}
+                    placeholder={commissionWorkspace.estimatedExVat ? String(Math.round(commissionWorkspace.estimatedExVat)) : '0'}
+                  />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">VAT Handling</span>
+                  <Field as="select" value={commissionDraft.vatHandling} onChange={(event) => updateCommissionDraft('vatHandling', event.target.value)}>
+                    <option value="">Not captured</option>
+                    <option value="no">No VAT</option>
+                    <option value="exclusive">VAT Exclusive</option>
+                    <option value="inclusive">VAT Inclusive</option>
+                  </Field>
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Mandate Terms</span>
+                  <Field
+                    value={commissionDraft.mandateTerms}
+                    onChange={(event) => updateCommissionDraft('mandateTerms', event.target.value)}
+                    placeholder="Sole mandate, payable on registration"
+                  />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Payment Responsibility</span>
+                  <Field as="select" value={commissionDraft.paymentResponsibility} onChange={(event) => updateCommissionDraft('paymentResponsibility', event.target.value)}>
+                    <option value="">Not captured</option>
+                    <option value="seller">Seller</option>
+                    <option value="buyer">Buyer</option>
+                    <option value="split">Split</option>
+                    <option value="agency">Agency</option>
+                  </Field>
+                </label>
+                <FieldDisplay label="Last Updated Source" value={commissionWorkspace.lastUpdatedSource} />
+              </div>
+
+              <label className="mt-5 grid gap-2">
+                <span className="text-sm font-semibold text-[#2d445e]">Notes or Special Conditions</span>
+                <Field
+                  as="textarea"
+                  rows={5}
+                  value={commissionDraft.notes}
+                  onChange={(event) => updateCommissionDraft('notes', event.target.value)}
+                  placeholder="Capture any commission notes, exclusions, or special mandate conditions."
+                />
+              </label>
+
+              <div className="mt-5 grid gap-3 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4 md:grid-cols-3">
+                <FieldDisplay label="Estimated Ex VAT" value={commissionDraftPreview.estimatedExVat ? formatMoneyValue(commissionDraftPreview.estimatedExVat) : 'Not captured'} />
+                <FieldDisplay label="Estimated Incl VAT" value={commissionDraftPreview.estimatedInclVat ? formatMoneyValue(commissionDraftPreview.estimatedInclVat) : 'Not captured'} />
+                <FieldDisplay label="Sync Target" value="Seller profile, mandate data, and seller portal source fields" />
+              </div>
             </article>
           ) : null}
 
