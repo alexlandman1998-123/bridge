@@ -1896,7 +1896,20 @@ function InterestStatusActions({ interest, onAction }) {
   )
 }
 
-function AddListingToLeadPanel({ organisationId, lead, requirements = [], actor, onSaved }) {
+function AddListingToLeadPanel({
+  organisationId,
+  lead,
+  requirements = [],
+  actor,
+  onSaved,
+  title = 'Add Listing',
+  description = 'Search current private listings and link one to this lead.',
+  buttonLabel = 'Add Listing',
+  source = 'manual',
+  status = 'interested',
+  isOriginalEnquiry = false,
+  isAgentSelected = true,
+}) {
   const [open, setOpen] = useState(false)
   const primaryRequirement = requirements.find((requirement) => requirement.isPrimary) || requirements[0] || null
   const [filters, setFilters] = useState({ search: '', status: 'all', minPrice: '', maxPrice: '', requirementId: primaryRequirement?.requirementId || '' })
@@ -1934,9 +1947,10 @@ function AddListingToLeadPanel({ organisationId, lead, requirements = [], actor,
           contactId: lead.contactId,
           listing,
           requirementId: filters.requirementId,
-          source: 'manual',
-          status: 'interested',
-          isAgentSelected: true,
+          source,
+          status,
+          isOriginalEnquiry,
+          isAgentSelected,
           createdBy: actor?.id,
         },
         { actor },
@@ -1952,12 +1966,12 @@ function AddListingToLeadPanel({ organisationId, lead, requirements = [], actor,
     <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-slate-950">Add Listing</h3>
-          <p className="mt-1 text-sm text-slate-500">Search current private listings and link one to this lead.</p>
+          <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
+          <p className="mt-1 text-sm text-slate-500">{description}</p>
         </div>
         <button type="button" onClick={() => setOpen((value) => !value)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white">
           <Plus size={15} />
-          {open ? 'Close' : 'Add Listing'}
+          {open ? 'Close' : buttonLabel}
         </button>
       </div>
       {open ? (
@@ -2582,6 +2596,152 @@ function LeadSuggestionsPanel({ organisationId, lead, suggestions = [], actor, o
           )
         }) : (
           <EmptyState title="No suggestions yet" copy="Suggestions are generated automatically when requirements or listings are created or updated. You can regenerate them manually here." />
+        )}
+      </div>
+    </section>
+  )
+}
+
+function getOriginalEnquiryInterests(interests = []) {
+  return (Array.isArray(interests) ? interests : []).filter((interest) => interest.isOriginalEnquiry)
+}
+
+function getFallbackLeadListing(lead = {}) {
+  const listingId = normalizeText(lead.listingId || lead.listing_id || lead.privateListingId || lead.private_listing_id)
+  if (!listingId) return null
+  const listing = (Array.isArray(lead.listings) ? lead.listings : []).find((item) => {
+    const id = normalizeText(item?.id || item?.listingId || item?.listing_id)
+    return id === listingId
+  })
+  return listing || { id: listingId, title: 'Listing attached to lead', source: lead.source }
+}
+
+function PropertyMatchWorkflowPanel({ lead, interests = [], requirements = [], suggestions = [] }) {
+  const originalInterests = getOriginalEnquiryInterests(interests)
+  const fallbackListing = getFallbackLeadListing(lead)
+  const hasEnquiryProperty = Boolean(originalInterests.length || fallbackListing)
+  const pendingSuggestions = suggestions.filter((suggestion) => suggestion.status === 'pending')
+  const steps = [
+    {
+      label: 'Enquiry Property',
+      value: hasEnquiryProperty ? `${originalInterests.length || 1} linked` : 'None linked',
+      copy: hasEnquiryProperty ? 'Start with the property the buyer actually asked about.' : 'This lead is requirement-led unless an enquiry listing is linked.',
+    },
+    {
+      label: 'Search Brief',
+      value: requirements.length ? `${requirements.length} structured` : 'Lead details only',
+      copy: requirements.length ? 'Use the structured brief for matching and saved searches.' : 'Create a structured brief from the lead details before broad matching.',
+    },
+    {
+      label: 'Smart Suggestions',
+      value: `${pendingSuggestions.length} pending`,
+      copy: 'Review alternatives, accept the good ones, then send or schedule viewings.',
+    },
+  ]
+
+  return (
+    <section className={`${panelClass} card property-match-flow`}>
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Property Match Flow</h2>
+          <p className="mt-1 text-sm text-slate-500">Work from the original enquiry first, then use the buyer brief to suggest alternatives.</p>
+        </div>
+        <StatusPill tone={hasEnquiryProperty ? 'blue' : 'amber'}>{hasEnquiryProperty ? 'Property-led' : 'Requirement-led'}</StatusPill>
+      </div>
+      <div className="mt-5 grid gap-3 lg:grid-cols-3">
+        {steps.map((step, index) => (
+          <div key={step.label} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Step {index + 1}</p>
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-slate-950">{step.label}</h3>
+              <StatusPill tone={index === 0 && !hasEnquiryProperty ? 'amber' : 'blue'}>{step.value}</StatusPill>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-500">{step.copy}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function EnquiryPropertyPanel({ organisationId, lead, interests = [], requirements = [], actor, onSaved, onShare }) {
+  const originalInterests = getOriginalEnquiryInterests(interests)
+  const fallbackListing = getFallbackLeadListing(lead)
+  const hasEnquiryProperty = Boolean(originalInterests.length || fallbackListing)
+
+  return (
+    <section className={`${panelClass} card`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Enquiry Property</h2>
+          <p className="mt-1 text-sm text-slate-500">The listing that brought this buyer in. Link it here before reviewing alternatives.</p>
+        </div>
+        <StatusPill tone={hasEnquiryProperty ? 'blue' : 'amber'}>{hasEnquiryProperty ? 'Linked' : 'No property'}</StatusPill>
+      </div>
+
+      <div className="mt-5">
+        <AddListingToLeadPanel
+          organisationId={organisationId}
+          lead={lead}
+          requirements={requirements}
+          actor={actor}
+          onSaved={onSaved}
+          title="Link Enquired Listing"
+          description="If this lead came from Property24, Private Property, WhatsApp, or a website listing, attach that exact property here."
+          buttonLabel="Add Enquired Listing"
+          source="enquiry"
+          status="interested"
+          isOriginalEnquiry
+          isAgentSelected={false}
+        />
+      </div>
+
+      <div className="mt-5 grid gap-3">
+        {originalInterests.length ? originalInterests.map((interest) => {
+          const listing = interest.listing || {}
+          return (
+            <article key={interest.interestId} className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
+              <div className="grid gap-4 lg:grid-cols-[150px_1fr_auto]">
+                <div className="flex h-32 items-center justify-center overflow-hidden rounded-2xl bg-white text-slate-400">
+                  {listing.imageUrl ? <img src={listing.imageUrl} alt="" className="h-full w-full object-cover" /> : <Home size={24} />}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="truncate text-base font-semibold text-slate-950">{listing.title || 'Listing details unavailable'}</h3>
+                    <StatusPill tone="blue">Original enquiry</StatusPill>
+                    <StatusPill>{interest.source || lead.source || 'Unknown source'}</StatusPill>
+                  </div>
+                  <p className="mt-2 text-sm text-slate-500">{[listing.address, listing.suburb, listing.city].filter(Boolean).join(', ') || 'Address pending'}</p>
+                  <p className="mt-2 text-sm font-semibold text-blue-700">{formatCurrency(listing.price)}</p>
+                  <ListingSpecs listing={listing} />
+                  <p className="mt-3 text-sm text-slate-600">Use this as the anchor property, then compare alternatives in Smart Suggestions below.</p>
+                </div>
+                <div className="flex flex-col gap-2 lg:items-end">
+                  {listing.id ? <Link to={`/agent/listings/${listing.id}`} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">Open Listing <ExternalLink size={13} /></Link> : null}
+                  {listing.id ? (
+                    <button type="button" onClick={() => onShare?.({ listing, requirementId: interest.requirementId, interestId: interest.interestId })} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-blue-100 bg-white px-3 text-sm font-semibold text-blue-700">
+                      Send To Buyer
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </article>
+          )
+        }) : fallbackListing ? (
+          <article className="rounded-2xl border border-amber-100 bg-amber-50 p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-950">{fallbackListing.title || 'Listing attached to lead'}</h3>
+                <p className="mt-1 text-sm text-slate-500">A listing id exists on the lead, but it has not been turned into an enquiry relationship yet.</p>
+              </div>
+              <StatusPill tone="amber">Needs linking</StatusPill>
+            </div>
+          </article>
+        ) : (
+          <EmptyState
+            title="No enquiry property linked"
+            copy="That is fine for a pure buyer-registration lead. Build the Search Brief, then generate Smart Suggestions from the buyer criteria."
+          />
         )}
       </div>
     </section>
@@ -3337,40 +3497,58 @@ function LeadRecommendationsPanel({ recommendations = [], actor, onSaved, onShar
 
 function BuyerPropertyMatchPanel({ organisationId, row, workspace = {}, actor, onSaved, onShare, onShareRecommendation }) {
   const requirements = workspace.requirements || row.requirements || []
+  const listingInterests = workspace.listingInterests || row.listingInterests || []
+  const suggestions = workspace.suggestions || row.suggestions || []
+  const recommendations = workspace.recommendations || row.recommendations || []
   return (
     <div className="section-stack">
+      <PropertyMatchWorkflowPanel
+        lead={row}
+        interests={listingInterests}
+        requirements={requirements}
+        suggestions={suggestions}
+      />
+      <EnquiryPropertyPanel
+        organisationId={organisationId}
+        lead={row}
+        interests={listingInterests}
+        requirements={requirements}
+        actor={actor}
+        onSaved={onSaved}
+        onShare={onShare}
+      />
       <LeadRequirementsPanel
         organisationId={organisationId}
         lead={row}
         requirements={requirements}
         actor={actor}
         onSaved={onSaved}
-        title="Buyer Requirements"
-        description="Structured buyer criteria used for matching and agent follow-up."
-      />
-      <LeadListingInterestsPanel
-        organisationId={organisationId}
-        lead={row}
-        interests={workspace.listingInterests || row.listingInterests || []}
-        requirements={requirements}
-        actor={actor}
-        onSaved={onSaved}
-        onShare={onShare}
-        title="Matched / Interested Listings"
-        description="Listings linked by enquiry, manual selection, matching, or accepted suggestions."
+        title="Search Brief"
+        description="Structured buyer criteria used for matching when there is no enquiry property, or for finding alternatives to the enquiry property."
       />
       <LeadSuggestionsPanel
         organisationId={organisationId}
         lead={row}
-        suggestions={workspace.suggestions || row.suggestions || []}
+        suggestions={suggestions}
         actor={actor}
         onSaved={onSaved}
         onShare={onShare}
         title="Smart Suggestions"
-        description="Automated listing suggestions for the agent to approve, reject, or send."
+        description="Alternative matches generated from the search brief and lead context. Accept a suggestion to move it into the buyer shortlist."
+      />
+      <LeadListingInterestsPanel
+        organisationId={organisationId}
+        lead={row}
+        interests={listingInterests}
+        requirements={requirements}
+        actor={actor}
+        onSaved={onSaved}
+        onShare={onShare}
+        title="Shortlist / Interested Listings"
+        description="All linked listings with operational controls: accepted suggestions, manual matches, enquiry listings, sent status, notes, and viewing scheduling."
       />
       <LeadRecommendationsPanel
-        recommendations={workspace.recommendations || row.recommendations || []}
+        recommendations={recommendations}
         actor={actor}
         onSaved={onSaved}
         onShare={onShareRecommendation}

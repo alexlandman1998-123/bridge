@@ -4,12 +4,15 @@ import {
   PARTNER_ROUTING_SOURCE_TYPES,
   PARTNER_ROUTING_TARGET_TYPES,
 } from '../constants/bondRoutingContract'
+import { ENTITLEMENT_KEYS } from '../constants/workspaceEntitlements'
+import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import { supabase } from '../lib/supabaseClient'
 import { listOrganisationPartnerRoutingRules } from '../lib/settingsApi'
 import {
   BOND_NOTIFICATION_EVENTS,
   notifyBondIntakeEvent,
 } from './bondIntakeNotificationService'
+import { assertWorkspaceEntitlementLimit } from './workspaceEntitlementsService'
 
 export const BOND_INTAKE_DECLINE_REASONS = Object.freeze([
   'Buyer not finance-ready',
@@ -125,6 +128,13 @@ function resolveCurrentUser(user = {}) {
     workspaceName:
       normalizeText(user.workspaceName || currentWorkspace?.name || currentMembership?.workspace?.name) ||
       'Bond originator',
+    workspaceKind: normalizeText(
+      user.workspaceKind ||
+        user.workspace_kind ||
+        currentWorkspace?.workspaceKind ||
+        currentWorkspace?.workspace_kind ||
+        currentWorkspace?.raw?.workspace_kind,
+    ),
     roleKey: normalizeRoleKey(workspaceRole),
     appRole: normalizeRoleKey(user.role || profile?.role),
     scopeLevel: normalizeRoleKey(currentMembership?.scopeLevel || currentMembership?.scope_level || user.scopeLevel || user.scope_level),
@@ -732,7 +742,7 @@ async function persistBondApplicationAssignment(client, {
   const scope = decision.scope || resolveAssignmentScope({ actor, assignee })
   const lookup = await client
     .from('transaction_bond_applications')
-    .select('id')
+    .select('id, assigned_organisation_id')
     .eq('transaction_id', transactionId)
     .limit(10)
 
@@ -743,6 +753,14 @@ async function persistBondApplicationAssignment(client, {
 
   const updates = []
   for (const row of lookup.data || []) {
+    if (scope.organisationId && normalizeText(row.assigned_organisation_id) !== normalizeText(scope.organisationId)) {
+      await assertWorkspaceEntitlementLimit({
+        workspaceId: scope.organisationId,
+        workspaceType: WORKSPACE_TYPES.bondOriginator,
+        workspaceKind: actor.workspaceKind || assignee.workspaceKind || assignee.workspace_kind,
+        entitlementKey: ENTITLEMENT_KEYS.monthlyBondApplications,
+      })
+    }
     updates.push(await updateByIdWithMissingColumnFallback(
       client,
       'transaction_bond_applications',

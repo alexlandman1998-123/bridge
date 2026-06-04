@@ -171,9 +171,12 @@ try {
   for (const retiredTab of ['requirements', 'suggestions', 'listings', 'recommendations']) {
     assert.ok(!buyerTabKeys.includes(retiredTab), `${retiredTab} should be merged into Property Match`)
   }
-  for (const sectionTitle of ['Buyer Requirements', 'Matched / Interested Listings', 'Smart Suggestions', 'Recommended Actions']) {
+  assert.ok(workspaceSource.includes('function PropertyMatchWorkflowPanel'), 'Property Match should explain the enquiry-to-suggestions workflow')
+  assert.ok(workspaceSource.includes('function EnquiryPropertyPanel'), 'Property Match should surface the original enquiry property before alternatives')
+  for (const sectionTitle of ['Search Brief', 'Smart Suggestions', 'Shortlist / Interested Listings', 'Recommended Actions']) {
     assert.ok(workspaceSource.includes(`title="${sectionTitle}"`), `Property Match should include ${sectionTitle}`)
   }
+  assert.ok(workspaceSource.includes('buttonLabel="Add Enquired Listing"'), 'Property Match should support linking the listing the buyer enquired on')
   assert.ok(workspaceSource.includes('function LeadAppointmentsPanel'), 'appointments tab should expose a lead appointment creation panel')
   assert.ok(workspaceSource.includes('createAppointmentAsync(organisationId'), 'lead appointments should be created through the appointment service')
   assert.ok(workspaceSource.includes('function BuyerOutreachProgress'), 'buyer workspace should include outreach progress tracking')

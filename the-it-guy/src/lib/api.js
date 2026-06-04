@@ -56,6 +56,8 @@ import {
   isBondFinanceType,
   normalizeFinanceType,
 } from '../core/transactions/financeType'
+import { ENTITLEMENT_KEYS } from '../constants/workspaceEntitlements'
+import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import {
   BOND_HYBRID_APPLICATION_STATUS_LABELS,
   BOND_HYBRID_FINANCE_WORKFLOW_TYPE,
@@ -134,6 +136,7 @@ import { resolveLegalDocumentRequirements } from '../services/attorneyWorkflow/a
 import { normalizePropertyCategory, PROPERTY_CATEGORIES } from './propertyTaxonomy'
 import { getSuggestedRescheduleSlots } from './appointmentAvailabilityEngine'
 import { resolveSystemRole, resolveTransactionRole } from '../services/roleResolutionService'
+import { assertWorkspaceEntitlementLimit } from '../services/workspaceEntitlementsService'
 import {
   BOND_NOTIFICATION_EVENTS,
   checkAndNotifyBondApplicationReadyForReview,
@@ -19722,6 +19725,14 @@ async function ensureBondApplicationWorkspaceRecord(client, { transactionId, buy
   const resolvedUserId = selection?.userId || (selection?.email ? profileIdByEmail[selection.email] || null : null)
   const nowIso = new Date().toISOString()
   const scope = resolveRoleplayerSelectionScope(selection, resolvedUserId)
+  if (scope.organisationId && !existingQuery.data?.[0]?.id) {
+    await assertWorkspaceEntitlementLimit({
+      workspaceId: scope.organisationId,
+      workspaceType: WORKSPACE_TYPES.bondOriginator,
+      workspaceKind: selection.workspaceKind || selection.workspace_kind,
+      entitlementKey: ENTITLEMENT_KEYS.monthlyBondApplications,
+    })
+  }
   const payload = {
     transaction_id: transactionId,
     workflow_id: workflow.id,

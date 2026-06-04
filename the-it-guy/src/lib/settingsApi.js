@@ -42,10 +42,12 @@ import {
 } from '../constants/bondRoutingContract'
 import { assertPermission } from '../auth/permissions/permissionResolver'
 import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
+import { ENTITLEMENT_KEYS } from '../constants/workspaceEntitlements'
 import { recordSecurityAuditEvent } from '../services/auditLogService'
 import { completeOnboarding } from '../services/onboarding/onboardingEngine'
 import { logUnsafeFallbackBlocked, resolveCurrentWorkspace, WorkspaceContextError } from '../services/workspaceResolutionService'
 import { assertMembershipStatusTransition } from '../services/transitions/stateTransitionEngine'
+import { assertWorkspaceEntitlementLimit } from '../services/workspaceEntitlementsService'
 import { isUnsafeFallbackAllowed } from './envValidation'
 import { loadSignupIntentForUser } from './signupIntent'
 
@@ -1098,6 +1100,9 @@ function buildDefaultOrganisation(profile = null) {
     id: null,
     name: baseName,
     displayName: baseName,
+    type: 'agency',
+    workspaceKind: 'agency',
+    workspace_kind: 'agency',
     logoUrl: '',
     companyEmail: profile?.email || '',
     companyPhone: profile?.phoneNumber || '',
@@ -1136,6 +1141,9 @@ function normalizeOrganisationRow(row, profile = null) {
     id: row?.id || fallback.id,
     name: normalizeText(row?.name) || fallback.name,
     displayName: normalizeText(row?.display_name) || fallback.displayName,
+    type: normalizeText(row?.type) || fallback.type,
+    workspaceKind: normalizeText(row?.workspace_kind || row?.workspaceKind) || fallback.workspaceKind,
+    workspace_kind: normalizeText(row?.workspace_kind || row?.workspaceKind) || fallback.workspace_kind,
     logoUrl: normalizeText(row?.logo_url),
     companyEmail: normalizeText(row?.company_email) || fallback.companyEmail,
     companyPhone: normalizeText(row?.company_phone) || fallback.companyPhone,
@@ -1740,6 +1748,8 @@ async function ensureOrganisationContext(client) {
           id,
           name,
           display_name,
+          type,
+          workspace_kind,
           logo_url,
           company_email,
           company_phone,
@@ -1837,6 +1847,8 @@ async function ensureOrganisationContext(client) {
           id,
           name,
           display_name,
+          type,
+          workspace_kind,
           logo_url,
           company_email,
           company_phone,
@@ -2585,6 +2597,8 @@ export async function updateOrganisationSettings(input = {}) {
       id,
       name,
       display_name,
+      type,
+      workspace_kind,
       logo_url,
       company_email,
       company_phone,
@@ -3967,6 +3981,26 @@ export async function inviteOrganisationUser(input = {}) {
   }
 
   const user = await getAuthenticatedUser()
+  const email = normalizeEmail(input.email)
+  const existingInvite = await client
+    .from('organisation_users')
+    .select('id, status')
+    .eq('organisation_id', context.organisation.id)
+    .eq('email', email)
+    .maybeSingle()
+
+  if (existingInvite.error && !isMissingTableError(existingInvite.error, 'organisation_users')) {
+    throw existingInvite.error
+  }
+  if (!existingInvite.data || !['active', 'invited', 'pending'].includes(normalizeText(existingInvite.data?.status))) {
+    await assertWorkspaceEntitlementLimit({
+      workspaceId: context.organisation.id,
+      workspaceType: context.organisation.type,
+      workspaceKind: context.organisation.workspaceKind,
+      entitlementKey: ENTITLEMENT_KEYS.maxUsers,
+    })
+  }
+
   const inviteToken = createInviteToken()
   const payload = {
     organisation_id: context.organisation.id,
@@ -3974,7 +4008,7 @@ export async function inviteOrganisationUser(input = {}) {
     branch_id: input.branchId || null,
     first_name: normalizeNullableText(input.firstName),
     last_name: normalizeNullableText(input.lastName),
-    email: normalizeEmail(input.email),
+    email,
     role: normalizeOrganisationUserRole(input.role, 'viewer'),
     status: 'invited',
     invited_at: new Date().toISOString(),

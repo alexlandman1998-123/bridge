@@ -9,6 +9,8 @@ import { recordSecurityAuditEvent } from './auditLogService'
 import { assertMembershipStatusTransition } from './transitions/stateTransitionEngine'
 import { assertResolvedWorkspaceContext } from './workspaceResolutionService'
 import { resolveWorkspaceRole } from './roleResolutionService'
+import { ENTITLEMENT_KEYS } from '../constants/workspaceEntitlements'
+import { assertWorkspaceEntitlementLimit } from './workspaceEntitlementsService'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -67,6 +69,7 @@ async function resolveOrganisationContext() {
     membershipRole: normalizeLower(context?.membershipRole || 'viewer'),
     membershipStatus: normalizeLower(context?.membershipStatus || 'pending'),
     workspaceType: normalizeLower(organisation?.type || WORKSPACE_TYPES.agency) || WORKSPACE_TYPES.agency,
+    workspaceKind: normalizeLower(organisation?.workspaceKind || organisation?.workspace_kind || organisation?.type || WORKSPACE_TYPES.agency),
   }
 }
 
@@ -370,6 +373,12 @@ export async function createBranch(payload = {}) {
   if (!name) {
     throw new Error('Branch name is required.')
   }
+  await assertWorkspaceEntitlementLimit({
+    workspaceId: organisationId,
+    workspaceType: context.workspaceType,
+    workspaceKind: context.workspaceKind,
+    entitlementKey: ENTITLEMENT_KEYS.maxBranches,
+  })
 
   const insertPayload = {
     organisation_id: organisationId,
@@ -499,6 +508,24 @@ export async function inviteBranchMember(payload = {}) {
   }
   if (!branchId) {
     throw new Error('Branch is required for member invite.')
+  }
+  const existingInvite = await supabase
+    .from('organisation_users')
+    .select('id, status')
+    .eq('organisation_id', organisationId)
+    .eq('email', email)
+    .maybeSingle()
+
+  if (existingInvite.error && !isMissingTableError(existingInvite.error)) {
+    throw existingInvite.error
+  }
+  if (!existingInvite.data || !['active', 'invited', 'pending'].includes(normalizeLower(existingInvite.data?.status))) {
+    await assertWorkspaceEntitlementLimit({
+      workspaceId: organisationId,
+      workspaceType: context.workspaceType,
+      workspaceKind: context.workspaceKind,
+      entitlementKey: ENTITLEMENT_KEYS.maxUsers,
+    })
   }
 
   const insertPayload = {

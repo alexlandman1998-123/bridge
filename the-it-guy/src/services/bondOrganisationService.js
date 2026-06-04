@@ -1,4 +1,6 @@
 import { BOND_SCOPE_LEVELS, WORKSPACE_UNIT_TYPES } from '../constants/workspaceUnits'
+import { ENTITLEMENT_KEYS } from '../constants/workspaceEntitlements'
+import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
 import { can, resolvePermissionContext } from '../auth/permissions/permissionResolver'
 import { isMissingTableError } from './attorneyFirmServiceShared'
@@ -16,6 +18,7 @@ import {
   getBondPartnerWorkspace,
   getBondPartners,
 } from './bondPartnerManagementService'
+import { assertWorkspaceEntitlementLimit } from './workspaceEntitlementsService'
 
 export const BOND_ORGANISATION_STRUCTURE_TYPES = Object.freeze({
   independent: 'independent',
@@ -67,6 +70,16 @@ export const BOND_ORGANISATION_ACTIVITY_EVENTS = Object.freeze({
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function getContextWorkspaceKind(context = {}) {
+  return normalizeText(
+    context.workspaceKind ||
+      context.workspace_kind ||
+      context.currentWorkspace?.workspaceKind ||
+      context.currentWorkspace?.workspace_kind ||
+      context.currentWorkspace?.raw?.workspace_kind,
+  )
 }
 
 function normalizeLower(value) {
@@ -2072,6 +2085,12 @@ export async function createBondBranch(payload = {}, context = {}, workspaceId =
   ])
   const regionId = normalizeText(payload.regionId || payload.region_id)
   assertCanCreateBranch({ ...context, workspaceId: safeWorkspaceId }, { regions, branches: existingBranches, consultants: users }, regionId)
+  await assertWorkspaceEntitlementLimit({
+    workspaceId: safeWorkspaceId,
+    workspaceType: WORKSPACE_TYPES.bondOriginator,
+    workspaceKind: getContextWorkspaceKind(context),
+    entitlementKey: ENTITLEMENT_KEYS.maxBranches,
+  })
   const validated = validateBranchPayload(payload, existingBranches, { regions, users })
   const now = new Date().toISOString()
 
@@ -2359,6 +2378,18 @@ export async function createBondConsultant(payload = {}, context = {}, workspace
   const { safeWorkspaceId, regions, branches, consultants } = await getConsultantServiceData(context, workspaceId, options)
   const validated = validateConsultantPayload(payload, consultants, { branches })
   assertCanManageConsultant({ ...context, workspaceId: safeWorkspaceId }, { regions, branches, consultants }, null, validated.branchId)
+  const existingSeat = consultants.find((consultant) =>
+    normalizeLower(consultant.email) === normalizeLower(validated.email) &&
+    ['active', 'invited', 'pending'].includes(normalizeLower(consultant.status || (consultant.active === false ? 'inactive' : 'active'))),
+  )
+  if (!existingSeat) {
+    await assertWorkspaceEntitlementLimit({
+      workspaceId: safeWorkspaceId,
+      workspaceType: WORKSPACE_TYPES.bondOriginator,
+      workspaceKind: getContextWorkspaceKind(context),
+      entitlementKey: ENTITLEMENT_KEYS.maxUsers,
+    })
+  }
   const now = new Date().toISOString()
   const consultant = normalizeConsultantRow({
     id: payload.id || payload.userId || payload.user_id || createLocalConsultantId(validated.email, validated.name),
