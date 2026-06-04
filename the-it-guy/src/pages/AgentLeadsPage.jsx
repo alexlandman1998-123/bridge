@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Search,
   Tag,
+  Trash2,
   UserRound,
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
@@ -26,8 +27,10 @@ import {
   createAgencyCrmLeadActivity,
   createAgencyCrmLeadRecord,
   createAgencyCrmLeadTask,
+  deleteAgencyCrmLeadRecord,
   updateAgencyCrmLeadRecord,
 } from '../lib/agencyCrmRepository'
+import { createAppointmentAsync } from '../lib/agencyPipelineService'
 import { normalizeLeadCategory as normalizeCanonicalLeadCategory } from '../lib/leadCategory'
 import {
   fetchAgentLeadWorkspace,
@@ -119,6 +122,12 @@ const pageShell = 'mx-auto flex w-full max-w-[1480px] flex-col gap-5'
 const panelClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm'
 const buyerWorkspaceCardClass = `${panelClass} card`
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const LEAD_APPOINTMENT_TYPES = [
+  { value: 'viewing', label: 'Viewing' },
+  { value: 'buyer_consultation', label: 'Buyer Consultation' },
+  { value: 'otp_signing', label: 'OTP Signing' },
+  { value: 'other', label: 'Other Appointment' },
+]
 const LEAD_CATEGORY_FILTERS = [
   { key: 'all', label: 'All Leads', helper: 'Unified operating list', icon: Tag },
   { key: 'buyer', label: 'Buyer Leads', helper: 'Requirements, matches, viewings', icon: UserRound },
@@ -975,8 +984,117 @@ function BuyerRecentActivityCard({ timeline = [], onViewAll }) {
   )
 }
 
-function BuyerLeadHeader({ row, sourceInfo, leadScore, lastActivity, onMore, onConvert }) {
-  const whatsappHref = getWhatsAppHref(row.phone)
+function getTodayInputValue() {
+  const now = new Date()
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
+  return now.toISOString().slice(0, 10)
+}
+
+function getLeadContactSnapshot(lead = {}) {
+  const contact = lead.contact || {}
+  return {
+    name: normalizeText(lead.name || contact.fullName || contact.name),
+    email: normalizeText(lead.email || contact.email),
+    phone: normalizeText(lead.phone || contact.phone || contact.mobile),
+    contactId: normalizeText(lead.contactId || lead.contact_id || contact.contactId || contact.id),
+  }
+}
+
+function getLeadPrimaryListingId(lead = {}) {
+  return normalizeText(
+    lead.listingId ||
+    lead.listing_id ||
+    lead.privateListingId ||
+    lead.private_listing_id ||
+    lead.listingInterests?.[0]?.listingId ||
+    lead.listingInterests?.[0]?.listing_id ||
+    lead.listings?.[0]?.id ||
+    lead.listings?.[0]?.listingId ||
+    lead.listings?.[0]?.listing_id,
+  )
+}
+
+function isViewingAppointment(item = {}) {
+  const haystack = `${item.title || ''} ${item.appointmentType || item.appointment_type || ''} ${item.appointmentTypeLabel || ''}`.toLowerCase()
+  return haystack.includes('viewing')
+}
+
+function getAppointmentDateLabel(item = {}) {
+  const explicit = item.dateTime || item.date_time || item.startsAt || item.starts_at
+  if (explicit) return formatDateTime(explicit)
+  const date = normalizeText(item.date || item.appointmentDate || item.appointment_date)
+  const startTime = normalizeText(item.startTime || item.start_time || item.appointmentTime || item.appointment_time)
+  if (date && startTime) return formatDateTime(`${date}T${startTime}`)
+  return date ? formatDate(date) : 'Date to be confirmed'
+}
+
+function getBuyerOutreachSteps(row = {}) {
+  const appointments = Array.isArray(row.appointments) ? row.appointments : []
+  const viewings = appointments.filter(isViewingAppointment)
+  const scheduledViewings = viewings.filter((item) => !['cancelled', 'completed', 'no_show'].includes(String(item.status || '').toLowerCase()))
+  const completedViewings = viewings.filter((item) => String(item.status || '').toLowerCase() === 'completed' || item.completedAt || item.completed_at)
+  const timeline = Array.isArray(row.communicationTimeline) ? row.communicationTimeline : []
+  const outreachLogged = Boolean(row.firstContactedAt || row.first_contacted_at || timeline.some((item) => {
+    const haystack = `${item.activityType || item.activity_type || ''} ${item.communicationType || item.communication_type || ''} ${item.title || ''}`.toLowerCase()
+    return ['call', 'email', 'whatsapp', 'meeting', 'outreach'].some((token) => haystack.includes(token))
+  }))
+  const offers = Array.isArray(row.offers) ? row.offers : []
+  const transactions = Array.isArray(row.transactions) ? row.transactions : []
+
+  return [
+    { key: 'captured', label: 'Lead captured', done: true, meta: formatDate(row.createdAt || row.created_at, 'Captured') },
+    { key: 'reached_out', label: 'Reached out', done: outreachLogged, meta: outreachLogged ? 'Logged' : 'Pending' },
+    { key: 'viewing_scheduled', label: 'Viewing scheduled', done: viewings.length > 0, meta: scheduledViewings.length ? `${scheduledViewings.length} scheduled` : 'None yet' },
+    { key: 'viewing_completed', label: 'Viewing completed', done: completedViewings.length > 0, meta: completedViewings.length ? `${completedViewings.length} completed` : 'Pending' },
+    { key: 'offer_made', label: 'Offer made', done: offers.length > 0, meta: offers.length ? `${offers.length} offer${offers.length === 1 ? '' : 's'}` : 'No offer' },
+    { key: 'transaction_created', label: 'Transaction created', done: Boolean(row.convertedTransactionId || row.converted_transaction_id || transactions.length), meta: transactions.length ? `${transactions.length} transaction${transactions.length === 1 ? '' : 's'}` : 'Not created' },
+  ]
+}
+
+function BuyerOutreachProgress({ row, onLogOutreach, onAddViewing }) {
+  const steps = getBuyerOutreachSteps(row)
+  const completedCount = steps.filter((step) => step.done).length
+  const progress = Math.round((completedCount / Math.max(steps.length, 1)) * 100)
+
+  return (
+    <section className={`${panelClass} lead-outreach-progress card`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Lead Outreach Progress</h2>
+          <p className="mt-1 text-sm text-slate-500">Track contact, viewings, offers, and conversion without losing multiple viewing activity.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={onLogOutreach} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            Log outreach
+          </button>
+          <button type="button" onClick={onAddViewing} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-700">
+            <Plus size={15} />
+            Add viewing
+          </button>
+        </div>
+      </div>
+      <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
+        <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
+      </div>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        {steps.map((step) => (
+          <div key={step.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center gap-2">
+              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${step.done ? 'bg-blue-600 text-white' : 'bg-white text-slate-400 ring-1 ring-slate-200'}`}>
+                <CheckCircle2 size={15} />
+              </span>
+              <p className="text-sm font-semibold text-slate-950">{step.label}</p>
+            </div>
+            <p className="mt-2 text-xs font-medium text-slate-500">{step.meta}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function BuyerLeadHeader({ row, sourceInfo, leadScore, lastActivity, onOpenTimeline, onDelete, onConvert }) {
+  const [moreOpen, setMoreOpen] = useState(false)
   return (
     <header className={`${panelClass} p-5`}>
       <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
@@ -996,22 +1114,24 @@ function BuyerLeadHeader({ row, sourceInfo, leadScore, lastActivity, onMore, onC
           {lastActivity?.date ? <p className="mt-2 text-sm font-medium text-slate-500">Last activity {formatRelativeTime(lastActivity.date)} · {formatDateTime(lastActivity.date)}</p> : null}
         </div>
         <div className="ml-auto flex w-full flex-wrap items-center justify-end gap-3 xl:w-auto">
-          {row.phone ? (
-            <a href={`tel:${row.phone}`} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-              <Phone size={15} />
-              Call
-            </a>
-          ) : null}
-          {whatsappHref ? (
-            <a href={whatsappHref} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">
-              <MessageSquarePlus size={15} />
-              WhatsApp
-            </a>
-          ) : null}
-          <button type="button" onClick={onMore} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-            <MoreVertical size={15} />
-            More
-          </button>
+          <div className="relative">
+            <button type="button" onClick={() => setMoreOpen((open) => !open)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50" aria-haspopup="menu" aria-expanded={moreOpen}>
+              <MoreVertical size={15} />
+              More
+            </button>
+            {moreOpen ? (
+              <div className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 text-sm font-semibold text-slate-700 shadow-xl" role="menu">
+                <button type="button" onClick={() => { setMoreOpen(false); onOpenTimeline?.() }} className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-slate-50" role="menuitem">
+                  <Clock3 size={15} />
+                  View timeline
+                </button>
+                <button type="button" onClick={() => { setMoreOpen(false); onDelete?.() }} className="flex w-full items-center gap-2 border-t border-slate-100 px-4 py-2.5 text-left text-red-600 hover:bg-red-50" role="menuitem">
+                  <Trash2 size={15} />
+                  Delete lead
+                </button>
+              </div>
+            ) : null}
+          </div>
           <button type="button" onClick={onConvert} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-700">
             Convert to Transaction
           </button>
@@ -3223,7 +3343,7 @@ function AppointmentList({ items = [] }) {
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-slate-950">{item.title || item.appointmentType || item.appointment_type || 'Appointment'}</p>
-              <p className="mt-1 text-xs text-slate-500">{formatDateTime(item.startTime || item.start_time || item.date)}</p>
+              <p className="mt-1 text-xs text-slate-500">{getAppointmentDateLabel(item)}</p>
             </div>
             <StatusPill>{item.status || 'scheduled'}</StatusPill>
           </div>
@@ -3231,6 +3351,142 @@ function AppointmentList({ items = [] }) {
         </article>
       ))}
     </div>
+  )
+}
+
+function LeadAppointmentForm({ organisationId, lead, actor, onSaved }) {
+  const contact = getLeadContactSnapshot(lead)
+  const [draft, setDraft] = useState({
+    appointmentType: 'viewing',
+    title: `Viewing - ${contact.name || 'Buyer'}`,
+    date: getTodayInputValue(),
+    startTime: '',
+    location: '',
+    notes: '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    setDraft((previous) => ({
+      ...previous,
+      title: previous.title || `Viewing - ${contact.name || 'Buyer'}`,
+    }))
+  }, [contact.name])
+
+  async function submit(event) {
+    event.preventDefault()
+    if (!organisationId || !lead?.leadId) {
+      setError('This lead needs to be loaded before an appointment can be created.')
+      return
+    }
+    if (!normalizeText(draft.date) || !normalizeText(draft.startTime)) {
+      setError('Choose a date and start time for the appointment.')
+      return
+    }
+
+    try {
+      setSaving(true)
+      setError('')
+      await createAppointmentAsync(organisationId, {
+        appointmentType: draft.appointmentType,
+        title: normalizeText(draft.title) || `${formatCleanValue(draft.appointmentType)} - ${contact.name || 'Buyer'}`,
+        date: draft.date,
+        startTime: draft.startTime,
+        location: draft.location,
+        locationType: normalizeText(draft.location) ? 'physical' : 'to_be_confirmed',
+        notes: draft.notes,
+        status: 'confirmed',
+        leadId: lead.leadId,
+        contactId: contact.contactId || null,
+        listingId: getLeadPrimaryListingId(lead) || null,
+        relatedEntityType: 'lead',
+        relatedEntityId: lead.leadId,
+        assignedAgent: actor,
+        participants: [
+          {
+            name: contact.name || lead.name || 'Buyer',
+            email: contact.email,
+            phone: contact.phone,
+            contactId: contact.contactId || null,
+            participantRole: 'Buyer',
+            rsvpStatus: 'Pending',
+          },
+        ],
+        sendInviteEmails: false,
+      }, { actor })
+      setDraft({
+        appointmentType: 'viewing',
+        title: `Viewing - ${contact.name || 'Buyer'}`,
+        date: getTodayInputValue(),
+        startTime: '',
+        location: '',
+        notes: '',
+      })
+      await onSaved()
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to create this appointment.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="mt-5 grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-slate-950">Prefilled for {contact.name || lead.name || 'this lead'}</p>
+          <p className="mt-1 text-sm text-slate-500">{contact.phone || 'No phone'} · {contact.email || 'No email'}</p>
+        </div>
+        <StatusPill tone="blue">Lead linked</StatusPill>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <label className="grid gap-1 text-sm font-semibold text-slate-700">
+          Type
+          <select value={draft.appointmentType} onChange={(event) => setDraft((previous) => ({ ...previous, appointmentType: event.target.value, title: previous.title || `${formatCleanValue(event.target.value)} - ${contact.name || 'Buyer'}` }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300">
+            {LEAD_APPOINTMENT_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
+        <label className="grid gap-1 text-sm font-semibold text-slate-700">
+          Title
+          <input value={draft.title} onChange={(event) => setDraft((previous) => ({ ...previous, title: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" placeholder="Viewing appointment" />
+        </label>
+        <label className="grid gap-1 text-sm font-semibold text-slate-700">
+          Date
+          <input type="date" value={draft.date} onChange={(event) => setDraft((previous) => ({ ...previous, date: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" />
+        </label>
+        <label className="grid gap-1 text-sm font-semibold text-slate-700">
+          Start time
+          <input type="time" value={draft.startTime} onChange={(event) => setDraft((previous) => ({ ...previous, startTime: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" />
+        </label>
+      </div>
+      <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
+        <input value={draft.location} onChange={(event) => setDraft((previous) => ({ ...previous, location: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" placeholder="Location or property address" />
+        <input value={draft.notes} onChange={(event) => setDraft((previous) => ({ ...previous, notes: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" placeholder="Internal notes" />
+        <button type="submit" disabled={saving || !normalizeText(draft.date) || !normalizeText(draft.startTime)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
+          <Plus size={15} />
+          Add Appointment
+        </button>
+      </div>
+      {error ? <p className="text-sm font-semibold text-red-600">{error}</p> : null}
+    </form>
+  )
+}
+
+function LeadAppointmentsPanel({ organisationId, lead, actor, onSaved }) {
+  return (
+    <section className={buyerWorkspaceCardClass}>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Appointments</h2>
+          <p className="mt-1 text-sm text-slate-500">Create appointments directly for this lead with buyer details already linked.</p>
+        </div>
+      </div>
+      <LeadAppointmentForm organisationId={organisationId} lead={lead} actor={actor} onSaved={onSaved} />
+      <div className="mt-5">
+        <AppointmentList items={lead.appointments} />
+      </div>
+    </section>
   )
 }
 
@@ -4156,6 +4412,27 @@ function AgentLeadWorkspace() {
     else navigate('/listings')
   }, [linkedSellerListing?.id, navigate, row])
 
+  const deleteCurrentLead = useCallback(async () => {
+    const leadIdToDelete = normalizeText(row?.leadId)
+    if (!organisationId || !leadIdToDelete) {
+      setError('This lead cannot be deleted until the workspace has loaded.')
+      return
+    }
+    const leadName = normalizeText(row?.name) || 'this lead'
+    const confirmed = typeof window === 'undefined'
+      ? true
+      : window.confirm(`Delete ${leadName}? This cannot be undone.`)
+    if (!confirmed) return
+
+    try {
+      setError('')
+      await deleteAgencyCrmLeadRecord(organisationId, leadIdToDelete)
+      navigate('/pipeline/leads')
+    } catch (deleteError) {
+      setError(deleteError?.message || 'Unable to delete this lead.')
+    }
+  }, [navigate, organisationId, row])
+
   return (
     <main className={pageShell}>
       <button type="button" onClick={() => navigate('/pipeline/leads')} className="inline-flex w-fit items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-950">
@@ -4193,16 +4470,23 @@ function AgentLeadWorkspace() {
                 sourceInfo={sourceInfo}
                 leadScore={getBuyerLeadScore(row, workspaceAnalytics)}
                 lastActivity={getBuyerLastActivity(row)}
-                onMore={() => setActiveTab('timeline')}
+                onOpenTimeline={() => setActiveTab('timeline')}
+                onDelete={deleteCurrentLead}
                 onConvert={() => {
                   if (row.convertedTransactionId) navigate(`/transactions/${row.convertedTransactionId}`)
                   else setActiveTab('offers')
                 }}
               />
 
+              <BuyerOutreachProgress
+                row={row}
+                onLogOutreach={() => setActiveTab('timeline')}
+                onAddViewing={() => setActiveTab('appointments')}
+              />
+
               <nav className={`${panelClass} buyer-workspace-tabs flex gap-2 overflow-x-auto p-2`} aria-label="Lead workspace tabs">
                 {tabs.map((tab) => (
-                  <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} className={`min-h-10 shrink-0 rounded-xl px-3 text-sm font-semibold ${activeTab === tab.key ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
+                  <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} className={`buyer-workspace-tab min-h-10 rounded-xl px-3 text-sm font-semibold ${activeTab === tab.key ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
                     {tab.label}
                   </button>
                 ))}
@@ -4261,10 +4545,12 @@ function AgentLeadWorkspace() {
                 ) : null}
 
                 {activeTab === 'appointments' ? (
-                  <section className={buyerWorkspaceCardClass}>
-                    <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Appointments</h2>
-                    <div className="mt-5"><AppointmentList items={row.appointments} /></div>
-                  </section>
+                  <LeadAppointmentsPanel
+                    organisationId={organisationId}
+                    lead={row}
+                    actor={actor}
+                    onSaved={loadWorkspace}
+                  />
                 ) : null}
 
                 {activeTab === 'offers' ? (

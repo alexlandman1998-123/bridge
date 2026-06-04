@@ -339,6 +339,18 @@
 
   .buyer-lead-workspace .buyer-workspace-tabs {
     margin-top: 24px;
+    width: 100%;
+  }
+
+  .buyer-lead-workspace .lead-outreach-progress {
+    margin-top: 24px;
+  }
+
+  .buyer-lead-workspace .buyer-workspace-tab {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 
   .buyer-lead-workspace .buyer-overview-grid {
@@ -353,6 +365,11 @@
     .buyer-lead-workspace .buyer-overview-grid,
     .buyer-lead-workspace .buyer-overview-lower-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .buyer-lead-workspace .buyer-workspace-tab {
+      flex: 1 1 0;
+      justify-content: center;
     }
   }
 

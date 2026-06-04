@@ -4521,7 +4521,7 @@ create table if not exists public.transaction_bond_applications (
   transaction_id uuid not null references public.transactions(id) on delete cascade,
   workflow_id uuid references public.transaction_finance_workflows(id) on delete cascade,
   buyer_party_id uuid references public.buyers(id) on delete set null,
-  application_type text default 'originator_intake',
+  application_type text not null,
   bank_name text not null default 'Bond Originator Intake',
   status text not null default 'pending',
   assigned_organisation_id uuid references public.organisations(id) on delete set null,
@@ -4542,11 +4542,13 @@ create table if not exists public.transaction_bond_applications (
   created_by uuid references public.profiles(id) on delete set null,
   updated_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint transaction_bond_applications_application_type_check
+    check (application_type in ('originator_intake', 'bank_application', 'draft_application', 'special_application'))
 );
 
 create unique index if not exists transaction_bond_applications_originator_intake_uidx
-  on public.transaction_bond_applications (transaction_id, coalesce(application_type, 'originator_intake'))
-  where coalesce(application_type, 'originator_intake') = 'originator_intake';
+  on public.transaction_bond_applications (transaction_id, application_type)
+  where application_type = 'originator_intake';
 create index if not exists transaction_bond_applications_assignment_scope_idx
   on public.transaction_bond_applications (assigned_organisation_id, assigned_region_id, assigned_branch_id, assigned_team_id, assigned_user_id, assignment_status);

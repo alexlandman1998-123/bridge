@@ -174,6 +174,12 @@ try {
   for (const sectionTitle of ['Buyer Requirements', 'Matched / Interested Listings', 'Smart Suggestions', 'Recommended Actions']) {
     assert.ok(workspaceSource.includes(`title="${sectionTitle}"`), `Property Match should include ${sectionTitle}`)
   }
+  assert.ok(workspaceSource.includes('function LeadAppointmentsPanel'), 'appointments tab should expose a lead appointment creation panel')
+  assert.ok(workspaceSource.includes('createAppointmentAsync(organisationId'), 'lead appointments should be created through the appointment service')
+  assert.ok(workspaceSource.includes('function BuyerOutreachProgress'), 'buyer workspace should include outreach progress tracking')
+  assert.ok(workspaceSource.includes('deleteAgencyCrmLeadRecord'), 'lead header dropdown should support lead deletion')
+  assert.ok(workspaceSource.includes('buyer-workspace-tab'), 'buyer tabs should use the stretched workspace tab class')
+  assert.ok(!workspaceSource.includes("onMore={() => setActiveTab('timeline')}"), 'More should no longer be a direct timeline shortcut')
 
   console.log('agent lead workspace smoke tests passed')
 } finally {

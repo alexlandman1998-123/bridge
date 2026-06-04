@@ -9339,6 +9339,7 @@ function normalizeBondApplicationRow(row = {}, profileById = {}) {
     id: row.id,
     transactionId: row.transaction_id,
     workflowId: row.workflow_id,
+    applicationType: row.application_type || 'bank_application',
     bankName: row.bank_name || '',
     status: normalizeBondHybridApplicationStatus(row.status),
     statusLabel: BOND_HYBRID_APPLICATION_STATUS_LABELS[normalizeBondHybridApplicationStatus(row.status)] || 'Pending',
@@ -9736,7 +9737,7 @@ export async function getTransactionFinanceWorkflow(transactionId, options = {})
   const [applicationsQuery, quotesQuery, eventsQuery, decisionsQuery, instructionQuery] = await Promise.all([
     client
       .from('transaction_bond_applications')
-      .select('id, transaction_id, workflow_id, bank_name, status, submitted_at, feedback_received_at, reference_number, application_reference, bond_originator_id, originator_organisation_id, submitted_by, notes, created_by, updated_by, created_at, updated_at')
+      .select('id, transaction_id, workflow_id, application_type, bank_name, status, submitted_at, feedback_received_at, reference_number, application_reference, bond_originator_id, originator_organisation_id, submitted_by, notes, created_by, updated_by, created_at, updated_at')
       .eq('workflow_id', workflow.id)
       .order('created_at', { ascending: true }),
     client
@@ -10016,6 +10017,7 @@ export async function addBondApplication(transactionId, payload = {}, options = 
     .insert({
       transaction_id: transactionId,
       workflow_id: workflow.id,
+      application_type: 'bank_application',
       bank_name: bankName,
       status,
       submitted_at: submittedAt,
@@ -10029,7 +10031,7 @@ export async function addBondApplication(transactionId, payload = {}, options = 
       created_by: activeProfile.userId || null,
       updated_by: activeProfile.userId || null,
     })
-    .select('id, transaction_id, workflow_id, bank_name, status, submitted_at, feedback_received_at, reference_number, application_reference, bond_originator_id, originator_organisation_id, submitted_by, notes, created_by, updated_by, created_at, updated_at')
+    .select('id, transaction_id, workflow_id, application_type, bank_name, status, submitted_at, feedback_received_at, reference_number, application_reference, bond_originator_id, originator_organisation_id, submitted_by, notes, created_by, updated_by, created_at, updated_at')
     .single()
 
   if (insert.error) throw insert.error
@@ -10094,7 +10096,7 @@ export async function updateBondApplication(applicationId, payload = {}, options
 
   const existing = await client
     .from('transaction_bond_applications')
-    .select('id, transaction_id, workflow_id, bank_name, status')
+    .select('id, transaction_id, workflow_id, application_type, bank_name, status')
     .eq('id', applicationId)
     .maybeSingle()
   if (existing.error) throw existing.error
@@ -10124,7 +10126,7 @@ export async function updateBondApplication(applicationId, payload = {}, options
     .from('transaction_bond_applications')
     .update(updatePayload)
     .eq('id', applicationId)
-    .select('id, transaction_id, workflow_id, bank_name, status, submitted_at, feedback_received_at, reference_number, application_reference, bond_originator_id, originator_organisation_id, submitted_by, notes, created_by, updated_by, created_at, updated_at')
+    .select('id, transaction_id, workflow_id, application_type, bank_name, status, submitted_at, feedback_received_at, reference_number, application_reference, bond_originator_id, originator_organisation_id, submitted_by, notes, created_by, updated_by, created_at, updated_at')
     .single()
   if (update.error) throw update.error
 
@@ -19777,6 +19779,10 @@ async function ensureBondApplicationWorkspaceRecord(client, { transactionId, buy
   )
   return inserted?.[0] || null
 }
+
+export const __transactionBondApplicationClassificationTestUtils = Object.freeze({
+  ensureBondApplicationWorkspaceRecord,
+})
 
 async function propagateTransactionRoleplayersIfPossible(
   client,
