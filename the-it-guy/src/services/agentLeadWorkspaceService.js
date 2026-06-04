@@ -132,9 +132,11 @@ function normalizeTransaction(row = {}) {
 }
 
 function normalizeListing(row = {}) {
+  const listingId = getListingId(row) || readId(row, ['id'])
   return {
     ...row,
-    id: getListingId(row) || readId(row, ['id']),
+    id: listingId,
+    listingId,
     leadId: readId(row, ['sellerLeadId', 'seller_lead_id', 'originatingCrmLeadId', 'originating_crm_lead_id']),
     status: normalizeText(row?.listingStatus || row?.listing_status),
     title: normalizeText(row?.title || row?.property_address || row?.propertyAddress || row?.suburb),

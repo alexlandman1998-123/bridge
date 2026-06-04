@@ -29,12 +29,23 @@ const leads = [
     convertedTransactionId: 'tx-one',
     createdAt: '2026-05-03T08:00:00.000Z',
   },
+  {
+    leadId: 'seller-listing-link',
+    contactId: 'contact-four',
+    leadSource: 'Canvassing',
+    leadCategory: 'seller',
+    stage: 'Listing Created',
+    status: 'Listing Created',
+    listingId: 'listing-two',
+    createdAt: '2026-05-04T08:00:00.000Z',
+  },
 ]
 
 const contacts = [
   { contactId: 'contact-one', firstName: 'Missing', lastName: 'Details', phone: '', email: '' },
   { contactId: 'contact-two', firstName: 'Buyer', lastName: 'Viewing', phone: '+27820000000', email: 'buyer@example.test' },
   { contactId: 'contact-three', firstName: 'Converted', lastName: 'Client', phone: '+27821111111', email: 'converted@example.test' },
+  { contactId: 'contact-four', firstName: 'Seller', lastName: 'Linked', phone: '+27822222222', email: 'seller@example.test' },
 ]
 
 const leadActivities = [
@@ -67,6 +78,7 @@ const transactions = [
 
 const listings = [
   { id: 'listing-one', originating_crm_lead_id: 'lead-viewing-offer', listing_status: 'active', suburb: 'Sandton' },
+  { id: 'listing-two', listing_status: 'seller_lead', suburb: 'Claremont' },
 ]
 
 const listingInterests = [
@@ -103,7 +115,7 @@ try {
 
   const rows = buildAgentLeadRows({ leads, contacts, leadActivities, tasks, appointments, offers, transactions, listings, listingInterests, requirements })
 
-  assert.equal(rows.length, 3, 'all leads should remain visible')
+  assert.equal(rows.length, 4, 'all leads should remain visible')
 
   const contactOnly = rows.find((row) => row.leadId === 'lead-contact-only')
   assert.equal(contactOnly.name, 'Missing Details')
@@ -126,6 +138,11 @@ try {
   const converted = rows.find((row) => row.leadId === 'lead-converted')
   assert.equal(converted.appointmentCount, 1, 'contact-linked appointments should resolve')
   assert.equal(converted.transactionCount, 1)
+
+  const sellerLinkedByListingId = rows.find((row) => row.leadId === 'seller-listing-link')
+  assert.equal(sellerLinkedByListingId.listings.length, 1, 'seller leads should keep listings linked by listing id')
+  assert.equal(sellerLinkedByListingId.listings[0].id, 'listing-two')
+  assert.equal(sellerLinkedByListingId.listings[0].listingId, 'listing-two')
 
   const options = getLeadFilterOptions(rows)
   assert.ok(options.stages.includes('Offer Submitted'))

@@ -2901,6 +2901,12 @@ function sellerOnboardingActionLabel(status = '') {
   return 'Send Seller Onboarding'
 }
 
+function sellerPortalLinkActionLabel(status = '') {
+  const normalized = normalizeText(status).toLowerCase()
+  if (sellerOnboardingIsSubmitted(normalized) || ['sent', 'in_progress', 'started'].includes(normalized)) return 'Resend Seller Portal Link'
+  return 'Send Seller Portal Link'
+}
+
 function SellerActionsPanel({
   journey = null,
   readiness = null,
@@ -2975,17 +2981,6 @@ function SellerActionsPanel({
   )
 }
 
-function getSellerPortalToken(row = {}, listing = null) {
-  return normalizeText(
-    row?.sellerOnboardingToken ||
-    row?.seller_onboarding_token ||
-    row?.sellerOnboarding?.token ||
-    listing?.sellerOnboarding?.token ||
-    listing?.sellerOnboardingToken ||
-    listing?.seller_onboarding_token,
-  )
-}
-
 function getSellerDocumentCompletion(documents = []) {
   const rows = Array.isArray(documents) ? documents : []
   if (!rows.length) return { complete: 0, total: 0, percent: 0 }
@@ -3046,7 +3041,6 @@ function SellerWorkspaceHero({
   onGenerateMandate,
   onOpenListing,
 }) {
-  const portalToken = getSellerPortalToken(row, listing)
   const hasListing = Boolean(journey?.listingCreated || listing?.id || row?.listingId || row?.listing_id)
   const listingActionLabel = hasListing ? 'Open Listing' : 'Create Listing'
   const mandateReady = sellerOnboardingIsSubmitted(onboardingStatus)
@@ -3091,32 +3085,22 @@ function SellerWorkspaceHero({
             <button type="button" onClick={onOpenListing} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white">
               {listingActionLabel}
             </button>
-            <Link
-              to={portalToken ? `/seller/onboarding/${encodeURIComponent(portalToken)}` : '#'}
-              aria-disabled={!portalToken}
-              className={`inline-flex min-h-10 items-center justify-center rounded-xl border px-4 text-sm font-semibold ${portalToken ? 'border-slate-200 bg-white text-slate-700' : 'pointer-events-none border-slate-200 bg-slate-50 text-slate-400'}`}
-            >
-              Open Seller Portal
-            </Link>
-            <button
-              type="button"
-              onClick={onGenerateMandate}
-              disabled={!mandateReady}
-              title={!mandateReady ? 'Seller onboarding must be submitted before opening the mandate workspace.' : 'Open mandate workspace'}
-              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              View Mandate
-            </button>
             <details className="relative">
-              <summary className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50" aria-label="More seller actions">
+              <summary className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50" aria-label="Seller actions">
                 <MoreVertical size={17} />
               </summary>
-              <div className="absolute right-0 z-20 mt-2 w-56 rounded-xl border border-slate-200 bg-white p-1 text-sm font-semibold text-slate-700 shadow-lg">
+              <div className="absolute right-0 z-20 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-1 text-sm font-semibold text-slate-700 shadow-lg">
                 <button type="button" onClick={() => onSendSellerOnboarding?.()} disabled={sendingOnboarding} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-50">
-                  {sendingOnboarding ? 'Sending...' : sellerOnboardingActionLabel(onboardingStatus)}
+                  {sendingOnboarding ? 'Sending...' : sellerPortalLinkActionLabel(onboardingStatus)}
                 </button>
-                <button type="button" onClick={onGenerateMandate} disabled={!mandateReady} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-50">
-                  Generate Mandate
+                <button
+                  type="button"
+                  onClick={onGenerateMandate}
+                  disabled={!mandateReady}
+                  title={!mandateReady ? 'Seller onboarding must be submitted before opening the mandate workspace.' : 'Open mandate workspace'}
+                  className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  View Mandate
                 </button>
               </div>
             </details>
@@ -3151,38 +3135,6 @@ function SellerJourneyHeroPanel({ journey = null }) {
           </li>
         ))}
       </ol>
-    </section>
-  )
-}
-
-function SellerNextActionPanel({ readiness = null, onPrimaryAction, onOpenListing, onOpenTimeline }) {
-  const nextAction = readiness?.nextAction || {}
-  const blocker = nextAction.blocker || readiness?.blockers?.[0]
-  const actionCopy = blocker?.sellerMessage || blocker?.label || nextAction.reason || 'Property ready for the next seller workflow step.'
-  return (
-    <section className={`${panelClass} flex h-full min-h-[260px] flex-col p-5`}>
-      <div>
-        <h2 className="text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">Next Best Action</h2>
-        <p className="mt-4 text-2xl font-semibold tracking-[-0.045em] text-slate-950">{nextAction.label || 'Review Seller Journey'}</p>
-        <p className="mt-3 text-sm leading-6 text-slate-500">{actionCopy}</p>
-      </div>
-      <div className="mt-auto pt-6">
-        <button
-          type="button"
-          disabled={nextAction.disabled}
-          onClick={() => {
-            if (['create_listing', 'open_listing', 'complete_listing', 'activate_listing'].includes(nextAction.id)) onOpenListing?.()
-            else if (nextAction.id === 'open_documents') document.getElementById('seller-documents')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-            else if (['generate_mandate', 'send_mandate', 'view_mandate', 'check_signature_status', 'resend_mandate'].includes(nextAction.id)) onPrimaryAction?.()
-            else if (['contact_seller', 'open_timeline'].includes(nextAction.id)) onOpenTimeline?.()
-            else onPrimaryAction?.()
-          }}
-          className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-        >
-          {nextAction.label || 'Review Seller'}
-        </button>
-        <p className="mt-3 text-xs font-semibold text-slate-400">{readiness?.readinessLabel || 'Seller readiness pending'}</p>
-      </div>
     </section>
   )
 }
@@ -3369,7 +3321,6 @@ function SellerLeadWorkspaceLayout({
   onSendSellerOnboarding,
   onGenerateMandate,
   onOpenListing,
-  onOpenTimeline,
 }) {
   return (
     <div className="space-y-6">
@@ -3386,11 +3337,8 @@ function SellerLeadWorkspaceLayout({
       />
       {sellerActionError ? <p className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{sellerActionError}</p> : null}
       {sellerActionMessage ? <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{sellerActionMessage}</p> : null}
-      <div className="grid items-stretch gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(280px,3fr)]">
-        <SellerJourneyHeroPanel journey={sellerJourney} />
-        <SellerNextActionPanel readiness={sellerReadiness} onPrimaryAction={onGenerateMandate} onOpenListing={onOpenListing} onOpenTimeline={onOpenTimeline} />
-      </div>
       <SellerKpiRow row={row} journey={sellerJourney} />
+      <SellerJourneyHeroPanel journey={sellerJourney} />
       <div className="grid items-stretch gap-6 lg:grid-cols-2">
         <SellerDetailsCard row={row} sourceInfo={sourceInfo} journey={sellerJourney} />
         <SellerDocumentsSummaryCard journey={sellerJourney} />
@@ -3540,12 +3488,12 @@ function AgentLeadWorkspace() {
   const isSellerLeadWorkspace = leadCategory === 'seller'
   const linkedSellerListing = useMemo(() => {
     if (!row) return null
+    const leadListingId = normalizeText(row.listingId || row.listing_id || row.privateListingId || row.private_listing_id)
     return (row.listings || data?.listings || []).find((listing) => {
       const listingId = normalizeText(listing?.id || listing?.listingId || listing?.listing_id)
-      const leadListingId = normalizeText(row.listingId || row.listing_id || row.privateListingId || row.private_listing_id)
       const sellerLeadId = normalizeText(listing?.sellerLeadId || listing?.seller_lead_id || listing?.originatingCrmLeadId || listing?.originating_crm_lead_id || listing?.leadId || listing?.lead_id)
       return (leadListingId && listingId === leadListingId) || sellerLeadId === row.leadId
-    }) || row.listings?.[0] || null
+    }) || row.listings?.[0] || (leadListingId ? { id: leadListingId } : null)
   }, [data?.listings, row])
   const sellerJourney = useMemo(() => {
     if (!row || !isSellerLeadWorkspace) return null
@@ -3699,9 +3647,10 @@ function AgentLeadWorkspace() {
   }, [linkedSellerListing, navigate, row])
 
   const openSellerListing = useCallback(() => {
-    if (linkedSellerListing?.id) navigate(`/agent/listings/${linkedSellerListing.id}`)
+    const listingId = normalizeText(linkedSellerListing?.id || row?.listingId || row?.listing_id || row?.privateListingId || row?.private_listing_id)
+    if (listingId) navigate(`/agent/listings/${encodeURIComponent(listingId)}`)
     else navigate('/listings')
-  }, [linkedSellerListing?.id, navigate])
+  }, [linkedSellerListing?.id, navigate, row])
 
   return (
     <main className={pageShell}>
@@ -3732,7 +3681,6 @@ function AgentLeadWorkspace() {
               onSendSellerOnboarding={sendSellerOnboardingForLead}
               onGenerateMandate={openMandateWorkspace}
               onOpenListing={openSellerListing}
-              onOpenTimeline={() => setActiveTab('timeline')}
             />
           ) : (
             <>
