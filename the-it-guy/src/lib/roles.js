@@ -175,6 +175,7 @@ export const APP_NAV_BY_ROLE = {
     { key: 'bank_relationships', label: 'Bank Relationships', to: '/bond/banks', navSection: 'main', activeMatch: ['/bond/banks'] },
     { key: 'revenue_commissions', label: 'Revenue & Commissions', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
     { key: 'automation_rules', label: 'Automation & Rules', to: '/bond/automation', navSection: 'main', activeMatch: ['/bond/automation'] },
+    { key: 'predictive_intelligence', label: 'Predictive Intelligence', to: '/bond/predictive-intelligence', navSection: 'main', activeMatch: ['/bond/predictive-intelligence'] },
     { key: 'bond_reports', label: 'Reports', to: '/bond/reports', navSection: 'main', activeMatch: ['/bond/reports', '/reports'] },
     { key: 'bond_organisation', label: 'Organisation', to: '/bond/organisation', navSection: 'main', activeMatch: ['/bond/organisation'] },
     { key: 'settings', label: 'Settings', to: '/settings', navSection: 'secondary' },
@@ -317,6 +318,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
         { key: 'bank_relationships', label: 'Bank Relationships', to: '/bond/banks', navSection: 'main', activeMatch: ['/bond/banks'] },
         { key: 'revenue_commissions', label: 'Revenue & Commissions', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
         { key: 'automation_rules', label: 'Automation & Rules', to: '/bond/automation', navSection: 'main', activeMatch: ['/bond/automation'] },
+        { key: 'predictive_intelligence', label: 'Predictive Intelligence', to: '/bond/predictive-intelligence', navSection: 'main', activeMatch: ['/bond/predictive-intelligence'] },
         { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners'] },
         { key: 'partner_intelligence', label: 'Partner Intelligence', to: '/bond/partner-intelligence', navSection: 'main', activeMatch: ['/bond/partner-intelligence'] },
         { key: 'bond_reports', label: 'Reports', to: '/bond/reports', navSection: 'main', activeMatch: ['/bond/reports', '/reports'] },
@@ -345,6 +347,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
         { key: 'bank_relationships', label: 'Bank Relationships', to: '/bond/banks', navSection: 'main', activeMatch: ['/bond/banks'] },
         { key: 'revenue_commissions', label: 'Revenue & Commissions', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
         { key: 'automation_rules', label: 'Automation & Rules', to: '/bond/automation', navSection: 'main', activeMatch: ['/bond/automation'] },
+        { key: 'predictive_intelligence', label: 'Predictive Intelligence', to: '/bond/predictive-intelligence', navSection: 'main', activeMatch: ['/bond/predictive-intelligence'] },
         { key: 'partner_intelligence', label: 'Partner Intelligence', to: '/bond/partner-intelligence', navSection: 'main', activeMatch: ['/bond/partner-intelligence'] },
       ]
     }
@@ -367,6 +370,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
         { key: 'branch_operations', label: 'Branch Operations', to: '/bond/branch-operations', navSection: 'main', activeMatch: ['/bond/branch-operations'] },
         { key: 'bank_relationships', label: 'Bank Relationships', to: '/bond/banks', navSection: 'main', activeMatch: ['/bond/banks'] },
         { key: 'revenue_commissions', label: 'Revenue & Commissions', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
+        { key: 'predictive_intelligence', label: 'Predictive Intelligence', to: '/bond/predictive-intelligence', navSection: 'main', activeMatch: ['/bond/predictive-intelligence'] },
         { key: 'partner_intelligence', label: 'Partner Intelligence', to: '/bond/partner-intelligence', navSection: 'main', activeMatch: ['/bond/partner-intelligence'] },
       ]
     }

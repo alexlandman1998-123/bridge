@@ -108,6 +108,7 @@ const BondHQCommandCentrePage = lazy(() => import('./pages/bond/BondHQCommandCen
 const BondBankRelationshipsPage = lazy(() => import('./pages/bond/BondBankRelationshipsPage'))
 const BondRevenueManagementPage = lazy(() => import('./pages/bond/BondRevenueManagementPage'))
 const BondAutomationCentrePage = lazy(() => import('./pages/bond/BondAutomationCentrePage'))
+const BondPredictiveIntelligencePage = lazy(() => import('./pages/bond/BondPredictiveIntelligencePage'))
 const CommercialLayout = lazy(() => import('./modules/commercial/components/CommercialLayout'))
 const CommercialActivityPage = lazy(() => import('./modules/commercial/pages/CommercialActivityPage'))
 const CommercialBrokerPerformancePage = lazy(() => import('./modules/commercial/pages/CommercialBrokerPerformancePage'))
@@ -1757,6 +1758,16 @@ function AppRoutes() {
                   <RoleRoute allowedRoles={['bond_originator']}>
                     <AppErrorBoundary scope="bond-automation-centre" title="Automation & rules failed to load">
                       <BondAutomationCentrePage />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/predictive-intelligence"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <AppErrorBoundary scope="bond-predictive-intelligence" title="Predictive intelligence failed to load">
+                      <BondPredictiveIntelligencePage />
                     </AppErrorBoundary>
                   </RoleRoute>
                 }

@@ -281,6 +281,7 @@ function HeaderBar({ onLogout, user }) {
       location.pathname.startsWith('/bond/banks/') ||
       location.pathname === '/bond/revenue' ||
       location.pathname === '/bond/automation' ||
+      location.pathname === '/bond/predictive-intelligence' ||
       location.pathname === '/bond/organisation' ||
       location.pathname.startsWith('/bond/organisation/') ||
       location.pathname === '/bond/tasks' ||
