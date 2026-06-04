@@ -641,21 +641,231 @@ function FieldDisplay({ label, value }) {
   )
 }
 
-function formatFieldLabel(key = '') {
-  return String(key || '')
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+function formatLongDate(value) {
+  if (!value) return '—'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return '—'
+  return parsed.toLocaleDateString('en-ZA', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+function humanizeProfileToken(value = '') {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  const normalized = text.toLowerCase().replace(/\s+/g, '_')
+  const labels = {
+    yes: 'Yes',
+    no: 'No',
+    true: 'Yes',
+    false: 'No',
+    individual: 'Individual',
+    company: 'Company',
+    trust: 'Trust',
+    deceased_estate: 'Deceased Estate',
+    sole: 'Sole Mandate',
+    open: 'Open Mandate',
+    exclusive: 'Exclusive Mandate',
+    not_married: 'Not married',
+    married_cop: 'Married in community of property',
+    married_anc: 'Married out of community of property',
+    married_anc_accrual: 'Married out of community of property with accrual',
+    divorced: 'Divorced',
+    widowed: 'Widowed',
+    one_to_three_months: '1-3 months',
+    '1_3_months': '1-3 months',
+    three_to_six_months: '3-6 months',
+    '3_6_months': '3-6 months',
+    six_plus_months: '6+ months',
+    complete: 'Complete',
+    completed: 'Complete',
+    incomplete: 'Incomplete',
+    pending: 'Pending',
+    uploaded: 'Uploaded',
+    approved: 'Approved',
+    missing: 'Missing',
+  }
+  if (labels[normalized]) return labels[normalized]
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return formatLongDate(text)
+  return text
     .replace(/[_-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
-function formatFieldValue(value) {
-  if (value === null || value === undefined || value === '') return ''
+function summarizeProfileCollection(value) {
+  if (!Array.isArray(value)) return ''
+  const readable = value
+    .map((item) => {
+      if (item === null || item === undefined || item === '') return ''
+      if (typeof item !== 'object') return humanizeProfileToken(item)
+      return toCleanText(
+        item.name ||
+          item.fullName ||
+          [item.firstName, item.lastName].filter(Boolean).join(' ') ||
+          item.label ||
+          item.title ||
+          item.value,
+      )
+    })
+    .filter(Boolean)
+  if (readable.length) return readable.join(', ')
+  return value.length ? `${value.length} item${value.length === 1 ? '' : 's'} captured` : ''
+}
+
+function formatSellerProfileValue(value, type = 'text') {
+  if (value === null || value === undefined || value === '') return '—'
   if (typeof value === 'boolean') return value ? 'Yes' : 'No'
-  if (Array.isArray(value)) return value.filter(Boolean).join(', ')
-  if (typeof value === 'object') return JSON.stringify(value)
-  return String(value)
+  if (Array.isArray(value)) return summarizeProfileCollection(value) || '—'
+  if (typeof value === 'object') {
+    const readable = toCleanText(
+      value.name ||
+        value.fullName ||
+        [value.firstName, value.lastName].filter(Boolean).join(' ') ||
+        value.label ||
+        value.title ||
+        value.value,
+    )
+    return readable || 'Details captured'
+  }
+  const text = String(value || '').trim()
+  if (!text) return '—'
+  if (/^https?:\/\//i.test(text) || text.includes('supabase.co') || text.includes('/storage/v1/')) return '—'
+  if (type === 'currency') return formatMoneyValue(text)
+  if (type === 'date') return formatLongDate(text)
+  if (type === 'percentage') {
+    const amount = Number(text)
+    return Number.isFinite(amount) ? `${amount}%` : humanizeProfileToken(text)
+  }
+  return humanizeProfileToken(text)
+}
+
+function isSellerProfileFilled(value) {
+  const formatted = formatSellerProfileValue(value)
+  return Boolean(formatted && formatted !== '—' && formatted !== 'Details captured')
+}
+
+function getInitials(value = '') {
+  const parts = String(value || '').trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return 'S'
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('')
+}
+
+function sanitizeFileName(value = '') {
+  return String(value || 'seller-profile')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'seller-profile'
+}
+
+function escapePdfText(value = '') {
+  return String(value || '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/[^\x20-\x7E]/g, '-')
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)')
+}
+
+function wrapPdfText(value = '', maxChars = 86) {
+  const words = String(value || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean)
+  const lines = []
+  let current = ''
+  for (const word of words) {
+    if (!current) {
+      current = word
+    } else if (`${current} ${word}`.length <= maxChars) {
+      current = `${current} ${word}`
+    } else {
+      lines.push(current)
+      current = word
+    }
+  }
+  if (current) lines.push(current)
+  return lines.length ? lines : ['']
+}
+
+function buildSellerProfilePdf({ agencyName = 'Bridge', generatedDate = '', summary = [], sections = [] }) {
+  const pages = [[]]
+  let y = 790
+  const addLine = (text, { x = 48, size = 10, bold = false, gap = 15, maxChars = 86 } = {}) => {
+    const lines = wrapPdfText(text, maxChars)
+    for (const line of lines) {
+      if (y < 54) {
+        pages.push([])
+        y = 790
+      }
+      pages[pages.length - 1].push({ text: line, x, y, size, bold })
+      y -= gap
+    }
+  }
+  const addSpace = (amount = 10) => {
+    y -= amount
+    if (y < 54) {
+      pages.push([])
+      y = 790
+    }
+  }
+
+  addLine(agencyName, { size: 11, bold: true, gap: 18 })
+  addLine('Seller Profile', { size: 22, bold: true, gap: 28 })
+  addLine(`Generated ${generatedDate || formatLongDate(new Date())}`, { size: 9, gap: 18 })
+  addSpace(8)
+  summary.forEach((row) => addLine(`${row.label}: ${row.value}`, { size: 10, gap: 14 }))
+  addSpace(16)
+
+  sections.forEach((section) => {
+    addLine(section.title, { size: 14, bold: true, gap: 20 })
+    section.rows.forEach((row) => addLine(`${row.label}: ${row.value}`, { size: 10, gap: 14 }))
+    addSpace(12)
+  })
+
+  const objects = []
+  objects[0] = '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n'
+  objects[2] = '3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n'
+  objects[3] = '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n'
+  const pageIds = []
+  pages.forEach((pageLines, index) => {
+    const pageId = 5 + index * 2
+    const contentId = pageId + 1
+    pageIds.push(`${pageId} 0 R`)
+    const stream = pageLines.map((line) => (
+      `BT /${line.bold ? 'F2' : 'F1'} ${line.size} Tf 1 0 0 1 ${line.x} ${line.y} Tm (${escapePdfText(line.text)}) Tj ET`
+    )).join('\n')
+    objects[pageId - 1] = `${pageId} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentId} 0 R >>\nendobj\n`
+    objects[contentId - 1] = `${contentId} 0 obj\n<< /Length ${stream.length} >>\nstream\n${stream}\nendstream\nendobj\n`
+  })
+  objects[1] = `2 0 obj\n<< /Type /Pages /Kids [${pageIds.join(' ')}] /Count ${pageIds.length} >>\nendobj\n`
+
+  let pdf = '%PDF-1.4\n'
+  const offsets = [0]
+  objects.forEach((object) => {
+    offsets.push(pdf.length)
+    pdf += object
+  })
+  const xrefOffset = pdf.length
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`
+  })
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`
+  return new Blob([pdf], { type: 'application/pdf' })
+}
+
+function downloadBlob(blob, filename) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => window.URL.revokeObjectURL(url), 1000)
 }
 
 function readPipelineLeads() {
@@ -2376,71 +2586,94 @@ function AgentListingDetail() {
 
   const sellerFormData = useMemo(() => getListingSellerFormData(listingRecord), [listingRecord])
 
-  const sellerOnboardingSections = useMemo(() => {
-    const usedKeys = new Set()
-    const valueFor = (...keys) => firstDraftValue(...keys.map((key) => sellerFormData?.[key]))
-    const field = (label, keys, fallback = '') => {
-      keys.forEach((key) => usedKeys.add(key))
-      return { label, value: formatFieldValue(firstDraftValue(valueFor(...keys), fallback)) }
+  const sellerProfile = useMemo(() => {
+    const raw = (...values) => firstDraftValue(...values)
+    const form = sellerFormData || {}
+    const seller = listingRecord?.seller || {}
+    const valueFor = (...keys) => raw(...keys.map((key) => form?.[key]))
+    const field = (label, values = [], type = 'text') => {
+      const rawValue = Array.isArray(values) ? raw(...values) : values
+      return { label, rawValue, value: formatSellerProfileValue(rawValue, type) }
     }
-    const section = (title, rows) => ({ title, rows })
+    const section = (title, icon, rows) => ({ title, icon, rows })
+    const sellerName = raw(
+      resolveSellerNameFromListing(listingRecord),
+      valueFor('sellerName', 'fullName'),
+      [form.sellerFirstName || form.firstName, form.sellerSurname || form.lastName].filter(Boolean).join(' '),
+      'Seller',
+    )
+    const sellerTypeRaw = raw(valueFor('sellerType', 'type', 'ownershipType'), seller.sellerType, seller.type, 'individual')
+    const propertyAddress = raw(
+      valueFor('propertyAddress', 'addressLine1'),
+      marketingDraft.addressLine1,
+      listingRecord?.addressLine1,
+      listingRecord?.propertyAddress,
+      listingRecord?.listingTitle,
+    )
+    const mandateType = raw(valueFor('mandateType'), listingRecord?.mandateType, listingRecord?.mandate?.type, 'sole')
+    const askingPrice = raw(valueFor('askingPrice', 'price'), marketingDraft.price, listingRecord?.askingPrice)
+    const popiConsent = raw(valueFor('popiConsent', 'privacyConsent'), seller.popiConsent, listingRecord?.popiConsent)
     const sections = [
-      section('Seller Identity', [
-        field('Seller Name', ['sellerName', 'fullName'], resolveSellerNameFromListing(listingRecord)),
-        field('First Name', ['sellerFirstName', 'firstName']),
-        field('Surname', ['sellerSurname', 'lastName']),
-        field('Seller Type', ['sellerType', 'type'], listingRecord?.seller?.sellerType || listingRecord?.seller?.type || 'Individual'),
-        field('ID / Registration', ['idNumber', 'sellerIdNumber', 'companyRegistrationNumber', 'trustRegistrationNumber'], listingRecord?.seller?.idNumber || listingRecord?.seller?.companyNumber || listingRecord?.seller?.trustNumber),
+      section('Seller Details', UserRound, [
+        field('Full name', [sellerName]),
+        field('ID / Registration number', [valueFor('idNumber', 'sellerIdNumber', 'companyRegistrationNumber', 'trustRegistrationNumber'), seller.idNumber, seller.companyNumber, seller.trustNumber]),
+        field('Seller type', [sellerTypeRaw]),
+        field('Marital status', [valueFor('maritalStatus'), seller.maritalStatus]),
       ]),
-      section('Contact Details', [
-        field('Email', ['sellerEmail', 'email', 'contactEmail'], resolveSellerEmailFromListing(listingRecord)),
-        field('Phone', ['sellerPhone', 'phone', 'contactNumber', 'mobile'], listingRecord?.seller?.phone),
-        field('Alternative Contact', ['alternativeContact', 'alternateContact', 'secondaryPhone']),
-        field('Preferred Contact Method', ['preferredContactMethod', 'contactPreference']),
+      section('Contact Details', Link2, [
+        field('Email', [resolveSellerEmailFromListing(listingRecord), valueFor('sellerEmail', 'email', 'contactEmail'), seller.email]),
+        field('Phone', [valueFor('sellerPhone', 'phone', 'contactNumber', 'mobile'), seller.phone]),
+        field('Alternative contact', [valueFor('alternativeContact', 'alternateContact', 'secondaryPhone', 'alternativePhone'), seller.alternativeContact]),
+        field('Preferred contact method', [valueFor('preferredContactMethod', 'contactPreference'), seller.preferredContactMethod]),
       ]),
-      section('Address Details', [
-        field('Residential Address', ['residentialAddress', 'sellerAddress', 'address'], listingRecord?.seller?.address),
-        field('Property Address', ['propertyAddress', 'addressLine1'], marketingDraft.addressLine1 || listingRecord?.addressLine1),
-        field('Suburb', ['suburb'], marketingDraft.suburb || listingRecord?.suburb),
-        field('City', ['city'], marketingDraft.city || listingRecord?.city),
-        field('Province', ['province'], marketingDraft.province || listingRecord?.province),
+      section('Property & Ownership', Home, [
+        field('Property address', [propertyAddress]),
+        field('Ownership type', [valueFor('ownershipType', 'ownerType'), seller.ownershipType]),
+        field('Title deed number', [valueFor('titleDeedNumber', 'deedNumber', 'titleReference'), seller.titleDeedNumber]),
+        field('Bond holder', [valueFor('bondHolder', 'bondBank', 'mortgageBank'), seller.bondHolder]),
+        field('Outstanding bond', [valueFor('outstandingBond', 'bondSettlementAmount'), seller.outstandingBond], 'currency'),
+        field('Co-owner details', [valueFor('coOwnerDetails', 'coOwners'), seller.coOwners]),
       ]),
-      section('Ownership Details', [
-        field('Ownership Type', ['ownershipType', 'ownerType']),
-        field('Title Deed Number', ['titleDeedNumber', 'deedNumber', 'titleReference']),
-        field('Bond Holder', ['bondHolder', 'bondBank', 'mortgageBank']),
-        field('Outstanding Bond', ['outstandingBond', 'bondSettlementAmount']),
-        field('Co-owner Details', ['coOwnerDetails', 'coOwners']),
+      section('Mandate Details', FileText, [
+        field('Mandate type', [mandateType]),
+        field('Asking price', [askingPrice], 'currency'),
+        field('Mandate start date', [valueFor('mandateStartDate', 'startDate'), marketingDraft.listingDate, listingRecord?.mandateStartDate], 'date'),
+        field('Expiry date', [valueFor('expiryDate', 'mandateEndDate'), mandateWorkspace.expiryDate], 'date'),
+        field('Commission preference', [valueFor('commissionPreference', 'commissionPercentage', 'commission_percent'), listingRecord?.commission?.percentage, listingRecord?.commission?.commission_percentage]),
+        field('POPI consent', [popiConsent]),
       ]),
-      section('FICA / Compliance Details', [
-        field('FICA Status', ['ficaStatus']),
-        field('Tax Number', ['taxNumber', 'sellerTaxNumber']),
-        field('Marital Status', ['maritalStatus']),
-        field('POPI Consent', ['popiConsent', 'privacyConsent']),
-        field('Compliance Notes', ['complianceNotes', 'ficaNotes']),
+      section('Compliance', ShieldCheck, [
+        field('FICA status', [valueFor('ficaStatus'), seller.ficaStatus]),
+        field('Tax number', [valueFor('taxNumber', 'sellerTaxNumber'), seller.taxNumber]),
+        field('POPI consent', [popiConsent]),
+        field('Electrical certificate', [valueFor('electricalCertificate', 'electricalComplianceCertificate', 'cocElectrical'), seller.electricalCertificate]),
+        field('Plumbing certificate', [valueFor('plumbingCertificate', 'cocPlumbing'), seller.plumbingCertificate]),
+        field('Occupation certificate', [valueFor('occupationCertificate', 'occupancyCertificate'), seller.occupationCertificate]),
+        field('Building plans', [valueFor('buildingPlans', 'approvedBuildingPlans'), seller.buildingPlans]),
       ]),
-      section('Mandate Preferences', [
-        field('Mandate Type', ['mandateType'], listingRecord?.mandateType || listingRecord?.mandate?.type),
-        field('Preferred Start Date', ['mandateStartDate', 'startDate']),
-        field('Expiry Date', ['expiryDate', 'mandateEndDate'], mandateWorkspace.expiryDate),
-        field('Asking Price', ['askingPrice', 'price'], marketingDraft.price || listingRecord?.askingPrice),
-        field('Commission Preference', ['commissionPreference', 'commissionPercentage', 'commission_percent']),
-      ]),
-      section('Notes / Special Conditions', [
-        field('Selling Reason', ['sellingReason']),
-        field('Selling Timeline', ['sellingTimeline']),
-        field('Special Conditions', ['specialConditions', 'conditions']),
-        field('Notes', ['notes', 'sellerNotes', 'propertyNotes'], marketingDraft.notes),
+      section('Notes / Special Conditions', Info, [
+        field('Selling reason', [valueFor('sellingReason'), seller.sellingReason]),
+        field('Selling timeline', [valueFor('sellingTimeline'), seller.sellingTimeline]),
+        field('Special conditions', [valueFor('specialConditions', 'conditions'), seller.specialConditions]),
+        field('Notes', [valueFor('notes', 'sellerNotes'), seller.notes]),
       ]),
     ]
-    const additionalRows = Object.entries(sellerFormData || {})
-      .filter(([key, value]) => !usedKeys.has(key) && formatFieldValue(value))
-      .map(([key, value]) => ({ label: formatFieldLabel(key), value: formatFieldValue(value) }))
-    if (additionalRows.length) {
-      sections.push(section('Additional Captured Fields', additionalRows))
+    const completionRows = sections.flatMap((item) => item.rows)
+    const completed = completionRows.filter((row) => isSellerProfileFilled(row.rawValue)).length
+    const completionPercent = completionRows.length ? Math.round((completed / completionRows.length) * 100) : 0
+    const status = completionPercent >= 90 ? 'Complete' : completionPercent >= 60 ? 'In Progress' : 'Needs Attention'
+    return {
+      initials: getInitials(sellerName),
+      name: formatSellerProfileValue(sellerName),
+      type: `${formatSellerProfileValue(sellerTypeRaw)} Seller`,
+      propertyAddress: formatSellerProfileValue(propertyAddress),
+      mandateType: formatSellerProfileValue(mandateType),
+      askingPrice: formatSellerProfileValue(askingPrice, 'currency'),
+      status,
+      completionPercent,
+      sections,
     }
-    return sections
-  }, [listingRecord, mandateWorkspace.expiryDate, marketingDraft, sellerFormData])
+  }, [listingRecord, mandateWorkspace.expiryDate, marketingDraft.addressLine1, marketingDraft.listingDate, marketingDraft.price, sellerFormData])
 
   const keyInformationItems = useMemo(() => {
     const listingStatus = String(marketingDraft.listingStatus || listingRecord?.status || '').toLowerCase()
@@ -2783,6 +3016,36 @@ function AgentListingDetail() {
       reportsSent: Number(listingRecord?.sellerReport?.sentCount || listingRecord?.sellerReportsSent || 0) || 0,
     }
   }, [listingRecord, mandateWorkspace.signedDate, offerRows, sellerDocumentTrackerRows, viewings])
+
+  function handleEditSellerProfile() {
+    const portalLink = String(listingRecord?.sellerOnboarding?.link || listingRecord?.sellerOnboarding?.clientPortalLink || '').trim()
+    if (portalLink && typeof window !== 'undefined') {
+      window.open(portalLink, '_blank', 'noopener,noreferrer')
+      return
+    }
+    setDetailMessage('No seller portal link is linked yet. Send the seller portal link first, then edit the seller profile from the onboarding record.')
+  }
+
+  function handleDownloadSellerProfilePdf() {
+    const agencyName = String(profile?.organisationName || profile?.companyName || profile?.agencyName || 'Bridge').trim()
+    const summary = [
+      { label: 'Seller', value: sellerProfile.name },
+      { label: 'Seller Type', value: sellerProfile.type },
+      { label: 'Property Address', value: sellerProfile.propertyAddress },
+      { label: 'Mandate Type', value: sellerProfile.mandateType },
+      { label: 'Asking Price', value: sellerProfile.askingPrice },
+      { label: 'Status', value: sellerProfile.status },
+      { label: 'Profile Completion', value: `${sellerProfile.completionPercent}%` },
+    ]
+    const pdf = buildSellerProfilePdf({
+      agencyName,
+      generatedDate: formatLongDate(new Date()),
+      summary,
+      sections: sellerProfile.sections,
+    })
+    downloadBlob(pdf, `${sanitizeFileName(sellerProfile.name)}-seller-profile.pdf`)
+    setDetailMessage('Seller profile PDF downloaded.')
+  }
 
   function updateMarketingDraft(key, value) {
     setMarketingDraft((previous) => ({ ...previous, [key]: value }))
@@ -5140,17 +5403,95 @@ function AgentListingDetail() {
           ) : null}
 
           {sellerWorkspaceTab === 'seller' ? (
-            <section className="grid gap-5 xl:grid-cols-2">
-              {sellerOnboardingSections.map((section) => (
-                <article key={section.title} className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                  <h3 className="text-base font-semibold text-[#142132]">{section.title}</h3>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    {section.rows.map((row) => (
-                      <FieldDisplay key={`${section.title}-${row.label}`} label={row.label} value={row.value} />
+            <section className="space-y-6">
+              <div className="flex flex-col gap-4 rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)] lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/listings')}
+                    className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#5f7894] hover:text-[#1f4f78]"
+                  >
+                    <ArrowLeft size={13} />
+                    Back to Listings
+                  </button>
+                  <h2 className="mt-3 text-2xl font-semibold text-[#142132]">Seller Profile</h2>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-3 lg:flex lg:flex-wrap lg:justify-end">
+                  <Button size="sm" variant="secondary" onClick={handleEditSellerProfile}>
+                    <FileText size={15} />
+                    Edit Seller
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={handleDownloadSellerProfilePdf}>
+                    <FileText size={15} />
+                    Download PDF
+                  </Button>
+                  <Button size="sm" onClick={() => void handleResendSellerClientPortalLink()} disabled={resendingSellerPortalLink}>
+                    <Link2 size={15} />
+                    {resendingSellerPortalLink ? 'Sending...' : 'Send Seller Portal Link'}
+                  </Button>
+                </div>
+              </div>
+
+              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex min-w-0 items-start gap-4">
+                    <div className="grid h-16 w-16 shrink-0 place-items-center rounded-[20px] bg-[#10243a] text-xl font-semibold text-white">
+                      {sellerProfile.initials}
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="break-words text-2xl font-semibold text-[#142132]">{sellerProfile.name}</h3>
+                      <p className="mt-1 text-sm font-semibold text-[#607387]">{sellerProfile.type}</p>
+                      <p className="mt-2 break-words text-sm leading-5 text-[#425970]">{sellerProfile.propertyAddress}</p>
+                    </div>
+                  </div>
+                  <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {[
+                      { label: 'Mandate type', value: sellerProfile.mandateType },
+                      { label: 'Asking price', value: sellerProfile.askingPrice },
+                      { label: 'Seller status', value: sellerProfile.status },
+                      { label: 'Profile complete', value: `${sellerProfile.completionPercent}%` },
+                    ].map((item) => (
+                      <div key={item.label} className="min-w-0 rounded-[16px] border border-[#e5edf6] bg-[#fbfdff] px-4 py-3">
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">{item.label}</p>
+                        <p className="mt-1 break-words text-sm font-semibold leading-5 text-[#243d56]">{item.value}</p>
+                      </div>
                     ))}
                   </div>
-                </article>
-              ))}
+                </div>
+                <div className="mt-5">
+                  <div className="flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">
+                    <span>Profile completion</span>
+                    <span>{sellerProfile.completionPercent}%</span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#e5edf6]">
+                    <div className="h-full rounded-full bg-[#2f8f6b]" style={{ width: `${sellerProfile.completionPercent}%` }} />
+                  </div>
+                </div>
+              </article>
+
+              <section className="grid items-stretch gap-5 md:grid-cols-2 min-[1320px]:grid-cols-3">
+                {sellerProfile.sections.map((section) => {
+                  const Icon = section.icon || Info
+                  return (
+                    <article key={section.title} className="flex h-full min-h-[280px] flex-col rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                      <div className="flex items-start gap-3">
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#eef5fb] text-[#1f4f78]">
+                          <Icon size={18} />
+                        </span>
+                        <h3 className="min-w-0 break-words text-base font-semibold text-[#142132]">{section.title}</h3>
+                      </div>
+                      <div className="mt-5 grid gap-0">
+                        {section.rows.map((row) => (
+                          <div key={`${section.title}-${row.label}`} className="grid gap-1 border-b border-[#e7edf5] py-3 last:border-b-0">
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">{row.label}</p>
+                            <p className="break-words text-sm font-semibold leading-5 text-[#243d56]">{row.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+                  )
+                })}
+              </section>
             </section>
           ) : null}
 

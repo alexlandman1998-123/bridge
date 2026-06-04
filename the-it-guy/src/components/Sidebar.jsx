@@ -23,6 +23,7 @@ import {
   Trophy,
   Users,
   Wallet,
+  Workflow,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
@@ -121,6 +122,8 @@ const ICON_BY_KEY = {
   regional_operations: LineChart,
   hq_command_centre: LayoutDashboard,
   bank_relationships: Building2,
+  revenue_commissions: Wallet,
+  automation_rules: Workflow,
   bond_regions: Building2,
   bond_branches: Building2,
   bond_consultants: Users,
@@ -174,6 +177,8 @@ const BOND_NAV_SECTIONS = [
       'regional_operations',
       'hq_command_centre',
       'bank_relationships',
+      'revenue_commissions',
+      'automation_rules',
       'bond_reports',
     ],
   },

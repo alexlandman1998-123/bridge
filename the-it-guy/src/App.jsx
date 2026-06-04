@@ -106,6 +106,8 @@ const BondBranchOperationsPage = lazy(() => import('./pages/bond/BondBranchOpera
 const BondRegionalOperationsPage = lazy(() => import('./pages/bond/BondRegionalOperationsPage'))
 const BondHQCommandCentrePage = lazy(() => import('./pages/bond/BondHQCommandCentrePage'))
 const BondBankRelationshipsPage = lazy(() => import('./pages/bond/BondBankRelationshipsPage'))
+const BondRevenueManagementPage = lazy(() => import('./pages/bond/BondRevenueManagementPage'))
+const BondAutomationCentrePage = lazy(() => import('./pages/bond/BondAutomationCentrePage'))
 const CommercialLayout = lazy(() => import('./modules/commercial/components/CommercialLayout'))
 const CommercialActivityPage = lazy(() => import('./modules/commercial/pages/CommercialActivityPage'))
 const CommercialBrokerPerformancePage = lazy(() => import('./modules/commercial/pages/CommercialBrokerPerformancePage'))
@@ -1735,6 +1737,26 @@ function AppRoutes() {
                   <RoleRoute allowedRoles={['bond_originator']}>
                     <AppErrorBoundary scope="bond-bank-workspace" title="Bank workspace failed to load">
                       <BondBankRelationshipsPage />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/revenue"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <AppErrorBoundary scope="bond-revenue-management" title="Revenue & commissions failed to load">
+                      <BondRevenueManagementPage />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/automation"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <AppErrorBoundary scope="bond-automation-centre" title="Automation & rules failed to load">
+                      <BondAutomationCentrePage />
                     </AppErrorBoundary>
                   </RoleRoute>
                 }
