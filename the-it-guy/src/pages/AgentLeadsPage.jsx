@@ -117,6 +117,7 @@ import {
 
 const pageShell = 'mx-auto flex w-full max-w-[1480px] flex-col gap-5'
 const panelClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm'
+const buyerWorkspaceCardClass = `${panelClass} card`
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const LEAD_CATEGORY_FILTERS = [
   { key: 'all', label: 'All Leads', helper: 'Unified operating list', icon: Tag },
@@ -514,13 +515,14 @@ function getBuyerPropertyTypeLabel(row = {}, requirement = getBuyerPrimaryRequir
   return formatCleanValue(types[0] || requirement.propertyCategory || requirement.property_category || row.propertyInterest || row.property_interest)
 }
 
-function getBuyerBedBathLabel(row = {}, requirement = getBuyerPrimaryRequirement(row)) {
+function getBuyerBedroomLabel(row = {}, requirement = getBuyerPrimaryRequirement(row)) {
   const beds = toFiniteNumber(requirement.bedroomsMin ?? requirement.bedrooms_min ?? row.bedrooms)
+  return beds ? `${beds}+` : '—'
+}
+
+function getBuyerBathroomLabel(row = {}, requirement = getBuyerPrimaryRequirement(row)) {
   const baths = toFiniteNumber(requirement.bathroomsMin ?? requirement.bathrooms_min ?? row.bathrooms)
-  if (beds && baths) return `${beds} Bed / ${baths} Bath`
-  if (beds) return `${beds} Bed`
-  if (baths) return `${baths} Bath`
-  return getBuyerPropertyTypeLabel(row, requirement)
+  return baths ? `${baths}+` : '—'
 }
 
 function getBuyerTimelineLabel(requirement = {}) {
@@ -531,15 +533,6 @@ function getBuyerPreQualifiedLabel(requirement = {}) {
   if (requirement.preApproved !== null && requirement.preApproved !== undefined) return requirement.preApproved ? 'Pre-approved' : 'Not pre-approved'
   if (requirement.pre_approved !== null && requirement.pre_approved !== undefined) return requirement.pre_approved ? 'Pre-approved' : 'Not pre-approved'
   return formatCleanValue(requirement.financeStatus || requirement.finance_status)
-}
-
-function getBuyerPreferredContactLabel(row = {}, requirement = {}) {
-  return formatCleanValue(
-    requirement.communicationPreference ||
-    requirement.communication_preference ||
-    row.communicationPreferences?.preferredChannel ||
-    (row.phone ? 'Phone' : row.email ? 'Email' : ''),
-  )
 }
 
 function getBuyerLeadScore(row = {}, analytics = {}) {
@@ -609,11 +602,21 @@ function getNextAction(row = {}) {
   return category === 'buyer' ? 'Contact Buyer' : 'Contact Lead'
 }
 
-function EmptyState({ title, copy }) {
+function EmptyState({ title, copy, actionLabel = '', onAction }) {
   return (
-    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center">
-      <p className="text-sm font-semibold text-slate-900">{title}</p>
-      <p className="mx-auto mt-2 max-w-xl text-sm text-slate-500">{copy}</p>
+    <div className="empty-state bg-slate-50 px-5 py-10">
+      <div className="mx-auto grid max-w-xl justify-items-center gap-2">
+        <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-400 shadow-sm">
+          <Search size={18} />
+        </span>
+        <p className="text-sm font-semibold text-slate-900">{title}</p>
+        <p className="text-sm text-slate-500">{copy}</p>
+        {actionLabel && onAction ? (
+          <button type="button" onClick={onAction} className="mt-2 inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white">
+            {actionLabel}
+          </button>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -714,35 +717,142 @@ function BuyerActionItem({ icon, title, description, buttonLabel, onClick, href 
   )
 }
 
-function BuyerSnapshotCard({ row, requirement, onViewRequirements }) {
-  const notes = normalizeText(requirement.notes || row.notes)
+function BuyerSnapshotCard({ row, requirement, onEdit }) {
   return (
-    <section className={`${panelClass} p-5`}>
+    <section className={buyerWorkspaceCardClass}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Buyer Snapshot</h2>
-          <p className="mt-1 text-sm text-slate-500">The key buyer context an agent needs before acting.</p>
+          <p className="mt-1 text-sm text-slate-500">Core search criteria for this buyer.</p>
         </div>
-        <StatusPill tone={getStageTone(row.stage)}>{formatCleanValue(row.stage || row.status)}</StatusPill>
+        <button type="button" onClick={onEdit} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          Edit
+        </button>
       </div>
       <dl className="mt-5 grid gap-3 sm:grid-cols-2">
-        <BuyerInfoRow label="Buyer Name" value={row.name} />
-        <BuyerInfoRow label="Email" value={row.email || '—'} />
-        <BuyerInfoRow label="Phone" value={row.phone || '—'} />
-        <BuyerInfoRow label="Preferred Contact" value={getBuyerPreferredContactLabel(row, requirement)} />
         <BuyerInfoRow label="Budget" value={getBuyerBudgetLabel(row, requirement)} />
-        <BuyerInfoRow label="Areas Of Interest" value={getBuyerAreaLabel(row, requirement)} />
         <BuyerInfoRow label="Property Type" value={getBuyerPropertyTypeLabel(row, requirement)} />
-        <BuyerInfoRow label="Bedrooms / Bathrooms" value={getBuyerBedBathLabel(row, requirement)} />
-        <BuyerInfoRow label="Move-In Timeline" value={getBuyerTimelineLabel(requirement)} />
-        <BuyerInfoRow label="Motivation" value={formatCleanValue(requirement.urgency || requirement.motivation || row.motivation)} />
-        <BuyerInfoRow label="Pre-Qualified" value={getBuyerPreQualifiedLabel(requirement)} />
-        <BuyerInfoRow label="Notes" value={notes || '—'} />
+        <BuyerInfoRow label="Bedrooms" value={getBuyerBedroomLabel(row, requirement)} />
+        <BuyerInfoRow label="Bathrooms" value={getBuyerBathroomLabel(row, requirement)} />
+        <BuyerInfoRow label="Areas" value={getBuyerAreaLabel(row, requirement)} />
       </dl>
-      <div className="mt-5">
-        <button type="button" onClick={onViewRequirements} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-          View full requirements
+    </section>
+  )
+}
+
+function BuyerLeadStatusCard({ row, sourceInfo, lastActivity }) {
+  const nextTask = row.nextTask || (Array.isArray(row.tasks) ? row.tasks.find((task) => String(task.status || '').toLowerCase() !== 'completed') : null)
+  return (
+    <section className={buyerWorkspaceCardClass}>
+      <div>
+        <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Lead Status</h2>
+        <p className="mt-1 text-sm text-slate-500">Ownership, source, and follow-up state.</p>
+      </div>
+      <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+        <BuyerInfoRow label="Stage" value={formatCleanValue(row.stage || row.status)} />
+        <BuyerInfoRow label="Source" value={formatCleanValue(sourceInfo?.leadSource || row.source)} />
+        <BuyerInfoRow label="Assigned Agent" value={getOwnerName(row)} />
+        <BuyerInfoRow label="Last Contact" value={lastActivity?.date ? formatDateTime(lastActivity.date) : '—'} />
+        <BuyerInfoRow label="Next Follow-up" value={nextTask?.dueDate || nextTask?.due_date ? formatDate(nextTask.dueDate || nextTask.due_date) : '—'} />
+      </dl>
+    </section>
+  )
+}
+
+function BuyerActivityOverviewCard({ row, workspace = {} }) {
+  const propertyShares = workspace.propertyShares || row.propertyShares || []
+  const listingInterests = workspace.listingInterests || row.listingInterests || []
+  const appointments = row.appointments || []
+  const offers = row.offers || []
+  const transactions = row.transactions || []
+  const listingsSent = propertyShares.length || listingInterests.filter((item) => item.sentAt || ['sent', 'viewed', 'viewing_scheduled'].includes(String(item.status || '').toLowerCase())).length
+  const listingsViewed = listingInterests.filter((item) => item.viewedAt || String(item.status || '').toLowerCase() === 'viewed').length
+  const viewingsBooked = appointments.filter((item) => {
+    const haystack = `${item.title || ''} ${item.appointmentType || item.appointment_type || ''}`.toLowerCase()
+    return haystack.includes('view') || haystack.includes('show')
+  }).length || row.appointmentCount || appointments.length
+  const transactionsCreated = transactions.length || (row.convertedTransactionId ? 1 : 0)
+  const metrics = [
+    { label: 'Listings Sent', value: listingsSent },
+    { label: 'Listings Viewed', value: listingsViewed },
+    { label: 'Viewings Booked', value: viewingsBooked },
+    { label: 'Offers Made', value: offers.length || row.offerCount || 0 },
+    { label: 'Transactions Created', value: transactionsCreated },
+  ]
+  return (
+    <section className={buyerWorkspaceCardClass}>
+      <div>
+        <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Activity Overview</h2>
+        <p className="mt-1 text-sm text-slate-500">Buyer engagement at a glance.</p>
+      </div>
+      <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+        {metrics.map((metric) => (
+          <BuyerInfoRow key={metric.label} label={metric.label} value={metric.value} />
+        ))}
+      </dl>
+    </section>
+  )
+}
+
+function BuyerOverviewRecentActivityCard({ row, timeline = [], onViewAll }) {
+  const items = [
+    ...(Array.isArray(timeline) ? timeline : []),
+    ...(Array.isArray(row.activities) ? row.activities : []),
+  ]
+    .map((item) => ({
+      ...item,
+      sortDate: getLatestActivityDate(item) || item.occurredAt || item.createdAt || item.updatedAt,
+    }))
+    .filter((item) => item.sortDate && !Number.isNaN(new Date(item.sortDate).getTime()))
+    .sort((left, right) => new Date(right.sortDate).getTime() - new Date(left.sortDate).getTime())
+    .slice(0, 5)
+
+  return (
+    <section className={buyerWorkspaceCardClass}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Recent Activity</h2>
+          <p className="mt-1 text-sm text-slate-500">Latest lead events and communication.</p>
+        </div>
+        <button type="button" onClick={onViewAll} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">View all</button>
+      </div>
+      <div className="mt-5 grid gap-3">
+        {items.length ? items.map((item) => (
+          <article key={item.id || item.activityId || item.activity_id || `${item.sortDate}-${item.title || item.activityType || item.kind}`} className="rounded-2xl bg-slate-50 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h4 className="text-sm font-semibold text-slate-950">{formatCleanValue(item.title || item.activityType || item.activity_type || item.communicationType || item.kind)}</h4>
+                <p className="mt-1 line-clamp-2 text-sm leading-5 text-slate-500">{item.summary || item.message || item.subject || item.activityNote || item.activity_note || 'Activity logged.'}</p>
+              </div>
+              <span className="shrink-0 text-xs font-semibold text-slate-500">{formatRelativeTime(item.sortDate)}</span>
+            </div>
+          </article>
+        )) : <EmptyState title="No recent activity" copy="Lead events, notes, calls, messages, and viewings will appear here." />}
+      </div>
+    </section>
+  )
+}
+
+function BuyerTasksDueCard({ tasks = [], onAddTask }) {
+  const dueTasks = (Array.isArray(tasks) ? tasks : [])
+    .filter((task) => String(task.status || '').toLowerCase() !== 'completed')
+    .sort((left, right) => new Date(left.dueDate || left.due_date || 0).getTime() - new Date(right.dueDate || right.due_date || 0).getTime())
+    .slice(0, 5)
+
+  return (
+    <section className={buyerWorkspaceCardClass}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Tasks Due</h2>
+          <p className="mt-1 text-sm text-slate-500">Open follow-up tasks for this lead.</p>
+        </div>
+        <button type="button" onClick={onAddTask} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white">
+          <Plus size={15} />
+          Add Task
         </button>
+      </div>
+      <div className="mt-5">
+        {dueTasks.length ? <TaskList items={dueTasks} /> : <EmptyState title="No tasks due" copy="Open follow-up tasks will appear here once created." actionLabel="Add Task" onAction={onAddTask} />}
       </div>
     </section>
   )
@@ -885,7 +995,7 @@ function BuyerLeadHeader({ row, sourceInfo, leadScore, lastActivity, onMore, onC
           </div>
           {lastActivity?.date ? <p className="mt-2 text-sm font-medium text-slate-500">Last activity {formatRelativeTime(lastActivity.date)} · {formatDateTime(lastActivity.date)}</p> : null}
         </div>
-        <div className="flex flex-wrap gap-2 xl:justify-end">
+        <div className="ml-auto flex w-full flex-wrap items-center justify-end gap-3 xl:w-auto">
           {row.phone ? (
             <a href={`tel:${row.phone}`} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
               <Phone size={15} />
@@ -911,40 +1021,22 @@ function BuyerLeadHeader({ row, sourceInfo, leadScore, lastActivity, onMore, onC
   )
 }
 
-function BuyerLeadOverview({ row, analytics, onNavigate }) {
+function BuyerLeadOverview({ row, workspace = {}, sourceInfo, onNavigate }) {
   const requirement = getBuyerPrimaryRequirement(row)
-  const leadScore = getBuyerLeadScore(row, analytics)
   const lastActivity = getBuyerLastActivity(row)
-  const statusLabel = formatCleanValue(row.stage || row.status)
-  const lastActivityDate = lastActivity?.date
   return (
-    <>
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <BuyerKpiCard label="Budget" value={getBuyerBudgetLabel(row, requirement)} helper="Purchase Price" icon={Tag} />
-        <BuyerKpiCard label="Area" value={getBuyerAreaLabel(row, requirement)} helper="Primary Area" icon={Home} />
-        <BuyerKpiCard label="Property Type" value={getBuyerBedBathLabel(row, requirement)} helper={getBuyerPropertyTypeLabel(row, requirement)} icon={Home} />
-        <BuyerKpiCard label="Status" value={statusLabel} helper={row.slaStatus === 'overdue' ? 'Needs attention' : 'On Track'} icon={CheckCircle2} />
-        <BuyerKpiCard label="Lead Score" value={`${leadScore}%`} helper={getIntentLabel(leadScore)} icon={CheckCircle2} />
-        <BuyerKpiCard label="Last Activity" value={lastActivityDate ? formatRelativeTime(lastActivityDate) : '—'} helper={lastActivityDate ? formatDateTime(lastActivityDate) : 'No activity yet'} icon={Clock3} />
+    <div className="section-stack">
+      <section className="card-grid buyer-overview-grid">
+        <BuyerSnapshotCard row={row} requirement={requirement} onEdit={() => onNavigate('property_match')} />
+        <BuyerLeadStatusCard row={row} sourceInfo={sourceInfo} lastActivity={lastActivity} />
+        <BuyerActivityOverviewCard row={row} workspace={workspace} />
       </section>
 
-      <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
-        <div className="grid gap-5">
-          <BuyerSnapshotCard row={row} requirement={requirement} onViewRequirements={() => onNavigate('requirements')} />
-          <BuyerPerformanceCard analytics={analytics} row={row} />
-        </div>
-        <div className="grid gap-5">
-          <BuyerNextActionsCard
-            row={row}
-            onViewTasks={() => onNavigate('tasks')}
-            onSendMatches={() => onNavigate((row.suggestions || []).length ? 'suggestions' : 'listings')}
-            onScheduleViewing={() => onNavigate('appointments')}
-            onCreateOffer={() => onNavigate('offers')}
-          />
-          <BuyerRecentActivityCard timeline={row.communicationTimeline} onViewAll={() => onNavigate('timeline')} />
-        </div>
+      <section className="card-grid buyer-overview-lower-grid">
+        <BuyerOverviewRecentActivityCard row={row} timeline={workspace.timeline || row.communicationTimeline || []} onViewAll={() => onNavigate('timeline')} />
+        <BuyerTasksDueCard tasks={row.tasks || []} onAddTask={() => onNavigate('tasks')} />
       </section>
-    </>
+    </div>
   )
 }
 
@@ -1548,7 +1640,7 @@ function RequirementCard({ requirement, lead, organisationId, actor, onSaved }) 
   )
 }
 
-function LeadRequirementsPanel({ organisationId, lead, requirements = [], actor, onSaved }) {
+function LeadRequirementsPanel({ organisationId, lead, requirements = [], actor, onSaved, title = 'Requirements', description = 'Structured lead intent for manual matching later. Existing loose lead fields are preserved as fallback context.' }) {
   const [showForm, setShowForm] = useState(false)
   const [creatingFromLegacy, setCreatingFromLegacy] = useState(false)
   const hasLegacy = Boolean(lead.budget || lead.areaInterest || lead.area_interest || lead.propertyInterest || lead.property_interest)
@@ -1567,8 +1659,8 @@ function LeadRequirementsPanel({ organisationId, lead, requirements = [], actor,
     <section className={`${panelClass} p-5`}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Requirements</h2>
-          <p className="mt-1 text-sm text-slate-500">Structured lead intent for manual matching later. Existing loose lead fields are preserved as fallback context.</p>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">{title}</h2>
+          <p className="mt-1 text-sm text-slate-500">{description}</p>
         </div>
         <button type="button" onClick={() => setShowForm((value) => !value)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white">
           <Plus size={15} />
@@ -2025,7 +2117,7 @@ function PropertyShareDialog({ draft, organisationId = '', lead, requirements = 
   )
 }
 
-function LeadListingInterestsPanel({ organisationId, lead, interests = [], requirements = [], actor, onSaved, onShare }) {
+function LeadListingInterestsPanel({ organisationId, lead, interests = [], requirements = [], actor, onSaved, onShare, title = 'Interested Listings', description = 'Canonical lead-to-listing relationships. No matching or transaction creation happens here.' }) {
   const [noteDrafts, setNoteDrafts] = useState({})
   const [scheduleDrafts, setScheduleDrafts] = useState({})
   const [workingId, setWorkingId] = useState('')
@@ -2091,8 +2183,8 @@ function LeadListingInterestsPanel({ organisationId, lead, interests = [], requi
     <section className={`${panelClass} p-5`}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Interested Listings</h2>
-          <p className="mt-1 text-sm text-slate-500">Canonical lead-to-listing relationships. No matching or transaction creation happens here.</p>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">{title}</h2>
+          <p className="mt-1 text-sm text-slate-500">{description}</p>
         </div>
         <StatusPill>{interests.length} linked</StatusPill>
       </div>
@@ -2224,7 +2316,7 @@ function SuggestionReasonList({ reasons = [] }) {
   )
 }
 
-function LeadSuggestionsPanel({ organisationId, lead, suggestions = [], actor, onSaved, onShare }) {
+function LeadSuggestionsPanel({ organisationId, lead, suggestions = [], actor, onSaved, onShare, title = 'Suggestions', description = 'Automated listing recommendations. Agents must accept before a relationship becomes an interested listing.' }) {
   const [workingId, setWorkingId] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -2269,8 +2361,8 @@ function LeadSuggestionsPanel({ organisationId, lead, suggestions = [], actor, o
     <section className={`${panelClass} p-5`}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Suggestions</h2>
-          <p className="mt-1 text-sm text-slate-500">Automated listing recommendations. Agents must accept before a relationship becomes an interested listing.</p>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">{title}</h2>
+          <p className="mt-1 text-sm text-slate-500">{description}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <StatusPill tone="blue">{pendingSuggestions.length} pending</StatusPill>
@@ -2986,7 +3078,7 @@ function getRecommendationAgeLabel(recommendation = {}) {
   return `${days} days old`
 }
 
-function LeadRecommendationsPanel({ recommendations = [], actor, onSaved, onShare }) {
+function LeadRecommendationsPanel({ recommendations = [], actor, onSaved, onShare, title = 'Recommendations', description = 'Recommended next actions generated from lead events, inactivity, suggestions, viewings, offers, and communication history.' }) {
   const [workingId, setWorkingId] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -3023,8 +3115,8 @@ function LeadRecommendationsPanel({ recommendations = [], actor, onSaved, onShar
     <section className={`${panelClass} p-5`}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Recommendations</h2>
-          <p className="mt-1 text-sm text-slate-500">Recommended next actions generated from lead events, inactivity, suggestions, viewings, offers, and communication history.</p>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">{title}</h2>
+          <p className="mt-1 text-sm text-slate-500">{description}</p>
         </div>
         <StatusPill tone="amber">{pendingCount} active</StatusPill>
       </div>
@@ -3073,6 +3165,52 @@ function LeadRecommendationsPanel({ recommendations = [], actor, onSaved, onShar
         )}
       </div>
     </section>
+  )
+}
+
+function BuyerPropertyMatchPanel({ organisationId, row, workspace = {}, actor, onSaved, onShare, onShareRecommendation }) {
+  const requirements = workspace.requirements || row.requirements || []
+  return (
+    <div className="section-stack">
+      <LeadRequirementsPanel
+        organisationId={organisationId}
+        lead={row}
+        requirements={requirements}
+        actor={actor}
+        onSaved={onSaved}
+        title="Buyer Requirements"
+        description="Structured buyer criteria used for matching and agent follow-up."
+      />
+      <LeadListingInterestsPanel
+        organisationId={organisationId}
+        lead={row}
+        interests={workspace.listingInterests || row.listingInterests || []}
+        requirements={requirements}
+        actor={actor}
+        onSaved={onSaved}
+        onShare={onShare}
+        title="Matched / Interested Listings"
+        description="Listings linked by enquiry, manual selection, matching, or accepted suggestions."
+      />
+      <LeadSuggestionsPanel
+        organisationId={organisationId}
+        lead={row}
+        suggestions={workspace.suggestions || row.suggestions || []}
+        actor={actor}
+        onSaved={onSaved}
+        onShare={onShare}
+        title="Smart Suggestions"
+        description="Automated listing suggestions for the agent to approve, reject, or send."
+      />
+      <LeadRecommendationsPanel
+        recommendations={workspace.recommendations || row.recommendations || []}
+        actor={actor}
+        onSaved={onSaved}
+        onShare={onShareRecommendation}
+        title="Recommended Actions"
+        description="Action recommendations generated from buyer activity, matching, viewings, offers, and inactivity."
+      />
+    </div>
   )
 }
 
@@ -3825,7 +3963,7 @@ function AgentLeadWorkspace() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [data, setData] = useState(null)
-  const [activeTab, setActiveTab] = useState('timeline')
+  const [activeTab, setActiveTab] = useState('overview')
   const [shareDraft, setShareDraft] = useState(null)
   const [sellerActionError, setSellerActionError] = useState('')
   const [sellerActionMessage, setSellerActionMessage] = useState('')
@@ -3896,11 +4034,8 @@ function AgentLeadWorkspace() {
     ]
     : [
       { key: 'overview', label: 'Overview' },
-      { key: 'requirements', label: 'Requirements' },
+      { key: 'property_match', label: 'Property Match' },
       { key: 'saved_searches', label: 'Saved Searches' },
-      { key: 'suggestions', label: 'Suggestions' },
-      { key: 'listings', label: 'Listings' },
-      { key: 'recommendations', label: 'Recommendations' },
       { key: 'timeline', label: 'Timeline' },
       { key: 'tasks', label: 'Tasks' },
       { key: 'appointments', label: 'Appointments' },
@@ -3921,7 +4056,7 @@ function AgentLeadWorkspace() {
     const suggestion = (row?.suggestions || data?.suggestions || []).find((item) => item.listingId === targetListingId)
     const listing = interest?.listing || suggestion?.listing || null
     if (!listing) {
-      setActiveTab('listings')
+      setActiveTab('property_match')
       return
     }
     setShareDraft({
@@ -4052,151 +4187,94 @@ function AgentLeadWorkspace() {
               onOpenListing={openSellerListing}
             />
           ) : (
-            <>
-          <BuyerLeadHeader
-            row={row}
-            sourceInfo={sourceInfo}
-            leadScore={getBuyerLeadScore(row, workspaceAnalytics)}
-            lastActivity={getBuyerLastActivity(row)}
-            onMore={() => setActiveTab('timeline')}
-            onConvert={() => {
-              if (row.convertedTransactionId) navigate(`/transactions/${row.convertedTransactionId}`)
-              else setActiveTab('offers')
-            }}
-          />
+            <div className="buyer-lead-workspace page-content">
+              <BuyerLeadHeader
+                row={row}
+                sourceInfo={sourceInfo}
+                leadScore={getBuyerLeadScore(row, workspaceAnalytics)}
+                lastActivity={getBuyerLastActivity(row)}
+                onMore={() => setActiveTab('timeline')}
+                onConvert={() => {
+                  if (row.convertedTransactionId) navigate(`/transactions/${row.convertedTransactionId}`)
+                  else setActiveTab('offers')
+                }}
+              />
 
-          <nav className={`${panelClass} flex gap-2 overflow-x-auto p-2`} aria-label="Lead workspace tabs">
-            {tabs.map((tab) => (
-              <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} className={`min-h-10 shrink-0 rounded-xl px-3 text-sm font-semibold ${activeTab === tab.key ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
-                {tab.label}
-              </button>
-            ))}
-          </nav>
+              <nav className={`${panelClass} buyer-workspace-tabs flex gap-2 overflow-x-auto p-2`} aria-label="Lead workspace tabs">
+                {tabs.map((tab) => (
+                  <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} className={`min-h-10 shrink-0 rounded-xl px-3 text-sm font-semibold ${activeTab === tab.key ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    {tab.label}
+                  </button>
+                ))}
+              </nav>
 
-          {activeTab === 'overview' ? (
-            <BuyerLeadOverview
-              row={row}
-              analytics={workspaceAnalytics}
-              onNavigate={setActiveTab}
-            />
-          ) : null}
+              <div className="tab-content">
+                {activeTab === 'overview' ? (
+                  <BuyerLeadOverview
+                    row={row}
+                    workspace={data || {}}
+                    sourceInfo={sourceInfo}
+                    onNavigate={setActiveTab}
+                  />
+                ) : null}
 
-          {activeTab === 'listing_journey' && isSellerLeadWorkspace ? (
-            <SellerJourneyPanel journey={sellerJourney} />
-          ) : null}
+                {activeTab === 'property_match' ? (
+                  <BuyerPropertyMatchPanel
+                    organisationId={organisationId}
+                    row={row}
+                    workspace={data || {}}
+                    actor={actor}
+                    onSaved={loadWorkspace}
+                    onShare={setShareDraft}
+                    onShareRecommendation={openShareFromRecommendation}
+                  />
+                ) : null}
 
-          {activeTab === 'readiness' && isSellerLeadWorkspace ? (
-            <SellerReadinessPanel readiness={sellerReadiness} />
-          ) : null}
+                {activeTab === 'saved_searches' ? (
+                  <SavedSearchesPanel
+                    organisationId={organisationId}
+                    lead={row}
+                    requirements={data?.requirements || row.requirements || []}
+                    savedSearches={data?.savedSearches || row.savedSearches || []}
+                    propertyShares={data?.propertyShares || row.propertyShares || []}
+                    actor={actor}
+                    onSaved={loadWorkspace}
+                  />
+                ) : null}
 
-          {activeTab === 'documents' && isSellerLeadWorkspace ? (
-            <SellerDocumentsPanel journey={sellerJourney} />
-          ) : null}
+                {activeTab === 'timeline' ? (
+                  <CommunicationTimelinePanel
+                    organisationId={organisationId}
+                    lead={row}
+                    actor={actor}
+                    timeline={data?.timeline || row.communicationTimeline || []}
+                    onSaved={loadWorkspace}
+                  />
+                ) : null}
 
-          {activeTab === 'seller_actions' && isSellerLeadWorkspace ? (
-            <SellerActionsPanel
-              journey={sellerJourney}
-              readiness={sellerReadiness}
-              onboardingStatus={sellerOnboardingStatus}
-              sendingOnboarding={sendingSellerOnboarding}
-              sellerActionError={sellerActionError}
-              sellerActionMessage={sellerActionMessage}
-              onSendSellerOnboarding={sendSellerOnboardingForLead}
-              onGenerateMandate={openMandateWorkspace}
-              onOpenListing={() => {
-                if (linkedSellerListing?.id) navigate(`/agent/listings/${linkedSellerListing.id}`)
-                else navigate('/listings')
-              }}
-              onOpenTimeline={() => setActiveTab('timeline')}
-            />
-          ) : null}
+                {activeTab === 'tasks' ? (
+                  <section className={buyerWorkspaceCardClass}>
+                    <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Tasks</h2>
+                    <TaskForm organisationId={organisationId} leadId={row.leadId} actor={actor} onSaved={loadWorkspace} />
+                    <div className="mt-5"><TaskList items={row.tasks} /></div>
+                  </section>
+                ) : null}
 
-          {activeTab === 'requirements' && !isSellerLeadWorkspace ? (
-            <LeadRequirementsPanel
-              organisationId={organisationId}
-              lead={row}
-              requirements={data?.requirements || row.requirements || []}
-              actor={actor}
-              onSaved={loadWorkspace}
-            />
-          ) : null}
+                {activeTab === 'appointments' ? (
+                  <section className={buyerWorkspaceCardClass}>
+                    <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Appointments</h2>
+                    <div className="mt-5"><AppointmentList items={row.appointments} /></div>
+                  </section>
+                ) : null}
 
-          {activeTab === 'suggestions' && !isSellerLeadWorkspace ? (
-            <LeadSuggestionsPanel
-              organisationId={organisationId}
-              lead={row}
-              suggestions={data?.suggestions || row.suggestions || []}
-              actor={actor}
-              onSaved={loadWorkspace}
-              onShare={setShareDraft}
-            />
-          ) : null}
-
-          {activeTab === 'saved_searches' && !isSellerLeadWorkspace ? (
-            <SavedSearchesPanel
-              organisationId={organisationId}
-              lead={row}
-              requirements={data?.requirements || row.requirements || []}
-              savedSearches={data?.savedSearches || row.savedSearches || []}
-              propertyShares={data?.propertyShares || row.propertyShares || []}
-              actor={actor}
-              onSaved={loadWorkspace}
-            />
-          ) : null}
-
-          {activeTab === 'timeline' ? (
-            <CommunicationTimelinePanel
-              organisationId={organisationId}
-              lead={row}
-              actor={actor}
-              timeline={data?.timeline || row.communicationTimeline || []}
-              onSaved={loadWorkspace}
-            />
-          ) : null}
-
-          {activeTab === 'recommendations' && !isSellerLeadWorkspace ? (
-            <LeadRecommendationsPanel
-              recommendations={data?.recommendations || row.recommendations || []}
-              actor={actor}
-              onSaved={loadWorkspace}
-              onShare={openShareFromRecommendation}
-            />
-          ) : null}
-
-          {activeTab === 'tasks' && !isSellerLeadWorkspace ? (
-            <section className={`${panelClass} p-5`}>
-              <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Tasks</h2>
-              <TaskForm organisationId={organisationId} leadId={row.leadId} actor={actor} onSaved={loadWorkspace} />
-              <div className="mt-5"><TaskList items={row.tasks} /></div>
-            </section>
-          ) : null}
-
-          {activeTab === 'listings' && !isSellerLeadWorkspace ? (
-            <LeadListingInterestsPanel
-              organisationId={organisationId}
-              lead={row}
-              interests={data?.listingInterests || row.listingInterests || []}
-              requirements={data?.requirements || row.requirements || []}
-              actor={actor}
-              onSaved={loadWorkspace}
-              onShare={setShareDraft}
-            />
-          ) : null}
-
-          {activeTab === 'appointments' ? (
-            <section className={`${panelClass} p-5`}>
-              <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Appointments</h2>
-              <div className="mt-5"><AppointmentList items={row.appointments} /></div>
-            </section>
-          ) : null}
-
-          {activeTab === 'offers' && !isSellerLeadWorkspace ? (
-            <section className={`${panelClass} p-5`}>
-              <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Offers / Transactions</h2>
-              <div className="mt-5"><OfferTransactionList offers={row.offers} transactions={row.transactions} convertedTransactionId={row.convertedTransactionId} /></div>
-            </section>
-          ) : null}
-            </>
+                {activeTab === 'offers' ? (
+                  <section className={buyerWorkspaceCardClass}>
+                    <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Offers / Transactions</h2>
+                    <div className="mt-5"><OfferTransactionList offers={row.offers} transactions={row.transactions} convertedTransactionId={row.convertedTransactionId} /></div>
+                  </section>
+                ) : null}
+              </div>
+            </div>
           )}
         </>
       ) : null}

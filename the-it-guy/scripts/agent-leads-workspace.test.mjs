@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { createServer } from 'vite'
 
 const leads = [
@@ -154,6 +155,25 @@ try {
   assert.equal(filterAgentLeadRows(rows, { source: 'Unknown' }).length, 1)
   assert.equal(filterAgentLeadRows(rows, { agent: 'Alex Agent' }).length, 1)
   assert.equal(filterAgentLeadRows(rows, { createdFrom: '2026-05-02', createdTo: '2026-05-03' }).length, 2)
+
+  const workspaceSource = await readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
+  const buyerTabsSource = workspaceSource.match(/: \[\n      \{ key: 'overview'[\s\S]*?\n    \], \[isSellerLeadWorkspace\]\)/)?.[0] || ''
+  const buyerTabKeys = [...buyerTabsSource.matchAll(/\{ key: '([^']+)'/g)].map((match) => match[1])
+  assert.deepEqual(buyerTabKeys, [
+    'overview',
+    'property_match',
+    'saved_searches',
+    'timeline',
+    'tasks',
+    'appointments',
+    'offers',
+  ], 'buyer lead workspace should expose exactly seven tabs')
+  for (const retiredTab of ['requirements', 'suggestions', 'listings', 'recommendations']) {
+    assert.ok(!buyerTabKeys.includes(retiredTab), `${retiredTab} should be merged into Property Match`)
+  }
+  for (const sectionTitle of ['Buyer Requirements', 'Matched / Interested Listings', 'Smart Suggestions', 'Recommended Actions']) {
+    assert.ok(workspaceSource.includes(`title="${sectionTitle}"`), `Property Match should include ${sectionTitle}`)
+  }
 
   console.log('agent lead workspace smoke tests passed')
 } finally {
