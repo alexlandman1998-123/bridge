@@ -162,22 +162,12 @@ export const APP_NAV_BY_ROLE = {
   ],
   bond_originator: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
-    { key: 'bond_pipeline', label: 'Pipeline', to: '/bond/pipeline', navSection: 'main', activeMatch: ['/bond/pipeline', '/applications'] },
-    { key: 'applications', label: 'Applications', to: '/bond/applications', navSection: 'main', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
-    { key: 'bond_developments', label: 'Developments', to: '/bond/developments', navSection: 'main', activeMatch: ['/bond/developments', '/developments'] },
-    { key: 'clients', label: 'Clients', to: '/bond/clients', navSection: 'main', activeMatch: ['/bond/clients', '/clients'] },
-    { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners'] },
-    { key: 'partner_intelligence', label: 'Partner Intelligence', to: '/bond/partner-intelligence', navSection: 'main', activeMatch: ['/bond/partner-intelligence'] },
-    { key: 'consultant_performance', label: 'Consultant Performance', to: '/bond/consultant-performance', navSection: 'main', activeMatch: ['/bond/consultant-performance'] },
-    { key: 'branch_operations', label: 'Branch Operations', to: '/bond/branch-operations', navSection: 'main', activeMatch: ['/bond/branch-operations'] },
-    { key: 'regional_operations', label: 'Regional Operations', to: '/bond/regional-operations', navSection: 'main', activeMatch: ['/bond/regional-operations'] },
-    { key: 'hq_command_centre', label: 'HQ Command Centre', to: '/bond/hq-command-centre', navSection: 'main', activeMatch: ['/bond/hq-command-centre'] },
+    { key: 'bond_applications', label: 'Applications', to: '/bond/pipeline', navSection: 'main', activeMatch: ['/bond/pipeline', '/bond/applications', '/bond/transactions', '/transactions', '/applications'] },
+    { key: 'bond_organisation', label: 'Organisation', to: '/bond/organisation?view=overview', navSection: 'main', activeMatch: ['/bond/organisation', '/bond/hq-command-centre', '/bond/branch-operations', '/bond/regional-operations', '/bond/consultant-performance'] },
+    { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners', '/bond/partner-intelligence', '/bond/organisation/partners'] },
     { key: 'bank_relationships', label: 'Bank Relationships', to: '/bond/banks', navSection: 'main', activeMatch: ['/bond/banks'] },
     { key: 'revenue_commissions', label: 'Revenue & Commissions', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
-    { key: 'automation_rules', label: 'Automation & Rules', to: '/bond/automation', navSection: 'main', activeMatch: ['/bond/automation'] },
-    { key: 'predictive_intelligence', label: 'Predictive Intelligence', to: '/bond/predictive-intelligence', navSection: 'main', activeMatch: ['/bond/predictive-intelligence'] },
     { key: 'bond_reports', label: 'Reports', to: '/bond/reports', navSection: 'main', activeMatch: ['/bond/reports', '/reports'] },
-    { key: 'bond_organisation', label: 'Organisation', to: '/bond/organisation', navSection: 'main', activeMatch: ['/bond/organisation'] },
     { key: 'settings', label: 'Settings', to: '/settings', navSection: 'secondary' },
   ],
   client: [
@@ -223,6 +213,101 @@ const BOND_REGIONAL_ROLES = new Set(['regional_manager', 'bond_regional_manager'
 const BOND_BRANCH_ROLES = new Set(['branch_manager', 'bond_branch_manager', 'team_lead', 'bond_team_lead'])
 const BOND_CONSULTANT_ROLES = new Set(['bond_originator', 'consultant', 'bond_consultant', 'processor', 'bond_processor'])
 const BOND_INDEPENDENT_ROLES = new Set(['bond_independent_consultant', 'independent_consultant', 'independent_originator'])
+
+const BOND_APPLICATIONS_ACTIVE_MATCH = ['/bond/pipeline', '/bond/applications', '/bond/transactions', '/transactions', '/applications']
+const BOND_ORGANISATION_ACTIVE_MATCH = [
+  '/bond/organisation',
+  '/bond/hq-command-centre',
+  '/bond/branch-operations',
+  '/bond/regional-operations',
+  '/bond/consultant-performance',
+]
+const BOND_BRANCH_REGION_ACTIVE_MATCH = [
+  '/bond/branch-operations',
+  '/bond/regional-operations',
+  '/bond/organisation/regions',
+  '/bond/organisation/branches',
+]
+const BOND_REPORTS_ACTIVE_MATCH = ['/bond/reports', '/reports', '/bond/predictive-intelligence']
+const BOND_SETTINGS_ACTIVE_MATCH = ['/settings', '/bond/automation']
+
+function createBondApplicationsNav() {
+  return {
+    key: 'bond_applications',
+    label: 'Applications',
+    to: '/bond/pipeline',
+    navSection: 'main',
+    activeMatch: BOND_APPLICATIONS_ACTIVE_MATCH,
+    children: [
+      { key: 'bond_pipeline', label: 'Pipeline', to: '/bond/pipeline', activeMatch: ['/bond/pipeline', '/applications'] },
+      { key: 'applications', label: 'Applications', to: '/bond/applications', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
+    ],
+  }
+}
+
+function createBondOrganisationNav({ includeOverview = false, includeBranchRegions = true, includeConsultants = true, defaultView = 'overview' } = {}) {
+  const children = []
+  if (includeOverview) {
+    children.push({
+      key: 'bond_org_overview',
+      label: 'Overview',
+      to: '/bond/organisation?view=overview',
+      activeMatch: ['/bond/hq-command-centre'],
+    })
+  }
+  if (includeBranchRegions) {
+    children.push({
+      key: 'bond_branches_regions',
+      label: 'Branches / Regions',
+      to: '/bond/organisation?view=branches',
+      activeMatch: BOND_BRANCH_REGION_ACTIVE_MATCH,
+    })
+  }
+  if (includeConsultants) {
+    children.push({
+      key: 'bond_consultants',
+      label: 'Consultants',
+      to: '/bond/organisation?view=consultants',
+      activeMatch: ['/bond/consultant-performance', '/bond/organisation/consultants'],
+    })
+  }
+
+  return {
+    key: 'bond_organisation',
+    label: 'Organisation',
+    to: `/bond/organisation?view=${defaultView}`,
+    navSection: 'main',
+    activeMatch: BOND_ORGANISATION_ACTIVE_MATCH,
+    children,
+  }
+}
+
+function createBondReportsNav() {
+  return {
+    key: 'bond_reports',
+    label: 'Reports',
+    to: '/bond/reports',
+    navSection: 'main',
+    activeMatch: BOND_REPORTS_ACTIVE_MATCH,
+    children: [
+      { key: 'bond_reports_analytics', label: 'Analytics', to: '/bond/reports', activeMatch: ['/bond/reports', '/reports'] },
+      { key: 'predictive_intelligence', label: 'Predictive Intelligence', to: '/bond/predictive-intelligence', activeMatch: ['/bond/predictive-intelligence'] },
+    ],
+  }
+}
+
+function createBondSettingsNav() {
+  return {
+    key: 'settings',
+    label: 'Settings',
+    to: '/settings',
+    navSection: 'secondary',
+    activeMatch: BOND_SETTINGS_ACTIVE_MATCH,
+    children: [
+      { key: 'automation_rules', label: 'Automation & Rules', to: '/bond/automation', activeMatch: ['/bond/automation'] },
+    ],
+  }
+}
 
 function normalizeMembershipRole(value) {
   const normalized = String(value || '').trim().toLowerCase()
@@ -298,80 +383,39 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
     if (BOND_HQ_ROLES.has(normalizedMembershipRole)) {
       return [
         { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
-        { key: 'applications', label: 'Applications', to: '/bond/applications', navSection: 'main', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
-        {
-          key: 'bond_organisation',
-          label: 'Organisation',
-          to: '/bond/organisation?view=regions',
-          navSection: 'main',
-          activeMatch: ['/bond/organisation'],
-          children: [
-            { key: 'bond_regions', label: 'Regions', to: '/bond/organisation?view=regions' },
-            { key: 'bond_branches', label: 'Branches', to: '/bond/organisation?view=branches' },
-            { key: 'bond_consultants', label: 'Consultants', to: '/bond/organisation?view=consultants' },
-          ],
-        },
-        { key: 'consultant_performance', label: 'Consultant Performance', to: '/bond/consultant-performance', navSection: 'main', activeMatch: ['/bond/consultant-performance'] },
-        { key: 'branch_operations', label: 'Branch Operations', to: '/bond/branch-operations', navSection: 'main', activeMatch: ['/bond/branch-operations'] },
-        { key: 'regional_operations', label: 'Regional Operations', to: '/bond/regional-operations', navSection: 'main', activeMatch: ['/bond/regional-operations'] },
-        { key: 'hq_command_centre', label: 'HQ Command Centre', to: '/bond/hq-command-centre', navSection: 'main', activeMatch: ['/bond/hq-command-centre'] },
+        createBondApplicationsNav(),
+        createBondOrganisationNav({ includeOverview: true, defaultView: 'overview' }),
+        { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners', '/bond/partner-intelligence', '/bond/organisation/partners'] },
         { key: 'bank_relationships', label: 'Bank Relationships', to: '/bond/banks', navSection: 'main', activeMatch: ['/bond/banks'] },
         { key: 'revenue_commissions', label: 'Revenue & Commissions', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
-        { key: 'automation_rules', label: 'Automation & Rules', to: '/bond/automation', navSection: 'main', activeMatch: ['/bond/automation'] },
-        { key: 'predictive_intelligence', label: 'Predictive Intelligence', to: '/bond/predictive-intelligence', navSection: 'main', activeMatch: ['/bond/predictive-intelligence'] },
-        { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners'] },
-        { key: 'partner_intelligence', label: 'Partner Intelligence', to: '/bond/partner-intelligence', navSection: 'main', activeMatch: ['/bond/partner-intelligence'] },
-        { key: 'bond_reports', label: 'Reports', to: '/bond/reports', navSection: 'main', activeMatch: ['/bond/reports', '/reports'] },
-        { key: 'settings', label: 'Settings', to: '/settings', navSection: 'secondary' },
+        createBondReportsNav(),
+        createBondSettingsNav(),
       ]
     }
 
     if (BOND_REGIONAL_ROLES.has(normalizedMembershipRole)) {
       return [
         { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
-        { key: 'applications', label: 'Applications', to: '/bond/applications', navSection: 'main', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
-        {
-          key: 'bond_organisation',
-          label: 'Organisation',
-          to: '/bond/organisation?view=branches',
-          navSection: 'main',
-          activeMatch: ['/bond/organisation'],
-          children: [
-            { key: 'bond_branches', label: 'Branches', to: '/bond/organisation?view=branches' },
-            { key: 'bond_consultants', label: 'Consultants', to: '/bond/organisation?view=consultants' },
-          ],
-        },
-        { key: 'consultant_performance', label: 'Consultant Performance', to: '/bond/consultant-performance', navSection: 'main', activeMatch: ['/bond/consultant-performance'] },
-        { key: 'branch_operations', label: 'Branch Operations', to: '/bond/branch-operations', navSection: 'main', activeMatch: ['/bond/branch-operations'] },
-        { key: 'regional_operations', label: 'Regional Operations', to: '/bond/regional-operations', navSection: 'main', activeMatch: ['/bond/regional-operations'] },
+        createBondApplicationsNav(),
+        createBondOrganisationNav({ includeOverview: true, defaultView: 'branches' }),
+        { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners', '/bond/partner-intelligence', '/bond/organisation/partners'] },
         { key: 'bank_relationships', label: 'Bank Relationships', to: '/bond/banks', navSection: 'main', activeMatch: ['/bond/banks'] },
         { key: 'revenue_commissions', label: 'Revenue & Commissions', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
-        { key: 'automation_rules', label: 'Automation & Rules', to: '/bond/automation', navSection: 'main', activeMatch: ['/bond/automation'] },
-        { key: 'predictive_intelligence', label: 'Predictive Intelligence', to: '/bond/predictive-intelligence', navSection: 'main', activeMatch: ['/bond/predictive-intelligence'] },
-        { key: 'partner_intelligence', label: 'Partner Intelligence', to: '/bond/partner-intelligence', navSection: 'main', activeMatch: ['/bond/partner-intelligence'] },
+        createBondReportsNav(),
+        createBondSettingsNav(),
       ]
     }
 
     if (BOND_BRANCH_ROLES.has(normalizedMembershipRole)) {
       return [
         { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
-        { key: 'applications', label: 'Applications', to: '/bond/applications', navSection: 'main', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
-        {
-          key: 'bond_organisation',
-          label: 'Organisation',
-          to: '/bond/organisation?view=consultants',
-          navSection: 'main',
-          activeMatch: ['/bond/organisation'],
-          children: [
-            { key: 'bond_consultants', label: 'Consultants', to: '/bond/organisation?view=consultants' },
-          ],
-        },
-        { key: 'consultant_performance', label: 'Consultant Performance', to: '/bond/consultant-performance', navSection: 'main', activeMatch: ['/bond/consultant-performance'] },
-        { key: 'branch_operations', label: 'Branch Operations', to: '/bond/branch-operations', navSection: 'main', activeMatch: ['/bond/branch-operations'] },
+        createBondApplicationsNav(),
+        createBondOrganisationNav({ includeOverview: false, includeBranchRegions: true, defaultView: 'branches' }),
+        { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners', '/bond/partner-intelligence', '/bond/organisation/partners'] },
         { key: 'bank_relationships', label: 'Bank Relationships', to: '/bond/banks', navSection: 'main', activeMatch: ['/bond/banks'] },
         { key: 'revenue_commissions', label: 'Revenue & Commissions', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
-        { key: 'predictive_intelligence', label: 'Predictive Intelligence', to: '/bond/predictive-intelligence', navSection: 'main', activeMatch: ['/bond/predictive-intelligence'] },
-        { key: 'partner_intelligence', label: 'Partner Intelligence', to: '/bond/partner-intelligence', navSection: 'main', activeMatch: ['/bond/partner-intelligence'] },
+        createBondReportsNav(),
+        createBondSettingsNav(),
       ]
     }
 

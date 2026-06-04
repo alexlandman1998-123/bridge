@@ -2311,8 +2311,11 @@ async function runAppointmentCreateNotificationSideEffects(notificationSource = 
   let inviteNotificationResults = []
   let documentNotificationResults = []
   let reminderResults = []
+  const notificationEventType = normalizeLowerText(notificationSource.status) === 'confirmed'
+    ? 'appointment_confirmed'
+    : 'appointment_confirmation_required'
 
-  inviteNotificationResults = await notifyAppointmentParticipants(notificationSource.appointmentId, 'appointment_confirmation_required', {
+  inviteNotificationResults = await notifyAppointmentParticipants(notificationSource.appointmentId, notificationEventType, {
     visibility: notificationSource.visibility,
     metadata: {
       source: 'createAppointmentAsync',

@@ -48,30 +48,42 @@ async function main() {
     })
     assert.deepEqual(
       defaultBondNav.map((item) => item.label),
-      ['Dashboard', 'My Applications', 'Clients', 'Tasks'],
+      ['Dashboard', 'My Applications', 'Consultant Performance', 'My Commissions', 'Clients', 'Tasks'],
     )
     assert.deepEqual(
       hqBondNav.map((item) => item.label),
-      ['Dashboard', 'Applications', 'Organisation', 'Partners', 'Reports', 'Settings'],
+      ['Dashboard', 'Applications', 'Organisation', 'Partners', 'Bank Relationships', 'Revenue & Commissions', 'Reports', 'Settings'],
     )
     assert.equal(consultantNav.some((item) => item.key === 'settings'), false)
     assert.deepEqual(
       hqBondNav.filter((item) => item.navSection !== 'secondary').map((item) => item.label),
-      ['Dashboard', 'Applications', 'Organisation', 'Partners', 'Reports'],
+      ['Dashboard', 'Applications', 'Organisation', 'Partners', 'Bank Relationships', 'Revenue & Commissions', 'Reports'],
     )
     assert.deepEqual(
       hqBondNav.filter((item) => item.navSection === 'secondary').map((item) => item.label),
       ['Settings'],
     )
-    assert.equal(hqBondNav.find((item) => item.key === 'applications')?.to, '/bond/applications')
+    const applicationsNav = hqBondNav.find((item) => item.key === 'bond_applications')
+    assert.equal(applicationsNav?.to, '/bond/pipeline')
+    assert.deepEqual(applicationsNav?.children.map((item) => item.label), ['Pipeline', 'Applications'])
+    assert.equal(applicationsNav?.children.find((item) => item.key === 'bond_pipeline')?.to, '/bond/pipeline')
+    assert.equal(applicationsNav?.children.find((item) => item.key === 'applications')?.to, '/bond/applications')
     const organisationNav = hqBondNav.find((item) => item.key === 'bond_organisation')
-    assert.equal(organisationNav?.to, '/bond/organisation?view=regions')
-    assert.deepEqual(organisationNav?.children.map((item) => item.label), ['Regions', 'Branches', 'Consultants'])
-    assert.equal(organisationNav?.children.find((item) => item.key === 'bond_regions')?.to, '/bond/organisation?view=regions')
-    assert.equal(organisationNav?.children.find((item) => item.key === 'bond_branches')?.to, '/bond/organisation?view=branches')
+    assert.equal(organisationNav?.to, '/bond/organisation?view=overview')
+    assert.deepEqual(organisationNav?.children.map((item) => item.label), ['Overview', 'Branches / Regions', 'Consultants'])
+    assert.equal(organisationNav?.children.find((item) => item.key === 'bond_org_overview')?.to, '/bond/organisation?view=overview')
+    assert.equal(organisationNav?.children.find((item) => item.key === 'bond_branches_regions')?.to, '/bond/organisation?view=branches')
     assert.equal(organisationNav?.children.find((item) => item.key === 'bond_consultants')?.to, '/bond/organisation?view=consultants')
+    const reportsNav = hqBondNav.find((item) => item.key === 'bond_reports')
+    assert.deepEqual(reportsNav?.children.map((item) => item.label), ['Analytics', 'Predictive Intelligence'])
+    assert.equal(reportsNav?.children.find((item) => item.key === 'bond_reports_analytics')?.to, '/bond/reports')
+    assert.equal(reportsNav?.children.find((item) => item.key === 'predictive_intelligence')?.to, '/bond/predictive-intelligence')
+    const settingsNav = hqBondNav.find((item) => item.key === 'settings')
+    assert.deepEqual(settingsNav?.children.map((item) => item.label), ['Automation & Rules'])
+    assert.equal(settingsNav?.children.find((item) => item.key === 'automation_rules')?.to, '/bond/automation')
     assert.equal(hqBondNav.some((item) => item.key === 'documents' || item.key === 'tasks' || item.key === 'bond_calendar'), false)
     assert.equal(hqBondNav.some((item) => item.key === 'banks' || item.key === 'teams' || item.key === 'performance'), false)
+    assert.equal(hqBondNav.some((item) => item.key === 'automation_rules' || item.key === 'predictive_intelligence' || item.key === 'branch_operations' || item.key === 'regional_operations'), false)
 
     const appSource = require('node:fs').readFileSync(path.join(PROJECT_ROOT, 'src/App.jsx'), 'utf8')
     assert.match(appSource, /path="\/bond\/tasks"/)
@@ -79,8 +91,8 @@ async function main() {
     assert.match(appSource, /path="\/documents"/)
 
     const sidebarSource = require('node:fs').readFileSync(path.join(PROJECT_ROOT, 'src/components/Sidebar.jsx'), 'utf8')
-    assert.match(sidebarSource, /bond_regions/)
-    assert.match(sidebarSource, /bond_branches/)
+    assert.match(sidebarSource, /bond_applications/)
+    assert.match(sidebarSource, /bond_branches_regions/)
     assert.match(sidebarSource, /bond_consultants/)
     assert.match(sidebarSource, /'tasks'/)
 

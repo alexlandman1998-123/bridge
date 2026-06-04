@@ -28,10 +28,18 @@ import {
   createAgencyCrmLeadRecord,
   createAgencyCrmLeadTask,
   deleteAgencyCrmLeadRecord,
+  ensureAgencyCrmLeadRecordPersisted,
   updateAgencyCrmLeadRecord,
 } from '../lib/agencyCrmRepository'
-import { createAppointmentAsync } from '../lib/agencyPipelineService'
+import { createAppointmentAsync, updateAppointmentAsync } from '../lib/agencyPipelineService'
+import {
+  createCanonicalOffer,
+  createOfferPortalSession,
+  createTransactionFromAcceptedCanonicalOffer,
+  upsertAppointmentViewedListings,
+} from '../lib/buyerLifecycleService'
 import { normalizeLeadCategory as normalizeCanonicalLeadCategory } from '../lib/leadCategory'
+import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
   fetchAgentLeadWorkspace,
   filterAgentLeadRows,
@@ -127,6 +135,18 @@ const LEAD_APPOINTMENT_TYPES = [
   { value: 'buyer_consultation', label: 'Buyer Consultation' },
   { value: 'otp_signing', label: 'OTP Signing' },
   { value: 'other', label: 'Other Appointment' },
+]
+const VIEWING_OUTCOME_OPTIONS = [
+  'Interested',
+  'Needs second viewing',
+  'Offer discussed',
+  'Not interested',
+]
+const VIEWING_NEXT_STEP_OPTIONS = [
+  'Send offer link',
+  'Schedule second viewing',
+  'Follow up with buyer',
+  'Close out property',
 ]
 const LEAD_CATEGORY_FILTERS = [
   { key: 'all', label: 'All Leads', helper: 'Unified operating list', icon: Tag },
@@ -990,6 +1010,13 @@ function getTodayInputValue() {
   return now.toISOString().slice(0, 10)
 }
 
+function getFutureInputValue(days = 7) {
+  const now = new Date()
+  now.setDate(now.getDate() + Number(days || 0))
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
+  return now.toISOString().slice(0, 10)
+}
+
 function getLeadContactSnapshot(lead = {}) {
   const contact = lead.contact || {}
   return {
@@ -1014,6 +1041,47 @@ function getLeadPrimaryListingId(lead = {}) {
   )
 }
 
+function getLeadAppointmentPropertyOptions(lead = {}) {
+  const options = []
+  const addOption = (listing = {}, source = '', meta = {}) => {
+    const listingId = normalizeText(listing?.id || listing?.listingId || listing?.listing_id || meta.listingId)
+    if (!listingId || options.some((option) => option.id === listingId)) return
+    const title = normalizeText(listing?.title || listing?.listingTitle || listing?.propertyAddress || listing?.address) || 'Linked property'
+    const location = [listing?.address, listing?.suburb, listing?.city].map(normalizeText).filter(Boolean).join(', ')
+    options.push({
+      id: listingId,
+      label: title,
+      description: location || normalizeText(source) || 'Property details pending',
+      price: listing?.price || listing?.askingPrice || listing?.asking_price || null,
+      source,
+      isOriginalEnquiry: Boolean(meta.isOriginalEnquiry),
+    })
+  }
+
+  for (const interest of Array.isArray(lead.listingInterests) ? lead.listingInterests : []) {
+    addOption(interest.listing || {}, interest.isOriginalEnquiry ? 'Enquiry property' : interest.source || 'Shortlist', {
+      listingId: interest.listingId || interest.listing_id,
+      isOriginalEnquiry: interest.isOriginalEnquiry,
+    })
+  }
+  for (const suggestion of Array.isArray(lead.suggestions) ? lead.suggestions : []) {
+    if (String(suggestion.status || '').toLowerCase() !== 'accepted') continue
+    addOption(suggestion.listing || {}, 'Accepted suggestion', { listingId: suggestion.listingId || suggestion.listing_id })
+  }
+  for (const listing of Array.isArray(lead.listings) ? lead.listings : []) {
+    addOption(listing, 'Linked listing')
+  }
+  const fallbackListingId = getLeadPrimaryListingId(lead)
+  if (fallbackListingId) {
+    addOption({ id: fallbackListingId, title: 'Listing attached to lead' }, 'Lead listing id')
+  }
+
+  return options.sort((left, right) => {
+    if (left.isOriginalEnquiry !== right.isOriginalEnquiry) return left.isOriginalEnquiry ? -1 : 1
+    return left.label.localeCompare(right.label)
+  })
+}
+
 function isViewingAppointment(item = {}) {
   const haystack = `${item.title || ''} ${item.appointmentType || item.appointment_type || ''} ${item.appointmentTypeLabel || ''}`.toLowerCase()
   return haystack.includes('viewing')
@@ -1026,6 +1094,252 @@ function getAppointmentDateLabel(item = {}) {
   const startTime = normalizeText(item.startTime || item.start_time || item.appointmentTime || item.appointment_time)
   if (date && startTime) return formatDateTime(`${date}T${startTime}`)
   return date ? formatDate(date) : 'Date to be confirmed'
+}
+
+function getAppointmentId(item = {}) {
+  return normalizeText(item.appointmentId || item.appointment_id || item.id)
+}
+
+function getAppointmentListingId(item = {}) {
+  return normalizeText(item.listingId || item.listing_id)
+}
+
+function getAppointmentDateInputValue(item = {}) {
+  const explicit = normalizeText(item.dateTime || item.date_time || item.startsAt || item.starts_at)
+  if (explicit) return explicit.slice(0, 10)
+  return normalizeText(item.date || item.appointmentDate || item.appointment_date) || getTodayInputValue()
+}
+
+function getAppointmentTimeInputValue(item = {}) {
+  const explicit = normalizeText(item.dateTime || item.date_time || item.startsAt || item.starts_at)
+  if (explicit.includes('T')) return explicit.split('T')[1]?.slice(0, 5) || ''
+  return normalizeText(item.startTime || item.start_time || item.appointmentTime || item.appointment_time)
+}
+
+function getAppointmentStatusTone(status = '') {
+  const normalized = normalizeText(status).toLowerCase()
+  if (normalized === 'completed' || normalized === 'confirmed') return 'green'
+  if (normalized === 'no_show' || normalized.includes('cancel') || normalized.includes('declin')) return 'red'
+  if (normalized.includes('request') || normalized.includes('reschedule') || normalized.includes('alternative')) return 'amber'
+  return 'slate'
+}
+
+function isAppointmentClosed(item = {}) {
+  const normalized = normalizeText(item.status).toLowerCase()
+  return ['completed', 'no_show', 'cancelled', 'declined'].includes(normalized) || normalized.includes('cancel') || normalized.includes('declin')
+}
+
+function getAppointmentOutcomeDraft(item = {}, propertyOptions = []) {
+  const listingId = getAppointmentListingId(item) || propertyOptions[0]?.id || ''
+  return {
+    listingId,
+    outcome: normalizeText(item.outcomeSummary || item.outcome_summary) || 'Interested',
+    buyerFeedback: normalizeText(item.clientFeedback || item.client_feedback),
+    agentNotes: normalizeText(item.agentNotes || item.agent_notes || item.notes),
+    nextStep: normalizeText(item.nextStep || item.next_step) || 'Send offer link',
+    rescheduleDate: getAppointmentDateInputValue(item),
+    rescheduleTime: getAppointmentTimeInputValue(item),
+  }
+}
+
+function getLeadContactFallback(lead = {}) {
+  const contact = getLeadContactSnapshot(lead)
+  const nameParts = splitName(contact.name || lead.name || lead.buyerName || '')
+  return {
+    contactId: contact.contactId || lead.contactId || lead.contact_id || '',
+    firstName: lead.firstName || lead.first_name || nameParts.firstName || 'Buyer',
+    lastName: lead.lastName || lead.last_name || nameParts.lastName,
+    email: contact.email || lead.email || '',
+    phone: contact.phone || lead.phone || '',
+    contactType: lead.leadCategory || lead.lead_category || 'Buyer Lead',
+  }
+}
+
+function getOfferStatusTone(status = '') {
+  const normalized = normalizeText(status).toLowerCase()
+  if (normalized.includes('accepted') || normalized.includes('converted')) return 'green'
+  if (normalized.includes('rejected') || normalized.includes('withdrawn') || normalized.includes('expired')) return 'red'
+  if (normalized.includes('submitted') || normalized.includes('seller') || normalized.includes('review')) return 'amber'
+  if (normalized.includes('sent') || normalized.includes('draft')) return 'blue'
+  return 'slate'
+}
+
+function getOfferId(offer = {}) {
+  return normalizeText(offer.id || offer.offerId || offer.offer_id)
+}
+
+function getOfferListingId(offer = {}) {
+  return normalizeText(offer.listingId || offer.listing_id)
+}
+
+function getOfferTransactionId(offer = {}) {
+  return normalizeText(offer.transactionId || offer.transaction_id)
+}
+
+function getOfferAmount(offer = {}) {
+  return offer.amount || offer.offerAmount || offer.offer_amount
+}
+
+function getOfferStatus(offer = {}) {
+  return normalizeText(offer.status).toLowerCase()
+}
+
+function isOfferAcceptedForConversion(offer = {}) {
+  const status = getOfferStatus(offer)
+  return status === 'accepted' || status === 'converted_to_transaction' || Boolean(getOfferTransactionId(offer))
+}
+
+function isOfferConvertedToTransaction(offer = {}) {
+  return getOfferStatus(offer) === 'converted_to_transaction' || Boolean(getOfferTransactionId(offer))
+}
+
+function getAcceptedOfferForConversion(offers = []) {
+  return (Array.isArray(offers) ? offers : [])
+    .filter(isOfferAcceptedForConversion)
+    .sort((left, right) => {
+      if (isOfferConvertedToTransaction(left) !== isOfferConvertedToTransaction(right)) {
+        return isOfferConvertedToTransaction(left) ? 1 : -1
+      }
+      return new Date(right.acceptedAt || right.accepted_at || right.updatedAt || right.updated_at || 0) -
+        new Date(left.acceptedAt || left.accepted_at || left.updatedAt || left.updated_at || 0)
+    })[0] || null
+}
+
+function getLeadLinkedTransactionId(lead = {}) {
+  const transactions = Array.isArray(lead.transactions) ? lead.transactions : []
+  return normalizeText(
+    lead.convertedTransactionId ||
+      lead.converted_transaction_id ||
+      lead.transactionId ||
+      lead.transaction_id ||
+      transactions[0]?.id ||
+      transactions[0]?.transactionId ||
+      transactions[0]?.transaction_id,
+  )
+}
+
+function getLeadHandoffState(lead = {}) {
+  const transactionId = getLeadLinkedTransactionId(lead)
+  const activities = Array.isArray(lead.activities) ? lead.activities : []
+  const timeline = Array.isArray(lead.communicationTimeline) ? lead.communicationTimeline : []
+  const activityHaystack = [...activities, ...timeline]
+    .map((item) => `${item.activityType || item.activity_type || item.title || ''} ${item.activityNote || item.activity_note || item.summary || ''}`)
+    .join(' ')
+    .toLowerCase()
+  const openTasks = (Array.isArray(lead.tasks) ? lead.tasks : []).filter((task) => !['completed', 'cancelled', 'done'].includes(normalizeText(task.status).toLowerCase()))
+  const hasOpenTaskLike = (needle = '') => openTasks.some((task) => normalizeText(task.title).toLowerCase().includes(needle))
+  return {
+    transactionId,
+    buyerOnboardingSent: activityHaystack.includes('buyer onboarding sent') || activityHaystack.includes('client onboarding'),
+    financeTaskReady: hasOpenTaskLike('finance') || hasOpenTaskLike('bond'),
+    ficaTaskReady: hasOpenTaskLike('fica') || hasOpenTaskLike('document'),
+    conveyancerTaskReady: hasOpenTaskLike('conveyancer') || hasOpenTaskLike('handover'),
+  }
+}
+
+function getLeadOfferPropertyContexts(lead = {}) {
+  const propertyOptions = getLeadAppointmentPropertyOptions(lead)
+  const optionById = new Map(propertyOptions.map((option) => [option.id, option]))
+  const contexts = []
+  const seen = new Set()
+  const addContext = (context = {}) => {
+    const listingId = normalizeText(context.listingId)
+    if (!listingId) return
+    const appointmentId = normalizeText(context.appointmentId)
+    const key = context.key || `${appointmentId || 'property'}:${listingId}`
+    if (seen.has(key)) return
+    seen.add(key)
+    const option = optionById.get(listingId) || {}
+    const appointmentStatus = normalizeText(context.appointmentStatus).toLowerCase()
+    const completed = appointmentStatus === 'completed' || Boolean(context.completedAt)
+    const confirmed = appointmentStatus === 'confirmed'
+    contexts.push({
+      key,
+      listingId,
+      appointmentId,
+      label: context.label || option.label || 'Selected property',
+      description: context.description || option.description || 'Property details pending',
+      price: context.price || option.price || null,
+      appointmentLabel: context.appointmentLabel || '',
+      appointmentStatus: context.appointmentStatus || '',
+      source: context.source || option.source || 'Linked property',
+      completed,
+      confirmed,
+      readiness: completed ? 'best' : confirmed ? 'ready' : appointmentId ? 'scheduled' : 'manual',
+      readinessLabel: completed ? 'Completed viewing' : confirmed ? 'Confirmed viewing' : appointmentId ? 'Viewing scheduled' : 'No viewing linked',
+      priority: completed ? 0 : confirmed ? 1 : appointmentId ? 2 : 3,
+    })
+  }
+
+  for (const appointment of Array.isArray(lead.appointments) ? lead.appointments : []) {
+    if (!isViewingAppointment(appointment)) continue
+    const listingId = getAppointmentListingId(appointment)
+    if (!listingId) continue
+    const option = optionById.get(listingId) || {}
+    addContext({
+      key: `${getAppointmentId(appointment)}:${listingId}`,
+      listingId,
+      appointmentId: getAppointmentId(appointment),
+      label: option.label || appointment.location || 'Viewed property',
+      description: option.description || appointment.location || getAppointmentDateLabel(appointment),
+      price: option.price,
+      appointmentLabel: getAppointmentDateLabel(appointment),
+      appointmentStatus: appointment.status || '',
+      completedAt: appointment.completedAt || appointment.completed_at,
+      source: 'Viewing',
+    })
+  }
+
+  for (const option of propertyOptions) {
+    addContext({
+      key: `property:${option.id}`,
+      listingId: option.id,
+      label: option.label,
+      description: option.description,
+      price: option.price,
+      source: option.isOriginalEnquiry ? 'Enquiry property' : option.source,
+    })
+  }
+
+  return contexts.sort((left, right) => {
+    if (left.priority !== right.priority) return left.priority - right.priority
+    return left.label.localeCompare(right.label)
+  })
+}
+
+function getAppointmentParticipantRoleSet(item = {}) {
+  return new Set((Array.isArray(item.participants) ? item.participants : [])
+    .map((participant) => normalizeText(participant.participantRole || participant.role).toLowerCase())
+    .filter(Boolean))
+}
+
+function getAppointmentIntegrityBadges(item = {}) {
+  const roles = getAppointmentParticipantRoleSet(item)
+  const hasCalendarTime = Boolean(item.dateTime || item.date_time || ((item.date || item.appointmentDate || item.appointment_date) && (item.startTime || item.start_time || item.appointmentTime || item.appointment_time)))
+  const hasInviteSignal = Boolean(item.notificationsQueued || item.invitationSentAt || item.invitation_sent_at || (Array.isArray(item.participants) && item.participants.some((participant) => participant.invitationSentAt || participant.invitation_sent_at || participant.lastInvitationSentAt || participant.last_invitation_sent_at)))
+  return [
+    { label: 'Calendar', done: hasCalendarTime, tone: hasCalendarTime ? 'green' : 'amber' },
+    { label: 'Lead', done: Boolean(item.leadId || item.lead_id), tone: item.leadId || item.lead_id ? 'green' : 'amber' },
+    { label: 'Property', done: Boolean(item.listingId || item.listing_id), tone: item.listingId || item.listing_id ? 'green' : 'amber' },
+    { label: 'Buyer', done: roles.has('buyer') || Boolean(item.contactId || item.contact_id), tone: roles.has('buyer') || item.contactId || item.contact_id ? 'green' : 'amber' },
+    { label: 'Agent', done: roles.has('agent') || Boolean(item.assignedAgentId || item.agentId || item.agent_id), tone: roles.has('agent') || item.assignedAgentId || item.agentId || item.agent_id ? 'green' : 'amber' },
+    { label: 'Invite', done: hasInviteSignal, tone: hasInviteSignal ? 'green' : 'slate' },
+  ]
+}
+
+function buildAppointmentCreateMessage(result = {}, draft = {}, isViewing = false) {
+  const calendarMessage = result?.appointmentId || result?.appointment_id
+    ? 'Appointment saved to the shared calendar source.'
+    : 'Appointment created; calendar id is pending.'
+  const workflowMessage = isViewing
+    ? 'Viewing lifecycle and lead timeline update were requested.'
+    : 'Lead timeline update was requested.'
+  const inviteMessage = draft.sendInviteEmails
+    ? result?.notificationsQueued
+      ? 'Buyer invite and reminders were queued.'
+      : 'Invite sending was requested, but the notification queue did not report as queued.'
+    : 'Buyer invite was skipped by agent choice.'
+  return [calendarMessage, workflowMessage, inviteMessage].join(' ')
 }
 
 function getBuyerOutreachSteps(row = {}) {
@@ -1049,6 +1363,151 @@ function getBuyerOutreachSteps(row = {}) {
     { key: 'offer_made', label: 'Offer made', done: offers.length > 0, meta: offers.length ? `${offers.length} offer${offers.length === 1 ? '' : 's'}` : 'No offer', hint: 'Create or link an offer when the buyer is ready.' },
     { key: 'transaction_created', label: 'Transaction created', done: Boolean(row.convertedTransactionId || row.converted_transaction_id || transactions.length), meta: transactions.length ? `${transactions.length} transaction${transactions.length === 1 ? '' : 's'}` : 'Not created', hint: 'Convert the lead once there is a real transaction.' },
   ]
+}
+
+function getBuyerJourneyCommand(row = {}) {
+  const steps = getBuyerOutreachSteps(row)
+  const offers = Array.isArray(row.offers) ? row.offers : []
+  const appointments = Array.isArray(row.appointments) ? row.appointments : []
+  const propertyContexts = getLeadOfferPropertyContexts(row)
+  const handoff = getLeadHandoffState(row)
+  const acceptedOffer = getAcceptedOfferForConversion(offers)
+  const completedCount = steps.filter((step) => step.done).length
+  const progress = Math.round((completedCount / Math.max(steps.length, 1)) * 100)
+  const missingPropertyOnViewing = appointments.some((appointment) => isViewingAppointment(appointment) && !getAppointmentListingId(appointment))
+  const appointmentBadges = appointments.flatMap(getAppointmentIntegrityBadges)
+  const appointmentWarnings = appointmentBadges.filter((badge) => !badge.done && ['Calendar', 'Lead', 'Property', 'Buyer'].includes(badge.label)).length
+  const openTasks = (Array.isArray(row.tasks) ? row.tasks : []).filter((task) => !['completed', 'cancelled', 'done'].includes(normalizeText(task.status).toLowerCase()))
+  const nextIncomplete = steps.find((step) => !step.done)
+  let action = {
+    key: 'timeline',
+    label: 'Review timeline',
+    tab: 'timeline',
+    description: 'The core buyer journey is complete. Review activity and keep the relationship warm.',
+  }
+
+  if (!steps.find((step) => step.key === 'reached_out')?.done) {
+    action = {
+      key: 'outreach',
+      label: 'Log outreach',
+      tab: 'timeline',
+      description: 'Start by recording the first call, WhatsApp, or email so the lead has a clean contact trail.',
+    }
+  } else if (!propertyContexts.length) {
+    action = {
+      key: 'property_match',
+      label: 'Add property context',
+      tab: 'property_match',
+      description: 'Attach the enquiry property or shortlist before scheduling viewings or sending offer links.',
+    }
+  } else if (!steps.find((step) => step.key === 'viewing_scheduled')?.done) {
+    action = {
+      key: 'appointments',
+      label: 'Book viewing',
+      tab: 'appointments',
+      description: 'Schedule a viewing from the relevant property so buyer, calendar, and property context stay linked.',
+    }
+  } else if (!steps.find((step) => step.key === 'viewing_completed')?.done || missingPropertyOnViewing) {
+    action = {
+      key: 'appointments',
+      label: missingPropertyOnViewing ? 'Fix viewing property' : 'Complete viewing',
+      tab: 'appointments',
+      description: missingPropertyOnViewing
+        ? 'One or more viewings needs a property link before the offer path is clean.'
+        : 'Capture viewing outcome, buyer feedback, and the next step before sending an offer link.',
+    }
+  } else if (!offers.length) {
+    action = {
+      key: 'offers',
+      label: 'Send offer link',
+      tab: 'offers',
+      description: 'Use the completed viewing context to send the buyer a property-specific offer link.',
+    }
+  } else if (!acceptedOffer) {
+    action = {
+      key: 'offers',
+      label: 'Review offer status',
+      tab: 'offers',
+      description: 'Track submitted offers through seller review until one is accepted.',
+    }
+  } else if (!handoff.transactionId) {
+    action = {
+      key: 'offers',
+      label: 'Create transaction',
+      tab: 'offers',
+      description: 'Convert the accepted offer into a transaction and start buyer onboarding.',
+    }
+  } else if (!handoff.buyerOnboardingSent || !handoff.financeTaskReady || !handoff.ficaTaskReady || !handoff.conveyancerTaskReady) {
+    action = {
+      key: 'offers',
+      label: 'Prepare handoff',
+      tab: 'offers',
+      description: 'Finish onboarding, finance, documents, and conveyancer handoff from the linked transaction.',
+    }
+  }
+
+  const healthItems = [
+    {
+      key: 'property_context',
+      label: 'Property Context',
+      done: propertyContexts.length > 0,
+      value: propertyContexts.length ? `${propertyContexts.length} linked` : 'Missing',
+      tab: 'property_match',
+    },
+    {
+      key: 'appointments',
+      label: 'Appointments',
+      done: appointments.length > 0 && appointmentWarnings === 0,
+      value: appointments.length ? appointmentWarnings ? `${appointmentWarnings} warning${appointmentWarnings === 1 ? '' : 's'}` : `${appointments.length} linked` : 'None',
+      tab: 'appointments',
+    },
+    {
+      key: 'offers',
+      label: 'Offers',
+      done: offers.length > 0,
+      value: offers.length ? acceptedOffer ? 'Accepted offer' : `${offers.length} active` : 'No offer',
+      tab: 'offers',
+    },
+    {
+      key: 'transaction',
+      label: 'Transaction',
+      done: Boolean(handoff.transactionId),
+      value: handoff.transactionId ? 'Linked' : 'Not created',
+      tab: 'offers',
+    },
+    {
+      key: 'handoff',
+      label: 'Handoff',
+      done: Boolean(handoff.transactionId && handoff.buyerOnboardingSent && handoff.financeTaskReady && handoff.ficaTaskReady && handoff.conveyancerTaskReady),
+      value: handoff.transactionId ? 'In progress' : 'Locked',
+      tab: 'offers',
+    },
+    {
+      key: 'tasks',
+      label: 'Open Tasks',
+      done: openTasks.length > 0,
+      value: openTasks.length ? `${openTasks.length} open` : 'None',
+      tab: 'tasks',
+    },
+  ]
+
+  return {
+    action,
+    healthItems,
+    progress,
+    completedCount,
+    totalCount: steps.length,
+    nextLabel: nextIncomplete?.label || 'Relationship maintenance',
+    stageLabel: handoff.transactionId
+      ? 'Transaction handoff'
+      : acceptedOffer
+        ? 'Accepted offer'
+        : offers.length
+          ? 'Offer active'
+          : propertyContexts.length
+            ? 'Property matching'
+            : 'Lead qualification',
+  }
 }
 
 function BuyerOutreachProgress({ row, onLogOutreach, onMarkReachedOut, onAddViewing, onOpenAppointments, onOpenOffers, onConvert }) {
@@ -1134,6 +1593,55 @@ function BuyerOutreachProgress({ row, onLogOutreach, onMarkReachedOut, onAddView
               </span>
             )}
           </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function BuyerJourneyCommandPanel({ row, onOpenTab }) {
+  const command = useMemo(() => getBuyerJourneyCommand(row), [row])
+
+  return (
+    <section className={`${panelClass} card`}>
+      <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr] lg:items-start">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusPill tone="blue">{command.stageLabel}</StatusPill>
+            <StatusPill>{command.completedCount}/{command.totalCount} stages</StatusPill>
+          </div>
+          <h2 className="mt-3 text-lg font-semibold tracking-[-0.03em] text-slate-950">Buyer Journey Command</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-500">{command.action.description}</p>
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
+            <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${command.progress}%` }} />
+          </div>
+          <p className="mt-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Next checkpoint: {command.nextLabel}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Recommended Action</p>
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-950">{command.action.label}</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">Opens the tab where the next workflow action should happen.</p>
+            </div>
+            <button type="button" onClick={() => onOpenTab(command.action.tab)} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white">
+              Open
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        {command.healthItems.map((item) => (
+          <button key={item.key} type="button" onClick={() => onOpenTab(item.tab)} className={`min-h-[104px] rounded-2xl border p-3 text-left transition hover:border-blue-200 ${item.done ? 'border-emerald-100 bg-emerald-50/60' : 'border-slate-200 bg-slate-50'}`}>
+            <div className="flex items-center justify-between gap-2">
+              <span className={`flex h-7 w-7 items-center justify-center rounded-full ${item.done ? 'bg-emerald-600 text-white' : 'bg-white text-slate-400 ring-1 ring-slate-200'}`}>
+                {item.done ? <CheckCircle2 size={14} /> : <Clock3 size={14} />}
+              </span>
+              <StatusPill tone={item.done ? 'green' : 'amber'}>{item.done ? 'OK' : 'Check'}</StatusPill>
+            </div>
+            <p className="mt-3 text-sm font-semibold text-slate-950">{item.label}</p>
+            <p className="mt-1 text-xs font-medium text-slate-500">{item.value}</p>
+          </button>
         ))}
       </div>
     </section>
@@ -3559,31 +4067,232 @@ function BuyerPropertyMatchPanel({ organisationId, row, workspace = {}, actor, o
   )
 }
 
-function AppointmentList({ items = [] }) {
+function AppointmentList({ items = [], organisationId, lead, actor, onSaved }) {
+  const propertyOptions = useMemo(() => getLeadAppointmentPropertyOptions(lead), [lead])
+  const [drafts, setDrafts] = useState({})
+  const [workingId, setWorkingId] = useState('')
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+
+  function getDraft(item) {
+    const appointmentId = getAppointmentId(item)
+    return drafts[appointmentId] || getAppointmentOutcomeDraft(item, propertyOptions)
+  }
+
+  function updateDraft(appointmentId, patch) {
+    setDrafts((previous) => ({
+      ...previous,
+      [appointmentId]: {
+        ...(previous[appointmentId] || {}),
+        ...patch,
+      },
+    }))
+  }
+
+  async function saveAppointmentOutcome(item, nextStatus = '') {
+    const appointmentId = getAppointmentId(item)
+    const draft = getDraft(item)
+    const isViewing = isViewingAppointment(item)
+    const listingId = normalizeText(draft.listingId || getAppointmentListingId(item))
+    if (!organisationId || !appointmentId) {
+      setError('This appointment needs to be saved before it can be updated.')
+      return
+    }
+    if (isViewing && nextStatus === 'completed' && !listingId) {
+      setError('Choose the property viewed before marking this viewing complete.')
+      return
+    }
+
+    try {
+      setWorkingId(`${appointmentId}:${nextStatus || 'feedback'}`)
+      setError('')
+      setMessage('')
+      const selectedProperty = propertyOptions.find((option) => option.id === listingId)
+      const outcomeSummary = nextStatus === 'no_show'
+        ? 'Buyer no-show'
+        : normalizeText(draft.outcome) || (nextStatus === 'completed' ? 'Viewing completed' : 'Viewing feedback captured')
+      await updateAppointmentAsync(organisationId, appointmentId, {
+        ...(nextStatus ? { status: nextStatus } : {}),
+        listingId: listingId || null,
+        outcomeSummary,
+        clientFeedback: draft.buyerFeedback,
+        agentNotes: draft.agentNotes,
+        nextStep: draft.nextStep,
+        ...(nextStatus === 'completed' ? { completedAt: new Date().toISOString() } : {}),
+      }, { actor })
+
+      if (isViewing && listingId && nextStatus === 'completed') {
+        await upsertAppointmentViewedListings({
+          organisationId,
+          appointmentId,
+          leadId: lead?.leadId,
+          agentId: actor?.id || actor?.userId,
+          replaceExisting: true,
+          viewedListings: [
+            {
+              listingId,
+              outcome: normalizeText(draft.outcome) || 'Interested',
+              buyerFeedback: draft.buyerFeedback,
+              agentNotes: draft.agentNotes,
+              viewedAt: new Date().toISOString(),
+              metadata: {
+                source: 'lead_workspace_viewing_outcome',
+                nextStep: draft.nextStep,
+                listingLabel: selectedProperty?.label || '',
+              },
+            },
+          ],
+        }).catch(() => [])
+      }
+
+      if (nextStatus === 'completed') setMessage('Viewing completed. The lead progress and viewed property history were updated.')
+      else if (nextStatus === 'no_show') setMessage('Appointment marked as no-show.')
+      else setMessage('Viewing feedback saved.')
+      await onSaved?.()
+    } catch (updateError) {
+      setError(updateError?.message || 'Unable to update this appointment.')
+    } finally {
+      setWorkingId('')
+    }
+  }
+
+  async function rescheduleAppointment(item) {
+    const appointmentId = getAppointmentId(item)
+    const draft = getDraft(item)
+    if (!organisationId || !appointmentId) {
+      setError('This appointment needs to be saved before it can be rescheduled.')
+      return
+    }
+    if (!normalizeText(draft.rescheduleDate) || !normalizeText(draft.rescheduleTime)) {
+      setError('Choose the new date and start time before rescheduling.')
+      return
+    }
+
+    try {
+      setWorkingId(`${appointmentId}:reschedule`)
+      setError('')
+      setMessage('')
+      await updateAppointmentAsync(organisationId, appointmentId, {
+        date: draft.rescheduleDate,
+        startTime: draft.rescheduleTime,
+        status: 'requested',
+        nextStep: 'Await buyer confirmation',
+        attachCalendarInvite: true,
+      }, { actor })
+      setMessage('Appointment rescheduled and buyer confirmation was requested.')
+      await onSaved?.()
+    } catch (updateError) {
+      setError(updateError?.message || 'Unable to reschedule this appointment.')
+    } finally {
+      setWorkingId('')
+    }
+  }
+
   if (!items.length) return <EmptyState title="No appointments linked" copy="Lead, contact, listing, and converted transaction appointments will appear here when related by existing ids." />
   return (
-    <div className="grid gap-3 lg:grid-cols-2">
-      {items.map((item) => (
-        <article key={item.appointmentId || item.appointment_id || item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-slate-950">{item.title || item.appointmentType || item.appointment_type || 'Appointment'}</p>
-              <p className="mt-1 text-xs text-slate-500">{getAppointmentDateLabel(item)}</p>
+    <div className="grid gap-4">
+      {error ? <p className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
+      {message ? <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+      <div className="grid gap-3 lg:grid-cols-2">
+        {items.map((item, index) => {
+        const appointmentId = getAppointmentId(item)
+        const integrityBadges = getAppointmentIntegrityBadges(item)
+        const draft = getDraft(item)
+        const isViewing = isViewingAppointment(item)
+        const isClosed = isAppointmentClosed(item)
+        const status = normalizeText(item.status) || 'scheduled'
+        const itemKey = appointmentId || `${item.title || 'appointment'}-${index}`
+        return (
+          <article key={itemKey} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-950">{item.title || item.appointmentType || item.appointment_type || 'Appointment'}</p>
+                <p className="mt-1 text-xs text-slate-500">{getAppointmentDateLabel(item)}</p>
+              </div>
+              <StatusPill tone={getAppointmentStatusTone(status)}>{status}</StatusPill>
             </div>
-            <StatusPill>{item.status || 'scheduled'}</StatusPill>
-          </div>
-          <p className="mt-3 text-sm text-slate-600">{item.location || item.locationAddress || item.location_address || 'No location captured'}</p>
-        </article>
-      ))}
+            <p className="mt-3 text-sm text-slate-600">{item.location || item.locationAddress || item.location_address || 'No location captured'}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {integrityBadges.map((badge) => (
+                <StatusPill key={badge.label} tone={badge.tone}>{badge.label}</StatusPill>
+              ))}
+            </div>
+            {isViewing ? (
+              <div className="mt-4 grid gap-3 rounded-2xl border border-slate-200 bg-white p-3">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                    Viewed property
+                    <select value={draft.listingId} onChange={(event) => updateDraft(appointmentId, { listingId: event.target.value })} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm normal-case tracking-normal text-slate-800 outline-none focus:border-blue-300">
+                      <option value="">{propertyOptions.length ? 'Choose property' : 'No linked properties yet'}</option>
+                      {propertyOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {[option.isOriginalEnquiry ? 'Enquiry' : option.source, option.label].filter(Boolean).join(' - ')}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                    Interest level
+                    <select value={draft.outcome} onChange={(event) => updateDraft(appointmentId, { outcome: event.target.value })} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm normal-case tracking-normal text-slate-800 outline-none focus:border-blue-300">
+                      {VIEWING_OUTCOME_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                  Buyer feedback
+                  <textarea value={draft.buyerFeedback} onChange={(event) => updateDraft(appointmentId, { buyerFeedback: event.target.value })} rows={2} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm normal-case tracking-normal text-slate-800 outline-none focus:border-blue-300" placeholder="What did the buyer like or dislike?" />
+                </label>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                    Agent notes
+                    <textarea value={draft.agentNotes} onChange={(event) => updateDraft(appointmentId, { agentNotes: event.target.value })} rows={2} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm normal-case tracking-normal text-slate-800 outline-none focus:border-blue-300" placeholder="Internal notes for follow-up" />
+                  </label>
+                  <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                    Next step
+                    <select value={draft.nextStep} onChange={(event) => updateDraft(appointmentId, { nextStep: event.target.value })} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm normal-case tracking-normal text-slate-800 outline-none focus:border-blue-300">
+                      {VIEWING_NEXT_STEP_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                  <input type="date" value={draft.rescheduleDate} onChange={(event) => updateDraft(appointmentId, { rescheduleDate: event.target.value })} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" />
+                  <input type="time" value={draft.rescheduleTime} onChange={(event) => updateDraft(appointmentId, { rescheduleTime: event.target.value })} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" />
+                  <button type="button" disabled={!appointmentId || isClosed || workingId === `${appointmentId}:reschedule`} onClick={() => rescheduleAppointment(item)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50">
+                    <RefreshCw size={15} />
+                    Reschedule
+                  </button>
+                </div>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button type="button" disabled={!appointmentId || workingId === `${appointmentId}:feedback`} onClick={() => saveAppointmentOutcome(item)} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50">
+                    Save Feedback
+                  </button>
+                  <button type="button" disabled={!appointmentId || isClosed || workingId === `${appointmentId}:no_show`} onClick={() => saveAppointmentOutcome(item, 'no_show')} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-rose-100 bg-rose-50 px-3 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-50">
+                    No-show
+                  </button>
+                  <button type="button" disabled={!appointmentId || isClosed || workingId === `${appointmentId}:completed`} onClick={() => saveAppointmentOutcome(item, 'completed')} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
+                    <CheckCircle2 size={15} />
+                    Mark Complete
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </article>
+        )
+      })}
+      </div>
     </div>
   )
 }
 
 function LeadAppointmentForm({ organisationId, lead, actor, onSaved }) {
   const contact = getLeadContactSnapshot(lead)
+  const propertyOptions = useMemo(() => getLeadAppointmentPropertyOptions(lead), [lead])
   const [draft, setDraft] = useState({
     appointmentType: 'viewing',
     title: `Viewing - ${contact.name || 'Buyer'}`,
+    listingId: propertyOptions[0]?.id || '',
+    appointmentStatus: 'requested',
+    sendInviteEmails: true,
     date: getTodayInputValue(),
     startTime: '',
     location: '',
@@ -3591,6 +4300,9 @@ function LeadAppointmentForm({ organisationId, lead, actor, onSaved }) {
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const isViewing = draft.appointmentType === 'viewing'
+  const selectedProperty = propertyOptions.find((option) => option.id === draft.listingId) || null
 
   useEffect(() => {
     setDraft((previous) => ({
@@ -3598,6 +4310,13 @@ function LeadAppointmentForm({ organisationId, lead, actor, onSaved }) {
       title: previous.title || `Viewing - ${contact.name || 'Buyer'}`,
     }))
   }, [contact.name])
+
+  useEffect(() => {
+    setDraft((previous) => {
+      if (previous.listingId || !propertyOptions[0]?.id) return previous
+      return { ...previous, listingId: propertyOptions[0].id }
+    })
+  }, [propertyOptions])
 
   async function submit(event) {
     event.preventDefault()
@@ -3609,22 +4328,27 @@ function LeadAppointmentForm({ organisationId, lead, actor, onSaved }) {
       setError('Choose a date and start time for the appointment.')
       return
     }
+    if (isViewing && !normalizeText(draft.listingId)) {
+      setError('Choose the property this viewing is for before creating the appointment.')
+      return
+    }
 
     try {
       setSaving(true)
       setError('')
-      await createAppointmentAsync(organisationId, {
+      setMessage('')
+      const result = await createAppointmentAsync(organisationId, {
         appointmentType: draft.appointmentType,
         title: normalizeText(draft.title) || `${formatCleanValue(draft.appointmentType)} - ${contact.name || 'Buyer'}`,
         date: draft.date,
         startTime: draft.startTime,
-        location: draft.location,
-        locationType: normalizeText(draft.location) ? 'physical' : 'to_be_confirmed',
+        location: normalizeText(draft.location) || selectedProperty?.description || '',
+        locationType: normalizeText(draft.location || selectedProperty?.description) ? 'physical' : 'to_be_confirmed',
         notes: draft.notes,
-        status: 'confirmed',
+        status: draft.appointmentStatus,
         leadId: lead.leadId,
         contactId: contact.contactId || null,
-        listingId: getLeadPrimaryListingId(lead) || null,
+        listingId: normalizeText(draft.listingId) || null,
         relatedEntityType: 'lead',
         relatedEntityId: lead.leadId,
         assignedAgent: actor,
@@ -3638,11 +4362,16 @@ function LeadAppointmentForm({ organisationId, lead, actor, onSaved }) {
             rsvpStatus: 'Pending',
           },
         ],
-        sendInviteEmails: false,
+        sendInviteEmails: draft.sendInviteEmails,
+        attachCalendarInvite: draft.sendInviteEmails,
       }, { actor })
+      setMessage(buildAppointmentCreateMessage(result, draft, isViewing))
       setDraft({
         appointmentType: 'viewing',
         title: `Viewing - ${contact.name || 'Buyer'}`,
+        listingId: propertyOptions[0]?.id || '',
+        appointmentStatus: 'requested',
+        sendInviteEmails: true,
         date: getTodayInputValue(),
         startTime: '',
         location: '',
@@ -3685,15 +4414,51 @@ function LeadAppointmentForm({ organisationId, lead, actor, onSaved }) {
           <input type="time" value={draft.startTime} onChange={(event) => setDraft((previous) => ({ ...previous, startTime: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" />
         </label>
       </div>
+      <div className="grid gap-3 lg:grid-cols-[1.2fr_220px_220px]">
+        <label className="grid gap-1 text-sm font-semibold text-slate-700">
+          Property {isViewing ? <span className="text-xs font-medium text-slate-400">Required for viewings</span> : null}
+          <select value={draft.listingId} onChange={(event) => setDraft((previous) => ({ ...previous, listingId: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300">
+            <option value="">{propertyOptions.length ? 'No property link' : 'No linked properties yet'}</option>
+            {propertyOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {[option.isOriginalEnquiry ? 'Enquiry' : option.source, option.label, option.price ? formatCurrency(option.price) : ''].filter(Boolean).join(' - ')}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="grid gap-1 text-sm font-semibold text-slate-700">
+          Appointment status
+          <select value={draft.appointmentStatus} onChange={(event) => setDraft((previous) => ({ ...previous, appointmentStatus: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300">
+            <option value="requested">Request confirmation</option>
+            <option value="confirmed">Confirmed</option>
+          </select>
+        </label>
+        <label className="flex min-h-11 items-center gap-3 self-end rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
+          <input type="checkbox" checked={draft.sendInviteEmails} onChange={(event) => setDraft((previous) => ({ ...previous, sendInviteEmails: event.target.checked }))} />
+          Send invite to buyer
+        </label>
+      </div>
+      <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-800">
+        {draft.appointmentStatus === 'requested'
+          ? 'Request confirmation sends the buyer an appointment confirmation email with calendar details when invite sending is enabled.'
+          : 'Confirmed creates a booked appointment immediately and can still send the buyer a calendar invite.'}
+        {!contact.email && draft.sendInviteEmails ? ' Add a buyer email before relying on email delivery.' : null}
+      </div>
+      {isViewing && !propertyOptions.length ? (
+        <p className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          Link the enquiry property or a shortlisted listing in Property Match before booking a viewing.
+        </p>
+      ) : null}
       <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
         <input value={draft.location} onChange={(event) => setDraft((previous) => ({ ...previous, location: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" placeholder="Location or property address" />
         <input value={draft.notes} onChange={(event) => setDraft((previous) => ({ ...previous, notes: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" placeholder="Internal notes" />
-        <button type="submit" disabled={saving || !normalizeText(draft.date) || !normalizeText(draft.startTime)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
+        <button type="submit" disabled={saving || !normalizeText(draft.date) || !normalizeText(draft.startTime) || (isViewing && !normalizeText(draft.listingId))} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
           <Plus size={15} />
-          Add Appointment
+          {draft.appointmentStatus === 'requested' ? 'Request Appointment' : 'Add Appointment'}
         </button>
       </div>
       {error ? <p className="text-sm font-semibold text-red-600">{error}</p> : null}
+      {message ? <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
     </form>
   )
 }
@@ -3709,8 +4474,666 @@ function LeadAppointmentsPanel({ organisationId, lead, actor, onSaved }) {
       </div>
       <LeadAppointmentForm organisationId={organisationId} lead={lead} actor={actor} onSaved={onSaved} />
       <div className="mt-5">
-        <AppointmentList items={lead.appointments} />
+        <AppointmentList items={lead.appointments} organisationId={organisationId} lead={lead} actor={actor} onSaved={onSaved} />
       </div>
+    </section>
+  )
+}
+
+function LeadOfferReadinessPanel({ organisationId, lead, actor, onSaved }) {
+  const contact = getLeadContactSnapshot(lead)
+  const contexts = useMemo(() => getLeadOfferPropertyContexts(lead), [lead])
+  const bestContext = contexts[0] || null
+  const [draft, setDraft] = useState({
+    contextKey: bestContext?.key || '',
+    expiryDate: getFutureInputValue(7),
+    note: '',
+    sendEmail: true,
+  })
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [lastLink, setLastLink] = useState('')
+  const selectedContext = contexts.find((context) => context.key === draft.contextKey) || bestContext
+
+  useEffect(() => {
+    setDraft((previous) => {
+      if (contexts.some((context) => context.key === previous.contextKey)) return previous
+      return { ...previous, contextKey: contexts[0]?.key || '' }
+    })
+  }, [contexts])
+
+  async function sendBuyerOfferLinkEmail(link = '', context = {}) {
+    const recipientEmail = normalizeText(contact.email || lead.email).toLowerCase()
+    if (!draft.sendEmail || !recipientEmail || !link) {
+      return {
+        attempted: false,
+        sent: false,
+        reason: !draft.sendEmail ? 'disabled' : recipientEmail ? 'missing_link' : 'missing_email',
+      }
+    }
+
+    try {
+      const emailResponse = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'buyer_offer_link',
+          to: recipientEmail,
+          buyerName: contact.name || lead.name || 'Buyer',
+          propertyTitle: context.label || 'selected property',
+          propertyCount: 1,
+          offerLink: link,
+          expiresAt: draft.expiryDate,
+          agentName: actor?.fullName || actor?.name || actor?.email || '',
+          note: draft.note,
+        },
+      })
+      if (emailResponse?.error || emailResponse?.data?.error) {
+        throw emailResponse.error || new Error(emailResponse.data.error)
+      }
+      return { attempted: true, sent: true }
+    } catch (emailError) {
+      return { attempted: true, sent: false, error: emailError }
+    }
+  }
+
+  async function submit(event) {
+    event.preventDefault()
+    if (!organisationId || !lead?.leadId) {
+      setError('This lead needs to be loaded before an offer link can be sent.')
+      return
+    }
+    if (!selectedContext?.listingId) {
+      setError('Choose the property this offer link is for.')
+      return
+    }
+
+    try {
+      setSending(true)
+      setError('')
+      setMessage('')
+      setLastLink('')
+
+      const persisted = await ensureAgencyCrmLeadRecordPersisted(
+        organisationId,
+        lead,
+        getLeadContactFallback(lead),
+        { actor },
+      )
+      const buyerLeadId = normalizeText(persisted?.leadId || lead.leadId)
+      const buyerContactId = normalizeText(persisted?.contactId || contact.contactId)
+      const appointmentId = normalizeText(selectedContext.appointmentId)
+      const canUsePostViewingPortal = Boolean(
+        appointmentId &&
+          UUID_PATTERN.test(organisationId) &&
+          UUID_PATTERN.test(buyerLeadId) &&
+          UUID_PATTERN.test(selectedContext.listingId) &&
+          UUID_PATTERN.test(appointmentId),
+      )
+      let offerLink = ''
+      let activityType = 'Offer Link Sent'
+      let createdLabel = 'Offer link created'
+
+      if (canUsePostViewingPortal) {
+        await upsertAppointmentViewedListings({
+          organisationId,
+          appointmentId,
+          leadId: buyerLeadId,
+          agentId: actor?.id || actor?.userId,
+          viewedListings: [
+            {
+              listingId: selectedContext.listingId,
+              outcome: selectedContext.completed ? 'Interested' : 'Offer requested',
+              buyerFeedback: '',
+              agentNotes: draft.note,
+              viewedAt: new Date().toISOString(),
+              metadata: {
+                source: 'lead_workspace_offer_link',
+                readiness: selectedContext.readiness,
+              },
+            },
+          ],
+        }).catch(() => [])
+        const session = await createOfferPortalSession({
+          organisationId,
+          buyerLeadId,
+          buyerContactId,
+          appointmentId,
+          agentId: actor?.id || actor?.userId,
+          expiresAt: draft.expiryDate,
+          metadata: {
+            source: 'lead_workspace_offers_tab',
+            selectedListingId: selectedContext.listingId,
+            propertyLabel: selectedContext.label,
+            readiness: selectedContext.readiness,
+            agentNoteToBuyer: draft.note,
+          },
+        }, { actor })
+        offerLink = session?.token && typeof window !== 'undefined'
+          ? `${window.location.origin}/offers/session/${encodeURIComponent(session.token)}`
+          : ''
+        activityType = 'Post-Viewing Offer Portal Sent'
+        createdLabel = 'Post-viewing offer portal created'
+        await updateAppointmentAsync(organisationId, appointmentId, {
+          nextStep: 'Post-viewing offer portal sent',
+        }, { actor }).catch(() => null)
+      } else {
+        const offer = await createCanonicalOffer({
+          organisationId,
+          buyerLeadId,
+          buyerContactId,
+          listingId: selectedContext.listingId,
+          agentId: actor?.id || actor?.userId,
+          viewingAppointmentId: UUID_PATTERN.test(appointmentId) ? appointmentId : null,
+          status: 'sent_to_buyer',
+          expiryDate: draft.expiryDate,
+          conditionsJson: {
+            source: 'lead_workspace_offers_tab',
+            propertyLabel: selectedContext.label,
+            readiness: selectedContext.readiness,
+            agentNoteToBuyer: draft.note,
+            offerWithoutCompletedViewing: !selectedContext.completed,
+          },
+        }, { actor })
+        const offerToken = normalizeText(offer?.offerToken || offer?.offer_token || offer?.id)
+        offerLink = offerToken && typeof window !== 'undefined'
+          ? `${window.location.origin}/offers/${encodeURIComponent(offerToken)}`
+          : ''
+        createdLabel = selectedContext.completed ? 'Offer link created' : 'Offer link created without a completed viewing'
+      }
+
+      await createAgencyCrmLeadActivity(
+        organisationId,
+        buyerLeadId,
+        {
+          activityType,
+          activityNote: [
+            `${createdLabel} for ${selectedContext.label || 'selected property'}.`,
+            selectedContext.readinessLabel ? `Context: ${selectedContext.readinessLabel}.` : '',
+            offerLink ? `Link: ${offerLink}` : '',
+            draft.note ? `Note: ${draft.note}` : '',
+          ].filter(Boolean).join(' '),
+          outcome: 'Offer Draft',
+          activityDate: new Date().toISOString(),
+        },
+        { actor },
+      ).catch(() => null)
+
+      if (offerLink && typeof navigator !== 'undefined') {
+        void navigator.clipboard?.writeText(offerLink)
+      }
+      const emailResult = await sendBuyerOfferLinkEmail(offerLink, selectedContext)
+      setLastLink(offerLink)
+      setMessage(
+        offerLink
+          ? emailResult.sent
+            ? `${createdLabel} and emailed to the buyer. Link copied as backup.`
+            : emailResult.attempted
+              ? `${createdLabel} and copied, but the buyer email could not be sent.`
+              : `${createdLabel} and copied. Add a buyer email or enable email sending to send it directly.`
+          : `${createdLabel}.`,
+      )
+      if (emailResult.error) setError(emailResult.error?.message || 'Offer link created, but email sending failed.')
+      await onSaved?.()
+    } catch (sendError) {
+      setError(sendError?.message || 'Unable to create this offer link.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  if (!contexts.length) {
+    return (
+      <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-950">Offer Readiness</h3>
+            <p className="mt-1 text-sm text-slate-500">Link an enquiry property, shortlist, or viewing before sending an offer link.</p>
+          </div>
+          <StatusPill tone="amber">Property required</StatusPill>
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <form onSubmit={submit} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-950">Offer Readiness</h3>
+          <p className="mt-1 text-sm text-slate-500">Best practice is to send the offer link from a completed property viewing. Use a linked property only when the buyer is ready without another viewing.</p>
+        </div>
+        <StatusPill tone={selectedContext?.completed ? 'green' : selectedContext?.appointmentId ? 'amber' : 'blue'}>
+          {selectedContext?.readinessLabel || 'Property selected'}
+        </StatusPill>
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-[1.4fr_180px_180px]">
+        <label className="grid gap-1 text-sm font-semibold text-slate-700">
+          Property / viewing context
+          <select value={draft.contextKey} onChange={(event) => setDraft((previous) => ({ ...previous, contextKey: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300">
+            {contexts.map((context) => (
+              <option key={context.key} value={context.key}>
+                {[context.readinessLabel, context.label, context.price ? formatCurrency(context.price) : ''].filter(Boolean).join(' - ')}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="grid gap-1 text-sm font-semibold text-slate-700">
+          Link expiry
+          <input type="date" value={draft.expiryDate} onChange={(event) => setDraft((previous) => ({ ...previous, expiryDate: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" />
+        </label>
+        <label className="flex min-h-11 items-center gap-3 self-end rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
+          <input type="checkbox" checked={draft.sendEmail} onChange={(event) => setDraft((previous) => ({ ...previous, sendEmail: event.target.checked }))} />
+          Email buyer
+        </label>
+      </div>
+      <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_auto]">
+        <input value={draft.note} onChange={(event) => setDraft((previous) => ({ ...previous, note: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" placeholder="Optional note for the buyer or timeline" />
+        <button type="submit" disabled={sending || !selectedContext?.listingId} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
+          <Mail size={15} />
+          {sending ? 'Creating...' : 'Send Offer Link'}
+        </button>
+      </div>
+      {!contact.email && draft.sendEmail ? (
+        <p className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-700">This buyer has no email, so the link will be created and copied but not emailed.</p>
+      ) : null}
+      {selectedContext && !selectedContext.completed ? (
+        <p className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">This property has not got a completed viewing outcome yet. You can still proceed when the buyer is ready, but the completed-viewing portal is the preferred path.</p>
+      ) : null}
+      {error ? <p className="mt-3 text-sm font-semibold text-red-600">{error}</p> : null}
+      {message ? <p className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+      {lastLink ? (
+        <a href={lastLink} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-blue-700">
+          Open generated offer link <ExternalLink size={13} />
+        </a>
+      ) : null}
+    </form>
+  )
+}
+
+function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSaved }) {
+  const offers = Array.isArray(lead?.offers) ? lead.offers : []
+  const transactions = Array.isArray(lead?.transactions) ? lead.transactions : []
+  const acceptedOffer = getAcceptedOfferForConversion(offers)
+  const acceptedOfferId = getOfferId(acceptedOffer)
+  const existingTransactionId = normalizeText(
+    getOfferTransactionId(acceptedOffer) ||
+      lead?.convertedTransactionId ||
+      lead?.converted_transaction_id ||
+      transactions[0]?.id ||
+      transactions[0]?.transactionId ||
+      transactions[0]?.transaction_id,
+  )
+  const propertyContexts = useMemo(() => getLeadOfferPropertyContexts(lead), [lead])
+  const propertyById = new Map(propertyContexts.map((context) => [context.listingId, context]))
+  const acceptedListing = acceptedOffer ? propertyById.get(getOfferListingId(acceptedOffer)) : null
+  const [converting, setConverting] = useState(false)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [createdTransactionId, setCreatedTransactionId] = useState(existingTransactionId)
+
+  useEffect(() => {
+    setCreatedTransactionId(existingTransactionId)
+  }, [existingTransactionId])
+
+  async function sendBuyerOnboarding(transactionId = '') {
+    const scopedTransactionId = normalizeText(transactionId)
+    if (!scopedTransactionId) return { attempted: false, sent: false, reason: 'missing_transaction' }
+    try {
+      const onboardingEmail = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'client_onboarding',
+          transactionId: scopedTransactionId,
+          source: 'buyer_lead_offer_conversion',
+        },
+      })
+      if (onboardingEmail?.error || onboardingEmail?.data?.error) {
+        throw onboardingEmail.error || new Error(onboardingEmail.data.error)
+      }
+      return { attempted: true, sent: true }
+    } catch (sendError) {
+      return { attempted: true, sent: false, error: sendError }
+    }
+  }
+
+  async function convertAcceptedOffer() {
+    if (!organisationId || !lead?.leadId || !acceptedOfferId || !acceptedOffer) {
+      setError('An accepted offer is required before a transaction can be created.')
+      return
+    }
+    if (!isOfferAcceptedForConversion(acceptedOffer)) {
+      setError('Only an accepted offer can be converted to a transaction.')
+      return
+    }
+
+    try {
+      setConverting(true)
+      setError('')
+      setMessage('')
+
+      const contact = getLeadContactSnapshot(lead)
+      const listingId = getOfferListingId(acceptedOffer)
+      const result = await createTransactionFromAcceptedCanonicalOffer({
+        organisationId,
+        offerId: acceptedOfferId,
+        offer: acceptedOffer,
+        lead: {
+          ...lead,
+          email: contact.email || lead.email,
+          phone: contact.phone || lead.phone,
+          firstName: getLeadContactFallback(lead).firstName,
+          lastName: getLeadContactFallback(lead).lastName,
+        },
+        listing: listingId
+          ? {
+              id: listingId,
+              organisationId,
+              listingTitle: acceptedListing?.label || lead.propertyInterest || 'Listing',
+              propertyAddress: acceptedListing?.description || lead.areaInterest || '',
+            }
+          : null,
+        actor,
+        payload: {
+          listingId,
+          buyerName: contact.name || lead.name,
+          buyerEmail: contact.email || lead.email,
+          buyerPhone: contact.phone || lead.phone,
+          source: 'buyer_lead_workspace_phase_5',
+        },
+      })
+      const transactionId = normalizeText(result?.transactionId || result?.transactionRow?.transaction?.id)
+      const reused = Boolean(result?.alreadyConverted || result?.existing)
+      const onboarding = await sendBuyerOnboarding(transactionId)
+
+      await createAgencyCrmLeadActivity(
+        organisationId,
+        lead.leadId,
+        {
+          activityType: reused ? 'Transaction Reused' : 'Transaction Created',
+          activityNote: [
+            `${reused ? 'Existing transaction reused' : 'Transaction created'} from accepted offer ${acceptedOfferId}.`,
+            transactionId ? `Transaction: ${transactionId}.` : '',
+            onboarding.sent ? 'Buyer onboarding email sent.' : onboarding.attempted ? 'Buyer onboarding email needs attention.' : '',
+          ].filter(Boolean).join(' '),
+          outcome: transactionId ? 'Transaction Created' : 'Conversion Requested',
+          activityDate: new Date().toISOString(),
+        },
+        { actor },
+      ).catch(() => null)
+
+      setCreatedTransactionId(transactionId)
+      setMessage(
+        transactionId
+          ? onboarding.sent
+            ? `${reused ? 'Existing transaction reused' : 'Transaction created'} and buyer onboarding was sent.`
+            : onboarding.attempted
+              ? `${reused ? 'Existing transaction reused' : 'Transaction created'}, but buyer onboarding email could not be sent.`
+              : `${reused ? 'Existing transaction reused' : 'Transaction created'}.`
+          : 'Transaction conversion was requested.',
+      )
+      if (onboarding.error) setError(onboarding.error?.message || 'Transaction created, but onboarding email failed.')
+      await onSaved?.()
+    } catch (conversionError) {
+      setError(conversionError?.message || 'Unable to create a transaction from this accepted offer.')
+    } finally {
+      setConverting(false)
+    }
+  }
+
+  if (!offers.length && !existingTransactionId) {
+    return (
+      <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-950">Transaction Conversion</h3>
+            <p className="mt-1 text-sm text-slate-500">Send an offer link first. Once the seller accepts an offer, Bridge can create the transaction from that accepted offer.</p>
+          </div>
+          <StatusPill tone="slate">Waiting for offer</StatusPill>
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-950">Transaction Conversion</h3>
+          <p className="mt-1 text-sm text-slate-500">A buyer transaction should be created from the accepted offer, then buyer onboarding can start from the transaction record.</p>
+        </div>
+        <StatusPill tone={createdTransactionId ? 'green' : acceptedOffer ? 'amber' : 'blue'}>
+          {createdTransactionId ? 'Transaction linked' : acceptedOffer ? 'Accepted offer ready' : 'Seller acceptance required'}
+        </StatusPill>
+      </div>
+      {acceptedOffer ? (
+        <div className="mt-4 grid gap-3 lg:grid-cols-[1.2fr_1fr_auto]">
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Accepted Offer</p>
+            <p className="mt-1 text-sm font-semibold text-slate-950">{formatCurrency(getOfferAmount(acceptedOffer))}</p>
+            <p className="mt-1 text-xs text-slate-500">{acceptedListing?.label || getOfferListingId(acceptedOffer) || 'Property pending'}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Conversion Rule</p>
+            <p className="mt-1 text-sm font-semibold text-slate-950">Accepted offer only</p>
+            <p className="mt-1 text-xs text-slate-500">Sent, submitted, and seller-review offers stay blocked until accepted.</p>
+          </div>
+          {createdTransactionId ? (
+            <Link to={`/transactions/${createdTransactionId}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">
+              Open Transaction <ExternalLink size={13} />
+            </Link>
+          ) : (
+            <button type="button" disabled={converting || !acceptedOfferId} onClick={convertAcceptedOffer} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
+              <CheckCircle2 size={15} />
+              {converting ? 'Creating...' : 'Create Transaction'}
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+          No accepted offer yet. Keep the offer in review until the seller accepts, then return here to create the transaction.
+        </div>
+      )}
+      {error ? <p className="mt-3 text-sm font-semibold text-red-600">{error}</p> : null}
+      {message ? <p className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+    </section>
+  )
+}
+
+function LeadTransactionHandoffPanel({ organisationId, lead, actor, onSaved }) {
+  const handoff = useMemo(() => getLeadHandoffState(lead), [lead])
+  const transactionId = handoff.transactionId
+  const [working, setWorking] = useState('')
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+
+  const checklist = [
+    {
+      key: 'buyer_onboarding',
+      label: 'Buyer onboarding',
+      done: handoff.buyerOnboardingSent,
+      helper: 'Send or resend the buyer onboarding email from the linked transaction.',
+    },
+    {
+      key: 'fica_documents',
+      label: 'FICA and documents',
+      done: handoff.ficaTaskReady,
+      helper: 'Track buyer identity, FICA, proof of funds, and supporting documents.',
+    },
+    {
+      key: 'finance_readiness',
+      label: 'Finance readiness',
+      done: handoff.financeTaskReady,
+      helper: 'Track bond/cash readiness and follow-up with the buyer.',
+    },
+    {
+      key: 'conveyancer_handoff',
+      label: 'Conveyancer handoff',
+      done: handoff.conveyancerTaskReady,
+      helper: 'Confirm transaction handover and next operational owner.',
+    },
+  ]
+
+  async function resendBuyerOnboarding() {
+    if (!transactionId) {
+      setError('Create or link the transaction before sending buyer onboarding.')
+      return
+    }
+    try {
+      setWorking('buyer_onboarding')
+      setError('')
+      setMessage('')
+      const onboardingEmail = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'client_onboarding',
+          transactionId,
+          source: 'buyer_lead_handoff',
+        },
+      })
+      if (onboardingEmail?.error || onboardingEmail?.data?.error) {
+        throw onboardingEmail.error || new Error(onboardingEmail.data.error)
+      }
+      await createAgencyCrmLeadActivity(
+        organisationId,
+        lead.leadId,
+        {
+          activityType: 'Buyer Onboarding Sent',
+          activityNote: `Buyer onboarding sent for transaction ${transactionId} from the lead handoff checklist.`,
+          outcome: 'Sent',
+          activityDate: new Date().toISOString(),
+        },
+        { actor },
+      ).catch(() => null)
+      setMessage('Buyer onboarding email sent.')
+      await onSaved?.()
+    } catch (sendError) {
+      setError(sendError?.message || 'Unable to send buyer onboarding right now.')
+    } finally {
+      setWorking('')
+    }
+  }
+
+  async function createHandoffTasks() {
+    if (!organisationId || !lead?.leadId || !transactionId) {
+      setError('Create or link the transaction before creating handoff tasks.')
+      return
+    }
+    const taskSeeds = [
+      {
+        key: 'fica_documents',
+        title: 'Collect buyer FICA and transaction documents',
+        description: `Linked transaction: ${transactionId}`,
+        dueDate: getFutureInputValue(1),
+        skip: handoff.ficaTaskReady,
+      },
+      {
+        key: 'finance_readiness',
+        title: 'Confirm buyer finance readiness',
+        description: `Linked transaction: ${transactionId}`,
+        dueDate: getFutureInputValue(2),
+        skip: handoff.financeTaskReady,
+      },
+      {
+        key: 'conveyancer_handoff',
+        title: 'Confirm conveyancer handoff',
+        description: `Linked transaction: ${transactionId}`,
+        dueDate: getFutureInputValue(3),
+        skip: handoff.conveyancerTaskReady,
+      },
+    ].filter((task) => !task.skip)
+
+    if (!taskSeeds.length) {
+      setMessage('Handoff tasks are already open.')
+      return
+    }
+
+    try {
+      setWorking('handoff_tasks')
+      setError('')
+      setMessage('')
+      for (const task of taskSeeds) {
+        await createAgencyCrmLeadTask(
+          organisationId,
+          lead.leadId,
+          {
+            title: task.title,
+            description: task.description,
+            dueDate: task.dueDate,
+            status: 'Pending',
+            priority: 'High',
+          },
+          { actor },
+        )
+      }
+      await createAgencyCrmLeadActivity(
+        organisationId,
+        lead.leadId,
+        {
+          activityType: 'Transaction Handoff Prepared',
+          activityNote: `${taskSeeds.length} post-conversion handoff task${taskSeeds.length === 1 ? '' : 's'} created for transaction ${transactionId}.`,
+          outcome: 'Tasks Created',
+          activityDate: new Date().toISOString(),
+        },
+        { actor },
+      ).catch(() => null)
+      setMessage(`${taskSeeds.length} handoff task${taskSeeds.length === 1 ? '' : 's'} created.`)
+      await onSaved?.()
+    } catch (taskError) {
+      setError(taskError?.message || 'Unable to create handoff tasks.')
+    } finally {
+      setWorking('')
+    }
+  }
+
+  if (!transactionId) {
+    return (
+      <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-950">Post-Conversion Handoff</h3>
+            <p className="mt-1 text-sm text-slate-500">This checklist unlocks once a transaction has been created from the accepted offer.</p>
+          </div>
+          <StatusPill tone="slate">Waiting for transaction</StatusPill>
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-950">Post-Conversion Handoff</h3>
+          <p className="mt-1 text-sm text-slate-500">Keep the buyer lead useful after conversion by preparing onboarding, finance, documents, and conveyancer follow-up.</p>
+        </div>
+        <Link to={`/transactions/${transactionId}`} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
+          Open Transaction <ExternalLink size={13} />
+        </Link>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {checklist.map((item) => (
+          <div key={item.key} className={`flex min-h-[138px] flex-col justify-between rounded-2xl border p-3 ${item.done ? 'border-emerald-100 bg-emerald-50' : 'border-slate-200 bg-white'}`}>
+            <div>
+              <div className={`flex h-8 w-8 items-center justify-center rounded-full ${item.done ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                {item.done ? <CheckCircle2 size={16} /> : <Clock3 size={16} />}
+              </div>
+              <p className={`mt-3 text-sm font-semibold ${item.done ? 'text-emerald-800' : 'text-slate-950'}`}>{item.label}</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">{item.helper}</p>
+            </div>
+            <StatusPill tone={item.done ? 'green' : 'amber'}>{item.done ? 'Ready' : 'Needs action'}</StatusPill>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <button type="button" disabled={working === 'buyer_onboarding'} onClick={resendBuyerOnboarding} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50">
+          <Mail size={15} />
+          {handoff.buyerOnboardingSent ? 'Resend Onboarding' : 'Send Onboarding'}
+        </button>
+        <button type="button" disabled={working === 'handoff_tasks'} onClick={createHandoffTasks} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
+          <Plus size={15} />
+          Create Handoff Tasks
+        </button>
+      </div>
+      {error ? <p className="mt-3 text-sm font-semibold text-red-600">{error}</p> : null}
+      {message ? <p className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
     </section>
   )
 }
@@ -3728,7 +5151,7 @@ function OfferTransactionList({ offers = [], transactions = [], convertedTransac
             <article key={offer.id || offer.offerId} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex items-center justify-between gap-3">
                 <strong className="text-sm text-slate-950">{formatCurrency(offer.amount || offer.offerAmount || offer.offer_amount)}</strong>
-                <StatusPill tone={String(offer.status || '').includes('accepted') ? 'green' : 'amber'}>{offer.status || 'draft'}</StatusPill>
+                <StatusPill tone={getOfferStatusTone(offer.status)}>{offer.status || 'draft'}</StatusPill>
               </div>
               <p className="mt-2 text-xs text-slate-500">Updated {formatDateTime(offer.updatedAt || offer.updated_at || offer.createdAt || offer.created_at)}</p>
             </article>
@@ -4723,6 +6146,8 @@ function AgentLeadWorkspace() {
                 onConvert={convertBuyerLead}
               />
 
+              <BuyerJourneyCommandPanel row={row} onOpenTab={setActiveTab} />
+
               <nav className={`${panelClass} buyer-workspace-tabs flex gap-2 overflow-x-auto p-2`} aria-label="Lead workspace tabs">
                 {tabs.map((tab) => (
                   <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} className={`buyer-workspace-tab min-h-10 rounded-xl px-3 text-sm font-semibold ${activeTab === tab.key ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
@@ -4795,7 +6220,27 @@ function AgentLeadWorkspace() {
                 {activeTab === 'offers' ? (
                   <section className={buyerWorkspaceCardClass}>
                     <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Offers / Transactions</h2>
-                    <div className="mt-5"><OfferTransactionList offers={row.offers} transactions={row.transactions} convertedTransactionId={row.convertedTransactionId} /></div>
+                    <div className="mt-5 grid gap-5">
+                      <LeadOfferReadinessPanel
+                        organisationId={organisationId}
+                        lead={row}
+                        actor={actor}
+                        onSaved={loadWorkspace}
+                      />
+                      <LeadOfferTransactionConversionPanel
+                        organisationId={organisationId}
+                        lead={row}
+                        actor={actor}
+                        onSaved={loadWorkspace}
+                      />
+                      <LeadTransactionHandoffPanel
+                        organisationId={organisationId}
+                        lead={row}
+                        actor={actor}
+                        onSaved={loadWorkspace}
+                      />
+                      <OfferTransactionList offers={row.offers} transactions={row.transactions} convertedTransactionId={row.convertedTransactionId} />
+                    </div>
                   </section>
                 ) : null}
               </div>
