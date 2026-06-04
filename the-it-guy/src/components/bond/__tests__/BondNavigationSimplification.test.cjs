@@ -48,16 +48,16 @@ async function main() {
     })
     assert.deepEqual(
       defaultBondNav.map((item) => item.label),
-      ['Dashboard', 'My Applications', 'Consultant Performance', 'My Commissions', 'Clients', 'Tasks'],
+      ['Dashboard', 'My Applications', 'Developments', 'Consultant Performance', 'My Commissions', 'Clients', 'Tasks'],
     )
     assert.deepEqual(
       hqBondNav.map((item) => item.label),
-      ['Dashboard', 'Applications', 'Organisation', 'Partners', 'Bank Relationships', 'Revenue & Commissions', 'Reports', 'Settings'],
+      ['Dashboard', 'Applications', 'Developments', 'Organisation', 'Partners', 'Bank Relationships', 'Revenue & Commissions', 'Reports', 'Settings'],
     )
     assert.equal(consultantNav.some((item) => item.key === 'settings'), false)
     assert.deepEqual(
       hqBondNav.filter((item) => item.navSection !== 'secondary').map((item) => item.label),
-      ['Dashboard', 'Applications', 'Organisation', 'Partners', 'Bank Relationships', 'Revenue & Commissions', 'Reports'],
+      ['Dashboard', 'Applications', 'Developments', 'Organisation', 'Partners', 'Bank Relationships', 'Revenue & Commissions', 'Reports'],
     )
     assert.deepEqual(
       hqBondNav.filter((item) => item.navSection === 'secondary').map((item) => item.label),
@@ -68,6 +68,11 @@ async function main() {
     assert.deepEqual(applicationsNav?.children.map((item) => item.label), ['Pipeline', 'Applications'])
     assert.equal(applicationsNav?.children.find((item) => item.key === 'bond_pipeline')?.to, '/bond/pipeline')
     assert.equal(applicationsNav?.children.find((item) => item.key === 'applications')?.to, '/bond/applications')
+    const developmentsNav = hqBondNav.find((item) => item.key === 'bond_developments')
+    assert.equal(developmentsNav?.to, '/bond/developments?view=current')
+    assert.deepEqual(developmentsNav?.children.map((item) => item.label), ['Current Developments', 'Developers'])
+    assert.equal(developmentsNav?.children.find((item) => item.key === 'bond_developments_current')?.to, '/bond/developments?view=current')
+    assert.equal(developmentsNav?.children.find((item) => item.key === 'bond_developments_developers')?.to, '/bond/developments?view=developers')
     const organisationNav = hqBondNav.find((item) => item.key === 'bond_organisation')
     assert.equal(organisationNav?.to, '/bond/organisation?view=overview')
     assert.deepEqual(organisationNav?.children.map((item) => item.label), ['Overview', 'Branches / Regions', 'Consultants'])
@@ -79,7 +84,8 @@ async function main() {
     assert.equal(reportsNav?.children.find((item) => item.key === 'bond_reports_analytics')?.to, '/bond/reports')
     assert.equal(reportsNav?.children.find((item) => item.key === 'predictive_intelligence')?.to, '/bond/predictive-intelligence')
     const settingsNav = hqBondNav.find((item) => item.key === 'settings')
-    assert.deepEqual(settingsNav?.children.map((item) => item.label), ['Automation & Rules'])
+    assert.deepEqual(settingsNav?.children.map((item) => item.label), ['Workspace Settings', 'Automation & Rules'])
+    assert.equal(settingsNav?.children.find((item) => item.key === 'settings_workspace')?.to, '/settings/organisation')
     assert.equal(settingsNav?.children.find((item) => item.key === 'automation_rules')?.to, '/bond/automation')
     assert.equal(hqBondNav.some((item) => item.key === 'documents' || item.key === 'tasks' || item.key === 'bond_calendar'), false)
     assert.equal(hqBondNav.some((item) => item.key === 'banks' || item.key === 'teams' || item.key === 'performance'), false)
@@ -92,6 +98,8 @@ async function main() {
 
     const sidebarSource = require('node:fs').readFileSync(path.join(PROJECT_ROOT, 'src/components/Sidebar.jsx'), 'utf8')
     assert.match(sidebarSource, /bond_applications/)
+    assert.match(sidebarSource, /bond_developments/)
+    assert.match(sidebarSource, /bond_developments_developers/)
     assert.match(sidebarSource, /bond_branches_regions/)
     assert.match(sidebarSource, /bond_consultants/)
     assert.match(sidebarSource, /'tasks'/)

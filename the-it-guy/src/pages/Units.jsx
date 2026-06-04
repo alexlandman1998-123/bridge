@@ -33,6 +33,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { resolveEffectiveBondAssignment } from '../services/bondAssignmentService'
 import {
   BOND_OPERATIONAL_QUEUE_KEYS,
+  getBondOriginatorQueueState,
   isNewBondApplicationRow,
 } from '../services/bondOperationalQueueService'
 import {
@@ -496,6 +497,7 @@ function isBondQueueMatch(row, queue, profile = null) {
   const normalizedQueue = String(queue || 'all').trim().toLowerCase()
   if (!normalizedQueue || normalizedQueue === 'all') return true
 
+  const queueState = getBondOriginatorQueueState(row)
   const stage = getBondApplicationStage(row)
   const signal = getBondSignalText(row)
   const missingDocuments = getBondMissingDocumentCount(row)
@@ -520,6 +522,22 @@ function isBondQueueMatch(row, queue, profile = null) {
 
   if (normalizedQueue === BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS) {
     return isNewBondApplicationRow(row)
+  }
+
+  if (normalizedQueue === 'awaiting_otp') {
+    return queueState.status === 'AWAITING_OTP'
+  }
+
+  if (normalizedQueue === 'ready_to_start') {
+    return queueState.status === 'READY_TO_START'
+  }
+
+  if (normalizedQueue === 'application_in_progress') {
+    return queueState.status === 'APPLICATION_IN_PROGRESS'
+  }
+
+  if (normalizedQueue === 'application_submitted') {
+    return queueState.status === 'APPLICATION_SUBMITTED'
   }
 
   if (normalizedQueue === 'missing_documents') {
@@ -550,6 +568,10 @@ function isBondQueueMatch(row, queue, profile = null) {
 }
 
 function isBondPipelineLifecycleRow(row) {
+  return getBondOriginatorQueueState(row).bucket === 'pipeline'
+}
+
+function isLegacyBondPipelineLifecycleRow(row) {
   const explicitBucket = String(row?.transaction?.lifecycle_bucket || row?.transaction?.lifecycleBucket || '')
     .trim()
     .toLowerCase()
@@ -785,7 +807,21 @@ function Units() {
     const allowedRiskValues = new Set(['all', 'stale', 'blocked', 'healthy'])
     const allowedBlockedValues = new Set(['all', 'blocked', 'clear'])
     const allowedAssignedValues = new Set(['all', 'mine'])
-    const allowedQueueValues = new Set([BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS, 'all', 'my_applications', 'missing_documents', 'submission_readiness', 'submitted', 'bank_feedback', 'overdue_applications', 'compliance_review'])
+    const allowedQueueValues = new Set([
+      BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS,
+      'all',
+      'my_applications',
+      'awaiting_otp',
+      'ready_to_start',
+      'application_in_progress',
+      'application_submitted',
+      'missing_documents',
+      'submission_readiness',
+      'submitted',
+      'bank_feedback',
+      'overdue_applications',
+      'compliance_review',
+    ])
     const allowedTransactionStatusValues = new Set(['all', 'active', 'registered', 'completed', 'archived', 'cancelled'])
     const allowedDateRangeValues = new Set(['all', '7d', '30d', '90d'])
     const allowedSourceValues = new Set(ATTORNEY_SOURCE_OPTIONS.map((item) => item.value))

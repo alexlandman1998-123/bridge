@@ -28,8 +28,25 @@ const NEW_APPLICATION_INTAKE_STATUSES = new Set([
   BOND_INTAKE_STATUSES.READY_TO_START,
   BOND_INTAKE_STATUSES.APPLICATION_IN_PROGRESS,
   BOND_INTAKE_STATUSES.APPLICATION_SUBMITTED,
-  BOND_INTAKE_STATUSES.READY_FOR_REVIEW,
 ])
+
+const APPLICATION_INTAKE_STATUSES = new Set([
+  BOND_INTAKE_STATUSES.READY_FOR_REVIEW,
+  BOND_INTAKE_STATUSES.ACCEPTED,
+])
+
+const REVIEW_PICKED_UP_EVENT_TYPES = new Set([
+  'BOND_APPLICATION_ACCEPTED',
+  'BOND_APPLICATION_ASSIGNED',
+  'BOND_APPLICATION_REVIEW_OPENED',
+  'BOND_APPLICATION_REVIEW_STARTED',
+])
+
+const CURRENCY = new Intl.NumberFormat('en-ZA', {
+  style: 'currency',
+  currency: 'ZAR',
+  maximumFractionDigits: 0,
+})
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -201,6 +218,19 @@ function getPreferredOriginatorName(row = {}) {
   return displayName || 'Unassigned originator'
 }
 
+function getOfferAmount(row = {}) {
+  return normalizeNumber(
+    row?.transaction?.offer_amount ??
+      row?.transaction?.offerAmount ??
+      row?.transaction?.purchase_price ??
+      row?.transaction?.purchasePrice ??
+      row?.transaction?.sales_price ??
+      row?.transaction?.salesPrice ??
+      row?.unit?.price,
+    0,
+  )
+}
+
 function getBondIntakeInput(row = {}) {
   return {
     transaction: row?.transaction || row || {},
@@ -214,6 +244,42 @@ function getBondIntakeInput(row = {}) {
     documents: row?.documents || [],
     rolePlayers: getRolePlayers(row),
     currentOrganisationId: row?.transaction?.bond_workspace_id || row?.transaction?.organisation_id || null,
+  }
+}
+
+function getRowEvents(row = {}) {
+  if (Array.isArray(row.transactionEvents)) return row.transactionEvents
+  if (Array.isArray(row.transaction_events)) return row.transaction_events
+  if (Array.isArray(row.events)) return row.events
+  if (Array.isArray(row?.transaction?.events)) return row.transaction.events
+  if (Array.isArray(row?.transaction?.transaction_events)) return row.transaction.transaction_events
+  return []
+}
+
+function hasReviewBeenPickedUp(row = {}) {
+  const transaction = row?.transaction || row || {}
+  const intakeStatus = normalizeText(transaction.bond_originator_intake_status || transaction.bondOriginatorIntakeStatus).toLowerCase()
+  const assignmentStatus = normalizeText(transaction.bond_assignment_status || transaction.bondAssignmentStatus).toLowerCase()
+  if (['accepted', 'assigned', 'consultant_assigned', 'accepted_from_intake', 'assigned_from_intake'].includes(intakeStatus)) return true
+  if (['consultant_assigned', 'accepted', 'assigned', 'accepted_from_intake', 'assigned_from_intake'].includes(assignmentStatus)) return true
+  return getRowEvents(row).some((event) => {
+    const type = normalizeText(event?.event_type || event?.eventType || event?.type).toUpperCase()
+    return REVIEW_PICKED_UP_EVENT_TYPES.has(type)
+  })
+}
+
+export function getBondOriginatorQueueState(row = {}) {
+  const intakeSummary = getBondIntakeSummary(getBondIntakeInput(row))
+  const status = intakeSummary.intakeStatus
+  const bucket = APPLICATION_INTAKE_STATUSES.has(status) ? 'applications' : NEW_APPLICATION_INTAKE_STATUSES.has(status) ? 'pipeline' : 'hidden'
+  const isNew = status === BOND_INTAKE_STATUSES.READY_FOR_REVIEW && !hasReviewBeenPickedUp(row)
+
+  return {
+    status,
+    bucket,
+    label: BOND_INTAKE_STATUS_LABELS[status] || 'Not applicable',
+    isNew,
+    actionRequired: status === BOND_INTAKE_STATUSES.READY_FOR_REVIEW || status === BOND_INTAKE_STATUSES.READY_TO_START,
   }
 }
 
@@ -244,6 +310,7 @@ export function buildBondNewApplicationViewModel(row = {}) {
   const operationalRisk = calculateOperationalRisk(row)
   const velocity = calculateTransactionVelocity(row)
   const financeInsights = generateFinanceInsights(row)
+  const offerAmount = getOfferAmount(row)
 
   return {
     id: normalizeText(transaction.id || row?.unit?.id || row?.buyer?.id) || `${getBuyerName(row)}-${getPropertyLabel(row)}`,
@@ -252,6 +319,8 @@ export function buildBondNewApplicationViewModel(row = {}) {
     propertyLabel: getPropertyLabel(row),
     developmentName: getDevelopmentName(row),
     agentName: getAgentName(row),
+    offerAmount,
+    offerAmountLabel: offerAmount > 0 ? CURRENCY.format(offerAmount) : 'Offer pending',
     financeType: financeTypeShortLabel(transaction.finance_type || transaction.financeType),
     preferredOriginatorName: getPreferredOriginatorName(row),
     intakeStatus: intakeSummary.intakeStatus,
@@ -287,8 +356,16 @@ export function buildBondNewApplicationViewModel(row = {}) {
 }
 
 export function isNewBondApplicationRow(row = {}) {
-  const intakeSummary = getBondIntakeSummary(getBondIntakeInput(row))
-  return NEW_APPLICATION_INTAKE_STATUSES.has(intakeSummary.intakeStatus)
+  return getBondOriginatorQueueState(row).bucket === 'pipeline'
+}
+
+export function isBondApplicationTrackerRow(row = {}) {
+  return getBondOriginatorQueueState(row).bucket === 'applications'
+}
+
+export function isNewBondApplicationReadyForReview(row = {}) {
+  const state = getBondOriginatorQueueState(row)
+  return state.bucket === 'applications' && state.isNew
 }
 
 export function getNewApplicationsQueue(rows = []) {

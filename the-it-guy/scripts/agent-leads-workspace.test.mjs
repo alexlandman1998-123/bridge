@@ -202,13 +202,11 @@ try {
   assert.ok(workspaceSource.includes('Confirm buyer finance readiness'), 'handoff tasks should include finance readiness')
   assert.ok(workspaceSource.includes('Confirm conveyancer handoff'), 'handoff tasks should include conveyancer handoff')
   assert.ok(workspaceSource.includes('Transaction Handoff Prepared'), 'handoff task creation should be logged to lead activity')
-  assert.ok(workspaceSource.includes('function BuyerJourneyCommandPanel'), 'buyer workspace should expose a final journey command panel')
-  assert.ok(workspaceSource.includes('getBuyerJourneyCommand'), 'journey command panel should derive next best action from live lead state')
-  assert.ok(workspaceSource.includes('Buyer Journey Command'), 'journey command panel should be visible in the workspace')
-  assert.ok(workspaceSource.includes('Recommended Action'), 'journey command panel should surface one recommended action')
-  for (const healthLabel of ['Property Context', 'Appointments', 'Offers', 'Transaction', 'Handoff', 'Open Tasks']) {
-    assert.ok(workspaceSource.includes(healthLabel), `journey command panel should include ${healthLabel} health signal`)
-  }
+  assert.ok(!workspaceSource.includes('function BuyerJourneyCommandPanel'), 'buyer workspace should not duplicate outreach progress with a second journey panel')
+  assert.ok(!workspaceSource.includes('Buyer Journey Command'), 'buyer workspace should keep one clear journey/progress surface')
+  assert.ok(workspaceSource.includes('const safeOffer = offer || {}'), 'offer helpers should tolerate an early-stage lead with no accepted offer')
+  assert.ok(workspaceSource.includes('const safeOffers = (Array.isArray(offers) ? offers : []).filter(Boolean)'), 'offers tab should ignore sparse/null offer relationship rows')
+  assert.ok(workspaceSource.includes('const safeTransactions = (Array.isArray(transactions) ? transactions : []).filter(Boolean)'), 'offers tab should ignore sparse/null transaction relationship rows')
   assert.ok(workspaceSource.includes('getLeadAppointmentPropertyOptions'), 'lead appointments should select from linked/enquiry/shortlist properties')
   assert.ok(workspaceSource.includes('Choose the property this viewing is for'), 'viewing appointments should require a property context')
   assert.ok(workspaceSource.includes('Choose the property viewed before marking this viewing complete'), 'completed viewing outcomes should require the viewed property')

@@ -256,6 +256,108 @@ function makeSnapshot(overrides = {}) {
     assert.ok(commandCenterMarkup.indexOf('Operational Bottleneck Heatmap') < commandCenterMarkup.indexOf('Recent Bank Activity'))
     assert.ok(commandCenterMarkup.indexOf('Connected Partners') < commandCenterMarkup.indexOf('Operational Risk'))
 
+    const hqMarkup = render(BondDashboard, {
+      user: { role: 'bond_originator' },
+      workspaceId: 'workspace-1',
+      initialState: {
+        loading: false,
+        error: '',
+        snapshot: makeSnapshot({
+          reportingScope: {
+            workspaceKind: 'bond_company',
+            workspaceRole: 'owner',
+            scopeLevel: 'workspace_hq',
+            dashboardMode: 'owner_director',
+          },
+          hqCommandCentre: {
+            nationalSnapshot: [
+              { key: 'active_applications', label: 'Active Applications', value: '42', trend: '+8%', helper: 'National active book' },
+              { key: 'applications_submitted', label: 'Applications Submitted', value: '18', trend: '+4', helper: 'Submitted in period' },
+              { key: 'approval_rate', label: 'Approval Rate', value: '72%', trend: '+2%', helper: 'National approval rate' },
+              { key: 'average_approval_time', label: 'Average Approval Time', value: '7d', trend: '-1d', helper: 'Submission to outcome' },
+              { key: 'pipeline_value', label: 'Pipeline Value', value: 'R 42 000 000', trend: '+12%', helper: 'Open national pipeline' },
+              { key: 'projected_commission', label: 'Projected Commission', value: 'R 504 000', trend: '+9%', helper: 'Expected commission' },
+            ],
+            alerts: [
+              { key: 'unassigned', label: 'Unassigned applications', value: 3, tone: 'warning', href: '/bond/applications?filter=unassigned' },
+              { key: 'sla_breaches', label: 'SLA breaches', value: 2, tone: 'high', href: '/bond/reports?view=sla-breaches' },
+            ],
+            pipelineFunnel: {
+              bottleneckStage: 'Awaiting OTP',
+              stages: [
+                { key: 'intake_received', label: 'Intake Received', count: 42, valueLabel: '42 files', conversionRate: 100, dropOff: 0, href: '/bond/pipeline?stage=intake_received' },
+                { key: 'awaiting_otp', label: 'Awaiting OTP', count: 30, valueLabel: '30 files', conversionRate: 71, dropOff: 29, href: '/bond/pipeline?stage=awaiting_otp' },
+                { key: 'approved', label: 'Approved', count: 12, valueLabel: '12 files', conversionRate: 29, dropOff: 60, href: '/bond/pipeline?stage=approved' },
+              ],
+            },
+            regionalPerformance: [
+              { key: 'gauteng', region: 'Gauteng', activeApplications: 21, submitted: 10, approvalRate: 74, avgApprovalTime: 7, pipelineValueLabel: 'R 21 000 000', projectedCommissionLabel: 'R 252 000', riskLevel: 'Low', href: '/bond/organisation?view=branches&region=Gauteng' },
+              { key: 'western-cape', region: 'Western Cape', activeApplications: 14, submitted: 5, approvalRate: 61, avgApprovalTime: 10, pipelineValueLabel: 'R 14 000 000', projectedCommissionLabel: 'R 168 000', riskLevel: 'Medium', href: '/bond/organisation?view=branches&region=Western%20Cape' },
+            ],
+            branchLeaderboard: {
+              topBranches: [
+                { key: 'sandton', branch: 'Sandton HQ', region: 'Gauteng', activeApplications: 12, approvalRate: 82, avgApprovalTime: 6, projectedCommissionLabel: 'R 144 000', topScore: 91, riskLevel: 'Low', href: '/bond/organisation?view=branches&branch=Sandton%20HQ' },
+              ],
+              attentionBranches: [
+                { key: 'cape-town', branch: 'Cape Town Central', region: 'Western Cape', activeApplications: 9, approvalRate: 48, avgApprovalTime: 13, projectedCommissionLabel: 'R 108 000', missingDocs: 5, riskLevel: 'High', href: '/bond/organisation?view=branches&branch=Cape%20Town%20Central' },
+              ],
+            },
+            partnerPerformance: [
+              { key: 'agency', sourceType: 'Agencies', partner: 'Prime Realty', applicationsReferred: 16, submittedApplications: 9, approvalRate: 70, conversionRate: 56, pipelineValueLabel: 'R 16 000 000', projectedCommissionLabel: 'R 192 000', href: '/bond/partners?source=agency' },
+              { key: 'developers', sourceType: 'Developers', partner: 'Bridge Developments', applicationsReferred: 12, submittedApplications: 7, approvalRate: 76, conversionRate: 58, pipelineValueLabel: 'R 12 000 000', projectedCommissionLabel: 'R 144 000', href: '/bond/developments' },
+            ],
+            revenue: {
+              revenueThisMonthLabel: 'R 180 000',
+              projectedCommissionLabel: 'R 504 000',
+              commissionConfirmedLabel: 'R 96 000',
+              forecast90Day: 'R 1 120 000',
+              revenueByRegion: [{ label: 'Gauteng', valueLabel: 'R 252 000' }],
+              revenueByBranch: [{ label: 'Sandton HQ', valueLabel: 'R 144 000' }],
+              revenueByPartnerSource: [{ label: 'Agencies', valueLabel: 'R 192 000' }],
+            },
+            bankPerformance: {
+              bestBank: 'Nedbank',
+              bottleneckBank: 'FNB',
+              rows: [
+                { bank: 'Nedbank', submitted: 8, approvalRate: 75, averageResponseTime: 5 },
+                { bank: 'FNB', submitted: 6, approvalRate: 58, averageResponseTime: 9 },
+              ],
+            },
+          },
+        }),
+        reportingScope: {
+          workspaceKind: 'bond_company',
+          workspaceRole: 'owner',
+          scopeLevel: 'workspace_hq',
+          dashboardMode: 'owner_director',
+        },
+      },
+    })
+    assert.match(hqMarkup, /National Bond Command Centre/)
+    assert.match(hqMarkup, /Company-wide view of applications, revenue, approvals, partner performance, and operational risk/)
+    assert.match(hqMarkup, /Applications Submitted/)
+    assert.match(hqMarkup, /Projected Commission/)
+    assert.match(hqMarkup, /Unassigned applications/)
+    assert.match(hqMarkup, /SLA breaches/)
+    assert.match(hqMarkup, /National Pipeline Funnel/)
+    assert.match(hqMarkup, /Bottleneck: Awaiting OTP/)
+    assert.match(hqMarkup, /Regional Performance/)
+    assert.match(hqMarkup, /Top Performing Branches/)
+    assert.match(hqMarkup, /Branches Requiring Attention/)
+    assert.match(hqMarkup, /Partner Performance/)
+    assert.match(hqMarkup, /Revenue Command Centre/)
+    assert.match(hqMarkup, /Bank Performance Overview/)
+    assert.match(hqMarkup, /Executive Actions/)
+    assert.doesNotMatch(hqMarkup, /Live operational movement across active bond applications/)
+    assert.doesNotMatch(hqMarkup, /Client One/)
+    assert.doesNotMatch(hqMarkup, /Open Application/)
+    assert.doesNotMatch(hqMarkup, /Buyer Type Mix/)
+    assert.doesNotMatch(hqMarkup, /Readiness Quality Mix/)
+    assert.doesNotMatch(hqMarkup, /Recent Bank Activity/)
+    assert.doesNotMatch(hqMarkup, /Team Performance/)
+    assert.doesNotMatch(hqMarkup, /Operational Bottleneck Heatmap/)
+    assert.doesNotMatch(hqMarkup, /Applications Needing Attention/)
+
     const emptyActiveMarkup = render(BondDashboard, {
       user: { role: 'bond_originator' },
       workspaceId: 'workspace-1',

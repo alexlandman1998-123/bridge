@@ -226,7 +226,10 @@ try {
       rangeKey: 'all_time',
     })
     assert.equal(managerSnapshot.reportingScope.dashboardMode, 'owner_director')
-    assert.equal(managerSnapshot.totalApplications >= consultantSnapshot.totalApplications, true)
+    assert.equal(managerSnapshot.totalApplications, transactions.length)
+    assert.ok(managerSnapshot.hqCommandCentre)
+    assert.equal(managerSnapshot.hqCommandCentre.nationalSnapshot.length, 6)
+    assert.equal(managerSnapshot.hqCommandCentre.pipelineFunnel.stages.some((stage) => stage.label === 'Intake Received'), true)
 
     const transactionSnapshot = await service.getBondTransactionTrackerSnapshot(consultant, 'workspace-1', {
       transactions,

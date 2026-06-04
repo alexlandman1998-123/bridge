@@ -1,5 +1,5 @@
 import { AlertTriangle, ArrowRight, BarChart3, Building2, FileText, Network, Users } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import BondEmptyState from '../../components/bond/BondEmptyState'
 import BondPageHeader from '../../components/bond/BondPageHeader'
@@ -20,6 +20,11 @@ const DETAIL_TABS = [
   { key: 'documents', label: 'Documents' },
 ]
 
+const LIST_TABS = [
+  { key: 'current', label: 'Current Developments' },
+  { key: 'developers', label: 'Developers' },
+]
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -37,6 +42,10 @@ function resolveWorkspaceId(workspaceContext = {}) {
 
 function formatNumber(value) {
   return new Intl.NumberFormat('en-ZA').format(Number(value || 0))
+}
+
+function formatCurrency(value) {
+  return `R ${formatNumber(Math.round(Number(value || 0)))}`
 }
 
 function formatDate(value) {
@@ -95,6 +104,93 @@ function DevelopmentCard({ development }) {
         </Link>
       </div>
     </article>
+  )
+}
+
+function buildDeveloperPortfolio(developments = []) {
+  const groups = new Map()
+  for (const development of developments) {
+    const developerName = normalizeText(development.developerName) || 'Unassigned Developer'
+    const group = groups.get(developerName) || {
+      id: developerName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      name: developerName,
+      developments: [],
+      developmentCount: 0,
+      activeFiles: 0,
+      pipelineValue: 0,
+      atRiskFiles: 0,
+      pendingDocuments: 0,
+      approvalScore: 0,
+    }
+    const activeFiles = Number(development.activeFiles || 0)
+    group.developments.push(development)
+    group.developmentCount += 1
+    group.activeFiles += activeFiles
+    group.pipelineValue += Number(development.pipelineValue || 0)
+    group.atRiskFiles += Number(development.atRiskFiles || 0)
+    group.pendingDocuments += Number(development.pendingDocuments || 0)
+    group.approvalScore += Number(development.approvalRate || 0) * Math.max(activeFiles, 1)
+    groups.set(developerName, group)
+  }
+
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      approvalRate: group.developments.length
+        ? Math.round(group.approvalScore / group.developments.reduce((total, item) => total + Math.max(Number(item.activeFiles || 0), 1), 0))
+        : 0,
+    }))
+    .sort((left, right) => Number(right.pipelineValue || 0) - Number(left.pipelineValue || 0))
+}
+
+function DeveloperPortfolioCard({ developer }) {
+  return (
+    <article className="rounded-[24px] border border-[#dbe5f0] bg-white p-5 shadow-[0_16px_42px_rgba(20,33,50,0.07)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">{developer.name}</p>
+          <p className="mt-1 text-sm text-[#60758d]">{formatNumber(developer.developmentCount)} linked developments</p>
+        </div>
+        <span className="rounded-full border border-[#dbe5f0] bg-[#f8fbfe] px-3 py-1 text-xs font-semibold text-[#49657d]">
+          {formatCurrency(developer.pipelineValue)}
+        </span>
+      </div>
+
+      <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Metric label="Active Applications" value={formatNumber(developer.activeFiles)} />
+        <Metric label="Approval Rate" value={`${developer.approvalRate}%`} tone={developer.approvalRate >= 70 ? 'green' : 'amber'} />
+        <Metric label="Awaiting Docs" value={formatNumber(developer.pendingDocuments)} tone={developer.pendingDocuments ? 'amber' : 'green'} />
+        <Metric label="At Risk" value={formatNumber(developer.atRiskFiles)} tone={developer.atRiskFiles ? 'red' : 'green'} />
+      </div>
+
+      <div className="mt-5 space-y-2">
+        {developer.developments.slice(0, 5).map((development) => (
+          <Link
+            key={development.id}
+            to={development.href}
+            className="flex items-center justify-between gap-3 rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3 text-sm transition hover:border-[#bdd0e4] hover:bg-white"
+          >
+            <span className="min-w-0">
+              <span className="block truncate font-semibold text-[#20364c]">{development.name}</span>
+              <span className="mt-1 block text-xs text-[#71879d]">{development.location} · {formatNumber(development.activeFiles)} active applications</span>
+            </span>
+            <ArrowRight size={15} className="shrink-0 text-[#6f849a]" />
+          </Link>
+        ))}
+      </div>
+    </article>
+  )
+}
+
+function DevelopersWorkspace({ developments = [] }) {
+  const developers = useMemo(() => buildDeveloperPortfolio(developments), [developments])
+  if (!developers.length) {
+    return <BondEmptyState compact title="No developers linked yet." description="Developer relationships will appear once bond applications are linked to developments." />
+  }
+  return (
+    <section className="grid gap-5 xl:grid-cols-2">
+      {developers.map((developer) => <DeveloperPortfolioCard key={developer.id} developer={developer} />)}
+    </section>
   )
 }
 
@@ -281,6 +377,7 @@ export default function BondDevelopmentsPage({ service = bondCommandCenterServic
   const [searchParams, setSearchParams] = useSearchParams()
   const [state, setState] = useState(initialState || { loading: true, error: '', snapshot: null })
   const selectedTab = searchParams.get('tab') || 'overview'
+  const selectedListView = searchParams.get('view') || 'current'
 
   const loadDevelopments = useCallback(async () => {
     if (!workspaceId) {
@@ -306,6 +403,7 @@ export default function BondDevelopmentsPage({ service = bondCommandCenterServic
   const snapshot = state.snapshot
   const detail = snapshot?.detail
   const tabValue = DETAIL_TABS.some((tab) => tab.key === selectedTab) ? selectedTab : 'overview'
+  const listViewValue = LIST_TABS.some((tab) => tab.key === selectedListView) ? selectedListView : 'current'
   const pageTitle = detail?.name || 'Developments'
   const pageDescription = detail
     ? `${detail.developerName} · ${detail.location}`
@@ -314,6 +412,13 @@ export default function BondDevelopmentsPage({ service = bondCommandCenterServic
   const handleTabChange = (key) => {
     const nextParams = new URLSearchParams(searchParams)
     nextParams.set('tab', key)
+    setSearchParams(nextParams, { replace: true })
+  }
+
+  const handleListViewChange = (key) => {
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('view', key)
+    nextParams.delete('tab')
     setSearchParams(nextParams, { replace: true })
   }
 
@@ -333,6 +438,7 @@ export default function BondDevelopmentsPage({ service = bondCommandCenterServic
 
       {!state.loading && snapshot && !detail ? (
         <>
+          <BondViewTabs tabs={LIST_TABS} value={listViewValue} onChange={handleListViewChange} />
           <section className="grid gap-4 md:grid-cols-3">
             <BondSectionCard title="Project Pipeline" description="Development and unassigned deal performance." icon={Building2}>
               <p className="text-3xl font-semibold tracking-[-0.04em] text-[#172b42]">{formatNumber(snapshot.developments.length)}</p>
@@ -344,9 +450,13 @@ export default function BondDevelopmentsPage({ service = bondCommandCenterServic
               <p className="text-3xl font-semibold tracking-[-0.04em] text-[#172b42]">{formatNumber(snapshot.developments.reduce((total, item) => total + item.atRiskFiles, 0))}</p>
             </BondSectionCard>
           </section>
-          <section className="grid gap-5 xl:grid-cols-2">
-            {snapshot.developments.map((development) => <DevelopmentCard key={development.id} development={development} />)}
-          </section>
+          {listViewValue === 'developers' ? (
+            <DevelopersWorkspace developments={snapshot.developments} />
+          ) : (
+            <section className="grid gap-5 xl:grid-cols-2">
+              {snapshot.developments.map((development) => <DevelopmentCard key={development.id} development={development} />)}
+            </section>
+          )}
         </>
       ) : null}
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowRight, Banknote, Building2, ChevronDown, CircleCheck, CircleDashed, CircleAlert, Clock3, FileCheck2, FileText, HandCoins, UsersRound } from 'lucide-react'
 import BondEmptyState from './BondEmptyState'
+import BondHqCommandCentre from './BondHqCommandCentre'
 import BondPageShell from './BondPageShell'
 import BondSectionCard from './BondSectionCard'
 import OperationalHeatmap from '../analytics/OperationalHeatmap'
@@ -48,6 +49,12 @@ const DEFAULT_RANGE_LABEL = 'Last 30 Days'
 
 function getBankVisual(bank = '') {
   return BANK_VISUALS[bank] || BANK_VISUALS.Others
+}
+
+function isHqDashboard(reportingScope = {}) {
+  const dashboardMode = normalizeText(reportingScope?.dashboardMode)
+  const scopeLevel = normalizeText(reportingScope?.scopeLevel)
+  return dashboardMode === 'owner_director' || dashboardMode === 'hq_manager' || scopeLevel === 'workspace_hq'
 }
 
 export default function BondDashboard({
@@ -128,6 +135,7 @@ export default function BondDashboard({
   const teamPerformance = snapshot.teamPerformance || []
   const connectedPartners = snapshot.connectedPartners || []
   const heatmapRows = snapshot.operationalHeatmap || []
+  const shouldRenderHqDashboard = isHqDashboard(state.reportingScope)
   const organisationSnapshot = buildOrganisationSnapshot(snapshot, state.reportingScope)
 
   if (!safeWorkspaceId) {
@@ -159,7 +167,9 @@ export default function BondDashboard({
 
       {!state.loading && snapshot ? (
         <>
-          {snapshot.totalApplications === 0 ? (
+          {shouldRenderHqDashboard ? (
+            <BondHqCommandCentre snapshot={snapshot} />
+          ) : snapshot.totalApplications === 0 ? (
             <BondEmptyState
               title="All operational queues are clear."
               description="Your bond desk is running smoothly."

@@ -5,7 +5,12 @@ import { isBondFinanceType, normalizeFinanceType } from '../core/transactions/fi
 import { getTransactionScopeForRow } from '../core/transactions/transactionScope'
 import { fetchTransactionsByParticipantSummary } from '../lib/api'
 import { canViewFinanceWorkflow } from './bondFinanceWorkflowOwnershipService'
-import { resolveBondOperationalQueues } from './bondOperationalQueueService'
+import {
+  getBondOriginatorQueueState,
+  isBondApplicationTrackerRow,
+  isNewBondApplicationReadyForReview,
+  resolveBondOperationalQueues,
+} from './bondOperationalQueueService'
 import { getBondDashboardReportingScope } from './bondDashboardService'
 import {
   calculateApprovalProbability,
@@ -74,6 +79,19 @@ const DASHBOARD_PIPELINE_FLOW_META = Object.freeze([
   { key: 'bank_feedback', label: 'Bank Feedback', href: '/bond/pipeline?view=submitted' },
   { key: 'approved', label: 'Approval', href: '/bond/applications?view=bond-approved' },
   { key: 'registered', label: 'Registration', href: '/bond/applications?view=registered' },
+])
+
+const HQ_PIPELINE_STAGE_META = Object.freeze([
+  { key: 'intake_received', label: 'Intake Received', href: '/bond/pipeline?view=all' },
+  { key: 'awaiting_otp', label: 'Awaiting OTP', href: '/bond/pipeline?view=all' },
+  { key: 'otp_ready', label: 'OTP Ready', href: '/bond/pipeline?view=all' },
+  { key: 'application_in_progress', label: 'Application In Progress', href: '/bond/pipeline?view=awaiting-docs' },
+  { key: 'submitted', label: 'Submitted', href: '/bond/pipeline?view=submitted' },
+  { key: 'ready_for_review', label: 'Ready For Review', href: '/bond/pipeline?view=ready-for-submission' },
+  { key: 'submitted_to_banks', label: 'Submitted To Banks', href: '/bond/pipeline?view=submitted' },
+  { key: 'bank_feedback', label: 'Bank Feedback', href: '/bond/pipeline?view=submitted' },
+  { key: 'approved', label: 'Approved', href: '/bond/applications?view=bond-approved' },
+  { key: 'registered', label: 'Registered', href: '/bond/applications?view=registered' },
 ])
 
 const EXECUTIVE_BANKS = Object.freeze(['FNB', 'ABSA', 'Standard Bank', 'Nedbank', 'Investec', 'Others'])
@@ -741,6 +759,9 @@ function deriveRiskSignals(row = {}) {
 }
 
 function deriveFinanceLaneStage(row = {}) {
+  const queueState = getBondOriginatorQueueState(row)
+  if (queueState.status === 'READY_FOR_REVIEW') return { key: 'ready_for_review', label: 'Ready For Review' }
+
   const pipelineStage = resolvePipelineStageKey(row)
   const transferStage = getAttorneyTransferStage(row)
   const signal = getSignalText(row)
@@ -789,6 +810,8 @@ function deriveTransactionStatus(row = {}) {
 }
 
 function isBondTransactionLifecycleRow(row = {}) {
+  if (isBondApplicationTrackerRow(row)) return true
+
   const explicitBucket = normalizeLower(row?.transaction?.lifecycle_bucket || row?.transaction?.lifecycleBucket)
   if (explicitBucket === 'transaction') return true
   if (explicitBucket === 'pipeline') return false
@@ -1682,6 +1705,358 @@ function buildPerformanceSnapshot(rows = []) {
   ]
 }
 
+function isHqReportingScope(reportingScope = {}) {
+  return ['owner_director', 'hq_manager'].includes(normalizeText(reportingScope.dashboardMode)) ||
+    normalizeText(reportingScope.scopeLevel) === 'workspace_hq'
+}
+
+function getRegionLabel(row = {}) {
+  const tx = row?.transaction || {}
+  return normalizeText(
+    tx.assigned_region_name ||
+      tx.region_name ||
+      tx.region ||
+      tx.assigned_region_id ||
+      tx.region_id ||
+      row?.region?.name ||
+      row?.region?.region,
+  ) || 'Unassigned Region'
+}
+
+function getBranchLabel(row = {}) {
+  const tx = row?.transaction || {}
+  return normalizeText(
+    tx.assigned_branch_name ||
+      tx.branch_name ||
+      tx.branch ||
+      tx.assigned_team_name ||
+      tx.assigned_workspace_unit_name ||
+      tx.assigned_branch_id ||
+      tx.branch_id ||
+      tx.workspace_unit_id ||
+      row?.branch?.name ||
+      row?.unit?.branch_name,
+  ) || 'Unassigned Branch'
+}
+
+function isSubmittedStage(row = {}) {
+  return ['submitted_to_banks', 'bank_feedback', 'bond_approved', 'grant_signed', 'bond_instruction_sent', 'registered'].includes(deriveFinanceLaneStage(row).key)
+}
+
+function isApprovedStage(row = {}) {
+  return ['bond_approved', 'grant_signed', 'bond_instruction_sent', 'registered'].includes(deriveFinanceLaneStage(row).key)
+}
+
+function getTurnaroundDays(row = {}) {
+  const created = getTimestamp(row?.transaction?.created_at)
+  const updated = getTimestamp(getUpdatedAt(row))
+  if (!created || !updated || updated < created) return null
+  return Math.max(0, Math.round((updated - created) / (24 * 60 * 60 * 1000)))
+}
+
+function averageTurnaround(rows = []) {
+  const values = rows.map(getTurnaroundDays).filter((value) => Number.isFinite(value))
+  if (!values.length) return 0
+  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
+}
+
+function getRiskLevel({ riskCount = 0, total = 0, approvalRate = 0, avgApprovalTime = 0 } = {}) {
+  const riskRate = total ? riskCount / total : 0
+  if (riskRate >= 0.35 || approvalRate < 35 || avgApprovalTime > 21) return 'High'
+  if (riskRate >= 0.18 || approvalRate < 55 || avgApprovalTime > 14) return 'Medium'
+  return 'Low'
+}
+
+function summarizeRows(rows = []) {
+  const safeRows = Array.isArray(rows) ? rows : []
+  const activeApplications = safeRows.filter((row) => deriveTransactionStatus(row) !== 'registered' && deriveTransactionStatus(row) !== 'cancelled').length
+  const submitted = safeRows.filter(isSubmittedStage).length
+  const approved = safeRows.filter(isApprovedStage).length
+  const riskCount = safeRows.filter((row) => deriveRiskSignals(row).atRisk).length
+  const avgApprovalTime = averageTurnaround(safeRows)
+  const pipelineValue = safeRows.reduce((sum, row) => sum + getBondAmount(row), 0)
+  const projectedCommission = safeRows.reduce((sum, row) => sum + getCommissionValue(row), 0)
+  const approvalRate = safeRows.length ? roundTo((approved / safeRows.length) * 100, 0) : 0
+
+  return {
+    total: safeRows.length,
+    activeApplications,
+    submitted,
+    approved,
+    approvalRate,
+    avgApprovalTime,
+    pipelineValue,
+    pipelineValueLabel: formatCurrency(pipelineValue),
+    projectedCommission,
+    projectedCommissionLabel: formatCurrency(projectedCommission),
+    riskCount,
+    riskLevel: getRiskLevel({ riskCount, total: safeRows.length, approvalRate, avgApprovalTime }),
+  }
+}
+
+function groupRows(rows = [], getKey = () => '') {
+  const groups = new Map()
+  for (const row of rows) {
+    const key = normalizeText(getKey(row)) || 'Unassigned'
+    const group = groups.get(key) || { key, rows: [] }
+    group.rows.push(row)
+    groups.set(key, group)
+  }
+  return [...groups.values()]
+}
+
+function buildHqRegionalPerformance(rows = []) {
+  return groupRows(rows, getRegionLabel)
+    .map((group) => ({
+      key: group.key,
+      region: group.key,
+      href: `/bond/organisation?view=branches&region=${encodeURIComponent(group.key)}`,
+      ...summarizeRows(group.rows),
+    }))
+    .sort((left, right) => right.pipelineValue - left.pipelineValue || right.activeApplications - left.activeApplications)
+}
+
+function buildHqBranchRows(rows = []) {
+  return groupRows(rows, getBranchLabel)
+    .map((group) => {
+      const summary = summarizeRows(group.rows)
+      const region = getRegionLabel(group.rows[0])
+      const missingDocs = group.rows.reduce((sum, row) => sum + getDocumentMissingCount(row), 0)
+      const staleApplications = group.rows.filter((row) => getDaysSinceUpdate(row) > 7).length
+      const unassignedApplications = group.rows.filter((row) => {
+        const assignment = resolveEffectiveBondAssignment(row?.transaction || {})
+        return !normalizeText(assignment.primaryConsultantUserId || assignment.primaryConsultantEmail)
+      }).length
+      const topScore =
+        summary.approvalRate * 0.35 +
+        summary.submitted * 3 +
+        Math.max(0, 30 - summary.avgApprovalTime) +
+        Math.min(summary.projectedCommission / 10000, 25)
+      const attentionScore =
+        summary.riskCount * 12 +
+        staleApplications * 10 +
+        missingDocs * 4 +
+        unassignedApplications * 14 +
+        Math.max(0, 60 - summary.approvalRate)
+
+      return {
+        key: group.key,
+        branch: group.key,
+        region,
+        href: `/bond/organisation?view=branches&branch=${encodeURIComponent(group.key)}`,
+        ...summary,
+        missingDocs,
+        staleApplications,
+        unassignedApplications,
+        topScore: roundTo(topScore, 0),
+        attentionScore: roundTo(attentionScore, 0),
+      }
+    })
+}
+
+function getPartnerSource(row = {}) {
+  const tx = row?.transaction || {}
+  const developer = normalizeText(row?.development?.name || tx.development_name || tx.developer_name)
+  const attorney = normalizeText(tx.attorney_name || tx.conveyancer_name || tx.assigned_attorney_email)
+  const agency = normalizeText(tx.assigned_agent || tx.assigned_agent_email || tx.agency_name || tx.partner_name)
+  const leadSource = normalizeText(tx.lead_source || tx.campaign_source || tx.source)
+  if (agency) return { type: 'Agencies', name: agency }
+  if (attorney) return { type: 'Attorneys', name: attorney }
+  if (developer) return { type: 'Developers', name: developer }
+  return { type: leadSource || 'Internal/Direct', name: leadSource || 'Direct / Internal' }
+}
+
+function buildHqPartnerPerformance(rows = []) {
+  return groupRows(rows, (row) => {
+    const source = getPartnerSource(row)
+    return `${source.type}:${source.name}`
+  })
+    .map((group) => {
+      const firstSource = getPartnerSource(group.rows[0])
+      const summary = summarizeRows(group.rows)
+      return {
+        key: group.key,
+        sourceType: firstSource.type,
+        partner: firstSource.name,
+        applicationsReferred: summary.total,
+        submittedApplications: summary.submitted,
+        approvalRate: summary.approvalRate,
+        pipelineValue: summary.pipelineValue,
+        pipelineValueLabel: summary.pipelineValueLabel,
+        projectedCommission: summary.projectedCommission,
+        projectedCommissionLabel: summary.projectedCommissionLabel,
+        conversionRate: summary.total ? roundTo((summary.submitted / summary.total) * 100, 0) : 0,
+        href: `/bond/partners?source=${encodeURIComponent(firstSource.name)}`,
+      }
+    })
+    .sort((left, right) => right.applicationsReferred - left.applicationsReferred || right.pipelineValue - left.pipelineValue)
+    .slice(0, 12)
+}
+
+function buildHqPipelineFunnel(rows = []) {
+  const counts = HQ_PIPELINE_STAGE_META.reduce((accumulator, stage) => {
+    accumulator[stage.key] = 0
+    return accumulator
+  }, {})
+
+  for (const row of rows) {
+    const lane = deriveFinanceLaneStage(row).key
+    const signal = getSignalText(row)
+    let key = 'intake_received'
+    if (lane === 'registered') key = 'registered'
+    else if (isApprovedStage(row)) key = 'approved'
+    else if (lane === 'bank_feedback') key = 'bank_feedback'
+    else if (lane === 'submitted_to_banks') key = 'submitted_to_banks'
+    else if (lane === 'pre_approval') key = 'ready_for_review'
+    else if (lane === 'bond_application_open') key = 'application_in_progress'
+    else if (/otp.*(ready|signed|complete)/i.test(signal)) key = 'otp_ready'
+    else if (/otp/i.test(signal)) key = 'awaiting_otp'
+    else if (resolvePipelineStageKey(row) === 'submitted') key = 'submitted'
+    counts[key] += 1
+  }
+
+  const firstCount = Math.max(rows.length, 1)
+  let previousCount = firstCount
+  let bottleneck = null
+  const stages = HQ_PIPELINE_STAGE_META.map((stage, index) => {
+    const count = counts[stage.key] || 0
+    const conversionRate = index === 0 ? 100 : roundTo((count / Math.max(previousCount, 1)) * 100, 0)
+    const dropOff = index === 0 ? 0 : Math.max(0, 100 - conversionRate)
+    const item = {
+      ...stage,
+      count,
+      conversionRate,
+      dropOff,
+      valueLabel: `${count} ${count === 1 ? 'file' : 'files'}`,
+    }
+    if (!bottleneck || item.dropOff > bottleneck.dropOff) bottleneck = item
+    previousCount = Math.max(count, 1)
+    return item
+  })
+
+  return {
+    stages,
+    bottleneckStage: bottleneck?.label || 'No bottleneck',
+    bottleneckDropOff: bottleneck?.dropOff || 0,
+  }
+}
+
+function buildHqExecutiveAlerts(rows = [], branchRows = []) {
+  const unassigned = rows.filter((row) => {
+    const assignment = resolveEffectiveBondAssignment(row?.transaction || {})
+    return !normalizeText(assignment.primaryConsultantUserId || assignment.primaryConsultantEmail)
+  }).length
+  const waiting = rows.filter((row) => getDaysSinceUpdate(row) > 7).length
+  const missingDocs = rows.reduce((sum, row) => sum + getDocumentMissingCount(row), 0)
+  const slaBreaches = rows.filter((row) => deriveRiskSignals(row).overdueDays > 0).length
+  const highRiskBranches = branchRows.filter((row) => row.riskLevel === 'High').length
+
+  return [
+    { key: 'unassigned', label: 'Unassigned applications', value: unassigned, tone: unassigned ? 'danger' : 'success', href: '/bond/applications?filter=unassigned' },
+    { key: 'waiting', label: 'Waiting > 7 days', value: waiting, tone: waiting ? 'warning' : 'success', href: '/bond/applications?filter=stale' },
+    { key: 'missing_docs', label: 'Missing document packs', value: missingDocs, tone: missingDocs ? 'warning' : 'success', href: '/bond/pipeline?view=awaiting-docs' },
+    { key: 'sla', label: 'SLA breaches', value: slaBreaches, tone: slaBreaches ? 'danger' : 'success', href: '/bond/reports?view=sla-breaches' },
+    { key: 'branches', label: 'High-risk branches', value: highRiskBranches, tone: highRiskBranches ? 'danger' : 'success', href: '/bond/organisation?view=branches&risk=high' },
+  ]
+}
+
+function buildRevenueByPartnerSource(partnerRows = []) {
+  const groups = new Map()
+  for (const row of partnerRows) {
+    const key = normalizeText(row.sourceType) || 'Internal/Direct'
+    const group = groups.get(key) || { label: key, value: 0 }
+    group.value += normalizeNumber(row.projectedCommission)
+    groups.set(key, group)
+  }
+  return [...groups.values()]
+    .sort((left, right) => right.value - left.value)
+    .slice(0, 6)
+    .map((row) => ({ ...row, valueLabel: formatCurrency(row.value) }))
+}
+
+function buildHqRevenue(rows = [], regionalRows = [], branchRows = [], partnerRows = []) {
+  const thisMonthRows = rows.filter(isUpdatedThisMonth)
+  const confirmedRows = rows.filter(isApprovedStage)
+  const revenueThisMonth = thisMonthRows.reduce((sum, row) => sum + getCommissionValue(row), 0)
+  const projectedCommission = rows.reduce((sum, row) => sum + getCommissionValue(row), 0)
+  const confirmedCommission = confirmedRows.reduce((sum, row) => sum + getCommissionValue(row), 0)
+
+  return {
+    revenueThisMonth,
+    revenueThisMonthLabel: formatCurrency(revenueThisMonth),
+    projectedCommission,
+    projectedCommissionLabel: formatCurrency(projectedCommission),
+    commissionConfirmed: confirmedCommission,
+    commissionConfirmedLabel: formatCurrency(confirmedCommission),
+    revenueByRegion: regionalRows.slice(0, 6).map((row) => ({ label: row.region, value: row.projectedCommission, valueLabel: row.projectedCommissionLabel })),
+    revenueByBranch: branchRows.slice(0, 6).map((row) => ({ label: row.branch, value: row.projectedCommission, valueLabel: row.projectedCommissionLabel })),
+    revenueByPartnerSource: buildRevenueByPartnerSource(partnerRows),
+    forecast90Day: projectedCommission ? formatCurrency(projectedCommission * 3) : 'Not enough data',
+  }
+}
+
+function buildHqBankPerformance(bankBreakdown = [], bankLeadTimes = []) {
+  const leadByBank = new Map((bankLeadTimes || []).map((row) => [row.bank, row.leadTimeDays]))
+  const rows = (bankBreakdown || [])
+    .filter((row) => normalizeNumber(row.total) > 0)
+    .map((row) => ({
+      ...row,
+      submitted: normalizeNumber(row.approved) + normalizeNumber(row.pending),
+      averageResponseTime: leadByBank.get(row.bank) || 0,
+    }))
+    .sort((left, right) => right.submitted - left.submitted)
+  const bottleneckBank = [...rows].sort((left, right) => right.averageResponseTime - left.averageResponseTime)[0]
+  const bestBank = [...rows].sort((left, right) => right.approvalRate - left.approvalRate || left.averageResponseTime - right.averageResponseTime)[0]
+
+  return {
+    rows,
+    bottleneckBank: bottleneckBank?.bank || 'Not enough data',
+    bestBank: bestBank?.bank || 'Not enough data',
+  }
+}
+
+function buildHqKpis(rows = [], heroKpis = []) {
+  const summary = summarizeRows(rows)
+  const getHero = (key) => (heroKpis || []).find((item) => item.key === key) || {}
+  const active = getHero('active_applications')
+  const approval = getHero('approval_rate')
+  const approvalTime = getHero('average_approval_time')
+  const pipeline = getHero('bond_value')
+  const commission = getHero('commission_pipeline')
+
+  return [
+    { key: 'active_applications', label: 'Active Applications', value: active.value || String(summary.activeApplications), trend: active.trend || 'Current book', helper: active.microContext || `${summary.total} total applications` },
+    { key: 'submitted', label: 'Applications Submitted', value: String(summary.submitted), trend: `${summary.submitted} submitted`, helper: 'Submitted to bank or beyond' },
+    { key: 'approval_rate', label: 'Approval Rate', value: approval.value || `${summary.approvalRate}%`, trend: approval.trend || 'Tracking', helper: approval.microContext || `${summary.approved} approved files` },
+    { key: 'average_approval_time', label: 'Average Approval Time', value: approvalTime.value || `${summary.avgApprovalTime} days`, trend: approvalTime.trend || 'Against target', helper: approvalTime.microContext || 'Submission to approval movement' },
+    { key: 'pipeline_value', label: 'Pipeline Value', value: pipeline.value || summary.pipelineValueLabel, trend: pipeline.trend || 'National pipeline', helper: pipeline.microContext || `${summary.total} files included` },
+    { key: 'projected_commission', label: 'Projected Commission', value: commission.value || summary.projectedCommissionLabel, trend: commission.trend || 'Projected', helper: commission.microContext || 'Estimated commission pipeline' },
+  ]
+}
+
+function buildHqCommandCentreSnapshot(rows = [], { bankBreakdown = [], bankLeadTimes = [], heroKpis = [], reportingScope = {} } = {}) {
+  const regionalPerformance = buildHqRegionalPerformance(rows)
+  const branchRows = buildHqBranchRows(rows)
+  const topBranches = [...branchRows].sort((left, right) => right.topScore - left.topScore).slice(0, 6)
+  const attentionBranches = [...branchRows].sort((left, right) => right.attentionScore - left.attentionScore).slice(0, 6)
+  const partnerPerformance = buildHqPartnerPerformance(rows)
+
+  return {
+    reportingScope,
+    nationalSnapshot: buildHqKpis(rows, heroKpis),
+    alerts: buildHqExecutiveAlerts(rows, branchRows),
+    pipelineFunnel: buildHqPipelineFunnel(rows),
+    regionalPerformance,
+    branchLeaderboard: {
+      topBranches,
+      attentionBranches,
+    },
+    partnerPerformance,
+    revenue: buildHqRevenue(rows, regionalPerformance, branchRows, partnerPerformance),
+    bankPerformance: buildHqBankPerformance(bankBreakdown, bankLeadTimes),
+  }
+}
+
 function buildPipelineOverview(rows = []) {
   const byStage = PIPELINE_STAGE_META.reduce((accumulator, stage) => {
     accumulator[stage.key] = {
@@ -1769,6 +2144,7 @@ function buildStatusCards(rows = []) {
 
 function mapTransactionTrackerRow(row = {}) {
   const assignment = resolveEffectiveBondAssignment(row?.transaction || {})
+  const queueState = getBondOriginatorQueueState(row)
   const financeLane = deriveFinanceLaneStage(row)
   const transferStage = getAttorneyTransferStage(row)
   const risk = deriveRiskSignals(row)
@@ -1809,11 +2185,17 @@ function mapTransactionTrackerRow(row = {}) {
     bondAmountLabel: formatCurrency(bondAmount),
     financeStageKey: financeLane.key,
     financeStageLabel: financeLane.label,
+    originatorQueueStatus: queueState.status,
+    originatorQueueLabel: queueState.label,
+    tags: [
+      isNewBondApplicationReadyForReview(row) ? { key: 'new', label: 'New', tone: 'blue' } : null,
+      queueState.status === 'READY_FOR_REVIEW' ? { key: 'ready_for_review', label: 'Ready For Review', tone: 'green' } : null,
+    ].filter(Boolean),
     transferStageKey: transferStage,
     transferStageLabel: stageLabelFromAttorneyKey(transferStage),
     lastActivityAt: getUpdatedAt(row),
     lastActivityLabel: formatRelativeTime(getUpdatedAt(row)),
-    nextAction: normalizeText(row?.transaction?.next_action) || 'No next action set',
+    nextAction: normalizeText(row?.transaction?.next_action) || (queueState.status === 'READY_FOR_REVIEW' ? 'Review submitted application' : 'No next action set'),
     approvalConfidence,
     operationalRisk,
     velocity,
@@ -2044,7 +2426,8 @@ export async function getBondDevelopmentsWorkspaceSnapshot(user = {}, workspaceI
 
 export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', options = {}) {
   const reportingScope = options.reportingScope || (await getBondDashboardReportingScope(user, workspaceId, options))
-  const allRows = await resolveBondRows(user, workspaceId, options)
+  const includeDemoRows = options.includeDemoRows ?? !isHqReportingScope(reportingScope)
+  const allRows = await resolveBondRows(user, workspaceId, { ...options, includeDemoRows })
   const rangeKey = options.rangeKey || DEFAULT_DASHBOARD_RANGE_KEY
   const dateRows = filterRowsByDateRange(allRows, rangeKey)
   const filteredRows = filterRowsByDevelopment(dateRows, options.developmentId)
@@ -2097,6 +2480,9 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
     recentBankActivity: buildRecentBankActivity(filteredRows),
     atRiskApplications: buildAtRiskApplications(filteredRows),
     performanceSnapshot,
+    hqCommandCentre: isHqReportingScope(reportingScope)
+      ? buildHqCommandCentreSnapshot(filteredRows, { bankBreakdown, bankLeadTimes, heroKpis: executiveAnalytics.heroKpis, reportingScope })
+      : null,
     queues,
     developmentOptions: buildBondDevelopmentOptions(dateRows),
     selectedDevelopmentId: normalizeText(options.developmentId) || 'all',
@@ -2119,7 +2505,7 @@ export async function getBondTransactionTrackerSnapshot(user = {}, workspaceId =
     const financeType = normalizeFinanceType(row?.transaction?.finance_type, { allowUnknown: true })
     return isBondFinanceType(financeType) || deriveFinanceLaneStage(row).key !== 'finance_requested'
   })
-  const transactionRows = bondRows.filter(isBondTransactionLifecycleRow).map(mapTransactionTrackerRow)
+  const transactionRows = bondRows.filter((row) => isBondTransactionLifecycleRow(row) || isBondApplicationTrackerRow(row)).map(mapTransactionTrackerRow)
   const selectedStatus = normalizeText(options.status || 'all') || 'all'
   const filteredRows = filterTransactionRows(transactionRows, selectedStatus)
 

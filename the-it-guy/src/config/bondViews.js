@@ -4,22 +4,22 @@ export const BOND_TRANSACTION_VIEW_PARAM = 'view'
 export const bondViews = {
   pipeline: {
     title: 'Pipeline',
-    description: 'Incoming bond requests, incomplete files, and applications preparing for submission.',
+    description: 'Incoming bond requests and incomplete files before they are ready for review.',
     primaryActionLabel: '+ Create Application',
     secondaryActionLabel: 'Export Pipeline',
     basePath: '/bond/pipeline',
     legacyPath: '/applications',
     tabs: [
       { key: 'all', label: 'All', filters: { queue: 'all', stage: 'all' } },
-      { key: 'new', label: 'New', filters: { queue: 'new_applications', stage: 'all' } },
-      { key: 'awaiting-docs', label: 'Awaiting Docs', filters: { queue: 'missing_documents', stage: 'all' }, aliases: ['awaiting-documents'] },
-      { key: 'ready-for-submission', label: 'Ready for Submission', filters: { queue: 'submission_readiness', stage: 'all' } },
-      { key: 'submitted', label: 'Submitted', filters: { queue: 'submitted', stage: 'all' } },
+      { key: 'awaiting-otp', label: 'Awaiting OTP', filters: { queue: 'awaiting_otp', stage: 'all' }, aliases: ['new'] },
+      { key: 'ready-to-start', label: 'Ready To Start', filters: { queue: 'ready_to_start', stage: 'all' } },
+      { key: 'in-progress', label: 'In Progress', filters: { queue: 'application_in_progress', stage: 'all' }, aliases: ['awaiting-docs', 'awaiting-documents'] },
+      { key: 'submitted', label: 'Application Submitted', filters: { queue: 'application_submitted', stage: 'all' }, aliases: ['ready-for-submission'] },
       { key: 'stalled', label: 'Stalled', filters: { queue: 'overdue_applications', stage: 'all' } },
       { key: 'declined', label: 'Declined', filters: { queue: 'all', stage: 'declined' } },
     ],
     emptyTitle: 'No incoming applications found.',
-    emptyDescription: 'New bond requests will appear here once a buyer selects bond finance or submits onboarding.',
+    emptyDescription: 'Bond requests will appear here once buyer onboarding is submitted and will move to Applications when ready for review.',
   },
   transactions: {
     title: 'Applications',

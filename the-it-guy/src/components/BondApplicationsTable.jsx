@@ -196,13 +196,13 @@ function NewApplicationsEmptyState() {
   return (
     <BondSectionCard
       eyebrow="Intake"
-      title="New Applications"
-      description="Review incoming Bond and Hybrid buyer applications before they are accepted into the active finance book."
+      title="Pipeline"
+      description="Bond and Hybrid buyer onboarding records will appear here until they are ready for review."
     >
       <div className="rounded-[20px] border border-dashed border-[#d8e2ec] bg-[#fbfdff] px-5 py-7 text-center">
         <p className="text-lg font-semibold text-[#142132]">No new bond applications</p>
         <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[#60758d]">
-          When buyers select Bond or Hybrid and complete their onboarding, they will appear here for review.
+          When buyers select Bond or Hybrid and submit onboarding, they will appear here while OTP, application, or documents are still outstanding.
         </p>
         <a
           href="/bond/pipeline"
@@ -276,6 +276,7 @@ function NewApplicationCard({ item, currentUser, onRowClick, onAction }) {
           </div>
           <p className="mt-2 text-sm font-semibold text-[#31445a]">{item.propertyLabel}</p>
           <p className="mt-1 text-sm text-[#60758d]">{item.developmentName} · {item.agentName}</p>
+          <p className="mt-1 text-sm font-semibold text-[#31445a]">{item.offerAmountLabel}</p>
           <p className="mt-2 text-xs text-[#7a8fa5]">Preferred originator: {item.preferredOriginatorName}</p>
         </div>
 
@@ -354,17 +355,19 @@ function NewApplicationCard({ item, currentUser, onRowClick, onAction }) {
               <FilePlus2 size={14} />
               Request Documents
             </button>
-            <button
-              type="button"
-              disabled={!userCanAccept}
-              title={userCanAccept ? 'Accept this application.' : acceptDisabledTitle}
-              onClick={() => onAction('accept', item)}
-              className="inline-flex h-9 items-center justify-center rounded-[12px] bg-[#143250] px-3 text-sm font-semibold text-white transition enabled:hover:bg-[#173a5e] disabled:cursor-not-allowed disabled:bg-[#c7d3df]"
-            >
-              <CheckCircle2 size={14} className="mr-1" />
-              Accept
-            </button>
-            {userCanAssign ? (
+            {item.canAccept ? (
+              <button
+                type="button"
+                disabled={!userCanAccept}
+                title={userCanAccept ? 'Accept this application.' : acceptDisabledTitle}
+                onClick={() => onAction('accept', item)}
+                className="inline-flex h-9 items-center justify-center rounded-[12px] bg-[#143250] px-3 text-sm font-semibold text-white transition enabled:hover:bg-[#173a5e] disabled:cursor-not-allowed disabled:bg-[#c7d3df]"
+              >
+                <CheckCircle2 size={14} className="mr-1" />
+                Accept
+              </button>
+            ) : null}
+            {userCanAssign && item.canAccept ? (
               <button
                 type="button"
                 disabled={item.intakeStatus !== BOND_INTAKE_STATUSES.READY_FOR_REVIEW}
@@ -547,7 +550,6 @@ function NewApplicationsInbox({ rows = [], onRowClick, currentUser = {}, onActio
       BOND_INTAKE_STATUSES.READY_TO_START,
       BOND_INTAKE_STATUSES.APPLICATION_IN_PROGRESS,
       BOND_INTAKE_STATUSES.APPLICATION_SUBMITTED,
-      BOND_INTAKE_STATUSES.READY_FOR_REVIEW,
     ].map((status) => ({
       key: status,
       label: `${intakeFilterLabel(status)} (${activeItems.filter((item) => item.intakeStatus === status).length})`,
@@ -596,9 +598,9 @@ function NewApplicationsInbox({ rows = [], onRowClick, currentUser = {}, onActio
   return (
     <BondSectionCard
       eyebrow="Intake"
-      title="New Applications"
-      description="Incoming Bond and Hybrid applications waiting for buyer completion, document readiness, or review."
-      action={<span className="rounded-full border border-[#dbe5f0] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#516a83]">{visibleItems.length} new</span>}
+      title="Pipeline"
+      description="Incoming Bond and Hybrid files waiting on OTP, buyer application progress, or outstanding documents."
+      action={<span className="rounded-full border border-[#dbe5f0] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#516a83]">{visibleItems.length} pipeline</span>}
     >
       {feedback ? (
         <div

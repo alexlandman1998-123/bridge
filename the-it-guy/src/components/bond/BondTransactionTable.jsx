@@ -11,6 +11,7 @@ function normalizeText(value) {
 const PROGRESS_STAGE_ORDER = [
   'documents_received',
   'documents_reviewed',
+  'ready_for_review',
   'applications_submitted',
   'quotes_received',
   'quote_approved',
@@ -20,6 +21,7 @@ const PROGRESS_STAGE_ORDER = [
 const PROGRESS_STAGE_LABELS = {
   documents_received: 'Documents Received',
   documents_reviewed: 'Documents Reviewed',
+  ready_for_review: 'Ready For Review',
   applications_submitted: 'Applications Submitted',
   quotes_received: 'Quotes Received',
   quote_approved: 'Quote Approved',
@@ -32,6 +34,7 @@ export const APPLICATION_PROGRESS_STAGE_OPTIONS = [
   { key: 'all', label: 'All stages' },
   { key: 'documents_received', label: PROGRESS_STAGE_LABELS.documents_received },
   { key: 'documents_reviewed', label: PROGRESS_STAGE_LABELS.documents_reviewed },
+  { key: 'ready_for_review', label: PROGRESS_STAGE_LABELS.ready_for_review },
   { key: 'applications_submitted', label: PROGRESS_STAGE_LABELS.applications_submitted },
   { key: 'quotes_received', label: PROGRESS_STAGE_LABELS.quotes_received },
   { key: 'quote_approved', label: PROGRESS_STAGE_LABELS.quote_approved },
@@ -53,6 +56,9 @@ export function resolveBondProgressStage(row = {}) {
 
   if (normalized.status === 'cancelled') {
     return 'declined'
+  }
+  if (normalized.financeKey === 'ready_for_review' || normalized.financeLabel === 'ready for review') {
+    return 'ready_for_review'
   }
   if (normalized.status === 'registered' || normalized.transferKey === 'registered') {
     return 'registered'
@@ -184,6 +190,13 @@ export default function BondTransactionTable({ rows = [] }) {
                     {row.bank ? <p className="mt-1 text-xs text-[#6e849b]">{row.bank}</p> : null}
                     {row.property ? <p className="mt-1 text-xs text-[#60758d]">{row.property}</p> : null}
                     {row.applicationReference ? <p className="mt-1 text-xs text-[#7b8ea3]">{row.applicationReference}</p> : null}
+                    {Array.isArray(row.tags) && row.tags.length ? (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {row.tags.map((tag) => (
+                          <BondStatusBadge key={tag.key || tag.label} status={tag.key || tag.label} label={tag.label} tone={tag.tone} />
+                        ))}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="w-[22%] px-4 py-4 align-top">
                     <p className="text-sm font-semibold text-[#142132]">{row.consultant || 'Consultant pending'}</p>

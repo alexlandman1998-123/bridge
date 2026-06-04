@@ -1018,30 +1018,33 @@ function getFutureInputValue(days = 7) {
 }
 
 function getLeadContactSnapshot(lead = {}) {
-  const contact = lead.contact || {}
+  const safeLead = lead || {}
+  const contact = safeLead.contact || {}
   return {
-    name: normalizeText(lead.name || contact.fullName || contact.name),
-    email: normalizeText(lead.email || contact.email),
-    phone: normalizeText(lead.phone || contact.phone || contact.mobile),
-    contactId: normalizeText(lead.contactId || lead.contact_id || contact.contactId || contact.id),
+    name: normalizeText(safeLead.name || contact.fullName || contact.name),
+    email: normalizeText(safeLead.email || contact.email),
+    phone: normalizeText(safeLead.phone || contact.phone || contact.mobile),
+    contactId: normalizeText(safeLead.contactId || safeLead.contact_id || contact.contactId || contact.id),
   }
 }
 
 function getLeadPrimaryListingId(lead = {}) {
+  const safeLead = lead || {}
   return normalizeText(
-    lead.listingId ||
-    lead.listing_id ||
-    lead.privateListingId ||
-    lead.private_listing_id ||
-    lead.listingInterests?.[0]?.listingId ||
-    lead.listingInterests?.[0]?.listing_id ||
-    lead.listings?.[0]?.id ||
-    lead.listings?.[0]?.listingId ||
-    lead.listings?.[0]?.listing_id,
+    safeLead.listingId ||
+    safeLead.listing_id ||
+    safeLead.privateListingId ||
+    safeLead.private_listing_id ||
+    safeLead.listingInterests?.[0]?.listingId ||
+    safeLead.listingInterests?.[0]?.listing_id ||
+    safeLead.listings?.[0]?.id ||
+    safeLead.listings?.[0]?.listingId ||
+    safeLead.listings?.[0]?.listing_id,
   )
 }
 
 function getLeadAppointmentPropertyOptions(lead = {}) {
+  const safeLead = lead || {}
   const options = []
   const addOption = (listing = {}, source = '', meta = {}) => {
     const listingId = normalizeText(listing?.id || listing?.listingId || listing?.listing_id || meta.listingId)
@@ -1058,20 +1061,22 @@ function getLeadAppointmentPropertyOptions(lead = {}) {
     })
   }
 
-  for (const interest of Array.isArray(lead.listingInterests) ? lead.listingInterests : []) {
+  for (const interest of Array.isArray(safeLead.listingInterests) ? safeLead.listingInterests : []) {
+    if (!interest) continue
     addOption(interest.listing || {}, interest.isOriginalEnquiry ? 'Enquiry property' : interest.source || 'Shortlist', {
       listingId: interest.listingId || interest.listing_id,
       isOriginalEnquiry: interest.isOriginalEnquiry,
     })
   }
-  for (const suggestion of Array.isArray(lead.suggestions) ? lead.suggestions : []) {
+  for (const suggestion of Array.isArray(safeLead.suggestions) ? safeLead.suggestions : []) {
+    if (!suggestion) continue
     if (String(suggestion.status || '').toLowerCase() !== 'accepted') continue
     addOption(suggestion.listing || {}, 'Accepted suggestion', { listingId: suggestion.listingId || suggestion.listing_id })
   }
-  for (const listing of Array.isArray(lead.listings) ? lead.listings : []) {
+  for (const listing of Array.isArray(safeLead.listings) ? safeLead.listings : []) {
     addOption(listing, 'Linked listing')
   }
-  const fallbackListingId = getLeadPrimaryListingId(lead)
+  const fallbackListingId = getLeadPrimaryListingId(safeLead)
   if (fallbackListingId) {
     addOption({ id: fallbackListingId, title: 'Listing attached to lead' }, 'Lead listing id')
   }
@@ -1083,37 +1088,43 @@ function getLeadAppointmentPropertyOptions(lead = {}) {
 }
 
 function isViewingAppointment(item = {}) {
-  const haystack = `${item.title || ''} ${item.appointmentType || item.appointment_type || ''} ${item.appointmentTypeLabel || ''}`.toLowerCase()
+  const safeItem = item || {}
+  const haystack = `${safeItem.title || ''} ${safeItem.appointmentType || safeItem.appointment_type || ''} ${safeItem.appointmentTypeLabel || ''}`.toLowerCase()
   return haystack.includes('viewing')
 }
 
 function getAppointmentDateLabel(item = {}) {
-  const explicit = item.dateTime || item.date_time || item.startsAt || item.starts_at
+  const safeItem = item || {}
+  const explicit = safeItem.dateTime || safeItem.date_time || safeItem.startsAt || safeItem.starts_at
   if (explicit) return formatDateTime(explicit)
-  const date = normalizeText(item.date || item.appointmentDate || item.appointment_date)
-  const startTime = normalizeText(item.startTime || item.start_time || item.appointmentTime || item.appointment_time)
+  const date = normalizeText(safeItem.date || safeItem.appointmentDate || safeItem.appointment_date)
+  const startTime = normalizeText(safeItem.startTime || safeItem.start_time || safeItem.appointmentTime || safeItem.appointment_time)
   if (date && startTime) return formatDateTime(`${date}T${startTime}`)
   return date ? formatDate(date) : 'Date to be confirmed'
 }
 
 function getAppointmentId(item = {}) {
-  return normalizeText(item.appointmentId || item.appointment_id || item.id)
+  const safeItem = item || {}
+  return normalizeText(safeItem.appointmentId || safeItem.appointment_id || safeItem.id)
 }
 
 function getAppointmentListingId(item = {}) {
-  return normalizeText(item.listingId || item.listing_id)
+  const safeItem = item || {}
+  return normalizeText(safeItem.listingId || safeItem.listing_id)
 }
 
 function getAppointmentDateInputValue(item = {}) {
-  const explicit = normalizeText(item.dateTime || item.date_time || item.startsAt || item.starts_at)
+  const safeItem = item || {}
+  const explicit = normalizeText(safeItem.dateTime || safeItem.date_time || safeItem.startsAt || safeItem.starts_at)
   if (explicit) return explicit.slice(0, 10)
-  return normalizeText(item.date || item.appointmentDate || item.appointment_date) || getTodayInputValue()
+  return normalizeText(safeItem.date || safeItem.appointmentDate || safeItem.appointment_date) || getTodayInputValue()
 }
 
 function getAppointmentTimeInputValue(item = {}) {
-  const explicit = normalizeText(item.dateTime || item.date_time || item.startsAt || item.starts_at)
+  const safeItem = item || {}
+  const explicit = normalizeText(safeItem.dateTime || safeItem.date_time || safeItem.startsAt || safeItem.starts_at)
   if (explicit.includes('T')) return explicit.split('T')[1]?.slice(0, 5) || ''
-  return normalizeText(item.startTime || item.start_time || item.appointmentTime || item.appointment_time)
+  return normalizeText(safeItem.startTime || safeItem.start_time || safeItem.appointmentTime || safeItem.appointment_time)
 }
 
 function getAppointmentStatusTone(status = '') {
@@ -1125,7 +1136,8 @@ function getAppointmentStatusTone(status = '') {
 }
 
 function isAppointmentClosed(item = {}) {
-  const normalized = normalizeText(item.status).toLowerCase()
+  const safeItem = item || {}
+  const normalized = normalizeText(safeItem.status).toLowerCase()
   return ['completed', 'no_show', 'cancelled', 'declined'].includes(normalized) || normalized.includes('cancel') || normalized.includes('declin')
 }
 
@@ -1143,15 +1155,16 @@ function getAppointmentOutcomeDraft(item = {}, propertyOptions = []) {
 }
 
 function getLeadContactFallback(lead = {}) {
-  const contact = getLeadContactSnapshot(lead)
-  const nameParts = splitName(contact.name || lead.name || lead.buyerName || '')
+  const safeLead = lead || {}
+  const contact = getLeadContactSnapshot(safeLead)
+  const nameParts = splitName(contact.name || safeLead.name || safeLead.buyerName || '')
   return {
-    contactId: contact.contactId || lead.contactId || lead.contact_id || '',
-    firstName: lead.firstName || lead.first_name || nameParts.firstName || 'Buyer',
-    lastName: lead.lastName || lead.last_name || nameParts.lastName,
-    email: contact.email || lead.email || '',
-    phone: contact.phone || lead.phone || '',
-    contactType: lead.leadCategory || lead.lead_category || 'Buyer Lead',
+    contactId: contact.contactId || safeLead.contactId || safeLead.contact_id || '',
+    firstName: safeLead.firstName || safeLead.first_name || nameParts.firstName || 'Buyer',
+    lastName: safeLead.lastName || safeLead.last_name || nameParts.lastName,
+    email: contact.email || safeLead.email || '',
+    phone: contact.phone || safeLead.phone || '',
+    contactType: safeLead.leadCategory || safeLead.lead_category || 'Buyer Lead',
   }
 }
 
@@ -1165,23 +1178,28 @@ function getOfferStatusTone(status = '') {
 }
 
 function getOfferId(offer = {}) {
-  return normalizeText(offer.id || offer.offerId || offer.offer_id)
+  const safeOffer = offer || {}
+  return normalizeText(safeOffer.id || safeOffer.offerId || safeOffer.offer_id)
 }
 
 function getOfferListingId(offer = {}) {
-  return normalizeText(offer.listingId || offer.listing_id)
+  const safeOffer = offer || {}
+  return normalizeText(safeOffer.listingId || safeOffer.listing_id)
 }
 
 function getOfferTransactionId(offer = {}) {
-  return normalizeText(offer.transactionId || offer.transaction_id)
+  const safeOffer = offer || {}
+  return normalizeText(safeOffer.transactionId || safeOffer.transaction_id)
 }
 
 function getOfferAmount(offer = {}) {
-  return offer.amount || offer.offerAmount || offer.offer_amount
+  const safeOffer = offer || {}
+  return safeOffer.amount || safeOffer.offerAmount || safeOffer.offer_amount
 }
 
 function getOfferStatus(offer = {}) {
-  return normalizeText(offer.status).toLowerCase()
+  const safeOffer = offer || {}
+  return normalizeText(safeOffer.status).toLowerCase()
 }
 
 function isOfferAcceptedForConversion(offer = {}) {
@@ -1206,12 +1224,13 @@ function getAcceptedOfferForConversion(offers = []) {
 }
 
 function getLeadLinkedTransactionId(lead = {}) {
-  const transactions = Array.isArray(lead.transactions) ? lead.transactions : []
+  const safeLead = lead || {}
+  const transactions = (Array.isArray(safeLead.transactions) ? safeLead.transactions : []).filter(Boolean)
   return normalizeText(
-    lead.convertedTransactionId ||
-      lead.converted_transaction_id ||
-      lead.transactionId ||
-      lead.transaction_id ||
+    safeLead.convertedTransactionId ||
+      safeLead.converted_transaction_id ||
+      safeLead.transactionId ||
+      safeLead.transaction_id ||
       transactions[0]?.id ||
       transactions[0]?.transactionId ||
       transactions[0]?.transaction_id,
@@ -1219,14 +1238,17 @@ function getLeadLinkedTransactionId(lead = {}) {
 }
 
 function getLeadHandoffState(lead = {}) {
-  const transactionId = getLeadLinkedTransactionId(lead)
-  const activities = Array.isArray(lead.activities) ? lead.activities : []
-  const timeline = Array.isArray(lead.communicationTimeline) ? lead.communicationTimeline : []
+  const safeLead = lead || {}
+  const transactionId = getLeadLinkedTransactionId(safeLead)
+  const activities = (Array.isArray(safeLead.activities) ? safeLead.activities : []).filter(Boolean)
+  const timeline = (Array.isArray(safeLead.communicationTimeline) ? safeLead.communicationTimeline : []).filter(Boolean)
   const activityHaystack = [...activities, ...timeline]
     .map((item) => `${item.activityType || item.activity_type || item.title || ''} ${item.activityNote || item.activity_note || item.summary || ''}`)
     .join(' ')
     .toLowerCase()
-  const openTasks = (Array.isArray(lead.tasks) ? lead.tasks : []).filter((task) => !['completed', 'cancelled', 'done'].includes(normalizeText(task.status).toLowerCase()))
+  const openTasks = (Array.isArray(safeLead.tasks) ? safeLead.tasks : [])
+    .filter(Boolean)
+    .filter((task) => !['completed', 'cancelled', 'done'].includes(normalizeText(task.status).toLowerCase()))
   const hasOpenTaskLike = (needle = '') => openTasks.some((task) => normalizeText(task.title).toLowerCase().includes(needle))
   return {
     transactionId,
@@ -1238,7 +1260,8 @@ function getLeadHandoffState(lead = {}) {
 }
 
 function getLeadOfferPropertyContexts(lead = {}) {
-  const propertyOptions = getLeadAppointmentPropertyOptions(lead)
+  const safeLead = lead || {}
+  const propertyOptions = getLeadAppointmentPropertyOptions(safeLead).filter(Boolean)
   const optionById = new Map(propertyOptions.map((option) => [option.id, option]))
   const contexts = []
   const seen = new Set()
@@ -1271,7 +1294,8 @@ function getLeadOfferPropertyContexts(lead = {}) {
     })
   }
 
-  for (const appointment of Array.isArray(lead.appointments) ? lead.appointments : []) {
+  for (const appointment of Array.isArray(safeLead.appointments) ? safeLead.appointments : []) {
+    if (!appointment) continue
     if (!isViewingAppointment(appointment)) continue
     const listingId = getAppointmentListingId(appointment)
     if (!listingId) continue
@@ -1343,171 +1367,27 @@ function buildAppointmentCreateMessage(result = {}, draft = {}, isViewing = fals
 }
 
 function getBuyerOutreachSteps(row = {}) {
-  const appointments = Array.isArray(row.appointments) ? row.appointments : []
+  const safeRow = row || {}
+  const appointments = (Array.isArray(safeRow.appointments) ? safeRow.appointments : []).filter(Boolean)
   const viewings = appointments.filter(isViewingAppointment)
   const scheduledViewings = viewings.filter((item) => !['cancelled', 'completed', 'no_show'].includes(String(item.status || '').toLowerCase()))
   const completedViewings = viewings.filter((item) => String(item.status || '').toLowerCase() === 'completed' || item.completedAt || item.completed_at)
-  const timeline = Array.isArray(row.communicationTimeline) ? row.communicationTimeline : []
-  const outreachLogged = Boolean(row.firstContactedAt || row.first_contacted_at || timeline.some((item) => {
+  const timeline = (Array.isArray(safeRow.communicationTimeline) ? safeRow.communicationTimeline : []).filter(Boolean)
+  const outreachLogged = Boolean(safeRow.firstContactedAt || safeRow.first_contacted_at || timeline.some((item) => {
     const haystack = `${item.activityType || item.activity_type || ''} ${item.communicationType || item.communication_type || ''} ${item.title || ''}`.toLowerCase()
     return ['call', 'email', 'whatsapp', 'meeting', 'outreach'].some((token) => haystack.includes(token))
   }))
-  const offers = Array.isArray(row.offers) ? row.offers : []
-  const transactions = Array.isArray(row.transactions) ? row.transactions : []
+  const offers = (Array.isArray(safeRow.offers) ? safeRow.offers : []).filter(Boolean)
+  const transactions = (Array.isArray(safeRow.transactions) ? safeRow.transactions : []).filter(Boolean)
 
   return [
-    { key: 'captured', label: 'Lead captured', done: true, meta: formatDate(row.createdAt || row.created_at, 'Captured'), hint: 'Created automatically when the enquiry lands.' },
+    { key: 'captured', label: 'Lead captured', done: true, meta: formatDate(safeRow.createdAt || safeRow.created_at, 'Captured'), hint: 'Created automatically when the enquiry lands.' },
     { key: 'reached_out', label: 'Reached out', done: outreachLogged, meta: outreachLogged ? 'Logged' : 'Pending', hint: 'Mark first contact after calling, emailing, or messaging.' },
     { key: 'viewing_scheduled', label: 'Viewing scheduled', done: viewings.length > 0, meta: scheduledViewings.length ? `${scheduledViewings.length} scheduled` : 'None yet', hint: 'Add one or more viewing appointments for this buyer.' },
     { key: 'viewing_completed', label: 'Viewing completed', done: completedViewings.length > 0, meta: completedViewings.length ? `${completedViewings.length} completed` : 'Pending', hint: 'Complete a viewing appointment after it happens.' },
     { key: 'offer_made', label: 'Offer made', done: offers.length > 0, meta: offers.length ? `${offers.length} offer${offers.length === 1 ? '' : 's'}` : 'No offer', hint: 'Create or link an offer when the buyer is ready.' },
-    { key: 'transaction_created', label: 'Transaction created', done: Boolean(row.convertedTransactionId || row.converted_transaction_id || transactions.length), meta: transactions.length ? `${transactions.length} transaction${transactions.length === 1 ? '' : 's'}` : 'Not created', hint: 'Convert the lead once there is a real transaction.' },
+    { key: 'transaction_created', label: 'Transaction created', done: Boolean(safeRow.convertedTransactionId || safeRow.converted_transaction_id || transactions.length), meta: transactions.length ? `${transactions.length} transaction${transactions.length === 1 ? '' : 's'}` : 'Not created', hint: 'Convert the lead once there is a real transaction.' },
   ]
-}
-
-function getBuyerJourneyCommand(row = {}) {
-  const steps = getBuyerOutreachSteps(row)
-  const offers = Array.isArray(row.offers) ? row.offers : []
-  const appointments = Array.isArray(row.appointments) ? row.appointments : []
-  const propertyContexts = getLeadOfferPropertyContexts(row)
-  const handoff = getLeadHandoffState(row)
-  const acceptedOffer = getAcceptedOfferForConversion(offers)
-  const completedCount = steps.filter((step) => step.done).length
-  const progress = Math.round((completedCount / Math.max(steps.length, 1)) * 100)
-  const missingPropertyOnViewing = appointments.some((appointment) => isViewingAppointment(appointment) && !getAppointmentListingId(appointment))
-  const appointmentBadges = appointments.flatMap(getAppointmentIntegrityBadges)
-  const appointmentWarnings = appointmentBadges.filter((badge) => !badge.done && ['Calendar', 'Lead', 'Property', 'Buyer'].includes(badge.label)).length
-  const openTasks = (Array.isArray(row.tasks) ? row.tasks : []).filter((task) => !['completed', 'cancelled', 'done'].includes(normalizeText(task.status).toLowerCase()))
-  const nextIncomplete = steps.find((step) => !step.done)
-  let action = {
-    key: 'timeline',
-    label: 'Review timeline',
-    tab: 'timeline',
-    description: 'The core buyer journey is complete. Review activity and keep the relationship warm.',
-  }
-
-  if (!steps.find((step) => step.key === 'reached_out')?.done) {
-    action = {
-      key: 'outreach',
-      label: 'Log outreach',
-      tab: 'timeline',
-      description: 'Start by recording the first call, WhatsApp, or email so the lead has a clean contact trail.',
-    }
-  } else if (!propertyContexts.length) {
-    action = {
-      key: 'property_match',
-      label: 'Add property context',
-      tab: 'property_match',
-      description: 'Attach the enquiry property or shortlist before scheduling viewings or sending offer links.',
-    }
-  } else if (!steps.find((step) => step.key === 'viewing_scheduled')?.done) {
-    action = {
-      key: 'appointments',
-      label: 'Book viewing',
-      tab: 'appointments',
-      description: 'Schedule a viewing from the relevant property so buyer, calendar, and property context stay linked.',
-    }
-  } else if (!steps.find((step) => step.key === 'viewing_completed')?.done || missingPropertyOnViewing) {
-    action = {
-      key: 'appointments',
-      label: missingPropertyOnViewing ? 'Fix viewing property' : 'Complete viewing',
-      tab: 'appointments',
-      description: missingPropertyOnViewing
-        ? 'One or more viewings needs a property link before the offer path is clean.'
-        : 'Capture viewing outcome, buyer feedback, and the next step before sending an offer link.',
-    }
-  } else if (!offers.length) {
-    action = {
-      key: 'offers',
-      label: 'Send offer link',
-      tab: 'offers',
-      description: 'Use the completed viewing context to send the buyer a property-specific offer link.',
-    }
-  } else if (!acceptedOffer) {
-    action = {
-      key: 'offers',
-      label: 'Review offer status',
-      tab: 'offers',
-      description: 'Track submitted offers through seller review until one is accepted.',
-    }
-  } else if (!handoff.transactionId) {
-    action = {
-      key: 'offers',
-      label: 'Create transaction',
-      tab: 'offers',
-      description: 'Convert the accepted offer into a transaction and start buyer onboarding.',
-    }
-  } else if (!handoff.buyerOnboardingSent || !handoff.financeTaskReady || !handoff.ficaTaskReady || !handoff.conveyancerTaskReady) {
-    action = {
-      key: 'offers',
-      label: 'Prepare handoff',
-      tab: 'offers',
-      description: 'Finish onboarding, finance, documents, and conveyancer handoff from the linked transaction.',
-    }
-  }
-
-  const healthItems = [
-    {
-      key: 'property_context',
-      label: 'Property Context',
-      done: propertyContexts.length > 0,
-      value: propertyContexts.length ? `${propertyContexts.length} linked` : 'Missing',
-      tab: 'property_match',
-    },
-    {
-      key: 'appointments',
-      label: 'Appointments',
-      done: appointments.length > 0 && appointmentWarnings === 0,
-      value: appointments.length ? appointmentWarnings ? `${appointmentWarnings} warning${appointmentWarnings === 1 ? '' : 's'}` : `${appointments.length} linked` : 'None',
-      tab: 'appointments',
-    },
-    {
-      key: 'offers',
-      label: 'Offers',
-      done: offers.length > 0,
-      value: offers.length ? acceptedOffer ? 'Accepted offer' : `${offers.length} active` : 'No offer',
-      tab: 'offers',
-    },
-    {
-      key: 'transaction',
-      label: 'Transaction',
-      done: Boolean(handoff.transactionId),
-      value: handoff.transactionId ? 'Linked' : 'Not created',
-      tab: 'offers',
-    },
-    {
-      key: 'handoff',
-      label: 'Handoff',
-      done: Boolean(handoff.transactionId && handoff.buyerOnboardingSent && handoff.financeTaskReady && handoff.ficaTaskReady && handoff.conveyancerTaskReady),
-      value: handoff.transactionId ? 'In progress' : 'Locked',
-      tab: 'offers',
-    },
-    {
-      key: 'tasks',
-      label: 'Open Tasks',
-      done: openTasks.length > 0,
-      value: openTasks.length ? `${openTasks.length} open` : 'None',
-      tab: 'tasks',
-    },
-  ]
-
-  return {
-    action,
-    healthItems,
-    progress,
-    completedCount,
-    totalCount: steps.length,
-    nextLabel: nextIncomplete?.label || 'Relationship maintenance',
-    stageLabel: handoff.transactionId
-      ? 'Transaction handoff'
-      : acceptedOffer
-        ? 'Accepted offer'
-        : offers.length
-          ? 'Offer active'
-          : propertyContexts.length
-            ? 'Property matching'
-            : 'Lead qualification',
-  }
 }
 
 function BuyerOutreachProgress({ row, onLogOutreach, onMarkReachedOut, onAddViewing, onOpenAppointments, onOpenOffers, onConvert }) {
@@ -1593,55 +1473,6 @@ function BuyerOutreachProgress({ row, onLogOutreach, onMarkReachedOut, onAddView
               </span>
             )}
           </div>
-        ))}
-      </div>
-    </section>
-  )
-}
-
-function BuyerJourneyCommandPanel({ row, onOpenTab }) {
-  const command = useMemo(() => getBuyerJourneyCommand(row), [row])
-
-  return (
-    <section className={`${panelClass} card`}>
-      <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr] lg:items-start">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusPill tone="blue">{command.stageLabel}</StatusPill>
-            <StatusPill>{command.completedCount}/{command.totalCount} stages</StatusPill>
-          </div>
-          <h2 className="mt-3 text-lg font-semibold tracking-[-0.03em] text-slate-950">Buyer Journey Command</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-500">{command.action.description}</p>
-          <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
-            <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${command.progress}%` }} />
-          </div>
-          <p className="mt-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Next checkpoint: {command.nextLabel}</p>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Recommended Action</p>
-          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-slate-950">{command.action.label}</p>
-              <p className="mt-1 text-xs leading-5 text-slate-500">Opens the tab where the next workflow action should happen.</p>
-            </div>
-            <button type="button" onClick={() => onOpenTab(command.action.tab)} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white">
-              Open
-            </button>
-          </div>
-        </div>
-      </div>
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        {command.healthItems.map((item) => (
-          <button key={item.key} type="button" onClick={() => onOpenTab(item.tab)} className={`min-h-[104px] rounded-2xl border p-3 text-left transition hover:border-blue-200 ${item.done ? 'border-emerald-100 bg-emerald-50/60' : 'border-slate-200 bg-slate-50'}`}>
-            <div className="flex items-center justify-between gap-2">
-              <span className={`flex h-7 w-7 items-center justify-center rounded-full ${item.done ? 'bg-emerald-600 text-white' : 'bg-white text-slate-400 ring-1 ring-slate-200'}`}>
-                {item.done ? <CheckCircle2 size={14} /> : <Clock3 size={14} />}
-              </span>
-              <StatusPill tone={item.done ? 'green' : 'amber'}>{item.done ? 'OK' : 'Check'}</StatusPill>
-            </div>
-            <p className="mt-3 text-sm font-semibold text-slate-950">{item.label}</p>
-            <p className="mt-1 text-xs font-medium text-slate-500">{item.value}</p>
-          </button>
         ))}
       </div>
     </section>
@@ -5139,7 +4970,10 @@ function LeadTransactionHandoffPanel({ organisationId, lead, actor, onSaved }) {
 }
 
 function OfferTransactionList({ offers = [], transactions = [], convertedTransactionId = '' }) {
-  if (!offers.length && !transactions.length && !convertedTransactionId) {
+  const safeOffers = (Array.isArray(offers) ? offers : []).filter(Boolean)
+  const safeTransactions = (Array.isArray(transactions) ? transactions : []).filter(Boolean)
+  const safeConvertedTransactionId = normalizeText(convertedTransactionId)
+  if (!safeOffers.length && !safeTransactions.length && !safeConvertedTransactionId) {
     return <EmptyState title="No offers or transaction link" copy="Submitted offers and converted transactions will appear here from the existing offer and transaction fields." />
   }
   return (
@@ -5147,10 +4981,10 @@ function OfferTransactionList({ offers = [], transactions = [], convertedTransac
       <section>
         <h3 className="mb-3 text-sm font-semibold text-slate-950">Offers</h3>
         <div className="space-y-3">
-          {offers.length ? offers.map((offer) => (
-            <article key={offer.id || offer.offerId} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          {safeOffers.length ? safeOffers.map((offer, index) => (
+            <article key={getOfferId(offer) || `${getOfferListingId(offer) || 'offer'}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex items-center justify-between gap-3">
-                <strong className="text-sm text-slate-950">{formatCurrency(offer.amount || offer.offerAmount || offer.offer_amount)}</strong>
+                <strong className="text-sm text-slate-950">{formatCurrency(getOfferAmount(offer))}</strong>
                 <StatusPill tone={getOfferStatusTone(offer.status)}>{offer.status || 'draft'}</StatusPill>
               </div>
               <p className="mt-2 text-xs text-slate-500">Updated {formatDateTime(offer.updatedAt || offer.updated_at || offer.createdAt || offer.created_at)}</p>
@@ -5161,20 +4995,25 @@ function OfferTransactionList({ offers = [], transactions = [], convertedTransac
       <section>
         <h3 className="mb-3 text-sm font-semibold text-slate-950">Transactions</h3>
         <div className="space-y-3">
-          {transactions.length ? transactions.map((transaction) => (
-            <article key={transaction.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          {safeTransactions.length ? safeTransactions.map((transaction, index) => {
+            const transactionId = normalizeText(transaction.id || transaction.transactionId || transaction.transaction_id)
+            return (
+            <article key={transactionId || `transaction-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex items-center justify-between gap-3">
                 <strong className="text-sm text-slate-950">Transaction</strong>
                 <StatusPill tone="green">{transaction.status || 'Linked'}</StatusPill>
               </div>
-              <Link to={`/transactions/${transaction.id}`} className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-blue-700">
-                Open transaction <ExternalLink size={13} />
-              </Link>
+              {transactionId ? (
+                <Link to={`/transactions/${transactionId}`} className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-blue-700">
+                  Open transaction <ExternalLink size={13} />
+                </Link>
+              ) : null}
             </article>
-          )) : convertedTransactionId ? (
+            )
+          }) : safeConvertedTransactionId ? (
             <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <strong className="text-sm text-slate-950">Converted transaction</strong>
-              <Link to={`/transactions/${convertedTransactionId}`} className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-blue-700">
+              <Link to={`/transactions/${safeConvertedTransactionId}`} className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-blue-700">
                 Open transaction <ExternalLink size={13} />
               </Link>
             </article>
@@ -6145,8 +5984,6 @@ function AgentLeadWorkspace() {
                 onOpenOffers={() => setActiveTab('offers')}
                 onConvert={convertBuyerLead}
               />
-
-              <BuyerJourneyCommandPanel row={row} onOpenTab={setActiveTab} />
 
               <nav className={`${panelClass} buyer-workspace-tabs flex gap-2 overflow-x-auto p-2`} aria-label="Lead workspace tabs">
                 {tabs.map((tab) => (
