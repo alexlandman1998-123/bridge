@@ -136,7 +136,9 @@ import { getSuggestedRescheduleSlots } from './appointmentAvailabilityEngine'
 import { resolveSystemRole, resolveTransactionRole } from '../services/roleResolutionService'
 import {
   BOND_NOTIFICATION_EVENTS,
+  checkAndNotifyBondApplicationReadyForReview,
   checkAndNotifyBondDocumentsComplete,
+  checkAndNotifyBondOtpReady,
   notifyBondIntakeEvent,
   notifyBondIntakeStartedForOnboarding,
 } from '../services/bondIntakeNotificationService'
@@ -21296,6 +21298,39 @@ async function activateSelectedBondOriginatorForOnboarding(client, { transaction
     },
   })
 
+  await ensureBondApplicationWorkspaceRecord(client, {
+    transactionId,
+    buyerId: buyer?.id || transaction?.buyer_id || transaction?.buyerId || null,
+    selection: {
+      roleType: 'bond_originator',
+      organisationId: selectedBondOriginator.organisationId || selectedBondOriginator.organisation_id || null,
+      partnerOrganisationId: selectedBondOriginator.organisationId || selectedBondOriginator.organisation_id || scope.bondWorkspaceId || null,
+      regionId: selectedBondOriginator.snapshot?.regionId || selectedBondOriginator.snapshot?.region_id || scope.bondRegionId || null,
+      workspaceUnitId:
+        selectedBondOriginator.snapshot?.workspaceUnitId ||
+        selectedBondOriginator.snapshot?.workspace_unit_id ||
+        selectedBondOriginator.snapshot?.branchId ||
+        selectedBondOriginator.snapshot?.branch_id ||
+        scope.bondWorkspaceUnitId ||
+        null,
+      branchId:
+        selectedBondOriginator.snapshot?.branchId ||
+        selectedBondOriginator.snapshot?.branch_id ||
+        selectedBondOriginator.snapshot?.workspaceUnitId ||
+        selectedBondOriginator.snapshot?.workspace_unit_id ||
+        scope.bondWorkspaceUnitId ||
+        null,
+      teamId: selectedBondOriginator.snapshot?.teamId || selectedBondOriginator.snapshot?.team_id || null,
+      userId: bondOriginatorProfileId || selectedBondOriginator.snapshot?.userId || selectedBondOriginator.snapshot?.user_id || null,
+      companyName: selectedBondOriginator.partnerName || null,
+      contactPerson: selectedBondOriginator.contactPerson || selectedBondOriginator.partnerName || null,
+      email: selectedBondOriginator.emailAddress || null,
+      phone: selectedBondOriginator.phoneNumber || null,
+      snapshot: selectedBondOriginator.snapshot || {},
+    },
+    actorProfile: { userId: null, role: 'client' },
+  })
+
   return {
     activated: true,
     roleplayer: selectedBondOriginator,
@@ -30924,6 +30959,21 @@ async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
           },
           client,
         })
+
+        const readiness = await computeTransactionReadinessSnapshot(client, transaction.id)
+        await checkAndNotifyBondApplicationReadyForReview({
+          transaction: transactionForNotification,
+          previousReadyForReview: false,
+          currentReadyForReview: Boolean(readiness?.docsComplete),
+          actor: { roleType: 'client' },
+          metadata: {
+            source: 'client_portal_bond_application_submit',
+            submittedAt: nextBondProgress.submittedAt || now,
+            onboardingFormData: normalizedFormData,
+            documentStatus: readiness?.docsComplete ? 'Buyer onboarding completed' : 'Required documents outstanding',
+          },
+          client,
+        })
       }
     } catch (bondNotificationError) {
       console.warn('Bond application notification failed', bondNotificationError)
@@ -31108,6 +31158,27 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
         },
         previousMissingCount: previousReadiness?.missingRequiredDocs,
         readiness,
+        actor: { roleType: 'client' },
+        metadata: {
+          source: 'onboarding_upload',
+          documentKey: requiredDocument.key,
+          documentId: insertResult.data.id,
+        },
+        client,
+      })
+      const bondProgress = getBondApplicationProgress({
+        transaction,
+        onboardingFormData: formData,
+      })
+      await checkAndNotifyBondApplicationReadyForReview({
+        transaction: {
+          ...transaction,
+          finance_type: financeSnapshot.financeType || transaction.finance_type,
+          buyer_name: buyer?.name || null,
+          buyer_email: buyer?.email || null,
+        },
+        previousReadyForReview: Boolean(previousReadiness?.docsComplete && bondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED),
+        currentReadyForReview: Boolean(readiness?.docsComplete && bondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED),
         actor: { roleType: 'client' },
         metadata: {
           source: 'onboarding_upload',
@@ -31319,6 +31390,23 @@ export async function updateTransactionRequiredDocumentStatus({
         transaction: { id: transactionId, finance_type: readiness?.financeType },
         previousMissingCount: previousReadiness?.missingRequiredDocs,
         readiness,
+        actor: { id: effectiveActorUserId, roleType: effectiveActorRole },
+        metadata: {
+          source: 'required_document_status_update',
+          documentKey,
+          status: normalizedStatus,
+        },
+        client,
+      })
+      const formDataRow = await fetchOnboardingFormDataForTransaction(client, transactionId, 'individual')
+      const bondProgress = getBondApplicationProgress({
+        transaction: { id: transactionId, finance_type: readiness?.financeType },
+        onboardingFormData: formDataRow?.formData || formDataRow?.form_data || formDataRow || null,
+      })
+      await checkAndNotifyBondApplicationReadyForReview({
+        transaction: { id: transactionId, finance_type: readiness?.financeType },
+        previousReadyForReview: Boolean(previousReadiness?.docsComplete && bondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED),
+        currentReadyForReview: Boolean(readiness?.docsComplete && bondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED),
         actor: { id: effectiveActorUserId, roleType: effectiveActorRole },
         metadata: {
           source: 'required_document_status_update',
@@ -35047,6 +35135,23 @@ async function triggerPostSigningWorkflowIfNeeded(
     dedupePrefix: `otp-signed-workflow:${bondFinance ? 'finance' : 'attorney'}`,
     excludeUserId: actorUserId || null,
   })
+
+  if (bondFinance) {
+    await checkAndNotifyBondOtpReady({
+      transaction: {
+        id: normalizedTransactionId,
+        finance_type: normalizedFinanceType,
+      },
+      previousOtpReady: false,
+      currentOtpReady: true,
+      actor: { id: actorUserId || null, roleType: 'client' },
+      metadata: {
+        source: 'client_otp_signed_final',
+        workflow: 'finance',
+      },
+      client,
+    })
+  }
 
   if (stageResult?.advanced) {
     await addTransactionDiscussionComment({

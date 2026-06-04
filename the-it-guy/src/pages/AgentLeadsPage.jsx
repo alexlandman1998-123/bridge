@@ -1042,50 +1042,97 @@ function getBuyerOutreachSteps(row = {}) {
   const transactions = Array.isArray(row.transactions) ? row.transactions : []
 
   return [
-    { key: 'captured', label: 'Lead captured', done: true, meta: formatDate(row.createdAt || row.created_at, 'Captured') },
-    { key: 'reached_out', label: 'Reached out', done: outreachLogged, meta: outreachLogged ? 'Logged' : 'Pending' },
-    { key: 'viewing_scheduled', label: 'Viewing scheduled', done: viewings.length > 0, meta: scheduledViewings.length ? `${scheduledViewings.length} scheduled` : 'None yet' },
-    { key: 'viewing_completed', label: 'Viewing completed', done: completedViewings.length > 0, meta: completedViewings.length ? `${completedViewings.length} completed` : 'Pending' },
-    { key: 'offer_made', label: 'Offer made', done: offers.length > 0, meta: offers.length ? `${offers.length} offer${offers.length === 1 ? '' : 's'}` : 'No offer' },
-    { key: 'transaction_created', label: 'Transaction created', done: Boolean(row.convertedTransactionId || row.converted_transaction_id || transactions.length), meta: transactions.length ? `${transactions.length} transaction${transactions.length === 1 ? '' : 's'}` : 'Not created' },
+    { key: 'captured', label: 'Lead captured', done: true, meta: formatDate(row.createdAt || row.created_at, 'Captured'), hint: 'Created automatically when the enquiry lands.' },
+    { key: 'reached_out', label: 'Reached out', done: outreachLogged, meta: outreachLogged ? 'Logged' : 'Pending', hint: 'Mark first contact after calling, emailing, or messaging.' },
+    { key: 'viewing_scheduled', label: 'Viewing scheduled', done: viewings.length > 0, meta: scheduledViewings.length ? `${scheduledViewings.length} scheduled` : 'None yet', hint: 'Add one or more viewing appointments for this buyer.' },
+    { key: 'viewing_completed', label: 'Viewing completed', done: completedViewings.length > 0, meta: completedViewings.length ? `${completedViewings.length} completed` : 'Pending', hint: 'Complete a viewing appointment after it happens.' },
+    { key: 'offer_made', label: 'Offer made', done: offers.length > 0, meta: offers.length ? `${offers.length} offer${offers.length === 1 ? '' : 's'}` : 'No offer', hint: 'Create or link an offer when the buyer is ready.' },
+    { key: 'transaction_created', label: 'Transaction created', done: Boolean(row.convertedTransactionId || row.converted_transaction_id || transactions.length), meta: transactions.length ? `${transactions.length} transaction${transactions.length === 1 ? '' : 's'}` : 'Not created', hint: 'Convert the lead once there is a real transaction.' },
   ]
 }
 
-function BuyerOutreachProgress({ row, onLogOutreach, onAddViewing }) {
+function BuyerOutreachProgress({ row, onLogOutreach, onMarkReachedOut, onAddViewing, onOpenAppointments, onOpenOffers, onConvert }) {
   const steps = getBuyerOutreachSteps(row)
+  const [workingKey, setWorkingKey] = useState('')
+  const [error, setError] = useState('')
   const completedCount = steps.filter((step) => step.done).length
   const progress = Math.round((completedCount / Math.max(steps.length, 1)) * 100)
+  const actions = {
+    reached_out: { label: 'Mark reached out', handler: onMarkReachedOut },
+    viewing_scheduled: { label: 'Add viewing', handler: onAddViewing },
+    viewing_completed: { label: 'Open appointments', handler: onOpenAppointments || onAddViewing },
+    offer_made: { label: 'Open offers', handler: onOpenOffers },
+    transaction_created: { label: 'Convert lead', handler: onConvert },
+  }
+  const nextStep = steps.find((step) => !step.done)
+  const nextAction = nextStep ? actions[nextStep.key] : { label: 'Review timeline', handler: onLogOutreach }
+
+  async function runStageAction(step) {
+    const action = actions[step.key]
+    if (!action?.handler) return
+    try {
+      setWorkingKey(step.key)
+      setError('')
+      await action.handler()
+    } catch (actionError) {
+      setError(actionError?.message || 'Unable to update outreach progress.')
+    } finally {
+      setWorkingKey('')
+    }
+  }
+
+  async function runPrimaryAction() {
+    if (!nextStep) {
+      onLogOutreach?.()
+      return
+    }
+    await runStageAction(nextStep)
+  }
 
   return (
     <section className={`${panelClass} lead-outreach-progress card`}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Lead Outreach Progress</h2>
-          <p className="mt-1 text-sm text-slate-500">Track contact, viewings, offers, and conversion without losing multiple viewing activity.</p>
+          <p className="mt-1 text-sm text-slate-500">
+            Next step: <span className="font-semibold text-slate-700">{nextStep?.label || 'Keep nurturing this lead'}</span>. Each stage shows how the agent moves it forward.
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={onLogOutreach} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
             Log outreach
           </button>
-          <button type="button" onClick={onAddViewing} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-700">
-            <Plus size={15} />
-            Add viewing
+          <button type="button" onClick={runPrimaryAction} disabled={Boolean(workingKey)} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300">
+            {workingKey ? 'Updating...' : nextAction.label}
           </button>
         </div>
       </div>
       <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
         <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
       </div>
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+      {error ? <p className="mt-3 text-sm font-semibold text-red-600">{error}</p> : null}
+      <div className="lead-progress-grid mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         {steps.map((step) => (
-          <div key={step.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-            <div className="flex items-center gap-2">
-              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${step.done ? 'bg-blue-600 text-white' : 'bg-white text-slate-400 ring-1 ring-slate-200'}`}>
-                <CheckCircle2 size={15} />
+          <div key={step.key} className={`lead-progress-step rounded-2xl border p-3 ${step.done ? 'border-blue-100 bg-blue-50/40' : 'border-slate-200 bg-slate-50'}`}>
+            <div className="flex items-start gap-2">
+              <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${step.done ? 'bg-blue-600 text-white' : 'bg-white text-slate-400 ring-1 ring-slate-200'}`}>
+                <CheckCircle2 size={14} />
               </span>
-              <p className="text-sm font-semibold text-slate-950">{step.label}</p>
+              <div className="min-w-0">
+                <p className="lead-progress-step-label text-sm font-semibold leading-5 text-slate-950">{step.label}</p>
+                <p className="mt-1 text-xs font-medium text-slate-500">{step.meta}</p>
+              </div>
             </div>
-            <p className="mt-2 text-xs font-medium text-slate-500">{step.meta}</p>
+            <p className="lead-progress-step-hint mt-3 text-xs leading-5 text-slate-500">{step.hint}</p>
+            {!step.done && actions[step.key]?.handler ? (
+              <button type="button" onClick={() => runStageAction(step)} disabled={Boolean(workingKey)} className="lead-progress-step-action mt-3 inline-flex min-h-9 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60">
+                {workingKey === step.key ? 'Updating...' : actions[step.key].label}
+              </button>
+            ) : (
+              <span className="lead-progress-step-action mt-3 inline-flex min-h-9 w-full items-center justify-center rounded-xl bg-white px-3 text-xs font-semibold text-slate-500 ring-1 ring-slate-100">
+                {step.done ? 'Complete' : 'Awaiting previous step'}
+              </span>
+            )}
           </div>
         ))}
       </div>
@@ -4433,6 +4480,19 @@ function AgentLeadWorkspace() {
     }
   }, [navigate, organisationId, row])
 
+  const markBuyerReachedOut = useCallback(async () => {
+    if (!organisationId || !row?.leadId) {
+      throw new Error('This lead cannot be updated until the workspace has loaded.')
+    }
+    await markLeadFirstContacted({ organisationId, leadId: row.leadId }, { actor })
+    await loadWorkspace()
+  }, [actor, loadWorkspace, organisationId, row])
+
+  const convertBuyerLead = useCallback(() => {
+    if (row?.convertedTransactionId) navigate(`/transactions/${row.convertedTransactionId}`)
+    else setActiveTab('offers')
+  }, [navigate, row?.convertedTransactionId])
+
   return (
     <main className={pageShell}>
       <button type="button" onClick={() => navigate('/pipeline/leads')} className="inline-flex w-fit items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-950">
@@ -4472,16 +4532,17 @@ function AgentLeadWorkspace() {
                 lastActivity={getBuyerLastActivity(row)}
                 onOpenTimeline={() => setActiveTab('timeline')}
                 onDelete={deleteCurrentLead}
-                onConvert={() => {
-                  if (row.convertedTransactionId) navigate(`/transactions/${row.convertedTransactionId}`)
-                  else setActiveTab('offers')
-                }}
+                onConvert={convertBuyerLead}
               />
 
               <BuyerOutreachProgress
                 row={row}
                 onLogOutreach={() => setActiveTab('timeline')}
+                onMarkReachedOut={markBuyerReachedOut}
                 onAddViewing={() => setActiveTab('appointments')}
+                onOpenAppointments={() => setActiveTab('appointments')}
+                onOpenOffers={() => setActiveTab('offers')}
+                onConvert={convertBuyerLead}
               />
 
               <nav className={`${panelClass} buyer-workspace-tabs flex gap-2 overflow-x-auto p-2`} aria-label="Lead workspace tabs">

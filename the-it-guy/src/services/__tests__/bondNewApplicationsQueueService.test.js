@@ -64,13 +64,32 @@ try {
   const cash = makeRow('cash', { transaction: { finance_type: 'cash' } })
   assert.equal(getNewApplicationsQueue([cash]).length, 0, 'cash transaction is excluded')
 
-  const bondAwaiting = makeRow('bond-awaiting')
-  assert.equal(getNewApplicationsQueue([bondAwaiting]).length, 1, 'bond awaiting buyer is included')
+  const bondAwaitingBuyer = makeRow('bond-awaiting-buyer')
+  assert.equal(getNewApplicationsQueue([bondAwaitingBuyer]).length, 0, 'bond awaiting buyer onboarding is not visible yet')
 
-  const hybridAwaiting = makeRow('hybrid-awaiting', { transaction: { finance_type: 'Hybrid' } })
-  assert.equal(getNewApplicationsQueue([hybridAwaiting]).length, 1, 'hybrid awaiting buyer is included')
+  const bondAwaitingOtp = makeRow('bond-awaiting-otp', {
+    transaction: { onboarding_completed_at: '2026-05-02T09:00:00.000Z' },
+  })
+  assert.equal(getNewApplicationsQueue([bondAwaitingOtp])[0].intakeStatus, BOND_INTAKE_STATUSES.AWAITING_OTP)
+
+  const hybridAwaitingOtp = makeRow('hybrid-awaiting-otp', {
+    transaction: { finance_type: 'Hybrid', onboarding_completed_at: '2026-05-02T09:00:00.000Z' },
+  })
+  assert.equal(getNewApplicationsQueue([hybridAwaitingOtp]).length, 1, 'hybrid awaiting signed OTP is included')
+
+  const readyToStart = makeRow('ready-to-start', {
+    transaction: {
+      onboarding_completed_at: '2026-05-02T09:00:00.000Z',
+      otp_status: 'fully_signed',
+    },
+  })
+  assert.equal(getNewApplicationsQueue([readyToStart])[0].intakeStatus, BOND_INTAKE_STATUSES.READY_TO_START)
 
   const inProgress = makeRow('in-progress', {
+    transaction: {
+      onboarding_completed_at: '2026-05-02T09:00:00.000Z',
+      otp_status: 'fully_signed',
+    },
     onboardingFormData: {
       form_data: {
         bond_application: {
@@ -80,18 +99,26 @@ try {
       },
     },
   })
-  assert.equal(getNewApplicationsQueue([inProgress])[0].intakeStatus, BOND_INTAKE_STATUSES.BUYER_IN_PROGRESS)
+  assert.equal(getNewApplicationsQueue([inProgress])[0].intakeStatus, BOND_INTAKE_STATUSES.APPLICATION_IN_PROGRESS)
 
   const missingDocs = makeRow('missing-docs', {
+    transaction: {
+      onboarding_completed_at: '2026-05-02T09:00:00.000Z',
+      otp_status: 'fully_signed',
+    },
     onboardingFormData: submittedOnboarding(),
     documentRequests: [
       { id: 'req-id', category: 'bond', title: 'ID document', status: 'uploaded' },
       { id: 'req-bank', category: 'finance', title: 'Bank statement', status: 'requested' },
     ],
   })
-  assert.equal(getNewApplicationsQueue([missingDocs])[0].intakeStatus, BOND_INTAKE_STATUSES.AWAITING_DOCUMENTS)
+  assert.equal(getNewApplicationsQueue([missingDocs])[0].intakeStatus, BOND_INTAKE_STATUSES.APPLICATION_SUBMITTED)
 
   const ready = makeRow('ready', {
+    transaction: {
+      onboarding_completed_at: '2026-05-02T09:00:00.000Z',
+      otp_status: 'fully_signed',
+    },
     onboardingFormData: submittedOnboarding(),
     documentRequests: [
       { id: 'req-id', category: 'bond', title: 'ID document', status: 'uploaded' },

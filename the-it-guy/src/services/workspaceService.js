@@ -2,6 +2,7 @@ import { APP_ROLES, normalizeCanonicalAppRole } from '../constants/appRoles'
 import { MEMBERSHIP_STATUSES, normalizeMembershipStatus } from '../constants/membershipStatuses'
 import { ONBOARDING_EVENT_TYPES, ONBOARDING_STATUSES, ONBOARDING_STEPS } from '../constants/onboardingStatuses'
 import { normalizeOrgRole, ORG_ROLES } from '../constants/orgRoles'
+import { getRoleContractSnapshot, resolveSignupRoleContract, resolveWorkspaceKindForContract } from '../constants/roleContract'
 import { SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
 import { getDefaultBranchScope, getDefaultBondScope, getWorkspaceUnitLabels, normalizeScopeLevel } from '../constants/workspaceUnits'
 import {
@@ -69,6 +70,8 @@ function safeObject(value, fallback = {}) {
 }
 
 function mapOwnerRole(intent) {
+  const contract = resolveSignupRoleContract(intent)
+  if (contract?.workspaceType === WORKSPACE_TYPES.bondOriginator && contract?.workspaceRole) return contract.workspaceRole
   const workspaceType = normalizeWorkspaceType(intent?.workspace_type, inferWorkspaceTypeFromAppRole(intent?.app_role))
   const intended = normalizeOrgRole(intent?.intended_org_role, { appRole: intent?.app_role, workspaceType })
   if (workspaceType === WORKSPACE_TYPES.agency) return intended === ORG_ROLES.owner ? ORG_ROLES.owner : ORG_ROLES.principal
@@ -80,12 +83,21 @@ function mapOwnerRole(intent) {
 
 function buildAtomicWorkspaceOnboardingPayload({ intent, user, form = {} } = {}) {
   const workspaceType = normalizeWorkspaceType(intent.workspace_type)
+  const roleContract = resolveSignupRoleContract(intent)
   const workspaceKind = normalizeWorkspaceKind(
     form.workspaceKind || form.workspace_kind,
-    inferWorkspaceKindFromWorkspaceType(workspaceType) || workspaceType,
+    roleContract
+      ? resolveWorkspaceKindForContract(roleContract)
+      : inferWorkspaceKindFromWorkspaceType(workspaceType) || workspaceType,
   ) || workspaceType
   const name = normalizeText(form.name || form.companyName || form.agencyName || form.firmName || form.businessName)
   const ownerRole = mapOwnerRole(intent)
+  const roleContractSnapshot = getRoleContractSnapshot(roleContract, {
+    workspaceKind,
+    workspaceRole: ownerRole,
+    organisationRole: ownerRole,
+    membershipRole: ownerRole,
+  })
   const ownerName = normalizeText(form.ownerFullName || form.primaryContactName || user.user_metadata?.full_name || user.email)
   const ownerNameParts = splitFullName(ownerName)
   const settings = {
@@ -108,6 +120,7 @@ function buildAtomicWorkspaceOnboardingPayload({ intent, user, form = {} } = {})
       completedAt: new Date().toISOString(),
       defaultStructureCreated: [WORKSPACE_TYPES.agency, WORKSPACE_TYPES.attorneyFirm, WORKSPACE_TYPES.bondOriginator].includes(workspaceType),
     },
+    roleContract: roleContractSnapshot,
   }
 
   const defaultBranch = {
@@ -164,12 +177,19 @@ function buildAtomicWorkspaceOnboardingPayload({ intent, user, form = {} } = {})
     owner: {
       user_id: user.id,
       workspace_role: ownerRole,
+      organisation_role: roleContractSnapshot?.organisation_role || ownerRole,
+      membership_role: roleContractSnapshot?.membership_role || ownerRole,
+      system_role: roleContractSnapshot?.system_role || intent.system_role || null,
+      scope_level: roleContractSnapshot?.scope_level || null,
+      branch_scope: roleContractSnapshot?.branch_scope || null,
+      is_primary_owner: roleContractSnapshot?.is_primary_owner ?? true,
       first_name: normalizeText(form.ownerFirstName || ownerNameParts.firstName),
       last_name: normalizeText(form.ownerLastName || ownerNameParts.lastName),
       full_name: ownerName,
       email: normalizeEmail(form.ownerEmail || user.email),
       phone: normalizeText(form.ownerPhone || form.contactNumber || form.phone),
     },
+    role_contract: roleContractSnapshot,
     branches,
     settings,
     invites,
@@ -353,16 +373,20 @@ async function createOrganisationWorkspaceFromIntent(intent, user, form = {}) {
     type: rpcResult.data.workspace_type || intent.workspace_type,
     raw: rpcResult.data.organisation || null,
   }
+  const workspaceRole = rpcResult.data.workspace_role || payload.role_contract?.workspace_role || mapOwnerRole(intent)
   const membership = {
     id: rpcResult.data.membership_id,
     organisation_id: workspace.id,
     user_id: user.id,
     branch_id: rpcResult.data.branch_id || null,
-    role: rpcResult.data.workspace_role || mapOwnerRole(intent),
-    organisation_role: rpcResult.data.workspace_role || mapOwnerRole(intent),
-    workspace_role: rpcResult.data.workspace_role || mapOwnerRole(intent),
+    role: workspaceRole,
+    organisation_role: rpcResult.data.organisation_role || payload.role_contract?.organisation_role || workspaceRole,
+    workspace_role: workspaceRole,
     app_role: intent.app_role,
     workspace_type: intent.workspace_type,
+    scope_level: rpcResult.data.scope_level || payload.role_contract?.scope_level || null,
+    branch_scope: rpcResult.data.branch_scope || payload.role_contract?.branch_scope || null,
+    is_primary_owner: payload.role_contract?.is_primary_owner ?? true,
     status: MEMBERSHIP_STATUSES.active,
   }
   const defaultStructure = rpcResult.data.branch_id

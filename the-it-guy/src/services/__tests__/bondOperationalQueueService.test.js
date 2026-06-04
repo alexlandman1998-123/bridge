@@ -169,6 +169,7 @@ try {
       organisation_id: 'workspace-1',
       assigned_organisation_id: 'workspace-1',
       finance_type: 'bond',
+      onboarding_completed_at: '2026-05-23T09:00:00.000Z',
       updated_at: '2026-05-23T10:00:00.000Z',
     },
     {
@@ -177,6 +178,7 @@ try {
       assigned_organisation_id: 'workspace-1',
       assigned_branch_id: 'unit-1',
       finance_type: 'bond',
+      onboarding_completed_at: '2026-05-24T09:00:00.000Z',
       updated_at: '2026-05-24T10:00:00.000Z',
     },
     {
@@ -185,6 +187,7 @@ try {
       assigned_organisation_id: 'workspace-1',
       assigned_user_id: '11111111-1111-4111-8111-111111111111',
       finance_type: 'bond',
+      onboarding_completed_at: '2026-05-25T09:00:00.000Z',
       updated_at: '2026-05-25T10:00:00.000Z',
     },
     {
@@ -193,6 +196,7 @@ try {
       assigned_organisation_id: 'workspace-1',
       assigned_user_id: '99999999-9999-4999-8999-999999999999',
       finance_type: 'bond',
+      onboarding_completed_at: '2026-05-26T09:00:00.000Z',
       updated_at: '2026-05-26T10:00:00.000Z',
     },
   ]

@@ -184,6 +184,10 @@ function intakeFilterLabel(status = '') {
   if (status === BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION) return 'Awaiting Buyer'
   if (status === BOND_INTAKE_STATUSES.BUYER_IN_PROGRESS) return 'In Progress'
   if (status === BOND_INTAKE_STATUSES.AWAITING_DOCUMENTS) return 'Awaiting Docs'
+  if (status === BOND_INTAKE_STATUSES.AWAITING_OTP) return 'Awaiting OTP'
+  if (status === BOND_INTAKE_STATUSES.READY_TO_START) return 'Ready To Start'
+  if (status === BOND_INTAKE_STATUSES.APPLICATION_IN_PROGRESS) return 'Application In Progress'
+  if (status === BOND_INTAKE_STATUSES.APPLICATION_SUBMITTED) return 'Application Submitted'
   if (status === BOND_INTAKE_STATUSES.READY_FOR_REVIEW) return 'Ready For Review'
   return 'All'
 }
@@ -539,9 +543,10 @@ function NewApplicationsInbox({ rows = [], onRowClick, currentUser = {}, onActio
   const filters = [
     { key: 'all', label: `All (${activeItems.length})` },
     ...[
-      BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION,
-      BOND_INTAKE_STATUSES.BUYER_IN_PROGRESS,
-      BOND_INTAKE_STATUSES.AWAITING_DOCUMENTS,
+      BOND_INTAKE_STATUSES.AWAITING_OTP,
+      BOND_INTAKE_STATUSES.READY_TO_START,
+      BOND_INTAKE_STATUSES.APPLICATION_IN_PROGRESS,
+      BOND_INTAKE_STATUSES.APPLICATION_SUBMITTED,
       BOND_INTAKE_STATUSES.READY_FOR_REVIEW,
     ].map((status) => ({
       key: status,

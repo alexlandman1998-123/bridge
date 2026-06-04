@@ -28,6 +28,8 @@ function makeReadyRow(overrides = {}) {
       id: 'tx-ready',
       finance_type: 'bond',
       buyer_name: 'Buyer Ready',
+      onboarding_completed_at: '2026-05-02T09:00:00.000Z',
+      otp_status: 'fully_signed',
       ...overrides.transaction,
     },
     onboardingFormData: Object.prototype.hasOwnProperty.call(overrides, 'onboardingFormData') ? overrides.onboardingFormData : submittedOnboarding(),

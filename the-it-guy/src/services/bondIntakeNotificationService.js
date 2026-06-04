@@ -4,9 +4,12 @@ import { invokeEdgeFunction, supabase } from '../lib/supabaseClient'
 
 export const BOND_NOTIFICATION_EVENTS = Object.freeze({
   BOND_INTAKE_STARTED: 'BOND_INTAKE_STARTED',
+  BOND_INTAKE_RECEIVED: 'BOND_INTAKE_RECEIVED',
+  BOND_OTP_READY: 'BOND_OTP_READY',
   BOND_APPLICATION_STARTED: 'BOND_APPLICATION_STARTED',
   BOND_APPLICATION_SUBMITTED: 'BOND_APPLICATION_SUBMITTED',
   BOND_DOCUMENTS_COMPLETE: 'BOND_DOCUMENTS_COMPLETE',
+  BOND_APPLICATION_READY_FOR_REVIEW: 'BOND_APPLICATION_READY_FOR_REVIEW',
   BOND_APPLICATION_ACCEPTED: 'BOND_APPLICATION_ACCEPTED',
   BOND_APPLICATION_ASSIGNED: 'BOND_APPLICATION_ASSIGNED',
   BOND_APPLICATION_DECLINED: 'BOND_APPLICATION_DECLINED',
@@ -15,9 +18,12 @@ export const BOND_NOTIFICATION_EVENTS = Object.freeze({
 
 const EVENT_KEYS = Object.freeze({
   [BOND_NOTIFICATION_EVENTS.BOND_INTAKE_STARTED]: 'bond_intake_started',
+  [BOND_NOTIFICATION_EVENTS.BOND_INTAKE_RECEIVED]: 'bond_intake_received',
+  [BOND_NOTIFICATION_EVENTS.BOND_OTP_READY]: 'bond_otp_ready',
   [BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_STARTED]: 'bond_application_started',
   [BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_SUBMITTED]: 'bond_application_submitted',
   [BOND_NOTIFICATION_EVENTS.BOND_DOCUMENTS_COMPLETE]: 'bond_documents_complete',
+  [BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_READY_FOR_REVIEW]: 'bond_application_ready_for_review',
   [BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_ACCEPTED]: 'bond_application_accepted',
   [BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_ASSIGNED]: 'bond_application_assigned',
   [BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_DECLINED]: 'bond_application_declined',
@@ -31,8 +37,11 @@ const BRANCH_MANAGER_ROLE_KEYS = new Set(['branch_manager', 'team_lead', 'manage
 const ACTIVE_STATUSES = new Set(['', 'active', 'approved', 'assigned', 'current', 'in_progress', 'pending', 'notified'])
 const EMAIL_EVENTS = new Set([
   BOND_NOTIFICATION_EVENTS.BOND_INTAKE_STARTED,
+  BOND_NOTIFICATION_EVENTS.BOND_INTAKE_RECEIVED,
+  BOND_NOTIFICATION_EVENTS.BOND_OTP_READY,
   BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_SUBMITTED,
   BOND_NOTIFICATION_EVENTS.BOND_DOCUMENTS_COMPLETE,
+  BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_READY_FOR_REVIEW,
   BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_ACCEPTED,
   BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_ASSIGNED,
   BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_DECLINED,
@@ -697,6 +706,18 @@ function buildEventCopy(eventType, { transaction = {}, recipients = {}, metadata
       message: `A new bond application has been added to your pipeline for ${buyer} at ${property}.`,
       activity: `Buyer selected Bond finance. Bond originator pipeline application created.`,
     },
+    [BOND_NOTIFICATION_EVENTS.BOND_INTAKE_RECEIVED]: {
+      title: 'New bond intake received',
+      subject: 'New bond intake received',
+      message: 'A new bond transaction has been added to your pipeline. OTP signature is still outstanding.',
+      activity: 'Bond intake received. OTP signature is still outstanding.',
+    },
+    [BOND_NOTIFICATION_EVENTS.BOND_OTP_READY]: {
+      title: 'OTP signed - bond process can begin',
+      subject: `OTP signed - bond process can begin: ${buyer}`,
+      message: `The OTP for ${buyer} at ${property} has been fully signed and the bond process can now begin.`,
+      activity: 'OTP fully signed. Bond process can begin.',
+    },
     [BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_STARTED]: {
       title: 'Buyer started bond application',
       subject: `Buyer started bond application: ${buyer}`,
@@ -714,6 +735,12 @@ function buildEventCopy(eventType, { transaction = {}, recipients = {}, metadata
       subject: `Documents complete for ${buyer}`,
       message: `Required bond finance documents for ${buyer} are complete.`,
       activity: 'Bond finance documents completed.',
+    },
+    [BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_READY_FOR_REVIEW]: {
+      title: 'Bond application ready for review',
+      subject: `Bond application ready for review: ${buyer}`,
+      message: `${buyer}'s bond application for ${property} is complete and ready for review.`,
+      activity: 'Bond application and required documents are ready for review.',
     },
     [BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_ACCEPTED]: {
       title: 'Bond application accepted',
@@ -748,14 +775,19 @@ function buildEventCopy(eventType, { transaction = {}, recipients = {}, metadata
 function selectRecipientsForEvent(eventType, resolved = {}, metadata = {}) {
   const assignee = makeRecipient(metadata.assignee || {}, 'bond_originator')
   switch (eventType) {
+    case BOND_NOTIFICATION_EVENTS.BOND_INTAKE_RECEIVED:
     case BOND_NOTIFICATION_EVENTS.BOND_INTAKE_STARTED:
       return dedupeRecipients([...resolved.managers, resolved.assignedOriginator, resolved.preferredOriginator])
+    case BOND_NOTIFICATION_EVENTS.BOND_OTP_READY:
+      return dedupeRecipients([resolved.assignedOriginator, resolved.preferredOriginator, ...resolved.managers])
     case BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_STARTED:
       return dedupeRecipients([resolved.preferredOriginator, resolved.assignedOriginator, resolved.agent])
     case BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_SUBMITTED:
       return dedupeRecipients([resolved.assignedOriginator, resolved.preferredOriginator, resolved.agent, resolved.principal])
     case BOND_NOTIFICATION_EVENTS.BOND_DOCUMENTS_COMPLETE:
       return dedupeRecipients([resolved.assignedConsultant, resolved.assignedOriginator, resolved.preferredOriginator])
+    case BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_READY_FOR_REVIEW:
+      return dedupeRecipients([resolved.assignedConsultant, resolved.assignedOriginator, resolved.preferredOriginator, ...resolved.managers])
     case BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_ACCEPTED:
       return dedupeRecipients([resolved.buyer, resolved.agent, resolved.principal])
     case BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_ASSIGNED:
@@ -832,15 +864,21 @@ async function createNotification(client, { transactionId, recipient, eventType,
   if (!recipient?.userId) return null
   const isBuyer = normalizeRoleKey(recipient.roleType) === 'client' || normalizeRoleKey(recipient.roleType) === 'buyer'
   const notificationType =
-    eventType === BOND_NOTIFICATION_EVENTS.BOND_INTAKE_STARTED
-      ? 'bond_application_pipeline_added'
-      : eventType === BOND_NOTIFICATION_EVENTS.BUYER_BOND_ORIGINATOR_INTRO
-        ? 'buyer_intro_email_sent'
-      : eventType === BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_ASSIGNED
-        ? 'bond_application_assigned'
-        : eventType === BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_SUBMITTED
-          ? 'bond_application_created'
-          : 'readiness_updated'
+    eventType === BOND_NOTIFICATION_EVENTS.BOND_INTAKE_RECEIVED
+      ? 'bond_intake_received'
+      : eventType === BOND_NOTIFICATION_EVENTS.BOND_INTAKE_STARTED
+        ? 'bond_application_pipeline_added'
+        : eventType === BOND_NOTIFICATION_EVENTS.BOND_OTP_READY
+          ? 'bond_otp_ready'
+          : eventType === BOND_NOTIFICATION_EVENTS.BUYER_BOND_ORIGINATOR_INTRO
+            ? 'buyer_intro_email_sent'
+            : eventType === BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_ASSIGNED
+              ? 'bond_application_assigned'
+              : eventType === BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_READY_FOR_REVIEW
+                ? 'bond_application_ready_for_review'
+                : eventType === BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_SUBMITTED
+                  ? 'bond_application_created'
+                  : 'readiness_updated'
   const payload = compactObject({
     transaction_id: transactionId,
     user_id: recipient.userId,
@@ -899,7 +937,7 @@ async function sendEmailIfAllowed({ eventType, transactionId, recipient, copy, m
   const eventAllowsRecipientEmail =
     eventType === BOND_NOTIFICATION_EVENTS.BUYER_BOND_ORIGINATOR_INTRO
       ? ['client', 'buyer'].includes(role)
-      : eventType !== BOND_NOTIFICATION_EVENTS.BOND_INTAKE_STARTED ||
+      : ![BOND_NOTIFICATION_EVENTS.BOND_INTAKE_STARTED, BOND_NOTIFICATION_EVENTS.BOND_INTAKE_RECEIVED].includes(eventType) ||
         ['bond_originator', 'consultant', 'branch_manager', 'regional_manager', 'hq_manager', 'manager', 'owner', 'principal', 'director', 'admin'].includes(role)
 
   if (!emailEnabled || !EMAIL_EVENTS.has(eventType) || !recipient?.email || !eventAllowsRecipientEmail) {
@@ -1150,7 +1188,7 @@ export async function notifyBondIntakeEvent({
   }
 
   const supplementaryActivities =
-    effectiveEventType === BOND_NOTIFICATION_EVENTS.BOND_INTAKE_STARTED
+    [BOND_NOTIFICATION_EVENTS.BOND_INTAKE_STARTED, BOND_NOTIFICATION_EVENTS.BOND_INTAKE_RECEIVED].includes(effectiveEventType)
       ? await insertSupplementaryIntakeEvents(db, {
           transactionId: id,
           actor,
@@ -1191,7 +1229,7 @@ export async function notifyBondIntakeStartedForOnboarding({ transaction, formDa
     return { skipped: true, reason: 'not_bond_finance' }
   }
   const started = await notifyBondIntakeEvent({
-    eventType: BOND_NOTIFICATION_EVENTS.BOND_INTAKE_STARTED,
+    eventType: BOND_NOTIFICATION_EVENTS.BOND_INTAKE_RECEIVED,
     transaction: {
       ...transaction,
       finance_type: isBondFinanceType(financeType) ? financeType : transaction?.finance_type || transaction?.financeType || 'bond',
@@ -1201,6 +1239,7 @@ export async function notifyBondIntakeStartedForOnboarding({ transaction, formDa
       ...metadata,
       formDataSource: 'client_onboarding_submitted',
       onboardingFormData: formData,
+      applicationPath: metadata.originatorPath || metadata.bondApplicationPath || '/bond/applications',
     },
     client,
     emailEnabled,
@@ -1227,6 +1266,76 @@ export async function notifyBondIntakeStartedForOnboarding({ transaction, formDa
     ...started,
     buyerIntro,
   }
+}
+
+export async function checkAndNotifyBondOtpReady({
+  transaction,
+  transactionId = '',
+  previousOtpReady = false,
+  currentOtpReady = true,
+  actor = {},
+  metadata = {},
+  client = null,
+} = {}) {
+  const db = getClient({ client })
+  const resolvedTransaction = transaction || { id: transactionId }
+  const id = getTransactionId(resolvedTransaction, transactionId)
+  const financeType = resolvedTransaction?.finance_type || resolvedTransaction?.financeType || metadata.financeType
+
+  if (!isBondFinanceType(financeType)) {
+    return { skipped: true, reason: 'not_bond_finance' }
+  }
+  if (previousOtpReady || !currentOtpReady) {
+    return { skipped: true, reason: 'otp_not_crossing_ready_threshold' }
+  }
+
+  return notifyBondIntakeEvent({
+    eventType: BOND_NOTIFICATION_EVENTS.BOND_OTP_READY,
+    transaction: resolvedTransaction,
+    transactionId: id,
+    actor,
+    metadata: {
+      ...metadata,
+      source: metadata.source || 'otp_ready_check',
+      applicationPath: metadata.applicationPath || `/bond/files/${id}`,
+    },
+    client: db,
+  })
+}
+
+export async function checkAndNotifyBondApplicationReadyForReview({
+  transaction,
+  transactionId = '',
+  previousReadyForReview = false,
+  currentReadyForReview = false,
+  actor = {},
+  metadata = {},
+  client = null,
+} = {}) {
+  const db = getClient({ client })
+  const resolvedTransaction = transaction || { id: transactionId }
+  const id = getTransactionId(resolvedTransaction, transactionId)
+  const financeType = resolvedTransaction?.finance_type || resolvedTransaction?.financeType || metadata.financeType
+
+  if (!isBondFinanceType(financeType)) {
+    return { skipped: true, reason: 'not_bond_finance' }
+  }
+  if (previousReadyForReview || !currentReadyForReview) {
+    return { skipped: true, reason: 'application_not_crossing_ready_for_review_threshold' }
+  }
+
+  return notifyBondIntakeEvent({
+    eventType: BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_READY_FOR_REVIEW,
+    transaction: resolvedTransaction,
+    transactionId: id,
+    actor,
+    metadata: {
+      ...metadata,
+      source: metadata.source || 'ready_for_review_check',
+      applicationPath: metadata.applicationPath || `/bond/files/${id}`,
+    },
+    client: db,
+  })
 }
 
 export async function checkAndNotifyBondDocumentsComplete({

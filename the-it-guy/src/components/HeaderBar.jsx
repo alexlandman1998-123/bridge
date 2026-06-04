@@ -391,8 +391,17 @@ function HeaderBar({ onLogout, user }) {
                     }
                     await loadNotifications()
 
+                    const actionPath = String(
+                      notification.eventData?.applicationPath ||
+                        notification.eventData?.actionRoute ||
+                        notification.eventData?.path ||
+                        '',
+                    ).trim()
                     const targetUnitId = notification.unitId || notification.eventData?.unitId || null
-                    if (targetUnitId) {
+                    if (actionPath && actionPath.startsWith('/')) {
+                      navigate(actionPath)
+                      setNotificationsOpen(false)
+                    } else if (targetUnitId) {
                       navigate(`/units/${targetUnitId}`)
                       setNotificationsOpen(false)
                     }

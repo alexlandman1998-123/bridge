@@ -6,10 +6,18 @@ import {
 } from '../constants/signupIntents'
 import { normalizeCanonicalAppRole } from '../constants/appRoles'
 import { normalizeOrgRole } from '../constants/orgRoles'
-import { normalizeWorkspaceType } from '../constants/workspaceTypes'
+import { resolveSignupRoleContract, resolveWorkspaceKindForContract } from '../constants/roleContract'
+import { normalizeSystemRole } from '../constants/systemRoles'
+import { normalizeWorkspaceKind, normalizeWorkspaceType } from '../constants/workspaceTypes'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 
 export const SIGNUP_INTENT_STORAGE_KEY = 'itg:signup-intent:v1'
+
+const SIGNUP_INTENT_SELECT =
+  'id, auth_user_id, email, app_role, system_role, workspace_type, workspace_kind, intended_org_role, role_contract_key, authority_level, onboarding_path, workspace_action, invite_token, status, source, created_at, updated_at, consumed_at'
+const LEGACY_SIGNUP_INTENT_SELECT =
+  'id, auth_user_id, email, app_role, workspace_type, intended_org_role, authority_level, onboarding_path, workspace_action, invite_token, status, source, created_at, updated_at, consumed_at'
+const CONTRACT_SIGNUP_INTENT_COLUMNS = ['system_role', 'workspace_kind', 'role_contract_key']
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -24,6 +32,17 @@ function isMissingSignupIntentsTable(error) {
   const code = String(error.code || '').toLowerCase()
   const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
   return code === '42p01' || code === 'pgrst205' || message.includes('signup_intents')
+}
+
+function isMissingSignupIntentContractColumn(error) {
+  if (!error) return false
+  const code = String(error.code || '').toLowerCase()
+  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
+  return (
+    code === '42703' ||
+    code === 'pgrst204' ||
+    CONTRACT_SIGNUP_INTENT_COLUMNS.some((column) => message.includes(column))
+  )
 }
 
 function getStoredSignupIntent() {
@@ -72,6 +91,12 @@ export function normalizeSignupIntent(input = null) {
   if (!input || typeof input !== 'object') return null
   const appRole = normalizeCanonicalAppRole(input.app_role || input.appRole, '')
   const workspaceType = normalizeWorkspaceType(input.workspace_type || input.workspaceType, null)
+  const roleContract = resolveSignupRoleContract({ ...input, app_role: appRole, workspace_type: workspaceType })
+  const workspaceKind = normalizeWorkspaceKind(
+    input.workspace_kind || input.workspaceKind,
+    roleContract ? resolveWorkspaceKindForContract(roleContract) : '',
+  )
+  const systemRole = normalizeSystemRole(input.system_role || input.systemRole, roleContract?.systemRole || '')
   const intendedOrgRoleRaw = normalizeText(input.intended_org_role || input.intendedOrgRole)
   const intendedOrgRole = intendedOrgRoleRaw === 'client'
     ? 'client'
@@ -87,8 +112,11 @@ export function normalizeSignupIntent(input = null) {
     auth_user_id: normalizeText(input.auth_user_id || input.authUserId),
     email: normalizeEmail(input.email),
     app_role: appRole,
+    system_role: systemRole || null,
     workspace_type: workspaceType || null,
+    workspace_kind: workspaceKind || null,
     intended_org_role: intendedOrgRole,
+    role_contract_key: normalizeText(input.role_contract_key || input.roleContractKey || roleContract?.key),
     authority_level: authorityLevel,
     onboarding_path: onboardingPath,
     workspace_action: workspaceAction,
@@ -109,6 +137,7 @@ export function createSignupUserMetadata({ intent, fullName = '', phone = '' } =
   return {
     app_role: normalizedIntent.app_role,
     role: normalizedIntent.app_role,
+    system_role: normalizedIntent.system_role,
     signup_intent: normalizedIntent,
     full_name: safeFullName,
     first_name: parts[0] || '',
@@ -147,8 +176,11 @@ export async function persistSignupIntent({
     auth_user_id: user.id,
     email: normalizeEmail(normalized.email || user.email),
     app_role: normalized.app_role,
+    system_role: normalized.system_role,
     workspace_type: normalized.workspace_type,
+    workspace_kind: normalized.workspace_kind,
     intended_org_role: normalized.intended_org_role,
+    role_contract_key: normalized.role_contract_key,
     authority_level: normalized.authority_level,
     onboarding_path: normalized.onboarding_path,
     workspace_action: normalized.workspace_action,
@@ -158,11 +190,21 @@ export async function persistSignupIntent({
     consumed_at: normalized.consumed_at || null,
   }
 
-  const result = await supabase
+  let result = await supabase
     .from('signup_intents')
     .upsert(payload, { onConflict: 'auth_user_id' })
-    .select('id, auth_user_id, email, app_role, workspace_type, intended_org_role, authority_level, onboarding_path, workspace_action, invite_token, status, source, created_at, updated_at, consumed_at')
+    .select(SIGNUP_INTENT_SELECT)
     .single()
+
+  if (result.error && isMissingSignupIntentContractColumn(result.error)) {
+    const legacyPayload = { ...payload }
+    CONTRACT_SIGNUP_INTENT_COLUMNS.forEach((column) => delete legacyPayload[column])
+    result = await supabase
+      .from('signup_intents')
+      .upsert(legacyPayload, { onConflict: 'auth_user_id' })
+      .select(LEGACY_SIGNUP_INTENT_SELECT)
+      .single()
+  }
 
   if (result.error) {
     if (isMissingSignupIntentsTable(result.error)) {
@@ -185,13 +227,23 @@ export async function loadSignupIntentForUser({ user = null } = {}) {
   if (!user?.id) return null
 
   if (isSupabaseConfigured && supabase) {
-    const result = await supabase
+    let result = await supabase
       .from('signup_intents')
-      .select('id, auth_user_id, email, app_role, workspace_type, intended_org_role, authority_level, onboarding_path, workspace_action, invite_token, status, source, created_at, updated_at, consumed_at')
+      .select(SIGNUP_INTENT_SELECT)
       .eq('auth_user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
+
+    if (result.error && isMissingSignupIntentContractColumn(result.error)) {
+      result = await supabase
+        .from('signup_intents')
+        .select(LEGACY_SIGNUP_INTENT_SELECT)
+        .eq('auth_user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    }
 
     if (!result.error && result.data) {
       const intent = mapIntentRow(result.data)

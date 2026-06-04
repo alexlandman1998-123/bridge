@@ -346,6 +346,28 @@
     margin-top: 24px;
   }
 
+  .buyer-lead-workspace .lead-progress-grid {
+    align-items: stretch;
+  }
+
+  .buyer-lead-workspace .lead-progress-step {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    min-height: 168px;
+  }
+
+  .buyer-lead-workspace .lead-progress-step-label {
+    min-height: 40px;
+  }
+
+  .buyer-lead-workspace .lead-progress-step-hint {
+    min-height: 40px;
+  }
+
+  .buyer-lead-workspace .lead-progress-step-action {
+    align-self: end;
+  }
+
   .buyer-lead-workspace .buyer-workspace-tab {
     display: inline-flex;
     align-items: center;
@@ -4207,6 +4229,24 @@ body.sidebar-compact .ui-main-region {
   border-radius: 15px;
   background: #f8fbff;
   padding: 0.9rem;
+}
+
+button.agency-setup-row-card {
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+button.agency-setup-row-card:hover {
+  border-color: #9db6ca;
+  background: #ffffff;
+}
+
+.agency-setup-row-card.is-selected {
+  border-color: #315b7b;
+  background: #eef5fb;
+  box-shadow: 0 10px 22px rgba(49, 91, 123, 0.12);
 }
 
 .agency-setup-row-head {

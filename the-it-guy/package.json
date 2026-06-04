@@ -35,6 +35,7 @@
     "test:atomic-onboarding": "node scripts/atomic-onboarding.test.mjs",
     "test:bond-demo-runtime-data": "node scripts/bond-demo-runtime-data.test.mjs",
     "test:bond-intake-notifications": "node src/services/__tests__/bondIntakeNotificationService.test.js",
+    "test:bond-application-classification": "node src/services/__tests__/bondApplicationClassification.test.js",
     "test:bond-consultants-management": "node src/services/__tests__/bondConsultantsManagementService.test.js",
     "test:bond-application-assignment": "node src/services/__tests__/bondApplicationAssignmentService.test.js",
     "test:bond-routing-rules": "node src/services/__tests__/bondRoutingRulesService.test.js",

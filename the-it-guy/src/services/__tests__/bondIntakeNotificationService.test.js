@@ -185,7 +185,9 @@ const baseState = {
 try {
   const {
     BOND_NOTIFICATION_EVENTS,
+    checkAndNotifyBondApplicationReadyForReview,
     checkAndNotifyBondDocumentsComplete,
+    checkAndNotifyBondOtpReady,
     notifyBondIntakeEvent,
     notifyBondIntakeStartedForOnboarding,
     resolveBondNotificationRecipients,
@@ -197,10 +199,10 @@ try {
     formData: { finance_type: 'bond' },
     client: onboardingClient,
   })
-  assert.equal(started.eventType, BOND_NOTIFICATION_EVENTS.BOND_INTAKE_STARTED)
+  assert.equal(started.eventType, BOND_NOTIFICATION_EVENTS.BOND_INTAKE_RECEIVED)
   assert.equal(onboardingClient.state.transaction_events.length, 6)
   assert.equal(started.buyerIntro.eventType, BOND_NOTIFICATION_EVENTS.BUYER_BOND_ORIGINATOR_INTRO)
-  assert.equal(onboardingClient.state.transaction_events[0].event_data.event_key, 'bond_intake_started')
+  assert.equal(onboardingClient.state.transaction_events[0].event_data.event_key, 'bond_intake_received')
   assert.equal(onboardingClient.state.transaction_events.some((row) => row.event_type === BOND_NOTIFICATION_EVENTS.BUYER_BOND_ORIGINATOR_INTRO), true)
   assert.equal(onboardingClient.state.transaction_events.some((row) => row.event_type === 'buyer_bond_originator_introduced'), true)
   assert.equal(onboardingClient.state.transaction_events.some((row) => row.event_type === 'application_added_to_pipeline'), true)
@@ -209,6 +211,7 @@ try {
   assert.equal(started.emailSuppressed, true)
   assert.equal(onboardingClient.state.transaction_notifications.some((row) => row.user_id === 'manager-user-1'), true)
   assert.equal(onboardingClient.state.transaction_notifications.some((row) => row.user_id === 'originator-user-1'), true)
+  assert.equal(onboardingClient.state.transaction_notifications.some((row) => row.notification_type === 'bond_intake_received'), true)
   assert.equal(onboardingClient.state.transaction_notifications.some((row) => row.user_id === 'buyer-user-1' && row.notification_type === 'buyer_intro_email_sent'), true)
 
   const duplicateStarted = await notifyBondIntakeStartedForOnboarding({
@@ -336,7 +339,7 @@ try {
   const managerEmailCalls = []
   const managerEmailClient = createMockClient(baseState)
   await notifyBondIntakeEvent({
-    eventType: BOND_NOTIFICATION_EVENTS.BOND_INTAKE_STARTED,
+    eventType: BOND_NOTIFICATION_EVENTS.BOND_INTAKE_RECEIVED,
     transaction: transaction({ id: 'tx-bond-manager-email' }),
     recipients: [{ userId: 'manager-user-1', email: 'manager@example.test', name: 'Morgan Manager', roleType: 'branch_manager' }],
     emailEnabled: true,
@@ -347,7 +350,50 @@ try {
     client: managerEmailClient,
   })
   assert.equal(managerEmailCalls.length, 1)
-  assert.equal(managerEmailCalls[0].request.body.subject, 'New Bond Application Added To Pipeline')
+  assert.equal(managerEmailCalls[0].request.body.subject, 'New bond intake received')
+
+  const otpReadyClient = createMockClient(baseState)
+  const otpReady = await checkAndNotifyBondOtpReady({
+    transaction: transaction({ otp_status: 'fully_signed' }),
+    previousOtpReady: false,
+    currentOtpReady: true,
+    client: otpReadyClient,
+  })
+  assert.equal(otpReady.eventType, BOND_NOTIFICATION_EVENTS.BOND_OTP_READY)
+  assert.equal(otpReadyClient.state.transaction_notifications.some((row) => row.notification_type === 'bond_otp_ready'), true)
+  const duplicateOtpReady = await checkAndNotifyBondOtpReady({
+    transaction: transaction({ otp_status: 'fully_signed' }),
+    previousOtpReady: false,
+    currentOtpReady: true,
+    client: otpReadyClient,
+  })
+  assert.equal(duplicateOtpReady.duplicate, true)
+
+  const readyForReviewClient = createMockClient(baseState)
+  const readyForReview = await checkAndNotifyBondApplicationReadyForReview({
+    transaction: transaction(),
+    previousReadyForReview: false,
+    currentReadyForReview: true,
+    client: readyForReviewClient,
+  })
+  assert.equal(readyForReview.eventType, BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_READY_FOR_REVIEW)
+  assert.equal(
+    readyForReviewClient.state.transaction_notifications.some((row) => row.notification_type === 'bond_application_ready_for_review'),
+    true,
+  )
+
+  const managerFallbackClient = createMockClient({
+    ...baseState,
+    transaction_role_players: [],
+    organisation_preferred_partners: [],
+  })
+  await checkAndNotifyBondApplicationReadyForReview({
+    transaction: transaction({ assigned_bond_originator_email: '' }),
+    previousReadyForReview: false,
+    currentReadyForReview: true,
+    client: managerFallbackClient,
+  })
+  assert.equal(managerFallbackClient.state.transaction_notifications.some((row) => row.user_id === 'manager-user-1'), true)
 
   const buyerIntroEmailCalls = []
   const buyerIntroEmailClient = createMockClient(baseState)

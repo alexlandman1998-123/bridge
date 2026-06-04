@@ -1,5 +1,6 @@
 import { APP_ROLES } from './appRoles'
 import { ORG_ROLES } from './orgRoles'
+import { SIGNUP_ROLE_CONTRACTS } from './roleContract'
 import { WORKSPACE_TYPES } from './workspaceTypes'
 
 export const SIGNUP_BUSINESS_TYPES = Object.freeze({
@@ -200,17 +201,23 @@ export const SIGNUP_POSITION_INTENT_MAP = Object.freeze({
     workspace_action: SIGNUP_WORKSPACE_ACTIONS.joinOrRequestWorkspace,
   },
   bond_owner: {
-    app_role: APP_ROLES.bondOriginator,
-    workspace_type: WORKSPACE_TYPES.bondOriginator,
-    intended_org_role: ORG_ROLES.owner,
+    app_role: SIGNUP_ROLE_CONTRACTS.bond_owner.profileRole,
+    system_role: SIGNUP_ROLE_CONTRACTS.bond_owner.systemRole,
+    workspace_type: SIGNUP_ROLE_CONTRACTS.bond_owner.workspaceType,
+    workspace_kind: SIGNUP_ROLE_CONTRACTS.bond_owner.defaultWorkspaceKind,
+    intended_org_role: SIGNUP_ROLE_CONTRACTS.bond_owner.intendedOrgRole,
+    role_contract_key: SIGNUP_ROLE_CONTRACTS.bond_owner.key,
     authority_level: SIGNUP_AUTHORITY_LEVELS.ownerManagement,
     onboarding_path: SIGNUP_ONBOARDING_PATHS.bondOwner,
     workspace_action: SIGNUP_WORKSPACE_ACTIONS.createWorkspace,
   },
   bond_operational: {
-    app_role: APP_ROLES.bondOriginator,
-    workspace_type: WORKSPACE_TYPES.bondOriginator,
-    intended_org_role: ORG_ROLES.consultant,
+    app_role: SIGNUP_ROLE_CONTRACTS.bond_operational.profileRole,
+    system_role: SIGNUP_ROLE_CONTRACTS.bond_operational.systemRole,
+    workspace_type: SIGNUP_ROLE_CONTRACTS.bond_operational.workspaceType,
+    workspace_kind: SIGNUP_ROLE_CONTRACTS.bond_operational.defaultWorkspaceKind,
+    intended_org_role: SIGNUP_ROLE_CONTRACTS.bond_operational.intendedOrgRole,
+    role_contract_key: SIGNUP_ROLE_CONTRACTS.bond_operational.key,
     authority_level: SIGNUP_AUTHORITY_LEVELS.operational,
     onboarding_path: SIGNUP_ONBOARDING_PATHS.bondOperational,
     workspace_action: SIGNUP_WORKSPACE_ACTIONS.joinOrRequestWorkspace,

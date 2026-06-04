@@ -49,10 +49,29 @@ const AGENCY_SETUP_STEPS = [
   { key: 'review', label: 'Review' },
 ]
 const BOND_SETUP_STEPS = [
+  { key: 'type', label: 'Type' },
   { key: 'business', label: 'Business' },
   { key: 'owner', label: 'Owner' },
   { key: 'team', label: 'Team' },
   { key: 'review', label: 'Review' },
+]
+const BOND_WORKSPACE_KIND_OPTIONS = [
+  {
+    value: WORKSPACE_KINDS.personalOriginator,
+    label: 'Independent originator',
+    title: 'I operate as an individual originator',
+    description: 'Create a solo workspace with owner-led consulting and processing.',
+    defaultTeamName: 'My Pipeline',
+    ownerTitle: 'Independent Originator',
+  },
+  {
+    value: WORKSPACE_KINDS.bondCompany,
+    label: 'Originator company',
+    title: 'I represent a bond originator company',
+    description: 'Create a company workspace that can grow into branches, teams, and role-based invites.',
+    defaultTeamName: 'Main Team',
+    ownerTitle: 'Owner',
+  },
 ]
 const BOND_INVITE_ROLE_OPTIONS = [
   { value: 'consultant', label: 'Consultant' },
@@ -155,11 +174,19 @@ function createBondInviteDraft(seed = {}) {
 
 function getBondDraftDefaults(intent, profile) {
   const companyName = normalizeText(profile?.companyName)
+  const workspaceKind = normalizeText(intent?.workspace_kind) === WORKSPACE_KINDS.personalOriginator
+    ? WORKSPACE_KINDS.personalOriginator
+    : WORKSPACE_KINDS.bondCompany
+  const kindOption = BOND_WORKSPACE_KIND_OPTIONS.find((option) => option.value === workspaceKind) || BOND_WORKSPACE_KIND_OPTIONS[1]
+  const personalName = normalizeText(profile?.fullName)
+  const defaultBusinessName = workspaceKind === WORKSPACE_KINDS.personalOriginator
+    ? companyName || personalName
+    : companyName
   return {
     businessInformation: {
-      businessName: companyName || '',
-      legalName: companyName || '',
-      tradingName: companyName || '',
+      businessName: defaultBusinessName || '',
+      legalName: defaultBusinessName || '',
+      tradingName: defaultBusinessName || '',
       registrationNumber: '',
       businessEmail: normalizeText(profile?.email),
       contactNumber: normalizeText(profile?.phoneNumber),
@@ -171,12 +198,12 @@ function getBondDraftDefaults(intent, profile) {
     },
     ownerInformation: {
       fullName: normalizeText(profile?.fullName),
-      title: 'Owner',
+      title: kindOption.ownerTitle,
       email: normalizeText(profile?.email),
       phoneNumber: normalizeText(profile?.phoneNumber),
     },
     teamStructure: {
-      defaultTeamName: 'Main Team',
+      defaultTeamName: kindOption.defaultTeamName,
       launchRoles: {
         ownerHandlesConsulting: true,
         ownerHandlesProcessing: true,
@@ -186,7 +213,7 @@ function getBondDraftDefaults(intent, profile) {
     },
     invitations: [createBondInviteDraft()],
     meta: {
-      workspaceKind: WORKSPACE_KINDS.bondCompany,
+      workspaceKind,
       onboardingPath: intent?.onboarding_path || 'bond_owner',
     },
   }
@@ -232,15 +259,25 @@ function resolveBondStepError(stepKey, draft) {
   const owner = draft?.ownerInformation || {}
   const team = draft?.teamStructure || {}
   const invites = Array.isArray(draft?.invitations) ? draft.invitations : []
+  const workspaceKind = normalizeText(draft?.meta?.workspaceKind) || WORKSPACE_KINDS.bondCompany
+  const isPersonalOriginator = workspaceKind === WORKSPACE_KINDS.personalOriginator
+
+  if (stepKey === 'type') {
+    if (![WORKSPACE_KINDS.personalOriginator, WORKSPACE_KINDS.bondCompany].includes(workspaceKind)) {
+      return 'Choose the originator setup type.'
+    }
+  }
 
   if (stepKey === 'business') {
-    if (!normalizeText(business.businessName)) return 'Bond originator business name is required.'
-    if (!normalizeText(business.legalName)) return 'Legal name is required.'
-    if (!normalizeText(business.businessEmail)) return 'Business email is required.'
-    if (!normalizeText(business.contactNumber)) return 'Business contact number is required.'
+    if (!normalizeText(business.businessName)) {
+      return isPersonalOriginator ? 'Originator name is required.' : 'Bond originator business name is required.'
+    }
+    if (!isPersonalOriginator && !normalizeText(business.legalName)) return 'Legal name is required.'
+    if (!normalizeText(business.businessEmail)) return isPersonalOriginator ? 'Contact email is required.' : 'Business email is required.'
+    if (!normalizeText(business.contactNumber)) return isPersonalOriginator ? 'Contact number is required.' : 'Business contact number is required.'
     if (!normalizeText(business.province)) return 'Province is required.'
     if (!normalizeText(business.city)) return 'City is required.'
-    if (!normalizeText(business.physicalAddress)) return 'Physical address is required.'
+    if (!isPersonalOriginator && !normalizeText(business.physicalAddress)) return 'Physical address is required.'
   }
 
   if (stepKey === 'owner') {
@@ -251,6 +288,7 @@ function resolveBondStepError(stepKey, draft) {
 
   if (stepKey === 'team') {
     if (!normalizeText(team.defaultTeamName)) return 'Default team name is required.'
+    if (isPersonalOriginator) return ''
     for (const invite of invites) {
       const hasRowData = normalizeText(invite.name || invite.email)
       if (!hasRowData) continue
@@ -272,6 +310,10 @@ function buildBondWorkspaceSubmission(draft, profile) {
   const business = draft?.businessInformation || {}
   const owner = draft?.ownerInformation || {}
   const team = draft?.teamStructure || {}
+  const workspaceKind = normalizeText(draft?.meta?.workspaceKind) === WORKSPACE_KINDS.personalOriginator
+    ? WORKSPACE_KINDS.personalOriginator
+    : WORKSPACE_KINDS.bondCompany
+  const isPersonalOriginator = workspaceKind === WORKSPACE_KINDS.personalOriginator
   const ownerName = normalizeText(owner.fullName || profile?.fullName)
   const ownerNameParts = splitFullName(ownerName)
   const cleanedInvites = (Array.isArray(draft?.invitations) ? draft.invitations : [])
@@ -284,7 +326,7 @@ function buildBondWorkspaceSubmission(draft, profile) {
 
   return {
     name: normalizeText(business.businessName),
-    legalName: normalizeText(business.legalName),
+    legalName: normalizeText(business.legalName || business.businessName),
     tradingName: normalizeText(business.tradingName || business.businessName),
     registrationNumber: normalizeText(business.registrationNumber),
     businessEmail: normalizeText(business.businessEmail),
@@ -302,7 +344,7 @@ function buildBondWorkspaceSubmission(draft, profile) {
     ownerPhone: normalizeText(owner.phoneNumber),
     firstName: ownerNameParts.firstName,
     lastName: ownerNameParts.lastName,
-    workspaceKind: draft?.meta?.workspaceKind || WORKSPACE_KINDS.bondCompany,
+    workspaceKind,
     branches: [{
       name: normalizeText(team.defaultTeamName) || 'Main Team',
       province: normalizeText(business.province),
@@ -314,9 +356,10 @@ function buildBondWorkspaceSubmission(draft, profile) {
     invites: cleanedInvites,
     settings: {
       workspaceType: WORKSPACE_TYPES.bondOriginator,
-      workspaceKind: draft?.meta?.workspaceKind || WORKSPACE_KINDS.bondCompany,
+      workspaceKind,
       bondOnboarding: draft,
       bondWorkspace: {
+        operatingModel: isPersonalOriginator ? 'independent' : 'company',
         teamName: normalizeText(team.defaultTeamName) || 'Main Team',
         supportEmail: normalizeText(business.supportEmail || business.businessEmail),
         ownerHandlesConsulting: Boolean(team.launchRoles?.ownerHandlesConsulting),
@@ -493,7 +536,7 @@ export default function PostDashboardSetup() {
   const pageDescription = isAgencyPrincipalSetup
     ? 'Create the operating profile your agents will enter: agency details, branches, branding, permissions, and team invitations.'
     : isBondOwnerSetup
-      ? 'Capture the business, owner, and launch-team details Bridge needs to create a proper bond company workspace and avoid incomplete setup states.'
+      ? 'Choose the originator setup type, then capture the owner, operating, and launch-team details Bridge needs to create a complete bond workspace.'
       : 'Bridge has your profile and signup path. The last step is creating or joining a real backend workspace so dashboard access is tied to an active membership.'
 
   useEffect(() => {
@@ -581,6 +624,53 @@ export default function PostDashboardSetup() {
         },
       },
     }))
+  }
+
+  function updateBondWorkspaceKind(workspaceKind) {
+    const kindOption = BOND_WORKSPACE_KIND_OPTIONS.find((option) => option.value === workspaceKind) || BOND_WORKSPACE_KIND_OPTIONS[1]
+    const isPersonalOriginator = workspaceKind === WORKSPACE_KINDS.personalOriginator
+    updateBondDraft((previous) => {
+      const previousKind = normalizeText(previous?.meta?.workspaceKind) || WORKSPACE_KINDS.bondCompany
+      const previousOption = BOND_WORKSPACE_KIND_OPTIONS.find((option) => option.value === previousKind) || BOND_WORKSPACE_KIND_OPTIONS[1]
+      const ownerName = normalizeText(previous?.ownerInformation?.fullName || profile?.fullName)
+      const currentBusinessName = normalizeText(previous?.businessInformation?.businessName)
+      const nextBusinessName = currentBusinessName || (isPersonalOriginator ? ownerName : normalizeText(profile?.companyName))
+      const currentTeamName = normalizeText(previous?.teamStructure?.defaultTeamName)
+      const nextTeamName = !currentTeamName || currentTeamName === previousOption.defaultTeamName
+        ? kindOption.defaultTeamName
+        : currentTeamName
+      const currentOwnerTitle = normalizeText(previous?.ownerInformation?.title)
+      const nextOwnerTitle = !currentOwnerTitle || currentOwnerTitle === previousOption.ownerTitle
+        ? kindOption.ownerTitle
+        : currentOwnerTitle
+      return {
+        ...previous,
+        businessInformation: {
+          ...(previous?.businessInformation || {}),
+          businessName: nextBusinessName,
+          legalName: normalizeText(previous?.businessInformation?.legalName) || nextBusinessName,
+          tradingName: normalizeText(previous?.businessInformation?.tradingName) || nextBusinessName,
+        },
+        ownerInformation: {
+          ...(previous?.ownerInformation || {}),
+          title: nextOwnerTitle,
+        },
+        teamStructure: {
+          ...(previous?.teamStructure || {}),
+          defaultTeamName: nextTeamName,
+          launchRoles: {
+            ...(previous?.teamStructure?.launchRoles || {}),
+            ownerHandlesConsulting: isPersonalOriginator ? true : previous?.teamStructure?.launchRoles?.ownerHandlesConsulting ?? true,
+            ownerHandlesProcessing: isPersonalOriginator ? true : previous?.teamStructure?.launchRoles?.ownerHandlesProcessing ?? true,
+          },
+        },
+        meta: {
+          ...(previous?.meta || {}),
+          workspaceKind,
+          operatingModel: isPersonalOriginator ? 'independent' : 'company',
+        },
+      }
+    })
   }
 
   function updateBondInvite(inviteId, patch) {
@@ -942,6 +1032,10 @@ export default function PostDashboardSetup() {
   const bondOwner = bondDraft?.ownerInformation || {}
   const bondTeam = bondDraft?.teamStructure || {}
   const bondInvites = Array.isArray(bondDraft?.invitations) ? bondDraft.invitations : []
+  const bondWorkspaceKind = normalizeText(bondDraft?.meta?.workspaceKind) || WORKSPACE_KINDS.bondCompany
+  const isPersonalBondOriginator = bondWorkspaceKind === WORKSPACE_KINDS.personalOriginator
+  const bondWorkspaceKindLabel =
+    BOND_WORKSPACE_KIND_OPTIONS.find((option) => option.value === bondWorkspaceKind)?.label || 'Originator company'
   const inviteCount = invites.filter((invite) => normalizeText(invite.name || invite.email)).length
   const currentStepReady = resolveAgencyStepError(agencyCurrentStep.key, agencyDraft) ? 0 : 1
   const completedStepCount = Math.min(AGENCY_SETUP_STEPS.length, agencyStepIndex + currentStepReady)
@@ -950,20 +1044,55 @@ export default function PostDashboardSetup() {
   const bondCompletedStepCount = Math.min(BOND_SETUP_STEPS.length, bondStepIndex + bondCurrentStepReady)
 
   function renderBondStep() {
+    if (bondCurrentStep.key === 'type') {
+      return (
+        <div className="agency-setup-card">
+          <SetupSectionHeader
+            eyebrow="Workspace type"
+            title="Choose your originator setup"
+            copy="This controls the workspace kind Bridge creates and the defaults used for teams, scope, and owner coverage."
+            icon={Building2}
+          />
+          <div className="agency-setup-list">
+            {BOND_WORKSPACE_KIND_OPTIONS.map((option) => {
+              const isSelected = bondWorkspaceKind === option.value
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`agency-setup-row-card ${isSelected ? 'is-selected' : ''}`}
+                  onClick={() => updateBondWorkspaceKind(option.value)}
+                  aria-pressed={isSelected}
+                >
+                  <div className="agency-setup-row-head">
+                    <strong>{option.title}</strong>
+                    {isSelected ? <CheckCircle2 size={17} /> : null}
+                  </div>
+                  <p className="text-left text-sm leading-6 text-[#5f748b]">{option.description}</p>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )
+    }
+
     if (bondCurrentStep.key === 'business') {
       return (
         <div className="agency-setup-card">
           <SetupSectionHeader
             eyebrow="Foundation"
-            title="Business profile"
-            copy="This becomes the finance business identity, support contact, and default reporting home for the workspace."
+            title={isPersonalBondOriginator ? 'Originator profile' : 'Business profile'}
+            copy={isPersonalBondOriginator
+              ? 'This becomes your solo originator identity, support contact, and reporting home.'
+              : 'This becomes the finance business identity, support contact, and default reporting home for the workspace.'}
             icon={Building2}
           />
           <div className="setup-field-grid">
-            <SetupField label="Business name">
+            <SetupField label={isPersonalBondOriginator ? 'Originator display name' : 'Business name'}>
               <input className="setup-input" value={bondBusiness.businessName || ''} onChange={(event) => updateBondSection('businessInformation', 'businessName', event.target.value)} />
             </SetupField>
-            <SetupField label="Legal name">
+            <SetupField label="Legal name" hint={isPersonalBondOriginator ? 'Optional for independent originators.' : ''}>
               <input className="setup-input" value={bondBusiness.legalName || ''} onChange={(event) => updateBondSection('businessInformation', 'legalName', event.target.value)} />
             </SetupField>
             <SetupField label="Trading name">
@@ -972,7 +1101,7 @@ export default function PostDashboardSetup() {
             <SetupField label="Registration number" hint="Optional, but useful for duplicate protection and legal records.">
               <input className="setup-input" value={bondBusiness.registrationNumber || ''} onChange={(event) => updateBondSection('businessInformation', 'registrationNumber', event.target.value)} />
             </SetupField>
-            <SetupField label="Business email">
+            <SetupField label={isPersonalBondOriginator ? 'Contact email' : 'Business email'}>
               <input className="setup-input" type="email" value={bondBusiness.businessEmail || ''} onChange={(event) => updateBondSection('businessInformation', 'businessEmail', event.target.value)} />
             </SetupField>
             <SetupField label="Contact number">
@@ -990,7 +1119,7 @@ export default function PostDashboardSetup() {
             <SetupField label="City">
               <input className="setup-input" value={bondBusiness.city || ''} onChange={(event) => updateBondSection('businessInformation', 'city', event.target.value)} />
             </SetupField>
-            <SetupField label="Physical address">
+            <SetupField label="Physical address" hint={isPersonalBondOriginator ? 'Optional for independent originators.' : ''}>
               <textarea className="setup-input setup-textarea" value={bondBusiness.physicalAddress || ''} onChange={(event) => updateBondSection('businessInformation', 'physicalAddress', event.target.value)} />
             </SetupField>
           </div>
@@ -1030,8 +1159,10 @@ export default function PostDashboardSetup() {
         <div className="agency-setup-card">
           <SetupSectionHeader
             eyebrow="Operating setup"
-            title="Default team and launch roles"
-            copy="Bridge creates one finance team immediately, then uses these launch choices to avoid leaving the workspace without coverage."
+            title={isPersonalBondOriginator ? 'Pipeline and coverage' : 'Default team and launch roles'}
+            copy={isPersonalBondOriginator
+              ? 'Bridge creates a personal pipeline and gives the owner full coverage at launch.'
+              : 'Bridge creates one finance team immediately, then uses these launch choices to avoid leaving the workspace without coverage.'}
             icon={Users}
           />
           <div className="setup-field-grid">
@@ -1066,44 +1197,48 @@ export default function PostDashboardSetup() {
             </SetupField>
           </div>
 
-          <div className="agency-setup-divider" />
-          <SetupSectionHeader
-            eyebrow="Invites"
-            title="Invite the first operating team"
-            copy="Add consultants, processors, or admin staff who should enter the new workspace immediately after creation."
-            icon={Mail}
-          />
-          <div className="agency-setup-list">
-            {bondInvites.map((invite, index) => (
-              <section key={invite.id} className="agency-setup-row-card">
-                <div className="agency-setup-row-head">
-                  <strong>{normalizeText(invite.name) || `Teammate ${index + 1}`}</strong>
-                  <button type="button" className="setup-icon-button" onClick={() => removeBondInvite(invite.id)} disabled={bondInvites.length <= 1} aria-label="Remove invite">
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-                <div className="setup-field-grid">
-                  <SetupField label="Name">
-                    <input className="setup-input" value={invite.name || ''} onChange={(event) => updateBondInvite(invite.id, { name: event.target.value })} />
-                  </SetupField>
-                  <SetupField label="Email">
-                    <input className="setup-input" type="email" value={invite.email || ''} onChange={(event) => updateBondInvite(invite.id, { email: event.target.value })} />
-                  </SetupField>
-                  <SetupField label="Role">
-                    <select className="setup-input" value={invite.role || 'consultant'} onChange={(event) => updateBondInvite(invite.id, { role: event.target.value })}>
-                      {BOND_INVITE_ROLE_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </SetupField>
-                </div>
-              </section>
-            ))}
-          </div>
-          <button type="button" className="setup-secondary-button" onClick={addBondInvite}>
-            <Plus size={16} />
-            Add teammate invite
-          </button>
+          {!isPersonalBondOriginator ? (
+            <>
+              <div className="agency-setup-divider" />
+              <SetupSectionHeader
+                eyebrow="Invites"
+                title="Invite the first operating team"
+                copy="Add consultants, processors, or admin staff who should enter the new workspace immediately after creation."
+                icon={Mail}
+              />
+              <div className="agency-setup-list">
+                {bondInvites.map((invite, index) => (
+                  <section key={invite.id} className="agency-setup-row-card">
+                    <div className="agency-setup-row-head">
+                      <strong>{normalizeText(invite.name) || `Teammate ${index + 1}`}</strong>
+                      <button type="button" className="setup-icon-button" onClick={() => removeBondInvite(invite.id)} disabled={bondInvites.length <= 1} aria-label="Remove invite">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                    <div className="setup-field-grid">
+                      <SetupField label="Name">
+                        <input className="setup-input" value={invite.name || ''} onChange={(event) => updateBondInvite(invite.id, { name: event.target.value })} />
+                      </SetupField>
+                      <SetupField label="Email">
+                        <input className="setup-input" type="email" value={invite.email || ''} onChange={(event) => updateBondInvite(invite.id, { email: event.target.value })} />
+                      </SetupField>
+                      <SetupField label="Role">
+                        <select className="setup-input" value={invite.role || 'consultant'} onChange={(event) => updateBondInvite(invite.id, { role: event.target.value })}>
+                          {BOND_INVITE_ROLE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </SetupField>
+                    </div>
+                  </section>
+                ))}
+              </div>
+              <button type="button" className="setup-secondary-button" onClick={addBondInvite}>
+                <Plus size={16} />
+                Add teammate invite
+              </button>
+            </>
+          ) : null}
         </div>
       )
     }
@@ -1112,16 +1247,18 @@ export default function PostDashboardSetup() {
       <div className="agency-setup-card">
         <SetupSectionHeader
           eyebrow="Final check"
-          title="Create the bond company workspace"
-          copy="Bridge will create the company workspace, activate the owner membership, create the default team, and queue the launch invites."
+          title={isPersonalBondOriginator ? 'Create the independent originator workspace' : 'Create the bond company workspace'}
+          copy={isPersonalBondOriginator
+            ? 'Bridge will create a solo originator workspace, activate the owner membership, and create the personal pipeline.'
+            : 'Bridge will create the company workspace, activate the owner membership, create the default team, and queue the launch invites.'}
           icon={CheckCircle2}
         />
         <div className="agency-review-grid">
           <div>
             <Building2 size={18} />
-            <span>Business</span>
+            <span>{isPersonalBondOriginator ? 'Originator' : 'Business'}</span>
             <strong>{bondBusiness.businessName || 'Not set'}</strong>
-            <small>{bondBusiness.province || 'Province missing'}</small>
+            <small>{bondWorkspaceKindLabel}</small>
           </div>
           <div>
             <ShieldCheck size={18} />
@@ -1131,9 +1268,9 @@ export default function PostDashboardSetup() {
           </div>
           <div>
             <Users size={18} />
-            <span>Team</span>
+            <span>{isPersonalBondOriginator ? 'Pipeline' : 'Team'}</span>
             <strong>{bondTeam.defaultTeamName || 'Main Team'}</strong>
-            <small>{bondInviteCount} {bondInviteCount === 1 ? 'invite' : 'invites'} ready</small>
+            <small>{isPersonalBondOriginator ? 'Owner covers launch roles' : `${bondInviteCount} ${bondInviteCount === 1 ? 'invite' : 'invites'} ready`}</small>
           </div>
         </div>
       </div>
@@ -1502,9 +1639,9 @@ export default function PostDashboardSetup() {
         <form className="agency-setup-shell" onSubmit={handleBondStepSubmit}>
           <aside className="agency-setup-command">
             <div>
-              <p className="agency-setup-kicker">Bond company setup</p>
+              <p className="agency-setup-kicker">{isPersonalBondOriginator ? 'Independent originator setup' : 'Bond company setup'}</p>
               <h2>{bondBusiness.businessName || 'New bond business'}</h2>
-              <span>{APP_ROLE_LABELS[intent.app_role] || 'Bond Originator'} · {intendedRole.replace(/_/g, ' ')}</span>
+              <span>{bondWorkspaceKindLabel} · {APP_ROLE_LABELS[intent.app_role] || 'Bond Originator'}</span>
             </div>
             <div className="agency-setup-progress">
               <strong>{bondCompletedStepCount}/{BOND_SETUP_STEPS.length}</strong>
@@ -1535,7 +1672,7 @@ export default function PostDashboardSetup() {
             <div className="agency-setup-snapshot">
               <p><Mail size={14} />{bondBusiness.businessEmail || 'Business email missing'}</p>
               <p><Phone size={14} />{bondBusiness.contactNumber || 'Business phone missing'}</p>
-              <p><Users size={14} />{bondTeam.defaultTeamName || 'Main Team'}</p>
+              <p><Users size={14} />{isPersonalBondOriginator ? bondTeam.defaultTeamName || 'My Pipeline' : bondTeam.defaultTeamName || 'Main Team'}</p>
             </div>
           </aside>
 
@@ -1559,7 +1696,7 @@ export default function PostDashboardSetup() {
                 {saving
                   ? 'Creating bond workspace...'
                   : bondStepIndex === BOND_SETUP_STEPS.length - 1
-                    ? 'Create bond business workspace'
+                    ? isPersonalBondOriginator ? 'Create independent workspace' : 'Create bond business workspace'
                     : (
                         <>
                           Continue

@@ -4,7 +4,15 @@ export const BOND_INTAKE_STATUSES = Object.freeze({
   AWAITING_BUYER_APPLICATION: 'AWAITING_BUYER_APPLICATION',
   BUYER_IN_PROGRESS: 'BUYER_IN_PROGRESS',
   AWAITING_DOCUMENTS: 'AWAITING_DOCUMENTS',
+  AWAITING_OTP: 'AWAITING_OTP',
+  READY_TO_START: 'READY_TO_START',
+  APPLICATION_IN_PROGRESS: 'APPLICATION_IN_PROGRESS',
+  APPLICATION_SUBMITTED: 'APPLICATION_SUBMITTED',
   READY_FOR_REVIEW: 'READY_FOR_REVIEW',
+  APPLICATIONS_SUBMITTED_TO_BANKS: 'APPLICATIONS_SUBMITTED_TO_BANKS',
+  BANK_FEEDBACK_RECEIVED: 'BANK_FEEDBACK_RECEIVED',
+  QUOTE_ACCEPTED: 'QUOTE_ACCEPTED',
+  INSTRUCTION_SENT: 'INSTRUCTION_SENT',
   ACCEPTED: 'ACCEPTED',
   DECLINED: 'DECLINED',
   NOT_BOND_RELEVANT: 'NOT_BOND_RELEVANT',
@@ -20,7 +28,15 @@ export const BOND_INTAKE_STATUS_LABELS = Object.freeze({
   [BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION]: 'Awaiting buyer application',
   [BOND_INTAKE_STATUSES.BUYER_IN_PROGRESS]: 'Buyer in progress',
   [BOND_INTAKE_STATUSES.AWAITING_DOCUMENTS]: 'Awaiting documents',
+  [BOND_INTAKE_STATUSES.AWAITING_OTP]: 'Awaiting OTP',
+  [BOND_INTAKE_STATUSES.READY_TO_START]: 'Ready to start',
+  [BOND_INTAKE_STATUSES.APPLICATION_IN_PROGRESS]: 'Application in progress',
+  [BOND_INTAKE_STATUSES.APPLICATION_SUBMITTED]: 'Application submitted',
   [BOND_INTAKE_STATUSES.READY_FOR_REVIEW]: 'Ready for review',
+  [BOND_INTAKE_STATUSES.APPLICATIONS_SUBMITTED_TO_BANKS]: 'Submitted to banks',
+  [BOND_INTAKE_STATUSES.BANK_FEEDBACK_RECEIVED]: 'Bank feedback received',
+  [BOND_INTAKE_STATUSES.QUOTE_ACCEPTED]: 'Quote accepted',
+  [BOND_INTAKE_STATUSES.INSTRUCTION_SENT]: 'Instruction sent',
   [BOND_INTAKE_STATUSES.ACCEPTED]: 'Accepted',
   [BOND_INTAKE_STATUSES.DECLINED]: 'Declined',
   [BOND_INTAKE_STATUSES.NOT_BOND_RELEVANT]: 'Not bond relevant',
@@ -30,7 +46,15 @@ export const BOND_INTAKE_STATUS_TONES = Object.freeze({
   [BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION]: 'neutral',
   [BOND_INTAKE_STATUSES.BUYER_IN_PROGRESS]: 'warning',
   [BOND_INTAKE_STATUSES.AWAITING_DOCUMENTS]: 'warning',
+  [BOND_INTAKE_STATUSES.AWAITING_OTP]: 'neutral',
+  [BOND_INTAKE_STATUSES.READY_TO_START]: 'success',
+  [BOND_INTAKE_STATUSES.APPLICATION_IN_PROGRESS]: 'warning',
+  [BOND_INTAKE_STATUSES.APPLICATION_SUBMITTED]: 'warning',
   [BOND_INTAKE_STATUSES.READY_FOR_REVIEW]: 'success',
+  [BOND_INTAKE_STATUSES.APPLICATIONS_SUBMITTED_TO_BANKS]: 'success',
+  [BOND_INTAKE_STATUSES.BANK_FEEDBACK_RECEIVED]: 'warning',
+  [BOND_INTAKE_STATUSES.QUOTE_ACCEPTED]: 'success',
+  [BOND_INTAKE_STATUSES.INSTRUCTION_SENT]: 'success',
   [BOND_INTAKE_STATUSES.ACCEPTED]: 'success',
   [BOND_INTAKE_STATUSES.DECLINED]: 'danger',
   [BOND_INTAKE_STATUSES.NOT_BOND_RELEVANT]: 'muted',
@@ -44,6 +68,7 @@ const ACTIVE_ROLE_PLAYER_STATUSES = new Set(['', 'active', 'assigned', 'in_progr
 const ACCEPTED_ASSIGNMENT_STATUSES = new Set(['workspace_assigned', 'consultant_assigned', 'processor_assigned', 'fully_assigned'])
 const DECLINED_MARKER_VALUES = new Set(['declined', 'rejected', 'not_accepted', 'intake_declined'])
 const ACCEPTED_MARKER_VALUES = new Set(['accepted', 'intake_accepted', 'ready_accepted', 'assigned'])
+const OTP_SIGNED_VALUES = new Set(['otp_signed', 'signed_otp', 'signed_otp_received', 'fully_signed', 'fully_executed', 'executed', 'completed', 'complete', 'signed', 'uploaded_signed'])
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -171,13 +196,7 @@ function getSectionsCompleted(payload = null) {
 export function getBondApplicationProgress(input = {}) {
   const transaction = input.transaction || {}
   const payload = getBondApplicationPayload(input)
-  const transactionSubmittedAt = normalizeDateValue(
-    transaction.onboarding_completed_at ||
-      transaction.onboardingCompletedAt ||
-      transaction.external_onboarding_submitted_at ||
-      transaction.externalOnboardingSubmittedAt,
-  )
-  const submittedAt = normalizeDateValue(payload?.submitted_at || payload?.submittedAt) || transactionSubmittedAt
+  const submittedAt = normalizeDateValue(payload?.submitted_at || payload?.submittedAt)
   const startedAt = normalizeDateValue(payload?.started_at || payload?.startedAt || payload?.created_at || payload?.createdAt)
   const sectionsCompleted = getSectionsCompleted(payload)
   const explicitPercentage = normalizeNumber(
@@ -192,7 +211,7 @@ export function getBondApplicationProgress(input = {}) {
         ? Math.min(95, sectionsCompleted.length * 20)
         : 0
 
-  if (isSubmittedBondApplication(payload) || transactionSubmittedAt) {
+  if (isSubmittedBondApplication(payload)) {
     return {
       status: BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED,
       submittedAt: submittedAt || normalizeDateValue(payload?.updated_at || payload?.updatedAt),
@@ -219,6 +238,108 @@ export function getBondApplicationProgress(input = {}) {
     completionPercentage: 0,
     sectionsCompleted: [],
   }
+}
+
+export function isBuyerOnboardingComplete(input = {}) {
+  const transaction = input.transaction || {}
+  const formData = getFormData(input.onboardingFormData)
+  const onboardingStatus = normalizeLower(
+    input.onboardingFormData?.status ||
+      input.onboarding?.status ||
+      transaction.onboarding_status ||
+      transaction.onboardingStatus ||
+      formData.status ||
+      formData.onboarding_status,
+  )
+  return (
+    ['submitted', 'reviewed', 'approved', 'complete', 'completed', 'client_onboarding_complete'].includes(onboardingStatus) ||
+    Boolean(
+      normalizeDateValue(transaction.onboarding_completed_at || transaction.onboardingCompletedAt) ||
+        normalizeDateValue(transaction.external_onboarding_submitted_at || transaction.externalOnboardingSubmittedAt) ||
+        normalizeDateValue(input.onboardingFormData?.submitted_at || input.onboardingFormData?.submittedAt),
+    )
+  )
+}
+
+function getDocuments(input = {}) {
+  if (Array.isArray(input.documents)) return input.documents
+  if (Array.isArray(input.transaction?.documents)) return input.transaction.documents
+  return []
+}
+
+function getDocumentRequests(input = {}) {
+  if (Array.isArray(input.documentRequests)) return input.documentRequests
+  if (Array.isArray(input.document_requests)) return input.document_requests
+  if (Array.isArray(input.transaction?.documentRequests)) return input.transaction.documentRequests
+  if (Array.isArray(input.transaction?.document_requests)) return input.transaction.document_requests
+  return []
+}
+
+function getTransactionEvents(input = {}) {
+  if (Array.isArray(input.events)) return input.events
+  if (Array.isArray(input.transactionEvents)) return input.transactionEvents
+  if (Array.isArray(input.transaction_events)) return input.transaction_events
+  if (Array.isArray(input.transaction?.events)) return input.transaction.events
+  if (Array.isArray(input.transaction?.transactionEvents)) return input.transaction.transactionEvents
+  if (Array.isArray(input.transaction?.transaction_events)) return input.transaction.transaction_events
+  return []
+}
+
+function rowLooksLikeSignedOtp(row = {}) {
+  const key = normalizeLower(
+    pickFirstText([
+      row.document_key,
+      row.documentKey,
+      row.document_type,
+      row.documentType,
+      row.type,
+      row.category,
+      row.title,
+      row.label,
+      row.name,
+      row.event_key,
+      row.eventKey,
+    ]),
+  )
+  if (!/(otp|offer_to_purchase|offer to purchase)/i.test(key)) return false
+  if (!/(signed|executed|final)/i.test(key)) return false
+  const status = normalizeLower(row.status || row.workflow_state || row.workflowState || row.document_status || row.documentStatus)
+  return !status || COMPLETED_DOCUMENT_STATUSES.has(status) || OTP_SIGNED_VALUES.has(status)
+}
+
+export function isOtpFullySigned(input = {}) {
+  const transaction = input.transaction || {}
+  const explicitValues = [
+    transaction.otp_status,
+    transaction.otpStatus,
+    transaction.otp_signature_status,
+    transaction.otpSignatureStatus,
+    transaction.otp_packet_status,
+    transaction.otpPacketStatus,
+    transaction.signed_otp_status,
+    transaction.signedOtpStatus,
+    transaction.sales_otp_status,
+    transaction.salesOtpStatus,
+  ].map(normalizeLower)
+  if (explicitValues.some((value) => OTP_SIGNED_VALUES.has(value))) return true
+
+  if (getDocuments(input).some(rowLooksLikeSignedOtp) || getDocumentRequests(input).some(rowLooksLikeSignedOtp)) return true
+
+  return getTransactionEvents(input).some((event) => {
+    const eventType = normalizeLower(event.event_type || event.eventType || event.type)
+    const eventData = isPlainObject(event.event_data) ? event.event_data : isPlainObject(event.eventData) ? event.eventData : {}
+    const eventValues = [
+      eventType,
+      eventData.event_key,
+      eventData.eventKey,
+      eventData.action,
+      eventData.source,
+      eventData.evidenceKey,
+      eventData.evidence_key,
+      eventData.status,
+    ].map(normalizeLower)
+    return eventValues.some((value) => value === 'bond_otp_ready' || OTP_SIGNED_VALUES.has(value) || value === 'client_otp_signed_final')
+  })
 }
 
 function isFinanceDocument(candidate = {}) {
@@ -533,18 +654,26 @@ export function getBondIntakeStatus(input = {}) {
     return BOND_INTAKE_STATUSES.ACCEPTED
   }
 
-  const applicationProgress = getBondApplicationProgress(input)
-  if (applicationProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.NOT_STARTED) {
+  if (!isBuyerOnboardingComplete(input)) {
     return BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION
   }
 
+  if (!isOtpFullySigned(input)) {
+    return BOND_INTAKE_STATUSES.AWAITING_OTP
+  }
+
+  const applicationProgress = getBondApplicationProgress(input)
+  if (applicationProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.NOT_STARTED) {
+    return BOND_INTAKE_STATUSES.READY_TO_START
+  }
+
   if (applicationProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.IN_PROGRESS) {
-    return BOND_INTAKE_STATUSES.BUYER_IN_PROGRESS
+    return BOND_INTAKE_STATUSES.APPLICATION_IN_PROGRESS
   }
 
   const documentReadiness = getDocumentReadinessSummary(input)
   if (!documentReadiness.isComplete) {
-    return BOND_INTAKE_STATUSES.AWAITING_DOCUMENTS
+    return BOND_INTAKE_STATUSES.APPLICATION_SUBMITTED
   }
 
   return BOND_INTAKE_STATUSES.READY_FOR_REVIEW
@@ -554,8 +683,11 @@ function getReasons({ intakeStatus, applicationProgress, documentReadiness } = {
   if (intakeStatus === BOND_INTAKE_STATUSES.NOT_BOND_RELEVANT) return ['Transaction is not Bond or Hybrid finance.']
   if (intakeStatus === BOND_INTAKE_STATUSES.ACCEPTED) return ['Bond originator assignment already exists.']
   if (intakeStatus === BOND_INTAKE_STATUSES.DECLINED) return ['Bond intake has been declined.']
-  if (applicationProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.NOT_STARTED) return ['No submitted bond application payload found.']
+  if (intakeStatus === BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION) return ['Buyer onboarding has not been completed yet.']
+  if (intakeStatus === BOND_INTAKE_STATUSES.AWAITING_OTP) return ['Buyer onboarding is complete. OTP signature is still outstanding.']
+  if (intakeStatus === BOND_INTAKE_STATUSES.READY_TO_START) return ['OTP is signed. The bond process can begin.']
   if (applicationProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.IN_PROGRESS) return ['Buyer has started but not submitted the bond application.']
+  if (intakeStatus === BOND_INTAKE_STATUSES.APPLICATION_SUBMITTED && !documentReadiness.isComplete) return ['Buyer submitted the bond application. Required documents are still outstanding.']
   if (!documentReadiness.isComplete) return documentReadiness.missingLabels.map((label) => `${label} is required.`)
   return ['Bond application and required documents are ready for review.']
 }
