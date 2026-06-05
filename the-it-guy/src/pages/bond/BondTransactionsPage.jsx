@@ -1,5 +1,20 @@
 /* eslint-disable react-refresh/only-export-components */
-import { AlertTriangle, ArrowUpRight, Search } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  Banknote,
+  CheckCircle2,
+  Clock3,
+  FileCheck2,
+  FileText,
+  MoreVertical,
+  Search,
+  Send,
+  SlidersHorizontal,
+  UserRound,
+  X,
+} from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import BondEmptyState from '../../components/bond/BondEmptyState'
@@ -110,17 +125,14 @@ function matchesStageFilter(row = {}, filter = 'all') {
 }
 
 const HQ_STATUS_LABELS = {
-  intake_received: 'Intake Received',
-  awaiting_otp: 'Awaiting OTP',
-  otp_ready: 'OTP Ready',
-  ready_to_start: 'Ready To Start',
-  application_in_progress: 'Application In Progress',
-  application_submitted: 'Application Submitted',
-  ready_for_review: 'Ready For Review',
-  submitted_to_banks: 'Submitted To Banks',
+  intake: 'Intake',
+  docs: 'Documents',
+  submitted_to_banks: 'Submitted to Banks',
   bank_feedback: 'Bank Feedback',
   approved: 'Approved',
+  instruction_sent: 'Instruction Issued',
   registered: 'Registered',
+  declined: 'Declined',
 }
 
 const HQ_FILTER_DEFAULTS = {
@@ -143,9 +155,10 @@ const DATE_RANGE_OPTIONS = [
 
 const RISK_OPTIONS = [
   { key: 'all', label: 'All risk' },
-  { key: 'high', label: 'Highest risk' },
-  { key: 'medium', label: 'Needs attention' },
-  { key: 'low', label: 'Healthy' },
+  { key: 'low', label: 'Low' },
+  { key: 'medium', label: 'Medium' },
+  { key: 'high', label: 'High' },
+  { key: 'critical', label: 'Critical' },
 ]
 
 const SORT_OPTIONS = [
@@ -157,6 +170,22 @@ const SORT_OPTIONS = [
   { key: 'consultant', label: 'Consultant' },
 ]
 
+const APPLICATION_PIPELINE_STAGES = [
+  { key: 'intake', label: 'Intake' },
+  { key: 'docs', label: 'Docs' },
+  { key: 'submitted_to_banks', label: 'Submitted' },
+  { key: 'bank_feedback', label: 'Bank Review' },
+  { key: 'approved', label: 'Approved' },
+  { key: 'instruction_sent', label: 'Instruction' },
+  { key: 'registered', label: 'Complete' },
+]
+
+const CURRENCY_FORMATTER = new Intl.NumberFormat('en-ZA', {
+  style: 'currency',
+  currency: 'ZAR',
+  maximumFractionDigits: 0,
+})
+
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
 }
@@ -164,6 +193,35 @@ function normalizeKey(value) {
 function parseDateTimestamp(value) {
   const date = new Date(value || 0)
   return Number.isNaN(date.getTime()) ? 0 : date.getTime()
+}
+
+function normalizeNumber(value, fallback = 0) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function looksLikeTechnicalId(value = '') {
+  const normalized = normalizeText(value)
+  if (!normalized) return false
+  return (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized) ||
+    /^(region|branch|unit|development|property|workspace|user)-[0-9a-f-]{8,}$/i.test(normalized) ||
+    /^[0-9a-f]{16,}$/i.test(normalized)
+  )
+}
+
+function safeDisplayText(value = '', fallback = '') {
+  const normalized = normalizeText(value)
+  if (!normalized || looksLikeTechnicalId(normalized)) return fallback
+  return normalized
+}
+
+function formatCurrency(value = 0) {
+  return CURRENCY_FORMATTER.format(normalizeNumber(value, 0)).replace(/\u00a0/g, ' ')
+}
+
+function getBondValue(row = {}) {
+  return normalizeNumber(row.bondAmount ?? row.requestedFinanceAmount ?? row.financeAmount ?? row.purchasePrice ?? row.salesPrice, 0)
 }
 
 function truthyFlag(value) {
@@ -228,27 +286,27 @@ function isMissingAssignmentLabel(value, kind) {
 }
 
 function displayRegion(row = {}) {
-  const label = normalizeText(row.regionName || row.region || row.regionLabel)
+  const label = safeDisplayText(row.regionName || row.region || row.regionLabel)
   return isMissingAssignmentLabel(label, 'region') ? 'No region' : label
 }
 
 function displayBranch(row = {}) {
-  const label = normalizeText(row.branchName || row.branch || row.branchLabel)
+  const label = safeDisplayText(row.branchName || row.branch || row.branchLabel)
   return isMissingAssignmentLabel(label, 'branch') ? 'Unassigned branch' : label
 }
 
 function displayConsultant(row = {}) {
-  const label = normalizeText(row.consultantName || row.consultant)
+  const label = safeDisplayText(row.consultantName || row.consultant)
   const hasAssignment = Boolean(normalizeText(row.assignedUserId || row.assignedUserEmail))
   return !hasAssignment || isMissingAssignmentLabel(label, 'consultant') ? 'Unassigned consultant' : label
 }
 
 function hasBranch(row = {}) {
-  return Boolean(normalizeText(row.branchId || row.workspaceUnitId)) && displayBranch(row) !== 'Unassigned branch'
+  return displayBranch(row) !== 'Unassigned branch'
 }
 
 function hasConsultant(row = {}) {
-  return Boolean(normalizeText(row.assignedUserId || row.assignedUserEmail)) && displayConsultant(row) !== 'Unassigned consultant'
+  return displayConsultant(row) !== 'Unassigned consultant'
 }
 
 export function isHqApplicationUnassigned(row = {}) {
@@ -292,16 +350,15 @@ function resolveHqApplicationStatus(row = {}) {
   const nextAction = normalizeKey(row.nextAction)
 
   if (registrationStatus === 'registered' || transferKey === 'registered' || status === 'registered') return 'registered'
-  if (['bond_approved', 'grant_signed', 'instruction_sent', 'approved'].includes(status) || financeLabel.includes('approved')) return 'approved'
+  if (['bond_instruction_sent', 'instruction_sent', 'grant_signed'].includes(financeKey) || ['instruction_sent', 'grant_signed'].includes(status)) return 'instruction_sent'
+  if (['bond_approved', 'approved'].includes(status) || financeKey === 'bond_approved' || financeLabel.includes('approved')) return 'approved'
   if (financeKey === 'bank_feedback' || status === 'bank_feedback' || bankStatus.includes('feedback')) return 'bank_feedback'
   if (financeKey === 'submitted_to_banks' || financeLabel.includes('submitted') || bankStatus.includes('submitted')) return 'submitted_to_banks'
-  if (financeKey === 'ready_for_review' || queueStatus === 'ready_for_review' || queueLabel === 'ready_for_review') return 'ready_for_review'
-  if (queueStatus === 'ready_to_start' || financeKey === 'ready_to_start') return 'ready_to_start'
-  if (financeKey === 'otp_ready' || queueStatus === 'otp_ready' || nextAction.includes('otp_ready')) return 'otp_ready'
-  if (financeKey === 'awaiting_otp' || queueStatus === 'awaiting_otp' || nextAction.includes('awaiting_otp') || nextAction.includes('signed_otp')) return 'awaiting_otp'
-  if (['bond_application_open', 'application_in_progress', 'docs_collection', 'pre_approval'].includes(financeKey)) return 'application_in_progress'
-  if (financeKey === 'application_submitted') return 'application_submitted'
-  return 'intake_received'
+  if (financeKey === 'ready_for_review' || queueStatus === 'ready_for_review' || queueLabel === 'ready_for_review') return 'docs'
+  if (['bond_application_open', 'application_in_progress', 'docs_collection', 'pre_approval', 'application_submitted'].includes(financeKey)) return 'docs'
+  if (queueStatus === 'application_in_progress' || queueStatus === 'application_submitted' || nextAction.includes('documents')) return 'docs'
+  if (getBondValue(row) > 0 || queueStatus === 'ready_to_start') return 'intake'
+  return 'intake'
 }
 
 function getFriendlyNextAction(row = {}, statusKey = resolveHqApplicationStatus(row)) {
@@ -312,39 +369,52 @@ function getFriendlyNextAction(row = {}, statusKey = resolveHqApplicationStatus(
   const explicit = normalizeText(row.nextAction)
   if (explicit && explicit.toLowerCase() !== 'no next action set') return explicit
   const nextActions = {
-    intake_received: 'Buyer completing application',
-    awaiting_otp: 'Awaiting signed OTP',
-    otp_ready: 'Ready to start application',
-    ready_to_start: 'Start application pack',
-    application_in_progress: 'Request missing documents',
-    application_submitted: 'Review application pack',
-    ready_for_review: 'Review application pack',
-    submitted_to_banks: 'Follow up with lender',
-    bank_feedback: 'Follow up with lender',
-    approved: 'Send approval quote to buyer',
-    registered: 'Awaiting registration',
+    intake: 'Complete application and documents',
+    docs: 'Upload outstanding documents',
+    submitted_to_banks: `Await lender response${row.bank && row.bank !== 'Bank pending' ? ` from ${row.bank}` : ''}`,
+    bank_feedback: `Respond to ${row.bank && row.bank !== 'Bank pending' ? row.bank : 'bank'} query and refresh docs`,
+    approved: 'Prepare for instruction',
+    instruction_sent: 'Monitor attorney instruction',
+    registered: 'Application complete',
+    declined: 'Review declined application',
   }
   return nextActions[statusKey] || 'Open application'
 }
 
-function normalizeRiskKey(row = {}) {
+function normalizeRiskKey(row = {}, now = Date.now()) {
   const riskLevel = normalizeKey(row.riskLevel || row.operationalRisk?.riskLevel)
   const riskTone = normalizeKey(row.riskTone)
   const riskStatus = normalizeKey(row.riskStatus)
   const riskScore = Number(row.riskScore ?? row.operationalRisk?.riskScore ?? 0)
-  if (riskLevel.includes('high') || riskTone === 'risk' || riskScore >= 70) return 'high'
-  if (riskLevel.includes('medium') || riskStatus.includes('attention') || riskScore >= 35) return 'medium'
+  if (riskLevel.includes('critical')) return 'critical'
+  if (riskLevel.includes('high')) return 'high'
+  if (riskLevel.includes('medium')) return 'medium'
+  if (riskLevel.includes('low')) return 'low'
+
+  const ageDays = Math.max(0, Math.floor((now - (getCreatedTimestamp(row) || now)) / (24 * 60 * 60 * 1000)))
+  const missingDocuments = normalizeNumber(row.missingDocuments ?? row.documentSummary?.missingCount, 0)
+  const statusKey = resolveHqApplicationStatus(row)
+  const lastActivityAge = Math.max(0, Math.floor((now - parseDateTimestamp(row.lastActivityAt)) / (24 * 60 * 60 * 1000)))
+  const staleBankFeedback = statusKey === 'bank_feedback' && lastActivityAge >= 5
+  const hasSlaRisk = normalizeKey(row.riskStatus).includes('overdue') || normalizeKey(row.nextAction).includes('overdue')
+
+  if (riskScore >= 90 || (hasSlaRisk && ageDays >= 21)) return 'critical'
+  if (riskTone === 'risk' || riskScore >= 70 || missingDocuments >= 3 || staleBankFeedback || ageDays >= 30) return 'high'
+  if (riskStatus.includes('attention') || riskScore >= 35) return 'medium'
+  if (missingDocuments > 0 || ageDays >= 14) return 'medium'
   return 'low'
 }
 
 function riskLabelFromKey(key) {
+  if (key === 'critical') return 'Critical'
   if (key === 'high') return 'High'
-  if (key === 'medium') return 'Attention'
-  return 'Healthy'
+  if (key === 'medium') return 'Medium'
+  return 'Low'
 }
 
 function getRiskSortScore(row = {}) {
   const key = normalizeRiskKey(row)
+  if (key === 'critical') return 4
   if (key === 'high') return 3
   if (key === 'medium') return 2
   return 1
@@ -353,7 +423,18 @@ function getRiskSortScore(row = {}) {
 export function buildHqApplicationRegisterRows(rows = [], now = Date.now()) {
   return parseRowsForQuery(rows).map((row) => {
     const statusKey = resolveHqApplicationStatus(row)
-    const riskKey = normalizeRiskKey(row)
+    const riskKey = normalizeRiskKey(row, now)
+    const stageIndex = Math.max(0, APPLICATION_PIPELINE_STAGES.findIndex((stage) => stage.key === statusKey))
+    const resolvedStageIndex = stageIndex >= 0 ? stageIndex : 0
+    const progressPercent = Math.round(((resolvedStageIndex + 1) / APPLICATION_PIPELINE_STAGES.length) * 100)
+    const bondValue = getBondValue(row)
+    const applicationReference = safeDisplayText(row.applicationReference || row.transactionReference || row.bondApplicationId, '')
+    const readableReference = applicationReference || (row.transactionId ? `BND-${normalizeText(row.transactionId).slice(-4).toUpperCase()}` : 'Reference pending')
+    const propertyDisplay = safeDisplayText(
+      row.property ||
+        [row.developmentName, row.unitLabel].map((item) => safeDisplayText(item)).filter(Boolean).join(' • '),
+      'Property pending',
+    )
     return {
       ...row,
       createdTimestamp: getCreatedTimestamp(row),
@@ -362,11 +443,18 @@ export function buildHqApplicationRegisterRows(rows = [], now = Date.now()) {
       regionDisplay: displayRegion(row),
       branchDisplay: displayBranch(row),
       consultantDisplay: displayConsultant(row),
+      consultantRoleLabel: displayBranch(row) === 'Unassigned branch' ? 'Internal Consultant' : displayBranch(row),
       isUnassigned: isHqApplicationUnassigned(row),
       statusKey,
       statusLabel: HQ_STATUS_LABELS[statusKey] || 'Intake Received',
+      progressStageIndex: resolvedStageIndex,
+      progressPercent,
       riskKey,
       riskLabel: riskLabelFromKey(riskKey),
+      bondValue,
+      bondValueLabel: row.bondAmountLabel || formatCurrency(bondValue),
+      applicationReferenceDisplay: readableReference,
+      propertyDisplay,
       nextActionLabel: getFriendlyNextAction(row, statusKey),
       openHref: row.transactionId ? `/bond/files/${encodeURIComponent(row.transactionId)}` : '/bond/pipeline?view=all',
     }
@@ -431,24 +519,43 @@ export function filterHqApplicationRegisterRows(rows = [], filters = HQ_FILTER_D
 
 export function getHqApplicationKpis(rows = [], now = Date.now()) {
   const normalizedRows = parseRowsForQuery(rows)
-  const weekAgo = now - (7 * 24 * 60 * 60 * 1000)
+  const currentStart = now - (30 * 24 * 60 * 60 * 1000)
+  const previousStart = now - (60 * 24 * 60 * 60 * 1000)
+  const inCurrentPeriod = (row) => (row.createdTimestamp || 0) >= currentStart
+  const inPreviousPeriod = (row) => (row.createdTimestamp || 0) >= previousStart && (row.createdTimestamp || 0) < currentStart
+  const calculateTrend = (currentValue, previousValue) => {
+    if (!previousValue && !currentValue) return '0% vs last 30 days'
+    if (!previousValue) return '+100% vs last 30 days'
+    const delta = Math.round(((currentValue - previousValue) / Math.max(previousValue, 1)) * 100)
+    return `${delta >= 0 ? '+' : ''}${delta}% vs last 30 days`
+  }
+  const countTrend = (predicate = () => true) => {
+    const currentValue = normalizedRows.filter((row) => predicate(row) && inCurrentPeriod(row)).length
+    const previousValue = normalizedRows.filter((row) => predicate(row) && inPreviousPeriod(row)).length
+    return calculateTrend(currentValue, previousValue)
+  }
+  const valueForRows = (sourceRows = []) => sourceRows.reduce((sum, row) => sum + normalizeNumber(row.bondValue ?? getBondValue(row), 0), 0)
+  const currentValue = valueForRows(normalizedRows.filter(inCurrentPeriod))
+  const previousValue = valueForRows(normalizedRows.filter(inPreviousPeriod))
+
   return [
-    { key: 'total', label: 'Total Applications', value: normalizedRows.length },
-    { key: 'new_this_week', label: 'New This Week', value: normalizedRows.filter((row) => (row.createdTimestamp || 0) >= weekAgo).length },
-    { key: 'unassigned', label: 'Unassigned', value: normalizedRows.filter((row) => row.isUnassigned).length },
-    { key: 'ready_for_review', label: 'Ready For Review', value: normalizedRows.filter((row) => row.statusKey === 'ready_for_review').length },
-    { key: 'awaiting_otp', label: 'Awaiting OTP', value: normalizedRows.filter((row) => row.statusKey === 'awaiting_otp').length },
+    { key: 'total', label: 'Total Applications', value: normalizedRows.length, trend: countTrend(), icon: FileText },
+    { key: 'pipeline_value', label: 'Active Pipeline Value', value: formatCurrency(valueForRows(normalizedRows.filter((row) => !['registered', 'declined'].includes(row.statusKey)))), trend: calculateTrend(currentValue, previousValue), icon: Banknote },
+    { key: 'submitted_to_banks', label: 'Submitted to Banks', value: normalizedRows.filter((row) => row.statusKey === 'submitted_to_banks').length, trend: countTrend((row) => row.statusKey === 'submitted_to_banks'), icon: Send },
+    { key: 'awaiting_feedback', label: 'Awaiting Feedback', value: normalizedRows.filter((row) => row.statusKey === 'bank_feedback').length, trend: countTrend((row) => row.statusKey === 'bank_feedback'), icon: Clock3 },
+    { key: 'approved', label: 'Approved', value: normalizedRows.filter((row) => row.statusKey === 'approved').length, trend: countTrend((row) => row.statusKey === 'approved'), icon: CheckCircle2 },
+    { key: 'instructions_issued', label: 'Instructions Issued', value: normalizedRows.filter((row) => ['instruction_sent', 'registered'].includes(row.statusKey)).length, trend: countTrend((row) => ['instruction_sent', 'registered'].includes(row.statusKey)), icon: FileCheck2 },
   ]
 }
 
 function HqFilterSelect({ label, value, onChange, options = [] }) {
   return (
-    <label className="min-w-0">
+    <label className="min-w-[160px] flex-1">
       <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-[#72869b]">{label}</span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-11 w-full rounded-[14px] border border-[#dbe5f0] bg-[#f9fbff] px-3 text-sm font-medium text-[#17324d] outline-none transition focus:border-[#bbcbdd]"
+        className="h-12 w-full rounded-[14px] border border-[#dbe5f0] bg-[#f9fbff] px-3 text-sm font-medium text-[#17324d] outline-none transition focus:border-[#9fb8d2]"
       >
         {options.map((option) => (
           <option key={option.key} value={option.key}>
@@ -465,6 +572,7 @@ function HqBadge({ tone = 'neutral', children }) {
     neutral: 'border-[#dbe5f0] bg-[#f8fbff] text-[#52677f]',
     warning: 'border-[#f6d7a8] bg-[#fff8eb] text-[#8a5b12]',
     risk: 'border-[#f4bfc0] bg-[#fff4f4] text-[#9a3030]',
+    critical: 'border-[#f0a9b7] bg-[#fff1f3] text-[#8b1e36]',
     success: 'border-[#bfe5cd] bg-[#f1fbf4] text-[#267347]',
     info: 'border-[#c8d9f5] bg-[#f4f8ff] text-[#2a5d9f]',
   }
@@ -476,123 +584,252 @@ function HqBadge({ tone = 'neutral', children }) {
 }
 
 function riskTone(row = {}) {
+  if (row.riskKey === 'critical') return 'critical'
   if (row.riskKey === 'high') return 'risk'
   if (row.riskKey === 'medium') return 'warning'
   return 'success'
-}
-
-function statusTone(row = {}) {
-  if (['approved', 'registered'].includes(row.statusKey)) return 'success'
-  if (['ready_for_review', 'submitted_to_banks'].includes(row.statusKey)) return 'info'
-  if (['awaiting_otp', 'bank_feedback'].includes(row.statusKey)) return 'warning'
-  return 'neutral'
 }
 
 function HqApplicationsEmptyState({ filtered = false }) {
   return (
     <section className="rounded-[18px] border border-[#dbe5f0] bg-white px-5 py-8 text-center shadow-[0_14px_34px_rgba(15,23,42,0.045)]">
       <p className="text-base font-semibold text-[#142132]">
-        {filtered ? 'No applications match these filters.' : 'No bond applications yet.'}
+        {filtered ? 'No applications match these filters.' : 'No applications found.'}
       </p>
-      {!filtered ? (
-        <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[#60758d]">
-          Applications will appear here once buyers complete onboarding or bond intake is created.
-        </p>
-      ) : null}
+      <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[#60758d]">
+        {filtered
+          ? 'Clear filters to view all applications.'
+          : 'Applications will appear here once buyers are assigned to this originator or submitted into the bond workflow.'}
+      </p>
     </section>
   )
 }
 
-function HqApplicationsTable({ rows = [], onOpen }) {
+function getInitials(value = '') {
+  const words = normalizeText(value).split(/\s+/).filter(Boolean)
+  if (!words.length) return 'UA'
+  return words.slice(0, 2).map((word) => word[0]?.toUpperCase()).join('')
+}
+
+function getRiskAccent(row = {}) {
+  if (row.riskKey === 'critical') return '#e33452'
+  if (row.riskKey === 'high') return '#ff6b6b'
+  if (row.riskKey === 'medium') return '#f59e0b'
+  if (row.statusKey === 'approved' || row.statusKey === 'registered') return '#17b26a'
+  if (row.statusKey === 'submitted_to_banks' || row.statusKey === 'bank_feedback') return '#2563eb'
+  return '#9fb8d2'
+}
+
+function StageProgress({ row = {} }) {
+  const activeIndex = row.progressStageIndex || 0
+  const accent = getRiskAccent(row)
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center justify-between gap-3">
+        <p className="truncate text-sm font-semibold text-[#102448]">{row.statusLabel}</p>
+        <span className="shrink-0 text-xs font-semibold text-[#60758d]">{row.progressPercent}% Complete</span>
+      </div>
+      <div className="mt-3 flex items-center gap-1.5">
+        {APPLICATION_PIPELINE_STAGES.map((stage, index) => {
+          const completed = index <= activeIndex
+          return (
+            <div key={stage.key} className="flex min-w-0 flex-1 items-center gap-1.5">
+              <span
+                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[9px] font-bold ${
+                  completed ? 'border-transparent text-white' : 'border-[#cfd9e6] bg-white text-[#8a9aab]'
+                }`}
+                style={completed ? { backgroundColor: accent } : undefined}
+                aria-label={stage.label}
+              >
+                {index + 1}
+              </span>
+              {index < APPLICATION_PIPELINE_STAGES.length - 1 ? (
+                <span className={`h-px min-w-2 flex-1 ${completed ? '' : 'bg-[#dfe7f1]'}`} style={completed ? { backgroundColor: accent } : undefined} />
+              ) : null}
+            </div>
+          )
+        })}
+      </div>
+      <div className="mt-2 grid grid-cols-7 gap-1 text-[10px] font-medium text-[#6f8398]">
+        {APPLICATION_PIPELINE_STAGES.map((stage) => (
+          <span key={stage.key} className="truncate">{stage.label}</span>
+        ))}
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#e8eef5]">
+        <span className="block h-full rounded-full" style={{ width: `${row.progressPercent}%`, backgroundColor: accent }} />
+      </div>
+    </div>
+  )
+}
+
+function OverflowMenuButton() {
+  return (
+    <button
+      type="button"
+      className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[#6b7f95] transition hover:bg-[#eef4fb] hover:text-[#17324d]"
+      title="More actions: view details, assign consultant, change status, add note"
+      aria-label="More application actions"
+    >
+      <MoreVertical size={18} />
+    </button>
+  )
+}
+
+export function HqApplicationsTable({ rows = [], onOpen }) {
   if (!rows.length) return null
   return (
-    <section className="overflow-hidden rounded-[20px] border border-[#dbe5f0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-      <div className="hidden overflow-x-auto md:block">
-        <table className="min-w-[1180px] border-collapse">
-          <thead>
-            <tr className="bg-[#f8fbff]">
-              {['Buyer / Transaction', 'Property / Development', 'Region', 'Branch', 'Consultant', 'Status', 'Age', 'Risk', 'Next Action', 'Open'].map((label) => (
-                <th key={label} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-[#7d90a5]">
-                  {label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.key || row.transactionId || row.bondApplicationId} className="border-t border-[#eef3f8] align-top hover:bg-[#fbfdff]">
-                <td className="px-4 py-4">
-                  <div className="flex min-w-[190px] flex-col gap-1">
-                    <span className="font-semibold text-[#142132]">{row.client || 'Buyer pending'}</span>
-                    <span className="text-xs text-[#7890a8]">{row.transactionReference || row.applicationReference || row.transactionId || 'No reference'}</span>
-                    {row.isUnassigned ? (
-                      <span className="inline-flex w-fit items-center gap-1 rounded-full border border-[#f6d7a8] bg-[#fff8eb] px-2 py-1 text-[11px] font-semibold text-[#8a5b12]">
-                        <AlertTriangle size={12} />
-                        Unassigned
-                      </span>
-                    ) : null}
-                  </div>
-                </td>
-                <td className="px-4 py-4 text-sm text-[#425a72]">
-                  <div className="max-w-[220px]">{row.property || 'Property pending'}</div>
-                </td>
-                <td className="px-4 py-4 text-sm font-medium text-[#425a72]">{row.regionDisplay}</td>
-                <td className="px-4 py-4 text-sm font-medium text-[#425a72]">{row.branchDisplay}</td>
-                <td className="px-4 py-4 text-sm font-medium text-[#425a72]">{row.consultantDisplay}</td>
-                <td className="px-4 py-4"><HqBadge tone={statusTone(row)}>{row.statusLabel}</HqBadge></td>
-                <td className="px-4 py-4 text-sm text-[#425a72]">
-                  <span className="font-semibold">{row.ageLabel}</span>
-                  <span className="block text-xs text-[#7890a8]">{row.createdDateLabel}</span>
-                </td>
-                <td className="px-4 py-4"><HqBadge tone={riskTone(row)}>{row.riskLabel}</HqBadge></td>
-                <td className="px-4 py-4 text-sm font-medium text-[#425a72]">{row.nextActionLabel}</td>
-                <td className="px-4 py-4 text-right">
+    <section className="space-y-3">
+      <div className="hidden grid-cols-[minmax(230px,1.15fr)_minmax(170px,0.75fr)_minmax(330px,1.45fr)_90px_92px_120px_minmax(180px,0.9fr)] gap-6 px-6 text-xs font-semibold uppercase tracking-[0.12em] text-[#75889e] xl:grid">
+        <span>Application</span>
+        <span>Consultant</span>
+        <span>Stage & Progress</span>
+        <span>Risk</span>
+        <span>Age</span>
+        <span className="text-right">Value</span>
+        <span>Next Action</span>
+      </div>
+
+      <div className="space-y-3">
+        {rows.map((row) => (
+          <article
+            key={row.key || row.transactionId || row.bondApplicationId}
+            className="relative overflow-hidden rounded-[16px] border border-[#dbe5f0] bg-white px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-[#bfd0e0] hover:shadow-[0_18px_36px_rgba(15,23,42,0.07)] sm:px-6"
+          >
+            <span className="absolute inset-y-0 left-0 w-1.5" style={{ backgroundColor: getRiskAccent(row) }} />
+            <div className="grid gap-5 xl:grid-cols-[minmax(230px,1.15fr)_minmax(170px,0.75fr)_minmax(330px,1.45fr)_90px_92px_120px_minmax(180px,0.9fr)] xl:items-center xl:gap-6">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#dce8f2] bg-[#f4f8fd] text-[#23518a]">
+                  <UserRound size={18} />
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-base font-semibold text-[#102448]">{row.client || 'Buyer pending'}</p>
+                  <p className="mt-1 truncate text-sm font-medium text-[#536b83]">{row.propertyDisplay}</p>
+                  <span className="mt-2 inline-flex rounded-full bg-[#edf3f8] px-2 py-1 text-[11px] font-semibold text-[#526b85]">
+                    {row.applicationReferenceDisplay}
+                  </span>
+                  {row.isUnassigned ? (
+                    <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-[#f6d7a8] bg-[#fff8eb] px-2 py-1 text-[11px] font-semibold text-[#8a5b12]">
+                      <AlertTriangle size={12} />
+                      Unassigned
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#102448] text-xs font-semibold text-white">
+                  {getInitials(row.consultantDisplay)}
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-[#102448]">{row.consultantDisplay}</p>
+                  <p className="mt-1 truncate text-xs font-medium text-[#64788f]">{row.consultantRoleLabel || 'Internal Consultant'}</p>
+                </div>
+              </div>
+
+              <StageProgress row={row} />
+
+              <div><HqBadge tone={riskTone(row)}>{row.riskLabel}</HqBadge></div>
+
+              <div className="text-sm text-[#425a72]">
+                <p className="text-lg font-semibold leading-none text-[#102448]">{row.ageLabel.replace(' days', '')}</p>
+                <p className="mt-1 text-xs font-medium text-[#64788f]">{row.ageLabel.includes('day') ? 'days' : ''}</p>
+                <p className="mt-1 text-xs text-[#64788f]">{row.createdDateLabel}</p>
+              </div>
+
+              <div className="text-left xl:text-right">
+                <p className="text-base font-semibold text-[#102448]">{row.bondValueLabel}</p>
+              </div>
+
+              <div className="flex min-w-0 flex-col gap-3">
+                <p className="text-sm font-medium leading-5 text-[#213a56]">{row.nextActionLabel}</p>
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => onOpen(row)}
-                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-[12px] border border-[#dce6f2] bg-white px-3 text-sm font-semibold text-[#17324b] transition hover:border-[#b9c9dc] hover:bg-[#f8fbff]"
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-[10px] bg-[#07183f] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(7,24,63,0.18)] transition hover:bg-[#102a63]"
                   >
-                    Open
-                    <ArrowUpRight size={15} />
+                    Open Application
+                    <ArrowRight size={15} />
                   </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="divide-y divide-[#eef3f8] md:hidden">
-        {rows.map((row) => (
-          <article key={row.key || row.transactionId || row.bondApplicationId} className="px-4 py-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="font-semibold text-[#142132]">{row.client || 'Buyer pending'}</p>
-                <p className="mt-1 text-sm text-[#60758d]">{row.property || 'Property pending'}</p>
+                  <OverflowMenuButton />
+                </div>
               </div>
-              {row.isUnassigned ? <HqBadge tone="warning">Unassigned</HqBadge> : null}
             </div>
-            <div className="mt-3 grid grid-cols-1 gap-2 text-sm text-[#425a72]">
-              <span>Region: <strong>{row.regionDisplay}</strong></span>
-              <span>Branch: <strong>{row.branchDisplay}</strong></span>
-              <span>Consultant: <strong>{row.consultantDisplay}</strong></span>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <HqBadge tone={statusTone(row)}>{row.statusLabel}</HqBadge>
-              <HqBadge tone={riskTone(row)}>{row.riskLabel}</HqBadge>
-              <HqBadge>{row.ageLabel}</HqBadge>
-            </div>
-            <p className="mt-3 text-sm font-medium text-[#425a72]">{row.nextActionLabel}</p>
-            <button
-              type="button"
-              onClick={() => onOpen(row)}
-              className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-[12px] bg-[#102448] px-3 text-sm font-semibold text-white"
-            >
-              Open
-              <ArrowUpRight size={15} />
-            </button>
           </article>
         ))}
+      </div>
+    </section>
+  )
+}
+
+function HqApplicationsPagination({
+  totalRows = 0,
+  page = 1,
+  rowsPerPage = 10,
+  onPageChange,
+  onRowsPerPageChange,
+}) {
+  if (!totalRows) return null
+  const totalPages = Math.max(1, Math.ceil(totalRows / rowsPerPage))
+  const firstRow = ((page - 1) * rowsPerPage) + 1
+  const lastRow = Math.min(totalRows, page * rowsPerPage)
+  const pageNumbers = Array.from({ length: Math.min(totalPages, 5) }, (_, index) => {
+    if (totalPages <= 5) return index + 1
+    if (page <= 3) return index + 1
+    if (page >= totalPages - 2) return totalPages - 4 + index
+    return page - 2 + index
+  })
+
+  return (
+    <section className="flex flex-col gap-4 px-1 py-2 text-sm text-[#536b83] md:flex-row md:items-center md:justify-between">
+      <p>
+        Showing <span className="font-semibold text-[#102448]">{firstRow}</span> to <span className="font-semibold text-[#102448]">{lastRow}</span> of <span className="font-semibold text-[#102448]">{totalRows}</span> applications
+      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2">
+          <span className="font-medium">Rows per page</span>
+          <select
+            value={rowsPerPage}
+            onChange={(event) => onRowsPerPageChange(Number(event.target.value))}
+            className="h-10 rounded-[12px] border border-[#dbe5f0] bg-white px-3 text-sm font-semibold text-[#102448] outline-none"
+          >
+            {[10, 25, 50].map((value) => <option key={value} value={value}>{value}</option>)}
+          </select>
+        </label>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            disabled={page <= 1}
+            onClick={() => onPageChange(Math.max(1, page - 1))}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-[#dbe5f0] text-[#48617a] disabled:cursor-not-allowed disabled:opacity-45"
+            aria-label="Previous page"
+          >
+            <ArrowLeft size={15} />
+          </button>
+          {pageNumbers.map((pageNumber) => (
+            <button
+              key={pageNumber}
+              type="button"
+              onClick={() => onPageChange(pageNumber)}
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-[10px] border text-sm font-semibold ${
+                pageNumber === page
+                  ? 'border-[#07183f] bg-[#07183f] text-white'
+                  : 'border-[#dbe5f0] bg-white text-[#48617a]'
+              }`}
+            >
+              {pageNumber}
+            </button>
+          ))}
+          <button
+            type="button"
+            disabled={page >= totalPages}
+            onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-[#dbe5f0] text-[#48617a] disabled:cursor-not-allowed disabled:opacity-45"
+            aria-label="Next page"
+          >
+            <ArrowRight size={15} />
+          </button>
+        </div>
       </div>
     </section>
   )
@@ -608,6 +845,8 @@ export default function BondTransactionsPage({
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [hqFilters, setHqFilters] = useState(HQ_FILTER_DEFAULTS)
+  const [hqPage, setHqPage] = useState(1)
+  const [hqRowsPerPage, setHqRowsPerPage] = useState(10)
   const [state, setState] = useState(
     initialState || {
       loading: true,
@@ -694,10 +933,31 @@ export default function BondTransactionsPage({
   const hqRegisterRows = useMemo(() => buildHqApplicationRegisterRows(snapshot?.rows), [snapshot?.rows])
   const hqFilterOptions = useMemo(() => getHqApplicationFilterOptions(hqRegisterRows), [hqRegisterRows])
   const hqFilteredRows = useMemo(() => filterHqApplicationRegisterRows(hqRegisterRows, hqFilters), [hqFilters, hqRegisterRows])
+  const hqTotalPages = Math.max(1, Math.ceil(hqFilteredRows.length / hqRowsPerPage))
+  const hqCurrentPage = Math.min(hqPage, hqTotalPages)
+  const hqPagedRows = useMemo(
+    () => hqFilteredRows.slice((hqCurrentPage - 1) * hqRowsPerPage, hqCurrentPage * hqRowsPerPage),
+    [hqCurrentPage, hqFilteredRows, hqRowsPerPage],
+  )
   const hqKpis = useMemo(() => getHqApplicationKpis(hqRegisterRows), [hqRegisterRows])
+  const hasActiveHqFilters = useMemo(
+    () => Object.entries(HQ_FILTER_DEFAULTS).some(([key, value]) => hqFilters[key] !== value),
+    [hqFilters],
+  )
 
   const handleHqFilterChange = useCallback((key, value) => {
     setHqFilters((previous) => ({ ...previous, [key]: value }))
+    setHqPage(1)
+  }, [])
+
+  const handleClearHqFilters = useCallback(() => {
+    setHqFilters(HQ_FILTER_DEFAULTS)
+    setHqPage(1)
+  }, [])
+
+  const handleRowsPerPageChange = useCallback((value) => {
+    setHqRowsPerPage(value)
+    setHqPage(1)
   }, [])
 
   const handleOpenHqApplication = useCallback(
@@ -751,18 +1011,39 @@ export default function BondTransactionsPage({
     const showFilteredEmpty = !state.loading && hqRegisterRows.length > 0 && hqFilteredRows.length === 0
 
     return (
-      <BondPageShell>
-        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <BondPageShell className="space-y-5">
+        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           {hqKpis.map((item) => (
-            <div key={item.key} className="min-h-[112px] rounded-[18px] border border-[#dbe5f0] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7890a8]">{item.label}</p>
-              <p className="mt-2 text-2xl font-semibold text-[#142132]">{item.value}</p>
+            <div key={item.key} className="flex min-h-[118px] items-center gap-4 rounded-[18px] border border-[#dbe5f0] bg-white px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#eef5ff] text-[#24518a]">
+                <item.icon size={21} />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7890a8]">{item.label}</p>
+                <p className="mt-1 truncate text-2xl font-semibold text-[#142132]">{item.value}</p>
+                <p className="mt-1 text-xs font-semibold text-[#14884d]">{item.trend}</p>
+              </div>
             </div>
           ))}
         </section>
 
         <section className="rounded-[18px] border border-[#dce6f2] bg-white px-4 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-[#17324d]">
+              <SlidersHorizontal size={16} />
+              Filters
+            </div>
+            <button
+              type="button"
+              disabled={!hasActiveHqFilters}
+              onClick={handleClearHqFilters}
+              className="inline-flex h-9 items-center gap-2 rounded-[10px] px-3 text-sm font-semibold text-[#24518a] transition hover:bg-[#eef5ff] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <X size={14} />
+              Clear filters
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-4">
             <HqFilterSelect label="Region" value={hqFilters.region} onChange={(value) => handleHqFilterChange('region', value)} options={hqFilterOptions.regions} />
             <HqFilterSelect label="Branch" value={hqFilters.branch} onChange={(value) => handleHqFilterChange('branch', value)} options={hqFilterOptions.branches} />
             <HqFilterSelect label="Consultant" value={hqFilters.consultant} onChange={(value) => handleHqFilterChange('consultant', value)} options={hqFilterOptions.consultants} />
@@ -779,7 +1060,18 @@ export default function BondTransactionsPage({
 
         {!state.loading && hqRegisterRows.length === 0 ? <HqApplicationsEmptyState /> : null}
         {showFilteredEmpty ? <HqApplicationsEmptyState filtered /> : null}
-        {!state.loading && hqFilteredRows.length > 0 ? <HqApplicationsTable rows={hqFilteredRows} onOpen={handleOpenHqApplication} /> : null}
+        {!state.loading && hqFilteredRows.length > 0 ? (
+          <>
+            <HqApplicationsTable rows={hqPagedRows} onOpen={handleOpenHqApplication} />
+            <HqApplicationsPagination
+              totalRows={hqFilteredRows.length}
+              page={hqCurrentPage}
+              rowsPerPage={hqRowsPerPage}
+              onPageChange={setHqPage}
+              onRowsPerPageChange={handleRowsPerPageChange}
+            />
+          </>
+        ) : null}
       </BondPageShell>
     )
   }

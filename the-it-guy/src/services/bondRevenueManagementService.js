@@ -21,6 +21,7 @@ export const BOND_REVENUE_EVENTS = Object.freeze({
   bonusAwarded: 'BONUS_AWARDED',
   payoutApproved: 'PAYOUT_APPROVED',
   payoutPaid: 'PAYOUT_PAID',
+  commissionRuleSaved: 'COMMISSION_RULE_SAVED',
 })
 
 export const REVENUE_STATUSES = Object.freeze({
@@ -506,6 +507,13 @@ function assertPayoutAccess(rows = {}, context = {}) {
   throw error
 }
 
+function assertCommissionRuleAccess(rows = {}, context = {}) {
+  if (rows.scope.scopeLevel === BOND_ORGANISATION_LEVELS.hq || isFinanceRole(context)) return
+  const error = new Error('Only HQ and finance managers can manage commission rules.')
+  error.code = 'permission_denied'
+  throw error
+}
+
 function ruleFor(rows = {}, appliesTo = '') {
   const safeAppliesTo = normalizeLower(appliesTo)
   return rows.rules.find((rule) => rule.appliesTo === safeAppliesTo || rule.partyType === safeAppliesTo) ||
@@ -981,15 +989,72 @@ export function getCommissionRules(context = {}, options = {}) {
   assertRevenueAccess(rows, context)
   return rows.rules.map((rule) => ({
     id: rule.id,
+    name: rule.name,
     partyType: rule.partyType || rule.appliesTo,
     partyId: rule.partyId,
     partyName: rule.appliesToLabel || rule.name,
     calculationBasis: rule.calculationBasis,
     rate: rule.rate || rule.percentage || rule.fixedAmount,
     rateType: rule.rateType || rule.type,
+    type: rule.type,
+    percentage: rule.percentage,
+    fixedAmount: rule.fixedAmount,
+    effectiveFrom: rule.effectiveFrom,
+    effectiveTo: rule.effectiveTo,
     status: rule.status,
     isDefault: rule.isDefault,
   }))
+}
+
+export function createCommissionRule(payload = {}, context = {}, options = {}) {
+  const rows = getRows(context, options)
+  assertRevenueAccess(rows, context)
+  assertCommissionRuleAccess(rows, context)
+  const rule = normalizeCommissionRule({
+    ...payload,
+    id: payload.id || createId('commission-rule'),
+    name: payload.name || payload.ruleName || payload.partyName || 'Commission Rule',
+    appliesToLabel: payload.appliesToLabel || payload.partyName,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  })
+  setLocalRows(LOCAL_RULE_STORE, rows.workspaceKey, [rule, ...getLocalRows(LOCAL_RULE_STORE, rows.workspaceKey)])
+  recordActivity(rows.workspaceKey, {
+    eventType: BOND_REVENUE_EVENTS.commissionRuleSaved,
+    sourceType: 'commission_rule',
+    sourceId: rule.id,
+    actorUserId: getActorId(context),
+    newValue: rule,
+  })
+  return rule
+}
+
+export function updateCommissionRule(id = '', payload = {}, context = {}, options = {}) {
+  const rows = getRows(context, options)
+  assertRevenueAccess(rows, context)
+  assertCommissionRuleAccess(rows, context)
+  const safeId = normalizeText(id)
+  const current = getLocalRows(LOCAL_RULE_STORE, rows.workspaceKey).map(normalizeCommissionRule)
+  const existing = current.find((row) => row.id === safeId)
+  if (!existing) throwNotFound('Commission rule not found.')
+  const updated = normalizeCommissionRule({
+    ...existing,
+    ...payload,
+    id: existing.id,
+    name: payload.name || payload.ruleName || payload.partyName || existing.name,
+    appliesToLabel: payload.appliesToLabel || payload.partyName || existing.appliesToLabel,
+    updatedAt: new Date().toISOString(),
+  })
+  setLocalRows(LOCAL_RULE_STORE, rows.workspaceKey, current.map((row) => (row.id === existing.id ? updated : row)))
+  recordActivity(rows.workspaceKey, {
+    eventType: BOND_REVENUE_EVENTS.commissionRuleSaved,
+    sourceType: 'commission_rule',
+    sourceId: updated.id,
+    actorUserId: getActorId(context),
+    previousValue: existing,
+    newValue: updated,
+  })
+  return updated
 }
 
 export function getCommercialRankings(context = {}, options = {}) {

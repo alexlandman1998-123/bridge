@@ -97,6 +97,32 @@ test('dry-run demo plan targets Bridge Finance Demo and bond.demo regional manag
   assert.ok(gautengApplications.some((application) => application.atRisk))
 })
 
+test('demo plan can target an existing HQ originator workspace safely', () => {
+  const plan = buildBondDemoRuntimePlan({
+    BOND_DEMO_WORKSPACE_ID: '36bbdf0e-f83b-4a56-8023-a3dc1be45e8b',
+    BOND_DEMO_WORKSPACE_NAME: 'OOBA',
+    BOND_DEMO_OWNER_WORKSPACE_ROLE: 'owner',
+    BOND_DEMO_OWNER_SCOPE_LEVEL: 'workspace_hq',
+  })
+
+  assert.equal(plan.workspace.id, '36bbdf0e-f83b-4a56-8023-a3dc1be45e8b')
+  assert.equal(plan.workspace.name, 'OOBA')
+  assert.equal(plan.metrics.totalApplications, 118)
+
+  const targetUser = plan.users.find((user) => user.key === 'alex_van_der_merwe')
+  assert.ok(targetUser)
+  assert.equal(targetUser.email, 'bond.demo@bridgenine.co.za')
+  assert.equal(targetUser.workspaceRole, 'owner')
+  assert.equal(targetUser.scopeLevel, 'workspace_hq')
+  assert.equal(targetUser.regionId, null)
+  assert.equal(targetUser.branchId, null)
+  assert.equal(targetUser.workspaceUnitId, null)
+
+  assert.ok(plan.hierarchy.regions.every((region) => region.workspaceId === plan.workspace.id))
+  assert.ok(plan.hierarchy.branches.every((branch) => branch.workspaceId === plan.workspace.id))
+  assert.notEqual(plan.hierarchy.regions[0].id, buildBondDemoRuntimePlan({}).hierarchy.regions[0].id)
+})
+
 test('demo plan is deterministic and preserves requested operational shape', () => {
   const planA = buildBondDemoRuntimePlan({})
   const planB = buildBondDemoRuntimePlan({})

@@ -83,16 +83,11 @@ const DASHBOARD_PIPELINE_FLOW_META = Object.freeze([
 ])
 
 const HQ_PIPELINE_STAGE_META = Object.freeze([
-  { key: 'intake_received', label: 'Intake Received', href: '/bond/pipeline?view=all' },
-  { key: 'awaiting_otp', label: 'Awaiting OTP', href: '/bond/pipeline?view=all' },
-  { key: 'otp_ready', label: 'OTP Ready', href: '/bond/pipeline?view=all' },
-  { key: 'application_in_progress', label: 'Application In Progress', href: '/bond/pipeline?view=awaiting-docs' },
-  { key: 'submitted', label: 'Submitted', href: '/bond/pipeline?view=submitted' },
-  { key: 'ready_for_review', label: 'Ready For Review', href: '/bond/pipeline?view=ready-for-submission' },
-  { key: 'submitted_to_banks', label: 'Submitted To Banks', href: '/bond/pipeline?view=submitted' },
-  { key: 'bank_feedback', label: 'Bank Feedback', href: '/bond/pipeline?view=submitted' },
-  { key: 'approved', label: 'Approved', href: '/bond/applications?view=bond-approved' },
-  { key: 'registered', label: 'Registered', href: '/bond/applications?view=registered' },
+  { key: 'intake', label: 'Intake', href: '/bond/pipeline?view=all' },
+  { key: 'application_prep', label: 'Application Prep', href: '/bond/pipeline?view=in-progress' },
+  { key: 'review_submit', label: 'Review & Submit', href: '/bond/pipeline?view=submitted' },
+  { key: 'bank_decision', label: 'Bank Decision', href: '/bond/pipeline?view=submitted' },
+  { key: 'registration', label: 'Registration', href: '/bond/applications?view=attorney-stage' },
 ])
 
 const EXECUTIVE_BANKS = Object.freeze(
@@ -1734,8 +1729,6 @@ function getRegionLabel(row = {}) {
     tx.assigned_region_name ||
       tx.region_name ||
       tx.region ||
-      tx.assigned_region_id ||
-      tx.region_id ||
       row?.region?.name ||
       row?.region?.region,
   ) || 'Unassigned Region'
@@ -1749,9 +1742,6 @@ function getBranchLabel(row = {}) {
       tx.branch ||
       tx.assigned_team_name ||
       tx.assigned_workspace_unit_name ||
-      tx.assigned_branch_id ||
-      tx.branch_id ||
-      tx.workspace_unit_id ||
       row?.branch?.name ||
       row?.unit?.branch_name,
   ) || 'Unassigned Branch'
@@ -1911,33 +1901,68 @@ function buildHqPartnerPerformance(rows = []) {
     .slice(0, 12)
 }
 
+function getHqPipelineSource(row = {}) {
+  const queueState = getBondOriginatorQueueState(row)
+  const intakeStatus = normalizeText(queueState.status).toLowerCase()
+  const lane = deriveFinanceLaneStage(row).key
+  const pipelineStage = resolvePipelineStageKey(row)
+  const transferStage = getAttorneyTransferStage(row)
+  const signal = getSignalText(row)
+
+  if (lane === 'registered' || transferStage === 'registered') return { key: 'registered', stageKey: 'registration' }
+  if (
+    lane === 'bond_instruction_sent' ||
+    lane === 'grant_signed' ||
+    pipelineStage === 'instruction_sent' ||
+    pipelineStage === 'grant_signed' ||
+    ['lodgement', 'attorney_transfer_in_progress'].includes(lane)
+  ) {
+    return { key: lane || pipelineStage, stageKey: 'registration' }
+  }
+  if (getBondApplicationStage(row) === 'declined') return { key: 'declined', stageKey: 'bank_decision' }
+  if (isApprovedStage(row) || lane === 'bond_approved' || pipelineStage === 'approved') return { key: 'approved', stageKey: 'bank_decision' }
+  if (lane === 'bank_feedback' || pipelineStage === 'bank_feedback') return { key: 'bank_feedback', stageKey: 'bank_decision' }
+  if (lane === 'submitted_to_banks' || pipelineStage === 'submitted') return { key: 'submitted_to_banks', stageKey: 'review_submit' }
+  if (queueState.status === 'READY_FOR_REVIEW' || lane === 'ready_for_review' || lane === 'pre_approval' || pipelineStage === 'pre_approval') {
+    return { key: 'ready_for_review', stageKey: 'review_submit' }
+  }
+  if (['application_in_progress', 'application_submitted', 'awaiting_documents', 'buyer_in_progress'].includes(intakeStatus)) {
+    return { key: intakeStatus, stageKey: 'application_prep' }
+  }
+  if (lane === 'bond_application_open' || pipelineStage === 'docs_collection') {
+    return { key: 'application_in_progress', stageKey: 'application_prep' }
+  }
+  if (queueState.status === 'READY_TO_START' || /otp.*(ready|signed|complete)/i.test(signal)) {
+    return { key: 'otp_ready', stageKey: 'intake' }
+  }
+  if (queueState.status === 'AWAITING_OTP' || /otp/i.test(signal)) {
+    return { key: 'awaiting_otp', stageKey: 'intake' }
+  }
+  return { key: intakeStatus || 'intake_received', stageKey: 'intake' }
+}
+
 function buildHqPipelineFunnel(rows = []) {
-  const counts = HQ_PIPELINE_STAGE_META.reduce((accumulator, stage) => {
-    accumulator[stage.key] = 0
+  const buckets = HQ_PIPELINE_STAGE_META.reduce((accumulator, stage) => {
+    accumulator[stage.key] = {
+      count: 0,
+      sourceBreakdown: {},
+    }
     return accumulator
   }, {})
 
   for (const row of rows) {
-    const lane = deriveFinanceLaneStage(row).key
-    const signal = getSignalText(row)
-    let key = 'intake_received'
-    if (lane === 'registered') key = 'registered'
-    else if (isApprovedStage(row)) key = 'approved'
-    else if (lane === 'bank_feedback') key = 'bank_feedback'
-    else if (lane === 'submitted_to_banks') key = 'submitted_to_banks'
-    else if (lane === 'pre_approval') key = 'ready_for_review'
-    else if (lane === 'bond_application_open') key = 'application_in_progress'
-    else if (/otp.*(ready|signed|complete)/i.test(signal)) key = 'otp_ready'
-    else if (/otp/i.test(signal)) key = 'awaiting_otp'
-    else if (resolvePipelineStageKey(row) === 'submitted') key = 'submitted'
-    counts[key] += 1
+    const source = getHqPipelineSource(row)
+    const bucket = buckets[source.stageKey] || buckets.intake
+    bucket.count += 1
+    bucket.sourceBreakdown[source.key] = (bucket.sourceBreakdown[source.key] || 0) + 1
   }
 
   const firstCount = Math.max(rows.length, 1)
   let previousCount = firstCount
   let bottleneck = null
   const stages = HQ_PIPELINE_STAGE_META.map((stage, index) => {
-    const count = counts[stage.key] || 0
+    const bucket = buckets[stage.key] || {}
+    const count = bucket.count || 0
     const conversionRate = index === 0 ? 100 : Math.min(100, roundTo((count / Math.max(previousCount, 1)) * 100, 0))
     const dropOff = index === 0 ? 0 : Math.max(0, 100 - conversionRate)
     const item = {
@@ -1946,6 +1971,7 @@ function buildHqPipelineFunnel(rows = []) {
       conversionRate,
       dropOff,
       valueLabel: `${count} ${count === 1 ? 'file' : 'files'}`,
+      sourceBreakdown: bucket.sourceBreakdown || {},
     }
     if (!bottleneck || item.dropOff > bottleneck.dropOff) bottleneck = item
     previousCount = Math.max(count, 1)
@@ -1964,14 +1990,14 @@ function buildHqExecutiveAlerts(rows = [], branchRows = []) {
     const assignment = resolveEffectiveBondAssignment(row?.transaction || {})
     return !normalizeText(assignment.primaryConsultantUserId || assignment.primaryConsultantEmail)
   }).length
-  const waiting = rows.filter((row) => getDaysSinceUpdate(row) > 7).length
+  const awaitingOtp = rows.filter((row) => getHqPipelineSource(row).key === 'awaiting_otp').length
   const missingDocs = rows.reduce((sum, row) => sum + getDocumentMissingCount(row), 0)
   const slaBreaches = rows.filter((row) => deriveRiskSignals(row).overdueDays > 0).length
   const highRiskBranches = branchRows.filter((row) => row.riskLevel === 'High').length
 
   return [
     { key: 'unassigned', label: 'Unassigned applications', value: unassigned, tone: unassigned ? 'danger' : 'success', href: '/bond/applications?filter=unassigned' },
-    { key: 'waiting', label: 'Waiting > 7 days', value: waiting, tone: waiting ? 'warning' : 'success', href: '/bond/applications?filter=stale' },
+    { key: 'awaiting_otp', label: 'Awaiting OTP signatures', value: awaitingOtp, tone: awaitingOtp ? 'warning' : 'success', href: '/bond/pipeline?view=all' },
     { key: 'missing_docs', label: 'Missing document packs', value: missingDocs, tone: missingDocs ? 'warning' : 'success', href: '/bond/pipeline?view=awaiting-docs' },
     { key: 'sla', label: 'SLA breaches', value: slaBreaches, tone: slaBreaches ? 'danger' : 'success', href: '/bond/reports?view=sla-breaches' },
     { key: 'branches', label: 'High-risk branches', value: highRiskBranches, tone: highRiskBranches ? 'danger' : 'success', href: '/bond/organisation?view=branches&risk=high' },
@@ -2184,6 +2210,8 @@ function mapTransactionTrackerRow(row = {}) {
     linkedApplicationId: transactionId,
     client: getBuyerName(row),
     property: getPropertyLabel(row),
+    developmentName: getDevelopmentName(row),
+    unitLabel: normalizeText(row?.unit?.unit_number) ? `Unit ${normalizeText(row.unit.unit_number)}` : '',
     partner: getPartnerLabel(row),
     attorney: normalizeText(row?.transaction?.attorney) || 'Awaiting attorney',
     consultant: consultantName,
@@ -2208,6 +2236,7 @@ function mapTransactionTrackerRow(row = {}) {
     bondAmountLabel: formatCurrency(bondAmount),
     financeType: normalizeFinanceType(row?.transaction?.finance_type, { allowUnknown: true }),
     bankSubmissionStatus: normalizeText(row?.transaction?.bank_submission_status || row?.transaction?.bank_status || row?.transaction?.finance_submission_status),
+    missingDocuments: getDocumentMissingCount(row),
     financeStageKey: financeLane.key,
     financeStageLabel: financeLane.label,
     originatorQueueStatus: queueState.status,

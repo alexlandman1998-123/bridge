@@ -36,6 +36,8 @@ import {
   updateBankContact,
 } from '../../services/bondBankRelationshipService'
 import {
+  BANK_AGREEMENT_STATUSES,
+  BANK_COMMISSION_BASES,
   BANK_SUPPORTED_PRODUCTS,
   BOND_ORIGINATOR_BANK_STATUSES,
   addOriginatorBank,
@@ -66,13 +68,47 @@ function resolveActorId(workspaceContext = {}) {
 
 function isHqUser(workspaceContext = {}) {
   const membership = workspaceContext.currentMembership || {}
-  const role = normalizeText(membership.workspaceRole || membership.workspace_role || membership.organisationRole || membership.organisation_role || workspaceContext.workspaceRole).toLowerCase()
+  const role = normalizeText(membership.workspaceRole || membership.workspace_role || membership.organisationRole || membership.organisation_role || membership.role || membership.rawRole || workspaceContext.workspaceRole).toLowerCase()
   const scope = normalizeText(membership.scopeLevel || membership.scope_level || workspaceContext.scopeLevel).toLowerCase()
-  return ['owner_director', 'hq_manager'].includes(role) || scope === 'workspace_hq'
+  return ['owner', 'director', 'principal', 'admin', 'owner_director', 'hq_manager', 'bond_hq_manager', 'national_manager'].includes(role) || scope === 'workspace_hq'
 }
 
 function formatPercent(value) {
   return `${Math.round(Number(value || 0))}%`
+}
+
+function humanize(value = '') {
+  return normalizeText(value).replaceAll('_', ' ') || 'Not configured'
+}
+
+function formatAgreementStatus(value = '') {
+  const labels = {
+    draft: 'Draft',
+    under_review: 'Under review',
+    active: 'Active',
+    renewal_due: 'Renewal due',
+    expired: 'Expired',
+  }
+  return labels[normalizeText(value)] || humanize(value)
+}
+
+function formatCommissionBasis(value = '') {
+  const labels = {
+    gross_bond_amount: 'Gross bond amount',
+    bank_commission_received: 'Bank commission received',
+    originator_gross_revenue: 'Originator gross revenue',
+    fixed_per_instruction: 'Fixed per instruction',
+  }
+  return labels[normalizeText(value)] || humanize(value)
+}
+
+function formatCommissionRate(row = {}) {
+  if (row.commissionRate === null || row.commissionRate === undefined || row.commissionRate === '') return 'Not set'
+  const value = Number(row.commissionRate)
+  if (row.commissionBasis === BANK_COMMISSION_BASES.fixedPerInstruction) {
+    return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(value || 0).replace('ZAR', 'R')
+  }
+  return `${value}%`
 }
 
 function formatHours(value) {
@@ -591,6 +627,17 @@ function emptyPanelDraft() {
     submissionEmail: '',
     portalUrl: '',
     slaDays: '',
+    slaOwner: '',
+    slaEscalationHours: '',
+    agreementStatus: BANK_AGREEMENT_STATUSES.draft,
+    agreementType: 'Panel Agreement',
+    agreementReference: '',
+    agreementStartDate: '',
+    agreementReviewDate: '',
+    commissionRate: '',
+    commissionBasis: BANK_COMMISSION_BASES.bankCommissionReceived,
+    commissionTrigger: 'Instruction issued',
+    commissionNotes: '',
     supportedProducts: [],
     regionsSupportedText: '',
     notes: '',
@@ -609,6 +656,17 @@ function panelDraftFromRow(row = {}) {
     submissionEmail: row.submissionEmail || '',
     portalUrl: row.portalUrl || '',
     slaDays: row.slaDays || '',
+    slaOwner: row.slaOwner || '',
+    slaEscalationHours: row.slaEscalationHours || '',
+    agreementStatus: row.agreementStatus || BANK_AGREEMENT_STATUSES.draft,
+    agreementType: row.agreementType || 'Panel Agreement',
+    agreementReference: row.agreementReference || '',
+    agreementStartDate: row.agreementStartDate || '',
+    agreementReviewDate: row.agreementReviewDate || '',
+    commissionRate: row.commissionRate || '',
+    commissionBasis: row.commissionBasis || BANK_COMMISSION_BASES.bankCommissionReceived,
+    commissionTrigger: row.commissionTrigger || 'Instruction issued',
+    commissionNotes: row.commissionNotes || '',
     supportedProducts: row.supportedProducts || [],
     regionsSupportedText: (row.regionsSupported || []).join(', '),
     notes: row.notes || '',
@@ -629,44 +687,80 @@ function BankPanelModal({ draft, setDraft, systemBanks = [], panelRows = [], onC
   }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4 py-6">
-      <div className="max-h-[calc(100vh-48px)] w-full max-w-3xl overflow-y-auto rounded-[24px] border border-slate-200 bg-white p-6 shadow-2xl shadow-slate-950/20">
+      <div className="max-h-[calc(100vh-48px)] w-full max-w-5xl overflow-y-auto rounded-[24px] border border-slate-200 bg-white p-6 shadow-2xl shadow-slate-950/20">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Bank Panel</p>
             <h2 className="mt-1 text-2xl font-bold text-slate-950">{isEditing ? 'Edit Bank' : 'Add Bank'}</h2>
-            <p className="mt-1 text-sm text-slate-500">Configure the bank details your originator team uses for submissions and performance tracking.</p>
+            <p className="mt-1 text-sm text-slate-500">Configure partner details, agreement terms, SLA ownership and commission structure for this bank.</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">Close</button>
         </div>
-        <div className="mt-6 grid gap-4 md:grid-cols-2">
-          <SelectField label="Select Bank" value={draft.bankId} onChange={(value) => setDraft({ ...draft, bankId: value })} disabled={isEditing}>
-            <option value="">{availableBanks.length ? 'Choose bank' : 'No banks available'}</option>
-            {availableBanks.map((bank) => <option key={bank.id} value={bank.id}>{bank.shortName}</option>)}
-          </SelectField>
-          <SelectField label="Status" value={draft.status} onChange={(value) => setDraft({ ...draft, status: value })}>
-            {Object.values(BOND_ORIGINATOR_BANK_STATUSES).map((status) => <option key={status} value={status}>{status}</option>)}
-          </SelectField>
-          <Field label="Primary Contact Name" value={draft.primaryContactName} onChange={(value) => setDraft({ ...draft, primaryContactName: value })} />
-          <Field label="Primary Contact Email" value={draft.primaryContactEmail} onChange={(value) => setDraft({ ...draft, primaryContactEmail: value })} type="email" />
-          <Field label="Primary Contact Phone" value={draft.primaryContactPhone} onChange={(value) => setDraft({ ...draft, primaryContactPhone: value })} />
-          <Field label="Submission Email" value={draft.submissionEmail} onChange={(value) => setDraft({ ...draft, submissionEmail: value })} type="email" />
-          <Field label="Portal URL" value={draft.portalUrl} onChange={(value) => setDraft({ ...draft, portalUrl: value })} />
-          <Field label="SLA Target Days" value={draft.slaDays} onChange={(value) => setDraft({ ...draft, slaDays: value })} type="number" />
-          <div className="md:col-span-2">
-            <p className="text-sm font-medium text-slate-600">Supported Products</p>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {BANK_SUPPORTED_PRODUCTS.map((product) => (
-                <label key={product} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
-                  <input type="checkbox" checked={draft.supportedProducts.includes(product)} onChange={() => toggleProduct(product)} className="h-4 w-4 rounded border-slate-300" />
-                  {product}
-                </label>
-              ))}
+        <div className="mt-6 space-y-6">
+          <section>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Partner Details</p>
+            <div className="mt-3 grid gap-4 md:grid-cols-2">
+              <SelectField label="Select Bank" value={draft.bankId} onChange={(value) => setDraft({ ...draft, bankId: value })} disabled={isEditing}>
+                <option value="">{availableBanks.length ? 'Choose bank' : 'No banks available'}</option>
+                {availableBanks.map((bank) => <option key={bank.id} value={bank.id}>{bank.shortName}</option>)}
+              </SelectField>
+              <SelectField label="Panel Status" value={draft.status} onChange={(value) => setDraft({ ...draft, status: value })}>
+                {Object.values(BOND_ORIGINATOR_BANK_STATUSES).map((status) => <option key={status} value={status}>{humanize(status)}</option>)}
+              </SelectField>
+              <Field label="Primary Contact Name" value={draft.primaryContactName} onChange={(value) => setDraft({ ...draft, primaryContactName: value })} />
+              <Field label="Primary Contact Email" value={draft.primaryContactEmail} onChange={(value) => setDraft({ ...draft, primaryContactEmail: value })} type="email" />
+              <Field label="Primary Contact Phone" value={draft.primaryContactPhone} onChange={(value) => setDraft({ ...draft, primaryContactPhone: value })} />
+              <Field label="Submission Email" value={draft.submissionEmail} onChange={(value) => setDraft({ ...draft, submissionEmail: value })} type="email" />
+              <Field label="Portal URL" value={draft.portalUrl} onChange={(value) => setDraft({ ...draft, portalUrl: value })} />
+              <Field label="Regions Supported" value={draft.regionsSupportedText} onChange={(value) => setDraft({ ...draft, regionsSupportedText: value })} />
             </div>
-          </div>
-          <Field label="Regions Supported" value={draft.regionsSupportedText} onChange={(value) => setDraft({ ...draft, regionsSupportedText: value })} />
-          <div className="md:col-span-2">
-            <TextAreaField label="Notes" value={draft.notes} onChange={(value) => setDraft({ ...draft, notes: value })} />
-          </div>
+          </section>
+
+          <section>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Agreement & SLA</p>
+            <div className="mt-3 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <SelectField label="Agreement Status" value={draft.agreementStatus} onChange={(value) => setDraft({ ...draft, agreementStatus: value })}>
+                {Object.values(BANK_AGREEMENT_STATUSES).map((status) => <option key={status} value={status}>{formatAgreementStatus(status)}</option>)}
+              </SelectField>
+              <Field label="Agreement Type" value={draft.agreementType} onChange={(value) => setDraft({ ...draft, agreementType: value })} />
+              <Field label="Agreement Reference" value={draft.agreementReference} onChange={(value) => setDraft({ ...draft, agreementReference: value })} />
+              <Field label="Agreement Start Date" value={draft.agreementStartDate} onChange={(value) => setDraft({ ...draft, agreementStartDate: value })} type="date" />
+              <Field label="Review / Renewal Date" value={draft.agreementReviewDate} onChange={(value) => setDraft({ ...draft, agreementReviewDate: value })} type="date" />
+              <Field label="SLA Target Days" value={draft.slaDays} onChange={(value) => setDraft({ ...draft, slaDays: value })} type="number" />
+              <Field label="SLA Owner" value={draft.slaOwner} onChange={(value) => setDraft({ ...draft, slaOwner: value })} />
+              <Field label="Escalate After Hours" value={draft.slaEscalationHours} onChange={(value) => setDraft({ ...draft, slaEscalationHours: value })} type="number" />
+            </div>
+          </section>
+
+          <section>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Commission Structure</p>
+            <div className="mt-3 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <Field label="Commission Rate" value={draft.commissionRate} onChange={(value) => setDraft({ ...draft, commissionRate: value })} type="number" />
+              <SelectField label="Commission Basis" value={draft.commissionBasis} onChange={(value) => setDraft({ ...draft, commissionBasis: value })}>
+                {Object.values(BANK_COMMISSION_BASES).map((basis) => <option key={basis} value={basis}>{formatCommissionBasis(basis)}</option>)}
+              </SelectField>
+              <Field label="Commission Trigger" value={draft.commissionTrigger} onChange={(value) => setDraft({ ...draft, commissionTrigger: value })} />
+            </div>
+          </section>
+
+          <section>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Products & Notes</p>
+            <div className="md:col-span-2">
+              <p className="mt-3 text-sm font-medium text-slate-600">Supported Products</p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {BANK_SUPPORTED_PRODUCTS.map((product) => (
+                  <label key={product} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                    <input type="checkbox" checked={draft.supportedProducts.includes(product)} onChange={() => toggleProduct(product)} className="h-4 w-4 rounded border-slate-300" />
+                    {product}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <TextAreaField label="Commission Notes" value={draft.commissionNotes} onChange={(value) => setDraft({ ...draft, commissionNotes: value })} />
+              <TextAreaField label="Relationship Notes" value={draft.notes} onChange={(value) => setDraft({ ...draft, notes: value })} />
+            </div>
+          </section>
         </div>
         <div className="mt-6 flex flex-wrap justify-end gap-3">
           <button type="button" onClick={onClose} className="inline-flex h-11 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50">Cancel</button>
@@ -701,7 +795,7 @@ function BankPanelManagementView({ panelRows = [], systemBanks = [], canManage =
         </div>
       </header>
       {notice ? <p className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">{notice}</p> : null}
-      <CommandSection eyebrow="Originator Bank Panel" title="Configured Banks" description="Active banks feed bank selections, relationship analytics, scorecards and submission workflows.">
+      <CommandSection eyebrow="Banks, Agreements & Commission" title="Configured Bank Partners" description="List every bank on the originator panel, then maintain its agreement, SLA and commission terms from one place.">
         {!panelRows.length ? (
           <div className="flex min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-center">
             <Landmark className="h-9 w-9 text-blue-700" aria-hidden="true" />
@@ -715,16 +809,16 @@ function BankPanelManagementView({ panelRows = [], systemBanks = [], canManage =
           </div>
         ) : (
           <div className="overflow-x-auto rounded-2xl border border-slate-200">
-            <table className="min-w-[1080px] w-full text-left text-sm">
+            <table className="min-w-[1280px] w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-[0.14em] text-slate-500">
                 <tr>
                   <th className="px-4 py-3 font-bold">Bank</th>
                   <th className="px-4 py-3 font-bold">Status</th>
-                  <th className="px-4 py-3 font-bold">SLA Target</th>
+                  <th className="px-4 py-3 font-bold">Agreement</th>
+                  <th className="px-4 py-3 font-bold">SLA</th>
+                  <th className="px-4 py-3 font-bold">Commission</th>
                   <th className="px-4 py-3 font-bold">Primary Contact</th>
                   <th className="px-4 py-3 font-bold">Submission Method</th>
-                  <th className="px-4 py-3 font-bold">Supported Products</th>
-                  <th className="px-4 py-3 font-bold">Regions</th>
                   <th className="px-4 py-3 text-right font-bold">Actions</th>
                 </tr>
               </thead>
@@ -741,14 +835,26 @@ function BankPanelManagementView({ panelRows = [], systemBanks = [], canManage =
                       </div>
                     </td>
                     <td className="px-4 py-4"><StatusPill status={row.status} /></td>
-                    <td className="px-4 py-4 font-semibold text-slate-700">{row.slaDays ? `${row.slaDays} days` : 'Not set'}</td>
+                    <td className="px-4 py-4">
+                      <p className="font-semibold text-slate-800">{formatAgreementStatus(row.agreementStatus)}</p>
+                      <p className="text-xs text-slate-500">{row.agreementReviewDate ? `Review ${row.agreementReviewDate}` : row.agreementReference || 'No review date'}</p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="font-semibold text-slate-800">{row.slaDays ? `${row.slaDays} days` : 'Not set'}</p>
+                      <p className="text-xs text-slate-500">{row.slaEscalationHours ? `Escalate after ${row.slaEscalationHours}h` : row.slaOwner || 'No escalation rule'}</p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="font-semibold text-slate-800">{formatCommissionRate(row)}</p>
+                      <p className="text-xs text-slate-500">{formatCommissionBasis(row.commissionBasis)} · {row.commissionTrigger || 'Trigger not set'}</p>
+                    </td>
                     <td className="px-4 py-4">
                       <p className="font-semibold text-slate-800">{row.primaryContactName || 'Not assigned'}</p>
                       <p className="text-xs text-slate-500">{row.primaryContactEmail || row.primaryContactPhone || 'No contact details'}</p>
                     </td>
-                    <td className="px-4 py-4 text-slate-700">{row.submissionEmail || row.portalUrl || 'Not configured'}</td>
-                    <td className="px-4 py-4 text-slate-700">{row.supportedProducts?.length ? row.supportedProducts.join(', ') : 'Not configured'}</td>
-                    <td className="px-4 py-4 text-slate-700">{row.regionsSupported?.length ? row.regionsSupported.join(', ') : 'All regions'}</td>
+                    <td className="px-4 py-4">
+                      <p className="font-semibold text-slate-800">{row.submissionEmail || row.portalUrl || 'Not configured'}</p>
+                      <p className="text-xs text-slate-500">{row.supportedProducts?.length ? row.supportedProducts.join(', ') : 'Products not set'} · {row.regionsSupported?.length ? row.regionsSupported.join(', ') : 'All regions'}</p>
+                    </td>
                     <td className="px-4 py-4">
                       <div className="flex justify-end gap-2">
                         <Link to={`/bond/banks/${encodeURIComponent(row.bankId)}`} className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50">
@@ -821,17 +927,27 @@ function downloadCsv(rows = []) {
 }
 
 function downloadBankPanelCsv(rows = []) {
-  const headers = ['Bank', 'Status', 'SLA Target Days', 'Primary Contact', 'Primary Contact Email', 'Submission Email', 'Portal URL', 'Supported Products', 'Regions', 'Notes']
+  const headers = ['Bank', 'Status', 'Agreement Status', 'Agreement Type', 'Agreement Reference', 'Agreement Review Date', 'SLA Target Days', 'SLA Owner', 'SLA Escalation Hours', 'Commission Rate', 'Commission Basis', 'Commission Trigger', 'Primary Contact', 'Primary Contact Email', 'Submission Email', 'Portal URL', 'Supported Products', 'Regions', 'Commission Notes', 'Notes']
   const csvRows = rows.map((row) => [
     row.bankName,
     row.status,
+    row.agreementStatus,
+    row.agreementType,
+    row.agreementReference,
+    row.agreementReviewDate,
     row.slaDays ?? '',
+    row.slaOwner,
+    row.slaEscalationHours ?? '',
+    row.commissionRate ?? '',
+    row.commissionBasis,
+    row.commissionTrigger,
     row.primaryContactName,
     row.primaryContactEmail,
     row.submissionEmail,
     row.portalUrl,
     (row.supportedProducts || []).join('; '),
     (row.regionsSupported || []).join('; '),
+    row.commissionNotes,
     row.notes,
   ])
   const csv = [headers, ...csvRows].map((line) => line.map((value) => `"${String(value ?? '').replaceAll('"', '""')}"`).join(',')).join('\n')
@@ -1166,6 +1282,17 @@ export default function BondBankRelationshipsPage() {
       submissionEmail: panelDraft.submissionEmail,
       portalUrl: panelDraft.portalUrl,
       slaDays: panelDraft.slaDays,
+      slaOwner: panelDraft.slaOwner,
+      slaEscalationHours: panelDraft.slaEscalationHours,
+      agreementStatus: panelDraft.agreementStatus,
+      agreementType: panelDraft.agreementType,
+      agreementReference: panelDraft.agreementReference,
+      agreementStartDate: panelDraft.agreementStartDate,
+      agreementReviewDate: panelDraft.agreementReviewDate,
+      commissionRate: panelDraft.commissionRate,
+      commissionBasis: panelDraft.commissionBasis,
+      commissionTrigger: panelDraft.commissionTrigger,
+      commissionNotes: panelDraft.commissionNotes,
       supportedProducts: panelDraft.supportedProducts,
       regionsSupported: panelDraft.regionsSupportedText.split(',').map((item) => item.trim()).filter(Boolean),
       notes: panelDraft.notes,

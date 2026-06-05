@@ -19,6 +19,21 @@ export const BANK_SUPPORTED_PRODUCTS = Object.freeze([
   'Switch Bond',
 ])
 
+export const BANK_AGREEMENT_STATUSES = Object.freeze({
+  draft: 'draft',
+  underReview: 'under_review',
+  active: 'active',
+  renewalDue: 'renewal_due',
+  expired: 'expired',
+})
+
+export const BANK_COMMISSION_BASES = Object.freeze({
+  grossBondAmount: 'gross_bond_amount',
+  bankCommissionReceived: 'bank_commission_received',
+  originatorGrossRevenue: 'originator_gross_revenue',
+  fixedPerInstruction: 'fixed_per_instruction',
+})
+
 export const SYSTEM_BANK_DIRECTORY = Object.freeze([
   { id: 'absa', name: 'ABSA', shortName: 'ABSA', short_name: 'ABSA', country: 'ZA', bankType: 'retail', bank_type: 'retail', isActive: true, is_active: true, displayOrder: 10, display_order: 10 },
   { id: 'fnb', name: 'First National Bank', shortName: 'FNB', short_name: 'FNB', country: 'ZA', bankType: 'retail', bank_type: 'retail', isActive: true, is_active: true, displayOrder: 20, display_order: 20 },
@@ -140,6 +155,28 @@ function normalizePanelRow(row = {}, orgId = '', systemBanks = SYSTEM_BANK_DIREC
     portal_url: normalizeText(row.portalUrl || row.portal_url),
     slaDays: row.slaDays ?? row.sla_days ?? '',
     sla_days: row.slaDays ?? row.sla_days ?? '',
+    slaOwner: normalizeText(row.slaOwner || row.sla_owner),
+    sla_owner: normalizeText(row.slaOwner || row.sla_owner),
+    slaEscalationHours: row.slaEscalationHours ?? row.sla_escalation_hours ?? '',
+    sla_escalation_hours: row.slaEscalationHours ?? row.sla_escalation_hours ?? '',
+    agreementStatus: normalizeLower(row.agreementStatus || row.agreement_status || BANK_AGREEMENT_STATUSES.draft),
+    agreement_status: normalizeLower(row.agreementStatus || row.agreement_status || BANK_AGREEMENT_STATUSES.draft),
+    agreementType: normalizeText(row.agreementType || row.agreement_type || 'Panel Agreement'),
+    agreement_type: normalizeText(row.agreementType || row.agreement_type || 'Panel Agreement'),
+    agreementReference: normalizeText(row.agreementReference || row.agreement_reference),
+    agreement_reference: normalizeText(row.agreementReference || row.agreement_reference),
+    agreementStartDate: normalizeText(row.agreementStartDate || row.agreement_start_date),
+    agreement_start_date: normalizeText(row.agreementStartDate || row.agreement_start_date),
+    agreementReviewDate: normalizeText(row.agreementReviewDate || row.agreement_review_date || row.nextReviewDate || row.next_review_date),
+    agreement_review_date: normalizeText(row.agreementReviewDate || row.agreement_review_date || row.nextReviewDate || row.next_review_date),
+    commissionRate: row.commissionRate ?? row.commission_rate ?? '',
+    commission_rate: row.commissionRate ?? row.commission_rate ?? '',
+    commissionBasis: normalizeLower(row.commissionBasis || row.commission_basis || BANK_COMMISSION_BASES.bankCommissionReceived),
+    commission_basis: normalizeLower(row.commissionBasis || row.commission_basis || BANK_COMMISSION_BASES.bankCommissionReceived),
+    commissionTrigger: normalizeText(row.commissionTrigger || row.commission_trigger || 'Instruction issued'),
+    commission_trigger: normalizeText(row.commissionTrigger || row.commission_trigger || 'Instruction issued'),
+    commissionNotes: normalizeText(row.commissionNotes || row.commission_notes),
+    commission_notes: normalizeText(row.commissionNotes || row.commission_notes),
     supportedProducts: normalizeArray(row.supportedProducts || row.supported_products),
     supported_products: normalizeArray(row.supportedProducts || row.supported_products),
     regionsSupported: normalizeArray(row.regionsSupported || row.regions_supported),

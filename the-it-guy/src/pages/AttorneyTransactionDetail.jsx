@@ -2,6 +2,7 @@ import {
   Activity,
   AlertTriangle,
   AtSign,
+  Bell,
   Building2,
   CalendarDays,
   ChevronRight,
@@ -9,12 +10,16 @@ import {
   Clock3,
   Copy,
   FileText,
+  Landmark,
   MessageSquarePlus,
   MoreHorizontal,
   Paperclip,
+  Plus,
+  Search,
   Send,
   Smile,
   Upload,
+  UserCircle,
   UsersRound,
   Workflow,
   X,
@@ -28,6 +33,8 @@ import AttorneyAssignmentSection from '../components/attorney/assignments/Attorn
 import TransactionBondHybridFinanceWorkflowPanel from '../components/TransactionBondHybridFinanceWorkflowPanel'
 import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
+import FinanceProgressBar from '../components/finance/FinanceProgressBar'
+import IndicativeFinanceReadinessContainer from '../components/finance/IndicativeFinanceReadinessContainer'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
@@ -89,6 +96,7 @@ import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partnersRepository'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { getBankPanelForCurrentUser } from '../services/bondOriginatorBankService'
 
 const ATTORNEY_WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
@@ -108,6 +116,16 @@ const AGENT_WORKSPACE_TABS = [
   { id: 'transfer', label: 'Transfer' },
   { id: 'activity', label: 'Activity' },
   { id: 'stakeholders', label: 'Roleplayers' },
+]
+
+const BOND_ORIGINATOR_WORKSPACE_TABS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'application', label: 'Application' },
+  { id: 'documents', label: 'Documents' },
+  { id: 'banks_quotes', label: 'Banks & Quotes' },
+  { id: 'stakeholders', label: 'Roleplayers' },
+  { id: 'tasks', label: 'Tasks' },
+  { id: 'activity', label: 'Activity' },
 ]
 
 const ATTORNEY_DOCUMENT_CATEGORIES = [
@@ -675,10 +693,10 @@ const currency = new Intl.NumberFormat('en-ZA', {
   maximumFractionDigits: 0,
 })
 
-function formatDate(value) {
-  if (!value) return 'Not set'
+function formatDate(value, fallback = 'Not set') {
+  if (!value) return fallback
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Not set'
+  if (Number.isNaN(date.getTime())) return fallback
   return date.toLocaleDateString('en-ZA', {
     day: '2-digit',
     month: 'short',
@@ -686,10 +704,10 @@ function formatDate(value) {
   })
 }
 
-function formatDateTime(value) {
-  if (!value) return 'Not set'
+function formatDateTime(value, fallback = 'Not set') {
+  if (!value) return fallback
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Not set'
+  if (Number.isNaN(date.getTime())) return fallback
   return date.toLocaleString('en-ZA', {
     day: '2-digit',
     month: 'short',
@@ -2092,6 +2110,8 @@ function buildMatterPreviewShell(matterPreview, transactionId) {
 function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange, premium = false }) {
   const iconByTab = {
     overview: Workflow,
+    application: FileText,
+    banks_quotes: Landmark,
     transfer: Workflow,
     parties: UsersRound,
     stakeholders: UsersRound,
@@ -2130,6 +2150,244 @@ function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange, premium = fa
         })}
       </div>
     </nav>
+  )
+}
+
+function BondApplicationHeader({
+  reference = '',
+  buyerName = '',
+  propertyLabel = '',
+  purchasePrice = '',
+  ageLabel = '',
+  consultant = '',
+  owner = '',
+  statusLabel = '',
+}) {
+  return (
+    <section className="rounded-[18px] border border-borderDefault bg-white px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+      <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-textMuted">
+            <span>Applications</span>
+            <ChevronRight size={14} />
+            <strong className="text-textStrong">{reference}</strong>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-semibold tracking-[-0.03em] text-textStrong">{buyerName || 'Bond Applicant'}</h1>
+            {statusLabel ? (
+              <span className="inline-flex rounded-full border border-success/25 bg-successSoft px-3 py-1 text-xs font-semibold text-success">
+                {statusLabel}
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-2 text-base text-[#243b5a]">{[propertyLabel, purchasePrice].filter(Boolean).join(' • ')}</p>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-start gap-2 xl:justify-end">
+            <Button type="button" size="sm">
+              <Plus size={14} />
+              Create
+            </Button>
+            <Button type="button" variant="secondary" size="sm">
+              <Search size={14} />
+              Search
+            </Button>
+            <button type="button" className="ui-icon-button" aria-label="Notifications"><Bell size={16} /></button>
+            <button type="button" className="ui-icon-button" aria-label="Profile"><UserCircle size={17} /></button>
+            <button type="button" className="ui-icon-button" aria-label="More actions"><MoreHorizontal size={17} /></button>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-4">
+            {[
+              ['Application Age', ageLabel],
+              ['Consultant', consultant],
+              ['Owner', owner],
+              ['Status', statusLabel],
+            ].map(([label, value]) => (
+              <article key={label} className="min-w-0 border-l border-borderSoft pl-4 first:border-l-0 first:pl-0">
+                <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
+                <strong className="mt-1 block truncate text-sm font-semibold text-textStrong">{value || 'Not assigned'}</strong>
+              </article>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function formatSla(row = {}) {
+  const days = Number(row?.slaDays || row?.sla_days || 0)
+  if (!Number.isFinite(days) || days <= 0) return '-'
+  return days === 1 ? '1 day' : `${Math.max(days - 1, 1)}-${days} days`
+}
+
+function calculateDaysWaiting(submittedAt, status = '') {
+  const normalized = String(status || '').trim().toLowerCase()
+  if (!submittedAt || ['approved', 'declined', 'expired', 'buyer_approved'].includes(normalized)) return '-'
+  return daysBetween(submittedAt)
+}
+
+function getBankSubmissionStatusLabel(status = '') {
+  const normalized = String(status || '').trim().toLowerCase()
+  if (!normalized || normalized === 'pending') return 'Not Submitted'
+  if (normalized === 'submitted') return 'Awaiting Response'
+  if (normalized === 'feedback_received') return 'Submitted'
+  if (normalized === 'additional_documents_required') return 'Docs Requested'
+  if (normalized === 'buyer_approved') return 'Approved'
+  return toTitle(normalized)
+}
+
+function getBankSubmissionTone(status = '') {
+  const normalized = String(status || '').trim().toLowerCase()
+  if (['approved', 'buyer_approved'].includes(normalized)) return 'border-success/25 bg-successSoft text-success'
+  if (normalized === 'additional_documents_required') return 'border-warning/25 bg-warningSoft text-warning'
+  if (['declined', 'expired'].includes(normalized)) return 'border-danger/25 bg-dangerSoft text-danger'
+  if (normalized === 'submitted') return 'border-[#ffd6a7] bg-[#fff7ed] text-[#c2410c]'
+  return 'border-borderSoft bg-surfaceAlt text-textMuted'
+}
+
+function buildConfiguredBankRows({ workflowData = null, bankPanel = [] } = {}) {
+  const applications = Array.isArray(workflowData?.applications) ? workflowData.applications : []
+  const configured = (bankPanel || []).map((row) => ({
+    key: row.bankId || row.bank_id || row.bankName || row.bank_name,
+    bankName: row.bankName || row.bank_name || row.shortName || row.name,
+    sla: formatSla(row),
+  }))
+  const byBank = new Map()
+  for (const row of [...configured, ...applications.map((application) => ({ key: application.bankName, bankName: application.bankName, sla: '-' }))]) {
+    const key = String(row.key || row.bankName || '').trim().toLowerCase()
+    if (key && !byBank.has(key)) byBank.set(key, row)
+  }
+  return [...byBank.values()].map((bank) => {
+    const application = applications.find((item) => String(item.bankName || '').trim().toLowerCase() === String(bank.bankName || '').trim().toLowerCase()) || null
+    const status = application?.status || 'pending'
+    return {
+      bankName: bank.bankName,
+      status,
+      statusLabel: getBankSubmissionStatusLabel(status),
+      submittedAt: application?.submittedAt || application?.submitted_at || '',
+      sla: bank.sla || '-',
+      daysWaiting: calculateDaysWaiting(application?.submittedAt || application?.submitted_at, status),
+      lastUpdate: application?.updatedAt || application?.updated_at || application?.feedbackReceivedAt || application?.feedback_received_at || application?.submittedAt || application?.submitted_at || '',
+    }
+  })
+}
+
+function BankSubmissionTracker({ rows = [], onViewAll }) {
+  return (
+    <section className="rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+      <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Bank Submission Tracker</h3>
+      {rows.length ? (
+        <div className="mt-5 overflow-x-auto">
+          <table className="min-w-[720px] w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-borderSoft text-left text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">
+                <th className="py-2.5 pr-3">Bank</th>
+                <th className="px-3 py-2.5">Status</th>
+                <th className="px-3 py-2.5">Submitted</th>
+                <th className="px-3 py-2.5">Response Time (SLA)</th>
+                <th className="px-3 py-2.5">Days Waiting</th>
+                <th className="py-2.5 pl-3">Last Update</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-borderSoft">
+              {rows.map((row) => (
+                <tr key={row.bankName}>
+                  <td className="py-3 pr-3 font-semibold text-textStrong">{row.bankName}</td>
+                  <td className="px-3 py-3">
+                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${getBankSubmissionTone(row.status)}`}>
+                      {row.statusLabel}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 text-textBody">{formatDate(row.submittedAt, '-')}</td>
+                  <td className="px-3 py-3 text-textBody">{row.sla || '-'}</td>
+                  <td className="px-3 py-3 text-textBody">{row.daysWaiting}</td>
+                  <td className="py-3 pl-3 text-textBody">{formatDateTime(row.lastUpdate, '-')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="mt-5 rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm text-textMuted">
+          No bank submissions yet. Submit this application to one or more banks to start tracking responses.
+        </p>
+      )}
+      <button type="button" className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:text-primaryDark" onClick={onViewAll}>
+        View all bank submissions
+        <ChevronRight size={14} />
+      </button>
+    </section>
+  )
+}
+
+function getBestQuote(quotes = []) {
+  return [...(quotes || [])]
+    .filter((quote) => Number.isFinite(Number(quote.interestRate || quote.interest_rate)) || Number.isFinite(Number(quote.monthlyRepayment || quote.monthly_repayment)))
+    .sort((left, right) => {
+      const leftRate = Number(left.interestRate || left.interest_rate || Number.POSITIVE_INFINITY)
+      const rightRate = Number(right.interestRate || right.interest_rate || Number.POSITIVE_INFINITY)
+      if (leftRate !== rightRate) return leftRate - rightRate
+      return Number(left.monthlyRepayment || left.monthly_repayment || Number.POSITIVE_INFINITY) - Number(right.monthlyRepayment || right.monthly_repayment || Number.POSITIVE_INFINITY)
+    })[0] || null
+}
+
+function BestQuoteSummary({ quote = null, quotes = [], onAccept, onViewAll, loading = false }) {
+  const nextBest = quotes.filter((item) => item.id !== quote?.id).sort((left, right) => Number(left.monthlyRepayment || 0) - Number(right.monthlyRepayment || 0))[0] || null
+  const saving = quote && nextBest ? Math.max(0, Number(nextBest.monthlyRepayment || 0) - Number(quote.monthlyRepayment || 0)) * Number(quote.termMonths || 240) : 0
+
+  return (
+    <section className="rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Best Quote Summary</h3>
+        {quote ? <span className="rounded-full border border-success/25 bg-successSoft px-3 py-1 text-xs font-semibold text-success">Recommended</span> : null}
+      </div>
+      {quote ? (
+        <div className="mt-6 space-y-5">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <article>
+              <span className="text-label font-semibold uppercase text-textMuted">Bank</span>
+              <strong className="mt-1 block text-xl text-textStrong">{quote.bankName}</strong>
+            </article>
+            <article>
+              <span className="text-label font-semibold uppercase text-textMuted">Interest Rate</span>
+              <strong className="mt-1 block text-xl text-textStrong">{quote.interestRate ? `${quote.interestRate}%` : quote.interestRateDisplay || 'Pending'}</strong>
+            </article>
+            <article>
+              <span className="text-label font-semibold uppercase text-textMuted">Est. Monthly Repayment</span>
+              <strong className="mt-1 block text-xl text-textStrong">{formatCurrencyValue(quote.monthlyRepayment, '-')}</strong>
+            </article>
+          </div>
+          <div className="grid gap-3 border-t border-borderSoft pt-5 sm:grid-cols-4">
+            {[
+              ['Lifetime Saving', saving ? formatCurrencyValue(saving, '-') : '-'],
+              ['Term', quote.termMonths ? `${Math.round(Number(quote.termMonths) / 12)} years` : '-'],
+              ['Approval Amount', formatCurrencyValue(quote.quotedAmount, '-')],
+              ['Fees', formatCurrencyValue(quote.fees || quote.feeAmount, 'R0')],
+              ['Status', quote.quoteStatusLabel || toTitle(quote.quoteStatus || 'Received')],
+            ].map(([label, value]) => (
+              <article key={label} className="min-w-0">
+                <span className="text-label font-semibold uppercase text-textMuted">{label}</span>
+                <strong className="mt-1 block truncate text-sm text-textStrong">{value}</strong>
+              </article>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button type="button" size="sm" disabled={loading || ['accepted', 'approved_by_buyer'].includes(String(quote.quoteStatus || '').toLowerCase())} onClick={() => onAccept?.(quote.id)}>
+              Accept Quote
+            </Button>
+            <Button type="button" variant="secondary" size="sm" onClick={onViewAll}>
+              View All Quotes
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <p className="mt-5 rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm leading-6 text-textMuted">
+          No quotes received yet. Quotes will appear here once banks respond to the submitted application.
+        </p>
+      )}
+    </section>
   )
 }
 
@@ -3057,14 +3315,19 @@ function AttorneyTransactionDetail() {
   const canManageTransactionRoleplayers = ['agent', 'agency_admin', 'principal', 'admin', 'internal_admin', 'developer'].includes(String(workspaceRole || '').toLowerCase())
   const requestedWorkspaceMenu = useMemo(() => {
     if (activeLegalWorkflowDetailKey) return 'transfer'
+    if (workspaceRole === 'bond_originator' && (workspaceMenu === 'finance' || workspaceMenu === 'bond')) return 'banks_quotes'
     if (workspaceMenu === 'financials' || workspaceMenu === 'bond') return 'finance'
     if (workspaceMenu === 'cancellation') return 'transfer'
     if (isAgentTransactionView && (workspaceMenu === 'parties' || workspaceMenu === 'tasks' || workspaceMenu === 'buyer' || workspaceMenu === 'seller')) {
       return 'overview'
     }
     return workspaceMenu
-  }, [activeLegalWorkflowDetailKey, isAgentTransactionView, workspaceMenu])
-  const availableWorkspaceTabs = isAgentTransactionView ? AGENT_WORKSPACE_TABS : ATTORNEY_WORKSPACE_TABS
+  }, [activeLegalWorkflowDetailKey, isAgentTransactionView, workspaceMenu, workspaceRole])
+  const availableWorkspaceTabs = workspaceRole === 'bond_originator'
+    ? BOND_ORIGINATOR_WORKSPACE_TABS
+    : isAgentTransactionView
+      ? AGENT_WORKSPACE_TABS
+      : ATTORNEY_WORKSPACE_TABS
   const activeWorkspaceMenu = availableWorkspaceTabs.some((tab) => tab.id === requestedWorkspaceMenu) ? requestedWorkspaceMenu : 'overview'
 
   useEffect(() => {
@@ -3305,6 +3568,12 @@ function AttorneyTransactionDetail() {
     }
     if (tab.id === 'documents') {
       return { ...tab, meta: `${documents.length} files` }
+    }
+    if (tab.id === 'application') {
+      return { ...tab, meta: onboardingCompleted ? 'Onboarding complete' : 'Review' }
+    }
+    if (tab.id === 'banks_quotes') {
+      return { ...tab, meta: `${transactionFinanceWorkflow?.applications?.length || 0} banks` }
     }
     if (tab.id === 'finance') {
       return { ...tab, meta: financeTypeLabel }
@@ -3823,8 +4092,56 @@ function AttorneyTransactionDetail() {
       : matterHealthLabel === 'Waiting'
         ? WORKFLOW_STATUS_META.waiting
         : WORKFLOW_STATUS_META.in_progress
-  const canEditBondHybridFinanceWorkflow = ['bond_originator', 'developer', 'internal_admin', 'admin'].includes(
+  const canEditBondHybridFinanceWorkflow = ['bond_originator', 'internal_admin', 'admin'].includes(
     String(workspaceRole || '').toLowerCase(),
+  )
+  const configuredOriginatorBanks = useMemo(
+    () =>
+      workspaceRole === 'bond_originator'
+        ? getBankPanelForCurrentUser(
+            { workspace, currentWorkspace: workspace, currentMembership, profile, workspaceId: workspaceOrganisationId },
+            { workspaceId: workspaceOrganisationId },
+          )
+        : [],
+    [currentMembership, profile, workspace, workspaceOrganisationId, workspaceRole],
+  )
+  const bondSubmissionRows = useMemo(
+    () => buildConfiguredBankRows({ workflowData: transactionFinanceWorkflow, bankPanel: configuredOriginatorBanks }),
+    [configuredOriginatorBanks, transactionFinanceWorkflow],
+  )
+  const bestBondQuote = useMemo(
+    () => getBestQuote(transactionFinanceWorkflow?.quotes || transactionFinanceWorkflow?.offers || []),
+    [transactionFinanceWorkflow],
+  )
+  const applicationReviewItems = useMemo(
+    () => [
+      ['Applicant', buyerDisplayName],
+      ['Applicant Email', buyerEmail || 'Not captured'],
+      ['Employment', data?.onboardingFormData?.employmentStatus || data?.onboardingFormData?.employment_status || 'Not captured'],
+      ['Gross Income', formatCurrencyValue(data?.onboardingFormData?.grossMonthlyIncome || data?.onboardingFormData?.gross_monthly_income, 'Not captured')],
+      ['Monthly Expenses', formatCurrencyValue(data?.onboardingFormData?.monthlyExpenses || data?.onboardingFormData?.monthly_expenses, 'Not captured')],
+      ['Existing Debt', formatCurrencyValue(data?.onboardingFormData?.existingDebt || data?.onboardingFormData?.existing_debt, 'Not captured')],
+      ['Deposit', formatCurrencyValue(transaction?.deposit_amount, 'Not captured')],
+      ['Purchase Price', formatCurrencyValue(transaction?.purchase_price || transaction?.sales_price, 'Not captured')],
+      ['Bond Amount Required', formatCurrencyValue(transaction?.bond_amount, 'Not captured')],
+      ['Property / Unit', matterHeadline],
+      ['Documents Uploaded', documentReadinessText],
+      ['Consent Status', data?.onboardingFormData?.creditConsent || data?.onboardingFormData?.credit_consent ? 'Consent captured' : 'Not captured'],
+      ['Affordability / Risk', transaction?.risk_status || transaction?.compliance_status || 'Review pending'],
+    ],
+    [
+      buyerDisplayName,
+      buyerEmail,
+      data?.onboardingFormData,
+      documentReadinessText,
+      matterHeadline,
+      transaction?.bond_amount,
+      transaction?.compliance_status,
+      transaction?.deposit_amount,
+      transaction?.purchase_price,
+      transaction?.risk_status,
+      transaction?.sales_price,
+    ],
   )
   const bondHybridFinanceWorkflowPanel = isBondOrHybridFinance ? (
     <TransactionBondHybridFinanceWorkflowPanel
@@ -4166,7 +4483,7 @@ function AttorneyTransactionDetail() {
       return
     }
     if (normalizedTarget === 'finance') {
-      setWorkspaceMenu('finance')
+      setWorkspaceMenu(workspaceRole === 'bond_originator' ? 'banks_quotes' : 'finance')
       return
     }
     if (normalizedTarget === 'activity') {
@@ -5938,29 +6255,42 @@ function AttorneyTransactionDetail() {
             <ChevronRight size={15} className="rotate-180" />
             {workspaceBackLabel}
           </Link>
-            <MatterOverviewHeader
-              title={workspaceReference}
-              clientTitle={buyerDisplayName}
-              transactionStageLabel={transferStageLabel}
-              transaction={transaction}
-              mainStage={mainStage}
-              statusLabel={hydratingDetail ? 'Refreshing' : displayedLifecycleLabel}
-              statusClassName={displayedLifecycleStatusClassName}
-              propertyLabel={isAgentTransactionView ? (propertyAddress || matterHeadline) : matterHeadline}
-              subtitle={matterSubtitle}
-              buyerName={buyerDisplayName}
-              sellerName={sellerDisplayName}
-              agentName={transaction?.assigned_agent || getParticipantDisplayName(assignedAgent)}
-              assignedFirms={matterAssignedFirms}
-              metrics={matterHeaderMetrics}
-              progressIndex={matterProgressIndex}
-              matterHealthLabel={displayedMatterHealthLabel}
-              daysActiveLabel={daysBetween(transaction?.created_at)}
-              updatedLabel={displayedUpdatedLabel}
-              lifecycleProgress={displayedLifecycleProgress}
-              actionButtons={headerWorkflowActionButtons}
-              isAgentView={isAgentTransactionView}
-            />
+            {workspaceRole === 'bond_originator' ? (
+              <BondApplicationHeader
+                reference={workspaceReference}
+                buyerName={buyerDisplayName}
+                propertyLabel={matterHeadline}
+                purchasePrice={formatCurrencyValue(transaction?.purchase_price || transaction?.sales_price, '')}
+                ageLabel={daysBetween(transaction?.created_at)}
+                consultant={transaction?.bond_originator || transaction?.assigned_bond_originator_name || getParticipantDisplayName(assignedBondOriginator) || 'Unassigned'}
+                owner={transaction?.bond_originator || transaction?.assigned_bond_processor_name || transaction?.processor_name || 'Unassigned'}
+                statusLabel={hydratingDetail ? 'Refreshing' : displayedLifecycleLabel}
+              />
+            ) : (
+              <MatterOverviewHeader
+                title={workspaceReference}
+                clientTitle={buyerDisplayName}
+                transactionStageLabel={transferStageLabel}
+                transaction={transaction}
+                mainStage={mainStage}
+                statusLabel={hydratingDetail ? 'Refreshing' : displayedLifecycleLabel}
+                statusClassName={displayedLifecycleStatusClassName}
+                propertyLabel={isAgentTransactionView ? (propertyAddress || matterHeadline) : matterHeadline}
+                subtitle={matterSubtitle}
+                buyerName={buyerDisplayName}
+                sellerName={sellerDisplayName}
+                agentName={transaction?.assigned_agent || getParticipantDisplayName(assignedAgent)}
+                assignedFirms={matterAssignedFirms}
+                metrics={matterHeaderMetrics}
+                progressIndex={matterProgressIndex}
+                matterHealthLabel={displayedMatterHealthLabel}
+                daysActiveLabel={daysBetween(transaction?.created_at)}
+                updatedLabel={displayedUpdatedLabel}
+                lifecycleProgress={displayedLifecycleProgress}
+                actionButtons={headerWorkflowActionButtons}
+                isAgentView={isAgentTransactionView}
+              />
+            )}
           <MatterWorkspaceTabs tabs={workspaceMenuTabs} activeTab={activeWorkspaceMenu} onChange={openWorkspaceMenu} premium={isAgentTransactionView} />
           {onboardingActionMessage ? (
             <p className="rounded-[14px] border border-borderDefault bg-surfaceAlt px-4 py-2.5 text-helper text-textMuted">
@@ -5971,7 +6301,119 @@ function AttorneyTransactionDetail() {
       )}
     >
       <div className="space-y-6">
-        {['overview', 'transfer'].includes(activeWorkspaceMenu) ? (
+        {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'overview' ? (
+          <section className="space-y-7">
+            <FinanceProgressBar
+              workflowData={transactionFinanceWorkflow}
+              mode="editable"
+              viewerRole={workspaceRole}
+              loadingStage={bondHybridFinanceActionLoading}
+              onStageChange={(stageKey) => void handleBondHybridFinanceStage(stageKey)}
+            />
+
+            <IndicativeFinanceReadinessContainer handoff={financeReadinessHandoff} />
+
+            <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
+              <BankSubmissionTracker rows={bondSubmissionRows} onViewAll={() => setWorkspaceMenu('banks_quotes')} />
+              <BestQuoteSummary
+                quote={bestBondQuote}
+                quotes={transactionFinanceWorkflow?.quotes || transactionFinanceWorkflow?.offers || []}
+                loading={Boolean(bondHybridFinanceActionLoading)}
+                onAccept={(quoteId) => void handleApproveBondHybridQuote(quoteId)}
+                onViewAll={() => setWorkspaceMenu('banks_quotes')}
+              />
+            </section>
+
+            <section className="rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Matter Conversation</h3>
+                  <p className="mt-1 text-sm text-textMuted">Updates, notes, roleplayer visibility, and system activity for this application.</p>
+                </div>
+                <Button type="button" variant="ghost" size="sm" onClick={() => openWorkspaceMenu('activity')}>
+                  View all activity
+                </Button>
+              </div>
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(360px,0.7fr)]">
+                <form onSubmit={handleAddDiscussion} className="rounded-[14px] border border-borderSoft bg-surfaceAlt p-4">
+                  <div className="mb-3 flex gap-2 border-b border-borderSoft">
+                    <button type="button" className="border-b-2 border-primary px-3 py-2 text-sm font-semibold text-primary">Updates</button>
+                    <button type="button" className="px-3 py-2 text-sm font-semibold text-textMuted">Notes</button>
+                  </div>
+                  <Field
+                    as="textarea"
+                    rows={4}
+                    value={discussionBody}
+                    onChange={(event) => setDiscussionBody(event.target.value)}
+                    placeholder="Write an update, note, or @mention someone..."
+                  />
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <label className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
+                      Update Type
+                      <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)} className="mt-1 min-h-9 text-xs">
+                        {DISCUSSION_TYPES.map((item) => (
+                          <option key={item.key} value={item.key}>{item.label}</option>
+                        ))}
+                      </Field>
+                    </label>
+                    <label className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
+                      Visibility
+                      <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)} className="mt-1 min-h-9 text-xs">
+                        {availableDiscussionVisibilityOptions.map((item) => (
+                          <option key={item.key} value={item.key}>{item.label}</option>
+                        ))}
+                      </Field>
+                    </label>
+                  </div>
+                  <div className="mt-4 flex flex-wrap justify-end gap-2">
+                    <Button type="button" variant="secondary" size="sm" onClick={() => openWorkspaceMenu('documents')}>
+                      <Paperclip size={14} />
+                      Attach Document
+                    </Button>
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={
+                        saving ||
+                        !discussionBody.trim() ||
+                        (discussionVisibility === 'internal' && !canPostInternalDiscussion) ||
+                        (discussionVisibility === 'shared' && !canPostSharedDiscussion) ||
+                        (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion)
+                      }
+                    >
+                      <Send size={14} />
+                      {saving ? 'Posting...' : 'Post Update'}
+                    </Button>
+                  </div>
+                </form>
+
+                <div className="min-w-0">
+                  <h4 className="text-sm font-semibold text-textStrong">Recent Activity</h4>
+                  <div className="mt-3 space-y-3">
+                    {overviewConversationEntries.slice(0, 4).map((entry) => (
+                      <article key={entry.id} className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <strong className="block truncate text-sm text-textStrong">{entry.authorName}</strong>
+                            <p className="mt-1 line-clamp-2 text-sm leading-5 text-textMuted">{entry.body || entry.title}</p>
+                          </div>
+                          <span className="shrink-0 text-xs text-textMuted">{formatDateTime(entry.createdAt)}</span>
+                        </div>
+                      </article>
+                    ))}
+                    {!overviewConversationEntries.length ? (
+                      <p className="rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm text-textMuted">
+                        No activity yet. Updates, notes and system events will appear here.
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </section>
+          </section>
+        ) : null}
+
+        {workspaceRole !== 'bond_originator' && ['overview', 'transfer'].includes(activeWorkspaceMenu) ? (
           <>
             <section className={activeWorkspaceMenu === 'overview' ? 'grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]' : 'space-y-5'}>
               <div className="space-y-4">
@@ -6724,8 +7166,10 @@ function AttorneyTransactionDetail() {
                     {[
                       ['Request Documents', FileText, handleQuickRequestDocuments, canPostSharedDiscussion || canManageTransactionRoleplayers],
                       ['Add Note', MessageSquarePlus, handleQuickAddWorkflowNote, canPostSharedDiscussion || canPostInternalDiscussion],
-                      ['Schedule Signing', CalendarDays, handleQuickScheduleSigning, canManageTransactionRoleplayers || workspaceRole === 'attorney'],
-                      ['Generate Sales Agreement', FileText, openAgentSalesAgreementWorkspace, canManageTransactionRoleplayers],
+                      ['Schedule Signing', CalendarDays, handleQuickScheduleSigning, workspaceRole !== 'bond_originator' && (canManageTransactionRoleplayers || workspaceRole === 'attorney')],
+                      ['Generate Sales Agreement', FileText, openAgentSalesAgreementWorkspace, workspaceRole !== 'bond_originator' && canManageTransactionRoleplayers],
+                      ['Submit to Banks', Landmark, () => setWorkspaceMenu('banks_quotes'), workspaceRole === 'bond_originator'],
+                      ['Compare Quotes', CircleDollarSign, () => setWorkspaceMenu('banks_quotes'), workspaceRole === 'bond_originator'],
                     ]
                       .filter(([, , , allowed]) => allowed)
                       .map(([label, Icon, action]) => (
@@ -7009,11 +7453,110 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
+        {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'application' ? (
+          <section className="space-y-5">
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-6 shadow-surface">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-section-title font-semibold text-textStrong">Application Review</h3>
+                  <p className="mt-1 text-secondary text-textMuted">
+                    Buyer onboarding is the source of truth. This tab reviews the submitted application data rather than recapturing it.
+                  </p>
+                </div>
+                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-helper font-semibold ${onboardingCompleted ? 'border-success/30 bg-successSoft text-success' : 'border-warning/30 bg-warningSoft text-warning'}`}>
+                  {onboardingCompleted ? 'Onboarding complete' : 'Onboarding pending'}
+                </span>
+              </div>
+              <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {applicationReviewItems.map(([label, value]) => (
+                  <article key={label} className="min-w-0 rounded-[14px] border border-borderSoft bg-white px-4 py-3">
+                    <span className="block text-label font-semibold uppercase text-textMuted">{label}</span>
+                    <strong className="mt-1 block truncate text-body font-semibold text-textStrong">{value || 'Not captured'}</strong>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-6 shadow-surface">
+              <h3 className="text-section-title font-semibold text-textStrong">Uploaded Application Documents</h3>
+              <p className="mt-1 text-secondary text-textMuted">Documents uploaded through onboarding and the transaction document centre.</p>
+              <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {documentLibraryRows.slice(0, 9).map((row) => (
+                  <article key={row.id} className="rounded-[14px] border border-borderSoft bg-white px-4 py-3">
+                    <strong className="block truncate text-sm text-textStrong">{row.displayName}</strong>
+                    <p className="mt-1 truncate text-xs text-textMuted">{row.categoryLabel} • {getDocumentCommandStatusLabel(row.status)}</p>
+                  </article>
+                ))}
+                {!documentLibraryRows.length ? (
+                  <p className="rounded-[14px] border border-dashed border-borderDefault bg-white px-4 py-6 text-sm text-textMuted">
+                    No documents have been uploaded yet.
+                  </p>
+                ) : null}
+              </div>
+            </section>
+          </section>
+        ) : null}
+
+        {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'banks_quotes' ? (
+          <section className="space-y-5">
+            {financeCommandCenterPanel}
+          </section>
+        ) : null}
+
         {activeWorkspaceMenu === 'finance' ? (
           financeCommandCenterPanel
         ) : null}
 
-        {activeWorkspaceMenu === 'tasks' ? (
+        {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'tasks' ? (
+          <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-6 shadow-surface">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-section-title font-semibold text-textStrong">Next Actions</h3>
+                  <p className="mt-1 text-secondary text-textMuted">Bond application tasks, bank follow-ups, document requests, and consultant ownership.</p>
+                </div>
+                <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
+                  {overviewNextActions.length} actions
+                </span>
+              </div>
+              <div className="mt-5 divide-y divide-borderSoft overflow-hidden rounded-[16px] border border-borderDefault bg-white">
+                {overviewNextActions.map((item) => (
+                  <article key={`${item.title}-${item.workflow}`} className="px-4 py-4 transition hover:bg-primarySoft/40">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="min-w-0">
+                        <strong className="text-sm font-semibold text-textStrong">{item.title}</strong>
+                        <p className="mt-1 max-w-3xl text-sm leading-6 text-textMuted">{item.description}</p>
+                      </div>
+                      <Button type="button" size="sm" variant="secondary" className="shrink-0 justify-center" onClick={() => handleOverviewActionTarget(item.actionTarget)}>
+                        {item.action}
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+            <aside className="space-y-4 xl:sticky xl:top-4">
+              <OverviewSidePanel title="Quick Actions">
+                <div className="grid gap-2">
+                  {[
+                    ['Request Documents', FileText, () => setWorkspaceMenu('documents')],
+                    ['Submit to Banks', Landmark, () => setWorkspaceMenu('banks_quotes')],
+                    ['Compare Quotes', CircleDollarSign, () => setWorkspaceMenu('banks_quotes')],
+                    ['Assign Consultant', UsersRound, () => setWorkspaceMenu('stakeholders')],
+                    ['Add Note', MessageSquarePlus, () => setWorkspaceMenu('activity')],
+                  ].map(([label, Icon, action]) => (
+                    <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
+                      {createElement(Icon, { size: 14 })}
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+              </OverviewSidePanel>
+            </aside>
+          </section>
+        ) : null}
+
+        {workspaceRole !== 'bond_originator' && activeWorkspaceMenu === 'tasks' ? (
           <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
             <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
               <div className="flex flex-wrap items-start justify-between gap-3">

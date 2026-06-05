@@ -282,11 +282,13 @@ function makeSnapshot(overrides = {}) {
               { key: 'sla_breaches', label: 'SLA breaches', value: 2, tone: 'high', href: '/bond/reports?view=sla-breaches' },
             ],
             pipelineFunnel: {
-              bottleneckStage: 'Awaiting OTP',
+              bottleneckStage: 'Application Prep',
               stages: [
-                { key: 'intake_received', label: 'Intake Received', count: 42, valueLabel: '42 files', conversionRate: 100, dropOff: 0, href: '/bond/pipeline?stage=intake_received' },
-                { key: 'awaiting_otp', label: 'Awaiting OTP', count: 30, valueLabel: '30 files', conversionRate: 71, dropOff: 29, href: '/bond/pipeline?stage=awaiting_otp' },
-                { key: 'approved', label: 'Approved', count: 12, valueLabel: '12 files', conversionRate: 29, dropOff: 60, href: '/bond/pipeline?stage=approved' },
+                { key: 'intake', label: 'Intake', count: 42, valueLabel: '42 files', conversionRate: 100, dropOff: 0, href: '/bond/pipeline?view=all' },
+                { key: 'application_prep', label: 'Application Prep', count: 30, valueLabel: '30 files', conversionRate: 71, dropOff: 29, href: '/bond/pipeline?view=in-progress' },
+                { key: 'review_submit', label: 'Review & Submit', count: 18, valueLabel: '18 files', conversionRate: 60, dropOff: 40, href: '/bond/pipeline?view=submitted' },
+                { key: 'bank_decision', label: 'Bank Decision', count: 12, valueLabel: '12 files', conversionRate: 67, dropOff: 33, href: '/bond/pipeline?view=submitted' },
+                { key: 'registration', label: 'Registration', count: 8, valueLabel: '8 files', conversionRate: 67, dropOff: 33, href: '/bond/applications?view=attorney-stage' },
               ],
             },
             regionalPerformance: [
@@ -347,6 +349,11 @@ function makeSnapshot(overrides = {}) {
     assert.match(hqMarkup, /SLA Breaches/)
     assert.match(hqMarkup, /High Risk Branches/)
     assert.match(hqMarkup, /National Pipeline Flow/)
+    assert.match(hqMarkup, /Application Prep/)
+    assert.match(hqMarkup, /Review &amp; Submit/)
+    assert.match(hqMarkup, /Bank Decision/)
+    assert.match(hqMarkup, /Registration/)
+    assert.doesNotMatch(hqMarkup, /OTP Ready/)
     assert.match(hqMarkup, /Biggest Bottleneck/)
     assert.match(hqMarkup, /Regional Performance/)
     assert.match(hqMarkup, /Top Performing Branches/)

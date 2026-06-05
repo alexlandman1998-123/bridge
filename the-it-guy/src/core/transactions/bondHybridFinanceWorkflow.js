@@ -1,30 +1,57 @@
 export const BOND_HYBRID_FINANCE_WORKFLOW_TYPE = 'bond_hybrid'
 
 export const BOND_HYBRID_FINANCE_STAGES = [
-  'documents_received',
-  'documents_reviewed',
-  'applications_submitted',
-  'quotes_received',
-  'quote_approved',
+  'intake',
+  'documents',
+  'submitted_to_banks',
+  'bank_review',
+  'quote_received',
+  'quote_accepted',
   'instruction_sent',
+  'complete',
 ]
 
 export const BOND_HYBRID_FINANCE_STAGE_LABELS = {
-  documents_received: 'Documents Received',
-  documents_reviewed: 'Documents Reviewed',
-  applications_submitted: 'Applications Submitted',
-  quotes_received: 'Quotes Received',
-  quote_approved: 'Quote Approved',
-  instruction_sent: 'Instruction Sent',
+  intake: 'Intake',
+  documents: 'Documents',
+  submitted_to_banks: 'Submitted to Banks',
+  bank_review: 'Bank Review',
+  quote_received: 'Quote Received',
+  quote_accepted: 'Quote Accepted',
+  instruction_sent: 'Instruction Issued',
+  complete: 'Complete',
 }
 
 export const BOND_HYBRID_FINANCE_STAGE_DESCRIPTIONS = {
-  documents_received: 'Buyer finance documents have been received.',
-  documents_reviewed: 'Buyer finance documents have been reviewed by the bond originator.',
-  applications_submitted: 'Applications have been submitted to one or more banks or lenders.',
-  quotes_received: 'Bank feedback or finance quotes have been received.',
-  quote_approved: 'The buyer has approved one finance quote.',
-  instruction_sent: 'Finance instruction has been sent and the finance workflow is complete.',
+  intake: 'The bond application intake is open.',
+  documents: 'Buyer finance documents are being collected and reviewed.',
+  submitted_to_banks: 'Applications have been submitted to one or more banks or lenders.',
+  bank_review: 'Banks are reviewing the application or requesting additional documents.',
+  quote_received: 'Bank feedback or finance quotes have been received.',
+  quote_accepted: 'The buyer has accepted one finance quote.',
+  instruction_sent: 'Finance instruction has been issued to the attorney workflow.',
+  complete: 'Finance workflow is complete.',
+}
+
+export const BOND_HYBRID_FINANCE_STAGE_ALIASES = {
+  buyer_onboarding_started: 'intake',
+  intake_started: 'intake',
+  documents_requested: 'documents',
+  documents_pending: 'documents',
+  documents_received: 'documents',
+  documents_reviewed: 'documents',
+  documents_verified: 'documents',
+  applications_submitted: 'submitted_to_banks',
+  submitted: 'submitted_to_banks',
+  bank_feedback: 'bank_review',
+  bank_feedback_pending: 'bank_review',
+  quotes_received: 'quote_received',
+  quote_approved: 'quote_accepted',
+  approved_by_buyer: 'quote_accepted',
+  accepted: 'quote_accepted',
+  instruction_issued: 'instruction_sent',
+  registered: 'complete',
+  completed: 'complete',
 }
 
 export const BOND_HYBRID_APPLICATION_STATUSES = [
@@ -81,14 +108,15 @@ export const BOND_HYBRID_WORKFLOW_EVENT_TYPES = [
   'instruction_sent',
 ]
 
-export function normalizeBondHybridFinanceStage(value, fallback = 'documents_received') {
+export function normalizeBondHybridFinanceStage(value, fallback = 'intake') {
   const normalized = String(value || '').trim().toLowerCase()
+  if (BOND_HYBRID_FINANCE_STAGE_ALIASES[normalized]) return BOND_HYBRID_FINANCE_STAGE_ALIASES[normalized]
   return BOND_HYBRID_FINANCE_STAGES.includes(normalized) ? normalized : fallback
 }
 
 export function getBondHybridFinanceStageLabel(stage) {
   const normalized = normalizeBondHybridFinanceStage(stage)
-  return BOND_HYBRID_FINANCE_STAGE_LABELS[normalized] || BOND_HYBRID_FINANCE_STAGE_LABELS.documents_received
+  return BOND_HYBRID_FINANCE_STAGE_LABELS[normalized] || BOND_HYBRID_FINANCE_STAGE_LABELS.intake
 }
 
 export function getBondHybridFinanceStageIndex(stage) {
@@ -106,7 +134,8 @@ export function normalizeBondHybridQuoteStatus(value, fallback = 'received') {
 }
 
 export function isBondHybridFinanceWorkflowComplete(workflow = {}) {
-  return workflow?.status === 'completed' || workflow?.currentStage === 'instruction_sent' || workflow?.current_stage === 'instruction_sent'
+  const stage = normalizeBondHybridFinanceStage(workflow?.currentStage || workflow?.current_stage)
+  return workflow?.status === 'completed' || stage === 'complete'
 }
 
 export function summarizeBondHybridFinanceWorkflow(workflowData = {}) {
@@ -154,4 +183,11 @@ export function buildBondHybridFinanceStageSteps(workflowData = {}) {
       status: stepStatus,
     }
   })
+}
+
+export function getBondHybridFinanceProgressPercent(stage, status = 'active') {
+  if (status === 'completed') return 100
+  const index = getBondHybridFinanceStageIndex(stage)
+  if (index < 0) return 0
+  return Math.min(100, Math.round(((index + 1) / Math.max(BOND_HYBRID_FINANCE_STAGES.length - 1, 1)) * 100))
 }

@@ -213,6 +213,89 @@ const COMMERCIAL_QUICK_CREATE_GROUPS = [
   },
 ]
 
+const BOND_ORIGINATOR_QUICK_CREATE_GROUPS = [
+  {
+    label: 'Applications',
+    items: [
+      {
+        type: 'bond-application',
+        label: 'Application',
+        helper: 'Open the bond intake queue for a new application',
+        icon: FileCheck2,
+        action: 'route',
+        to: '/bond/pipeline?view=new',
+      },
+      {
+        type: 'bond-client',
+        label: 'Client',
+        helper: 'Add a buyer or client in the bond workspace',
+        icon: UsersRound,
+        action: 'route',
+        to: '/bond/clients',
+        state: { openAddClient: true },
+      },
+    ],
+  },
+  {
+    label: 'Organisation',
+    items: [
+      {
+        type: 'bond-consultant',
+        label: 'Consultant',
+        helper: 'Open consultant management in the bond organisation module',
+        icon: UserPlus,
+        action: 'route',
+        to: '/bond/organisation?view=consultants',
+      },
+      {
+        type: 'bond-branch',
+        label: 'Branch',
+        helper: 'Open branch management in the originator hierarchy',
+        icon: Building2,
+        action: 'route',
+        to: '/bond/organisation?view=branches',
+      },
+      {
+        type: 'bond-region',
+        label: 'Region',
+        helper: 'Open regional operating scopes',
+        icon: Warehouse,
+        action: 'route',
+        to: '/bond/organisation?view=regions',
+      },
+    ],
+  },
+  {
+    label: 'Network',
+    items: [
+      {
+        type: 'bond-partner',
+        label: 'Partner',
+        helper: 'Open partner management for agencies and developers',
+        icon: Handshake,
+        action: 'route',
+        to: '/bond/organisation?view=partners',
+      },
+      {
+        type: 'bond-routing-rule',
+        label: 'Routing Rule',
+        helper: 'Open application routing defaults',
+        icon: ClipboardList,
+        action: 'route',
+        to: '/bond/organisation?view=routing-rules',
+      },
+      {
+        type: 'bond-appointment',
+        label: 'Appointment',
+        helper: 'Open the bond calendar workspace',
+        icon: CalendarPlus,
+        action: 'route',
+        to: '/bond/calendar',
+      },
+    ],
+  },
+]
+
 const PERSON_TYPES = ['Buyer', 'Seller', 'Tenant', 'Landlord', 'Investor']
 const LEAD_SOURCE_OPTIONS = [
   'Property24',
@@ -640,8 +723,11 @@ function QuickCreateDropdown({ className = '' }) {
   }, [profile?.email, profile?.firstName, profile?.fullName, profile?.id, profile?.lastName])
 
   const quickCreateGroups = useMemo(
-    () => location.pathname.startsWith('/commercial') ? COMMERCIAL_QUICK_CREATE_GROUPS : RESIDENTIAL_QUICK_CREATE_GROUPS,
-    [location.pathname],
+    () => {
+      if (role === 'bond_originator') return BOND_ORIGINATOR_QUICK_CREATE_GROUPS
+      return location.pathname.startsWith('/commercial') ? COMMERCIAL_QUICK_CREATE_GROUPS : RESIDENTIAL_QUICK_CREATE_GROUPS
+    },
+    [location.pathname, role],
   )
 
   useEffect(() => {

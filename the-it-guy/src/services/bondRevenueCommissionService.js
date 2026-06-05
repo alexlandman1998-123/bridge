@@ -3,6 +3,8 @@ export {
   getRevenueKpis,
   getRevenueFlow,
   getCommissionRules,
+  createCommissionRule,
+  updateCommissionRule,
   calculateApplicationCommissions,
   calculatePartnerPayout,
   calculateConsultantCommission,

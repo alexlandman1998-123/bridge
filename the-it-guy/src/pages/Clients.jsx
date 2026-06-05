@@ -324,6 +324,12 @@ function Clients() {
     }
   }, [activeFilter, searchParams, typeFilters])
 
+  useEffect(() => {
+    if (!location.state?.openAddClient) return
+    setShowAddModal(true)
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null })
+  }, [location.pathname, location.search, location.state, navigate])
+
   const loadData = useCallback(async () => {
     if (isAgentClientDirectory) {
       try {

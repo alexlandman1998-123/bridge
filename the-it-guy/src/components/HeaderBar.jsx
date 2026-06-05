@@ -321,6 +321,7 @@ function HeaderBar({ onLogout, user }) {
   const developerDashboardHeaderOnly = role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/')
   const userInitials = getUserInitials(user)
   const isAgentsDirectoryRoute = location.pathname === '/agency/agents'
+  const showPersonaSwitcher = role !== 'bond_originator' && !isAgentsDirectoryRoute
   const unreadDisplay = notificationState.unreadCount > 99 ? '99+' : String(notificationState.unreadCount || 0)
   const agentDashboardOwnsHeader =
     role === 'agent' &&
@@ -601,7 +602,7 @@ function HeaderBar({ onLogout, user }) {
       <div className="ui-shell-actions">
         <QuickCreateDropdown />
 
-        {!isAgentsDirectoryRoute ? (
+        {showPersonaSwitcher ? (
           <div
             className="ui-shell-role-switch min-h-[42px] min-w-[212px] shrink-0"
             aria-label="Active persona"

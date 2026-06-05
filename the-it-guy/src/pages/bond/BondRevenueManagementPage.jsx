@@ -5,15 +5,18 @@ import {
   CheckCircle2,
   Clock3,
   Download,
+  Edit3,
   FileSpreadsheet,
   Filter,
   Gauge,
   LineChart,
+  Plus,
   ReceiptText,
   RefreshCw,
   ShieldCheck,
   Users,
   Wallet,
+  X,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -22,10 +25,17 @@ import {
   INVOICE_STATUSES,
   PAYOUT_STATUSES,
   PAYOUT_STATUS_KEYS,
+  createCommissionRule,
   generateCommissionStatement,
   getRevenueDashboard,
+  updateCommissionRule,
   updatePayoutStatus,
 } from '../../services/bondRevenueCommissionService'
+import {
+  COMMISSION_CALCULATION_BASES,
+  COMMISSION_PARTY_TYPES,
+  COMMISSION_RULE_TYPES,
+} from '../../services/bondCommissionRulesService'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -79,6 +89,10 @@ function formatPartyType(value = '') {
     partner_referral: 'Partner Referral',
   }
   return labels[normalizeText(value)] || normalizeText(value).replaceAll('_', ' ') || 'Party'
+}
+
+function humanize(value = '') {
+  return normalizeText(value).replaceAll('_', ' ') || 'Not configured'
 }
 
 function formatRate(row = {}) {
@@ -206,6 +220,114 @@ function DataTable({ columns = [], rows = [], emptyTitle = 'No records match thi
   )
 }
 
+function Field({ label, value, onChange, type = 'text' }) {
+  return (
+    <label className="text-sm font-medium text-slate-600">
+      {label}
+      <input
+        type={type}
+        value={value ?? ''}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3 text-sm text-slate-950"
+      />
+    </label>
+  )
+}
+
+function SelectField({ label, value, onChange, children }) {
+  return (
+    <label className="text-sm font-medium text-slate-600">
+      {label}
+      <select
+        value={value ?? ''}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-950"
+      >
+        {children}
+      </select>
+    </label>
+  )
+}
+
+function emptyCommissionRuleDraft() {
+  return {
+    id: '',
+    name: '',
+    partyType: COMMISSION_PARTY_TYPES.bank,
+    partyName: '',
+    calculationBasis: COMMISSION_CALCULATION_BASES.originatorCommission,
+    type: COMMISSION_RULE_TYPES.percentage,
+    rate: '',
+    fixedAmount: '',
+    status: 'active',
+    effectiveFrom: '',
+    effectiveTo: '',
+  }
+}
+
+function commissionRuleDraftFromRow(row = {}) {
+  return {
+    ...emptyCommissionRuleDraft(),
+    id: row.id || '',
+    name: row.name || '',
+    partyType: row.partyType || COMMISSION_PARTY_TYPES.bank,
+    partyName: row.partyName || '',
+    calculationBasis: row.calculationBasis || COMMISSION_CALCULATION_BASES.originatorCommission,
+    type: row.type || row.rateType || COMMISSION_RULE_TYPES.percentage,
+    rate: row.rate ?? '',
+    fixedAmount: row.fixedAmount ?? '',
+    status: row.status || 'active',
+    effectiveFrom: row.effectiveFrom || '',
+    effectiveTo: row.effectiveTo || '',
+  }
+}
+
+function CommissionRuleModal({ draft, setDraft, onClose, onSave }) {
+  const isEditing = Boolean(draft.id)
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4 py-6">
+      <div className="max-h-[calc(100vh-48px)] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl shadow-slate-950/20">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Commission Structure</p>
+            <h2 className="mt-1 text-2xl font-bold text-slate-950">{isEditing ? 'Edit Commission Rule' : 'Add Commission Rule'}</h2>
+            <p className="mt-1 text-sm text-slate-500">Define the commercial rule used for bank incentives, partner payouts, consultant splits or internal allocations.</p>
+          </div>
+          <button type="button" onClick={onClose} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <Field label="Rule Name" value={draft.name} onChange={(value) => setDraft({ ...draft, name: value })} />
+          <SelectField label="Status" value={draft.status} onChange={(value) => setDraft({ ...draft, status: value })}>
+            {['active', 'inactive', 'draft'].map((status) => <option key={status} value={status}>{humanize(status)}</option>)}
+          </SelectField>
+          <SelectField label="Party Type" value={draft.partyType} onChange={(value) => setDraft({ ...draft, partyType: value })}>
+            {Object.values(COMMISSION_PARTY_TYPES).map((type) => <option key={type} value={type}>{formatPartyType(type)}</option>)}
+          </SelectField>
+          <Field label="Partner / Role Name" value={draft.partyName} onChange={(value) => setDraft({ ...draft, partyName: value })} />
+          <SelectField label="Calculation Basis" value={draft.calculationBasis} onChange={(value) => setDraft({ ...draft, calculationBasis: value })}>
+            {Object.values(COMMISSION_CALCULATION_BASES).map((basis) => <option key={basis} value={basis}>{formatBasis(basis)}</option>)}
+          </SelectField>
+          <SelectField label="Rule Type" value={draft.type} onChange={(value) => setDraft({ ...draft, type: value })}>
+            {Object.values(COMMISSION_RULE_TYPES).map((type) => <option key={type} value={type}>{humanize(type)}</option>)}
+          </SelectField>
+          <Field label="Percentage Rate" value={draft.rate} onChange={(value) => setDraft({ ...draft, rate: value })} type="number" />
+          <Field label="Fixed Amount" value={draft.fixedAmount} onChange={(value) => setDraft({ ...draft, fixedAmount: value })} type="number" />
+          <Field label="Effective From" value={draft.effectiveFrom} onChange={(value) => setDraft({ ...draft, effectiveFrom: value })} type="date" />
+          <Field label="Effective To" value={draft.effectiveTo} onChange={(value) => setDraft({ ...draft, effectiveTo: value })} type="date" />
+        </div>
+
+        <div className="mt-6 flex flex-wrap justify-end gap-3">
+          <button type="button" onClick={onClose} className="inline-flex h-11 items-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50">Cancel</button>
+          <button type="button" onClick={onSave} className="inline-flex h-11 items-center rounded-lg bg-slate-950 px-4 text-sm font-bold text-white hover:bg-slate-800">Save Rule</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function FlowNode({ node, isLast, restricted }) {
   return (
     <div className="relative min-w-0">
@@ -259,6 +381,7 @@ export default function BondRevenueManagementPage() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [notice, setNotice] = useState('')
   const [payoutTab, setPayoutTab] = useState(PAYOUT_STATUS_KEYS.readyToPay)
+  const [commissionRuleDraft, setCommissionRuleDraft] = useState(null)
   const options = useMemo(() => ({ workspaceId, refreshKey }), [workspaceId, refreshKey])
 
   const state = useMemo(() => {
@@ -271,6 +394,7 @@ export default function BondRevenueManagementPage() {
 
   const dashboard = state.dashboard
   const canManagePayouts = Boolean(dashboard?.permissions?.canManagePayouts)
+  const canManageCommissionRules = Boolean(dashboard?.permissions?.canManageCommissionRules)
   const canViewProfit = Boolean(dashboard?.permissions?.canViewCompanyProfit)
   const payoutCentre = dashboard?.payoutCentre || { rows: [], tabs: [], summary: {} }
   const visiblePayoutRows = payoutCentre.rows.filter((row) => row.statusKey === payoutTab)
@@ -302,6 +426,43 @@ export default function BondRevenueManagementPage() {
       setNotice(`${format} commission statement generated.`)
     } catch (error) {
       setNotice(String(error?.message || 'Could not generate commission statement.'))
+    }
+  }
+
+  function openCommissionRuleEditor(row = null) {
+    if (row?.isDefault) {
+      setCommissionRuleDraft({ ...commissionRuleDraftFromRow(row), id: '', name: `${row.partyName || row.name || 'Commission Rule'} Custom` })
+      return
+    }
+    setCommissionRuleDraft(row ? commissionRuleDraftFromRow(row) : emptyCommissionRuleDraft())
+  }
+
+  function saveCommissionRule() {
+    if (!commissionRuleDraft) return
+    const payload = {
+      name: commissionRuleDraft.name || commissionRuleDraft.partyName || 'Commission Rule',
+      partyType: commissionRuleDraft.partyType,
+      appliesTo: commissionRuleDraft.partyType,
+      partyName: commissionRuleDraft.partyName,
+      appliesToLabel: commissionRuleDraft.partyName,
+      calculationBasis: commissionRuleDraft.calculationBasis,
+      type: commissionRuleDraft.type,
+      rateType: commissionRuleDraft.type,
+      rate: commissionRuleDraft.rate,
+      percentage: commissionRuleDraft.type === COMMISSION_RULE_TYPES.fixed ? 0 : commissionRuleDraft.rate,
+      fixedAmount: commissionRuleDraft.fixedAmount,
+      status: commissionRuleDraft.status,
+      effectiveFrom: commissionRuleDraft.effectiveFrom,
+      effectiveTo: commissionRuleDraft.effectiveTo,
+    }
+    try {
+      if (commissionRuleDraft.id) updateCommissionRule(commissionRuleDraft.id, payload, workspaceContext, options)
+      else createCommissionRule(payload, workspaceContext, options)
+      setCommissionRuleDraft(null)
+      setNotice('Commission structure saved.')
+      setRefreshKey((value) => value + 1)
+    } catch (error) {
+      setNotice(String(error?.message || 'Could not save commission structure.'))
     }
   }
 
@@ -394,18 +555,31 @@ export default function BondRevenueManagementPage() {
             <AttributionChart rows={dashboard.revenueAttribution} />
           </Section>
 
-          <Section title="Commission Rules Engine" subtitle="Active commercial rules used to calculate revenue and payouts." icon={ReceiptText} action={<PageButton icon={ReceiptText} disabled title="Rule editor will use the existing commission setup workflow.">Add Commission Rule</PageButton>}>
+          <Section
+            title="Commission Structures"
+            subtitle="Manage the active rules used for bank agreements, partner payouts, consultant splits and internal allocations."
+            icon={ReceiptText}
+            action={canManageCommissionRules ? <PageButton icon={Plus} primary onClick={() => openCommissionRuleEditor()}>Add Commission Rule</PageButton> : null}
+          >
             <DataTable
               rows={dashboard.commissionRules}
               emptyTitle="No commission rules configured."
               emptyDescription="Add originator, consultant and partner commission rules to start calculating revenue automatically."
               columns={[
-                { key: 'partyType', label: 'Party Type', render: (row) => formatPartyType(row.partyType) },
+                { key: 'partyType', label: 'Applies To', render: (row) => formatPartyType(row.partyType) },
                 { key: 'partyName', label: 'Partner / Role', render: (row) => row.partyName || 'Default rule' },
                 { key: 'calculationBasis', label: 'Calculation Basis', render: (row) => formatBasis(row.calculationBasis) },
                 { key: 'rate', label: 'Rate / Split', render: (row) => formatRate(row) },
                 { key: 'status', label: 'Status', render: (row) => <StatusPill status={row.status} /> },
-                { key: 'actions', label: 'Actions', render: () => <span className="text-sm font-semibold text-slate-400">View</span> },
+                {
+                  key: 'actions',
+                  label: 'Actions',
+                  render: (row) => canManageCommissionRules ? (
+                    <button type="button" onClick={() => openCommissionRuleEditor(row)} className="inline-flex items-center gap-1 text-sm font-semibold text-slate-950 hover:underline">
+                      <Edit3 className="h-3.5 w-3.5" /> {row.isDefault ? 'Create override' : 'Edit'}
+                    </button>
+                  ) : <span className="text-sm font-semibold text-slate-400">View</span>,
+                },
               ]}
             />
             {dashboard.hasConfiguredCommissionRules ? null : (
@@ -566,6 +740,14 @@ export default function BondRevenueManagementPage() {
           />
         </Section>
       </div>
+      {commissionRuleDraft ? (
+        <CommissionRuleModal
+          draft={commissionRuleDraft}
+          setDraft={setCommissionRuleDraft}
+          onClose={() => setCommissionRuleDraft(null)}
+          onSave={saveCommissionRule}
+        />
+      ) : null}
     </main>
   )
 }

@@ -9594,10 +9594,12 @@ async function logBondHybridWorkflowActivity(client, { transactionId, actorRole,
 
 async function notifyBondHybridWorkflowRoles(client, { transactionId, stage, message, eventType = 'BondHybridFinanceWorkflowUpdated' } = {}) {
   const rolesByStage = {
-    applications_submitted: ['agent'],
-    quotes_received: ['agent'],
-    quote_approved: ['agent', 'attorney'],
+    submitted_to_banks: ['agent'],
+    bank_review: ['agent'],
+    quote_received: ['agent'],
+    quote_accepted: ['agent', 'attorney'],
     instruction_sent: ['agent', 'attorney'],
+    complete: ['agent', 'attorney'],
   }
   const roleTypes = rolesByStage[stage] || []
   if (!roleTypes.length) return []
@@ -9625,7 +9627,7 @@ async function assertBondHybridStageRequirements(client, workflow, nextStage) {
   if (!workflow?.id) return
   const normalizedStage = normalizeBondHybridFinanceStage(nextStage)
 
-  if (normalizedStage === 'applications_submitted') {
+  if (normalizedStage === 'submitted_to_banks') {
     const query = await client
       .from('transaction_bond_applications')
       .select('id, status')
@@ -9634,16 +9636,16 @@ async function assertBondHybridStageRequirements(client, workflow, nextStage) {
       .limit(1)
     if (query.error) {
       if (isMissingTableError(query.error, 'transaction_bond_applications') || isMissingSchemaError(query.error)) {
-        throw new Error('Add at least one submitted bank/lender application before moving to Applications Submitted.')
+        throw new Error('Add at least one submitted bank/lender application before moving to Submitted to Banks.')
       }
       throw query.error
     }
     if (!(query.data || []).length) {
-      throw new Error('Add at least one submitted bank/lender application before moving to Applications Submitted.')
+      throw new Error('Add at least one submitted bank/lender application before moving to Submitted to Banks.')
     }
   }
 
-  if (normalizedStage === 'quotes_received') {
+  if (normalizedStage === 'quote_received') {
     const [applicationFeedback, quoteQuery] = await Promise.all([
       client
         .from('transaction_bond_applications')
@@ -9656,11 +9658,11 @@ async function assertBondHybridStageRequirements(client, workflow, nextStage) {
     if (applicationFeedback.error && !isMissingTableError(applicationFeedback.error, 'transaction_bond_applications')) throw applicationFeedback.error
     if (quoteQuery.error && !isMissingTableError(quoteQuery.error, 'transaction_bond_quotes')) throw quoteQuery.error
     if (!(applicationFeedback.data || []).length && !(quoteQuery.data || []).length) {
-      throw new Error('Add bank feedback or at least one quote before moving to Quotes Received.')
+      throw new Error('Add bank feedback or at least one quote before moving to Quote Received.')
     }
   }
 
-  if (normalizedStage === 'quote_approved' || normalizedStage === 'instruction_sent') {
+  if (normalizedStage === 'quote_accepted' || normalizedStage === 'instruction_sent' || normalizedStage === 'complete') {
     const approvedQuote = await client
       .from('transaction_bond_quotes')
       .select('id')
@@ -9863,7 +9865,7 @@ export async function createOrGetBondHybridFinanceWorkflow(transactionId, option
   const insertPayload = {
     transaction_id: transactionId,
     workflow_type: BOND_HYBRID_FINANCE_WORKFLOW_TYPE,
-    current_stage: 'documents_received',
+    current_stage: 'intake',
     status: 'active',
     last_updated_by: activeProfile.userId || null,
     last_updated_at: new Date().toISOString(),
@@ -9907,7 +9909,7 @@ export async function updateBondHybridFinanceStage(transactionId, nextStage, opt
   await assertBondHybridStageRequirements(client, workflow, normalizedNextStage)
 
   const fromStage = normalizeBondHybridFinanceStage(workflow.current_stage)
-  const isCompleted = normalizedNextStage === 'instruction_sent'
+  const isCompleted = normalizedNextStage === 'complete'
   const update = await client
     .from('transaction_finance_workflows')
     .update({
@@ -9928,7 +9930,7 @@ export async function updateBondHybridFinanceStage(transactionId, nextStage, opt
       workflow: update.data,
       fromStage,
       toStage: normalizedNextStage,
-      eventType: isCompleted ? 'instruction_sent' : 'stage_changed',
+      eventType: normalizedNextStage === 'instruction_sent' ? 'instruction_sent' : 'stage_changed',
       notes: options.notes || null,
       createdBy: activeProfile.userId || null,
     })
@@ -9957,12 +9959,12 @@ export async function updateBondHybridFinanceStage(transactionId, nextStage, opt
     actorUserId: activeProfile.userId || null,
     source: 'bond_hybrid_finance_workflow',
     note: isCompleted
-      ? 'Bond / hybrid finance workflow reached Instruction Sent.'
+      ? 'Bond / hybrid finance workflow reached Complete.'
       : `Bond / hybrid finance workflow moved to ${stageLabel}.`,
   })
 
   const message = buildBondHybridWorkflowActivityMessage({
-    action: isCompleted ? 'instruction_sent' : 'stage_changed',
+    action: normalizedNextStage === 'instruction_sent' ? 'instruction_sent' : 'stage_changed',
     fromStage,
     toStage: normalizedNextStage,
   })
@@ -9970,7 +9972,7 @@ export async function updateBondHybridFinanceStage(transactionId, nextStage, opt
     transactionId,
     actorRole,
     message,
-    eventType: isCompleted ? 'BondHybridFinanceInstructionSent' : 'BondHybridFinanceWorkflowUpdated',
+    eventType: normalizedNextStage === 'instruction_sent' ? 'BondHybridFinanceInstructionSent' : 'BondHybridFinanceWorkflowUpdated',
     eventData: {
       workflowId: workflow.id,
       fromStage,
@@ -9981,7 +9983,7 @@ export async function updateBondHybridFinanceStage(transactionId, nextStage, opt
     transactionId,
     stage: normalizedNextStage,
     message,
-    eventType: isCompleted ? 'BondHybridFinanceInstructionSent' : 'BondHybridFinanceWorkflowUpdated',
+    eventType: normalizedNextStage === 'instruction_sent' ? 'BondHybridFinanceInstructionSent' : 'BondHybridFinanceWorkflowUpdated',
   })
 
   if (normalizedNextStage === 'instruction_sent') {
@@ -10083,8 +10085,8 @@ export async function addBondApplication(transactionId, payload = {}, options = 
     },
   })
 
-  if (getBondHybridFinanceStageIndex(workflow.current_stage) < getBondHybridFinanceStageIndex('applications_submitted')) {
-    await updateBondHybridFinanceStage(transactionId, 'applications_submitted', {
+  if (getBondHybridFinanceStageIndex(workflow.current_stage) < getBondHybridFinanceStageIndex('submitted_to_banks')) {
+    await updateBondHybridFinanceStage(transactionId, 'submitted_to_banks', {
       client,
       actorRole,
       notes: `${bankName} application submitted.`,
@@ -10249,8 +10251,8 @@ export async function addBondQuote(transactionId, payload = {}, options = {}) {
     return approveBondQuote(insert.data.id, { client, actorRole })
   }
 
-  if (getBondHybridFinanceStageIndex(workflow.current_stage) < getBondHybridFinanceStageIndex('quotes_received')) {
-    await updateBondHybridFinanceStage(transactionId, 'quotes_received', {
+  if (getBondHybridFinanceStageIndex(workflow.current_stage) < getBondHybridFinanceStageIndex('quote_received')) {
+    await updateBondHybridFinanceStage(transactionId, 'quote_received', {
       client,
       actorRole,
       notes: `${bankName} offer received.`,
@@ -10390,8 +10392,8 @@ export async function approveBondQuote(quoteId, options = {}) {
     createdBy: activeProfile.userId || null,
   })
 
-  if (getBondHybridFinanceStageIndex(workflow.current_stage) < getBondHybridFinanceStageIndex('quote_approved')) {
-    await updateBondHybridFinanceStage(quote.data.transaction_id, 'quote_approved', { client, actorRole, notes: `${quote.data.bank_name} quote approved by buyer.` })
+  if (getBondHybridFinanceStageIndex(workflow.current_stage) < getBondHybridFinanceStageIndex('quote_accepted')) {
+    await updateBondHybridFinanceStage(quote.data.transaction_id, 'quote_accepted', { client, actorRole, notes: `${quote.data.bank_name} quote approved by buyer.` })
   }
 
   await logBondHybridWorkflowActivity(client, {
@@ -10403,7 +10405,7 @@ export async function approveBondQuote(quoteId, options = {}) {
   })
   await notifyBondHybridWorkflowRoles(client, {
     transactionId: quote.data.transaction_id,
-    stage: 'quote_approved',
+    stage: 'quote_accepted',
     message: 'Buyer has approved a finance quote.',
     eventType: 'BondHybridFinanceQuoteUpdated',
   })
@@ -23293,6 +23295,73 @@ async function fetchInheritedDevelopmentTransactionIdsForUser(
   return ids
 }
 
+const BOND_HQ_WORKSPACE_ROLES = new Set(['owner', 'director', 'hq_manager'])
+
+function isBondHqOrganisationMembership(row = {}) {
+  const workspaceRole = normalizeTextValue(row.workspace_role || row.workspaceRole || row.organisation_role || row.organisationRole).toLowerCase()
+  const scopeLevel = normalizeTextValue(row.scope_level || row.scopeLevel).toLowerCase()
+  const status = normalizeTextValue(row.status || '').toLowerCase()
+  return status !== 'deactivated' && (BOND_HQ_WORKSPACE_ROLES.has(workspaceRole) || scopeLevel === 'workspace_hq')
+}
+
+async function resolveBondHqOrganisationMembership(client, { userId = '', email = '', organisationId = '' } = {}) {
+  const normalizedOrganisationId = normalizeTextValue(organisationId)
+  if (!normalizedOrganisationId || (!userId && !email)) return null
+
+  const selectClause = 'id, user_id, email, organisation_id, workspace_role, organisation_role, scope_level, status'
+  const candidates = []
+
+  if (userId) {
+    const byUser = await client
+      .from('organisation_users')
+      .select(selectClause)
+      .eq('organisation_id', normalizedOrganisationId)
+      .eq('user_id', userId)
+      .limit(3)
+    if (byUser.error && !isMissingSchemaError(byUser.error)) throw byUser.error
+    candidates.push(...(byUser.data || []))
+  }
+
+  if (email) {
+    const byEmail = await client
+      .from('organisation_users')
+      .select(selectClause)
+      .eq('organisation_id', normalizedOrganisationId)
+      .ilike('email', email)
+      .limit(3)
+    if (byEmail.error && !isMissingSchemaError(byEmail.error)) throw byEmail.error
+    candidates.push(...(byEmail.data || []))
+  }
+
+  return candidates.find(isBondHqOrganisationMembership) || null
+}
+
+async function fetchActiveTransactionIdsForOrganisation(client, organisationId = '') {
+  const normalizedOrganisationId = normalizeTextValue(organisationId)
+  if (!normalizedOrganisationId) return []
+
+  let query = await client
+    .from('transactions')
+    .select('id, organisation_id, is_active')
+    .eq('organisation_id', normalizedOrganisationId)
+
+  if (query.error && isMissingColumnError(query.error, 'is_active')) {
+    query = await client
+      .from('transactions')
+      .select('id, organisation_id')
+      .eq('organisation_id', normalizedOrganisationId)
+  }
+
+  if (query.error) {
+    if (isMissingSchemaError(query.error) || isMissingColumnError(query.error, 'organisation_id')) return []
+    throw query.error
+  }
+
+  return (query.data || [])
+    .filter((row) => row?.id && row?.is_active !== false)
+    .map((row) => row.id)
+}
+
 export async function getAccessibleTransactionIdsForUser({ userId, roleType = null, organisationId = '' } = {}) {
   const client = requireClient()
   if (!userId) {
@@ -23329,6 +23398,17 @@ export async function getAccessibleTransactionIdsForUser({ userId, roleType = nu
       .filter((row) => row?.id && row?.is_active !== false)
       .filter((row) => !normalizedOrganisationId || String(row?.organisation_id || '').trim() === normalizedOrganisationId)
       .map((row) => row.id)
+  }
+
+  if (normalizedRole === 'bond_originator' && normalizedOrganisationId) {
+    const hqMembership = await resolveBondHqOrganisationMembership(client, {
+      userId: identity.userId,
+      email: identity.email,
+      organisationId: normalizedOrganisationId,
+    })
+    if (hqMembership) {
+      return fetchActiveTransactionIdsForOrganisation(client, normalizedOrganisationId)
+    }
   }
 
   const directIds = await fetchDirectTransactionIdsForUser(client, {
@@ -37087,7 +37167,7 @@ export async function uploadClientPortalFinanceDocument({
 }
 
 export async function markFinanceDocumentsReviewed(transactionId, { actorRole = null, notes = '' } = {}) {
-  return updateBondHybridFinanceStage(transactionId, 'documents_reviewed', {
+  return updateBondHybridFinanceStage(transactionId, 'documents', {
     actorRole,
     notes: notes || 'Finance documents reviewed.',
   })

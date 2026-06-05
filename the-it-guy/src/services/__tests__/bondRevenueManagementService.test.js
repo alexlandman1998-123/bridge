@@ -177,6 +177,25 @@ try {
   assert.equal(dashboard.revenueFlow.nodes.some((row) => row.key === 'net_profit' && row.amount > 0), true)
   assert.equal(dashboard.attribution.length, applications.length)
 
+  const bankRule = revenue.createCommissionRule({
+    name: 'FNB bank incentive',
+    partyType: 'bank',
+    appliesTo: 'bank',
+    partyName: 'FNB',
+    calculationBasis: 'originator_commission',
+    type: 'percentage',
+    rate: 2.5,
+    percentage: 2.5,
+    status: 'active',
+    effectiveFrom: '2026-01-01',
+  }, hqContext, commonOptions)
+  assert.equal(bankRule.partyType, 'bank')
+  assert.equal(bankRule.appliesToLabel, 'FNB')
+  assert.equal(revenue.getCommissionRules(hqContext, commonOptions).some((row) => row.id === bankRule.id && row.partyName === 'FNB'), true)
+  const updatedBankRule = revenue.updateCommissionRule(bankRule.id, { rate: 3, percentage: 3, partyName: 'FNB Premier' }, hqContext, commonOptions)
+  assert.equal(updatedBankRule.rate, 3)
+  assert.equal(updatedBankRule.appliesToLabel, 'FNB Premier')
+
   const consultantCommission = revenue.getConsultantCommission('consultant-john', hqContext, commonOptions)
   assert.equal(consultantCommission.summary.applications, 3)
   assert.equal(consultantCommission.summary.commissionEarned > 0, true)
@@ -240,6 +259,10 @@ try {
     () => revenue.approvePayout(payout.id, consultantContext, commonOptions),
     /Only HQ and finance managers/i,
   )
+  assert.throws(
+    () => revenue.createCommissionRule({ name: 'Consultant override', partyType: 'consultant', rate: 40 }, consultantContext, commonOptions),
+    /Only HQ and finance managers/i,
+  )
 
   const activity = revenue.__bondRevenueManagementServiceTestUtils.getActivity(workspaceId)
   assert.equal(activity.some((row) => row.eventType === revenue.BOND_REVENUE_EVENTS.commissionCalculated), true)
@@ -248,6 +271,7 @@ try {
   assert.equal(activity.some((row) => row.eventType === revenue.BOND_REVENUE_EVENTS.payoutPaid), true)
   assert.equal(activity.some((row) => row.eventType === revenue.BOND_REVENUE_EVENTS.commissionApproved), true)
   assert.equal(activity.some((row) => row.eventType === revenue.BOND_REVENUE_EVENTS.commissionPaid), true)
+  assert.equal(activity.some((row) => row.eventType === revenue.BOND_REVENUE_EVENTS.commissionRuleSaved), true)
 
   console.log('bond revenue management tests passed')
 } catch (error) {

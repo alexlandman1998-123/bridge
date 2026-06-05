@@ -228,8 +228,14 @@ try {
     assert.equal(managerSnapshot.reportingScope.dashboardMode, 'owner_director')
     assert.equal(managerSnapshot.totalApplications, transactions.length)
     assert.ok(managerSnapshot.hqCommandCentre)
-    assert.equal(managerSnapshot.hqCommandCentre.nationalSnapshot.length, 6)
-    assert.equal(managerSnapshot.hqCommandCentre.pipelineFunnel.stages.some((stage) => stage.label === 'Intake Received'), true)
+    assert.equal(managerSnapshot.hqCommandCentre.nationalSnapshot.length, 5)
+    assert.deepEqual(
+      managerSnapshot.hqCommandCentre.pipelineFunnel.stages.map((stage) => stage.key),
+      ['intake', 'application_prep', 'review_submit', 'bank_decision', 'registration'],
+    )
+    assert.equal(managerSnapshot.hqCommandCentre.pipelineFunnel.stages.some((stage) => stage.label === 'Application Prep'), true)
+    assert.equal(managerSnapshot.hqCommandCentre.pipelineFunnel.stages.some((stage) => stage.label === 'OTP Ready'), false)
+    assert.ok(managerSnapshot.hqCommandCentre.pipelineFunnel.stages.every((stage) => stage.sourceBreakdown))
 
     const managerPreviewSnapshot = await service.getBondCommandCenterSnapshot(manager, 'workspace-1', {
       transactions,

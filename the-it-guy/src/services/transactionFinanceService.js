@@ -16,6 +16,7 @@ import {
 import {
   BOND_HYBRID_FINANCE_STAGE_LABELS,
   buildBondHybridFinanceStageSteps,
+  normalizeBondHybridFinanceStage,
   summarizeBondHybridFinanceWorkflow,
 } from '../core/transactions/bondHybridFinanceWorkflow'
 import {
@@ -252,16 +253,19 @@ function deriveBondStage(workflowData = {}, buyerDocumentRows = []) {
   const hasOffers = offers.length > 0
   const hasApplications = applications.length > 0
   const hasReviewedDocs =
-    ['documents_reviewed', 'applications_submitted', 'quotes_received', 'quote_approved', 'instruction_sent'].includes(lower(workflow?.currentStage || workflow?.current_stage))
+    ['documents', 'submitted_to_banks', 'bank_review', 'quote_received', 'quote_accepted', 'instruction_sent', 'complete'].includes(
+      normalizeBondHybridFinanceStage(workflow?.currentStage || workflow?.current_stage),
+    )
   const uploadedBuyerDocs = buyerDocumentRows.filter((item) => item.status !== 'missing').length > 0
 
+  if (normalizeBondHybridFinanceStage(workflow?.currentStage || workflow?.current_stage) === 'complete') return 'complete'
   if (instructionSent) return 'instruction_sent'
-  if (hasAcceptedOffer) return 'quote_approved'
-  if (hasOffers) return 'quotes_received'
-  if (hasApplications) return 'applications_submitted'
-  if (hasReviewedDocs) return 'documents_reviewed'
-  if (uploadedBuyerDocs) return 'documents_received'
-  return lower(workflow?.currentStage || workflow?.current_stage || 'documents_received')
+  if (hasAcceptedOffer) return 'quote_accepted'
+  if (hasOffers) return 'quote_received'
+  if (applications.some((item) => ['feedback_received', 'additional_documents_required', 'declined', 'approved', 'buyer_approved', 'quote_received'].includes(lower(item.status)))) return 'bank_review'
+  if (hasApplications) return 'submitted_to_banks'
+  if (hasReviewedDocs || uploadedBuyerDocs) return 'documents'
+  return normalizeBondHybridFinanceStage(workflow?.currentStage || workflow?.current_stage || 'intake')
 }
 
 function deriveCashStatus({ transaction = {}, documents = [], requiredDocumentChecklist = [] } = {}) {
@@ -420,12 +424,14 @@ function enrichBondRailSteps(steps = [], workflowData = {}, buyerDocumentRows = 
   const acceptedOffer = workflowData?.acceptedOffer || summarizeBondHybridFinanceWorkflow(workflowData || {}).approvedQuote || null
   const instruction = workflowData?.instruction || null
   const roleByStage = {
-    documents_received: 'Buyer',
-    documents_reviewed: 'Bond Originator',
-    applications_submitted: 'Bond Originator',
-    quotes_received: 'Banks / Originator',
-    quote_approved: 'Buyer',
+    intake: 'Bond Originator',
+    documents: 'Buyer / Bond Originator',
+    submitted_to_banks: 'Bond Originator',
+    bank_review: 'Banks / Originator',
+    quote_received: 'Banks / Originator',
+    quote_accepted: 'Buyer',
     instruction_sent: 'Bond Originator',
+    complete: 'Bond Originator',
   }
 
   return (steps || []).map((step) => {
@@ -433,22 +439,24 @@ function enrichBondRailSteps(steps = [], workflowData = {}, buyerDocumentRows = 
     let completedAt = event?.createdAt || event?.created_at || null
     let responsibleRole = event?.createdByName || null
 
-    if (step.key === 'documents_received') {
+    if (step.key === 'documents') {
       completedAt ||= getLatestDate(buyerDocumentRows.map((item) => item.uploadedAt))
-    } else if (step.key === 'documents_reviewed') {
-      completedAt ||= workflowData?.workflow?.lastUpdatedAt || workflowData?.workflow?.last_updated_at || null
-    } else if (step.key === 'applications_submitted') {
+    } else if (step.key === 'submitted_to_banks') {
       completedAt ||= getLatestDate(applications.map((item) => item.submittedAt || item.submitted_at || item.createdAt || item.created_at))
       responsibleRole ||= applications.find((item) => item.submittedByName || item.createdByName)?.submittedByName || applications.find((item) => item.submittedByName || item.createdByName)?.createdByName || null
-    } else if (step.key === 'quotes_received') {
+    } else if (step.key === 'bank_review') {
+      completedAt ||= getLatestDate(applications.map((item) => item.feedbackReceivedAt || item.feedback_received_at || item.updatedAt || item.updated_at))
+    } else if (step.key === 'quote_received') {
       completedAt ||= getLatestDate(offers.map((item) => item.quoteReceivedAt || item.quote_received_at || item.createdAt || item.created_at))
       responsibleRole ||= offers.find((item) => item.uploadedByName || item.createdByName)?.uploadedByName || offers.find((item) => item.uploadedByName || item.createdByName)?.createdByName || null
-    } else if (step.key === 'quote_approved') {
+    } else if (step.key === 'quote_accepted') {
       completedAt ||= acceptedOffer?.decisionAt || acceptedOffer?.approvedAt || acceptedOffer?.approved_at || null
       responsibleRole ||= 'Buyer'
     } else if (step.key === 'instruction_sent') {
       completedAt ||= instruction?.instructionSentAt || instruction?.instruction_sent_at || null
       responsibleRole ||= instruction?.instructionSentByName || null
+    } else if (step.key === 'complete') {
+      completedAt ||= workflowData?.workflow?.completedAt || workflowData?.workflow?.completed_at || null
     }
 
     return {
@@ -471,7 +479,9 @@ export function resolveTransactionFinancePermissions({
   activeViewerPermissions = null,
 } = {}) {
   const role = normalizeRole(viewerRole)
-  const canEditFinanceWorkflow = Boolean(activeViewerPermissions?.canEditFinanceWorkflow)
+  const canEditFinanceWorkflow =
+    Boolean(activeViewerPermissions?.canEditFinanceWorkflow) &&
+    ['bond_originator', 'admin'].includes(role)
   const canUploadFromPermissions = Boolean(activeViewerPermissions?.canUploadDocuments)
 
   return {

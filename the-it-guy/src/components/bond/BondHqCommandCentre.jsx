@@ -3,7 +3,6 @@ import {
   ArrowRight,
   BarChart3,
   Building2,
-  CheckCircle2,
   Clock3,
   FileCheck2,
   FileText,
@@ -39,6 +38,11 @@ function statusTone(value = '') {
 function getStageCount(funnel = {}, key = '') {
   const row = (funnel?.stages || []).find((stage) => stage.key === key)
   return normalizeNumber(row?.count)
+}
+
+function getStageSourceCount(funnel = {}, stageKey = '', sourceKey = '') {
+  const row = (funnel?.stages || []).find((stage) => stage.key === stageKey)
+  return normalizeNumber(row?.sourceBreakdown?.[sourceKey])
 }
 
 function getAlert(alerts = [], keys = []) {
@@ -126,7 +130,7 @@ export function HqExecutiveAlerts({ alerts = [], funnel = {} }) {
       label: 'Awaiting OTP',
       href: '/bond/pipeline?view=all',
       icon: Clock3,
-      value: normalizeNumber(getAlert(alerts, 'awaiting_otp')?.value, getStageCount(funnel, 'awaiting_otp')),
+      value: normalizeNumber(getAlert(alerts, 'awaiting_otp')?.value, getStageSourceCount(funnel, 'intake', 'awaiting_otp')),
     },
     {
       key: 'missing_docs',
@@ -188,32 +192,33 @@ export function HqExecutiveAlerts({ alerts = [], funnel = {} }) {
 }
 
 const PIPELINE_STAGE_CONFIG = [
-  { key: 'intake_received', label: 'Intake Received', icon: FileText },
-  { key: 'awaiting_otp', label: 'Awaiting OTP', icon: Clock3 },
-  { key: 'otp_ready', label: 'OTP Ready', icon: CheckCircle2 },
-  { key: 'application_in_progress', label: 'In Progress', icon: LineChart },
-  { key: 'ready_for_review', label: 'Ready for Review', icon: FileCheck2 },
-  { key: 'submitted_to_banks', label: 'Submitted to Banks', icon: Landmark },
-  { key: 'bank_feedback', label: 'Bank Feedback', icon: Gauge },
-  { key: 'approved', label: 'Approved', icon: CheckCircle2 },
-  { key: 'registered', label: 'Registered', icon: Building2 },
+  { key: 'intake', label: 'Intake', icon: FileText },
+  { key: 'application_prep', label: 'Application Prep', icon: LineChart },
+  { key: 'review_submit', label: 'Review & Submit', icon: FileCheck2 },
+  { key: 'bank_decision', label: 'Bank Decision', icon: Landmark },
+  { key: 'registration', label: 'Registration', icon: Building2 },
 ]
 
 export function HqPipelineFlow({ funnel = {} }) {
+  const configByKey = new Map(PIPELINE_STAGE_CONFIG.map((stage) => [stage.key, stage]))
   const stagesByKey = new Map((funnel?.stages || []).map((stage) => [stage.key, stage]))
-  const stageRows = PIPELINE_STAGE_CONFIG.map((config) => {
-    const stage = stagesByKey.get(config.key) || {}
+  const sourceStages = (funnel?.stages || []).length ? funnel.stages : PIPELINE_STAGE_CONFIG
+  const stageRows = sourceStages.map((sourceStage) => {
+    const config = configByKey.get(sourceStage.key) || {}
+    const stage = stagesByKey.get(sourceStage.key) || sourceStage || {}
     return {
       ...config,
       ...stage,
+      label: stage.label || config.label || 'Pipeline Stage',
+      icon: config.icon || BarChart3,
       count: normalizeNumber(stage.count),
       conversionRate: normalizeNumber(stage.conversionRate),
       dropOff: normalizeNumber(stage.dropOff),
       href: stage.href || '/bond/pipeline',
     }
   })
-  const intakeCount = Math.max(getStageCount(funnel, 'intake_received'), 1)
-  const registeredCount = getStageCount(funnel, 'registered')
+  const intakeCount = Math.max(getStageCount(funnel, 'intake'), 1)
+  const registeredCount = getStageCount(funnel, 'registration')
   const overallConversion = registeredCount ? Math.round((registeredCount / intakeCount) * 100) : 0
   const maxCount = Math.max(...stageRows.map((stage) => stage.count), 1)
   const highestStage = [...stageRows].sort((left, right) => right.count - left.count)[0]
@@ -226,7 +231,7 @@ export function HqPipelineFlow({ funnel = {} }) {
       action={<Link to="/bond/pipeline" className="shrink-0 text-sm font-semibold text-[#204b84] hover:text-[#17324d]">View pipeline</Link>}
     >
       <div className="overflow-x-auto pb-2">
-        <ol className="grid min-w-[1180px] grid-cols-9 gap-3">
+        <ol className="grid min-w-[760px] grid-cols-5 gap-3">
           {stageRows.map((stage, index) => {
           const Icon = stage.icon
           return (
@@ -400,33 +405,108 @@ function CompactBranchRow({ branch, attention = false }) {
   )
 }
 
-function CompactPartnerRow({ partner }) {
+const PARTNER_PIE_COLORS = ['#24518a', '#2f7d55', '#d8a34d', '#8b5cf6', '#dc6b4a']
+
+function PartnerPieChart({ partners = [] }) {
+  const rows = partners
+    .filter((partner) => normalizeNumber(partner.applicationsReferred) > 0)
+    .slice(0, 5)
+  const total = rows.reduce((sum, partner) => sum + normalizeNumber(partner.applicationsReferred), 0)
+
+  if (!rows.length || !total) {
+    return <HqEmptyState title="No partner data" description="Not enough data." icon={Landmark} />
+  }
+
+  const gradientParts = rows.reduce((accumulator, partner, index) => {
+    const start = accumulator.cursor
+    const share = (normalizeNumber(partner.applicationsReferred) / total) * 100
+    const end = start + share
+    return {
+      cursor: end,
+      parts: [...accumulator.parts, `${PARTNER_PIE_COLORS[index % PARTNER_PIE_COLORS.length]} ${start}% ${end}%`],
+    }
+  }, { cursor: 0, parts: [] })
+  const gradient = gradientParts.parts.join(', ')
+  const leadPartner = rows[0]
+
   return (
-    <Link to={partner.href || '/bond/partners'} className="flex items-center justify-between gap-3 rounded-[14px] border border-[#e2ebf4] bg-[#fbfdff] px-3 py-3 transition hover:border-[#c6d8e8]">
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-semibold text-[#17324d]">{partner.partner}</span>
-        <span className="mt-0.5 block truncate text-xs text-[#71869d]">{partner.sourceType} · {formatNumber(partner.applicationsReferred)} referred</span>
-      </span>
-      <span className="shrink-0 text-xs font-semibold text-[#204b84]">{formatPercent(partner.conversionRate)}</span>
-    </Link>
+    <div className="grid gap-3 sm:grid-cols-[132px_minmax(0,1fr)] lg:grid-cols-1 xl:grid-cols-[132px_minmax(0,1fr)]">
+      <div className="relative mx-auto flex h-[132px] w-[132px] items-center justify-center rounded-full shadow-[inset_0_0_0_1px_rgba(219,229,240,0.95)]" style={{ background: `conic-gradient(${gradient})` }}>
+        <div className="flex h-[76px] w-[76px] flex-col items-center justify-center rounded-full bg-white text-center shadow-[0_8px_20px_rgba(15,35,57,0.08)]">
+          <span className="text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-[#74879b]">Referrals</span>
+          <strong className="mt-0.5 text-xl font-semibold leading-none text-[#142132]">{formatNumber(total)}</strong>
+        </div>
+      </div>
+      <div className="min-w-0 space-y-2">
+        <Link to={leadPartner.href || '/bond/partners'} className="block rounded-[14px] border border-[#dce8f2] bg-[#fbfdff] px-3 py-2.5 transition hover:border-[#c6d8e8] hover:bg-white">
+          <p className="truncate text-sm font-semibold text-[#17324d]">{leadPartner.partner}</p>
+          <p className="mt-0.5 truncate text-xs font-medium text-[#71869d]">{leadPartner.sourceType} · {formatPercent(leadPartner.conversionRate)} conversion</p>
+        </Link>
+        <div className="space-y-1.5">
+          {rows.map((partner, index) => {
+            const share = Math.round((normalizeNumber(partner.applicationsReferred) / total) * 100)
+            return (
+              <Link key={partner.key} to={partner.href || '/bond/partners'} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-[10px] px-2 py-1.5 transition hover:bg-[#f7fbff]">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: PARTNER_PIE_COLORS[index % PARTNER_PIE_COLORS.length] }} />
+                  <span className="truncate text-xs font-semibold text-[#17324d]">{partner.partner}</span>
+                </span>
+                <span className="text-xs font-semibold text-[#60758d]">{share}%</span>
+              </Link>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RevenueProgressRow({ label = '', valueLabel = '', value = 0, max = 1, color = '#24518a' }) {
+  const width = max ? Math.max(4, Math.min(100, (normalizeNumber(value) / Math.max(normalizeNumber(max), 1)) * 100)) : 0
+  return (
+    <div className="rounded-[14px] border border-[#e2ebf4] bg-[#fbfdff] px-3 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#74879b]">{label}</span>
+        <span className="truncate text-sm font-semibold text-[#17324d]">{valueLabel || 'Not enough data'}</span>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#edf3f8]">
+        <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: color }} />
+      </div>
+    </div>
   )
 }
 
 function RevenueOverview({ revenue = {} }) {
-  const metrics = [
-    ['Projected', revenue.projectedCommissionLabel],
-    ['Confirmed', revenue.commissionConfirmedLabel],
-    ['This Month', revenue.revenueThisMonthLabel],
-    ['90-Day', revenue.forecast90Day],
-  ]
+  const projected = normalizeNumber(revenue.projectedCommission)
+  const confirmed = normalizeNumber(revenue.commissionConfirmed)
+  const thisMonth = normalizeNumber(revenue.revenueThisMonth)
+  const confirmedPercent = projected ? Math.round((confirmed / projected) * 100) : 0
+  const thisMonthPercent = projected ? Math.round((thisMonth / projected) * 100) : 0
+
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {metrics.map(([label, value]) => (
-        <div key={label} className="rounded-[14px] border border-[#e2ebf4] bg-[#fbfdff] px-3 py-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#74879b]">{label}</p>
-          <p className="mt-1 truncate text-sm font-semibold text-[#17324d]">{value || 'Not enough data'}</p>
+    <div className="space-y-3">
+      <div className="rounded-[16px] border border-[#dbe5f0] bg-[#fbfdff] p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#74879b]">Projected</p>
+            <p className="mt-1 truncate text-2xl font-semibold leading-none text-[#142132]">{revenue.projectedCommissionLabel || 'Not enough data'}</p>
+          </div>
+          <span className="shrink-0 rounded-full border border-[#d9e7d9] bg-[#f3fbf4] px-2.5 py-1 text-xs font-semibold text-[#25714f]">{formatPercent(confirmedPercent)} secured</span>
         </div>
-      ))}
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <div className="rounded-[12px] bg-white px-3 py-2 ring-1 ring-[#e2ebf4]">
+            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#74879b]">Confirmed</p>
+            <p className="mt-1 truncate text-sm font-semibold text-[#17324d]">{revenue.commissionConfirmedLabel || 'Not enough data'}</p>
+          </div>
+          <div className="rounded-[12px] bg-white px-3 py-2 ring-1 ring-[#e2ebf4]">
+            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#74879b]">90-Day Forecast</p>
+            <p className="mt-1 truncate text-sm font-semibold text-[#17324d]">{revenue.forecast90Day || 'Not enough data'}</p>
+          </div>
+        </div>
+      </div>
+      <RevenueProgressRow label="Confirmed" valueLabel={revenue.commissionConfirmedLabel} value={confirmed} max={projected} color="#2f7d55" />
+      <RevenueProgressRow label="This Month" valueLabel={revenue.revenueThisMonthLabel} value={thisMonth} max={projected} color="#d8a34d" />
+      <p className="text-[0.68rem] font-medium text-[#71869d]">{formatPercent(thisMonthPercent)} of projected commission is represented by this month’s movement.</p>
     </div>
   )
 }
@@ -466,9 +546,7 @@ export function HqLowerInsightGrid({ leaderboard = {}, partners = [], revenue = 
         description="Highest-value referral channels and partner sources."
         action={<Link to="/bond/partners" className="shrink-0 text-sm font-semibold text-[#204b84] hover:text-[#17324d]">View all</Link>}
       >
-        <div className="grid gap-2.5">
-          {topPartners.length ? topPartners.map((partner) => <CompactPartnerRow key={partner.key} partner={partner} />) : <HqEmptyState title="No partner data" description="Not enough data." icon={Landmark} />}
-        </div>
+        <PartnerPieChart partners={topPartners} />
       </SectionCard>
 
       <SectionCard

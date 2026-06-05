@@ -19,6 +19,7 @@ import Button from '../ui/Button'
 import Field from '../ui/Field'
 import { buildTransactionFinanceWorkspace } from '../../services/transactionFinanceService'
 import IndicativeFinanceReadinessContainer from '../finance/IndicativeFinanceReadinessContainer'
+import FinanceProgressBar from '../finance/FinanceProgressBar'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -960,7 +961,11 @@ function FinanceCommandCenter({
         ))}
       </div>
 
-      <ProgressRail groups={workspace.railGroups} />
+      {hasBondWorkflow ? (
+        <FinanceProgressBar workflowData={workflowData} mode="readonly" viewerRole={viewerRole} />
+      ) : (
+        <ProgressRail groups={workspace.railGroups} />
+      )}
 
       {hasBondWorkflow ? (
         <IndicativeFinanceReadinessContainer handoff={financeReadinessHandoff} />

@@ -75,6 +75,17 @@ try {
     primaryContactEmail: 'sarah@fnb.example.test',
     submissionEmail: 'submissions@fnb.example.test',
     slaDays: 3,
+    slaOwner: 'FNB Home Loans Desk',
+    slaEscalationHours: 48,
+    agreementStatus: 'active',
+    agreementType: 'National Panel Agreement',
+    agreementReference: 'FNB-OBA-2026',
+    agreementStartDate: '2026-01-01',
+    agreementReviewDate: '2026-12-01',
+    commissionRate: 1.95,
+    commissionBasis: 'bank_commission_received',
+    commissionTrigger: 'Instruction issued',
+    commissionNotes: 'Paid monthly after instruction confirmation.',
     supportedProducts: ['Residential Bond', 'Further Bond'],
     regionsSupported: ['Gauteng'],
     notes: 'Primary home-loan panel bank.',
@@ -82,6 +93,12 @@ try {
 
   assert.equal(fnb.bankId, 'fnb')
   assert.equal(fnb.bankName, 'FNB')
+  assert.equal(fnb.agreementStatus, 'active')
+  assert.equal(fnb.agreementReference, 'FNB-OBA-2026')
+  assert.equal(fnb.slaOwner, 'FNB Home Loans Desk')
+  assert.equal(fnb.slaEscalationHours, 48)
+  assert.equal(fnb.commissionRate, 1.95)
+  assert.equal(fnb.commissionBasis, 'bank_commission_received')
   assert.deepEqual(fnb.supportedProducts, ['Residential Bond', 'Further Bond'])
   assert.throws(
     () => service.addOriginatorBank({ bankId: 'First National Bank' }, hqContext, { workspaceId }),
@@ -95,9 +112,13 @@ try {
 
   const updated = service.updateOriginatorBank(fnb.id, {
     primaryContactPhone: '+27 11 555 0101',
+    agreementStatus: 'renewal_due',
+    commissionRate: 2.1,
     status: 'active',
   }, hqContext, { workspaceId })
   assert.equal(updated.primaryContactPhone, '+27 11 555 0101')
+  assert.equal(updated.agreementStatus, 'renewal_due')
+  assert.equal(updated.commissionRate, 2.1)
 
   const inactive = service.deactivateOriginatorBank(fnb.id, hqContext, { workspaceId })
   assert.equal(inactive.status, 'inactive')

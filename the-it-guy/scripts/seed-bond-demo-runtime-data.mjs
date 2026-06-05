@@ -1136,18 +1136,20 @@ export function prepareRowsForUpsert(table, rows = [], { knownColumns = null } =
   }
 }
 
-function createHierarchy() {
-  const workspaceId = deterministicUuid('workspace:bridge-finance-demo')
-  const hqId = deterministicUuid('unit:hq')
+function createHierarchy(env = {}) {
+  const workspaceId = normalizeText(env.BOND_DEMO_WORKSPACE_ID) || deterministicUuid('workspace:bridge-finance-demo')
+  const workspaceName = normalizeText(env.BOND_DEMO_WORKSPACE_NAME) || DEFAULT_WORKSPACE_NAME
+  const customWorkspaceSeed = normalizeText(env.BOND_DEMO_WORKSPACE_ID) ? `${workspaceId}:` : ''
+  const hqId = deterministicUuid(`unit:${customWorkspaceSeed}hq`)
   const regions = REGION_CATALOG.map((region) => ({
     ...region,
-    id: deterministicUuid(`region:${region.key}`),
+    id: deterministicUuid(`region:${customWorkspaceSeed}${region.key}`),
     workspaceId,
   }))
   const regionIdByKey = Object.fromEntries(regions.map((region) => [region.key, region.id]))
   const branches = BRANCH_CATALOG.map((branch) => ({
     ...branch,
-    id: deterministicUuid(`unit:branch:${branch.key}`),
+    id: deterministicUuid(`unit:branch:${customWorkspaceSeed}${branch.key}`),
     workspaceId,
     regionId: regionIdByKey[branch.regionKey],
     parentUnitId: hqId,
@@ -1159,7 +1161,7 @@ function createHierarchy() {
     const branch = branchByKey[team.branchKey] || branches[0]
     return {
       ...team,
-      id: deterministicUuid(`unit:team:${team.key}`),
+      id: deterministicUuid(`unit:team:${customWorkspaceSeed}${team.key}`),
       workspaceId,
       regionId: branch.regionId,
       parentUnitId: branch.id,
@@ -1173,8 +1175,8 @@ function createHierarchy() {
   return {
     workspace: {
       id: workspaceId,
-      name: DEFAULT_WORKSPACE_NAME,
-      slug: normalizeSlug(DEFAULT_WORKSPACE_NAME),
+      name: workspaceName,
+      slug: normalizeSlug(workspaceName),
       workspaceType: DEFAULT_WORKSPACE_TYPE,
       workspaceKind: 'bond_company',
     },
@@ -1196,20 +1198,42 @@ function createHierarchy() {
   }
 }
 
-function buildUsers(env = {}, hierarchy = createHierarchy()) {
+function buildUsers(env = {}, hierarchy = createHierarchy(env)) {
   const demoOwnerEmail = normalizeEmail(env.BOND_DEMO_OWNER_EMAIL || DEFAULT_DEMO_OWNER_EMAIL)
   return USER_CATALOG.map((user) => {
     const email = user.key === TARGET_DEMO_USER_KEY ? demoOwnerEmail : normalizeEmail(user.email)
-    const branchId = user.branchKey ? hierarchy.branchIdByKey[user.branchKey] || null : null
+    const workspaceRole = user.key === TARGET_DEMO_USER_KEY
+      ? normalizeText(env.BOND_DEMO_OWNER_WORKSPACE_ROLE || user.workspaceRole)
+      : user.workspaceRole
+    const scopeLevel = user.key === TARGET_DEMO_USER_KEY
+      ? normalizeText(env.BOND_DEMO_OWNER_SCOPE_LEVEL || user.scopeLevel)
+      : user.scopeLevel
+    const regionKey = user.key === TARGET_DEMO_USER_KEY
+      ? (Object.prototype.hasOwnProperty.call(env, 'BOND_DEMO_OWNER_REGION_KEY')
+          ? normalizeText(env.BOND_DEMO_OWNER_REGION_KEY)
+          : scopeLevel === 'workspace_hq'
+            ? null
+            : user.regionKey)
+      : user.regionKey
+    const branchKey = user.key === TARGET_DEMO_USER_KEY
+      ? (Object.prototype.hasOwnProperty.call(env, 'BOND_DEMO_OWNER_BRANCH_KEY')
+          ? normalizeText(env.BOND_DEMO_OWNER_BRANCH_KEY)
+          : user.branchKey)
+      : user.branchKey
+    const branchId = branchKey ? hierarchy.branchIdByKey[branchKey] || null : null
     const teamId = user.workspaceRole === 'processor' && user.branchKey ? hierarchy.teamIdByBranchKey[user.branchKey] || null : null
     return {
       ...user,
       email,
+      workspaceRole,
+      scopeLevel,
+      regionKey,
+      branchKey,
       workspaceType: DEFAULT_WORKSPACE_TYPE,
       workspaceId: hierarchy.workspace.id,
       branchId,
       workspaceUnitId: teamId || branchId || null,
-      regionId: user.regionKey ? hierarchy.regionIdByKey[user.regionKey] || null : null,
+      regionId: regionKey ? hierarchy.regionIdByKey[regionKey] || null : null,
       membershipEnabled: true,
     }
   })
@@ -1357,10 +1381,10 @@ function createUnitSpec(applicationIndex = 0, development = {}) {
   const unitId = deterministicUuid(`unit:${seed}`)
   const floor = seededInt(`${seed}:floor`, 1, development.unitLabelStyle === 'plot' ? 1 : 18)
   const unitNumber = development.unitLabelStyle === 'plot'
-    ? `Plot ${seededInt(`${seed}:plot`, 12, 96)}`
+    ? `Plot ${String(applicationIndex + 12).padStart(3, '0')}`
     : development.unitLabelStyle === 'apartment'
-      ? `${floor}${String.fromCharCode(65 + (applicationIndex % 4))}`
-      : `${floor}${String(seededInt(`${seed}:door`, 1, 8)).padStart(2, '0')}`
+      ? `${floor}${String.fromCharCode(65 + (applicationIndex % 4))}${String(applicationIndex + 1).padStart(3, '0')}`
+      : `${floor}${String(applicationIndex + 1).padStart(3, '0')}`
   const bedrooms = seededInt(`${seed}:beds`, 2, development.basePrice > 4000000 ? 4 : 3)
   const bathrooms = Math.min(bedrooms, seededInt(`${seed}:baths`, 2, 4))
   const parking = seededInt(`${seed}:parking`, 1, development.basePrice > 3000000 ? 3 : 2)
@@ -1875,6 +1899,26 @@ function buildApplicationRecords(users = [], hierarchy = createHierarchy()) {
   return applications
 }
 
+function normalizeTransactionStageForConstraint(stage = '') {
+  const normalized = normalizeText(stage).toLowerCase()
+  if (normalized === 'registered') return 'Registered'
+  if (normalized.includes('transfer')) return 'Transfer In Progress'
+  if (normalized.includes('instruction') || normalized.includes('grant')) return 'Proceed to Attorneys'
+  if (normalized.includes('approved') || normalized.includes('bond approved')) return 'Bond Approved / Proof of Funds'
+  return 'Finance Pending'
+}
+
+function normalizeAttorneyStageForConstraint(stage = '') {
+  const normalized = normalizeText(stage).toLowerCase()
+  if (!normalized) return null
+  if (normalized === 'registered') return 'registered'
+  if (normalized === 'instruction_received') return 'instruction_received'
+  if (normalized === 'documents_pending') return 'fica_onboarding'
+  if (normalized === 'preparation_in_progress') return 'drafting'
+  if (normalized === 'ready_for_lodgement' || normalized === 'lodged_at_deeds_office') return 'lodgement'
+  return normalized
+}
+
 function buildTransactionRows(applications = []) {
   return applications.map((application) => {
     const { stageConfig, buyer, development, unitSpec, consultant, processor, compliance, branchManager } = application
@@ -1902,7 +1946,7 @@ function buildTransactionRows(applications = []) {
       purchase_price: application.finance.purchasePrice,
       finance_type: application.finance.financeType,
       purchaser_type: buyer.purchaserType,
-      stage: stageConfig.stage,
+      stage: normalizeTransactionStageForConstraint(stageConfig.stage),
       current_main_stage: stageConfig.mainStage,
       current_sub_stage_summary: application.story,
       assigned_agent: application.agency,
@@ -1930,9 +1974,9 @@ function buildTransactionRows(applications = []) {
       assigned_bond_compliance_user_id: compliance?.userId || null,
       bond_assignment_status: application.bucketKey === 'declined_or_cancelled' ? 'fully_assigned' : 'fully_assigned',
       bond_assignment_source: 'workflow_assignment',
-      risk_status: application.atRisk ? 'At Risk' : application.bucketKey === 'registered' ? 'Registered' : 'On Track',
-      operational_state: application.bucketKey === 'registered' ? 'registered' : application.atRisk ? 'needs_attention' : 'flowing',
-      attorney_stage: stageConfig.attorneyStage,
+      risk_status: application.atRisk ? 'At Risk' : 'On Track',
+      operational_state: application.atRisk ? 'at_risk' : 'on_track',
+      attorney_stage: normalizeAttorneyStageForConstraint(stageConfig.attorneyStage),
       finance_status: stageConfig.financeStatus,
       compliance_status: stageConfig.complianceStatus,
       compliance_review_required: stageConfig.complianceStatus === 'review_required',
@@ -2105,7 +2149,7 @@ function buildFinanceWorkflowRuntimeRows(applications = [], ownerUserId = null) 
       assigned_consultant_id: application.consultant?.userId || ownerUserId,
       assigned_processor_id: application.processor?.userId || null,
       assignment_status: 'fully_assigned',
-      assignment_source: 'demo_seed',
+      assignment_source: 'manual',
     })
 
     if (quoteVisible) {
@@ -2144,7 +2188,7 @@ function buildSubprocessRows(applications = []) {
       transaction_id: application.transactionId,
       process_type: 'bond',
       owner_type: 'bond_originator',
-      status: application.bucketKey === 'registered' ? 'completed' : application.bucketKey === 'declined_or_cancelled' ? 'cancelled' : 'in_progress',
+      status: application.bucketKey === 'registered' ? 'completed' : application.bucketKey === 'declined_or_cancelled' ? 'blocked' : 'in_progress',
       created_at: application.createdAt,
       updated_at: application.updatedAt,
     })
@@ -2198,7 +2242,7 @@ function buildDocumentRows(applications = [], ownerUserId = null) {
       const uploaded = index < uploadedCount
       const rejected = uploaded && index === uploadedCount - 1 && rejectedCount > 0
       const approved = uploaded && !rejected && ['approved', 'grant_signed', 'bond_instruction_sent', 'transfer_in_progress', 'registered'].includes(application.bucketKey)
-      const status = rejected ? 'rejected' : approved ? 'approved' : uploaded ? 'uploaded' : 'requested'
+      const status = rejected ? 'rejected' : approved ? 'reviewed' : uploaded ? 'uploaded' : 'requested'
       const createdAt = isoDaysAgo(resolveRecencyDays(application.bucketKey, application.applicationIndex) + seededInt(`doc-created:${application.transactionReference}:${index}`, 1, 25))
       const updatedAt = uploaded
         ? isoDaysAgo(Math.max(resolveRecencyDays(application.bucketKey, application.applicationIndex) - seededInt(`doc-updated:${application.transactionReference}:${index}`, 0, 8), 0))
@@ -2215,7 +2259,7 @@ function buildDocumentRows(applications = [], ownerUserId = null) {
         document_type: documentType,
         title,
         description: missingCount > 0 && !uploaded ? `Still needed to progress ${application.transactionReference}.` : `Supporting document for ${application.transactionReference}.`,
-        priority: index < 4 ? 'required' : 'supporting',
+        priority: index < 4 ? 'required' : 'optional',
         due_date: application.stageConfig.nextActionDueAt ? application.stageConfig.nextActionDueAt.slice(0, 10) : null,
         assigned_to_role: 'bond_originator',
         assigned_to_user_id: application.consultant?.userId || ownerUserId,
@@ -2239,7 +2283,7 @@ function buildDocumentRows(applications = [], ownerUserId = null) {
           file_path: `bond-demo/${application.transactionReference}/${normalizeSlug(title)}.pdf`,
           category: 'Bond Finance',
           document_type: documentType,
-          visibility_scope: 'client_visible',
+          visibility_scope: 'client',
           uploaded_by_user_id: ownerUserId,
           stage_key: application.bucketKey,
           is_client_visible: true,
@@ -2269,13 +2313,47 @@ function buildCommentRows(applications = []) {
         id: deterministicUuid(`comment:${application.transactionReference}:${index}`),
         transaction_id: application.transactionId,
         author_name: index === 0 ? application.consultant?.name || 'Bond Consultant' : index === 1 ? application.processor?.name || 'Processor' : application.attorney,
-        author_role: index === 0 ? 'bond_originator' : index === 1 ? 'processor' : 'attorney',
+        author_role: index === 0 || index === 1 ? 'bond_originator' : 'attorney',
         comment_text: `[operational] ${templates[(application.applicationIndex + index) % templates.length]}`,
         created_at: isoDaysAgo(resolveRecencyDays(application.bucketKey, application.applicationIndex) + seededInt(`comment:${application.transactionReference}:${index}`, 1, 16)),
       })
     }
   }
   return comments
+}
+
+function normalizeTransactionEventTypeForConstraint(eventType = '') {
+  const normalized = normalizeText(eventType).toLowerCase()
+  if (normalized === 'document_uploaded') return 'DocumentUploaded'
+  if (normalized === 'document_requested') return 'TransactionUpdated'
+  if (normalized === 'finance_approved' || normalized === 'quote_approved') return 'BondHybridFinanceQuoteUpdated'
+  if (normalized === 'finance_submitted' || normalized === 'finance_updated') return 'BondHybridFinanceApplicationUpdated'
+  if (normalized === 'attorney_assigned') return 'attorney_assignment_created'
+  if (normalized === 'registration_completed') return 'TransactionStageChanged'
+  if (normalized === 'onboarding_completed' || normalized === 'note_shared_with_client') return 'TransactionUpdated'
+  if (normalized === 'instruction_sent') return 'BondHybridFinanceInstructionSent'
+  return 'TransactionStageChanged'
+}
+
+function normalizeTransactionEventRoleForConstraint(role = '') {
+  const normalized = normalizeText(role).toLowerCase()
+  if (normalized === 'processor' || normalized === 'compliance') return 'bond_originator'
+  return normalized || 'system'
+}
+
+function normalizeNotificationTypeForConstraint(type = '') {
+  const normalized = normalizeText(type).toLowerCase()
+  if (normalized === 'documents_missing') return 'overdue_missing_docs'
+  if (normalized === 'instruction_sent') return 'lane_handoff'
+  if (normalized === 'application_closed' || normalized === 'at_risk') return 'readiness_updated'
+  return 'readiness_updated'
+}
+
+function normalizeNotificationEventTypeForConstraint(eventType = '') {
+  const normalized = normalizeText(eventType).toLowerCase()
+  if (normalized === 'document_uploaded' || normalized === 'document_requested') return 'DocumentUploaded'
+  if (normalized === 'attorney_assigned') return 'ParticipantAssigned'
+  return 'TransactionUpdated'
 }
 
 function buildEventRows(applications = [], ownerUserId = null) {
@@ -2386,10 +2464,10 @@ function buildEventRows(applications = [], ownerUserId = null) {
       events.push({
         id: deterministicUuid(`${eventSeedPrefix}:${event.key}:${index}`),
         transaction_id: application.transactionId,
-        event_type: event.key,
+        event_type: normalizeTransactionEventTypeForConstraint(event.key),
         event_data: event.eventData,
         created_by: ownerUserId,
-        created_by_role: event.createdByRole,
+        created_by_role: normalizeTransactionEventRoleForConstraint(event.createdByRole),
         created_at: event.createdAt,
         updated_at: event.createdAt,
       })
@@ -2481,13 +2559,13 @@ function buildNotificationRows(applications = [], ownerUserId = null) {
         transaction_id: application.transactionId,
         user_id: ownerUserId,
         role_type: 'bond_originator',
-        notification_type: item.type,
+        notification_type: normalizeNotificationTypeForConstraint(item.type),
         title: item.title,
         message: item.message,
         is_read: application.applicationIndex % 5 === 0 && index === 0,
         read_at: application.applicationIndex % 5 === 0 && index === 0 ? application.updatedAt : null,
         dedupe_key: `${application.transactionReference}:${item.type}:${index}`,
-        event_type: item.eventType,
+        event_type: normalizeNotificationEventTypeForConstraint(item.eventType),
         event_data: buildManagedMetadata({ transaction_reference: application.transactionReference, bucket: application.bucketKey }),
         updated_at: application.updatedAt,
       })
@@ -2537,7 +2615,7 @@ function buildParticipantRows(applications = []) {
       {
         id: deterministicUuid(`participant:${application.transactionReference}:processor`),
         transaction_id: application.transactionId,
-        role_type: 'processor',
+        role_type: 'bond_originator',
         transaction_role: 'processor',
         legal_role: 'none',
         participant_email: application.processor?.email || null,
@@ -2552,7 +2630,7 @@ function buildParticipantRows(applications = []) {
       {
         id: deterministicUuid(`participant:${application.transactionReference}:compliance`),
         transaction_id: application.transactionId,
-        role_type: 'compliance',
+        role_type: 'bond_originator',
         transaction_role: 'compliance',
         legal_role: 'none',
         participant_email: application.compliance?.email || null,
@@ -2565,7 +2643,7 @@ function buildParticipantRows(applications = []) {
         updated_at: application.updatedAt,
       },
     ]
-    participants.push(...rows)
+    participants.push(...rows.filter((row) => !['processor', 'compliance'].includes(row.transaction_role)))
   }
   return participants
 }
@@ -2584,7 +2662,7 @@ function buildRolePlayerRows(applications = []) {
         id: deterministicUuid(`roleplayer:${application.transactionReference}:bond-originator`),
         transaction_id: application.transactionId,
         role_type: 'bond_originator',
-        selection_source: 'demo_seed',
+        selection_source: 'manual',
         preferred_partner_id: null,
         partner_name: application.consultant?.name || null,
         contact_person: application.consultant?.name || null,
@@ -2595,7 +2673,7 @@ function buildRolePlayerRows(applications = []) {
         province: application.branch.province,
         notes: 'Demo bond team assignment.',
         snapshot_json: baseSnapshot,
-        assignment_source: 'demo_seed',
+        assignment_source: 'manual',
         participant_email: application.consultant?.email || null,
         participant_name: application.consultant?.name || null,
         user_id: application.consultant?.userId || null,
@@ -2606,8 +2684,8 @@ function buildRolePlayerRows(applications = []) {
       {
         id: deterministicUuid(`roleplayer:${application.transactionReference}:attorney`),
         transaction_id: application.transactionId,
-        role_type: 'attorney',
-        selection_source: 'demo_seed',
+        role_type: 'transfer_attorney',
+        selection_source: 'manual',
         preferred_partner_id: null,
         partner_name: application.attorney,
         contact_person: application.attorney,
@@ -2618,7 +2696,7 @@ function buildRolePlayerRows(applications = []) {
         province: application.branch.province,
         notes: 'Demo transfer attorney.',
         snapshot_json: baseSnapshot,
-        assignment_source: 'demo_seed',
+        assignment_source: 'manual',
         participant_email: `${normalizeSlug(application.attorney)}@attorneys.demo.bridgefinance.co.za`,
         participant_name: application.attorney,
         user_id: null,
@@ -3896,8 +3974,8 @@ function buildMembershipRows(plan) {
         status: 'active',
         scope_level: user.scopeLevel,
         region_id: user.regionId,
-        branch_id: user.branchId || null,
-        primary_branch_id: user.branchId || null,
+        branch_id: null,
+        primary_branch_id: null,
         workspace_unit_id: user.workspaceUnitId,
         scope_metadata: buildManagedMetadata({
           user_key: user.key,
@@ -3942,7 +4020,7 @@ function buildPlan(inputEnv = {}) {
     throw new Error('Refusing to apply Bond demo runtime data outside staging target.')
   }
 
-  const hierarchy = createHierarchy()
+  const hierarchy = createHierarchy(env)
   const users = buildUsers(env, hierarchy)
   const applications = buildApplicationRecords(users, hierarchy)
   const transactionRows = buildTransactionRows(applications)
@@ -4199,6 +4277,15 @@ function parseMissingColumn(error) {
   return null
 }
 
+function parseMissingTable(error) {
+  const message = normalizeText(error?.message)
+  const schemaCacheMatch = message.match(/could not find the table ['"]public\.([a-zA-Z0-9_]+)['"] in the schema cache/i)
+  if (schemaCacheMatch) return schemaCacheMatch[1]
+  const relationMatch = message.match(/relation ["'](?:public\.)?([a-zA-Z0-9_]+)["'] does not exist/i)
+  if (relationMatch) return relationMatch[1]
+  return null
+}
+
 function createServiceAdapter(config) {
   const supabase = createClient(config.supabaseUrl, config.serviceRoleKey, {
     auth: {
@@ -4295,6 +4382,11 @@ function createServiceAdapter(config) {
           return { data: data || [], skippedColumns }
         }
 
+        const missingTable = parseMissingTable(error)
+        if (missingTable === table && options.optionalTable) {
+          return { data: [], skippedColumns, skippedTable: table }
+        }
+
         const missingColumn = parseMissingColumn(error)
         if (!missingColumn || !optionalColumns.has(missingColumn)) {
           throw new Error(`Bond demo apply failed for ${table}: ${error.message}`)
@@ -4314,12 +4406,14 @@ function createServiceAdapter(config) {
 async function applyCount(report, key, table, rows, adapter, options = {}) {
   const knownColumns = typeof adapter.getTableColumns === 'function' ? await adapter.getTableColumns(table) : null
   const prepared = prepareRowsForUpsert(table, rows, { knownColumns })
-  const result = await adapter.upsertRows(table, prepared.rows, options)
+  const applyOptions = table.startsWith('bond_') ? { optionalTable: true, ...options } : options
+  const result = await adapter.upsertRows(table, prepared.rows, applyOptions)
   report.createdOrUpdated[key] = {
-    rowCount: prepared.rows.length,
-    ids: prepared.rows.map((row) => row.id || row.transaction_id || row.development_id).filter(Boolean),
+    rowCount: result.skippedTable ? 0 : prepared.rows.length,
+    ids: result.skippedTable ? [] : prepared.rows.map((row) => row.id || row.transaction_id || row.development_id).filter(Boolean),
     skippedColumns: unique([...(prepared.omittedColumns || []), ...(result.skippedColumns || [])]),
-    missing: 0,
+    skippedTable: result.skippedTable || null,
+    missing: result.skippedTable ? prepared.rows.length : 0,
   }
   return {
     data: result.data || [],
@@ -4488,8 +4582,8 @@ async function performRealApply(plan, adapter) {
   await applyCount(hydrated, 'organisationUsers', 'organisation_users', buildMembershipRows(hydrated), adapter, { onConflict: 'organisation_id,email' })
   await applyCount(hydrated, 'buyers', 'buyers', hydrated._raw.rows.buyers, adapter, { onConflict: 'id' })
   await applyCount(hydrated, 'developments', 'developments', hydrated._raw.rows.developments, adapter, { onConflict: 'id' })
-  await applyCount(hydrated, 'developmentSettings', 'development_settings', hydrated._raw.rows.developmentSettings, adapter, { onConflict: 'development_id' })
-  await applyCount(hydrated, 'units', 'units', hydrated._raw.rows.units, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'developmentSettings', 'development_settings', hydrated._raw.rows.developmentSettings, adapter, { onConflict: 'development_id', select: 'development_id' })
+  await applyCount(hydrated, 'units', 'units', hydrated._raw.rows.units, adapter, { onConflict: 'development_id,unit_number' })
   await applyCount(hydrated, 'transactions', 'transactions', hydrated._raw.rows.transactions, adapter, { onConflict: 'id' })
   await applyCount(hydrated, 'transactionFinanceWorkflows', 'transaction_finance_workflows', hydrated._raw.rows.transactionFinanceWorkflows, adapter, {
     onConflict: 'transaction_id,workflow_type',
@@ -4518,7 +4612,7 @@ async function performRealApply(plan, adapter) {
   await applyCount(hydrated, 'transactionRolePlayers', 'transaction_role_players', rolePlayers, adapter, { onConflict: 'id' })
   await applyCount(hydrated, 'clientPortalLinks', 'client_portal_links', portalLinks, adapter, { onConflict: 'id' })
   const bondRows = hydrated._raw.rows.bondModule
-  await applyCount(hydrated, 'bondApplicationOwnershipHistory', 'bond_application_ownership_history', bondRows.bondApplicationOwnershipHistory, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondApplicationOwnershipHistory', 'bond_application_ownership_history', bondRows.bondApplicationOwnershipHistory, adapter, { onConflict: 'id', optionalTable: true })
   await applyCount(hydrated, 'bondRoutingRules', 'bond_routing_rules', bondRows.bondRoutingRules, adapter, { onConflict: 'id' })
   await applyCount(hydrated, 'bondRoutingRuleActivity', 'bond_routing_rule_activity', bondRows.bondRoutingRuleActivity, adapter, { onConflict: 'id' })
   await applyCount(hydrated, 'bondPartners', 'bond_partners', bondRows.bondPartners, adapter, { onConflict: 'id' })

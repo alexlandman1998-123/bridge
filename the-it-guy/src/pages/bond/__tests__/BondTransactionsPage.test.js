@@ -2,6 +2,8 @@
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
 
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..')
@@ -21,6 +23,7 @@ try {
       filterHqApplicationRegisterRows,
       getHqApplicationFilterOptions,
       getHqApplicationKpis,
+      HqApplicationsTable,
       isHqApplicationsScope,
     } = page
 
@@ -44,6 +47,7 @@ try {
         assignedUserId: 'user-mira',
         financeStageKey: 'ready_for_review',
         riskLevel: 'low',
+        bondAmount: 2400000,
       },
       {
         key: 'tx-unassigned',
@@ -58,6 +62,7 @@ try {
         financeStageKey: 'awaiting_otp',
         nextAction: 'No next action set',
         riskScore: 88,
+        bondAmount: 1850000,
       },
       {
         key: 'tx-feedback',
@@ -74,6 +79,22 @@ try {
         assignedUserEmail: 'tumi@example.test',
         financeStageKey: 'bank_feedback',
         riskLevel: 'medium',
+        bondAmount: 1500000,
+      },
+      {
+        key: 'tx-instruction',
+        transactionId: 'tx-instruction',
+        transactionReference: 'APP-004',
+        client: 'Instruction Buyer',
+        property: '4 Attorney Avenue',
+        createdAt: '2026-05-02T08:00:00.000Z',
+        regionName: 'Gauteng',
+        branchName: 'Sandton',
+        consultantName: 'Tumi Consultant',
+        assignedUserEmail: 'tumi@example.test',
+        financeStageKey: 'bond_instruction_sent',
+        riskLevel: 'low',
+        bondAmount: 900000,
       },
     ], NOW)
 
@@ -82,9 +103,9 @@ try {
     assert.equal(rows.find((row) => row.key === 'tx-unassigned').regionDisplay, 'No region')
     assert.equal(rows.find((row) => row.key === 'tx-unassigned').nextActionLabel, 'Assign branch')
 
-    assert.deepEqual(filterHqApplicationRegisterRows(rows).map((row) => row.key), ['tx-ready', 'tx-feedback', 'tx-unassigned'])
+    assert.deepEqual(filterHqApplicationRegisterRows(rows).map((row) => row.key), ['tx-ready', 'tx-feedback', 'tx-instruction', 'tx-unassigned'])
     assert.deepEqual(filterHqApplicationRegisterRows(rows, { tab: 'unassigned' }).map((row) => row.key), ['tx-unassigned'])
-    assert.deepEqual(filterHqApplicationRegisterRows(rows, { branch: 'Sandton' }).map((row) => row.key), ['tx-feedback'])
+    assert.deepEqual(filterHqApplicationRegisterRows(rows, { branch: 'Sandton' }).map((row) => row.key), ['tx-feedback', 'tx-instruction'])
     assert.deepEqual(filterHqApplicationRegisterRows(rows, { risk: 'high' }).map((row) => row.key), ['tx-unassigned'])
     assert.deepEqual(filterHqApplicationRegisterRows(rows, { dateRange: '7d' }, NOW).map((row) => row.key), ['tx-ready', 'tx-feedback'])
 
@@ -94,12 +115,23 @@ try {
     assert.equal(options.consultants.some((option) => option.label === 'Tumi Consultant'), true)
 
     const kpis = Object.fromEntries(getHqApplicationKpis(rows, NOW).map((item) => [item.key, item.value]))
-    assert.equal(kpis.total, 3)
-    assert.equal(kpis.new_this_week, 2)
-    assert.equal(kpis.unassigned, 1)
-    assert.equal(kpis.ready_for_review, 1)
-    assert.equal(kpis.awaiting_otp, 1)
-    assert.equal(Object.keys(kpis).length, 5)
+    assert.equal(kpis.total, 4)
+    assert.equal(kpis.pipeline_value, 'R 6 650 000')
+    assert.equal(kpis.awaiting_feedback, 1)
+    assert.equal(kpis.instructions_issued, 1)
+    assert.equal(Object.keys(kpis).length, 6)
+
+    const rowMarkup = renderToStaticMarkup(
+      React.createElement(HqApplicationsTable, {
+        rows,
+        onOpen: () => {},
+      }),
+    )
+    assert.match(rowMarkup, /Stage &amp; Progress/)
+    assert.match(rowMarkup, /Open Application/)
+    assert.match(rowMarkup, /R 2 400 000/)
+    assert.match(rowMarkup, /West|National Road|Pending Street|Lender Lane|Attorney Avenue/)
+    assert.doesNotMatch(rowMarkup, /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i)
 
     console.log('BondTransactionsPage tests passed')
   } finally {

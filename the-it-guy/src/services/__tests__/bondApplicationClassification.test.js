@@ -278,8 +278,8 @@ try {
   assert.equal(bankRows.length, 1)
   assert.equal(bankRows[0].bank_name, 'FNB')
   assert.equal(bankRows[0].transaction_id, originatorRows[0].transaction_id)
-  assert.equal(client.state.transaction_finance_workflows[0].current_stage, 'applications_submitted')
-  assert.equal(workflow.workflow.currentStage, 'applications_submitted')
+  assert.equal(client.state.transaction_finance_workflows[0].current_stage, 'submitted_to_banks')
+  assert.equal(workflow.workflow.currentStage, 'submitted_to_banks')
   assert.equal(workflow.applications.some((row) => row.applicationType === 'bank_application' && row.bankName === 'FNB'), true)
 
   const originatorQueueRows = getNewApplicationsQueue([{
