@@ -25,7 +25,8 @@ try {
     assert.deepEqual(hqItems.find((item) => item.key === 'bond_developments')?.children.map((item) => item.label), ['Current Developments', 'Developers'])
     assert.deepEqual(hqItems.find((item) => item.key === 'bond_organisation')?.children.map((item) => item.label), ['Overview', 'Branches / Regions', 'Consultants'])
     assert.deepEqual(hqItems.find((item) => item.key === 'bond_reports')?.children.map((item) => item.label), ['Analytics', 'Predictive Intelligence'])
-    assert.deepEqual(hqItems.find((item) => item.key === 'settings')?.children.map((item) => item.label), ['Workspace Settings', 'Automation & Rules'])
+    assert.equal(hqItems.find((item) => item.key === 'settings')?.to, '/settings')
+    assert.equal(Array.isArray(hqItems.find((item) => item.key === 'settings')?.children), false)
 
     const regionalItems = roles.getRoleNavItems('bond_originator', { membershipRole: 'bond_regional_manager' })
     assert.deepEqual(

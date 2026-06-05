@@ -16,6 +16,7 @@ import {
 import { CONSULTANT_CAPACITY_STATUSES, getConsultantPerformanceRows } from './bondConsultantPerformanceService'
 import { getPartnerHealth } from './bondPartnerIntelligenceService'
 import { getPartnerPortalOperationalRows } from './bondPartnerPortalService'
+import { getActiveOriginatorBanks, slugifyBank } from './bondOriginatorBankService'
 
 export const BOND_HQ_COMMAND_CENTRE_EVENTS = Object.freeze({
   hqHealthUpdated: 'HQ_HEALTH_UPDATED',
@@ -44,7 +45,6 @@ const APPROVAL_TERMS = ['approved', 'approval', 'grant', 'registered', 'accepted
 const DECLINE_TERMS = ['declined', 'rejected', 'lost']
 const SUBMITTED_TERMS = ['submitted', 'bank', 'feedback', 'quote', 'approved', 'declined', 'registered']
 const ACTIVE_TERMS = ['active', 'new', 'intake', 'pre', 'document', 'review', 'submit', 'feedback', 'bank', 'quote', 'instruction', 'in_progress', 'prepared']
-const BANKS = ['ABSA', 'FNB', 'Nedbank', 'Standard Bank', 'Investec', 'Other']
 const EXECUTIVE_REPORT_SECTIONS = [
   'Executive Summary',
   'Application Volume',
@@ -345,16 +345,6 @@ function requestsForApplications(requests = [], applications = []) {
   ))
 }
 
-function normalizeBankName(value = '') {
-  const signal = normalizeLower(value)
-  if (signal.includes('absa')) return 'ABSA'
-  if (signal.includes('fnb') || signal.includes('first national')) return 'FNB'
-  if (signal.includes('nedbank')) return 'Nedbank'
-  if (signal.includes('standard')) return 'Standard Bank'
-  if (signal.includes('investec')) return 'Investec'
-  return 'Other'
-}
-
 function getBanksForApplication(row = {}) {
   const values = [
     row.bank,
@@ -367,8 +357,8 @@ function getBanksForApplication(row = {}) {
     row.submitted_bank,
     ...normalizeArray(row.banksSubmittedTo || row.banks_submitted_to || row.submittedBanks || row.submitted_banks),
   ].map(normalizeText).filter(Boolean)
-  if (!values.length) return ['Other']
-  return [...new Set(values.map(normalizeBankName))]
+  if (!values.length) return []
+  return [...new Set(values.map(slugifyBank))]
 }
 
 function getApplicationResponseHours(row = {}) {
@@ -686,14 +676,16 @@ export function getApplicationPipelineOverview(context = {}, options = {}) {
 export function getBankPerformanceSnapshot(context = {}, options = {}) {
   const rows = getRows(context, options)
   assertHQAccess(rows)
-  return BANKS.map((bank) => {
-    const applications = rows.applications.filter((row) => getBanksForApplication(row).includes(bank))
+  const banks = getActiveOriginatorBanks(rows.workspaceKey, context, options)
+  return banks.map((bank) => {
+    const applications = rows.applications.filter((row) => getBanksForApplication(row).includes(bank.bankId))
     const submitted = applications.filter(isSubmittedApplication)
     const approved = applications.filter(isApprovedApplication)
     const declined = applications.filter(isDeclinedApplication)
     return {
-      id: bank,
-      bank,
+      id: bank.bankId,
+      bankId: bank.bankId,
+      bank: bank.bankName,
       applicationsSubmitted: submitted.length,
       approvals: approved.length,
       declines: declined.length,

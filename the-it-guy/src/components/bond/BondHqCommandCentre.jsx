@@ -50,16 +50,16 @@ function getAlert(alerts = [], keys = []) {
 
 function SectionCard({ eyebrow = '', title = '', description = '', action = null, children, className = '' }) {
   return (
-    <section className={`rounded-[22px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.035)] ${className}`}>
+    <section className={`rounded-[18px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.032)] ${className}`}>
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          {eyebrow ? <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#74879b]">{eyebrow}</p> : null}
-          <h2 className="mt-1.5 text-lg font-semibold tracking-[-0.03em] text-[#142132]">{title}</h2>
-          {description ? <p className="mt-1.5 text-sm leading-5 text-[#64788f]">{description}</p> : null}
+          {eyebrow ? <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#74879b]">{eyebrow}</p> : null}
+          <h2 className="mt-1 text-[1rem] font-semibold text-[#142132]">{title}</h2>
+          {description ? <p className="mt-1 text-[0.82rem] leading-5 text-[#64788f]">{description}</p> : null}
         </div>
         {action}
       </div>
-      <div className="mt-5">{children}</div>
+      <div className="mt-4">{children}</div>
     </section>
   )
 }
@@ -69,7 +69,7 @@ export default function BondHqCommandCentre({ snapshot = {} }) {
   const regions = hq.regionalPerformance || []
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <HqPageHeader regions={regions} />
       <HqKpiGrid items={hq.nationalSnapshot || []} />
       <HqExecutiveAlerts alerts={hq.alerts || []} funnel={hq.pipelineFunnel} />
@@ -88,24 +88,18 @@ export default function BondHqCommandCentre({ snapshot = {} }) {
 
 export function HqPageHeader({ regions = [] }) {
   return (
-    <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-      <div className="max-w-3xl">
-        <h1 className="text-3xl font-semibold tracking-[-0.045em] text-[#101828] md:text-4xl">National Bond Command Centre</h1>
-        <p className="mt-2 text-sm leading-6 text-[#64788f] md:text-base">
-          Executive view of national bond performance, pipeline, revenue and risk.
-        </p>
-      </div>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <select aria-label="Dashboard period" className="h-11 rounded-[14px] border border-[#d7e2ee] bg-white px-3 text-sm font-semibold text-[#20364c] shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+    <header className="flex justify-end">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <select aria-label="Dashboard period" className="h-10 rounded-[12px] border border-[#d7e2ee] bg-white px-3 text-[0.82rem] font-semibold text-[#20364c] shadow-[0_6px_14px_rgba(15,23,42,0.03)]">
           <option>Last 30 Days</option>
           <option>This Month</option>
           <option>Quarter to Date</option>
         </select>
-        <select aria-label="Region filter" className="h-11 rounded-[14px] border border-[#d7e2ee] bg-white px-3 text-sm font-semibold text-[#20364c] shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+        <select aria-label="Region filter" className="h-10 rounded-[12px] border border-[#d7e2ee] bg-white px-3 text-[0.82rem] font-semibold text-[#20364c] shadow-[0_6px_14px_rgba(15,23,42,0.03)]">
           <option>All Regions</option>
           {regions.map((region) => <option key={region.key}>{region.region}</option>)}
         </select>
-        <Link to="/bond/reports?export=executive" className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] bg-[#17324d] px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(23,50,77,0.16)]">
+        <Link to="/bond/reports?export=executive" className="inline-flex h-10 items-center justify-center gap-2 rounded-[12px] bg-[#17324d] px-3.5 text-[0.82rem] font-semibold text-white shadow-[0_8px_18px_rgba(23,50,77,0.14)]">
           <Download size={16} />
           Export report
         </Link>
@@ -122,21 +116,21 @@ export function HqKpiGrid({ items = [] }) {
   }
 
   return (
-    <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+    <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
       {rows.map((item, index) => {
         const Icon = icons[index] || BarChart3
         return (
-          <article key={item.key || item.label} className="flex min-h-[164px] flex-col justify-between rounded-[20px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.035)]">
+          <article key={item.key || item.label} className="flex min-h-[126px] flex-col justify-between rounded-[18px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.032)]">
             <div>
-              <span className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-[#eef5ff] text-[#24518a]">
-                <Icon size={19} />
+              <span className="flex h-8 w-8 items-center justify-center rounded-[11px] bg-[#eef5ff] text-[#24518a]">
+                <Icon size={16} />
               </span>
-              <p className="mt-4 text-sm font-medium text-[#60758d]">{item.label}</p>
-              <p className="mt-1.5 text-2xl font-semibold tracking-[-0.045em] text-[#101828]">{item.value || 'Not enough data'}</p>
+              <p className="mt-3 text-[0.78rem] font-semibold leading-4 text-[#60758d]">{item.label}</p>
+              <p className="mt-1 text-[1.35rem] font-semibold text-[#101828]">{item.value || 'Not enough data'}</p>
             </div>
-            <div className="mt-4 flex items-center justify-between gap-3">
-              <p className="min-w-0 truncate text-xs font-medium text-[#74879b]">{item.helper || 'Not enough data'}</p>
-              <span className="shrink-0 rounded-full border border-[#d9e7d9] bg-[#f3fbf4] px-2.5 py-1 text-[0.68rem] font-semibold text-[#25714f]">{item.trend || 'Tracking'}</span>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <p className="min-w-0 truncate text-[0.68rem] font-medium text-[#74879b]">{item.helper || 'Not enough data'}</p>
+              <span className="shrink-0 rounded-full border border-[#d9e7d9] bg-[#f3fbf4] px-2 py-0.5 text-[0.62rem] font-semibold text-[#25714f]">{item.trend || 'Tracking'}</span>
             </div>
           </article>
         )
@@ -185,31 +179,31 @@ export function HqExecutiveAlerts({ alerts = [], funnel = {} }) {
   ]
 
   return (
-    <section className="rounded-[22px] border border-[#efcfd7] bg-[#fff7f8] p-5 shadow-[0_12px_28px_rgba(155,51,71,0.045)]">
+    <section className="rounded-[18px] border border-[#efcfd7] bg-[#fff7f8] p-4 shadow-[0_10px_24px_rgba(155,51,71,0.04)]">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#9b3347]">Risk Monitor</p>
-          <h2 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-[#142132]">Executive Alerts</h2>
+          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#9b3347]">Risk Monitor</p>
+          <h2 className="mt-1 text-[1rem] font-semibold text-[#142132]">Executive Alerts</h2>
         </div>
-        <Link to="/bond/reports?view=executive-risk" className="inline-flex items-center gap-2 text-sm font-semibold text-[#8f2f45] hover:text-[#6f1f32]">
+        <Link to="/bond/reports?view=executive-risk" className="inline-flex items-center gap-2 text-[0.82rem] font-semibold text-[#8f2f45] hover:text-[#6f1f32]">
           View risk report <ArrowRight size={15} />
         </Link>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="mt-3 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
         {alertRows.map((item) => {
           const Icon = item.icon
           return (
-            <Link key={item.key} to={item.href} className="flex min-h-[86px] items-center justify-between gap-3 rounded-[16px] border border-[#f1d5dc] bg-white/78 px-4 py-3 transition hover:border-[#e6bcc7]">
+            <Link key={item.key} to={item.href} className="flex min-h-[72px] items-center justify-between gap-3 rounded-[14px] border border-[#f1d5dc] bg-white/78 px-3 py-2.5 transition hover:border-[#e6bcc7]">
               <span className="flex min-w-0 items-center gap-3">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-[#fff0f3] text-[#9b3347]">
-                  <Icon size={17} />
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[11px] bg-[#fff0f3] text-[#9b3347]">
+                  <Icon size={15} />
                 </span>
                 <span className="min-w-0">
-                  <strong className="block text-xl font-semibold tracking-[-0.04em] text-[#142132]">{formatNumber(item.value)}</strong>
-                  <span className="block truncate text-xs font-semibold uppercase tracking-[0.08em] text-[#8f5360]">{item.label}</span>
+                  <strong className="block text-lg font-semibold text-[#142132]">{formatNumber(item.value)}</strong>
+                  <span className="block truncate text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#8f5360]">{item.label}</span>
                 </span>
               </span>
-              <span className="shrink-0 text-xs font-semibold text-[#8f2f45]">View</span>
+              <span className="shrink-0 text-[0.68rem] font-semibold text-[#8f2f45]">View</span>
             </Link>
           )
         })}
@@ -257,7 +251,7 @@ export function HqPipelineFlow({ funnel = {} }) {
                 <span className="text-xs font-semibold text-[#60758d]">{formatPercent(stage.conversionRate)}</span>
               </div>
               <p className="mt-3 text-sm font-semibold leading-5 text-[#17324d]">{config.label}</p>
-              <p className="mt-1 text-2xl font-semibold tracking-[-0.045em] text-[#101828]">{formatNumber(stage.count)}</p>
+              <p className="mt-1 text-2xl font-semibold text-[#101828]">{formatNumber(stage.count)}</p>
             </Link>
           )
         })}

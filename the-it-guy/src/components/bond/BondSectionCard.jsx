@@ -16,8 +16,8 @@ export default function BondSectionCard({
   return (
     <section
       className={cn(
-        'rounded-[26px] border border-[#dbe5f0] bg-white shadow-[0_18px_40px_rgba(15,23,42,0.04)]',
-        padded ? 'p-5 sm:p-6' : 'p-0',
+        'min-w-0 rounded-[24px] border border-[#dbe5f0] bg-white shadow-[0_18px_40px_rgba(15,23,42,0.04)]',
+        padded ? 'p-5 sm:p-6 lg:p-6' : 'p-0',
         className,
       )}
     >
@@ -36,7 +36,7 @@ export default function BondSectionCard({
               </p>
             ) : null}
             {title ? (
-              <h2 className={cn('mt-2 text-[1.15rem] font-semibold tracking-[-0.02em] text-[#142132]', eyebrow ? '' : 'mt-0')}>
+              <h2 className={cn('mt-2 text-[1.15rem] font-semibold tracking-normal text-[#142132]', eyebrow ? '' : 'mt-0')}>
                 {title}
               </h2>
             ) : null}
@@ -44,7 +44,7 @@ export default function BondSectionCard({
               <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5f7287]">{description}</p>
             ) : null}
           </div>
-          {action ? <div className="flex shrink-0 items-center gap-3">{action}</div> : null}
+          {action ? <div className="flex w-full flex-wrap items-center gap-2.5 sm:w-auto lg:justify-end">{action}</div> : null}
         </div>
       ) : null}
 

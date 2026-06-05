@@ -99,7 +99,7 @@ try {
     assert.equal(kpis.unassigned, 1)
     assert.equal(kpis.ready_for_review, 1)
     assert.equal(kpis.awaiting_otp, 1)
-    assert.equal(kpis.sla_breaches, 1)
+    assert.equal(Object.keys(kpis).length, 5)
 
     console.log('BondTransactionsPage tests passed')
   } finally {

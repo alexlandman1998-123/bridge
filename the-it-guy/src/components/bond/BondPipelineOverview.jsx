@@ -35,7 +35,7 @@ export default function BondPipelineOverview({
               <p className="text-sm font-semibold text-[#17324d]">{item.label}</p>
               {index < items.length - 1 ? <ArrowRight size={14} className="hidden text-[#a0b1c4] xl:block" /> : null}
             </div>
-            <p className="mt-4 text-[1.85rem] font-semibold tracking-[-0.04em] text-[#142132]">{item.count}</p>
+            <p className="mt-4 text-[1.85rem] font-semibold tracking-normal text-[#142132]">{item.count}</p>
             <p className="mt-2 text-sm leading-6 text-[#5f7287]">{item.totalBondValueLabel}</p>
             <div className="mt-4">
               <BondStatusBadge

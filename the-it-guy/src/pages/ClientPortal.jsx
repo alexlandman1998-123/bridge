@@ -41,6 +41,7 @@ import {
   resolveClientJourneyFinanceType,
   resolveClientJourneyPropertyType,
 } from '../core/clientJourney/clientJourney.utils'
+import { getSystemBanks } from '../services/bondOriginatorBankService'
 import {
   createClientPortalDocumentSignedUrl,
   respondToClientPortalAppointment,
@@ -685,7 +686,9 @@ const BOND_APPLICATION_SECTION_TABS = [
   { key: 'documents', label: 'Documents' },
 ]
 
-const BOND_APPLICATION_BANK_OPTIONS = ['ABSA', 'FNB', 'Standard Bank', 'Nedbank', 'Other']
+const BOND_APPLICATION_BANK_OPTIONS = getSystemBanks()
+  .filter((bank) => ['absa', 'fnb', 'standard-bank', 'nedbank', 'other'].includes(bank.id))
+  .map((bank) => bank.shortName)
 
 const BOND_YES_NO_OPTIONS = [
   { value: '', label: 'Select option' },
@@ -771,15 +774,7 @@ const BOND_APPLICATION_STATUS_OPTIONS = [
   'Declined',
 ]
 
-const BOND_APPLICATION_BANK_MATCHERS = [
-  'ABSA',
-  'FNB',
-  'Nedbank',
-  'Standard Bank',
-  'Capitec',
-  'Investec',
-  'SA Home Loans',
-]
+const BOND_APPLICATION_BANK_MATCHERS = getSystemBanks().map((bank) => bank.shortName)
 
 function extractBondBankName(value) {
   const source = String(value || '')

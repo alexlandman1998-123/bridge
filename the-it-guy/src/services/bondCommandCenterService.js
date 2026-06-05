@@ -20,6 +20,7 @@ import {
   getCachedFinanceIntelligence,
 } from './financeIntelligenceService'
 import { resolveEffectiveBondAssignment } from './bondAssignmentService'
+import { getSystemBanks } from './bondOriginatorBankService'
 
 const PRIORITY_CARD_META = Object.freeze({
   missing_documents: {
@@ -94,7 +95,11 @@ const HQ_PIPELINE_STAGE_META = Object.freeze([
   { key: 'registered', label: 'Registered', href: '/bond/applications?view=registered' },
 ])
 
-const EXECUTIVE_BANKS = Object.freeze(['FNB', 'ABSA', 'Standard Bank', 'Nedbank', 'Investec', 'Others'])
+const EXECUTIVE_BANKS = Object.freeze(
+  getSystemBanks()
+    .filter((bank) => ['absa', 'fnb', 'standard-bank', 'nedbank', 'investec', 'other'].includes(bank.id))
+    .map((bank) => (bank.id === 'other' ? 'Others' : bank.shortName)),
+)
 export const BOND_NO_DEVELOPMENT_ID = 'no-development-assigned'
 
 const ACTIVE_APPLICATION_STAGE_META = Object.freeze([
@@ -2266,6 +2271,183 @@ function isUpdatedThisMonth(row = {}) {
   return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()
 }
 
+function getRegistrationDate(row = {}) {
+  return (
+    row?.transaction?.registered_at ||
+    row?.transaction?.registration_date ||
+    row?.transaction?.completed_at ||
+    (deriveTransactionStatus(row) === 'registered' ? getUpdatedAt(row) : null)
+  )
+}
+
+function isRegisteredThisMonth(row = {}) {
+  const date = getDateOrNull(getRegistrationDate(row))
+  if (!date) return false
+  const now = new Date()
+  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()
+}
+
+function isActivePortfolioApplication(row = {}) {
+  const tx = row?.transaction || {}
+  const lifecycleState = normalizeLower(tx.lifecycle_state || tx.lifecycleState)
+  const status = normalizeLower(tx.status || tx.application_status || tx.finance_status)
+  if (tx.is_active === false || tx.deleted_at) return false
+  if (tx.archived_at || tx.cancelled_at || tx.completed_at) return false
+  if (['completed', 'archived', 'cancelled', 'canceled', 'inactive', 'deleted'].includes(lifecycleState)) return false
+  if (['completed', 'archived', 'cancelled', 'canceled', 'inactive', 'deleted'].includes(status)) return false
+  return true
+}
+
+function isSubmittedOrDecisionedPortfolioApplication(row = {}) {
+  const laneKey = deriveFinanceLaneStage(row).key
+  const status = deriveTransactionStatus(row)
+  if (deriveRiskSignals(row).declined) return true
+  return [
+    'submitted_to_banks',
+    'bank_feedback',
+    'bond_approved',
+    'grant_signed',
+    'bond_instruction_sent',
+    'attorney_transfer_in_progress',
+    'lodgement',
+    'registered',
+  ].includes(laneKey) || [
+    'cancelled',
+    'bond_approved',
+    'grant_signed',
+    'instruction_sent',
+    'in_transfer',
+    'registered',
+  ].includes(status)
+}
+
+function isApprovedPortfolioApplication(row = {}) {
+  return ['bond_approved', 'grant_signed', 'instruction_sent', 'in_transfer', 'registered'].includes(deriveTransactionStatus(row))
+}
+
+function calculateApprovalRate(rows = []) {
+  const denominatorRows = rows.filter(isSubmittedOrDecisionedPortfolioApplication)
+  if (!denominatorRows.length) return null
+  const approvedRows = denominatorRows.filter(isApprovedPortfolioApplication)
+  return roundTo((approvedRows.length / denominatorRows.length) * 100, 0)
+}
+
+function getLatestActivityAt(rows = []) {
+  const timestamps = rows
+    .map((row) => getUpdatedAt(row))
+    .filter(Boolean)
+    .sort((left, right) => getTimestamp(right) - getTimestamp(left))
+  return timestamps[0] || null
+}
+
+function getPrimaryBranchName(rows = []) {
+  const counts = new Map()
+  for (const row of rows) {
+    const name = getBranchLabel(row)
+    if (!normalizeText(name) || name === 'Unassigned Branch') continue
+    counts.set(name, (counts.get(name) || 0) + 1)
+  }
+  return [...counts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] || null
+}
+
+function getPrimaryConsultantName(rows = []) {
+  const counts = new Map()
+  for (const row of rows) {
+    const assignment = resolveEffectiveBondAssignment(row?.transaction || {})
+    const name = getDisplayNameFromAssignment(assignment, row, 'consultant')
+    if (!normalizeText(name) || name === 'Consultant') continue
+    counts.set(name, (counts.get(name) || 0) + 1)
+  }
+  return [...counts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] || null
+}
+
+export function calculateDevelopmentRisk(rows = []) {
+  const riskRows = rows
+    .map((row) => ({ row, risk: deriveRiskSignals(row) }))
+    .filter((item) => item.risk.atRisk)
+  const riskCount = riskRows.length
+  const highRiskCount = riskRows.filter((item) => item.risk.declined || item.risk.complianceFlag || item.risk.overdueDays >= 14).length
+  const ratio = rows.length ? riskCount / rows.length : 0
+
+  if (highRiskCount > 0 || riskCount >= 3 || ratio >= 0.5) {
+    return { riskLevel: 'high', riskCount }
+  }
+  if (riskCount > 0) {
+    return { riskLevel: 'medium', riskCount }
+  }
+  return { riskLevel: 'low', riskCount: 0 }
+}
+
+export function normalizeDevelopmentPortfolioRows(groups = []) {
+  return (Array.isArray(groups) ? groups : [])
+    .map((group) => {
+      const rows = Array.isArray(group?.rows) ? group.rows : []
+      const identity = group?.identity || {}
+      const activeRows = rows.filter(isActivePortfolioApplication)
+      const pipelineValue = activeRows.reduce((total, row) => total + getBondAmount(row), 0)
+      const commissionForecast = activeRows.reduce((total, row) => total + getCommissionValue(row), 0)
+      const approvalRate = calculateApprovalRate(activeRows)
+      const risk = calculateDevelopmentRisk(activeRows)
+      const activeApplications = activeRows.length
+      const awaitingDocs = activeRows.filter((row) => getDocumentMissingCount(row) > 0).length
+      const registeredThisMonth = rows.filter(isRegisteredThisMonth).length
+      const lastActivityAt = getLatestActivityAt(rows)
+
+      return {
+        ...identity,
+        pipelineValue,
+        pipelineValueLabel: formatCurrency(pipelineValue),
+        activeApplications,
+        activeFiles: activeApplications,
+        awaitingDocs,
+        pendingDocuments: awaitingDocs,
+        approvalRate,
+        registeredThisMonth,
+        commissionForecast: commissionForecast > 0 ? commissionForecast : null,
+        ...risk,
+        atRiskFiles: risk.riskCount,
+        branchName: getPrimaryBranchName(rows),
+        consultantName: getPrimaryConsultantName(rows),
+        lastActivityAt,
+        href: `/bond/developments/${encodeURIComponent(identity.id)}`,
+        transactionsHref: `/bond/applications?developmentId=${encodeURIComponent(identity.id)}`,
+        reportsHref: `/bond/reports?developmentId=${encodeURIComponent(identity.id)}`,
+      }
+    })
+    .sort((left, right) => {
+      if (Number(right.pipelineValue || 0) !== Number(left.pipelineValue || 0)) {
+        return Number(right.pipelineValue || 0) - Number(left.pipelineValue || 0)
+      }
+      return normalizeText(left.name).localeCompare(normalizeText(right.name))
+    })
+}
+
+export function calculateDevelopmentPortfolioMetrics(developments = []) {
+  const rows = Array.isArray(developments) ? developments : []
+  const approvalRows = rows.filter((row) => row.approvalRate !== null && row.approvalRate !== undefined)
+  const activeApplications = rows.reduce((total, row) => total + Number(row.activeApplications || 0), 0)
+  const weightedApprovalTotal = approvalRows.reduce((total, row) => total + Number(row.approvalRate || 0) * Math.max(Number(row.activeApplications || 0), 1), 0)
+  const weightedApprovalDenominator = approvalRows.reduce((total, row) => total + Math.max(Number(row.activeApplications || 0), 1), 0)
+  const commissionRows = rows.filter((row) => Number(row.commissionForecast || 0) > 0)
+
+  return {
+    totalPipelineValue: rows.reduce((total, row) => total + Number(row.pipelineValue || 0), 0),
+    activeApplications,
+    approvalRate: weightedApprovalDenominator ? roundTo(weightedApprovalTotal / weightedApprovalDenominator, 0) : null,
+    registeredThisMonth: rows.reduce((total, row) => total + Number(row.registeredThisMonth || 0), 0),
+    commissionForecast: commissionRows.length ? commissionRows.reduce((total, row) => total + Number(row.commissionForecast || 0), 0) : null,
+    developmentsAtRisk: rows.filter((row) => Number(row.riskCount || 0) > 0).length,
+  }
+}
+
+export function getBondDevelopmentPortfolio(groups = []) {
+  const developments = normalizeDevelopmentPortfolioRows(groups)
+  return {
+    summary: calculateDevelopmentPortfolioMetrics(developments),
+    developments,
+  }
+}
+
 function buildDevelopmentSummary(rows = []) {
   const pipelineRows = rows.filter((row) => !isBondTransactionLifecycleRow(row))
   const transactionRows = rows.filter(isBondTransactionLifecycleRow)
@@ -2437,6 +2619,7 @@ export async function getBondDevelopmentsWorkspaceSnapshot(user = {}, workspaceI
   const developments = [...groups.values()]
     .map((group) => buildDevelopmentCard(group.rows, group.identity))
     .sort((left, right) => Number(right.pipelineValue || 0) - Number(left.pipelineValue || 0))
+  const portfolio = getBondDevelopmentPortfolio([...groups.values()])
 
   const selectedDevelopmentId = normalizeText(options.developmentId)
   const selectedGroup = selectedDevelopmentId && selectedDevelopmentId !== 'all'
@@ -2446,6 +2629,7 @@ export async function getBondDevelopmentsWorkspaceSnapshot(user = {}, workspaceI
   return {
     rows,
     developments,
+    portfolio,
     developmentOptions: buildBondDevelopmentOptions(allRows),
     selectedDevelopmentId: selectedDevelopmentId || 'all',
     detail: selectedGroup ? buildDevelopmentDetail(selectedGroup.identity, selectedGroup.rows) : null,

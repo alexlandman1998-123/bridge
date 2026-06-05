@@ -33,7 +33,7 @@ export default function BondDashboardSummary({ summary = null, loading = false }
       {SUMMARY_CARD_ORDER.map(([key, label]) => (
         <article key={key} className="rounded-[16px] border border-[#dde6f1] bg-white p-4 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
           <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f8399]">{label}</p>
-          <p className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-[#132130]">{toCount(safeSummary[key])}</p>
+          <p className="mt-2 text-2xl font-semibold tracking-normal text-[#132130]">{toCount(safeSummary[key])}</p>
         </article>
       ))}
     </section>

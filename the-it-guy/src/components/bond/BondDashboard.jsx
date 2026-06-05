@@ -343,7 +343,7 @@ export default function BondDashboard({
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#748aa0]">Connected Partners</p>
-                    <h2 className="mt-2 text-[1.1rem] font-semibold tracking-[-0.03em] text-[#142132]">
+                    <h2 className="mt-2 text-[1.1rem] font-semibold tracking-normal text-[#142132]">
                       Connected Partners
                     </h2>
                   </div>
@@ -448,7 +448,7 @@ function OrganisationSnapshotCard({ snapshot = {} }) {
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#748aa0]">Organisation Snapshot</p>
-          <h2 className="mt-2 text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Network operating health</h2>
+          <h2 className="mt-2 text-[1.05rem] font-semibold tracking-normal text-[#142132]">Network operating health</h2>
         </div>
         <Link to="/bond/organisation" className="inline-flex items-center gap-2 text-sm font-semibold text-[#204b84] hover:text-[#17324d]">
           View Organisation <ArrowRight size={15} />
@@ -589,7 +589,7 @@ function BuyerQualityPanel({ distribution = {} }) {
         return (
           <div key={key} className="rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] p-4">
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">{label}</p>
-            <p className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-[#142132]">{count}</p>
+            <p className="mt-3 text-3xl font-semibold tracking-normal text-[#142132]">{count}</p>
             <p className="mt-1 text-xs text-[#60758d]">{Math.round((count / total) * 100)}% of active book</p>
           </div>
         )
@@ -613,7 +613,7 @@ function ExecutiveKpiCard({ item = {} }) {
       </div>
       <div>
         <p className="truncate text-[13px] font-medium leading-5 text-[#52657a]">{label}</p>
-        <p className="mt-1.5 text-[1.55rem] font-semibold leading-none tracking-[-0.035em] text-[#101828] tabular-nums">{item.value}</p>
+        <p className="mt-1.5 text-[1.55rem] font-semibold leading-none tracking-normal text-[#101828] tabular-nums">{item.value}</p>
       </div>
       <p className="min-h-4 text-[0.72rem] font-medium leading-4 text-[#8a9aac]">{helper}</p>
     </article>
@@ -712,7 +712,7 @@ function ActiveApplicationCard({ application = {} }) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate text-[0.78rem] font-semibold text-[#58718b]">{application.developmentName || 'Location pending'}</p>
-            <p className="mt-1 truncate text-base font-semibold tracking-[-0.02em] text-[#142132]">{application.buyerName || 'Unknown buyer'}</p>
+            <p className="mt-1 truncate text-base font-semibold tracking-normal text-[#142132]">{application.buyerName || 'Unknown buyer'}</p>
           </div>
           <span className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}>
             {application.statusLabel || 'On Track'}
@@ -723,7 +723,7 @@ function ActiveApplicationCard({ application = {} }) {
       <div className="flex flex-1 flex-col p-4">
         <section className="flex min-h-[56px] items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="truncate text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]">{application.propertyLabel || 'Property pending'}</p>
+            <p className="truncate text-[1.02rem] font-semibold tracking-normal text-[#142132]">{application.propertyLabel || 'Property pending'}</p>
             <p className="mt-1 truncate text-xs text-[#71879d]">
               {[application.financeType || 'Bond', application.bankName || 'Bank not selected'].filter(Boolean).join(' • ')}
             </p>
@@ -1328,7 +1328,7 @@ function DonutAnalyticsPanel({ items = {} }) {
           />
           <div className="absolute inset-6 rounded-full bg-white shadow-[inset_0_0_18px_rgba(15,23,42,0.08)]" />
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-            <p className="text-3xl font-semibold leading-none tracking-[-0.04em] text-[#142132]">{total}</p>
+            <p className="text-3xl font-semibold leading-none tracking-normal text-[#142132]">{total}</p>
             <p className="mt-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">Buyers</p>
           </div>
         </div>

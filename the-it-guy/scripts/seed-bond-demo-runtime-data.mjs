@@ -613,6 +613,10 @@ const REQUIRED_COLUMNS_BY_TABLE = Object.freeze({
   units: ['id', 'development_id', 'unit_number'],
   transactions: ['id', 'organisation_id', 'transaction_reference'],
   transaction_finance_details: ['transaction_id'],
+  transaction_finance_workflows: ['transaction_id', 'workflow_type', 'current_stage', 'status'],
+  transaction_finance_workflow_events: ['id', 'workflow_id', 'to_stage', 'event_type'],
+  transaction_bond_applications: ['id', 'transaction_id', 'workflow_id', 'bank_name', 'status'],
+  transaction_bond_quotes: ['id', 'transaction_id', 'workflow_id', 'bank_name', 'quote_status'],
   transaction_subprocesses: ['transaction_id', 'process_type', 'owner_type', 'status'],
   transaction_subprocess_steps: ['subprocess_id', 'step_key', 'step_label', 'status', 'owner_type', 'sort_order'],
   document_requests: ['id', 'transaction_id', 'category', 'document_type', 'title', 'status'],
@@ -623,6 +627,57 @@ const REQUIRED_COLUMNS_BY_TABLE = Object.freeze({
   transaction_participants: ['id', 'transaction_id', 'role_type'],
   transaction_role_players: ['id', 'transaction_id', 'role_type'],
   client_portal_links: ['id', 'transaction_id', 'token', 'is_active'],
+  bond_application_ownership_history: ['id', 'organisation_id', 'event_type'],
+  bond_routing_rules: ['id', 'organisation_id', 'rule_type'],
+  bond_routing_rule_activity: ['id', 'organisation_id', 'event_type'],
+  bond_partners: ['id', 'organisation_id', 'name', 'partner_type'],
+  bond_partner_invitations: ['id', 'organisation_id', 'partner_id', 'invited_email', 'token'],
+  bond_partner_activity: ['id', 'organisation_id', 'event_type'],
+  bond_partner_portal_users: ['id', 'organisation_id', 'partner_id', 'email', 'portal_token'],
+  bond_partner_portal_documents: ['id', 'organisation_id', 'partner_id', 'document_name'],
+  bond_partner_portal_document_requests: ['id', 'organisation_id', 'partner_id', 'document_name'],
+  bond_partner_portal_comments: ['id', 'organisation_id', 'partner_id', 'message'],
+  bond_partner_portal_support_tickets: ['id', 'organisation_id', 'partner_id', 'ticket_type', 'subject'],
+  bond_partner_portal_audit: ['id', 'organisation_id', 'event_type'],
+  bond_partner_portal_notifications: ['id', 'organisation_id', 'partner_id', 'notification_type', 'title'],
+  bond_partner_requests: ['id', 'organisation_id', 'request_type', 'priority', 'status', 'title'],
+  bond_partner_request_messages: ['id', 'organisation_id', 'request_id', 'message'],
+  bond_partner_internal_notes: ['id', 'organisation_id', 'request_id', 'note'],
+  bond_partner_request_activity: ['id', 'organisation_id', 'event_type'],
+  bond_partner_request_notifications: ['id', 'organisation_id', 'type'],
+  bond_consultant_targets: ['id', 'organisation_id', 'consultant_id', 'period'],
+  bond_consultant_coaching_notes: ['id', 'organisation_id', 'consultant_id', 'note'],
+  bond_consultant_performance_snapshots: ['id', 'organisation_id', 'consultant_id', 'period'],
+  bond_branch_targets: ['id', 'organisation_id', 'branch_id', 'period'],
+  bond_branch_health_snapshots: ['id', 'organisation_id', 'branch_id', 'period'],
+  bond_branch_forecasts: ['id', 'organisation_id', 'branch_id', 'period', 'forecast_window_days'],
+  bond_regional_targets: ['id', 'organisation_id', 'region_id', 'period'],
+  bond_regional_health_snapshots: ['id', 'organisation_id', 'region_id', 'period'],
+  bond_regional_forecasts: ['id', 'organisation_id', 'region_id', 'period', 'forecast_window_days'],
+  bond_hq_health_snapshots: ['id', 'organisation_id', 'period'],
+  bond_hq_forecasts: ['id', 'organisation_id', 'period', 'forecast_window_days'],
+  bond_executive_alerts: ['id', 'organisation_id', 'alert_type', 'severity', 'title', 'source_type', 'source_id'],
+  bond_executive_reports: ['id', 'organisation_id', 'period', 'format'],
+  bond_banks: ['id', 'organisation_id', 'name'],
+  bond_bank_contacts: ['id', 'organisation_id', 'bank_id', 'name', 'role'],
+  bond_bank_escalations: ['id', 'organisation_id', 'bank_id', 'issue'],
+  bond_bank_feedback: ['id', 'organisation_id', 'bank_id', 'feedback_type', 'message'],
+  bond_bank_health_snapshots: ['id', 'organisation_id', 'bank_id', 'period'],
+  bond_commission_rules: ['id', 'organisation_id', 'name', 'applies_to'],
+  bond_commissions: ['id', 'organisation_id', 'amount'],
+  bond_referral_fees: ['id', 'organisation_id', 'amount'],
+  bond_bonus_awards: ['id', 'organisation_id', 'recipient_type', 'amount', 'reason'],
+  bond_payouts: ['id', 'organisation_id', 'payee_type', 'payee_name', 'amount'],
+  bond_revenue_snapshots: ['id', 'organisation_id', 'period'],
+  bond_automation_rules: ['id', 'organisation_id', 'name', 'category'],
+  bond_automation_runs: ['id', 'organisation_id', 'entity_id', 'entity_type'],
+  bond_automation_history: ['id', 'organisation_id', 'action_type', 'event_type'],
+  bond_automation_templates: ['id', 'organisation_id', 'name', 'category'],
+  bond_automation_recommendations: ['id', 'organisation_id', 'title', 'category'],
+  bond_prediction_snapshots: ['id', 'organisation_id', 'prediction_type', 'entity_type', 'entity_id'],
+  bond_risk_scores: ['id', 'organisation_id', 'entity_type', 'entity_id'],
+  bond_prediction_history: ['id', 'organisation_id', 'event_type', 'entity_type', 'entity_id'],
+  bond_prediction_feedback: ['id', 'organisation_id'],
 })
 
 const OPTIONAL_COLUMNS_BY_TABLE = Object.freeze({
@@ -783,6 +838,43 @@ const OPTIONAL_COLUMNS_BY_TABLE = Object.freeze({
     'next_action',
     'updated_at',
   ],
+  transaction_finance_workflows: ['id', 'last_updated_by', 'last_updated_at', 'completed_at', 'created_at', 'updated_at'],
+  transaction_finance_workflow_events: ['from_stage', 'notes', 'created_by', 'created_at'],
+  transaction_bond_applications: [
+    'submitted_at',
+    'feedback_received_at',
+    'reference_number',
+    'notes',
+    'created_by',
+    'updated_by',
+    'created_at',
+    'updated_at',
+    'application_type',
+    'assigned_organisation_id',
+    'assigned_workspace_unit_id',
+    'assigned_branch_id',
+    'assigned_region_id',
+    'assigned_team_id',
+    'assigned_user_id',
+    'assigned_consultant_id',
+    'assigned_processor_id',
+    'assignment_status',
+    'assignment_source',
+  ],
+  transaction_bond_quotes: [
+    'bond_application_id',
+    'quoted_amount',
+    'interest_rate',
+    'term_months',
+    'quote_received_at',
+    'quote_expiry_at',
+    'approved_at',
+    'notes',
+    'created_by',
+    'updated_by',
+    'created_at',
+    'updated_at',
+  ],
   transaction_subprocesses: ['created_at', 'updated_at'],
   transaction_subprocess_steps: ['created_at', 'updated_at', 'comment', 'completed_at'],
   document_requests: [
@@ -849,6 +941,71 @@ const OPTIONAL_COLUMNS_BY_TABLE = Object.freeze({
     'updated_at',
   ],
   client_portal_links: ['development_id', 'unit_id', 'buyer_id', 'created_at', 'updated_at'],
+  bond_application_ownership_history: [
+    'bond_application_id',
+    'transaction_id',
+    'application_reference',
+    'from_consultant_id',
+    'to_consultant_id',
+    'consultant_id',
+    'branch_id',
+    'region_id',
+    'reason',
+    'actor_user_id',
+    'previous_value',
+    'new_value',
+    'created_at',
+  ],
+  bond_routing_rules: ['source_id', 'source_name', 'region_id', 'branch_id', 'consultant_id', 'priority', 'status', 'accepts_overflow', 'maximum_capacity', 'overflow_destination_branch_id', 'metadata', 'created_by', 'updated_by', 'created_at', 'updated_at'],
+  bond_routing_rule_activity: ['routing_rule_id', 'bond_application_id', 'application_reference', 'actor_user_id', 'source', 'previous_value', 'new_value', 'created_at'],
+  bond_partners: ['primary_contact_name', 'primary_contact_email', 'primary_contact_number', 'default_region_id', 'default_branch_id', 'default_consultant_id', 'routing_rule_id', 'status', 'notes', 'created_by', 'updated_by', 'created_at', 'updated_at'],
+  bond_partner_invitations: ['invited_by', 'status', 'sent_at', 'accepted_at', 'expires_at', 'created_at'],
+  bond_partner_activity: ['partner_id', 'actor_user_id', 'source', 'previous_value', 'new_value', 'created_at'],
+  bond_partner_portal_users: ['user_id', 'name', 'role', 'password_set_at', 'status', 'last_login_at', 'created_at', 'updated_at'],
+  bond_partner_portal_documents: ['bond_application_id', 'application_reference', 'document_type', 'storage_path', 'status', 'uploaded_by', 'uploaded_at', 'created_at'],
+  bond_partner_portal_document_requests: ['bond_application_id', 'application_reference', 'requested_by', 'requested_by_name', 'due_date', 'status', 'notes', 'created_at', 'updated_at'],
+  bond_partner_portal_comments: ['bond_application_id', 'application_reference', 'author_user_id', 'author_name', 'author_role', 'attachments', 'created_at'],
+  bond_partner_portal_support_tickets: ['bond_application_id', 'application_reference', 'message', 'status', 'created_by', 'created_at', 'updated_at'],
+  bond_partner_portal_audit: ['partner_id', 'bond_application_id', 'application_reference', 'actor_user_id', 'previous_value', 'new_value', 'created_at'],
+  bond_partner_portal_notifications: ['bond_application_id', 'application_reference', 'channel', 'read_at', 'created_at'],
+  bond_partner_requests: ['partner_id', 'application_id', 'region_id', 'branch_id', 'owner_consultant_id', 'category', 'message', 'source_key', 'source_id', 'document_id', 'support_ticket_id', 'assigned_at', 'due_at', 'resolved_at', 'escalated', 'escalation_reason', 'resolution', 'created_at', 'updated_at'],
+  bond_partner_request_messages: ['application_id', 'partner_id', 'actor_user_id', 'actor_name', 'attachments', 'visible_to_partner', 'created_at'],
+  bond_partner_internal_notes: ['application_id', 'partner_id', 'actor_user_id', 'actor_name', 'visible_to_partner', 'created_at'],
+  bond_partner_request_activity: ['request_id', 'partner_id', 'application_id', 'actor_user_id', 'previous_value', 'new_value', 'created_at'],
+  bond_partner_request_notifications: ['request_id', 'recipient_user_id', 'recipient_role', 'title', 'read_at', 'created_at'],
+  bond_consultant_targets: ['applications_target', 'approvals_target', 'approval_rate_target', 'turnaround_target', 'sla_compliance_target', 'response_time_target', 'created_by', 'created_at', 'updated_at'],
+  bond_consultant_coaching_notes: ['flag_type', 'severity', 'created_by', 'created_at'],
+  bond_consultant_performance_snapshots: ['active_applications', 'pending_documents', 'awaiting_bank_feedback', 'urgent_requests', 'open_partner_requests', 'sla_breaches', 'capacity_score', 'capacity_status', 'approval_rate', 'decline_rate', 'average_turnaround', 'sla_compliance', 'partner_response_time', 'applications_submitted', 'approvals', 'declines', 'coaching_flags', 'forecast', 'created_at', 'updated_at'],
+  bond_branch_targets: ['approval_target', 'submission_target', 'turnaround_target', 'sla_target', 'satisfaction_target', 'created_by', 'created_at', 'updated_at'],
+  bond_branch_health_snapshots: ['health_score', 'health_status', 'sla_compliance', 'consultant_capacity', 'approval_rate', 'partner_health', 'escalations', 'open_requests', 'summary', 'created_at', 'updated_at'],
+  bond_branch_forecasts: ['expected_applications', 'expected_capacity', 'risk_level', 'required_headcount', 'recommended_action', 'inputs', 'created_at', 'updated_at'],
+  bond_regional_targets: ['application_target', 'approval_target', 'sla_target', 'partner_health_target', 'growth_target', 'created_by', 'created_at', 'updated_at'],
+  bond_regional_health_snapshots: ['health_score', 'health_status', 'branch_health', 'partner_health', 'sla_compliance', 'approval_rate', 'escalations', 'capacity_risk', 'forecast_risk', 'summary', 'created_at', 'updated_at'],
+  bond_regional_forecasts: ['application_growth', 'capacity_demand', 'consultant_demand', 'partner_growth', 'escalation_risk', 'expected_capacity_risk', 'recommended_headcount', 'expected_application_volume', 'inputs', 'created_at', 'updated_at'],
+  bond_hq_health_snapshots: ['health_score', 'health_status', 'regional_health', 'branch_health', 'partner_health', 'sla_compliance', 'approval_rate', 'escalations', 'capacity_risk', 'forecast_risk', 'summary', 'created_at', 'updated_at'],
+  bond_hq_forecasts: ['expected_applications', 'expected_approvals', 'expected_capacity_risk', 'required_consultants', 'expected_sla_risk', 'executive_forecast_risk', 'inputs', 'created_at', 'updated_at'],
+  bond_executive_alerts: ['description', 'status', 'assigned_to', 'created_at', 'dismissed_at', 'updated_at'],
+  bond_executive_reports: ['generated_by', 'file_url', 'sections', 'created_at'],
+  bond_banks: ['status', 'relationship_owner', 'created_at', 'updated_at'],
+  bond_bank_contacts: ['email', 'phone', 'region', 'notes', 'created_by', 'created_at', 'updated_at'],
+  bond_bank_escalations: ['application_id', 'consultant_id', 'branch_id', 'region_id', 'issue_type', 'priority', 'status', 'created_by', 'created_at', 'resolved_at', 'updated_at'],
+  bond_bank_feedback: ['sentiment', 'consultant_id', 'branch_id', 'region_id', 'created_by', 'created_at'],
+  bond_bank_health_snapshots: ['health_score', 'health_status', 'approval_rate', 'response_time_score', 'escalation_score', 'instruction_rate', 'consultant_feedback_score', 'partner_feedback_score', 'summary', 'created_at', 'updated_at'],
+  bond_commission_rules: ['rule_type', 'percentage', 'fixed_amount', 'tiers', 'components', 'bonus_criteria', 'status', 'created_by', 'created_at', 'updated_at'],
+  bond_commissions: ['application_id', 'consultant_id', 'status', 'calculated_at', 'approved_at', 'paid_at', 'created_at', 'updated_at'],
+  bond_referral_fees: ['application_id', 'partner_id', 'status', 'created_at', 'approved_at', 'paid_at', 'updated_at'],
+  bond_bonus_awards: ['recipient_id', 'branch_id', 'region_id', 'status', 'created_by', 'created_at', 'approved_at', 'paid_at', 'updated_at'],
+  bond_payouts: ['payee_id', 'branch_id', 'region_id', 'status', 'workflow_stage', 'manager_approved_at', 'finance_approved_at', 'paid_at', 'audit_trail', 'created_by', 'created_at', 'updated_at'],
+  bond_revenue_snapshots: ['revenue', 'commission', 'referral_fees', 'bonuses', 'bank_incentives', 'profit', 'margin', 'summary', 'created_at', 'updated_at'],
+  bond_automation_rules: ['trigger', 'conditions', 'actions', 'status', 'created_by', 'created_at', 'updated_at'],
+  bond_automation_runs: ['rule_id', 'result', 'action_results', 'executed_at'],
+  bond_automation_history: ['rule_id', 'rule_name', 'entity_id', 'entity_type', 'result', 'details', 'created_at'],
+  bond_automation_templates: ['channel', 'subject', 'body', 'sequence', 'status', 'created_by', 'created_at', 'updated_at'],
+  bond_automation_recommendations: ['description', 'impact', 'status', 'source', 'created_at', 'dismissed_at'],
+  bond_prediction_snapshots: ['score', 'confidence', 'recommendation', 'details', 'predicted_at', 'created_at'],
+  bond_risk_scores: ['score', 'risk_level', 'reasons', 'confidence', 'recommended_action', 'updated_at', 'created_at'],
+  bond_prediction_history: ['prediction_id', 'prediction_type', 'previous_value', 'new_value', 'created_by', 'created_at'],
+  bond_prediction_feedback: ['prediction_id', 'expected_outcome', 'actual_outcome', 'accuracy', 'correct', 'notes', 'created_by', 'created_at'],
 })
 
 function parseEnvFile(filePath) {
@@ -1827,6 +1984,156 @@ function buildFinanceDetailsRows(applications = []) {
   }))
 }
 
+function getPeriod(offsetMonths = 0) {
+  const date = new Date(Date.UTC(REFERENCE_NOW.getUTCFullYear(), REFERENCE_NOW.getUTCMonth() + offsetMonths, 1))
+  return date.toISOString().slice(0, 7)
+}
+
+function hydrateApplicationsWithUsers(applications = [], users = []) {
+  const byKey = Object.fromEntries(users.map((user) => [user.key, user]))
+  return applications.map((application) => ({
+    ...application,
+    regionalManager: byKey[application.regionalManager?.key] || application.regionalManager,
+    branchManager: byKey[application.branchManager?.key] || application.branchManager,
+    consultant: byKey[application.consultant?.key] || application.consultant,
+    processor: byKey[application.processor?.key] || application.processor,
+    compliance: byKey[application.compliance?.key] || application.compliance,
+  }))
+}
+
+function getFinanceWorkflowStage(bucketKey = '') {
+  if (['new_finance_requested', 'awaiting_contact', 'documents_required'].includes(bucketKey)) return 'documents_received'
+  if (bucketKey === 'pre_qualification') return 'documents_reviewed'
+  if (['ready_for_submission', 'submitted_to_banks', 'bank_feedback'].includes(bucketKey)) return 'applications_submitted'
+  if (bucketKey === 'approved') return 'quotes_received'
+  if (bucketKey === 'grant_signed') return 'quote_approved'
+  return 'instruction_sent'
+}
+
+function getBondApplicationStatus(bucketKey = '') {
+  const statusByBucket = {
+    new_finance_requested: 'pending',
+    awaiting_contact: 'pending',
+    documents_required: 'additional_documents_required',
+    pre_qualification: 'pending',
+    ready_for_submission: 'pending',
+    submitted_to_banks: 'submitted',
+    bank_feedback: 'feedback_received',
+    approved: 'approved',
+    grant_signed: 'buyer_approved',
+    bond_instruction_sent: 'buyer_approved',
+    transfer_in_progress: 'buyer_approved',
+    registered: 'buyer_approved',
+    declined_or_cancelled: 'declined',
+  }
+  return statusByBucket[bucketKey] || 'pending'
+}
+
+function buildFinanceWorkflowRuntimeRows(applications = [], ownerUserId = null) {
+  const workflows = []
+  const workflowEvents = []
+  const bondApplications = []
+  const quotes = []
+
+  for (const application of applications) {
+    const workflowId = deterministicUuid(`finance-workflow:${application.transactionReference}`)
+    const bondApplicationId = deterministicUuid(`bond-application:${application.transactionReference}:originator-intake`)
+    const currentStage = getFinanceWorkflowStage(application.bucketKey)
+    const completed = ['registered', 'declined_or_cancelled'].includes(application.bucketKey)
+    const status = application.bucketKey === 'declined_or_cancelled' ? 'blocked' : completed ? 'completed' : 'active'
+    const submitted = ['submitted_to_banks', 'bank_feedback', 'approved', 'grant_signed', 'bond_instruction_sent', 'transfer_in_progress', 'registered', 'declined_or_cancelled'].includes(application.bucketKey)
+    const feedback = ['bank_feedback', 'approved', 'grant_signed', 'bond_instruction_sent', 'transfer_in_progress', 'registered', 'declined_or_cancelled'].includes(application.bucketKey)
+    const quoteVisible = ['approved', 'grant_signed', 'bond_instruction_sent', 'transfer_in_progress', 'registered'].includes(application.bucketKey)
+
+    workflows.push({
+      id: workflowId,
+      transaction_id: application.transactionId,
+      workflow_type: 'bond_hybrid',
+      current_stage: currentStage,
+      status,
+      last_updated_by: ownerUserId,
+      last_updated_at: application.updatedAt,
+      completed_at: completed ? application.updatedAt : null,
+      created_at: application.createdAt,
+      updated_at: application.updatedAt,
+    })
+
+    workflowEvents.push({
+      id: deterministicUuid(`finance-workflow-event:${application.transactionReference}:created`),
+      workflow_id: workflowId,
+      from_stage: null,
+      to_stage: 'documents_received',
+      event_type: 'stage_changed',
+      notes: `Demo finance workflow opened for ${application.transactionReference}.`,
+      created_by: ownerUserId,
+      created_at: application.createdAt,
+    })
+    if (currentStage !== 'documents_received') {
+      workflowEvents.push({
+        id: deterministicUuid(`finance-workflow-event:${application.transactionReference}:${currentStage}`),
+        workflow_id: workflowId,
+        from_stage: 'documents_received',
+        to_stage: currentStage,
+        event_type: currentStage === 'instruction_sent' ? 'instruction_sent' : currentStage === 'quote_approved' ? 'quote_approved' : 'stage_changed',
+        notes: application.stageConfig.nextAction,
+        created_by: ownerUserId,
+        created_at: application.updatedAt,
+      })
+    }
+
+    bondApplications.push({
+      id: bondApplicationId,
+      transaction_id: application.transactionId,
+      workflow_id: workflowId,
+      bank_name: application.bank,
+      status: getBondApplicationStatus(application.bucketKey),
+      submitted_at: submitted ? isoDaysAgo(Math.max(resolveRecencyDays(application.bucketKey, application.applicationIndex) - 5, 1)) : null,
+      feedback_received_at: feedback ? application.updatedAt : null,
+      reference_number: `${application.bank.slice(0, 3).toUpperCase()}-${application.transactionReference}`,
+      notes: application.story,
+      created_by: ownerUserId,
+      updated_by: ownerUserId,
+      created_at: application.createdAt,
+      updated_at: application.updatedAt,
+      application_type: 'originator_intake',
+      assigned_organisation_id: application.workspaceId,
+      assigned_workspace_unit_id: application.branchId,
+      assigned_branch_id: application.branchId,
+      assigned_region_id: application.regionId,
+      assigned_team_id: application.teamId,
+      assigned_user_id: application.consultant?.userId || ownerUserId,
+      assigned_consultant_id: application.consultant?.userId || ownerUserId,
+      assigned_processor_id: application.processor?.userId || null,
+      assignment_status: 'fully_assigned',
+      assignment_source: 'demo_seed',
+    })
+
+    if (quoteVisible) {
+      quotes.push({
+        id: deterministicUuid(`bond-quote:${application.transactionReference}:${application.bank}`),
+        transaction_id: application.transactionId,
+        workflow_id: workflowId,
+        bond_application_id: bondApplicationId,
+        bank_name: application.bank,
+        quoted_amount: application.finance.bondAmount,
+        interest_rate: Number((10.25 + (application.applicationIndex % 6) * 0.15).toFixed(2)),
+        term_months: 240,
+        quote_status: ['grant_signed', 'bond_instruction_sent', 'transfer_in_progress', 'registered'].includes(application.bucketKey) ? 'approved_by_buyer' : 'received',
+        quote_received_at: application.updatedAt,
+        quote_expiry_at: isoDaysFromNow(14 + (application.applicationIndex % 10)),
+        approved_at: ['grant_signed', 'bond_instruction_sent', 'transfer_in_progress', 'registered'].includes(application.bucketKey) ? application.updatedAt : null,
+        notes: `${application.bank} demo quote for ${application.transactionReference}.`,
+        created_by: ownerUserId,
+        updated_by: ownerUserId,
+        created_at: application.createdAt,
+        updated_at: application.updatedAt,
+      })
+    }
+  }
+
+  return { workflows, workflowEvents, bondApplications, quotes }
+}
+
 function buildSubprocessRows(applications = []) {
   const subprocesses = []
   const steps = []
@@ -2341,6 +2648,1235 @@ function buildClientPortalLinks(applications = []) {
     }))
 }
 
+function percent(numerator = 0, denominator = 1) {
+  if (!denominator) return 0
+  return Number(((numerator / denominator) * 100).toFixed(2))
+}
+
+function clampNumber(value = 0, min = 0, max = 100) {
+  return Math.max(min, Math.min(max, Number(value) || 0))
+}
+
+function buildBondModuleRuntimeRows(plan, applications = [], ownerUserId = null, financeRuntime = {}) {
+  const period = getPeriod(0)
+  const previousPeriod = getPeriod(-1)
+  const applicationByTransactionId = new Map(applications.map((application) => [application.transactionId, application]))
+  const bondApplicationByTransactionId = new Map((financeRuntime.bondApplications || []).map((row) => [row.transaction_id, row]))
+  const consultantUsers = plan.users.filter((user) => user.roleFamily === 'consultant' && user.userId)
+  const branchRows = plan.hierarchy.branches
+  const regionRows = plan.hierarchy.regions
+  const approvedBuckets = new Set(['approved', 'grant_signed', 'bond_instruction_sent', 'transfer_in_progress', 'registered'])
+  const submittedBuckets = new Set(['submitted_to_banks', 'bank_feedback', 'approved', 'grant_signed', 'bond_instruction_sent', 'transfer_in_progress', 'registered'])
+  const activeApplications = applications.filter((application) => application.bucketKey !== 'registered' && application.bucketKey !== 'declined_or_cancelled')
+  const approvedApplications = applications.filter((application) => approvedBuckets.has(application.bucketKey))
+  const submittedApplications = applications.filter((application) => submittedBuckets.has(application.bucketKey))
+
+  const routingRules = [
+    {
+      id: deterministicUuid('bond-routing-rule:company'),
+      organisation_id: plan.workspace.id,
+      rule_type: 'company',
+      source_id: 'company',
+      source_name: 'Company fallback',
+      region_id: plan.hierarchy.regionIdByKey.gauteng,
+      branch_id: plan.hierarchy.branchIdByKey.sandton,
+      consultant_id: getUserByKey(plan.users, 'emma_roberts')?.userId || ownerUserId,
+      priority: 900,
+      status: 'active',
+      accepts_overflow: true,
+      maximum_capacity: 160,
+      overflow_destination_branch_id: plan.hierarchy.branchIdByKey.centurion,
+      metadata: buildManagedMetadata({ rule_key: 'company_fallback' }),
+      created_by: ownerUserId,
+      updated_by: ownerUserId,
+      created_at: isoDaysAgo(40),
+      updated_at: isoDaysAgo(3),
+    },
+    ...regionRows.map((region, index) => ({
+      id: deterministicUuid(`bond-routing-rule:region:${region.key}`),
+      organisation_id: plan.workspace.id,
+      rule_type: 'region',
+      source_id: region.id,
+      source_name: `${region.name} regional default`,
+      region_id: region.id,
+      branch_id: branchRows.find((branch) => branch.regionKey === region.key)?.id || null,
+      consultant_id: getUserByKey(plan.users, region.key === 'gauteng' ? 'rachel_adams' : region.key === 'western_cape' ? 'chris_williams' : 'daniel_nkosi')?.userId || null,
+      priority: 100 + index,
+      status: 'active',
+      accepts_overflow: true,
+      maximum_capacity: 70,
+      overflow_destination_branch_id: null,
+      metadata: buildManagedMetadata({ rule_key: `region:${region.key}` }),
+      created_by: ownerUserId,
+      updated_by: ownerUserId,
+      created_at: isoDaysAgo(39 - index),
+      updated_at: isoDaysAgo(2),
+    })),
+    ...branchRows.map((branch, index) => ({
+      id: deterministicUuid(`bond-routing-rule:branch:${branch.key}`),
+      organisation_id: plan.workspace.id,
+      rule_type: 'branch',
+      source_id: branch.id,
+      source_name: `${branch.name} branch default`,
+      region_id: branch.regionId,
+      branch_id: branch.id,
+      consultant_id: getUserByKey(plan.users, branch.consultantKeys[0])?.userId || null,
+      priority: 20 + index,
+      status: index === 5 ? 'inactive' : 'active',
+      accepts_overflow: index !== 5,
+      maximum_capacity: 35 + index * 4,
+      overflow_destination_branch_id: branchRows[(index + 1) % branchRows.length]?.id || null,
+      metadata: buildManagedMetadata({ rule_key: `branch:${branch.key}` }),
+      created_by: ownerUserId,
+      updated_by: ownerUserId,
+      created_at: isoDaysAgo(36 - index),
+      updated_at: isoDaysAgo(index % 5),
+    })),
+  ]
+
+  const developmentRules = DEVELOPMENT_CATALOG.slice(0, 6).map((development, index) => {
+    const branch = branchRows.find((item) => item.key === development.branchKey) || branchRows[0]
+    return {
+      id: deterministicUuid(`bond-routing-rule:development:${development.key}`),
+      organisation_id: plan.workspace.id,
+      rule_type: 'development',
+      source_id: deterministicUuid(`development:${development.key}`),
+      source_name: development.name,
+      region_id: branch.regionId,
+      branch_id: branch.id,
+      consultant_id: getUserByKey(plan.users, branch.consultantKeys[index % branch.consultantKeys.length])?.userId || null,
+      priority: 5 + index,
+      status: 'active',
+      accepts_overflow: true,
+      maximum_capacity: 45,
+      overflow_destination_branch_id: null,
+      metadata: buildManagedMetadata({ development_key: development.key }),
+      created_by: ownerUserId,
+      updated_by: ownerUserId,
+      created_at: isoDaysAgo(30 - index),
+      updated_at: isoDaysAgo(1),
+    }
+  })
+  routingRules.push(...developmentRules)
+
+  const agencyRules = AGENCY_CATALOG.map((agency, index) => {
+    const branch = branchRows[index % branchRows.length]
+    return {
+      id: deterministicUuid(`bond-routing-rule:agency:${normalizeSlug(agency)}`),
+      organisation_id: plan.workspace.id,
+      rule_type: 'agency',
+      source_id: normalizeSlug(agency),
+      source_name: agency,
+      region_id: branch.regionId,
+      branch_id: branch.id,
+      consultant_id: getUserByKey(plan.users, branch.consultantKeys[0])?.userId || null,
+      priority: 30 + index,
+      status: 'active',
+      accepts_overflow: true,
+      maximum_capacity: 55,
+      overflow_destination_branch_id: null,
+      metadata: buildManagedMetadata({ agency_name: agency }),
+      created_by: ownerUserId,
+      updated_by: ownerUserId,
+      created_at: isoDaysAgo(25 - index),
+      updated_at: isoDaysAgo(1),
+    }
+  })
+  routingRules.push(...agencyRules)
+
+  const partners = [
+    ...AGENCY_CATALOG.map((name, index) => ({ name, partnerType: 'agency', sourceKey: normalizeSlug(name), branch: branchRows[index % branchRows.length] })),
+    ...DEVELOPMENT_CATALOG.slice(0, 6).map((development, index) => ({ name: development.developer, partnerType: 'developer', sourceKey: development.key, branch: branchRows.find((branch) => branch.key === development.branchKey) || branchRows[index % branchRows.length] })),
+    ...ATTORNEY_CATALOG.slice(0, 3).map((name, index) => ({ name, partnerType: 'attorney', sourceKey: normalizeSlug(name), branch: branchRows[index % branchRows.length] })),
+  ].map((item, index) => {
+    const routingRule = routingRules.find((rule) => rule.source_id === item.sourceKey) || routingRules[index % routingRules.length]
+    return {
+      id: deterministicUuid(`bond-partner:${item.partnerType}:${item.sourceKey}`),
+      organisation_id: plan.workspace.id,
+      name: item.name,
+      partner_type: item.partnerType,
+      primary_contact_name: `${['Nandi', 'Michael', 'Sasha', 'Bongani', 'Leigh'][index % 5]} ${['Mokoena', 'Botha', 'Jacobs', 'Pillay', 'Smith'][index % 5]}`,
+      primary_contact_email: `${normalizeSlug(item.name)}@partners.demo.bridgefinance.co.za`,
+      primary_contact_number: `087${String(1000000 + index * 193).slice(-7)}`,
+      default_region_id: item.branch.regionId,
+      default_branch_id: item.branch.id,
+      default_consultant_id: routingRule?.consultant_id || null,
+      routing_rule_id: routingRule?.id || null,
+      status: index % 9 === 0 ? 'paused' : 'active',
+      notes: `Demo partner profile for ${item.name}.`,
+      created_by: ownerUserId,
+      updated_by: ownerUserId,
+      created_at: isoDaysAgo(24 - (index % 8)),
+      updated_at: isoDaysAgo(index % 4),
+    }
+  })
+  const partnerByName = new Map(partners.map((partner) => [partner.name, partner]))
+
+  const bankRows = BANK_CATALOG.map((bank, index) => ({
+    id: deterministicUuid(`bond-bank:${bank}`),
+    organisation_id: plan.workspace.id,
+    name: bank,
+    status: index === 4 ? 'paused' : 'active',
+    relationship_owner: getUserByKey(plan.users, index % 2 === 0 ? 'olivia_brown' : TARGET_DEMO_USER_KEY)?.userId || ownerUserId,
+    created_at: isoDaysAgo(50 - index),
+    updated_at: isoDaysAgo(index),
+  }))
+  const bankByName = new Map(bankRows.map((bank) => [bank.name, bank]))
+
+  const routingRuleActivity = routingRules.flatMap((rule, index) => [
+    {
+      id: deterministicUuid(`bond-routing-activity:${rule.id}:created`),
+      organisation_id: plan.workspace.id,
+      routing_rule_id: rule.id,
+      bond_application_id: null,
+      application_reference: null,
+      event_type: 'ROUTING_RULE_CREATED',
+      actor_user_id: ownerUserId,
+      source: 'demo_seed',
+      previous_value: null,
+      new_value: { ruleType: rule.rule_type, sourceName: rule.source_name },
+      created_at: rule.created_at,
+    },
+    {
+      id: deterministicUuid(`bond-routing-activity:${rule.id}:used`),
+      organisation_id: plan.workspace.id,
+      routing_rule_id: rule.id,
+      bond_application_id: bondApplicationByTransactionId.get(applications[index % applications.length]?.transactionId)?.id || null,
+      application_reference: applications[index % applications.length]?.transactionReference || null,
+      event_type: 'ROUTING_RULE_USED',
+      actor_user_id: ownerUserId,
+      source: 'demo_seed',
+      previous_value: null,
+      new_value: { outcome: 'assigned' },
+      created_at: isoDaysAgo(index % 12),
+    },
+  ])
+
+  const partnerInvitations = partners.slice(0, 10).map((partner, index) => ({
+    id: deterministicUuid(`bond-partner-invite:${partner.id}`),
+    organisation_id: plan.workspace.id,
+    partner_id: partner.id,
+    invited_email: partner.primary_contact_email,
+    invited_by: ownerUserId,
+    status: index % 6 === 0 ? 'pending' : 'accepted',
+    token: `bond-partner-demo-${normalizeSlug(partner.name)}-${index}`,
+    sent_at: isoDaysAgo(18 - index),
+    accepted_at: index % 6 === 0 ? null : isoDaysAgo(16 - index),
+    expires_at: isoDaysFromNow(14 + index),
+    created_at: isoDaysAgo(18 - index),
+  }))
+
+  const partnerActivity = partners.flatMap((partner, index) => [
+    {
+      id: deterministicUuid(`bond-partner-activity:${partner.id}:created`),
+      organisation_id: plan.workspace.id,
+      partner_id: partner.id,
+      event_type: 'PARTNER_CREATED',
+      actor_user_id: ownerUserId,
+      source: 'demo_seed',
+      previous_value: null,
+      new_value: { name: partner.name, status: partner.status },
+      created_at: partner.created_at,
+    },
+    {
+      id: deterministicUuid(`bond-partner-activity:${partner.id}:routing`),
+      organisation_id: plan.workspace.id,
+      partner_id: partner.id,
+      event_type: 'PARTNER_ROUTING_DEFAULT_UPDATED',
+      actor_user_id: ownerUserId,
+      source: 'demo_seed',
+      previous_value: null,
+      new_value: { branchId: partner.default_branch_id, consultantId: partner.default_consultant_id },
+      created_at: isoDaysAgo(index % 11),
+    },
+  ])
+
+  const portalUsers = partners.slice(0, 8).map((partner, index) => ({
+    id: deterministicUuid(`bond-partner-portal-user:${partner.id}`),
+    organisation_id: plan.workspace.id,
+    partner_id: partner.id,
+    user_id: null,
+    email: partner.primary_contact_email,
+    name: partner.primary_contact_name,
+    role: index % 3 === 0 ? 'partner_admin' : 'partner_user',
+    portal_token: `portal-${normalizeSlug(partner.name)}-${index}`,
+    password_set_at: isoDaysAgo(10 - index),
+    status: 'active',
+    last_login_at: isoDaysAgo(index % 5),
+    created_at: isoDaysAgo(15 - index),
+    updated_at: isoDaysAgo(index % 4),
+  }))
+  const portalUserByPartnerId = new Map(portalUsers.map((user) => [user.partner_id, user]))
+
+  const collaborationApplications = [
+    ...applications.slice(0, 18),
+    ...applications.filter((application) => approvedBuckets.has(application.bucketKey)).slice(0, 14),
+    ...applications.filter((application) => ['transfer_in_progress', 'registered'].includes(application.bucketKey)).slice(0, 12),
+    ...applications.filter((application) => application.atRisk).slice(0, 8),
+  ].filter((application, index, list) => list.findIndex((item) => item.transactionId === application.transactionId) === index).slice(0, 36)
+  const partnerRequests = collaborationApplications.map((application, index) => {
+    const partner = partnerByName.get(application.agency) || partners[index % partners.length]
+    const bondApplication = bondApplicationByTransactionId.get(application.transactionId)
+    const isResolved = ['approved', 'grant_signed', 'bond_instruction_sent', 'transfer_in_progress', 'registered'].includes(application.bucketKey) && index % 3 !== 0
+    const escalated = application.atRisk || index % 13 === 0
+    return {
+      id: deterministicUuid(`bond-partner-request:${application.transactionReference}`),
+      organisation_id: plan.workspace.id,
+      partner_id: partner?.id || null,
+      application_id: bondApplication?.id || application.transactionId,
+      region_id: application.regionId,
+      branch_id: application.branchId,
+      owner_consultant_id: application.consultant?.userId || ownerUserId,
+      request_type: index % 5 === 0 ? 'support_ticket' : index % 4 === 0 ? 'document_review' : escalated ? 'escalation' : 'comment',
+      category: index % 4 === 0 ? 'documents' : index % 5 === 0 ? 'support' : 'application_update',
+      priority: escalated ? 'urgent' : index % 3 === 0 ? 'high' : 'normal',
+      status: isResolved ? 'resolved' : escalated ? 'assigned' : index % 2 === 0 ? 'waiting_on_partner' : 'in_progress',
+      title: `${application.transactionReference} partner follow-up`,
+      message: application.story,
+      source_key: `demo:${application.transactionReference}:partner-request`,
+      source_id: application.transactionId,
+      document_id: null,
+      support_ticket_id: null,
+      assigned_at: isoDaysAgo(9 + (index % 6)),
+      due_at: isResolved ? null : (application.stageConfig.nextActionDueAt || isoDaysFromNow(2 + (index % 4))),
+      resolved_at: isResolved ? application.updatedAt : null,
+      escalated,
+      escalation_reason: escalated ? 'SLA or bank feedback requires consultant intervention.' : null,
+      resolution: isResolved ? 'Partner supplied required detail and file was cleared.' : null,
+      created_at: isoDaysAgo(12 + (index % 9)),
+      updated_at: application.updatedAt,
+    }
+  })
+
+  const partnerRequestMessages = partnerRequests.flatMap((request, index) => [
+    {
+      id: deterministicUuid(`bond-partner-request-message:${request.id}:initial`),
+      organisation_id: plan.workspace.id,
+      request_id: request.id,
+      application_id: request.application_id,
+      partner_id: request.partner_id,
+      actor_user_id: request.owner_consultant_id,
+      actor_name: applicationByTransactionId.get(request.source_id)?.consultant?.name || 'Bond Consultant',
+      message: request.message || request.title,
+      attachments: [],
+      visible_to_partner: true,
+      created_at: request.created_at,
+    },
+    {
+      id: deterministicUuid(`bond-partner-request-message:${request.id}:reply`),
+      organisation_id: plan.workspace.id,
+      request_id: request.id,
+      application_id: request.application_id,
+      partner_id: request.partner_id,
+      actor_user_id: null,
+      actor_name: partners.find((partner) => partner.id === request.partner_id)?.primary_contact_name || 'Partner Contact',
+      message: request.status === 'resolved' ? 'Confirmed, the partner pack has been updated.' : 'We are checking the outstanding information and will revert.',
+      attachments: request.request_type === 'document_review' ? [{ name: 'partner-pack.pdf', type: 'application/pdf' }] : [],
+      visible_to_partner: true,
+      created_at: isoDaysAgo(index % 7),
+    },
+  ])
+
+  const partnerInternalNotes = partnerRequests.slice(0, 18).map((request, index) => ({
+    id: deterministicUuid(`bond-partner-internal-note:${request.id}`),
+    organisation_id: plan.workspace.id,
+    request_id: request.id,
+    application_id: request.application_id,
+    partner_id: request.partner_id,
+    actor_user_id: ownerUserId,
+    actor_name: 'Alex van der Merwe',
+    note: request.escalated ? 'Escalation is visible to regional queue; monitor before next SLA cut-off.' : 'Demo note: partner has reliable response history.',
+    visible_to_partner: false,
+    created_at: isoDaysAgo(index % 9),
+  }))
+
+  const partnerRequestActivity = partnerRequests.flatMap((request, index) => [
+    {
+      id: deterministicUuid(`bond-partner-request-activity:${request.id}:assigned`),
+      organisation_id: plan.workspace.id,
+      request_id: request.id,
+      partner_id: request.partner_id,
+      application_id: request.application_id,
+      event_type: 'REQUEST_ASSIGNED',
+      actor_user_id: ownerUserId,
+      previous_value: null,
+      new_value: { status: request.status, priority: request.priority },
+      created_at: request.assigned_at || request.created_at,
+    },
+    {
+      id: deterministicUuid(`bond-partner-request-activity:${request.id}:state`),
+      organisation_id: plan.workspace.id,
+      request_id: request.id,
+      partner_id: request.partner_id,
+      application_id: request.application_id,
+      event_type: request.status === 'resolved' ? 'REQUEST_RESOLVED' : request.escalated ? 'REQUEST_ESCALATED' : 'REQUEST_UPDATED',
+      actor_user_id: request.owner_consultant_id,
+      previous_value: null,
+      new_value: { status: request.status },
+      created_at: isoDaysAgo(index % 6),
+    },
+  ])
+
+  const partnerRequestNotifications = partnerRequests.slice(0, 30).map((request, index) => ({
+    id: deterministicUuid(`bond-partner-request-notification:${request.id}`),
+    organisation_id: plan.workspace.id,
+    request_id: request.id,
+    recipient_user_id: request.owner_consultant_id || ownerUserId,
+    recipient_role: 'bond_originator',
+    type: request.escalated ? 'REQUEST_ESCALATED' : 'REQUEST_ASSIGNED',
+    title: request.title,
+    read_at: index % 4 === 0 ? isoDaysAgo(index % 5) : null,
+    created_at: request.created_at,
+  }))
+
+  const portalDocuments = collaborationApplications.slice(0, 20).map((application, index) => {
+    const partner = partnerByName.get(application.agency) || partners[index % partners.length]
+    const portalUser = portalUserByPartnerId.get(partner.id)
+    const bondApplication = bondApplicationByTransactionId.get(application.transactionId)
+    return {
+      id: deterministicUuid(`bond-partner-portal-document:${application.transactionReference}:${index}`),
+      organisation_id: plan.workspace.id,
+      partner_id: partner.id,
+      bond_application_id: bondApplication?.id || null,
+      application_reference: application.transactionReference,
+      document_name: index % 2 === 0 ? 'Signed OTP extract.pdf' : 'Reservation confirmation.pdf',
+      document_type: index % 2 === 0 ? 'offer_to_purchase' : 'reservation_confirmation',
+      storage_path: `bond-partner-demo/${application.transactionReference}/partner-${index}.pdf`,
+      status: index % 7 === 0 ? 'rejected' : index % 3 === 0 ? 'reviewed' : 'received',
+      uploaded_by: portalUser?.id || null,
+      uploaded_at: isoDaysAgo(index % 12),
+      created_at: isoDaysAgo(index % 12),
+    }
+  })
+
+  const portalDocumentRequests = collaborationApplications.slice(12, 34).map((application, index) => {
+    const partner = partnerByName.get(application.agency) || partners[index % partners.length]
+    const bondApplication = bondApplicationByTransactionId.get(application.transactionId)
+    return {
+      id: deterministicUuid(`bond-partner-portal-doc-request:${application.transactionReference}:${index}`),
+      organisation_id: plan.workspace.id,
+      partner_id: partner.id,
+      bond_application_id: bondApplication?.id || null,
+      application_reference: application.transactionReference,
+      document_name: index % 2 === 0 ? 'Updated source-of-funds note' : 'Latest signed addendum',
+      requested_by: ownerUserId,
+      requested_by_name: 'Alex van der Merwe',
+      due_date: isoDateDaysAgo(-1 * (2 + (index % 6))),
+      status: index % 5 === 0 ? 'uploaded' : index % 7 === 0 ? 'completed' : 'requested',
+      notes: 'Demo partner portal request.',
+      created_at: isoDaysAgo(8 + (index % 8)),
+      updated_at: isoDaysAgo(index % 4),
+    }
+  })
+
+  const portalComments = collaborationApplications.slice(0, 24).map((application, index) => {
+    const partner = partnerByName.get(application.agency) || partners[index % partners.length]
+    const bondApplication = bondApplicationByTransactionId.get(application.transactionId)
+    return {
+      id: deterministicUuid(`bond-partner-portal-comment:${application.transactionReference}:${index}`),
+      organisation_id: plan.workspace.id,
+      partner_id: partner.id,
+      bond_application_id: bondApplication?.id || null,
+      application_reference: application.transactionReference,
+      author_user_id: index % 2 === 0 ? ownerUserId : null,
+      author_name: index % 2 === 0 ? 'Alex van der Merwe' : partner.primary_contact_name,
+      author_role: index % 2 === 0 ? 'Bond Originator' : 'Partner',
+      message: index % 2 === 0 ? application.stageConfig.nextAction : 'Partner has acknowledged the requested update.',
+      attachments: [],
+      created_at: isoDaysAgo(index % 10),
+    }
+  })
+
+  const portalSupportTickets = collaborationApplications.slice(20, 30).map((application, index) => {
+    const partner = partnerByName.get(application.agency) || partners[index % partners.length]
+    const portalUser = portalUserByPartnerId.get(partner.id)
+    const bondApplication = bondApplicationByTransactionId.get(application.transactionId)
+    return {
+      id: deterministicUuid(`bond-partner-portal-ticket:${application.transactionReference}`),
+      organisation_id: plan.workspace.id,
+      partner_id: partner.id,
+      bond_application_id: bondApplication?.id || null,
+      application_reference: application.transactionReference,
+      ticket_type: index % 2 === 0 ? 'document_help' : 'application_query',
+      subject: `${application.transactionReference} support query`,
+      message: application.story,
+      status: index % 4 === 0 ? 'resolved' : index % 3 === 0 ? 'pending' : 'open',
+      created_by: portalUser?.id || null,
+      created_at: isoDaysAgo(index % 9),
+      updated_at: isoDaysAgo(index % 4),
+    }
+  })
+
+  const portalAudit = [
+    ...portalUsers.map((user, index) => ({
+      id: deterministicUuid(`bond-partner-portal-audit:${user.id}:login`),
+      organisation_id: plan.workspace.id,
+      partner_id: user.partner_id,
+      bond_application_id: null,
+      application_reference: null,
+      event_type: 'PARTNER_LOGIN',
+      actor_user_id: user.id,
+      previous_value: null,
+      new_value: { email: user.email },
+      created_at: user.last_login_at || user.created_at,
+    })),
+    ...portalDocuments.slice(0, 12).map((document, index) => ({
+      id: deterministicUuid(`bond-partner-portal-audit:${document.id}:uploaded`),
+      organisation_id: plan.workspace.id,
+      partner_id: document.partner_id,
+      bond_application_id: document.bond_application_id,
+      application_reference: document.application_reference,
+      event_type: 'PARTNER_DOCUMENT_UPLOADED',
+      actor_user_id: document.uploaded_by,
+      previous_value: null,
+      new_value: { documentName: document.document_name },
+      created_at: isoDaysAgo(index % 9),
+    })),
+  ]
+
+  const portalNotifications = portalDocumentRequests.slice(0, 18).map((request, index) => ({
+    id: deterministicUuid(`bond-partner-portal-notification:${request.id}`),
+    organisation_id: plan.workspace.id,
+    partner_id: request.partner_id,
+    bond_application_id: request.bond_application_id,
+    application_reference: request.application_reference,
+    notification_type: request.status === 'requested' ? 'DOCUMENT_REQUESTED' : 'DOCUMENT_UPDATED',
+    channel: index % 3 === 0 ? 'email' : 'portal',
+    title: `${request.document_name} requested`,
+    read_at: index % 5 === 0 ? isoDaysAgo(index % 4) : null,
+    created_at: request.created_at,
+  }))
+
+  const ownershipHistory = applications.map((application, index) => {
+    const bondApplication = bondApplicationByTransactionId.get(application.transactionId)
+    return {
+      id: deterministicUuid(`bond-ownership:${application.transactionReference}:assigned`),
+      organisation_id: plan.workspace.id,
+      bond_application_id: bondApplication?.id || null,
+      transaction_id: application.transactionId,
+      application_reference: application.transactionReference,
+      event_type: application.atRisk ? 'APPLICATION_ESCALATED' : index % 17 === 0 ? 'APPLICATION_REASSIGNED' : 'APPLICATION_ASSIGNED',
+      from_consultant_id: index % 17 === 0 ? getUserByKey(plan.users, 'thabo_mokoena')?.userId || null : null,
+      to_consultant_id: application.consultant?.userId || ownerUserId,
+      consultant_id: application.consultant?.userId || ownerUserId,
+      branch_id: application.branchId,
+      region_id: application.regionId,
+      reason: application.atRisk ? 'At-risk demo file escalated to regional manager.' : 'Demo routing assignment.',
+      actor_user_id: ownerUserId,
+      previous_value: null,
+      new_value: { consultant: application.consultant?.name, branch: application.branch.name },
+      created_at: application.createdAt,
+    }
+  })
+
+  const consultantTargets = consultantUsers.map((user, index) => ({
+    id: deterministicUuid(`bond-consultant-target:${user.key}:${period}`),
+    organisation_id: plan.workspace.id,
+    consultant_id: user.userId,
+    period,
+    applications_target: 12 + (index % 4),
+    approvals_target: 7 + (index % 3),
+    approval_rate_target: 62 + (index % 5),
+    turnaround_target: 8,
+    sla_compliance_target: 92,
+    response_time_target: 4,
+    created_by: ownerUserId,
+    created_at: isoDaysAgo(25),
+    updated_at: isoDaysAgo(2),
+  }))
+
+  const consultantSnapshots = consultantUsers.map((user, index) => {
+    const assigned = applications.filter((application) => application.consultant?.key === user.key)
+    const active = assigned.filter((application) => application.bucketKey !== 'registered' && application.bucketKey !== 'declined_or_cancelled')
+    const approvals = assigned.filter((application) => approvedBuckets.has(application.bucketKey)).length
+    const declines = assigned.filter((application) => application.bucketKey === 'declined_or_cancelled').length
+    const submitted = assigned.filter((application) => submittedBuckets.has(application.bucketKey)).length
+    const capacityScore = clampNumber(active.length * 7 + assigned.filter((application) => application.atRisk).length * 9, 0, 100)
+    return {
+      id: deterministicUuid(`bond-consultant-snapshot:${user.key}:${period}`),
+      organisation_id: plan.workspace.id,
+      consultant_id: user.userId,
+      period,
+      active_applications: active.length,
+      pending_documents: assigned.filter((application) => application.stageConfig.documentsMissing).length,
+      awaiting_bank_feedback: assigned.filter((application) => application.bucketKey === 'bank_feedback').length,
+      urgent_requests: assigned.filter((application) => application.atRisk).length,
+      open_partner_requests: partnerRequests.filter((request) => request.owner_consultant_id === user.userId && !['resolved', 'closed'].includes(request.status)).length,
+      sla_breaches: assigned.filter((application) => application.atRisk).length,
+      capacity_score: capacityScore,
+      capacity_status: capacityScore >= 80 ? 'Overloaded' : capacityScore >= 65 ? 'Busy' : capacityScore >= 35 ? 'Normal' : 'Light',
+      approval_rate: percent(approvals, Math.max(submitted, 1)),
+      decline_rate: percent(declines, Math.max(submitted + declines, 1)),
+      average_turnaround: 6.5 + (index % 5),
+      sla_compliance: Math.max(75, 96 - assigned.filter((application) => application.atRisk).length * 4),
+      partner_response_time: 3.2 + (index % 6) * 0.4,
+      applications_submitted: submitted,
+      approvals,
+      declines,
+      coaching_flags: assigned.some((application) => application.atRisk) ? [{ type: 'sla', label: 'At-risk file follow-up' }] : [],
+      forecast: [
+        { windowDays: 7, expectedApplications: active.length + 2 },
+        { windowDays: 30, expectedApplications: active.length + 8 },
+      ],
+      created_at: isoDaysAgo(2),
+      updated_at: isoDaysAgo(1),
+    }
+  })
+
+  const consultantCoachingNotes = consultantSnapshots
+    .filter((snapshot) => snapshot.sla_breaches > 0 || snapshot.capacity_status === 'Overloaded')
+    .map((snapshot, index) => ({
+      id: deterministicUuid(`bond-consultant-coaching:${snapshot.consultant_id}:${period}`),
+      organisation_id: plan.workspace.id,
+      consultant_id: snapshot.consultant_id,
+      note: snapshot.capacity_status === 'Overloaded' ? 'Capacity review needed; rebalance new allocations this week.' : 'Review at-risk file cadence and partner follow-up rhythm.',
+      flag_type: snapshot.capacity_status === 'Overloaded' ? 'capacity' : 'sla',
+      severity: snapshot.capacity_status === 'Overloaded' ? 'High' : 'Medium',
+      created_by: ownerUserId,
+      created_at: isoDaysAgo(index + 1),
+    }))
+
+  const branchTargets = branchRows.map((branch, index) => ({
+    id: deterministicUuid(`bond-branch-target:${branch.key}:${period}`),
+    organisation_id: plan.workspace.id,
+    branch_id: branch.id,
+    period,
+    approval_target: 64 + (index % 4),
+    submission_target: 14 + index,
+    turnaround_target: 8.5,
+    sla_target: 92,
+    satisfaction_target: 88,
+    created_by: ownerUserId,
+    created_at: isoDaysAgo(22),
+    updated_at: isoDaysAgo(1),
+  }))
+
+  const branchHealthSnapshots = branchRows.map((branch, index) => {
+    const scoped = applications.filter((application) => application.branch.key === branch.key)
+    const approvals = scoped.filter((application) => approvedBuckets.has(application.bucketKey)).length
+    const submitted = scoped.filter((application) => submittedBuckets.has(application.bucketKey)).length
+    const escalations = scoped.filter((application) => application.atRisk).length
+    const healthScore = clampNumber(88 - escalations * 9 + approvals, 35, 98)
+    return {
+      id: deterministicUuid(`bond-branch-health:${branch.key}:${period}`),
+      organisation_id: plan.workspace.id,
+      branch_id: branch.id,
+      period,
+      health_score: healthScore,
+      health_status: healthScore >= 90 ? 'Excellent' : healthScore >= 75 ? 'Healthy' : healthScore >= 55 ? 'At Risk' : 'Critical',
+      sla_compliance: clampNumber(96 - escalations * 7, 60, 99),
+      consultant_capacity: scoped.filter((application) => application.bucketKey !== 'registered').length,
+      approval_rate: percent(approvals, Math.max(submitted, 1)),
+      partner_health: clampNumber(91 - index * 3, 70, 96),
+      escalations,
+      open_requests: partnerRequests.filter((request) => request.branch_id === branch.id && !['resolved', 'closed'].includes(request.status)).length,
+      summary: buildManagedMetadata({ branch_key: branch.key, applications: scoped.length }),
+      created_at: isoDaysAgo(2),
+      updated_at: isoDaysAgo(1),
+    }
+  })
+
+  const branchForecasts = branchRows.flatMap((branch, index) => [7, 14, 30].map((windowDays) => ({
+    id: deterministicUuid(`bond-branch-forecast:${branch.key}:${period}:${windowDays}`),
+    organisation_id: plan.workspace.id,
+    branch_id: branch.id,
+    period,
+    forecast_window_days: windowDays,
+    expected_applications: Math.round((applications.filter((application) => application.branch.key === branch.key).length / 30) * windowDays) + 2,
+    expected_capacity: 12 + index * 2,
+    risk_level: index % 5 === 0 && windowDays === 30 ? 'High' : index % 3 === 0 ? 'Medium' : 'Low',
+    required_headcount: index % 5 === 0 && windowDays === 30 ? 2 : 1,
+    recommended_action: index % 5 === 0 && windowDays === 30 ? 'Move overflow to regional pool and pause low-priority intake.' : 'Maintain normal consultant allocations.',
+    inputs: buildManagedMetadata({ branch_key: branch.key, windowDays }),
+    created_at: isoDaysAgo(2),
+    updated_at: isoDaysAgo(1),
+  })))
+
+  const regionalTargets = regionRows.map((region, index) => ({
+    id: deterministicUuid(`bond-regional-target:${region.key}:${period}`),
+    organisation_id: plan.workspace.id,
+    region_id: region.id,
+    period,
+    application_target: 40 + index * 12,
+    approval_target: 65,
+    sla_target: 92,
+    partner_health_target: 88,
+    growth_target: 12 + index,
+    created_by: ownerUserId,
+    created_at: isoDaysAgo(22),
+    updated_at: isoDaysAgo(1),
+  }))
+
+  const regionalHealthSnapshots = regionRows.map((region, index) => {
+    const scoped = applications.filter((application) => application.branch.regionKey === region.key)
+    const approvals = scoped.filter((application) => approvedBuckets.has(application.bucketKey)).length
+    const submitted = scoped.filter((application) => submittedBuckets.has(application.bucketKey)).length
+    const escalations = scoped.filter((application) => application.atRisk).length
+    const healthScore = clampNumber(90 - escalations * 5 + approvals * 0.4, 45, 97)
+    return {
+      id: deterministicUuid(`bond-regional-health:${region.key}:${period}`),
+      organisation_id: plan.workspace.id,
+      region_id: region.id,
+      period,
+      health_score: Math.round(healthScore),
+      health_status: healthScore >= 90 ? 'Excellent' : healthScore >= 76 ? 'Healthy' : healthScore >= 58 ? 'At Risk' : 'Critical',
+      branch_health: Math.round(branchHealthSnapshots.filter((row) => branchRows.find((branch) => branch.id === row.branch_id)?.regionKey === region.key).reduce((sum, row) => sum + row.health_score, 0) / Math.max(1, branchRows.filter((branch) => branch.regionKey === region.key).length)),
+      partner_health: 86 - index * 4,
+      sla_compliance: clampNumber(95 - escalations * 4, 65, 99),
+      approval_rate: percent(approvals, Math.max(submitted, 1)),
+      escalations,
+      capacity_risk: scoped.filter((application) => application.bucketKey !== 'registered').length,
+      forecast_risk: index === 0 ? 42 : 28,
+      summary: buildManagedMetadata({ region_key: region.key, applications: scoped.length }),
+      created_at: isoDaysAgo(2),
+      updated_at: isoDaysAgo(1),
+    }
+  })
+
+  const regionalForecasts = regionRows.flatMap((region, index) => [7, 30, 90].map((windowDays) => ({
+    id: deterministicUuid(`bond-regional-forecast:${region.key}:${period}:${windowDays}`),
+    organisation_id: plan.workspace.id,
+    region_id: region.id,
+    period,
+    forecast_window_days: windowDays,
+    application_growth: 4 + index * 2,
+    capacity_demand: Math.round((applications.filter((application) => application.branch.regionKey === region.key).length / 30) * windowDays),
+    consultant_demand: windowDays === 90 ? 3 + index : 1 + index,
+    partner_growth: 2 + index,
+    escalation_risk: index === 0 && windowDays === 90 ? 48 : 22 + index * 4,
+    expected_capacity_risk: index === 0 && windowDays === 90 ? 'High' : windowDays === 30 ? 'Medium' : 'Low',
+    recommended_headcount: windowDays === 90 ? 2 + index : 1,
+    expected_application_volume: Math.round((applications.filter((application) => application.branch.regionKey === region.key).length / 30) * windowDays) + 6,
+    inputs: buildManagedMetadata({ region_key: region.key, windowDays }),
+    created_at: isoDaysAgo(2),
+    updated_at: isoDaysAgo(1),
+  })))
+
+  const totalRevenue = approvedApplications.reduce((sum, application) => sum + Math.round(application.finance.bondAmount * 0.018), 0)
+  const totalCommission = approvedApplications.reduce((sum, application) => sum + Math.round(application.finance.bondAmount * 0.006), 0)
+  const totalReferralFees = approvedApplications.reduce((sum, application) => sum + Math.round(application.finance.bondAmount * 0.002), 0)
+
+  const hqHealthSnapshots = [
+    {
+      id: deterministicUuid(`bond-hq-health:${period}`),
+      organisation_id: plan.workspace.id,
+      period,
+      health_score: 84,
+      health_status: 'Healthy',
+      regional_health: 83,
+      branch_health: 82,
+      partner_health: 86,
+      sla_compliance: 91,
+      approval_rate: percent(approvedApplications.length, Math.max(submittedApplications.length, 1)),
+      escalations: applications.filter((application) => application.atRisk).length,
+      capacity_risk: activeApplications.length,
+      forecast_risk: 38,
+      summary: buildManagedMetadata({ totalApplications: applications.length, revenue: totalRevenue }),
+      created_at: isoDaysAgo(1),
+      updated_at: isoDaysAgo(1),
+    },
+  ]
+
+  const hqForecasts = [7, 30, 90].map((windowDays) => ({
+    id: deterministicUuid(`bond-hq-forecast:${period}:${windowDays}`),
+    organisation_id: plan.workspace.id,
+    period,
+    forecast_window_days: windowDays,
+    expected_applications: Math.round((applications.length / 30) * windowDays),
+    expected_approvals: Math.round((approvedApplications.length / 30) * windowDays),
+    expected_capacity_risk: windowDays === 90 ? 'High' : windowDays === 30 ? 'Medium' : 'Low',
+    required_consultants: windowDays === 90 ? 6 : windowDays === 30 ? 3 : 1,
+    expected_sla_risk: windowDays === 90 ? 'Medium' : 'Low',
+    executive_forecast_risk: windowDays === 90 ? 'High' : windowDays === 30 ? 'Medium' : 'Low',
+    inputs: buildManagedMetadata({ windowDays }),
+    created_at: isoDaysAgo(1),
+    updated_at: isoDaysAgo(1),
+  }))
+
+  const executiveAlerts = [
+    {
+      id: deterministicUuid('bond-executive-alert:gauteng-capacity'),
+      organisation_id: plan.workspace.id,
+      alert_type: 'capacity_risk',
+      severity: 'High',
+      title: 'Gauteng capacity approaching SLA limit',
+      description: 'Sandton and Pretoria East have enough active files to justify temporary overflow routing.',
+      source_type: 'region',
+      source_id: plan.hierarchy.regionIdByKey.gauteng,
+      status: 'assigned',
+      assigned_to: ownerUserId,
+      created_at: isoDaysAgo(2),
+      dismissed_at: null,
+      updated_at: isoDaysAgo(1),
+    },
+    {
+      id: deterministicUuid('bond-executive-alert:bank-feedback'),
+      organisation_id: plan.workspace.id,
+      alert_type: 'bank_feedback',
+      severity: 'Medium',
+      title: 'Bank feedback queue requires review',
+      description: 'Several lender clarification requests are older than the target response window.',
+      source_type: 'bank',
+      source_id: deterministicUuid('bond-bank:ABSA'),
+      status: 'open',
+      assigned_to: getUserByKey(plan.users, 'olivia_brown')?.userId || ownerUserId,
+      created_at: isoDaysAgo(1),
+      dismissed_at: null,
+      updated_at: isoDaysAgo(1),
+    },
+  ]
+
+  const executiveReports = ['PDF', 'Excel'].map((format, index) => ({
+    id: deterministicUuid(`bond-executive-report:${period}:${format}`),
+    organisation_id: plan.workspace.id,
+    period,
+    format,
+    generated_by: ownerUserId,
+    file_url: `bond-demo/reports/${period}/executive-${format.toLowerCase()}.${format === 'PDF' ? 'pdf' : 'xlsx'}`,
+    sections: ['Executive KPIs', 'Regional Health', 'Revenue', 'SLA Risks'],
+    created_at: isoDaysAgo(index + 1),
+  }))
+
+  const bankContacts = bankRows.flatMap((bank, index) => ['Relationship Manager', 'Credit Escalations'].map((role, roleIndex) => ({
+    id: deterministicUuid(`bond-bank-contact:${bank.name}:${role}`),
+    organisation_id: plan.workspace.id,
+    bank_id: bank.id,
+    name: `${['Andre', 'Melissa', 'Sipho', 'Lauren', 'Karin'][index]} ${roleIndex === 0 ? 'Meyer' : 'Naidoo'}`,
+    role,
+    email: `${normalizeSlug(bank.name)}.${normalizeSlug(role)}@banks.demo.bridgefinance.co.za`,
+    phone: `086${String(2000000 + index * 331 + roleIndex * 17).slice(-7)}`,
+    region: roleIndex === 0 ? 'National' : 'Gauteng',
+    notes: `Demo ${bank.name} ${role.toLowerCase()} contact.`,
+    created_by: ownerUserId,
+    created_at: isoDaysAgo(28 - index),
+    updated_at: isoDaysAgo(roleIndex),
+  })))
+
+  const bankEscalations = applications.filter((application) => application.bucketKey === 'bank_feedback' || application.atRisk).slice(0, 12).map((application, index) => {
+    const bank = bankByName.get(application.bank) || bankRows[index % bankRows.length]
+    const bondApplication = bondApplicationByTransactionId.get(application.transactionId)
+    const resolved = index % 4 === 0
+    return {
+      id: deterministicUuid(`bond-bank-escalation:${application.transactionReference}`),
+      organisation_id: plan.workspace.id,
+      bank_id: bank.id,
+      application_id: bondApplication?.id || application.transactionId,
+      consultant_id: application.consultant?.userId || ownerUserId,
+      branch_id: application.branchId,
+      region_id: application.regionId,
+      issue: application.story,
+      issue_type: index % 2 === 0 ? 'Credit Query' : 'Turnaround Delay',
+      priority: application.atRisk ? 'High' : 'Medium',
+      status: resolved ? 'resolved' : index % 3 === 0 ? 'in_progress' : 'open',
+      created_by: ownerUserId,
+      created_at: isoDaysAgo(7 + index),
+      resolved_at: resolved ? isoDaysAgo(index % 3) : null,
+      updated_at: isoDaysAgo(index % 3),
+    }
+  })
+
+  const bankFeedback = applications.filter((application) => submittedBuckets.has(application.bucketKey)).slice(0, 35).map((application, index) => {
+    const bank = bankByName.get(application.bank) || bankRows[index % bankRows.length]
+    return {
+      id: deterministicUuid(`bond-bank-feedback:${application.transactionReference}`),
+      organisation_id: plan.workspace.id,
+      bank_id: bank.id,
+      feedback_type: application.bucketKey === 'bank_feedback' ? 'query' : application.bucketKey === 'approved' ? 'approval' : 'turnaround',
+      sentiment: application.bucketKey === 'bank_feedback' || application.atRisk ? 'negative' : application.bucketKey === 'approved' ? 'positive' : 'neutral',
+      message: application.story,
+      consultant_id: application.consultant?.userId || ownerUserId,
+      branch_id: application.branchId,
+      region_id: application.regionId,
+      created_by: ownerUserId,
+      created_at: isoDaysAgo(index % 18),
+    }
+  })
+
+  const bankHealthSnapshots = bankRows.map((bank, index) => {
+    const scoped = applications.filter((application) => application.bank === bank.name)
+    const approvals = scoped.filter((application) => approvedBuckets.has(application.bucketKey)).length
+    const submitted = scoped.filter((application) => submittedBuckets.has(application.bucketKey)).length
+    const escalations = bankEscalations.filter((row) => row.bank_id === bank.id && row.status !== 'resolved').length
+    const healthScore = clampNumber(90 - escalations * 12 + approvals, 45, 98)
+    return {
+      id: deterministicUuid(`bond-bank-health:${bank.name}:${period}`),
+      organisation_id: plan.workspace.id,
+      bank_id: bank.id,
+      period,
+      health_score: healthScore,
+      health_status: healthScore >= 90 ? 'Excellent' : healthScore >= 76 ? 'Healthy' : healthScore >= 58 ? 'At Risk' : 'Critical',
+      approval_rate: percent(approvals, Math.max(submitted, 1)),
+      response_time_score: clampNumber(88 - index * 4, 65, 96),
+      escalation_score: clampNumber(100 - escalations * 18, 45, 100),
+      instruction_rate: percent(scoped.filter((application) => ['bond_instruction_sent', 'transfer_in_progress', 'registered'].includes(application.bucketKey)).length, Math.max(approvals, 1)),
+      consultant_feedback_score: clampNumber(86 - index * 2, 70, 95),
+      partner_feedback_score: clampNumber(84 - index, 70, 93),
+      summary: buildManagedMetadata({ bank: bank.name, applications: scoped.length }),
+      created_at: isoDaysAgo(2),
+      updated_at: isoDaysAgo(1),
+    }
+  })
+
+  const commissionRules = [
+    ['Consultant Standard Bond Fee', 'consultant', 'percentage', 0.006, 0],
+    ['Branch Performance Pool', 'branch', 'percentage', 0.0015, 0],
+    ['Regional Growth Pool', 'region', 'percentage', 0.0008, 0],
+    ['Partner Referral Fee', 'partner_referral', 'percentage', 0.002, 0],
+    ['Bank Incentive Tracker', 'bank_incentive', 'fixed', 0, 2500],
+    ['Monthly SLA Bonus', 'bonus', 'hybrid', 0.0005, 1500],
+  ].map(([name, appliesTo, ruleType, percentageValue, fixedAmount]) => ({
+    id: deterministicUuid(`bond-commission-rule:${normalizeSlug(name)}`),
+    organisation_id: plan.workspace.id,
+    name,
+    applies_to: appliesTo,
+    rule_type: ruleType,
+    percentage: percentageValue,
+    fixed_amount: fixedAmount,
+    tiers: appliesTo === 'consultant' ? [{ min: 0, max: 3000000, percentage: 0.006 }, { min: 3000001, percentage: 0.007 }] : [],
+    components: [{ key: 'bond_amount', label: 'Bond Amount' }],
+    bonus_criteria: appliesTo === 'bonus' ? { slaCompliance: 94, approvalRate: 65 } : {},
+    status: 'active',
+    created_by: ownerUserId,
+    created_at: isoDaysAgo(32),
+    updated_at: isoDaysAgo(1),
+  }))
+
+  const commissions = approvedApplications.map((application, index) => ({
+    id: deterministicUuid(`bond-commission:${application.transactionReference}`),
+    organisation_id: plan.workspace.id,
+    application_id: bondApplicationByTransactionId.get(application.transactionId)?.id || application.transactionId,
+    consultant_id: application.consultant?.userId || ownerUserId,
+    amount: Math.round(application.finance.bondAmount * 0.006),
+    status: application.bucketKey === 'registered' ? 'Paid' : index % 4 === 0 ? 'Approved' : 'Pending',
+    calculated_at: application.updatedAt,
+    approved_at: application.bucketKey === 'registered' || index % 4 === 0 ? isoDaysAgo(index % 6) : null,
+    paid_at: application.bucketKey === 'registered' ? application.updatedAt : null,
+    created_at: application.updatedAt,
+    updated_at: application.updatedAt,
+  }))
+
+  const referralFees = approvedApplications.slice(0, 40).map((application, index) => {
+    const partner = partnerByName.get(application.agency) || partners[index % partners.length]
+    return {
+      id: deterministicUuid(`bond-referral-fee:${application.transactionReference}`),
+      organisation_id: plan.workspace.id,
+      application_id: bondApplicationByTransactionId.get(application.transactionId)?.id || application.transactionId,
+      partner_id: partner?.id || null,
+      amount: Math.round(application.finance.bondAmount * 0.002),
+      status: application.bucketKey === 'registered' ? 'Paid' : index % 3 === 0 ? 'Approved' : 'Pending',
+      created_at: application.updatedAt,
+      approved_at: index % 3 === 0 || application.bucketKey === 'registered' ? isoDaysAgo(index % 5) : null,
+      paid_at: application.bucketKey === 'registered' ? application.updatedAt : null,
+      updated_at: application.updatedAt,
+    }
+  })
+
+  const bonusAwards = [
+    ...branchHealthSnapshots.filter((row) => row.health_score >= 86).slice(0, 3).map((row, index) => {
+      const branch = branchRows.find((item) => item.id === row.branch_id)
+      return {
+        id: deterministicUuid(`bond-bonus:branch:${row.branch_id}:${period}`),
+        organisation_id: plan.workspace.id,
+        recipient_type: 'branch',
+        recipient_id: row.branch_id,
+        branch_id: row.branch_id,
+        region_id: branch?.regionId || null,
+        amount: 5000 + index * 1500,
+        reason: 'Branch exceeded demo SLA and approval-rate targets.',
+        status: index === 0 ? 'Approved' : 'Pending',
+        created_by: ownerUserId,
+        created_at: isoDaysAgo(index + 2),
+        approved_at: index === 0 ? isoDaysAgo(1) : null,
+        paid_at: null,
+        updated_at: isoDaysAgo(1),
+      }
+    }),
+    ...consultantSnapshots.filter((row) => row.approvals >= 2).slice(0, 4).map((row, index) => ({
+      id: deterministicUuid(`bond-bonus:consultant:${row.consultant_id}:${period}`),
+      organisation_id: plan.workspace.id,
+      recipient_type: 'consultant',
+      recipient_id: row.consultant_id,
+      branch_id: null,
+      region_id: null,
+      amount: 2500 + index * 500,
+      reason: 'Consultant demo performance bonus.',
+      status: index === 0 ? 'Paid' : 'Approved',
+      created_by: ownerUserId,
+      created_at: isoDaysAgo(index + 1),
+      approved_at: isoDaysAgo(index),
+      paid_at: index === 0 ? isoDaysAgo(0) : null,
+      updated_at: isoDaysAgo(0),
+    })),
+  ]
+
+  const payouts = [
+    ...commissions.slice(0, 28).map((commission, index) => {
+      const application = applications.find((item) => bondApplicationByTransactionId.get(item.transactionId)?.id === commission.application_id)
+      return {
+        id: deterministicUuid(`bond-payout:commission:${commission.id}`),
+        organisation_id: plan.workspace.id,
+        payee_type: 'consultant',
+        payee_id: commission.consultant_id,
+        payee_name: application?.consultant?.name || 'Bond Consultant',
+        branch_id: application?.branchId || null,
+        region_id: application?.regionId || null,
+        amount: commission.amount,
+        status: commission.status === 'Paid' ? 'Paid' : index % 5 === 0 ? 'Processing' : 'Pending',
+        workflow_stage: commission.status === 'Paid' ? 'Paid' : index % 5 === 0 ? 'Finance Review' : 'Calculated',
+        manager_approved_at: index % 5 === 0 || commission.status === 'Paid' ? isoDaysAgo(index % 4) : null,
+        finance_approved_at: commission.status === 'Paid' ? isoDaysAgo(index % 3) : null,
+        paid_at: commission.paid_at,
+        audit_trail: [{ event: 'calculated', at: commission.calculated_at }],
+        created_by: ownerUserId,
+        created_at: commission.created_at,
+        updated_at: commission.updated_at,
+      }
+    }),
+    ...referralFees.slice(0, 12).map((fee, index) => ({
+      id: deterministicUuid(`bond-payout:referral:${fee.id}`),
+      organisation_id: plan.workspace.id,
+      payee_type: 'partner',
+      payee_id: fee.partner_id,
+      payee_name: partners.find((partner) => partner.id === fee.partner_id)?.name || 'Partner',
+      branch_id: null,
+      region_id: null,
+      amount: fee.amount,
+      status: fee.status,
+      workflow_stage: fee.status === 'Paid' ? 'Paid' : fee.status === 'Approved' ? 'Finance Review' : 'Calculated',
+      manager_approved_at: fee.approved_at,
+      finance_approved_at: fee.status === 'Paid' ? fee.approved_at : null,
+      paid_at: fee.paid_at,
+      audit_trail: [{ event: 'referral_fee_calculated', at: fee.created_at }],
+      created_by: ownerUserId,
+      created_at: fee.created_at,
+      updated_at: fee.updated_at,
+    })),
+  ]
+
+  const revenueSnapshots = [previousPeriod, period].map((snapshotPeriod, index) => {
+    const factor = index === 0 ? 0.74 : 1
+    const revenue = Math.round(totalRevenue * factor)
+    const commission = Math.round(totalCommission * factor)
+    const referralFeeAmount = Math.round(totalReferralFees * factor)
+    const bonuses = Math.round(bonusAwards.reduce((sum, row) => sum + row.amount, 0) * factor)
+    const bankIncentives = Math.round(approvedApplications.length * 2500 * factor)
+    const profit = revenue - commission - referralFeeAmount - bonuses + bankIncentives
+    return {
+      id: deterministicUuid(`bond-revenue-snapshot:${snapshotPeriod}`),
+      organisation_id: plan.workspace.id,
+      period: snapshotPeriod,
+      revenue,
+      commission,
+      referral_fees: referralFeeAmount,
+      bonuses,
+      bank_incentives: bankIncentives,
+      profit,
+      margin: percent(profit, Math.max(revenue, 1)),
+      summary: buildManagedMetadata({ approvedApplications: Math.round(approvedApplications.length * factor) }),
+      created_at: isoDaysAgo(index + 1),
+      updated_at: isoDaysAgo(index),
+    }
+  })
+
+  const automationRules = [
+    ['Missing Docs SLA Nudge', 'Documents', 'application_idle'],
+    ['Bank Feedback Escalation', 'Banks', 'bank_feedback_overdue'],
+    ['Partner Request Follow-up', 'Partners', 'partner_request_idle'],
+    ['Consultant Capacity Guardrail', 'Consultants', 'capacity_threshold'],
+    ['Branch SLA Alert', 'Branches', 'sla_breach'],
+  ].map(([name, category, event], index) => ({
+    id: deterministicUuid(`bond-automation-rule:${normalizeSlug(name)}`),
+    organisation_id: plan.workspace.id,
+    name,
+    category,
+    trigger: { event, entityType: index === 3 ? 'consultant' : 'application' },
+    conditions: [{ field: 'status', operator: 'not_in', value: ['resolved', 'registered'] }],
+    actions: [{ type: index % 2 === 0 ? 'create_task' : 'notify_manager', channel: 'portal' }],
+    status: index === 4 ? 'draft' : 'active',
+    created_by: ownerUserId,
+    created_at: isoDaysAgo(20 - index),
+    updated_at: isoDaysAgo(index % 4),
+  }))
+
+  const automationRuns = automationRules.flatMap((rule, ruleIndex) => applications.slice(ruleIndex * 5, ruleIndex * 5 + 8).map((application, index) => ({
+    id: deterministicUuid(`bond-automation-run:${rule.id}:${application.transactionReference}`),
+    organisation_id: plan.workspace.id,
+    rule_id: rule.id,
+    entity_id: bondApplicationByTransactionId.get(application.transactionId)?.id || application.transactionId,
+    entity_type: 'application',
+    result: index % 7 === 0 ? 'skipped' : 'success',
+    action_results: [{ action: rule.actions[0]?.type, result: index % 7 === 0 ? 'not_applicable' : 'created' }],
+    executed_at: isoDaysAgo(index % 10),
+  })))
+
+  const automationHistory = automationRuns.map((run, index) => {
+    const rule = automationRules.find((item) => item.id === run.rule_id)
+    return {
+      id: deterministicUuid(`bond-automation-history:${run.id}`),
+      organisation_id: plan.workspace.id,
+      rule_id: run.rule_id,
+      rule_name: rule?.name || 'Automation',
+      entity_id: run.entity_id,
+      entity_type: run.entity_type,
+      action_type: rule?.actions?.[0]?.type || 'create_task',
+      event_type: rule?.trigger?.event || 'automation_run',
+      result: run.result,
+      details: { actionResults: run.action_results },
+      created_at: run.executed_at || isoDaysAgo(index % 10),
+    }
+  })
+
+  const automationTemplates = [
+    ['Missing documents reminder', 'Documents', 'email'],
+    ['Partner request assigned', 'Partners', 'portal'],
+    ['Bank feedback escalation', 'Banks', 'email'],
+    ['Consultant coaching task', 'Consultants', 'task'],
+  ].map(([name, category, channel], index) => ({
+    id: deterministicUuid(`bond-automation-template:${normalizeSlug(name)}`),
+    organisation_id: plan.workspace.id,
+    name,
+    category,
+    channel,
+    subject: `${name} - {{application_reference}}`,
+    body: `Demo template for ${name}.`,
+    sequence: [{ delayHours: index * 12, action: channel }],
+    status: 'active',
+    created_by: ownerUserId,
+    created_at: isoDaysAgo(18 - index),
+    updated_at: isoDaysAgo(index % 3),
+  }))
+
+  const automationRecommendations = [
+    ['Automate second missing-doc reminder', 'Documents', 82],
+    ['Route overflow from Sandton to Centurion', 'Branches', 76],
+    ['Escalate ABSA feedback after 36 hours', 'Banks', 88],
+    ['Create coaching tasks for overloaded consultants', 'Consultants', 71],
+  ].map(([title, category, impact], index) => ({
+    id: deterministicUuid(`bond-automation-recommendation:${normalizeSlug(title)}`),
+    organisation_id: plan.workspace.id,
+    title,
+    description: `Demo recommendation generated from ${category.toLowerCase()} signals.`,
+    category,
+    impact,
+    status: index === 1 ? 'accepted' : 'open',
+    source: buildManagedMetadata({ category }),
+    created_at: isoDaysAgo(index + 1),
+    dismissed_at: null,
+  }))
+
+  const predictionSnapshots = applications.slice(0, 48).map((application, index) => {
+    const riskScore = application.atRisk ? 84 : application.bucketKey === 'bank_feedback' ? 72 : application.bucketKey === 'approved' ? 24 : 45 + (index % 20)
+    return {
+      id: deterministicUuid(`bond-prediction:${application.transactionReference}`),
+      organisation_id: plan.workspace.id,
+      prediction_type: application.atRisk ? 'sla_breach' : 'approval_probability',
+      entity_type: 'application',
+      entity_id: bondApplicationByTransactionId.get(application.transactionId)?.id || application.transactionId,
+      score: riskScore,
+      confidence: index % 5 === 0 ? 'High Confidence' : 'Medium Confidence',
+      recommendation: application.atRisk ? 'Escalate and reassign follow-up owner.' : 'Continue normal cadence.',
+      details: buildManagedMetadata({ transaction_reference: application.transactionReference, bucket: application.bucketKey }),
+      predicted_at: isoDaysAgo(index % 7),
+      created_at: isoDaysAgo(index % 7),
+    }
+  })
+
+  const riskScores = predictionSnapshots.map((prediction, index) => ({
+    id: deterministicUuid(`bond-risk-score:${prediction.entity_id}`),
+    organisation_id: plan.workspace.id,
+    entity_type: prediction.entity_type,
+    entity_id: prediction.entity_id,
+    score: prediction.score,
+    risk_level: prediction.score >= 80 ? 'High Risk' : prediction.score >= 60 ? 'Medium Risk' : 'Low Risk',
+    reasons: prediction.score >= 80 ? ['Overdue SLA', 'Partner or bank feedback pending'] : ['Normal demo signal'],
+    confidence: prediction.confidence,
+    recommended_action: prediction.recommendation,
+    updated_at: prediction.predicted_at,
+    created_at: prediction.created_at,
+  }))
+
+  const predictionHistory = predictionSnapshots.slice(0, 24).map((prediction, index) => ({
+    id: deterministicUuid(`bond-prediction-history:${prediction.id}`),
+    organisation_id: plan.workspace.id,
+    prediction_id: prediction.id,
+    event_type: 'PREDICTION_CREATED',
+    prediction_type: prediction.prediction_type,
+    entity_type: prediction.entity_type,
+    entity_id: prediction.entity_id,
+    previous_value: null,
+    new_value: { score: prediction.score, confidence: prediction.confidence },
+    created_by: ownerUserId,
+    created_at: isoDaysAgo(index % 6),
+  }))
+
+  const predictionFeedback = predictionSnapshots.slice(0, 12).map((prediction, index) => ({
+    id: deterministicUuid(`bond-prediction-feedback:${prediction.id}`),
+    organisation_id: plan.workspace.id,
+    prediction_id: prediction.id,
+    expected_outcome: prediction.score >= 60 ? 'intervention_required' : 'normal_progress',
+    actual_outcome: index % 3 === 0 ? 'intervention_required' : 'normal_progress',
+    accuracy: index % 3 === 0 ? 94 : 82,
+    correct: index % 4 !== 0,
+    notes: 'Demo feedback loop for predictive analytics.',
+    created_by: ownerUserId,
+    created_at: isoDaysAgo(index % 5),
+  }))
+
+  return {
+    bondApplicationOwnershipHistory: ownershipHistory,
+    bondRoutingRules: routingRules,
+    bondRoutingRuleActivity: routingRuleActivity,
+    bondPartners: partners,
+    bondPartnerInvitations: partnerInvitations,
+    bondPartnerActivity: partnerActivity,
+    bondPartnerPortalUsers: portalUsers,
+    bondPartnerPortalDocuments: portalDocuments,
+    bondPartnerPortalDocumentRequests: portalDocumentRequests,
+    bondPartnerPortalComments: portalComments,
+    bondPartnerPortalSupportTickets: portalSupportTickets,
+    bondPartnerPortalAudit: portalAudit,
+    bondPartnerPortalNotifications: portalNotifications,
+    bondPartnerRequests: partnerRequests,
+    bondPartnerRequestMessages: partnerRequestMessages,
+    bondPartnerInternalNotes: partnerInternalNotes,
+    bondPartnerRequestActivity: partnerRequestActivity,
+    bondPartnerRequestNotifications: partnerRequestNotifications,
+    bondConsultantTargets: consultantTargets,
+    bondConsultantCoachingNotes: consultantCoachingNotes,
+    bondConsultantPerformanceSnapshots: consultantSnapshots,
+    bondBranchTargets: branchTargets,
+    bondBranchHealthSnapshots: branchHealthSnapshots,
+    bondBranchForecasts: branchForecasts,
+    bondRegionalTargets: regionalTargets,
+    bondRegionalHealthSnapshots: regionalHealthSnapshots,
+    bondRegionalForecasts: regionalForecasts,
+    bondHqHealthSnapshots: hqHealthSnapshots,
+    bondHqForecasts: hqForecasts,
+    bondExecutiveAlerts: executiveAlerts,
+    bondExecutiveReports: executiveReports,
+    bondBanks: bankRows,
+    bondBankContacts: bankContacts,
+    bondBankEscalations: bankEscalations,
+    bondBankFeedback: bankFeedback,
+    bondBankHealthSnapshots: bankHealthSnapshots,
+    bondCommissionRules: commissionRules,
+    bondCommissions: commissions,
+    bondReferralFees: referralFees,
+    bondBonusAwards: bonusAwards,
+    bondPayouts: payouts,
+    bondRevenueSnapshots: revenueSnapshots,
+    bondAutomationRules: automationRules,
+    bondAutomationRuns: automationRuns,
+    bondAutomationHistory: automationHistory,
+    bondAutomationTemplates: automationTemplates,
+    bondAutomationRecommendations: automationRecommendations,
+    bondPredictionSnapshots: predictionSnapshots,
+    bondRiskScores: riskScores,
+    bondPredictionHistory: predictionHistory,
+    bondPredictionFeedback: predictionFeedback,
+  }
+}
+
 function buildMembershipRows(plan) {
   return plan.users
     .filter((user) => user.membershipEnabled && user.workspaceId)
@@ -2411,6 +3947,8 @@ function buildPlan(inputEnv = {}) {
   const applications = buildApplicationRecords(users, hierarchy)
   const transactionRows = buildTransactionRows(applications)
   const financeDetailRows = buildFinanceDetailsRows(applications)
+  const financeRuntimeRows = buildFinanceWorkflowRuntimeRows(applications, null)
+  const bondModuleRows = buildBondModuleRuntimeRows({ workspace: hierarchy.workspace, hierarchy, users }, applications, null, financeRuntimeRows)
   const subprocessRows = buildSubprocessRows(applications)
   const buyerRows = unique(applications.map((application) => application.buyer.id)).map((buyerId) => {
     const buyer = applications.find((application) => application.buyer.id === buyerId)?.buyer
@@ -2516,6 +4054,10 @@ function buildPlan(inputEnv = {}) {
       units: makeCount(),
       transactions: makeCount(),
       transactionFinanceDetails: makeCount(),
+      transactionFinanceWorkflows: makeCount(),
+      transactionFinanceWorkflowEvents: makeCount(),
+      transactionBondApplications: makeCount(),
+      transactionBondQuotes: makeCount(),
       transactionSubprocesses: makeCount(),
       transactionSubprocessSteps: makeCount(),
       documentRequests: makeCount(),
@@ -2526,6 +4068,57 @@ function buildPlan(inputEnv = {}) {
       transactionParticipants: makeCount(),
       transactionRolePlayers: makeCount(),
       clientPortalLinks: makeCount(),
+      bondApplicationOwnershipHistory: makeCount(),
+      bondRoutingRules: makeCount(),
+      bondRoutingRuleActivity: makeCount(),
+      bondPartners: makeCount(),
+      bondPartnerInvitations: makeCount(),
+      bondPartnerActivity: makeCount(),
+      bondPartnerPortalUsers: makeCount(),
+      bondPartnerPortalDocuments: makeCount(),
+      bondPartnerPortalDocumentRequests: makeCount(),
+      bondPartnerPortalComments: makeCount(),
+      bondPartnerPortalSupportTickets: makeCount(),
+      bondPartnerPortalAudit: makeCount(),
+      bondPartnerPortalNotifications: makeCount(),
+      bondPartnerRequests: makeCount(),
+      bondPartnerRequestMessages: makeCount(),
+      bondPartnerInternalNotes: makeCount(),
+      bondPartnerRequestActivity: makeCount(),
+      bondPartnerRequestNotifications: makeCount(),
+      bondConsultantTargets: makeCount(),
+      bondConsultantCoachingNotes: makeCount(),
+      bondConsultantPerformanceSnapshots: makeCount(),
+      bondBranchTargets: makeCount(),
+      bondBranchHealthSnapshots: makeCount(),
+      bondBranchForecasts: makeCount(),
+      bondRegionalTargets: makeCount(),
+      bondRegionalHealthSnapshots: makeCount(),
+      bondRegionalForecasts: makeCount(),
+      bondHqHealthSnapshots: makeCount(),
+      bondHqForecasts: makeCount(),
+      bondExecutiveAlerts: makeCount(),
+      bondExecutiveReports: makeCount(),
+      bondBanks: makeCount(),
+      bondBankContacts: makeCount(),
+      bondBankEscalations: makeCount(),
+      bondBankFeedback: makeCount(),
+      bondBankHealthSnapshots: makeCount(),
+      bondCommissionRules: makeCount(),
+      bondCommissions: makeCount(),
+      bondReferralFees: makeCount(),
+      bondBonusAwards: makeCount(),
+      bondPayouts: makeCount(),
+      bondRevenueSnapshots: makeCount(),
+      bondAutomationRules: makeCount(),
+      bondAutomationRuns: makeCount(),
+      bondAutomationHistory: makeCount(),
+      bondAutomationTemplates: makeCount(),
+      bondAutomationRecommendations: makeCount(),
+      bondPredictionSnapshots: makeCount(),
+      bondRiskScores: makeCount(),
+      bondPredictionHistory: makeCount(),
+      bondPredictionFeedback: makeCount(),
     },
     missingAuthUsers: [],
     resolvedUserIds: {},
@@ -2547,8 +4140,13 @@ function buildPlan(inputEnv = {}) {
         units: unitRows,
         transactions: transactionRows,
         transactionFinanceDetails: financeDetailRows,
+        transactionFinanceWorkflows: financeRuntimeRows.workflows,
+        transactionFinanceWorkflowEvents: financeRuntimeRows.workflowEvents,
+        transactionBondApplications: financeRuntimeRows.bondApplications,
+        transactionBondQuotes: financeRuntimeRows.quotes,
         subprocesses: subprocessRows.subprocesses,
         subprocessSteps: subprocessRows.steps,
+        bondModule: bondModuleRows,
       },
     },
   }
@@ -2854,13 +4452,34 @@ async function performRealApply(plan, adapter) {
   }
 
   const targetDemoUserId = targetDemoUser.userId
-  const { requests, documents } = buildDocumentRows(hydrated._raw.applications, targetDemoUserId)
-  const comments = buildCommentRows(hydrated._raw.applications)
-  const events = buildEventRows(hydrated._raw.applications, targetDemoUserId)
-  const notifications = buildNotificationRows(hydrated._raw.applications, targetDemoUserId)
-  const participants = buildParticipantRows(hydrated._raw.applications)
-  const rolePlayers = buildRolePlayerRows(hydrated._raw.applications)
-  const portalLinks = buildClientPortalLinks(hydrated._raw.applications)
+  const hydratedApplications = hydrateApplicationsWithUsers(hydrated._raw.applications, hydratedUsers)
+  const hydratedFinanceRuntimeRows = buildFinanceWorkflowRuntimeRows(hydratedApplications, targetDemoUserId)
+  const hydratedSubprocessRows = buildSubprocessRows(hydratedApplications)
+  const hydratedBondModuleRows = buildBondModuleRuntimeRows(hydrated, hydratedApplications, targetDemoUserId, hydratedFinanceRuntimeRows)
+  hydrated._raw = {
+    ...hydrated._raw,
+    applications: hydratedApplications,
+    rows: {
+      ...hydrated._raw.rows,
+      transactions: buildTransactionRows(hydratedApplications),
+      transactionFinanceDetails: buildFinanceDetailsRows(hydratedApplications),
+      transactionFinanceWorkflows: hydratedFinanceRuntimeRows.workflows,
+      transactionFinanceWorkflowEvents: hydratedFinanceRuntimeRows.workflowEvents,
+      transactionBondApplications: hydratedFinanceRuntimeRows.bondApplications,
+      transactionBondQuotes: hydratedFinanceRuntimeRows.quotes,
+      subprocesses: hydratedSubprocessRows.subprocesses,
+      subprocessSteps: hydratedSubprocessRows.steps,
+      bondModule: hydratedBondModuleRows,
+    },
+  }
+
+  const { requests, documents } = buildDocumentRows(hydratedApplications, targetDemoUserId)
+  const comments = buildCommentRows(hydratedApplications)
+  const events = buildEventRows(hydratedApplications, targetDemoUserId)
+  const notifications = buildNotificationRows(hydratedApplications, targetDemoUserId)
+  const participants = buildParticipantRows(hydratedApplications)
+  const rolePlayers = buildRolePlayerRows(hydratedApplications)
+  const portalLinks = buildClientPortalLinks(hydratedApplications)
 
   await applyCount(hydrated, 'organisations', 'organisations', buildOrganisationRows(hydrated), adapter, { onConflict: 'id' })
   await applyCount(hydrated, 'organisationSettings', 'organisation_settings', buildOrganisationSettingsRows(hydrated), adapter, { onConflict: 'organisation_id' })
@@ -2872,6 +4491,13 @@ async function performRealApply(plan, adapter) {
   await applyCount(hydrated, 'developmentSettings', 'development_settings', hydrated._raw.rows.developmentSettings, adapter, { onConflict: 'development_id' })
   await applyCount(hydrated, 'units', 'units', hydrated._raw.rows.units, adapter, { onConflict: 'id' })
   await applyCount(hydrated, 'transactions', 'transactions', hydrated._raw.rows.transactions, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'transactionFinanceWorkflows', 'transaction_finance_workflows', hydrated._raw.rows.transactionFinanceWorkflows, adapter, {
+    onConflict: 'transaction_id,workflow_type',
+    select: 'id, transaction_id, workflow_type',
+  })
+  await applyCount(hydrated, 'transactionFinanceWorkflowEvents', 'transaction_finance_workflow_events', hydrated._raw.rows.transactionFinanceWorkflowEvents, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'transactionBondApplications', 'transaction_bond_applications', hydrated._raw.rows.transactionBondApplications, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'transactionBondQuotes', 'transaction_bond_quotes', hydrated._raw.rows.transactionBondQuotes, adapter, { onConflict: 'id' })
   const subprocessApply = await applyCount(hydrated, 'transactionSubprocesses', 'transaction_subprocesses', hydrated._raw.rows.subprocesses, adapter, {
     onConflict: 'transaction_id,process_type',
     select: 'id, transaction_id, process_type',
@@ -2891,6 +4517,58 @@ async function performRealApply(plan, adapter) {
   await applyCount(hydrated, 'transactionParticipants', 'transaction_participants', participants, adapter, { onConflict: 'id' })
   await applyCount(hydrated, 'transactionRolePlayers', 'transaction_role_players', rolePlayers, adapter, { onConflict: 'id' })
   await applyCount(hydrated, 'clientPortalLinks', 'client_portal_links', portalLinks, adapter, { onConflict: 'id' })
+  const bondRows = hydrated._raw.rows.bondModule
+  await applyCount(hydrated, 'bondApplicationOwnershipHistory', 'bond_application_ownership_history', bondRows.bondApplicationOwnershipHistory, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondRoutingRules', 'bond_routing_rules', bondRows.bondRoutingRules, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondRoutingRuleActivity', 'bond_routing_rule_activity', bondRows.bondRoutingRuleActivity, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondPartners', 'bond_partners', bondRows.bondPartners, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondPartnerInvitations', 'bond_partner_invitations', bondRows.bondPartnerInvitations, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondPartnerActivity', 'bond_partner_activity', bondRows.bondPartnerActivity, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondPartnerPortalUsers', 'bond_partner_portal_users', bondRows.bondPartnerPortalUsers, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondPartnerPortalDocuments', 'bond_partner_portal_documents', bondRows.bondPartnerPortalDocuments, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondPartnerPortalDocumentRequests', 'bond_partner_portal_document_requests', bondRows.bondPartnerPortalDocumentRequests, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondPartnerPortalComments', 'bond_partner_portal_comments', bondRows.bondPartnerPortalComments, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondPartnerPortalSupportTickets', 'bond_partner_portal_support_tickets', bondRows.bondPartnerPortalSupportTickets, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondPartnerPortalAudit', 'bond_partner_portal_audit', bondRows.bondPartnerPortalAudit, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondPartnerPortalNotifications', 'bond_partner_portal_notifications', bondRows.bondPartnerPortalNotifications, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondPartnerRequests', 'bond_partner_requests', bondRows.bondPartnerRequests, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondPartnerRequestMessages', 'bond_partner_request_messages', bondRows.bondPartnerRequestMessages, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondPartnerInternalNotes', 'bond_partner_internal_notes', bondRows.bondPartnerInternalNotes, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondPartnerRequestActivity', 'bond_partner_request_activity', bondRows.bondPartnerRequestActivity, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondPartnerRequestNotifications', 'bond_partner_request_notifications', bondRows.bondPartnerRequestNotifications, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondConsultantTargets', 'bond_consultant_targets', bondRows.bondConsultantTargets, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondConsultantCoachingNotes', 'bond_consultant_coaching_notes', bondRows.bondConsultantCoachingNotes, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondConsultantPerformanceSnapshots', 'bond_consultant_performance_snapshots', bondRows.bondConsultantPerformanceSnapshots, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondBranchTargets', 'bond_branch_targets', bondRows.bondBranchTargets, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondBranchHealthSnapshots', 'bond_branch_health_snapshots', bondRows.bondBranchHealthSnapshots, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondBranchForecasts', 'bond_branch_forecasts', bondRows.bondBranchForecasts, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondRegionalTargets', 'bond_regional_targets', bondRows.bondRegionalTargets, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondRegionalHealthSnapshots', 'bond_regional_health_snapshots', bondRows.bondRegionalHealthSnapshots, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondRegionalForecasts', 'bond_regional_forecasts', bondRows.bondRegionalForecasts, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondHqHealthSnapshots', 'bond_hq_health_snapshots', bondRows.bondHqHealthSnapshots, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondHqForecasts', 'bond_hq_forecasts', bondRows.bondHqForecasts, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondExecutiveAlerts', 'bond_executive_alerts', bondRows.bondExecutiveAlerts, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondExecutiveReports', 'bond_executive_reports', bondRows.bondExecutiveReports, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondBanks', 'bond_banks', bondRows.bondBanks, adapter, { onConflict: 'organisation_id,name' })
+  await applyCount(hydrated, 'bondBankContacts', 'bond_bank_contacts', bondRows.bondBankContacts, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondBankEscalations', 'bond_bank_escalations', bondRows.bondBankEscalations, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondBankFeedback', 'bond_bank_feedback', bondRows.bondBankFeedback, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondBankHealthSnapshots', 'bond_bank_health_snapshots', bondRows.bondBankHealthSnapshots, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondCommissionRules', 'bond_commission_rules', bondRows.bondCommissionRules, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondCommissions', 'bond_commissions', bondRows.bondCommissions, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondReferralFees', 'bond_referral_fees', bondRows.bondReferralFees, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondBonusAwards', 'bond_bonus_awards', bondRows.bondBonusAwards, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondPayouts', 'bond_payouts', bondRows.bondPayouts, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondRevenueSnapshots', 'bond_revenue_snapshots', bondRows.bondRevenueSnapshots, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondAutomationRules', 'bond_automation_rules', bondRows.bondAutomationRules, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondAutomationRuns', 'bond_automation_runs', bondRows.bondAutomationRuns, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondAutomationHistory', 'bond_automation_history', bondRows.bondAutomationHistory, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondAutomationTemplates', 'bond_automation_templates', bondRows.bondAutomationTemplates, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondAutomationRecommendations', 'bond_automation_recommendations', bondRows.bondAutomationRecommendations, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondPredictionSnapshots', 'bond_prediction_snapshots', bondRows.bondPredictionSnapshots, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondRiskScores', 'bond_risk_scores', bondRows.bondRiskScores, adapter, { onConflict: 'organisation_id,entity_type,entity_id' })
+  await applyCount(hydrated, 'bondPredictionHistory', 'bond_prediction_history', bondRows.bondPredictionHistory, adapter, { onConflict: 'id' })
+  await applyCount(hydrated, 'bondPredictionFeedback', 'bond_prediction_feedback', bondRows.bondPredictionFeedback, adapter, { onConflict: 'id' })
 
   hydrated.applied = true
   hydrated.applyReason = null
@@ -2900,6 +4578,7 @@ async function performRealApply(plan, adapter) {
   hydrated.metrics.documents = documents.length
   hydrated.metrics.transactionComments = comments.length
   hydrated.metrics.clientPortalLinks = portalLinks.length
+  hydrated.metrics.bondModuleRows = Object.values(bondRows).reduce((sum, rows) => sum + (Array.isArray(rows) ? rows.length : 0), 0)
   return hydrated
 }
 

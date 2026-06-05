@@ -319,10 +319,6 @@ function createBondSettingsNav() {
     to: '/settings',
     navSection: 'secondary',
     activeMatch: BOND_SETTINGS_ACTIVE_MATCH,
-    children: [
-      { key: 'settings_workspace', label: 'Workspace Settings', to: '/settings/organisation', activeMatch: ['/settings'] },
-      { key: 'automation_rules', label: 'Automation & Rules', to: '/bond/automation', activeMatch: ['/bond/automation'] },
-    ],
   }
 }
 

@@ -47,6 +47,7 @@
     "test:bond-branch-operations": "node src/services/__tests__/bondBranchOperationsService.test.js",
     "test:bond-regional-operations": "node src/services/__tests__/bondRegionalOperationsService.test.js",
     "test:bond-hq-command-centre": "node src/services/__tests__/bondHQCommandCentreService.test.js",
+    "test:bond-originator-banks": "node src/services/__tests__/bondOriginatorBankService.test.js",
     "test:bond-bank-relationships": "node src/services/__tests__/bondBankRelationshipService.test.js",
     "test:bond-revenue-management": "node src/services/__tests__/bondRevenueManagementService.test.js",
     "test:bond-automation": "node src/services/__tests__/bondAutomationService.test.js",

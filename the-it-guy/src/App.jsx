@@ -98,6 +98,7 @@ const BondDashboardPage = lazy(() => import('./pages/bond/BondDashboardPage'))
 const BondDevelopmentsPage = lazy(() => import('./pages/bond/BondDevelopmentsPage'))
 const BondTransactionsPage = lazy(() => import('./pages/bond/BondTransactionsPage'))
 const BondModuleHubPage = lazy(() => import('./pages/bond/BondModuleHubPage'))
+const BondReportsAnalyticsPage = lazy(() => import('./pages/bond/BondReportsAnalyticsPage'))
 const BondOrganisationPage = lazy(() => import('./pages/bond/BondOrganisationPage'))
 const BondPartnerCollaborationPage = lazy(() => import('./pages/bond/BondPartnerCollaborationPage'))
 const BondPartnerIntelligencePage = lazy(() => import('./pages/bond/BondPartnerIntelligencePage'))
@@ -500,13 +501,13 @@ function AppLayout({ onLogout, session = null, user }) {
   }
 
   return (
-    <div className="h-screen overflow-hidden bg-app text-textStrong">
+    <div className="min-h-screen overflow-x-hidden bg-app text-textStrong lg:h-screen lg:overflow-hidden">
       {sessionTimeoutWarning}
       <Suspense fallback={<SidebarSkeleton />}>
         <Sidebar />
       </Suspense>
 
-      <div className="ui-main-region h-screen overflow-hidden">
+      <div className="ui-main-region min-h-screen overflow-hidden lg:h-screen">
         {!hideSharedHeader ? (
           <Suspense fallback={<HeaderSkeleton />}>
             <HeaderBar
@@ -1757,7 +1758,7 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['bond_originator']}>
                     <AppErrorBoundary scope="bond-automation-centre" title="Automation & rules failed to load">
-                      <BondAutomationCentrePage />
+                      <Navigate to="/settings/automation" replace />
                     </AppErrorBoundary>
                   </RoleRoute>
                 }
@@ -1824,7 +1825,7 @@ function AppRoutes() {
                 path="/bond/reports"
                 element={
                   <RoleRoute allowedRoles={['bond_originator']}>
-                    <BondModuleHubPage section="performance" />
+                    <BondReportsAnalyticsPage />
                   </RoleRoute>
                 }
               />
@@ -2181,6 +2182,14 @@ function AppRoutes() {
                   element={
                     <RoleRoute allowedRoles={['developer', 'agent', 'bond_originator']}>
                       <SettingsOrganisationPage />
+                    </RoleRoute>
+                  }
+                />
+                <Route
+                  path="automation"
+                  element={
+                    <RoleRoute allowedRoles={['bond_originator']}>
+                      <BondAutomationCentrePage />
                     </RoleRoute>
                   }
                 />

@@ -1,4 +1,15 @@
-import { AlertTriangle, ArrowRight, BarChart3, Building2, FileText, Network, Users } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowRight,
+  Building2,
+  Download,
+  FileBarChart2,
+  LayoutGrid,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  Table2,
+} from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import BondEmptyState from '../../components/bond/BondEmptyState'
@@ -8,6 +19,7 @@ import BondSectionCard from '../../components/bond/BondSectionCard'
 import BondViewTabs from '../../components/bond/BondViewTabs'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import * as bondCommandCenterService from '../../services/bondCommandCenterService'
+import { filterAndSortDevelopments } from './bondDevelopmentsPortfolioUtils'
 
 const DETAIL_TABS = [
   { key: 'overview', label: 'Overview' },
@@ -21,7 +33,7 @@ const DETAIL_TABS = [
 ]
 
 const LIST_TABS = [
-  { key: 'current', label: 'Current Developments' },
+  { key: 'current', label: 'Portfolio' },
   { key: 'developers', label: 'Developers' },
 ]
 
@@ -54,6 +66,55 @@ function formatDate(value) {
   return date.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' })
 }
 
+function formatRelativeDate(value) {
+  const date = new Date(value || 0)
+  if (Number.isNaN(date.getTime())) return 'No recent activity'
+  const days = Math.floor((Date.now() - date.getTime()) / (24 * 60 * 60 * 1000))
+  if (days <= 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  if (days < 30) return `${days} days ago`
+  return formatDate(value)
+}
+
+function formatApprovalRate(value) {
+  return value === null || value === undefined ? '—' : `${Math.round(Number(value || 0))}%`
+}
+
+function getRiskLabel(value = 'low') {
+  const normalized = normalizeText(value).toLowerCase()
+  if (normalized === 'high') return 'High'
+  if (normalized === 'medium') return 'Medium'
+  return 'Low'
+}
+
+function getRiskClasses(value = 'low') {
+  const normalized = normalizeText(value).toLowerCase()
+  if (normalized === 'high') return 'border-[#efcfd3] bg-[#fff7f8] text-[#9b2f3f]'
+  if (normalized === 'medium') return 'border-[#ead7ad] bg-[#fffaf0] text-[#875b16]'
+  return 'border-[#cce7d8] bg-[#f7fcf9] text-[#1f6b45]'
+}
+
+function RiskPill({ level = 'low' }) {
+  return (
+    <span className={`inline-flex h-7 items-center rounded-full border px-2.5 text-xs font-semibold ${getRiskClasses(level)}`}>
+      {getRiskLabel(level)}
+    </span>
+  )
+}
+
+function ApprovalMeter({ value }) {
+  const hasValue = value !== null && value !== undefined
+  const percent = Math.max(0, Math.min(100, Number(value || 0)))
+  return (
+    <div className="min-w-[92px]">
+      <div className="text-sm font-semibold text-[#20364c]">{formatApprovalRate(value)}</div>
+      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[#edf3f8]">
+        <div className={`h-full rounded-full ${hasValue ? 'bg-[#315f8c]' : 'bg-transparent'}`} style={{ width: `${hasValue ? percent : 0}%` }} />
+      </div>
+    </div>
+  )
+}
+
 function Metric({ label, value, tone = 'slate' }) {
   const toneClasses = {
     slate: 'border-[#dce6f2] bg-white text-[#172b42]',
@@ -65,45 +126,115 @@ function Metric({ label, value, tone = 'slate' }) {
   return (
     <div className={`rounded-[18px] border px-4 py-3 ${toneClasses[tone] || toneClasses.slate}`}>
       <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#6f849a]">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tracking-[-0.03em]">{value}</p>
+      <p className="mt-1 text-2xl font-semibold tracking-normal">{value}</p>
     </div>
   )
 }
 
 function DevelopmentCard({ development }) {
   return (
-    <article className="rounded-[24px] border border-[#dbe5f0] bg-white p-5 shadow-[0_16px_42px_rgba(20,33,50,0.07)] transition hover:-translate-y-0.5 hover:shadow-[0_22px_56px_rgba(20,33,50,0.11)]">
-      <div className="flex items-start justify-between gap-3">
+    <article className="rounded-[20px] border border-[#dbe5f0] bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.045)]">
+      <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="truncate text-lg font-semibold tracking-[-0.02em] text-[#142132]">{development.name}</p>
-          <p className="mt-1 text-sm text-[#60758d]">{development.developerName} · {development.location}</p>
+          <p className="truncate text-lg font-semibold tracking-normal text-[#142132]">{development.name}</p>
+          <p className="mt-1 text-sm text-[#60758d]">{development.developerName || 'Developer not linked'} · {development.location || 'Location pending'}</p>
         </div>
         <span className="rounded-full border border-[#dbe5f0] bg-[#f8fbfe] px-3 py-1 text-xs font-semibold text-[#49657d]">
           {development.status}
         </span>
       </div>
 
-      <div className="mt-5 grid grid-cols-2 gap-3">
-        <Metric label="Application Pipeline Value" value={development.pipelineValueLabel} tone="blue" />
-        <Metric label="Active Applications" value={formatNumber(development.activeFiles)} />
-        <Metric label="Approval Rate" value={`${development.approvalRate}%`} tone={development.approvalRate >= 70 ? 'green' : 'amber'} />
-        <Metric label="Awaiting Docs" value={formatNumber(development.pendingDocuments)} tone={development.pendingDocuments ? 'amber' : 'green'} />
-        <Metric label="Registered Month" value={formatNumber(development.registeredThisMonth)} tone="green" />
-        <Metric label="At Risk" value={formatNumber(development.atRiskFiles)} tone={development.atRiskFiles ? 'red' : 'green'} />
+      <div className="mt-5 grid grid-cols-2 gap-x-5 gap-y-4 sm:grid-cols-4">
+        <CompactMetric label="Pipeline" value={development.pipelineValueLabel} />
+        <CompactMetric label="Applications" value={formatNumber(development.activeApplications)} />
+        <CompactMetric label="Approval" value={formatApprovalRate(development.approvalRate)} />
+        <CompactMetric label="Registered" value={formatNumber(development.registeredThisMonth)} />
       </div>
 
-      <div className="mt-5 flex flex-wrap gap-2">
-        <Link to={development.href} className="inline-flex h-10 items-center gap-2 rounded-[14px] bg-[#17324d] px-4 text-sm font-semibold text-white">
-          View Development <ArrowRight size={15} />
-        </Link>
-        <Link to={development.transactionsHref} className="inline-flex h-10 items-center rounded-[14px] border border-[#dbe5f0] px-4 text-sm font-semibold text-[#24415d]">
-          View Applications
-        </Link>
-        <Link to={development.reportsHref} className="inline-flex h-10 items-center rounded-[14px] border border-[#dbe5f0] px-4 text-sm font-semibold text-[#24415d]">
-          View Reports
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-[#edf2f7] pt-4">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-[#60758d]">
+          <RiskPill level={development.riskLevel} />
+          <span>Awaiting Docs: {formatNumber(development.awaitingDocs)}</span>
+          <span>Last Activity: {formatRelativeDate(development.lastActivityAt)}</span>
+        </div>
+        <Link to={development.href} className="inline-flex h-10 items-center gap-2 rounded-[12px] bg-[#17324d] px-4 text-sm font-semibold text-white">
+          Open Development <ArrowRight size={15} />
         </Link>
       </div>
     </article>
+  )
+}
+
+function CompactMetric({ label, value }) {
+  return (
+    <div>
+      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8da0]">{label}</p>
+      <p className="mt-1 text-lg font-semibold tracking-normal text-[#172b42]">{value}</p>
+    </div>
+  )
+}
+
+function SummaryMetric({ label, value, helper = '' }) {
+  return (
+    <div className="min-w-0 rounded-[18px] border border-[#dfe8f2] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
+      <p className="truncate text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#71859a]">{label}</p>
+      <p className="mt-2 truncate text-xl font-semibold tracking-normal text-[#142132]">{value}</p>
+      {helper ? <p className="mt-1 truncate text-xs text-[#6b7f94]">{helper}</p> : null}
+    </div>
+  )
+}
+
+export function PortfolioSummary({ summary = {} }) {
+  return (
+    <section className="grid gap-3 md:grid-cols-3 2xl:grid-cols-6">
+      <SummaryMetric label="Total Pipeline Value" value={formatCurrency(summary.totalPipelineValue)} helper="Active linked applications" />
+      <SummaryMetric label="Active Applications" value={formatNumber(summary.activeApplications)} helper="Excludes completed/cancelled files" />
+      <SummaryMetric label="Approval Rate" value={formatApprovalRate(summary.approvalRate)} helper={summary.approvalRate === null || summary.approvalRate === undefined ? 'No decision data' : 'Submitted and decisioned files'} />
+      <SummaryMetric label="Registered This Month" value={formatNumber(summary.registeredThisMonth)} helper="Calendar month registrations" />
+      <SummaryMetric label="Commission Forecast" value={summary.commissionForecast === null || summary.commissionForecast === undefined ? 'Not configured' : formatCurrency(summary.commissionForecast)} helper="Existing commission fields only" />
+      <SummaryMetric label="Developments At Risk" value={formatNumber(summary.developmentsAtRisk)} helper="Files with risk signals" />
+    </section>
+  )
+}
+
+function PortfolioHeader({ onExport, onReports, onAdd }) {
+  return (
+    <section className="rounded-[24px] border border-[#dfe8f2] bg-white px-5 py-5 shadow-[0_14px_32px_rgba(15,23,42,0.055)]">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-[1.65rem] font-semibold tracking-normal text-[#142132]">Developments</h1>
+          <p className="mt-1.5 max-w-3xl text-sm leading-6 text-[#60758d]">
+            Manage development performance, bond applications, developer relationships, and portfolio risk.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            onClick={onExport}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] border border-[#dce6f2] bg-white px-4 text-sm font-semibold text-[#17324b] shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-[#c9d8e8]"
+          >
+            <Download size={16} />
+            Export Portfolio
+          </button>
+          <button
+            type="button"
+            onClick={onReports}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] border border-[#dce6f2] bg-white px-4 text-sm font-semibold text-[#17324b] shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-[#c9d8e8]"
+          >
+            <FileBarChart2 size={16} />
+            Reports
+          </button>
+          <button
+            type="button"
+            onClick={onAdd}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] bg-[#102448] px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(16,36,72,0.22)] transition hover:-translate-y-0.5 hover:bg-[#17315c]"
+          >
+            <Plus size={16} />
+            Add Development
+          </button>
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -148,7 +279,7 @@ function DeveloperPortfolioCard({ developer }) {
     <article className="rounded-[24px] border border-[#dbe5f0] bg-white p-5 shadow-[0_16px_42px_rgba(20,33,50,0.07)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">{developer.name}</p>
+          <p className="text-lg font-semibold tracking-normal text-[#142132]">{developer.name}</p>
           <p className="mt-1 text-sm text-[#60758d]">{formatNumber(developer.developmentCount)} linked developments</p>
         </div>
         <span className="rounded-full border border-[#dbe5f0] bg-[#f8fbfe] px-3 py-1 text-xs font-semibold text-[#49657d]">
@@ -190,6 +321,166 @@ function DevelopersWorkspace({ developments = [] }) {
   return (
     <section className="grid gap-5 xl:grid-cols-2">
       {developers.map((developer) => <DeveloperPortfolioCard key={developer.id} developer={developer} />)}
+    </section>
+  )
+}
+
+function uniqueOptions(rows = [], key = '') {
+  return [...new Set(rows.map((row) => normalizeText(row[key])).filter(Boolean))].sort((left, right) => left.localeCompare(right))
+}
+
+function PortfolioToolbar({
+  developments = [],
+  filters = {},
+  onFiltersChange,
+  layout = 'table',
+  onLayoutChange,
+}) {
+  const developerOptions = uniqueOptions(developments, 'developerName').filter((item) => item !== 'Developer not linked')
+  const branchOptions = uniqueOptions(developments, 'branchName')
+
+  const updateFilter = (key, value) => {
+    onFiltersChange?.({ ...filters, [key]: value })
+  }
+
+  return (
+    <section className="rounded-[20px] border border-[#dfe8f2] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+      <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_repeat(5,minmax(140px,180px))_auto]">
+        <label className="flex h-11 min-w-0 items-center gap-2 rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-3 text-sm text-[#6f849a]">
+          <Search size={16} />
+          <input
+            value={filters.search}
+            onChange={(event) => updateFilter('search', event.target.value)}
+            placeholder="Search developments..."
+            className="min-w-0 flex-1 bg-transparent text-sm font-medium text-[#20364c] outline-none placeholder:text-[#9aaabc]"
+          />
+        </label>
+        <FilterSelect label="Status" value={filters.status} onChange={(value) => updateFilter('status', value)} options={['all', 'Active', 'Unassigned']} />
+        <FilterSelect label="Developer" value={filters.developer} onChange={(value) => updateFilter('developer', value)} options={['all', ...developerOptions]} />
+        <FilterSelect label="Branch" value={filters.branch} onChange={(value) => updateFilter('branch', value)} options={['all', ...branchOptions]} />
+        <FilterSelect label="Risk" value={filters.risk} onChange={(value) => updateFilter('risk', value)} options={['all', 'high', 'medium', 'low']} />
+        <FilterSelect label="Sort by" value={filters.sort} onChange={(value) => updateFilter('sort', value)} options={['Last Activity', 'Pipeline Value', 'Most Applications', 'Highest Risk', 'Lowest Approval Rate', 'Newest']} />
+        <div className="flex h-11 items-center justify-end gap-1 rounded-[14px] border border-[#dce6f2] bg-[#f8fbfe] p-1">
+          <LayoutButton active={layout === 'table'} label="Table" icon={Table2} onClick={() => onLayoutChange?.('table')} />
+          <LayoutButton active={layout === 'cards'} label="Cards" icon={LayoutGrid} onClick={() => onLayoutChange?.('cards')} />
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function FilterSelect({ label, value, options = [], onChange }) {
+  return (
+    <label className="relative flex h-11 items-center gap-2 rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-3 text-sm">
+      <SlidersHorizontal size={15} className="shrink-0 text-[#7f91a4]" />
+      <span className="sr-only">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange?.(event.target.value)}
+        className="min-w-0 flex-1 appearance-none bg-transparent pr-4 text-sm font-semibold text-[#20364c] outline-none"
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option === 'all' ? label : option.charAt(0).toUpperCase() + option.slice(1)}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function LayoutButton({ active = false, label, icon, onClick }) {
+  const IconComponent = icon
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      className={`inline-flex h-9 w-9 items-center justify-center rounded-[10px] transition ${
+        active ? 'bg-white text-[#17324d] shadow-[0_6px_14px_rgba(15,23,42,0.08)]' : 'text-[#7890a6] hover:bg-white/70'
+      }`}
+    >
+      <IconComponent size={16} />
+    </button>
+  )
+}
+
+export function PortfolioTable({ developments = [] }) {
+  if (!developments.length) {
+    return null
+  }
+
+  return (
+    <section className="overflow-hidden rounded-[22px] border border-[#dbe5f0] bg-white shadow-[0_16px_34px_rgba(15,23,42,0.045)]">
+      <div className="hidden overflow-x-auto xl:block">
+        <table className="min-w-[1180px] w-full text-left text-sm">
+          <thead className="border-b border-[#e5edf5] bg-[#f7fafc] text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#6f849a]">
+            <tr>
+              {['Development', 'Location', 'Pipeline Value', 'Applications', 'Approval Rate', 'Registered', 'Risk', 'Lead Consultant / Branch', 'Last Activity', 'Actions'].map((heading) => (
+                <th key={heading} className="px-5 py-3.5">{heading}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#edf2f7]">
+            {developments.map((development) => (
+              <tr key={development.id} className="align-middle transition hover:bg-[#fbfdff]">
+                <td className="px-5 py-4">
+                  <div className="min-w-[210px]">
+                    <Link to={development.href} className="font-semibold text-[#142132] hover:text-[#315f8c]">{development.name}</Link>
+                    <p className="mt-1 text-xs text-[#6b7f94]">{development.developerName || 'Developer not linked'}</p>
+                  </div>
+                </td>
+                <td className="px-5 py-4 text-[#60758d]">{development.location || 'Location pending'}</td>
+                <td className="px-5 py-4 font-semibold text-[#172b42]">{development.pipelineValueLabel}</td>
+                <td className="px-5 py-4">
+                  <p className="font-semibold text-[#20364c]">{formatNumber(development.activeApplications)} active</p>
+                  <p className="mt-1 text-xs text-[#71879d]">{formatNumber(development.awaitingDocs)} awaiting docs</p>
+                </td>
+                <td className="px-5 py-4"><ApprovalMeter value={development.approvalRate} /></td>
+                <td className="px-5 py-4 text-[#20364c]">{formatNumber(development.registeredThisMonth)} this month</td>
+                <td className="px-5 py-4"><RiskPill level={development.riskLevel} /></td>
+                <td className="px-5 py-4">
+                  <p className="font-medium text-[#20364c]">{development.consultantName || 'Unassigned'}</p>
+                  <p className="mt-1 text-xs text-[#71879d]">{development.branchName || 'No branch assigned'}</p>
+                </td>
+                <td className="px-5 py-4 text-[#60758d]">{formatRelativeDate(development.lastActivityAt)}</td>
+                <td className="px-5 py-4">
+                  <div className="flex items-center gap-2">
+                    <Link to={development.href} className="inline-flex h-9 items-center rounded-[11px] bg-[#17324d] px-3 text-xs font-semibold text-white">Open</Link>
+                    <Link to={development.transactionsHref} className="inline-flex h-9 items-center rounded-[11px] border border-[#dbe5f0] px-3 text-xs font-semibold text-[#24415d]">Applications</Link>
+                    <Link to={development.reportsHref} className="inline-flex h-9 items-center rounded-[11px] border border-[#dbe5f0] px-3 text-xs font-semibold text-[#24415d]">Reports</Link>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="grid gap-0 divide-y divide-[#edf2f7] xl:hidden">
+        {developments.map((development) => (
+          <article key={development.id} className="p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <Link to={development.href} className="block truncate font-semibold text-[#142132]">{development.name}</Link>
+                <p className="mt-1 text-sm text-[#60758d]">{development.developerName || 'Developer not linked'} · {development.location || 'Location pending'}</p>
+              </div>
+              <RiskPill level={development.riskLevel} />
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+              <CompactMetric label="Pipeline" value={development.pipelineValueLabel} />
+              <CompactMetric label="Active" value={formatNumber(development.activeApplications)} />
+              <CompactMetric label="Approval" value={formatApprovalRate(development.approvalRate)} />
+              <CompactMetric label="Registered" value={formatNumber(development.registeredThisMonth)} />
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link to={development.href} className="inline-flex h-9 items-center rounded-[11px] bg-[#17324d] px-3 text-xs font-semibold text-white">Open</Link>
+              <Link to={development.transactionsHref} className="inline-flex h-9 items-center rounded-[11px] border border-[#dbe5f0] px-3 text-xs font-semibold text-[#24415d]">Applications</Link>
+              <Link to={development.reportsHref} className="inline-flex h-9 items-center rounded-[11px] border border-[#dbe5f0] px-3 text-xs font-semibold text-[#24415d]">Reports</Link>
+            </div>
+          </article>
+        ))}
+      </div>
     </section>
   )
 }
@@ -376,8 +667,17 @@ export default function BondDevelopmentsPage({ service = bondCommandCenterServic
   const { developmentId = '' } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const [state, setState] = useState(initialState || { loading: true, error: '', snapshot: null })
+  const [filters, setFilters] = useState({
+    search: '',
+    status: 'all',
+    developer: 'all',
+    branch: 'all',
+    risk: 'all',
+    sort: 'Last Activity',
+  })
   const selectedTab = searchParams.get('tab') || 'overview'
   const selectedListView = searchParams.get('view') || 'current'
+  const selectedLayout = searchParams.get('layout') === 'cards' ? 'cards' : 'table'
 
   const loadDevelopments = useCallback(async () => {
     if (!workspaceId) {
@@ -402,6 +702,16 @@ export default function BondDevelopmentsPage({ service = bondCommandCenterServic
 
   const snapshot = state.snapshot
   const detail = snapshot?.detail
+  const portfolioSummary = snapshot?.portfolio?.summary || {}
+  const portfolioDevelopments = useMemo(
+    () => snapshot?.portfolio?.developments || snapshot?.developments || [],
+    [snapshot],
+  )
+  const filteredDevelopments = useMemo(
+    () => filterAndSortDevelopments(portfolioDevelopments, filters),
+    [filters, portfolioDevelopments],
+  )
+  const hasPortfolioFilters = Object.entries(filters).some(([key, value]) => key !== 'sort' && normalizeText(value) && value !== 'all')
   const tabValue = DETAIL_TABS.some((tab) => tab.key === selectedTab) ? selectedTab : 'overview'
   const listViewValue = LIST_TABS.some((tab) => tab.key === selectedListView) ? selectedListView : 'current'
   const pageTitle = detail?.name || 'Developments'
@@ -422,16 +732,30 @@ export default function BondDevelopmentsPage({ service = bondCommandCenterServic
     setSearchParams(nextParams, { replace: true })
   }
 
+  const handleLayoutChange = (key) => {
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('layout', key)
+    setSearchParams(nextParams, { replace: true })
+  }
+
   return (
     <BondPageShell>
-      <BondPageHeader
-        title={pageTitle}
-        description={pageDescription}
-        primaryLabel={detail ? 'View Applications' : 'Export Developments'}
-        secondaryLabel={detail ? 'Back to Developments' : 'View Reports'}
-        onPrimary={() => navigate(detail?.transactionsHref || '/bond/reports?view=developments')}
-        onSecondary={() => navigate(detail ? '/bond/developments' : '/bond/reports')}
-      />
+      {detail ? (
+        <BondPageHeader
+          title={pageTitle}
+          description={pageDescription}
+          primaryLabel="View Applications"
+          secondaryLabel="Back to Developments"
+          onPrimary={() => navigate(detail.transactionsHref)}
+          onSecondary={() => navigate('/bond/developments?view=current')}
+        />
+      ) : (
+        <PortfolioHeader
+          onExport={() => navigate('/bond/reports?view=developments')}
+          onReports={() => navigate('/bond/reports')}
+          onAdd={() => navigate('/settings/developments')}
+        />
+      )}
 
       {state.loading ? <BondEmptyState title="Loading development workspace…" description="We are assembling project-level bond intelligence now." /> : null}
       {!state.loading && state.error ? <BondEmptyState title="Could not load developments" description="Please refresh or try again." /> : null}
@@ -439,23 +763,54 @@ export default function BondDevelopmentsPage({ service = bondCommandCenterServic
       {!state.loading && snapshot && !detail ? (
         <>
           <BondViewTabs tabs={LIST_TABS} value={listViewValue} onChange={handleListViewChange} />
-          <section className="grid gap-4 md:grid-cols-3">
-            <BondSectionCard title="Project Pipeline" description="Development and unassigned deal performance." icon={Building2}>
-              <p className="text-3xl font-semibold tracking-[-0.04em] text-[#172b42]">{formatNumber(snapshot.developments.length)}</p>
-            </BondSectionCard>
-            <BondSectionCard title="Relationship Workspace" description="Developers, agents, attorneys, and banks connected to each project." icon={Network}>
-              <p className="text-3xl font-semibold tracking-[-0.04em] text-[#172b42]">{formatNumber(snapshot.developments.reduce((total, item) => total + item.activeFiles, 0))}</p>
-            </BondSectionCard>
-            <BondSectionCard title="Project Risk" description="Files requiring document, bank, or instruction attention." icon={BarChart3}>
-              <p className="text-3xl font-semibold tracking-[-0.04em] text-[#172b42]">{formatNumber(snapshot.developments.reduce((total, item) => total + item.atRiskFiles, 0))}</p>
-            </BondSectionCard>
-          </section>
+          <PortfolioSummary summary={portfolioSummary} />
           {listViewValue === 'developers' ? (
-            <DevelopersWorkspace developments={snapshot.developments} />
+            <DevelopersWorkspace developments={portfolioDevelopments} />
           ) : (
-            <section className="grid gap-5 xl:grid-cols-2">
-              {snapshot.developments.map((development) => <DevelopmentCard key={development.id} development={development} />)}
-            </section>
+            <>
+              <PortfolioToolbar
+                developments={portfolioDevelopments}
+                filters={filters}
+                onFiltersChange={setFilters}
+                layout={selectedLayout}
+                onLayoutChange={handleLayoutChange}
+              />
+              {portfolioDevelopments.length ? (
+                filteredDevelopments.length ? (
+                  selectedLayout === 'cards' ? (
+                    <section className="grid gap-5 xl:grid-cols-2">
+                      {filteredDevelopments.map((development) => <DevelopmentCard key={development.id} development={development} />)}
+                    </section>
+                  ) : (
+                    <PortfolioTable developments={filteredDevelopments} />
+                  )
+                ) : (
+                  <BondEmptyState
+                    title="No matching developments"
+                    description="Try adjusting your filters or search term."
+                    icon={Search}
+                  />
+                )
+              ) : (
+                <BondEmptyState
+                  title="No developments yet"
+                  description="Add your first development to start tracking applications, developer relationships, and bond performance."
+                  icon={Building2}
+                  action={
+                    <button
+                      type="button"
+                      onClick={() => navigate('/settings/developments')}
+                      className="inline-flex h-10 items-center rounded-[12px] bg-[#17324d] px-4 text-sm font-semibold text-white"
+                    >
+                      Add Development
+                    </button>
+                  }
+                />
+              )}
+              {hasPortfolioFilters && filteredDevelopments.length ? (
+                <p className="text-sm text-[#60758d]">{formatNumber(filteredDevelopments.length)} of {formatNumber(portfolioDevelopments.length)} developments shown</p>
+              ) : null}
+            </>
           )}
         </>
       ) : null}

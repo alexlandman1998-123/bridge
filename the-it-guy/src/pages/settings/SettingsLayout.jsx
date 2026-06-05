@@ -38,7 +38,7 @@ const BOND_SETTINGS_NAV = [
   { to: '/settings', label: 'Overview', icon: Settings2, end: true },
   { to: '/settings/account', label: 'Account', icon: UserCircle2 },
   { to: '/settings/organisation', label: 'Organisation', icon: Building2 },
-  { to: '/bond/automation', label: 'Automation & Rules', icon: SlidersHorizontal },
+  { to: '/settings/automation', label: 'Automation & Rules', icon: SlidersHorizontal },
 ]
 
 export default function SettingsLayout() {

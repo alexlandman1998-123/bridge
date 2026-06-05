@@ -24,7 +24,7 @@ export default function BondDashboardHeader({
     >
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center xl:justify-between">
         <div className="min-w-0">
-          <h1 className="text-[1.35rem] font-semibold tracking-[-0.03em] text-[#132130] sm:text-[1.55rem]">
+          <h1 className="text-[1.35rem] font-semibold tracking-normal text-[#132130] sm:text-[1.55rem]">
             Bond Originator Command Center
           </h1>
           <p className="mt-1 text-sm leading-6 text-[#5f7287]">

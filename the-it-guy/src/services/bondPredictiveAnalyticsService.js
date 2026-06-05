@@ -3,6 +3,7 @@ import {
   resolveBondOrganisationScope,
 } from './bondOrganisationScopeResolver'
 import { getPartnerPortalOperationalRows } from './bondPartnerPortalService'
+import { getActiveOriginatorBanks, getSystemBanks, slugifyBank } from './bondOriginatorBankService'
 
 export const BOND_PREDICTIVE_EVENTS = Object.freeze({
   applicationRiskUpdated: 'APPLICATION_RISK_UPDATED',
@@ -24,7 +25,6 @@ const HQ_ROLES = new Set(['owner', 'principal', 'director', 'partner', 'hq_manag
 const REGIONAL_ROLES = new Set(['regional_manager', 'bond_regional_manager'])
 const BRANCH_ROLES = new Set(['branch_manager', 'bond_branch_manager', 'team_lead', 'bond_team_lead'])
 const CONSULTANT_ROLES = new Set(['consultant', 'bond_consultant', 'bond_originator', 'processor', 'bond_processor'])
-const BANKS = ['ABSA', 'FNB', 'Nedbank', 'Standard Bank', 'Investec']
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -193,13 +193,20 @@ function getApplicationPartnerId(row = {}) {
 }
 
 function getApplicationBank(row = {}) {
-  const value = normalizeLower(row.bank || row.bankName || row.bank_name || row.lender || row.lenderName || row.lender_name || row.submittedBank || row.submitted_bank)
-  if (value.includes('absa')) return 'ABSA'
-  if (value.includes('fnb') || value.includes('first national')) return 'FNB'
-  if (value.includes('nedbank')) return 'Nedbank'
-  if (value.includes('standard')) return 'Standard Bank'
-  if (value.includes('investec')) return 'Investec'
-  return 'Other'
+  return slugifyBank(row.bank || row.bankName || row.bank_name || row.lender || row.lenderName || row.lender_name || row.submittedBank || row.submitted_bank)
+}
+
+function bankLabelForId(bankId = '', options = {}) {
+  const safeId = slugifyBank(bankId)
+  const bank = getSystemBanks(options).find((row) => row.id === safeId)
+  return bank?.shortName || bank?.name || normalizeText(bankId) || 'Other'
+}
+
+function getPredictionBanks(rows = {}, context = {}, options = {}) {
+  const configured = getActiveOriginatorBanks(rows.workspaceKey, context, options)
+  if (configured.length) return configured.map((bank) => ({ bankId: bank.bankId, bankName: bank.bankName }))
+  return [...new Set(rows.applications.map(getApplicationBank).filter(Boolean))]
+    .map((bankId) => ({ bankId, bankName: bankLabelForId(bankId, options) }))
 }
 
 function scopeRows(rows = {}) {
@@ -441,14 +448,15 @@ export function predictApprovalProbability(application = {}, context = {}, optio
   const creditScore = Number(application.creditScore || application.credit_score || 680)
   const employment = normalizeLower(application.employmentType || application.employment_type)
   const profileScore = clamp(55 + (income > 60000 ? 8 : income > 35000 ? 4 : 0) + (ltv < 80 ? 8 : ltv > 95 ? -10 : 0) + (creditScore > 720 ? 10 : creditScore < 620 ? -12 : 0) + (employment.includes('self') ? -4 : 3))
-  const probabilities = BANKS.map((bank) => {
-    const bankRows = rows.applications.filter((row) => getApplicationBank(row) === bank)
-    const bankApprovalRate = bankRows.length ? percent(bankRows.filter(isApproved).length, bankRows.length) : bank === 'Investec' ? 72 : bank === 'ABSA' ? 68 : 65
+  const probabilities = getPredictionBanks(rows, context, options).map((bank) => {
+    const bankRows = rows.applications.filter((row) => getApplicationBank(row) === bank.bankId)
+    const bankApprovalRate = bankRows.length ? percent(bankRows.filter(isApproved).length, bankRows.length) : 0
     const suburbRows = rows.applications.filter((row) => normalizeLower(row.suburb || row.propertySuburb || row.property_suburb) === normalizeLower(application.suburb || application.propertySuburb || application.property_suburb))
     const suburbBoost = suburbRows.length ? percent(suburbRows.filter(isApproved).length, suburbRows.length) - 60 : 0
     const score = clamp((profileScore * 0.5) + (bankApprovalRate * 0.4) + (suburbBoost * 0.1))
     return {
-      bank,
+      bank: bank.bankName,
+      bankId: bank.bankId,
       probability: Math.round(score),
       confidence: predictionConfidence({ dataVolume: bankRows.length + suburbRows.length, similarity: profileScore, stability: bankRows.length ? 76 : 48 }),
     }
@@ -456,7 +464,7 @@ export function predictApprovalProbability(application = {}, context = {}, optio
   return {
     applicationId: getApplicationId(application),
     probabilities,
-    bestBank: probabilities[0]?.bank || 'FNB',
+    bestBank: probabilities[0]?.bank || 'Not configured',
     bestProbability: probabilities[0]?.probability || 0,
   }
 }
@@ -596,17 +604,19 @@ export function predictRevenueRisk(context = {}, options = {}) {
 export function predictBankPerformance(bankId = '', context = {}, options = {}) {
   const rows = getRows(context, options)
   assertPredictiveAccess(rows, context)
-  const bank = normalizeText(bankId || 'FNB')
+  const bank = slugifyBank(bankId || getPredictionBanks(rows, context, options)[0]?.bankId || '')
+  const bankName = bankLabelForId(bank, options)
   const items = rows.applications.filter((row) => getApplicationBank(row) === bank)
   const approvals = items.filter(isApproved).length
   const declines = items.filter(isDeclined).length
   const approvalRate = percent(approvals, items.length)
-  const responseTimes = rows.banks.filter((row) => normalizeLower(row.name || row.bank || row.id) === normalizeLower(bank)).map((row) => Number(row.averageResponseTime || row.average_response_time || row.responseTime || row.response_time || 0))
+  const responseTimes = rows.banks.filter((row) => slugifyBank(row.name || row.bank || row.id) === bank).map((row) => Number(row.averageResponseTime || row.average_response_time || row.responseTime || row.response_time || 0))
   const avgResponse = average(responseTimes) || average(items.map((row) => bankDelayDays(row, options.now ? new Date(options.now) : new Date())))
   const responseChange = clamp(avgResponse * 2 + declines * 4, -30, 45)
   const escalationRisk = clamp((100 - approvalRate) * 0.35 + responseChange)
   return {
-    bank,
+    bank: bankName,
+    bankId: bank,
     approvalRate,
     approvalRateChange: Math.round(approvalRate - 65),
     responseTimeChange: Math.round(responseChange),
@@ -703,7 +713,9 @@ export function getPredictiveDashboard(context = {}, options = {}) {
   const consultantCapacity = rows.consultants.map((row) => predictConsultantCapacityRisk(getConsultantId(row), context, options))
   const branchCapacity = rows.branches.map((row) => predictBranchCapacityRisk(getBranchId(row), context, options))
   const partnerChurn = rows.partners.map((row) => predictPartnerChurn(getPartnerId(row), context, options)).sort((left, right) => right.churnRiskScore - left.churnRiskScore)
-  const bankPerformance = [...new Set([...BANKS, ...rows.applications.map(getApplicationBank)])].map((bank) => predictBankPerformance(bank, context, options)).sort((left, right) => right.escalationRisk - left.escalationRisk)
+  const bankPerformance = getPredictionBanks(rows, context, options)
+    .map((bank) => predictBankPerformance(bank.bankId, context, options))
+    .sort((left, right) => right.escalationRisk - left.escalationRisk)
   const revenueRisk = predictRevenueRisk(context, options)
   const timelines = rows.applications.slice(0, 8).map((row) => {
     const risk = applicationRisks.find((item) => item.applicationId === getApplicationId(row))

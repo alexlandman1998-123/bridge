@@ -1,9 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
-import { AlertTriangle, ArrowUpRight, Download, RefreshCw, Search } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, Search } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import BondEmptyState from '../../components/bond/BondEmptyState'
-import BondPageHeader from '../../components/bond/BondPageHeader'
 import BondPageShell from '../../components/bond/BondPageShell'
 import BondTransactionTable, { APPLICATION_PROGRESS_STAGE_OPTIONS, resolveBondProgressStage } from '../../components/bond/BondTransactionTable'
 import { BOND_TRANSACTION_VIEW_PARAM, bondViews, getBondTransactionView, getBondTransactionViewFromStatus } from '../../config/bondViews'
@@ -109,26 +108,6 @@ function matchesStageFilter(row = {}, filter = 'all') {
   if (filter === 'all') return true
   return resolveBondProgressStage(row) === filter
 }
-
-const STATUS_FILTER_OPTIONS = [
-  { key: 'all', label: 'All' },
-  { key: 'active', label: 'Active' },
-  { key: 'needs-action', label: 'Needs Action' },
-  { key: 'at-risk', label: 'At Risk' },
-  { key: 'completed', label: 'Completed' },
-]
-
-export const HQ_APPLICATION_STATUS_TABS = [
-  { key: 'all', label: 'All' },
-  { key: 'unassigned', label: 'Unassigned' },
-  { key: 'awaiting_otp', label: 'Awaiting OTP' },
-  { key: 'ready_to_start', label: 'Ready To Start' },
-  { key: 'application_in_progress', label: 'Application In Progress' },
-  { key: 'ready_for_review', label: 'Ready For Review' },
-  { key: 'submitted_to_banks', label: 'Submitted To Banks' },
-  { key: 'bank_feedback', label: 'Bank Feedback' },
-  { key: 'approved', label: 'Approved' },
-]
 
 const HQ_STATUS_LABELS = {
   intake_received: 'Intake Received',
@@ -459,12 +438,7 @@ export function getHqApplicationKpis(rows = [], now = Date.now()) {
     { key: 'unassigned', label: 'Unassigned', value: normalizedRows.filter((row) => row.isUnassigned).length },
     { key: 'ready_for_review', label: 'Ready For Review', value: normalizedRows.filter((row) => row.statusKey === 'ready_for_review').length },
     { key: 'awaiting_otp', label: 'Awaiting OTP', value: normalizedRows.filter((row) => row.statusKey === 'awaiting_otp').length },
-    { key: 'sla_breaches', label: 'SLA Breaches', value: normalizedRows.filter((row) => row.riskKey === 'high').length },
   ]
-}
-
-function csvEscape(value) {
-  return `"${String(value ?? '').replace(/"/g, '""')}"`
 }
 
 function HqFilterSelect({ label, value, onChange, options = [] }) {
@@ -733,56 +707,6 @@ export default function BondTransactionsPage({
     [navigate],
   )
 
-  const handleExportHqApplications = useCallback(() => {
-    const headers = ['Buyer', 'Transaction', 'Property', 'Region', 'Branch', 'Consultant', 'Status', 'Age', 'Risk', 'Next Action']
-    const lines = hqFilteredRows.map((row) => [
-      row.client,
-      row.transactionReference || row.applicationReference || row.transactionId,
-      row.property,
-      row.regionDisplay,
-      row.branchDisplay,
-      row.consultantDisplay,
-      row.statusLabel,
-      row.ageLabel,
-      row.riskLabel,
-      row.nextActionLabel,
-    ].map(csvEscape).join(','))
-    const csv = [headers.map(csvEscape).join(','), ...lines].join('\n')
-    if (typeof document === 'undefined') return
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = 'bond-applications.csv'
-    anchor.click()
-    URL.revokeObjectURL(url)
-  }, [hqFilteredRows])
-
-  const handleStatusFilterChange = useCallback(
-    (nextFilter) => {
-      const params = new URLSearchParams(location.search)
-      if (nextFilter === 'all') params.delete('filter')
-      else params.set('filter', nextFilter)
-      if (selectedDevelopmentId && selectedDevelopmentId !== 'all') {
-        params.set('developmentId', selectedDevelopmentId)
-      } else {
-        params.delete('developmentId')
-      }
-      if (selectedSortMode && selectedSortMode !== 'last_activity') {
-        params.set('sort', selectedSortMode)
-      } else {
-        params.delete('sort')
-      }
-      if (selectedStageFilter !== 'all') {
-        params.set('stage', selectedStageFilter)
-      } else {
-        params.delete('stage')
-      }
-      navigate(`${bondViews.transactions.basePath}?${params.toString()}`)
-    },
-    [location.search, navigate, selectedDevelopmentId, selectedSortMode, selectedStageFilter],
-  )
-
   const handleDevelopmentChange = useCallback(
     (event) => {
       const nextDevelopmentId = event.target.value
@@ -824,30 +748,13 @@ export default function BondTransactionsPage({
   }
 
   if (isHqRegister) {
-    const tabCounts = HQ_APPLICATION_STATUS_TABS.reduce((counts, tab) => {
-      if (tab.key === 'all') counts[tab.key] = hqRegisterRows.length
-      else if (tab.key === 'unassigned') counts[tab.key] = hqRegisterRows.filter((row) => row.isUnassigned).length
-      else counts[tab.key] = hqRegisterRows.filter((row) => row.statusKey === tab.key).length
-      return counts
-    }, {})
     const showFilteredEmpty = !state.loading && hqRegisterRows.length > 0 && hqFilteredRows.length === 0
 
     return (
       <BondPageShell>
-        <BondPageHeader
-          title="Bond Applications"
-          description="National register of all bond applications across branches, consultants, and regions."
-          primaryLabel="Refresh"
-          secondaryLabel="Export"
-          onPrimary={loadTransactions}
-          onSecondary={handleExportHqApplications}
-          primaryIcon={RefreshCw}
-          secondaryIcon={Download}
-        />
-
-        <section className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {hqKpis.map((item) => (
-            <div key={item.key} className="rounded-[16px] border border-[#dbe5f0] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+            <div key={item.key} className="min-h-[112px] rounded-[18px] border border-[#dbe5f0] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7890a8]">{item.label}</p>
               <p className="mt-2 text-2xl font-semibold text-[#142132]">{item.value}</p>
             </div>
@@ -855,29 +762,6 @@ export default function BondTransactionsPage({
         </section>
 
         <section className="rounded-[18px] border border-[#dce6f2] bg-white px-4 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-          <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
-            {HQ_APPLICATION_STATUS_TABS.map((tab) => {
-              const active = hqFilters.tab === tab.key
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => handleHqFilterChange('tab', tab.key)}
-                  className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-full px-3 text-sm font-semibold transition ${
-                    active
-                      ? 'bg-[#102448] text-white shadow-[0_10px_20px_rgba(16,36,72,0.16)]'
-                      : 'text-[#536d87] hover:bg-[#f2f7fd] hover:text-[#17324b]'
-                  }`}
-                >
-                  {tab.label}
-                  <span className={`rounded-full px-2 py-0.5 text-xs ${active ? 'bg-white/15 text-white' : 'bg-[#edf4fb] text-[#647b92]'}`}>
-                    {tabCounts[tab.key] || 0}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
             <HqFilterSelect label="Region" value={hqFilters.region} onChange={(value) => handleHqFilterChange('region', value)} options={hqFilterOptions.regions} />
             <HqFilterSelect label="Branch" value={hqFilters.branch} onChange={(value) => handleHqFilterChange('branch', value)} options={hqFilterOptions.branches} />
@@ -902,35 +786,7 @@ export default function BondTransactionsPage({
 
   return (
     <BondPageShell>
-      <BondPageHeader
-        title={bondViews.transactions.title}
-        description={bondViews.transactions.description}
-        primaryLabel={bondViews.transactions.primaryActionLabel}
-        secondaryLabel={bondViews.transactions.secondaryActionLabel}
-        onPrimary={() => navigate('/bond/pipeline?view=new')}
-      />
-
       <div className="rounded-[18px] border border-[#dce6f2] bg-white px-4 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-        <div className="mb-3 flex flex-wrap gap-2">
-          {STATUS_FILTER_OPTIONS.map((option) => {
-            const active = option.key === selectedStatusFilter
-            return (
-              <button
-                key={option.key}
-                type="button"
-                onClick={() => handleStatusFilterChange(option.key)}
-                className={`inline-flex h-10 items-center rounded-full px-3 text-sm font-semibold transition ${
-                  active
-                    ? 'bg-[#102448] text-white shadow-[0_10px_20px_rgba(16,36,72,0.16)]'
-                    : 'text-[#536d87] hover:bg-[#f2f7fd] hover:text-[#17324b]'
-                }`}
-              >
-                {option.label}
-              </button>
-            )
-          })}
-        </div>
-
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
           <label className="relative">
             <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#89a0b5]" />

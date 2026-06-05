@@ -11,7 +11,7 @@ export default function BondPerformanceSnapshot({ items = [] }) {
         {items.map((item) => (
           <article key={item.key} className="rounded-[20px] border border-[#e3ebf5] bg-[#fbfdff] p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7d90a5]">{item.label}</p>
-            <p className="mt-3 text-[1.35rem] font-semibold tracking-[-0.02em] text-[#142132]">{item.value}</p>
+            <p className="mt-3 text-[1.35rem] font-semibold tracking-normal text-[#142132]">{item.value}</p>
             <p className="mt-2 text-sm text-[#60758d]">{item.comparison}</p>
           </article>
         ))}

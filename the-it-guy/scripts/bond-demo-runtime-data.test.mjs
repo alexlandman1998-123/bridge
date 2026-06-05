@@ -185,6 +185,20 @@ test('apply path succeeds with only the demo regional manager resolved and write
   assert.ok(report.createdOrUpdated.documentRequests.rowCount >= 600)
   assert.ok(report.createdOrUpdated.transactionEvents.rowCount >= 590)
   assert.equal(report.createdOrUpdated.clientPortalLinks.rowCount, 15)
+  assert.equal(report.createdOrUpdated.transactionFinanceWorkflows.rowCount, plan.metrics.totalApplications)
+  assert.equal(report.createdOrUpdated.transactionBondApplications.rowCount, plan.metrics.totalApplications)
+  assert.ok(report.createdOrUpdated.transactionBondQuotes.rowCount >= 40)
+  assert.ok(report.createdOrUpdated.bondApplicationOwnershipHistory.rowCount >= plan.metrics.totalApplications)
+  assert.ok(report.createdOrUpdated.bondRoutingRules.rowCount >= 18)
+  assert.ok(report.createdOrUpdated.bondPartners.rowCount >= 12)
+  assert.ok(report.createdOrUpdated.bondPartnerRequests.rowCount >= 30)
+  assert.equal(report.createdOrUpdated.bondBanks.rowCount, 5)
+  assert.ok(report.createdOrUpdated.bondBankFeedback.rowCount >= 30)
+  assert.ok(report.createdOrUpdated.bondCommissions.rowCount >= 40)
+  assert.ok(report.createdOrUpdated.bondPayouts.rowCount >= 35)
+  assert.ok(report.createdOrUpdated.bondAutomationRuns.rowCount >= 35)
+  assert.ok(report.createdOrUpdated.bondPredictionSnapshots.rowCount >= 40)
+  assert.ok(report.metrics.bondModuleRows >= 1000)
 
   const membershipWrite = adapter.writes.find((entry) => entry.table === 'organisation_users')
   assert.ok(membershipWrite)
@@ -205,6 +219,22 @@ test('apply path succeeds with only the demo regional manager resolved and write
   assert.equal(settingsWrite.rows.length, 1)
   assert.equal(settingsWrite.rows[0].settings_json.organisation_structure_type, 'regional')
   assert.equal(settingsWrite.rows[0].settings_json.organisationHierarchy.organisation_structure_type, 'regional')
+
+  const bondApplicationWrite = adapter.writes.find((entry) => entry.table === 'transaction_bond_applications')
+  assert.ok(bondApplicationWrite)
+  assert.equal(bondApplicationWrite.rows.length, plan.metrics.totalApplications)
+  assert.ok(bondApplicationWrite.rows.every((row) => row.application_type === 'originator_intake'))
+  assert.ok(bondApplicationWrite.rows.every((row) => row.assigned_organisation_id === plan.workspace.id))
+
+  const partnerRequestWrite = adapter.writes.find((entry) => entry.table === 'bond_partner_requests')
+  assert.ok(partnerRequestWrite)
+  assert.ok(partnerRequestWrite.rows.some((row) => row.escalated))
+  assert.ok(partnerRequestWrite.rows.some((row) => row.status === 'resolved'))
+
+  const hqWrite = adapter.writes.find((entry) => entry.table === 'bond_hq_health_snapshots')
+  assert.ok(hqWrite)
+  assert.equal(hqWrite.rows[0].period, '2026-05')
+  assert.equal(hqWrite.rows[0].health_status, 'Healthy')
 })
 
 test('transaction summary select keeps bond command center signal fields', () => {

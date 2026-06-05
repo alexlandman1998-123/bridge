@@ -2954,10 +2954,7 @@
   }
 
   .ui-sidebar {
-    position: static;
-    width: 100%;
-    height: auto;
-    min-height: auto;
+    display: none;
   }
 
   .ui-main-region,
@@ -2970,30 +2967,8 @@
     width: 100%;
   }
 
-  body.sidebar-compact .ui-sidebar {
-    width: 100%;
-    padding: 1rem;
-  }
-
-  body.sidebar-compact .ui-sidebar-brand {
-    margin-bottom: 1rem;
-    padding-bottom: 1rem;
-    border-bottom-width: 1px;
-  }
-
-  body.sidebar-compact .ui-sidebar-brand-copy,
-  body.sidebar-compact .ui-sidebar-workspace,
-  body.sidebar-compact .ui-sidebar-link span {
-    display: initial;
-  }
-
-  body.sidebar-compact .ui-sidebar-link {
-    justify-content: flex-start;
-    padding: 0.75rem 1rem;
-  }
-
-  body.sidebar-compact .ui-sidebar-brand-mark {
-    font-size: 2.8rem;
+  .ui-page-scroll {
+    overflow-y: visible;
   }
 }
 
@@ -3142,10 +3117,7 @@ body.sidebar-compact .ui-main-region {
 
 @media (max-width: 980px) {
   .ui-sidebar {
-    position: static !important;
-    width: 100% !important;
-    height: auto !important;
-    min-height: auto !important;
+    display: none !important;
   }
 
   .ui-sidebar::after {
@@ -3156,6 +3128,83 @@ body.sidebar-compact .ui-main-region {
   body.sidebar-compact .ui-main-region {
     margin-left: 0 !important;
     width: 100% !important;
+    min-height: 100vh !important;
+  }
+
+  .ui-main-region {
+    overflow: visible !important;
+  }
+
+  .ui-page-scroll {
+    overflow-y: visible !important;
+    padding-top: 1.25rem !important;
+    padding-bottom: 1.25rem !important;
+  }
+
+  .ui-shell-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.875rem !important;
+  }
+
+  .ui-shell-header-no-title {
+    justify-content: flex-start;
+  }
+
+  .ui-shell-actions {
+    width: 100%;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 0.625rem;
+    margin-left: 0;
+  }
+
+  .ui-shell-search {
+    flex: 1 1 320px;
+    max-width: none;
+  }
+
+  .ui-shell-role-switch {
+    flex: 1 1 220px;
+  }
+
+  .ui-shell-create-button {
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .ui-shell-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.75rem;
+  }
+
+  .ui-shell-actions {
+    width: 100%;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 0.625rem;
+    margin-left: 0;
+  }
+
+  .ui-shell-search,
+  .ui-shell-role-switch {
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+
+  .ui-shell-search {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .ui-shell-role-switch {
+    flex: 1 1 auto;
   }
 }
 

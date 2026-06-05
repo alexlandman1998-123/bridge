@@ -119,6 +119,13 @@ const banks = [
   { id: 'FNB', name: 'FNB', averageResponseTime: 12 },
   { id: 'ABSA', name: 'ABSA', averageResponseTime: 5 },
 ]
+const originatorBanks = [
+  { id: 'panel-fnb', bankId: 'fnb', status: 'active' },
+  { id: 'panel-absa', bankId: 'absa', status: 'active' },
+  { id: 'panel-nedbank', bankId: 'nedbank', status: 'active' },
+  { id: 'panel-standard-bank', bankId: 'standard-bank', status: 'active' },
+  { id: 'panel-investec', bankId: 'investec', status: 'active' },
+]
 
 const requests = [
   { id: 'request-risk', applicationId: 'app-predict-1', partnerId: 'partner-risk', status: 'escalated complaint', type: 'complaint', createdAt: '2026-05-29T08:00:00.000Z', slaConsumedPercent: 86, responseHours: 36 },
@@ -134,6 +141,7 @@ const commonOptions = {
   branches,
   regions,
   banks,
+  originatorBanks,
   requests,
   revenueTarget: 500000,
 }

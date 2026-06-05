@@ -6,7 +6,7 @@ import { createServer } from 'vite'
 
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
 const workspaceId = 'workspace-bond-revenue'
-const now = '2026-06-04T08:00:00.000Z'
+const now = '2026-05-30T08:00:00.000Z'
 
 function makeContext({
   userId = 'user-hq',
@@ -15,6 +15,17 @@ function makeContext({
   regionId = '',
   branchId = '',
 } = {}) {
+  const resolvedPermissionContext = {
+    userId,
+    workspaceId,
+    workspaceRole,
+    organisationRole: workspaceRole,
+    scopeLevel,
+    scopeLevelRaw: scopeLevel,
+    regionId,
+    workspaceUnitId: branchId,
+    branchId,
+  }
   return {
     role: 'bond_originator',
     appRole: 'bond_originator',
@@ -45,6 +56,7 @@ function makeContext({
       status: 'active',
     },
     activeMemberships: [],
+    resolvedPermissionContext,
   }
 }
 
@@ -52,6 +64,7 @@ function app(index, overrides = {}) {
   return {
     id: `app-rev-${index}`,
     applicationReference: `REV-${index}`,
+    clientName: overrides.clientName || `Buyer ${index}`,
     assignedConsultantId: overrides.consultantId || 'consultant-john',
     assignedUserId: overrides.consultantId || 'consultant-john',
     consultantName: overrides.consultantName || 'John Smith',
@@ -66,7 +79,10 @@ function app(index, overrides = {}) {
     financeStatus: overrides.financeStatus || 'approval submitted instruction sent',
     status: overrides.status || 'approval submitted instruction sent',
     revenueStatus: overrides.revenueStatus || '',
-    applicationRevenue: overrides.applicationRevenue ?? 10000,
+    bondAmount: overrides.bondAmount ?? 2000000,
+    grossCommissionAmount: overrides.grossCommissionAmount,
+    applicationRevenue: overrides.applicationRevenue,
+    partnerType: overrides.partnerType,
     createdAt: overrides.createdAt || '2026-05-01T08:00:00.000Z',
     submittedAt: overrides.submittedAt || '2026-05-02T08:00:00.000Z',
     approvedAt: overrides.approvedAt || '2026-05-05T08:00:00.000Z',
@@ -89,12 +105,12 @@ const consultants = [
   { id: 'consultant-lindi', name: 'Lindi Mokoena', regionId: 'region-coast', branchId: 'branch-coast' },
 ]
 const applications = [
-  app(1, { applicationRevenue: 10000, revenueStatus: 'Payable', bank: 'FNB' }),
-  app(2, { applicationRevenue: 12000, revenueStatus: 'Approved', bank: 'FNB' }),
-  app(3, { consultantId: 'consultant-sarah', consultantName: 'Sarah Jacobs', branchId: 'branch-west', branchName: 'Johannesburg Branch', applicationRevenue: 15000, bank: 'ABSA', partnerId: 'partner-jhb', partnerName: 'Johannesburg Estates' }),
-  app(4, { consultantId: 'consultant-lindi', consultantName: 'Lindi Mokoena', branchId: 'branch-coast', branchName: 'Atlantic Branch', regionId: 'region-coast', applicationRevenue: 8000, bank: 'Standard Bank', partnerId: 'partner-coast', partnerName: 'Atlantic Realty' }),
-  app(5, { consultantId: 'consultant-lindi', consultantName: 'Lindi Mokoena', branchId: 'branch-coast', branchName: 'Atlantic Branch', regionId: 'region-coast', applicationRevenue: 7000, bank: 'Investec', financeStatus: 'submitted to bank', status: 'submitted to bank', approvedAt: '', revenueStatus: 'Pending', partnerId: 'partner-coast', partnerName: 'Atlantic Realty' }),
-  app(6, { applicationRevenue: 9000, bank: 'Nedbank', financeStatus: 'declined by bank', status: 'declined by bank', approvedAt: '', revenueStatus: 'Cancelled' }),
+  app(1, { bondAmount: 2000000, revenueStatus: 'Payable', bank: 'FNB' }),
+  app(2, { bondAmount: 1200000, revenueStatus: 'Approved', bank: 'FNB' }),
+  app(3, { consultantId: 'consultant-sarah', consultantName: 'Sarah Jacobs', branchId: 'branch-west', branchName: 'Johannesburg Branch', bondAmount: 1500000, bank: 'ABSA', partnerId: 'partner-jhb', partnerName: 'Johannesburg Estates', partnerType: 'agency' }),
+  app(4, { consultantId: 'consultant-lindi', consultantName: 'Lindi Mokoena', branchId: 'branch-coast', branchName: 'Atlantic Branch', regionId: 'region-coast', bondAmount: 800000, bank: 'Standard Bank', partnerId: 'partner-coast', partnerName: 'Atlantic Realty' }),
+  app(5, { consultantId: 'consultant-lindi', consultantName: 'Lindi Mokoena', branchId: 'branch-coast', branchName: 'Atlantic Branch', regionId: 'region-coast', bondAmount: 700000, bank: 'Investec', financeStatus: 'submitted to bank', status: 'submitted to bank', approvedAt: '', revenueStatus: 'Pending', partnerId: 'partner-coast', partnerName: 'Atlantic Realty' }),
+  app(6, { bondAmount: 900000, bank: 'Nedbank', financeStatus: 'declined by bank', status: 'declined by bank', approvedAt: '', revenueStatus: 'Cancelled' }),
 ]
 
 const commonOptions = {
@@ -128,16 +144,21 @@ try {
 
   const hqContext = makeContext()
   const calculated = revenue.calculateCommission(applications[0], hqContext, commonOptions)
-  assert.equal(calculated.attribution.applicationRevenue, 10000)
-  assert.equal(calculated.attribution.consultantCommission, 2000)
-  assert.equal(calculated.attribution.branchCommission, 500)
-  assert.equal(calculated.attribution.regionalCommission, 200)
-  assert.equal(calculated.attribution.referralFee, 1000)
-  assert.equal(calculated.attribution.bankIncentive, 100)
+  assert.equal(calculated.attribution.bondAmount, 2000000)
+  assert.equal(calculated.attribution.originatorGrossCommission, 39000)
+  assert.equal(calculated.attribution.consultantCommission, 13650)
+  assert.equal(calculated.attribution.branchCommission, 0)
+  assert.equal(calculated.attribution.regionalCommission, 0)
+  assert.equal(calculated.attribution.referralFee, 6000)
+  assert.equal(calculated.attribution.partnerPayout, 6000)
+  assert.equal(calculated.attribution.bankIncentive, 0)
+  assert.equal(calculated.attribution.netProfit, 19350)
   assert.equal(calculated.attribution.revenueStatus, 'Payable')
 
   const referral = revenue.calculateReferralFee(applications[0], hqContext, commonOptions)
-  assert.equal(referral, 1000)
+  assert.equal(referral, 6000)
+  assert.equal(revenue.calculateConsultantCommission(applications[0], hqContext, commonOptions), 13650)
+  assert.equal(revenue.calculatePartnerPayout(applications[0], hqContext, commonOptions), 6000)
 
   const bonus = revenue.calculateBonus({
     recipientType: 'consultant',
@@ -149,9 +170,11 @@ try {
   assert.equal(bonus.amount, 1500)
 
   const dashboard = revenue.getRevenueDashboard(hqContext, commonOptions)
-  assert.equal(dashboard.summary.revenueThisMonth > 0, true)
+  assert.equal(dashboard.summary.grossCommissionReceived > 0, true)
   assert.equal(dashboard.summary.commissionsPayable > 0, true)
   assert.equal(dashboard.summary.referralFeesPayable > 0, true)
+  assert.equal(dashboard.summary.netProfit > 0, true)
+  assert.equal(dashboard.revenueFlow.nodes.some((row) => row.key === 'net_profit' && row.amount > 0), true)
   assert.equal(dashboard.attribution.length, applications.length)
 
   const consultantCommission = revenue.getConsultantCommission('consultant-john', hqContext, commonOptions)
@@ -169,7 +192,9 @@ try {
   assert.equal(partnerRevenue.some((row) => row.partnerName === 'Harcourts Bedfordview' && row.referralFees > 0), true)
 
   const bankRevenue = revenue.getBankRevenue(hqContext, commonOptions)
-  assert.equal(bankRevenue.some((row) => row.bank === 'FNB' && row.revenue === 22000), true)
+  assert.equal(bankRevenue.some((row) => row.bank === 'FNB' && row.revenue === 62400), true)
+  const configuredBankRevenue = revenue.getBankRevenue(hqContext, { ...commonOptions, banks: [{ id: 'fnb', name: 'FNB' }] })
+  assert.deepEqual(configuredBankRevenue.map((row) => row.bank), ['FNB'])
 
   const profitability = revenue.getProfitability(hqContext, commonOptions)
   assert.equal(profitability.revenue > 0, true)
@@ -177,8 +202,22 @@ try {
   assert.equal(profitability.byBank.length > 0, true)
 
   const forecast = revenue.getRevenueForecast(hqContext, commonOptions)
-  assert.deepEqual(forecast.map((row) => row.periodDays), [30, 90, 365])
-  assert.equal(forecast[0].expectedRevenue > 0, true)
+  assert.deepEqual(forecast.map((row) => row.pipelineStage), ['Submitted', 'Approved', 'Accepted Quote', 'Instruction Issued', 'Registered / Paid', 'Total / Weighted Forecast'])
+  assert.equal(forecast.find((row) => row.pipelineStage === 'Instruction Issued').weight, 90)
+  assert.equal(forecast.find((row) => row.id === 'total').expectedRevenue > 0, true)
+
+  const inactiveDeveloperRule = {
+    id: 'inactive-developer',
+    partyType: 'developer',
+    appliesTo: 'developer',
+    calculationBasis: 'gross_bond_amount',
+    type: 'percentage',
+    percentage: 10,
+    rate: 10,
+    status: 'inactive',
+  }
+  const developerPayout = revenue.calculatePartnerPayout(app(20, { partnerType: 'developer', bondAmount: 1000000 }), hqContext, { ...commonOptions, commissionRules: [inactiveDeveloperRule] })
+  assert.equal(developerPayout, 4000)
 
   const payout = dashboard.payouts.find((row) => row.payeeId === 'consultant-john')
   assert.ok(payout)

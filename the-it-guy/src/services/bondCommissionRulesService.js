@@ -5,6 +5,25 @@ export const COMMISSION_RULE_TYPES = Object.freeze({
   hybrid: 'hybrid',
 })
 
+export const COMMISSION_CALCULATION_BASES = Object.freeze({
+  grossBondAmount: 'gross_bond_amount',
+  originatorCommission: 'originator_commission',
+  fixedAmount: 'fixed_amount',
+  manual: 'manual',
+})
+
+export const COMMISSION_PARTY_TYPES = Object.freeze({
+  originatorCompany: 'originator_company',
+  consultant: 'consultant',
+  agency: 'agency',
+  agent: 'agent',
+  developer: 'developer',
+  branch: 'branch',
+  region: 'region',
+  bank: 'bank',
+  partnerReferral: 'partner_referral',
+})
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -40,18 +59,35 @@ function resolveTier(tiers = [], volume = 0) {
 }
 
 export function normalizeCommissionRule(rule = {}) {
-  const type = normalizeLower(rule.type || rule.ruleType || rule.rule_type || COMMISSION_RULE_TYPES.percentage)
+  const type = normalizeLower(rule.type || rule.ruleType || rule.rule_type || rule.rateType || rule.rate_type || COMMISSION_RULE_TYPES.percentage)
+  const appliesTo = normalizeLower(rule.appliesTo || rule.applies_to || rule.partyType || rule.party_type || COMMISSION_PARTY_TYPES.consultant)
+  const calculationBasis = normalizeLower(rule.calculationBasis || rule.calculation_basis || (
+    appliesTo === COMMISSION_PARTY_TYPES.consultant || appliesTo === COMMISSION_PARTY_TYPES.branch || appliesTo === COMMISSION_PARTY_TYPES.region
+      ? COMMISSION_CALCULATION_BASES.originatorCommission
+      : COMMISSION_CALCULATION_BASES.grossBondAmount
+  ))
+  const percentage = Number(rule.percentage ?? rule.rate ?? 0)
+  const fixedAmount = Number(rule.fixedAmount ?? rule.fixed_amount ?? rule.amount ?? (type === COMMISSION_RULE_TYPES.fixed ? rule.rate : 0) ?? 0)
   return {
     id: normalizeText(rule.id || rule.key),
-    name: normalizeText(rule.name || rule.label || 'Commission Rule'),
-    appliesTo: normalizeLower(rule.appliesTo || rule.applies_to || 'consultant'),
+    name: normalizeText(rule.name || rule.ruleName || rule.rule_name || rule.label || 'Commission Rule'),
+    partyType: appliesTo,
+    partyId: normalizeText(rule.partyId || rule.party_id),
+    appliesTo,
+    appliesToLabel: normalizeText(rule.appliesToLabel || rule.applies_to_label || rule.partyName || rule.party_name),
+    calculationBasis,
     type: Object.values(COMMISSION_RULE_TYPES).includes(type) ? type : COMMISSION_RULE_TYPES.percentage,
-    percentage: Number(rule.percentage || rule.rate || 0),
-    fixedAmount: Number(rule.fixedAmount || rule.fixed_amount || rule.amount || 0),
+    rateType: Object.values(COMMISSION_RULE_TYPES).includes(type) ? type : COMMISSION_RULE_TYPES.percentage,
+    rate: Number(rule.rate ?? percentage ?? 0),
+    percentage,
+    fixedAmount,
     tiers: normalizeArray(rule.tiers),
     components: normalizeArray(rule.components),
     bonusCriteria: rule.bonusCriteria || rule.bonus_criteria || {},
     status: normalizeLower(rule.status || 'active'),
+    effectiveFrom: normalizeText(rule.effectiveFrom || rule.effective_from),
+    effectiveTo: normalizeText(rule.effectiveTo || rule.effective_to),
+    isDefault: Boolean(rule.isDefault || rule.is_default),
   }
 }
 
@@ -101,9 +137,13 @@ export function calculateBonusAmount(rule = {}, {
 }
 
 export const DEFAULT_BOND_COMMISSION_RULES = Object.freeze([
-  { id: 'consultant-standard', name: 'Consultant 20%', appliesTo: 'consultant', type: COMMISSION_RULE_TYPES.percentage, percentage: 20 },
-  { id: 'branch-standard', name: 'Branch 5%', appliesTo: 'branch', type: COMMISSION_RULE_TYPES.percentage, percentage: 5 },
-  { id: 'region-standard', name: 'Region 2%', appliesTo: 'region', type: COMMISSION_RULE_TYPES.percentage, percentage: 2 },
-  { id: 'partner-referral-standard', name: 'Partner Referral 10%', appliesTo: 'partner_referral', type: COMMISSION_RULE_TYPES.percentage, percentage: 10 },
-  { id: 'bank-incentive-standard', name: 'Bank Incentive 1%', appliesTo: 'bank_incentive', type: COMMISSION_RULE_TYPES.percentage, percentage: 1 },
+  { id: 'originator-standard', name: 'Originator Company 1.95%', appliesTo: COMMISSION_PARTY_TYPES.originatorCompany, calculationBasis: COMMISSION_CALCULATION_BASES.grossBondAmount, type: COMMISSION_RULE_TYPES.percentage, percentage: 1.95, rate: 1.95, isDefault: true },
+  { id: 'consultant-standard', name: 'Consultant 35%', appliesTo: COMMISSION_PARTY_TYPES.consultant, calculationBasis: COMMISSION_CALCULATION_BASES.originatorCommission, type: COMMISSION_RULE_TYPES.percentage, percentage: 35, rate: 35, isDefault: true },
+  { id: 'branch-standard', name: 'Branch 0%', appliesTo: COMMISSION_PARTY_TYPES.branch, calculationBasis: COMMISSION_CALCULATION_BASES.originatorCommission, type: COMMISSION_RULE_TYPES.percentage, percentage: 0, rate: 0, isDefault: true },
+  { id: 'region-standard', name: 'Region 0%', appliesTo: COMMISSION_PARTY_TYPES.region, calculationBasis: COMMISSION_CALCULATION_BASES.originatorCommission, type: COMMISSION_RULE_TYPES.percentage, percentage: 0, rate: 0, isDefault: true },
+  { id: 'partner-referral-standard', name: 'Partner Referral 0.30%', appliesTo: COMMISSION_PARTY_TYPES.partnerReferral, calculationBasis: COMMISSION_CALCULATION_BASES.grossBondAmount, type: COMMISSION_RULE_TYPES.percentage, percentage: 0.3, rate: 0.3, isDefault: true },
+  { id: 'developer-referral-standard', name: 'Developer Referral 0.40%', appliesTo: COMMISSION_PARTY_TYPES.developer, calculationBasis: COMMISSION_CALCULATION_BASES.grossBondAmount, type: COMMISSION_RULE_TYPES.percentage, percentage: 0.4, rate: 0.4, isDefault: true },
+  { id: 'agency-referral-standard', name: 'Agency Referral 0.30%', appliesTo: COMMISSION_PARTY_TYPES.agency, calculationBasis: COMMISSION_CALCULATION_BASES.grossBondAmount, type: COMMISSION_RULE_TYPES.percentage, percentage: 0.3, rate: 0.3, isDefault: true },
+  { id: 'agent-referral-standard', name: 'Agent Referral 0.30%', appliesTo: COMMISSION_PARTY_TYPES.agent, calculationBasis: COMMISSION_CALCULATION_BASES.grossBondAmount, type: COMMISSION_RULE_TYPES.percentage, percentage: 0.3, rate: 0.3, isDefault: true },
+  { id: 'bank-incentive-standard', name: 'Bank Incentive 0%', appliesTo: COMMISSION_PARTY_TYPES.bank, calculationBasis: COMMISSION_CALCULATION_BASES.originatorCommission, type: COMMISSION_RULE_TYPES.percentage, percentage: 0, rate: 0, isDefault: true },
 ])

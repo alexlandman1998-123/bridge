@@ -55,7 +55,7 @@ function ActionCard({ item }) {
 
       <div className="mt-6 flex items-end justify-between gap-3">
         <div>
-          <p className="text-[2rem] font-semibold tracking-[-0.04em] text-[#142132]">{item.count}</p>
+          <p className="text-[2rem] font-semibold tracking-normal text-[#142132]">{item.count}</p>
           <p className="mt-2 text-sm leading-6 text-[#5f7287]">{item.helper}</p>
         </div>
         <div className="rounded-full border border-white/80 bg-white/85 px-3 py-1 text-xs font-semibold text-[#516a83]">

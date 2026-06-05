@@ -148,12 +148,22 @@ const applications = [
   }),
 ]
 
+const originatorBanks = [
+  { id: 'panel-fnb', bankId: 'fnb', status: 'active', primaryContactName: 'FNB Relationship Desk', slaDays: 3, supportedProducts: ['Residential Bond'] },
+  { id: 'panel-absa', bankId: 'absa', status: 'active', primaryContactName: 'ABSA Relationship Desk', slaDays: 3, supportedProducts: ['Residential Bond'] },
+  { id: 'panel-nedbank', bankId: 'nedbank', status: 'active', primaryContactName: 'Nedbank Relationship Desk', slaDays: 4, supportedProducts: ['Residential Bond'] },
+  { id: 'panel-standard-bank', bankId: 'standard-bank', status: 'active', primaryContactName: 'Standard Bank Relationship Desk', slaDays: 5, supportedProducts: ['Residential Bond'] },
+  { id: 'panel-investec', bankId: 'investec', status: 'active', primaryContactName: 'Investec Relationship Desk', slaDays: 5, supportedProducts: ['Residential Bond'] },
+  { id: 'panel-capitec', bankId: 'capitec', status: 'inactive', primaryContactName: 'Capitec Relationship Desk', slaDays: 5, supportedProducts: ['Residential Bond'] },
+]
+
 const commonOptions = {
   workspaceId,
   applications,
   regions,
   branches,
   consultants,
+  originatorBanks,
   now,
 }
 
@@ -214,6 +224,45 @@ try {
   assert.equal(dashboard.summary.applicationsSubmitted, applications.length)
   assert.equal(dashboard.summary.approvals > 0, true)
   assert.equal(dashboard.summary.activeBanks >= 5, true)
+
+  const commandCentre = service.getBankRelationshipCommandCentre(hqContext, { ...commonOptions, platformRevenuePerBond: 500 })
+  assert.equal(commandCentre.kpis.totalApplications, applications.length)
+  assert.equal(commandCentre.kpis.fastestBank.bankName, 'ABSA')
+  assert.equal(commandCentre.kpis.mostUsedBank.bankName, 'FNB')
+  assert.equal(commandCentre.kpis.revenueGenerated, commandCentre.performanceMatrix.reduce((sum, row) => sum + row.approvals, 0) * 500)
+  assert.equal(commandCentre.leaderboard.topBanks.length > 0, true)
+  assert.equal(commandCentre.performanceMatrix.some((row) => row.bankName === 'FNB' && row.revenueGenerated > 0), true)
+  assert.equal(commandCentre.performanceMatrix.some((row) => row.bankName === 'Capitec'), false)
+  assert.equal(commandCentre.performanceMatrix.every((row) => ['Excellent', 'Good', 'Fair', 'Poor', 'Critical', 'Not enough data'].includes(row.healthStatus)), true)
+  assert.equal(commandCentre.distribution[0].bankName, 'FNB')
+  assert.equal(commandCentre.approvalFunnel.some((row) => row.stage === 'Applications Submitted'), true)
+  assert.equal(commandCentre.approvalFunnel.some((row) => row.stage === 'Approved'), true)
+  assert.equal(commandCentre.approvalFunnel.some((row) => row.stage === 'Instruction Issued'), true)
+  assert.equal(commandCentre.regionalSlaHeatmap.rows.some((row) => row.regionName === 'Gauteng' && row.cells.some((cell) => cell.bankName === 'FNB' && cell.responseTime > 0)), true)
+  assert.equal(commandCentre.trends.length, 4)
+  assert.equal(commandCentre.insights.length > 0, true)
+  assert.equal(commandCentre.profiles.some((profile) => profile.bankName === 'FNB'), true)
+
+  const unconfiguredCommandCentre = service.getBankRelationshipCommandCentre(hqContext, {
+    workspaceId: 'workspace-without-bank-panel',
+    applications,
+    regions,
+    branches,
+    consultants,
+    now,
+  })
+  assert.equal(unconfiguredCommandCentre.performanceMatrix.length, 0)
+
+  const customRevenue = service.getBankRelationshipCommandCentre(hqContext, { ...commonOptions, platformRevenuePerBond: 750 })
+  assert.equal(customRevenue.kpis.revenueGenerated, commandCentre.kpis.revenueGenerated * 1.5)
+  assert.equal(service.calculateBankRelationshipCommandHealthScore({ applications: 0 }), null)
+  assert.equal(service.calculateBankRelationshipCommandHealthScore({
+    applications: 20,
+    approvalRate: 80,
+    averageResponseTime: 48,
+    instructionRate: 70,
+    escalationCount: 0,
+  }) > 70, true)
 
   const workspace = service.getBankWorkspace('fnb', hqContext, commonOptions)
   assert.equal(workspace.bank.name, 'FNB')

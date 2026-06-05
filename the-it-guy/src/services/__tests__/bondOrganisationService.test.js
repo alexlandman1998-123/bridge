@@ -1,4 +1,3 @@
-/* global process */
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -76,6 +75,8 @@ try {
     isDemo = false,
     synthetic = false,
     __demo = false,
+    transactionOverrides = {},
+    extra = {},
   } = {}) {
     return {
       source,
@@ -94,6 +95,7 @@ try {
         bank: 'Nedbank',
         updated_at: updatedAt,
         created_at: createdAt,
+        ...transactionOverrides,
       },
       buyer: {
         id: `buyer-${id}`,
@@ -115,6 +117,7 @@ try {
       lastActivityAt: updatedAt,
       lastActivityLabel: 'Today',
       createdAt,
+      ...extra,
     }
   }
 
@@ -333,6 +336,236 @@ try {
   assert.ok(hqOverviewSnapshot.overview.alerts.some((alert) => alert.key === 'branch-no-manager-branch-real'))
   assert.ok(hqOverviewSnapshot.overview.alerts.some((alert) => alert.key === 'branch-no-consultants-branch-empty'))
   assert.ok(hqOverviewSnapshot.overview.performance.applicationsByStatus.length >= 2)
+  assert.equal(hqOverviewSnapshot.organisationCommandCentre.scopeLabel, 'National')
+  assert.equal(hqOverviewSnapshot.organisationCommandCentre.summary.activeApplications, 3)
+  assert.equal(hqOverviewSnapshot.organisationCommandCentre.summary.approvalRate, 100)
+  assert.equal(hqOverviewSnapshot.organisationCommandCentre.summary.revenueForecast, null)
+  assert.equal(hqOverviewSnapshot.organisationCommandCentre.health.applicationsWithoutOwner, 1)
+  assert.ok(hqOverviewSnapshot.organisationCommandCentre.health.items.some((item) => item.key === 'applications-without-owner'))
+  assert.ok(hqOverviewSnapshot.organisationCommandCentre.branchPerformance.length <= 5)
+  assert.ok(hqOverviewSnapshot.organisationCommandCentre.consultantWorkload.length <= 8)
+
+  const consultantCommandSnapshot = service.buildBondOrganisationSnapshot({
+    context: hqContext,
+    workspaceId: 'workspace-1',
+    hierarchy: {
+      regions: [{ id: 'region-command', name: 'Gauteng Command' }],
+      units: [{ id: 'branch-command', name: 'Command Desk', unit_type: 'branch', region_id: 'region-command' }],
+    },
+    users: [
+      { id: 'consultant-alpha', user_id: 'consultant-alpha', email: 'alpha@example.test', name: 'Alpha Consultant', role: 'consultant', region_id: 'region-command', workspace_unit_id: 'branch-command' },
+      { id: 'consultant-beta', user_id: 'consultant-beta', email: 'beta@example.test', name: 'Beta Consultant', role: 'consultant', region_id: 'region-command', workspace_unit_id: 'branch-command' },
+      { id: 'consultant-empty', user_id: 'consultant-empty', email: 'empty@example.test', name: 'Empty Consultant', role: 'consultant', region_id: 'region-command', workspace_unit_id: 'branch-command' },
+    ],
+    applicationSnapshot: {
+      rows: [
+        createApplicationRow({
+          id: 'command-alpha-approved',
+          buyerName: 'Alpha Approved',
+          regionId: 'region-command',
+          region: 'Gauteng Command',
+          branchId: 'branch-command',
+          branch: 'Command Desk',
+          consultant: 'Alpha Consultant',
+          assignedUserId: 'consultant-alpha',
+          financeStageLabel: 'Approved',
+          financeStageKey: 'approved',
+          status: 'approved',
+          transactionOverrides: {
+            bond_amount: 1_200_000,
+            gross_commission_amount: 12_000,
+          },
+        }),
+        createApplicationRow({
+          id: 'command-alpha-submitted',
+          buyerName: 'Alpha Submitted',
+          regionId: 'region-command',
+          region: 'Gauteng Command',
+          branchId: 'branch-command',
+          branch: 'Command Desk',
+          consultant: 'Alpha Consultant',
+          assignedUserId: 'consultant-alpha',
+          financeStageLabel: 'Submitted',
+          financeStageKey: 'submitted',
+          status: 'submitted',
+          transactionOverrides: {
+            purchase_price: 800_000,
+            agent_commission_amount: 3_500,
+            agency_commission_amount: 4_500,
+          },
+        }),
+        createApplicationRow({
+          id: 'command-alpha-completed',
+          buyerName: 'Alpha Completed',
+          regionId: 'region-command',
+          region: 'Gauteng Command',
+          branchId: 'branch-command',
+          branch: 'Command Desk',
+          consultant: 'Alpha Consultant',
+          assignedUserId: 'consultant-alpha',
+          financeStageLabel: 'Registered',
+          financeStageKey: 'registered',
+          status: 'completed',
+          extra: { lifecycleState: 'completed' },
+          transactionOverrides: {
+            bond_amount: 5_000_000,
+            gross_commission_amount: 50_000,
+            registered_at: new Date().toISOString(),
+          },
+        }),
+        createApplicationRow({
+          id: 'command-beta-docs',
+          buyerName: 'Beta Docs',
+          regionId: 'region-command',
+          region: 'Gauteng Command',
+          branchId: 'branch-command',
+          branch: 'Command Desk',
+          consultant: 'Beta Consultant',
+          assignedUserId: 'consultant-beta',
+          financeStageLabel: 'Awaiting Documents',
+          financeStageKey: 'awaiting_documents',
+          status: 'active',
+          transactionOverrides: {
+            bond_amount: 500_000,
+          },
+        }),
+      ],
+    },
+  })
+  const consultantCommand = consultantCommandSnapshot.overview.consultantCommandCentre
+  assert.equal(consultantCommand.summary.totalPipelineValue, 2_500_000)
+  assert.equal(consultantCommand.summary.activeApplications, 3)
+  assert.equal(consultantCommand.summary.approvalRate, 67)
+  assert.equal(consultantCommand.summary.forecastRevenue, 20_000)
+  assert.equal(consultantCommand.summary.averageRevenuePerConsultant, 6_667)
+  assert.equal(consultantCommand.summary.registrations, 1)
+  assert.equal(consultantCommand.directory.find((row) => row.id === 'consultant-alpha').activeApplications, 2)
+  assert.equal(consultantCommand.directory.find((row) => row.id === 'consultant-alpha').pipelineValue, 2_000_000)
+  assert.equal(consultantCommand.directory.find((row) => row.id === 'consultant-alpha').forecastRevenue, 20_000)
+  assert.equal(consultantCommand.directory.find((row) => row.id === 'consultant-beta').approvalRate, null)
+  assert.equal(consultantCommand.leaderboards.pipeline[0].id, 'consultant-alpha')
+  assert.equal(consultantCommand.rankings.conversion[0].id, 'consultant-alpha')
+  assert.ok(consultantCommand.healthCards.some((row) => row.key === 'files-without-owner' && row.count === 0))
+
+  const branchCommandSnapshot = service.buildBondOrganisationSnapshot({
+    context: hqContext,
+    workspaceId: 'workspace-1',
+    hierarchy: {
+      regions: [
+        { id: 'region-branch-a', name: 'Gauteng' },
+        { id: 'region-branch-b', name: 'Western Cape' },
+      ],
+      units: [
+        { id: 'branch-alpha', name: 'Alpha Branch', unit_type: 'branch', region_id: 'region-branch-a', manager_user_id: 'manager-alpha' },
+        { id: 'branch-beta', name: 'Beta Branch', unit_type: 'branch', region_id: 'region-branch-b' },
+        { id: 'branch-empty', name: 'Empty Branch', unit_type: 'branch', region_id: 'region-branch-b' },
+      ],
+    },
+    users: [
+      { id: 'consultant-alpha-1', user_id: 'consultant-alpha-1', email: 'a1@example.test', name: 'Alpha One', role: 'consultant', region_id: 'region-branch-a', workspace_unit_id: 'branch-alpha' },
+      { id: 'consultant-alpha-2', user_id: 'consultant-alpha-2', email: 'a2@example.test', name: 'Alpha Two', role: 'consultant', region_id: 'region-branch-a', workspace_unit_id: 'branch-alpha' },
+      { id: 'consultant-floating', user_id: 'consultant-floating', email: 'float@example.test', name: 'Floating Consultant', role: 'consultant', region_id: 'region-branch-b', workspace_unit_id: '' },
+    ],
+    applicationSnapshot: {
+      rows: [
+        createApplicationRow({
+          id: 'branch-alpha-approved',
+          buyerName: 'Alpha Approved',
+          regionId: 'region-branch-a',
+          region: 'Gauteng',
+          branchId: 'branch-alpha',
+          branch: 'Alpha Branch',
+          consultant: 'Alpha One',
+          assignedUserId: 'consultant-alpha-1',
+          financeStageLabel: 'Approved',
+          financeStageKey: 'approved',
+          status: 'approved',
+          transactionOverrides: { bond_amount: 1_000_000, gross_commission_amount: 10_000 },
+        }),
+        createApplicationRow({
+          id: 'branch-alpha-submitted',
+          buyerName: 'Alpha Submitted',
+          regionId: 'region-branch-a',
+          region: 'Gauteng',
+          branchId: 'branch-alpha',
+          branch: 'Alpha Branch',
+          consultant: 'Alpha Two',
+          assignedUserId: 'consultant-alpha-2',
+          financeStageLabel: 'Submitted',
+          financeStageKey: 'submitted',
+          status: 'submitted',
+          transactionOverrides: { purchase_price: 750_000 },
+        }),
+        createApplicationRow({
+          id: 'branch-alpha-registered',
+          buyerName: 'Alpha Registered',
+          regionId: 'region-branch-a',
+          region: 'Gauteng',
+          branchId: 'branch-alpha',
+          branch: 'Alpha Branch',
+          consultant: 'Alpha One',
+          assignedUserId: 'consultant-alpha-1',
+          financeStageLabel: 'Registered',
+          financeStageKey: 'registered',
+          status: 'completed',
+          extra: { lifecycleState: 'completed' },
+          transactionOverrides: { bond_amount: 5_000_000, registered_at: new Date().toISOString() },
+        }),
+        createApplicationRow({
+          id: 'branch-beta-docs',
+          buyerName: 'Beta Docs',
+          regionId: 'region-branch-b',
+          region: 'Western Cape',
+          branchId: 'branch-beta',
+          branch: 'Beta Branch',
+          consultant: 'Unassigned',
+          assignedUserId: '',
+          financeStageLabel: 'Awaiting Documents',
+          financeStageKey: 'awaiting_documents',
+          status: 'active',
+          transactionOverrides: { bond_amount: 500_000 },
+        }),
+        createApplicationRow({
+          id: 'branch-no-branch',
+          buyerName: 'No Branch',
+          regionId: 'region-branch-b',
+          region: 'Western Cape',
+          branchId: '',
+          branch: 'Unassigned',
+          consultant: 'Unassigned',
+          assignedUserId: '',
+          financeStageLabel: 'Submitted',
+          financeStageKey: 'submitted',
+          status: 'submitted',
+          transactionOverrides: { bond_amount: 250_000 },
+        }),
+      ],
+    },
+  })
+  const branchCommand = branchCommandSnapshot.overview.branchCommandCentre
+  assert.equal(branchCommand.summary.totalBranches, 3)
+  assert.equal(branchCommand.summary.activeBranches, 2)
+  assert.equal(branchCommand.summary.pipelineValue, 2_250_000)
+  assert.equal(branchCommand.summary.activeApplications, 3)
+  assert.equal(branchCommand.summary.approvalRate, 67)
+  assert.equal(branchCommand.summary.registrationsThisMonth, 1)
+  assert.equal(branchCommand.summary.branchesAtRisk, 3)
+  assert.equal(branchCommand.summary.averageConsultantLoad, 1.5)
+  assert.equal(branchCommand.summary.forecastRevenue, 10_000)
+  assert.equal(branchCommand.health.branchesWithoutManagers, 2)
+  assert.equal(branchCommand.health.branchesWithNoConsultants, 2)
+  assert.equal(branchCommand.health.applicationsWithoutBranch, 1)
+  assert.equal(branchCommand.directory.find((row) => row.branchId === 'branch-alpha').activeApplications, 2)
+  assert.equal(branchCommand.directory.find((row) => row.branchId === 'branch-alpha').pipelineValue, 1_750_000)
+  assert.equal(branchCommand.directory.find((row) => row.branchId === 'branch-alpha').approvalRate, 67)
+  assert.equal(branchCommand.directory.find((row) => row.branchId === 'branch-alpha').capacityPercent, 4)
+  assert.equal(branchCommand.directory.find((row) => row.branchId === 'branch-beta').riskLevel, 'high')
+  assert.equal(branchCommand.leaderboards.pipeline[0].branchId, 'branch-alpha')
+  assert.equal(branchCommand.leaderboards.volume[0].branchId, 'branch-alpha')
+  assert.equal(branchCommand.leaderboards.approval[0].branchId, 'branch-alpha')
+  assert.equal(branchCommand.leaderboards.risk[0].branchId, 'branch-alpha')
+  assert.equal(branchCommand.regionalDistribution[0].regionName, 'Gauteng')
+  assert.equal(branchCommand.branchWorkload[0].branchId, 'branch-beta')
 
   const noBranchesSnapshot = service.buildBondOrganisationSnapshot({
     context: hqContext,
@@ -356,6 +589,69 @@ try {
     applicationSnapshot: { rows: [] },
   })
   assert.equal(noConsultantsSnapshot.overview.setupState.key, 'consultants')
+
+  const smallOriginatorSnapshot = service.buildBondOrganisationSnapshot({
+    context: hqContext,
+    workspaceId: 'workspace-1',
+    users: [
+      { id: 'consultant-solo', user_id: 'consultant-solo', email: 'solo@example.test', role: 'consultant', scope_level: 'assigned' },
+    ],
+    applicationSnapshot: { rows: [] },
+  })
+  assert.equal(smallOriginatorSnapshot.organisationCommandCentre.scopeLabel, 'Organisation')
+  assert.equal(smallOriginatorSnapshot.organisationCommandCentre.structure.hasHierarchy, false)
+  assert.equal(smallOriginatorSnapshot.organisationCommandCentre.summary.approvalRate, null)
+  assert.equal(smallOriginatorSnapshot.organisationCommandCentre.summary.revenueForecast, null)
+  assert.ok(!smallOriginatorSnapshot.organisationCommandCentre.health.items.some((item) => item.key === 'regions-missing-coverage'))
+
+  const largeOriginatorSnapshot = service.buildBondOrganisationSnapshot({
+    context: hqContext,
+    workspaceId: 'workspace-1',
+    hierarchy: {
+      regions: Array.from({ length: 8 }, (_, index) => ({ id: `region-${index}`, name: `Region ${index}` })),
+      units: Array.from({ length: 8 }, (_, index) => ({ id: `branch-${index}`, name: `Branch ${index}`, unit_type: 'branch', region_id: `region-${index}` })),
+    },
+    users: Array.from({ length: 8 }, (_, index) => ({
+      id: `consultant-${index}`,
+      user_id: `consultant-${index}`,
+      email: `consultant-${index}@example.test`,
+      role: 'consultant',
+      region_id: `region-${index}`,
+      workspace_unit_id: `branch-${index}`,
+    })),
+    applicationSnapshot: {
+      rows: Array.from({ length: 8 }, (_, index) => createApplicationRow({
+        id: `large-${index}`,
+        buyerName: `Large Buyer ${index}`,
+        regionId: `region-${index}`,
+        branchId: `branch-${index}`,
+        consultant: `Consultant ${index}`,
+        assignedUserId: `consultant-${index}`,
+        transactionOverrides: { bond_amount: 1000000 + index },
+      })),
+    },
+  })
+  assert.equal(largeOriginatorSnapshot.organisationCommandCentre.scopeLabel, 'National')
+  assert.equal(largeOriginatorSnapshot.organisationCommandCentre.structure.topRegions.length, 6)
+  assert.equal(largeOriginatorSnapshot.organisationCommandCentre.summary.pipelineValue > 0, true)
+
+  const inactiveRowsSnapshot = service.buildBondOrganisationSnapshot({
+    context: hqContext,
+    workspaceId: 'workspace-1',
+    applicationSnapshot: {
+      rows: [
+        createApplicationRow({ id: 'active-row', buyerName: 'Active Buyer' }),
+        createApplicationRow({
+          id: 'registered-row',
+          buyerName: 'Registered Buyer',
+          status: 'registered',
+          financeStageLabel: 'Registered',
+          transactionOverrides: { lifecycle_state: 'registered', registered_at: '2026-06-01T10:00:00.000Z' },
+        }),
+      ],
+    },
+  })
+  assert.equal(inactiveRowsSnapshot.organisationCommandCentre.summary.activeApplications, 1)
 
   const regionalSnapshot = service.buildBondOrganisationSnapshot({
     context: makeContext({

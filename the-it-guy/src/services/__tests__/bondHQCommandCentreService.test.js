@@ -233,6 +233,14 @@ const documentRequests = [
   { id: 'doc-request-1', applicationId: 'consultant-john-app-3', documentType: 'Replacement Bank Statement', status: 'replacement requested', createdAt: '2026-05-17T08:00:00.000Z' },
   { id: 'doc-request-2', applicationId: 'consultant-john-app-4', documentType: 'Proof of Income', status: 'requested', createdAt: '2026-05-19T08:00:00.000Z' },
 ]
+const originatorBanks = [
+  { id: 'panel-absa', bankId: 'absa', status: 'active' },
+  { id: 'panel-fnb', bankId: 'fnb', status: 'active' },
+  { id: 'panel-nedbank', bankId: 'nedbank', status: 'active' },
+  { id: 'panel-standard-bank', bankId: 'standard-bank', status: 'active' },
+  { id: 'panel-investec', bankId: 'investec', status: 'active' },
+  { id: 'panel-other', bankId: 'other', status: 'active' },
+]
 
 const commonOptions = {
   workspaceId,
@@ -243,6 +251,7 @@ const commonOptions = {
   consultants,
   documents,
   documentRequests,
+  originatorBanks,
   now,
 }
 

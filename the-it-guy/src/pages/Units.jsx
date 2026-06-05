@@ -3,8 +3,6 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import AttorneyTransfersTable from '../components/AttorneyTransfersTable'
 import AgentTransactionsTable from '../components/AgentTransactionsTable'
 import BondApplicationsTable from '../components/BondApplicationsTable'
-import BondPageHeader from '../components/bond/BondPageHeader'
-import BondViewTabs from '../components/bond/BondViewTabs'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import OpenOnboardingButton from '../components/OpenOnboardingButton'
 import PageActionBar from '../components/PageActionBar'
@@ -1556,24 +1554,7 @@ function Units() {
         </p>
       ) : null}
 
-      {isBondRole ? (
-        <>
-          <BondPageHeader
-            title={bondViews.pipeline.title}
-            description={bondViews.pipeline.description}
-            primaryLabel={bondViews.pipeline.primaryActionLabel}
-            secondaryLabel={bondViews.pipeline.secondaryActionLabel}
-            onPrimary={() => handleBondPipelineViewChange('new')}
-          />
-          <BondViewTabs
-            tabs={bondViews.pipeline.tabs}
-            value={selectedBondPipelineView}
-            onChange={handleBondPipelineViewChange}
-          />
-        </>
-      ) : null}
-
-      {!isAgentRole ? (
+      {!isAgentRole && !isBondRole ? (
         <section className="rounded-[24px] border border-borderDefault bg-surface p-4 shadow-panel no-print">
           <div className="flex flex-col gap-3">
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -1870,6 +1851,10 @@ function Units() {
             rows={rows}
             title={selectedBondPipelineView === 'all' ? 'Pipeline Applications' : `${getBondPipelineView(selectedBondPipelineView).label} Pipeline`}
             description="Incoming bond requests, incomplete files, document follow-ups, and applications preparing for bank submission."
+            viewOptions={bondViews.pipeline.tabs}
+            selectedView={selectedBondPipelineView}
+            onViewChange={handleBondPipelineViewChange}
+            onCreateApplication={() => handleBondPipelineViewChange('new')}
             emptyTitle={bondViews.pipeline.emptyTitle}
             emptyDescription={bondViews.pipeline.emptyDescription}
             queue={filters.queue}

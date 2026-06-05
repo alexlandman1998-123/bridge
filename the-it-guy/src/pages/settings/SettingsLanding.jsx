@@ -103,7 +103,7 @@ const BOND_SETTINGS_CARDS = [
     icon: Building2,
   },
   {
-    to: '/bond/automation',
+    to: '/settings/automation',
     title: 'Automation & Rules',
     description: 'Configure routing, assignment, SLA, escalation, and workflow automation for bond applications.',
     icon: SlidersHorizontal,

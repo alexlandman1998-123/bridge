@@ -333,8 +333,8 @@ function makeSnapshot(overrides = {}) {
         },
       },
     })
-    assert.match(hqMarkup, /National Bond Command Centre/)
-    assert.match(hqMarkup, /Executive view of national bond performance, pipeline, revenue and risk/)
+    assert.doesNotMatch(hqMarkup, /National Bond Command Centre/)
+    assert.doesNotMatch(hqMarkup, /Executive view of national bond performance, pipeline, revenue and risk/)
     assert.match(hqMarkup, /Applications Submitted/)
     assert.match(hqMarkup, /Projected Commission/)
     assert.match(hqMarkup, /Executive Alerts/)

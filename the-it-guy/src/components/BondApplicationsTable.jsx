@@ -234,6 +234,50 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function PipelineTableActions({
+  rows = [],
+  viewOptions = [],
+  selectedView = 'all',
+  onViewChange,
+  onCreateApplication,
+}) {
+  return (
+    <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
+      {viewOptions.length ? (
+        <label className="min-w-[190px]">
+          <span className="sr-only">Pipeline view</span>
+          <select
+            value={selectedView}
+            onChange={(event) => onViewChange?.(event.target.value)}
+            className="h-10 w-full rounded-[13px] border border-[#dbe5f0] bg-[#f9fbff] px-3 text-sm font-semibold text-[#17324d] outline-none transition focus:border-[#b9cbdd]"
+          >
+            {viewOptions.map((option) => (
+              <option key={option.key} value={option.key}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      <span className="inline-flex h-10 items-center justify-center rounded-[13px] border border-[#dbe5f0] bg-[#f8fbff] px-3 text-xs font-semibold text-[#516a83]">
+        {rows.length} applications
+      </span>
+      {onCreateApplication ? (
+        <Button
+          type="button"
+          variant="primary"
+          size="sm"
+          className="h-10 rounded-[13px] px-4"
+          onClick={onCreateApplication}
+        >
+          <FilePlus2 size={15} />
+          Create Application
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
 function getCurrentUserOption(currentUser = {}) {
   const profile = currentUser.profile || currentUser
   const email = normalizeText(currentUser.email || profile.email)
@@ -476,7 +520,7 @@ function IntakeActionModal({ action = '', item = null, currentUser = {}, busy = 
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7d93aa]">Bond Intake</p>
-            <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#142132]">{title}</h3>
+            <h3 className="mt-2 text-xl font-semibold tracking-normal text-[#142132]">{title}</h3>
             <p className="mt-2 text-sm leading-6 text-[#60758d]">{description}</p>
           </div>
           <button
@@ -838,6 +882,10 @@ function BondApplicationsTable({
   onRowClick,
   title = 'Applications Queue',
   description = 'Manage incoming or incomplete applications before they move into the active applications workspace.',
+  viewOptions = [],
+  selectedView = 'all',
+  onViewChange,
+  onCreateApplication,
   emptyTitle = 'No applications found',
   emptyDescription = 'When finance applications match this queue, they will appear here.',
   queue = 'all',
@@ -860,7 +908,15 @@ function BondApplicationsTable({
       title={title}
       copy={description}
       className="bond-applications-panel bond-regional-pipeline-panel"
-      actions={<span className="rounded-full border border-[#dbe5f0] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#516a83]">{rows.length} applications</span>}
+      actions={(
+        <PipelineTableActions
+          rows={rows}
+          viewOptions={viewOptions}
+          selectedView={selectedView}
+          onViewChange={onViewChange}
+          onCreateApplication={onCreateApplication}
+        />
+      )}
     >
       <DataTableInner className="bond-applications-table bond-regional-pipeline-table">
         <thead>

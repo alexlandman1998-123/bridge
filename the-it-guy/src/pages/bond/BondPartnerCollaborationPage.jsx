@@ -66,7 +66,7 @@ function statusLabel(value = '') {
 
 function MetricCard({ label, value, description, icon: Icon }) {
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <article className="min-h-[132px] rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-slate-500">{label}</p>
@@ -110,7 +110,7 @@ function RequestWorkspace({ request, onReply, onInternalNote, onAccept, onReject
   }
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+    <section className="min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-200 p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -220,8 +220,8 @@ export default function BondPartnerCollaborationPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-950 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
+    <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-950 sm:px-5 lg:px-8">
+      <div className="mx-auto max-w-[1440px] space-y-8">
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Bond Originator</p>
@@ -341,7 +341,7 @@ export default function BondPartnerCollaborationPage() {
         </section>
 
         <section className="grid gap-4 lg:grid-cols-3">
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="min-h-[132px] rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-sm font-semibold text-slate-950">Branch Oversight</h2>
             <div className="mt-3 space-y-2">
               {dashboard.branches.slice(0, 4).map((row) => (
@@ -353,7 +353,7 @@ export default function BondPartnerCollaborationPage() {
               {!dashboard.branches.length ? <p className="text-sm text-slate-500">No branch request volume yet.</p> : null}
             </div>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="min-h-[132px] rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-sm font-semibold text-slate-950">Consultant Load</h2>
             <div className="mt-3 space-y-2">
               {dashboard.consultants.slice(0, 4).map((row) => (
@@ -365,7 +365,7 @@ export default function BondPartnerCollaborationPage() {
               {!dashboard.consultants.length ? <p className="text-sm text-slate-500">No consultant workload yet.</p> : null}
             </div>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="min-h-[132px] rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-sm font-semibold text-slate-950">Partner Health</h2>
             <p className="mt-2 text-2xl font-semibold text-slate-950">{dashboard.health.health}</p>
             <p className="mt-2 text-sm text-slate-500">Escalation rate {dashboard.health.escalationRate}% · document completion {dashboard.health.documentCompletionRate}%</p>
