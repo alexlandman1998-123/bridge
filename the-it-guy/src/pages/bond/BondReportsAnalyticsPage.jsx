@@ -98,25 +98,38 @@ function safeDataModel(hq = {}, revenue = {}, bank = {}) {
   const bankSummary = bank.summary || {}
   const regions = hasPositiveRows(hq.regionComparison, (row) => row.applications)
     ? hq.regionComparison
-    : SA_REGIONS.slice(0, 5).map((name, index) => ({
+    : SA_REGIONS.map((name, index) => ({
       regionName: name,
-      applications: [52, 31, 24, 12, 10][index] || 8,
-      approvalRate: [71, 64, 59, 55, 62][index] || 58,
-      healthScore: [86, 79, 72, 68, 74][index] || 70,
-      slaCompliance: [94, 89, 86, 82, 88][index] || 85,
-      partnerHealth: [88, 83, 79, 73, 80][index] || 75,
-      escalations: [2, 4, 5, 1, 3][index] || 1,
+      applications: [52, 31, 24, 12, 10, 9, 8, 6, 11][index] || 8,
+      approvalRate: [71, 64, 59, 55, 62, 57, 60, 54, 58][index] || 58,
+      healthScore: [86, 79, 72, 68, 74, 69, 71, 65, 70][index] || 70,
+      slaCompliance: [94, 89, 86, 82, 88, 84, 85, 80, 83][index] || 85,
+      partnerHealth: [88, 83, 79, 73, 80, 76, 78, 70, 75][index] || 75,
+      escalations: [2, 4, 5, 1, 3, 2, 2, 1, 3][index] || 1,
     }))
   const branchRows = hq.branchNetwork?.allRows || hq.branchNetwork?.rows || []
   const branches = hasPositiveRows(branchRows, (row) => row.applications || row.estimatedRevenue)
     ? (hq.branchNetwork.allRows || hq.branchNetwork.rows)
-    : ['Sandton', 'Centurion', 'Fourways', 'Cape Town Atlantic', 'Durban North', 'Pretoria East'].map((name, index) => ({
+    : [
+      ['Sandton', 'Gauteng', 26, 73, 91, 1720000],
+      ['Centurion', 'Gauteng', 18, 67, 83, 1180000],
+      ['Fourways', 'Gauteng', 16, 62, 78, 940000],
+      ['Cape Town Atlantic', 'Western Cape', 21, 68, 86, 1510000],
+      ['Durban North', 'KZN', 17, 61, 75, 870000],
+      ['Pretoria East', 'Gauteng', 22, 70, 80, 1320000],
+      ['Bloemfontein Central', 'Free State', 8, 55, 68, 420000],
+      ['Nelspruit', 'Mpumalanga', 7, 57, 69, 390000],
+      ['Polokwane', 'Limpopo', 7, 60, 71, 360000],
+      ['Rustenburg', 'North West', 6, 58, 70, 330000],
+      ['Kimberley', 'Northern Cape', 5, 54, 65, 280000],
+      ['Gqeberha Metro', 'Eastern Cape', 9, 58, 70, 410000],
+    ].map(([name, regionName, applications, approvalRate, healthScore, estimatedRevenue]) => ({
       branchName: name,
-      regionName: ['Gauteng', 'Gauteng', 'Gauteng', 'Western Cape', 'KZN', 'Gauteng'][index],
-      applications: [26, 18, 16, 21, 17, 22][index],
-      approvalRate: [73, 67, 62, 68, 61, 70][index],
-      healthScore: [91, 83, 78, 86, 75, 80][index],
-      estimatedRevenue: [1720000, 1180000, 940000, 1510000, 870000, 1320000][index],
+      regionName,
+      applications,
+      approvalRate,
+      healthScore,
+      estimatedRevenue,
     }))
   const consultants = hasPositiveRows(hq.consultantCapacity?.rows || [], (row) => row.activeApplications || row.revenue)
     ? hq.consultantCapacity.rows

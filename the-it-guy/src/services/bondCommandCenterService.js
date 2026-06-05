@@ -1938,7 +1938,7 @@ function buildHqPipelineFunnel(rows = []) {
   let bottleneck = null
   const stages = HQ_PIPELINE_STAGE_META.map((stage, index) => {
     const count = counts[stage.key] || 0
-    const conversionRate = index === 0 ? 100 : roundTo((count / Math.max(previousCount, 1)) * 100, 0)
+    const conversionRate = index === 0 ? 100 : Math.min(100, roundTo((count / Math.max(previousCount, 1)) * 100, 0))
     const dropOff = index === 0 ? 0 : Math.max(0, 100 - conversionRate)
     const item = {
       ...stage,
@@ -2040,7 +2040,6 @@ function buildHqKpis(rows = [], heroKpis = []) {
   const approval = getHero('approval_rate')
   const approvalTime = getHero('average_approval_time')
   const pipeline = getHero('bond_value')
-  const commission = getHero('commission_pipeline')
 
   return [
     { key: 'active_applications', label: 'Active Applications', value: active.value || String(summary.activeApplications), trend: active.trend || 'Current book', helper: active.microContext || `${summary.total} total applications` },
@@ -2048,7 +2047,6 @@ function buildHqKpis(rows = [], heroKpis = []) {
     { key: 'approval_rate', label: 'Approval Rate', value: approval.value || `${summary.approvalRate}%`, trend: approval.trend || 'Tracking', helper: approval.microContext || `${summary.approved} approved files` },
     { key: 'average_approval_time', label: 'Average Approval Time', value: approvalTime.value || `${summary.avgApprovalTime} days`, trend: approvalTime.trend || 'Against target', helper: approvalTime.microContext || 'Submission to approval movement' },
     { key: 'pipeline_value', label: 'Pipeline Value', value: pipeline.value || summary.pipelineValueLabel, trend: pipeline.trend || 'National pipeline', helper: pipeline.microContext || `${summary.total} files included` },
-    { key: 'projected_commission', label: 'Projected Commission', value: commission.value || summary.projectedCommissionLabel, trend: commission.trend || 'Projected', helper: commission.microContext || 'Estimated commission pipeline' },
   ]
 }
 

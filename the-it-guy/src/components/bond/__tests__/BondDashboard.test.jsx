@@ -276,7 +276,6 @@ function makeSnapshot(overrides = {}) {
               { key: 'approval_rate', label: 'Approval Rate', value: '72%', trend: '+2%', helper: 'National approval rate' },
               { key: 'average_approval_time', label: 'Average Approval Time', value: '7d', trend: '-1d', helper: 'Submission to outcome' },
               { key: 'pipeline_value', label: 'Pipeline Value', value: 'R 42 000 000', trend: '+12%', helper: 'Open national pipeline' },
-              { key: 'projected_commission', label: 'Projected Commission', value: 'R 504 000', trend: '+9%', helper: 'Expected commission' },
             ],
             alerts: [
               { key: 'unassigned', label: 'Unassigned applications', value: 3, tone: 'warning', href: '/bond/applications?filter=unassigned' },
@@ -335,8 +334,12 @@ function makeSnapshot(overrides = {}) {
     })
     assert.doesNotMatch(hqMarkup, /National Bond Command Centre/)
     assert.doesNotMatch(hqMarkup, /Executive view of national bond performance, pipeline, revenue and risk/)
+    assert.doesNotMatch(hqMarkup, /Last 30 Days/)
+    assert.doesNotMatch(hqMarkup, /All Regions/)
+    assert.doesNotMatch(hqMarkup, /Export report/)
     assert.match(hqMarkup, /Applications Submitted/)
-    assert.match(hqMarkup, /Projected Commission/)
+    assert.doesNotMatch(hqMarkup, /Projected Commission/)
+    assert.match(hqMarkup, /Risk Monitor/)
     assert.match(hqMarkup, /Executive Alerts/)
     assert.match(hqMarkup, /Unassigned/)
     assert.match(hqMarkup, /Awaiting OTP/)

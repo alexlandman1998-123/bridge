@@ -7,7 +7,8 @@ import BondSectionCard from './BondSectionCard'
 import OperationalHeatmap from '../analytics/OperationalHeatmap'
 import * as bondCommandCenterService from '../../services/bondCommandCenterService'
 import { FINANCE_INTELLIGENCE_DISCLAIMER } from '../../services/financeIntelligenceService'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
+import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -46,6 +47,8 @@ const ACTIVE_FILTERS = [
 
 const DEFAULT_RANGE_KEY = 'last_30_days'
 const DEFAULT_RANGE_LABEL = 'Last 30 Days'
+const MOCK_APPLICATION_QUERY_KEYS = ['mockApplications', 'mockData', 'demoApplications']
+const MOCK_APPLICATION_TRUE_VALUES = new Set(['1', 'true', 'yes', 'applications', 'bond'])
 
 function getBankVisual(bank = '') {
   return BANK_VISUALS[bank] || BANK_VISUALS.Others
@@ -57,6 +60,16 @@ function isHqDashboard(reportingScope = {}) {
   return dashboardMode === 'owner_director' || dashboardMode === 'hq_manager' || scopeLevel === 'workspace_hq'
 }
 
+function shouldPreviewMockApplications(search = '') {
+  const params = new URLSearchParams(search || '')
+  const requested = MOCK_APPLICATION_QUERY_KEYS.some((key) => {
+    const value = normalizeText(params.get(key)).toLowerCase()
+    return MOCK_APPLICATION_TRUE_VALUES.has(value)
+  })
+
+  return requested && (MOCK_DATA_ENABLED || import.meta.env.DEV)
+}
+
 export default function BondDashboard({
   user = {},
   workspaceId = '',
@@ -64,8 +77,10 @@ export default function BondDashboard({
   initialState = null,
 }) {
   const safeWorkspaceId = normalizeText(workspaceId)
+  const location = useLocation()
   const [rangeKey] = useState(DEFAULT_RANGE_KEY)
   const developmentId = 'all'
+  const mockApplicationsPreview = shouldPreviewMockApplications(location.search)
   const [state, setState] = useState(
     initialState || {
       loading: true,
@@ -90,7 +105,11 @@ export default function BondDashboard({
     setState((previous) => ({ ...previous, loading: true, error: '' }))
 
     try {
-      const snapshot = await service.getBondCommandCenterSnapshot(user, safeWorkspaceId, { rangeKey, developmentId })
+      const snapshot = await service.getBondCommandCenterSnapshot(user, safeWorkspaceId, {
+        rangeKey,
+        developmentId,
+        includeDemoRows: mockApplicationsPreview ? true : undefined,
+      })
       setState({
         loading: false,
         error: '',
@@ -105,7 +124,7 @@ export default function BondDashboard({
         reportingScope: null,
       })
     }
-  }, [developmentId, rangeKey, safeWorkspaceId, service, user])
+  }, [developmentId, mockApplicationsPreview, rangeKey, safeWorkspaceId, service, user])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -167,6 +186,11 @@ export default function BondDashboard({
 
       {!state.loading && snapshot ? (
         <>
+          {mockApplicationsPreview ? (
+            <section className="rounded-[18px] border border-[#d7e4f1] bg-[#f8fbff] px-4 py-3 text-sm text-[#31516f] shadow-[0_10px_24px_rgba(15,35,57,0.035)]">
+              <span className="font-semibold text-[#17324d]">Preview data enabled.</span> Showing generated mock bond applications for layout review only. No database records are created.
+            </section>
+          ) : null}
           {shouldRenderHqDashboard ? (
             <BondHqCommandCentre snapshot={snapshot} />
           ) : snapshot.totalApplications === 0 ? (

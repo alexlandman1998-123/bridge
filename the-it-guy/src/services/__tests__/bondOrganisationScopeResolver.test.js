@@ -1,4 +1,3 @@
-/* global process */
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -46,18 +45,26 @@ try {
   }
 
   const data = {
-    regions: [{ id: 'region-1', name: 'North' }],
+    regions: [
+      { id: 'region-1', name: 'North' },
+      { id: 'region-2', name: 'South' },
+    ],
     branches: [
       { id: 'branch-1', region_id: 'region-1', name: 'A' },
-      { id: 'branch-2', region_id: 'region-2', name: 'B' },
+      { id: 'branch-2', region_id: 'region-1', name: 'B' },
+      { id: 'branch-3', region_id: 'region-2', name: 'C' },
     ],
     consultants: [
       { id: 'consultant-1', user_id: 'consultant-1', region_id: 'region-1', workspace_unit_id: 'branch-1' },
-      { id: 'consultant-2', user_id: 'consultant-2', region_id: 'region-2', workspace_unit_id: 'branch-2' },
+      { id: 'consultant-2', user_id: 'consultant-2', region_id: 'region-1', workspace_unit_id: 'branch-1' },
+      { id: 'consultant-3', user_id: 'consultant-3', region_id: 'region-1', workspace_unit_id: 'branch-2' },
+      { id: 'consultant-4', user_id: 'consultant-4', region_id: 'region-2', workspace_unit_id: 'branch-3' },
     ],
     applications: [
       { assignedUserId: 'consultant-1', regionId: 'region-1', branchId: 'branch-1' },
-      { assignedUserId: 'consultant-2', regionId: 'region-2', branchId: 'branch-2' },
+      { assignedUserId: 'consultant-2', regionId: 'region-1', branchId: 'branch-1' },
+      { assignedUserId: 'consultant-3', regionId: 'region-1', branchId: 'branch-2' },
+      { assignedUserId: 'consultant-4', regionId: 'region-2', branchId: 'branch-3' },
     ],
   }
 
@@ -66,6 +73,9 @@ try {
   assert.equal(hqScope.regionIds, ALL_BOND_ORGANISATION_SCOPE)
   assert.equal(hqScope.branchIds, ALL_BOND_ORGANISATION_SCOPE)
   assert.equal(hqScope.consultantIds, ALL_BOND_ORGANISATION_SCOPE)
+  assert.equal(data.regions.length, 2)
+  assert.equal(data.branches.filter((branch) => branch.region_id === 'region-1').length, 2)
+  assert.equal(data.consultants.filter((consultant) => consultant.workspace_unit_id === 'branch-1').length, 2)
   assert.equal(hqScope.canViewRegions, true)
   assert.equal(hqScope.canViewPartners, true)
   assert.equal(hqScope.canViewReports, true)
@@ -73,8 +83,8 @@ try {
   const regionScope = resolveBondOrganisationScope(makeContext({ userId: 'regional-1', workspaceRole: 'regional_manager', scopeLevel: 'region', regionId: 'region-1' }), data)
   assert.equal(regionScope.scopeLevel, 'region')
   assert.deepEqual(regionScope.regionIds, ['region-1'])
-  assert.deepEqual(regionScope.branchIds, ['branch-1'])
-  assert.deepEqual(regionScope.consultantIds, ['consultant-1'])
+  assert.deepEqual(regionScope.branchIds.sort(), ['branch-1', 'branch-2'].sort())
+  assert.deepEqual(regionScope.consultantIds.sort(), ['consultant-1', 'consultant-2', 'consultant-3'].sort())
   assert.equal(regionScope.canViewRegions, true)
   assert.equal(regionScope.canViewBranches, true)
   assert.equal(regionScope.canViewConsultants, true)
@@ -84,7 +94,7 @@ try {
   const branchScope = resolveBondOrganisationScope(makeContext({ userId: 'branch-manager-1', workspaceRole: 'branch_manager', scopeLevel: 'branch', regionId: 'region-1', workspaceUnitId: 'branch-1' }), data)
   assert.equal(branchScope.scopeLevel, 'branch')
   assert.deepEqual(branchScope.branchIds, ['branch-1'])
-  assert.deepEqual(branchScope.consultantIds.sort(), ['branch-manager-1', 'consultant-1'].sort())
+  assert.deepEqual(branchScope.consultantIds.sort(), ['branch-manager-1', 'consultant-1', 'consultant-2'].sort())
   assert.equal(branchScope.canViewBranches, true)
   assert.equal(branchScope.canViewConsultants, true)
 

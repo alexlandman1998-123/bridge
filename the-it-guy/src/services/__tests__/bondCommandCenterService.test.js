@@ -231,6 +231,17 @@ try {
     assert.equal(managerSnapshot.hqCommandCentre.nationalSnapshot.length, 6)
     assert.equal(managerSnapshot.hqCommandCentre.pipelineFunnel.stages.some((stage) => stage.label === 'Intake Received'), true)
 
+    const managerPreviewSnapshot = await service.getBondCommandCenterSnapshot(manager, 'workspace-1', {
+      transactions,
+      rangeKey: 'all_time',
+      includeDemoRows: true,
+    })
+    assert.equal(managerPreviewSnapshot.reportingScope.dashboardMode, 'owner_director')
+    assert.ok(managerPreviewSnapshot.hqCommandCentre)
+    assert.equal(managerPreviewSnapshot.totalApplications >= 48, true)
+    assert.equal(managerPreviewSnapshot.activeApplications.length > managerSnapshot.activeApplications.length, true)
+    assert.equal(managerPreviewSnapshot.hqCommandCentre.pipelineFunnel.stages.every((stage) => stage.conversionRate <= 100), true)
+
     const hqTrackerSnapshot = await service.getBondTransactionTrackerSnapshot(manager, 'workspace-1', {
       transactions: [
         createTransaction({

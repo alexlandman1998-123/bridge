@@ -353,7 +353,7 @@ function CommandButton({ children, disabled = false, icon: Icon, variant = 'seco
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`inline-flex h-10 items-center gap-2 rounded-[12px] border px-3.5 text-sm font-semibold shadow-[0_6px_16px_rgba(15,23,42,0.035)] transition disabled:cursor-not-allowed disabled:opacity-55 ${className}`}
+      className={`inline-flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-[12px] border px-3.5 text-sm font-semibold shadow-[0_6px_16px_rgba(15,23,42,0.035)] transition disabled:cursor-not-allowed disabled:opacity-55 ${className}`}
     >
       {Icon ? <Icon size={16} strokeWidth={2.1} /> : null}
       {children}
@@ -501,14 +501,11 @@ function OrganisationCommandHeader({
         : 'Manage your bond origination network, branch structure, consultant workload, and application performance.'
 
   if (isHqOverview) {
+    if (!canManage) return null
     return (
-      <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-[1.9rem] font-semibold tracking-normal text-[#142132]">Organisation Command Centre</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5f7287]">Manage regions, branches, consultants, routing, and organisational performance.</p>
-        </div>
+      <header className="flex justify-end">
         {canManage ? (
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="grid w-full gap-3 sm:grid-cols-3 xl:w-auto xl:flex xl:justify-end">
             <CommandButton icon={Plus} variant="primary" onClick={onAddRegion || (() => navigate('/settings/organisation?intent=add-bond-region'))}>Add Region</CommandButton>
             <CommandButton icon={Plus} onClick={onAddBranch || (() => navigate('/settings/organisation?intent=add-bond-branch'))}>Add Branch</CommandButton>
             <CommandButton icon={Plus} onClick={onAddConsultant || (() => navigate('/settings/organisation?intent=invite-bond-user'))}>Add Consultant</CommandButton>
@@ -520,12 +517,8 @@ function OrganisationCommandHeader({
 
   if (isHqBranches) {
     return (
-      <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-[1.9rem] font-semibold tracking-normal text-[#142132]">Branch Command Centre</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5f7287]">Executive view of branch performance, regional coverage, workload, routing, and operational risk.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
+      <header className="flex justify-end">
+        <div className="flex w-full items-center gap-3 overflow-x-auto pb-1 sm:w-auto sm:justify-end">
           {canManage ? <CommandButton icon={Plus} variant="primary" onClick={onAddBranch || (() => navigate('/settings/organisation?intent=add-bond-branch'))}>Add Branch</CommandButton> : null}
           {canManage ? <CommandButton icon={UserCheck} onClick={onAssignBranchManager || (() => navigate('/settings/organisation?intent=assign-bond-branch-manager'))}>Assign Branch Manager</CommandButton> : null}
           {canManage ? <CommandButton icon={UserPlus} onClick={onInviteConsultant || (() => navigate('/settings/organisation?intent=invite-bond-user'))}>Invite Consultant</CommandButton> : null}
@@ -537,16 +530,11 @@ function OrganisationCommandHeader({
 
   if (isHqConsultants) {
     return (
-      <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-[1.9rem] font-semibold tracking-normal text-[#142132]">Consultant Command Centre</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5f7287]">Track consultant performance, pipeline generation, conversion, workload pressure, and future revenue.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
+      <header className="flex justify-end">
+        <div className="flex w-full items-center gap-3 overflow-x-auto pb-1 sm:w-auto sm:justify-end">
           {canManage ? <CommandButton icon={Plus} variant="primary" onClick={onAddConsultant || (() => navigate('/settings/organisation?intent=invite-bond-user'))}>Add Consultant</CommandButton> : null}
           {canManage ? <CommandButton icon={Building2} onClick={onAssignConsultant || (() => navigate('/settings/organisation?intent=assign-bond-user-branch'))}>Assign Consultant</CommandButton> : null}
           <CommandButton icon={Download} onClick={onExport || (() => {})}>Export Performance</CommandButton>
-          <CommandButton icon={RefreshCw} onClick={onRefresh || (() => {})}>Refresh</CommandButton>
         </div>
       </header>
     )
@@ -1059,43 +1047,14 @@ function getActivityGroup(row = {}) {
   return 'Older'
 }
 
-function HqRecentOrganisationActivity({ rows = [] }) {
-  const groups = ['Today', 'Yesterday', 'Older'].map((label) => ({
-    label,
-    rows: (rows || []).filter((row) => getActivityGroup(row) === label),
-  })).filter((group) => group.rows.length)
-  return (
-    <SectionShell title="Recent Organisation Activity" description="Recent changes across your organisation.">
-      {!rows.length ? (
-        <CompactEmptyState title="No organisation activity yet." description="Region, branch, manager, consultant, and reassignment changes will appear here." />
-      ) : (
-        <div className="grid gap-5 lg:grid-cols-3">
-          {groups.map((group) => (
-            <div key={group.label} className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7d90a5]">{group.label}</p>
-              <div className="mt-3 space-y-3">
-                {group.rows.slice(0, 4).map((row) => (
-                  <a key={row.id} href={row.href} className="block rounded-[14px] bg-white px-3 py-3 transition hover:bg-[#f8fbff]">
-                    <p className="text-sm font-semibold text-[#142132]">{row.type || 'Organisation update'}</p>
-                    <p className="mt-1 text-xs leading-5 text-[#60758d]">{row.description}</p>
-                    <p className="mt-2 text-xs font-semibold text-[#7d90a5]">{row.timestamp}</p>
-                  </a>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </SectionShell>
-  )
-}
-
 function CommandMetricCard({ item = {} }) {
   const Icon = item.icon || FileText
   return (
-    <article className="flex min-h-[148px] flex-col justify-between rounded-[22px] border border-[#dbe5f0] bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.035)]">
+    <article className="group relative flex min-h-[158px] flex-col justify-between overflow-hidden rounded-[22px] border border-[#dbe5f0] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.04)]">
+      <span className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#153756] via-[#2d6388] to-[#8fb6cf] opacity-80" />
+      <span className="pointer-events-none absolute right-[-28px] top-[-32px] h-24 w-24 rounded-full bg-[#eef5ff] opacity-70 transition group-hover:scale-110" />
       <div className="flex items-start justify-between gap-4">
-        <span className={`flex h-11 w-11 items-center justify-center rounded-[16px] ${item.tone || 'bg-[#eef5ff] text-[#24518a]'}`}>
+        <span className={`relative flex h-11 w-11 items-center justify-center rounded-[16px] ${item.tone || 'bg-[#eef5ff] text-[#24518a]'}`}>
           <Icon size={20} strokeWidth={2.1} />
         </span>
         {item.badge ? <span className="rounded-full border border-[#dce7f2] bg-[#fbfdff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#60758d]">{item.badge}</span> : null}
@@ -1147,15 +1106,6 @@ function OrganisationExecutiveMetricStrip({ commandCentre = {} }) {
       icon: UserCheck,
     },
     {
-      key: 'revenue',
-      label: 'Revenue Forecast',
-      value: formatNullableCurrency(summary.revenueForecast),
-      description: summary.revenueForecast === null || summary.revenueForecast === undefined ? 'Connect commission rules to forecast revenue.' : 'Configured commission forecast in scope.',
-      badge: summary.revenueForecast === null || summary.revenueForecast === undefined ? 'Not configured' : 'Configured',
-      icon: DollarSign,
-      tone: 'bg-[#fff7ed] text-[#b45309]',
-    },
-    {
       key: 'health',
       label: 'Organisation Health',
       value: summary.organisationHealthScore === null || summary.organisationHealthScore === undefined ? 'Needs setup' : `${summary.organisationHealthScore}%`,
@@ -1167,7 +1117,7 @@ function OrganisationExecutiveMetricStrip({ commandCentre = {} }) {
   ]
 
   return (
-    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+    <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
       {items.map((item) => <CommandMetricCard key={item.key} item={item} />)}
     </section>
   )
@@ -1196,106 +1146,72 @@ function OrganisationSetupGuidancePanel({ commandCentre = {}, canManage = false,
   )
 }
 
-function OperatingStructureCard({ commandCentre = {}, canManage = false, navigate = () => {} }) {
-  const structure = commandCentre.structure || {}
-  const topRegions = structure.topRegions || []
-  const directBranches = structure.directBranches || []
-  const isSmallStructure = !topRegions.length && (Number(structure.branchesCount || 0) <= 1 || Number(structure.consultantsCount || 0) <= 1)
-
-  if (!structure.hasHierarchy && !Number(structure.consultantsCount || 0)) {
-    return (
-      <SectionShell
-        eyebrow="Structure"
-        title="Organisation Structure"
-        description="Create a region, branch, or consultant to activate the structure view."
-      >
-        <CompactEmptyState
-          title="No organisation structure yet."
-          description="Regions, branches, consultants, and application ownership will appear here."
-          action={canManage ? <CommandButton icon={Plus} variant="primary" onClick={() => navigate(getSettingsIntentRoute('add-bond-region'))}>Create Region</CommandButton> : null}
-        />
-      </SectionShell>
-    )
-  }
-
-  if (isSmallStructure) {
-    return (
-      <SectionShell
-        eyebrow="Structure"
-        title="Current Operating Structure"
-        description="A compact view for smaller originator teams."
-        action={<button type="button" onClick={() => navigate(getBondOrganisationRouteForTab('branches'))} className="inline-flex items-center gap-2 text-sm font-semibold text-[#24518a]">View structure <ArrowRight size={14} /></button>}
-      >
-        <div className="grid gap-4 md:grid-cols-3">
-          <SummaryMetric label="Branches" value={structure.branchesCount || 0} emphasis />
-          <SummaryMetric label="Consultants" value={structure.consultantsCount || 0} emphasis />
-          <SummaryMetric label="Unassigned Applications" value={commandCentre.health?.applicationsWithoutOwner || 0} emphasis />
-        </div>
-      </SectionShell>
-    )
-  }
-
-  return (
-    <SectionShell
-      eyebrow="Structure"
-      title="Organisation Structure"
-      description="Top regional operating groups by active workload and pipeline."
-      action={<button type="button" onClick={() => navigate(getBondOrganisationRouteForTab('branches'))} className="inline-flex items-center gap-2 text-sm font-semibold text-[#24518a]">View full structure <ArrowRight size={14} /></button>}
-    >
-      <div className="grid gap-4 xl:grid-cols-2">
-        {topRegions.map((region) => (
-          <button key={region.id || region.name} type="button" onClick={() => navigate(region.href)} className="rounded-[18px] border border-[#dbe5f0] bg-[#fbfdff] p-4 text-left transition hover:border-[#bfd0e1] hover:bg-white">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-[#142132]">{region.name}</p>
-                <p className="mt-1 text-xs text-[#71869d]">{region.branchesCount || 0} branches · {region.consultantsCount || 0} consultants</p>
-              </div>
-              <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${riskTone(region.riskLevel)}`}>{region.riskLevel || 'Healthy'}</span>
-            </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <SummaryMetric label="Pipeline" value={formatCurrency(region.pipelineValue)} emphasis />
-              <SummaryMetric label="Active Files" value={region.activeApplications || 0} />
-              <SummaryMetric label="Approval Rate" value={formatNullablePercent(region.approvalRate)} />
-              <SummaryMetric label="Coverage" value={`${region.branchesCount || 0} branches`} />
-            </div>
-          </button>
-        ))}
-        {!topRegions.length && directBranches.map((branch) => (
-          <button key={branch.id || branch.name} type="button" onClick={() => navigate(branch.href)} className="rounded-[18px] border border-[#dbe5f0] bg-[#fbfdff] p-4 text-left transition hover:border-[#bfd0e1] hover:bg-white">
-            <p className="text-sm font-semibold text-[#142132]">{branch.name}</p>
-            <p className="mt-1 text-xs text-[#71869d]">Direct branch · {branch.consultants || 0} consultants · {branch.activeApplications || 0} active files</p>
-          </button>
-        ))}
-      </div>
-    </SectionShell>
-  )
-}
-
 function OrganisationHealthCommandList({ items = [], navigate = () => {} }) {
+  const healthItems = items || []
+  const issueCount = healthItems.reduce((total, item) => total + Number(item.count || 0), 0)
+  const highPriorityItems = healthItems.filter((item) => item.severity === 'high' && Number(item.count || 0) > 0)
+  const clearItems = healthItems.filter((item) => Number(item.count || 0) === 0)
+  const highestPriority = highPriorityItems[0] || healthItems.find((item) => Number(item.count || 0) > 0)
   const toneForSeverity = (severity = '') => {
     if (severity === 'high') return 'border-[#fecaca] bg-[#fff5f5] text-[#b42318]'
     if (severity === 'medium') return 'border-[#fed7aa] bg-[#fffaf3] text-[#b45309]'
     return 'border-[#ccebd8] bg-[#f7fdf9] text-[#1f7a4d]'
   }
   return (
-    <SectionShell eyebrow="Health" title="Organisation Health" description="Operational gaps that need ownership, capacity, or SLA attention.">
-      <div className="grid gap-3 md:grid-cols-2">
-        {(items || []).map((item) => (
-          <button key={item.key} type="button" onClick={() => item.href && navigate(item.href)} className="flex min-h-[96px] items-start gap-3 rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4 text-left transition hover:border-[#bfd0e1] hover:bg-white">
-            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] ${Number(item.count || 0) > 0 ? 'bg-[#fff1df] text-[#c26a17]' : 'bg-[#e7f8ef] text-[#1f7a4d]'}`}>
-              {Number(item.count || 0) > 0 ? <AlertTriangle size={18} /> : <ShieldCheck size={18} />}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-sm font-semibold text-[#142132]">{item.label}</span>
-                <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${toneForSeverity(item.severity)}`}>{item.count ?? 0}</span>
-              </span>
-              <span className="mt-1 block text-xs leading-5 text-[#60758d]">{item.description}</span>
-              <span className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-[#24518a]">{item.actionLabel || 'View'} <ArrowRight size={13} /></span>
-            </span>
-          </button>
-        ))}
-      </div>
+    <SectionShell eyebrow="Executive Control" title="Organisation Health" description="Ownership, capacity, routing, and SLA signals across the operating network." className="overflow-hidden">
+      {!healthItems.length ? (
+        <CompactEmptyState title="Organisation health is still building." description="Health signals will appear once branches, consultants, and applications are active." />
+      ) : (
+        <div className="grid gap-5 xl:grid-cols-[0.78fr_1.72fr]">
+          <aside className="relative overflow-hidden rounded-[24px] bg-[#10233a] p-5 text-white shadow-[0_20px_48px_rgba(16,35,58,0.18)] sm:p-6">
+            <span className="pointer-events-none absolute right-[-56px] top-[-64px] h-40 w-40 rounded-full bg-white/10" />
+            <span className="pointer-events-none absolute bottom-[-80px] left-[-64px] h-44 w-44 rounded-full bg-[#3e7197]/30" />
+            <div className="relative">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#a7c0d9]">Operating pulse</p>
+              <p className="mt-4 text-5xl font-semibold leading-none tracking-normal">{issueCount}</p>
+              <p className="mt-3 max-w-sm text-sm leading-6 text-[#c9d8e7]">
+                {issueCount > 0 ? 'Priority items need leadership attention across ownership, workload, or routing.' : 'No critical operating issues detected in the current scope.'}
+              </p>
+              <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                <div className="rounded-[18px] border border-white/[0.12] bg-white/[0.08] p-4">
+                  <p className="text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-[#9db8d2]">High priority</p>
+                  <p className="mt-2 text-2xl font-semibold">{highPriorityItems.length}</p>
+                </div>
+                <div className="rounded-[18px] border border-white/[0.12] bg-white/[0.08] p-4">
+                  <p className="text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-[#9db8d2]">Controls clear</p>
+                  <p className="mt-2 text-2xl font-semibold">{clearItems.length}</p>
+                </div>
+              </div>
+              {highestPriority ? (
+                <button type="button" onClick={() => highestPriority.href && navigate(highestPriority.href)} className="mt-5 inline-flex w-full items-center justify-between gap-3 rounded-[18px] border border-white/[0.14] bg-white px-4 py-3 text-left text-sm font-semibold text-[#10233a] shadow-[0_14px_30px_rgba(0,0,0,0.12)] transition hover:bg-[#f7fbff]">
+                  <span className="min-w-0">
+                    <span className="block text-xs font-semibold uppercase tracking-[0.14em] text-[#60758d]">Next intervention</span>
+                    <span className="mt-1 block truncate">{highestPriority.label}</span>
+                  </span>
+                  <ArrowRight size={16} />
+                </button>
+              ) : null}
+            </div>
+          </aside>
+          <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+            {healthItems.map((item) => (
+              <button key={item.key} type="button" onClick={() => item.href && navigate(item.href)} className="group flex min-h-[128px] items-start gap-3 rounded-[20px] border border-[#e1e9f2] bg-[#fbfdff] p-4 text-left transition hover:-translate-y-0.5 hover:border-[#bfd0e1] hover:bg-white hover:shadow-[0_16px_32px_rgba(15,23,42,0.055)]">
+                <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] ${Number(item.count || 0) > 0 ? 'bg-[#fff1df] text-[#c26a17]' : 'bg-[#e7f8ef] text-[#1f7a4d]'}`}>
+                  {Number(item.count || 0) > 0 ? <AlertTriangle size={18} /> : <ShieldCheck size={18} />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-[#142132]">{item.label}</span>
+                    <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${toneForSeverity(item.severity)}`}>{item.count ?? 0}</span>
+                  </span>
+                  <span className="mt-2 block text-xs leading-5 text-[#60758d]">{item.description}</span>
+                  <span className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-[#24518a]">{item.actionLabel || 'View'} <ArrowRight size={13} className="transition group-hover:translate-x-0.5" /></span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </SectionShell>
   )
 }
@@ -1384,62 +1300,17 @@ function ConsultantWorkloadCommandPanel({ rows = [], navigate = () => {} }) {
   )
 }
 
-function WorkflowFunnelPanel({ funnel = {} }) {
-  const stages = funnel.stages || []
-  return (
-    <SectionShell eyebrow="Workflow" title="Workflow Funnel" description="Executive movement from application creation to registration.">
-      {!funnel.hasData ? (
-        <CompactEmptyState title="Workflow data is still building." description={funnel.fallbackMessage || 'Workflow funnel will appear once applications move through finance stages.'} />
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {stages.map((stage) => (
-            <article key={stage.key} className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7d90a5]">{stage.conversionPercent === null ? '—' : `${stage.conversionPercent}%`}</p>
-              <p className="mt-3 text-sm font-semibold text-[#142132]">{stage.label}</p>
-              <p className="mt-2 text-2xl font-semibold text-[#142132]">{stage.count || 0}</p>
-            </article>
-          ))}
-        </div>
-      )}
-    </SectionShell>
-  )
-}
-
-function RevenueForecastPanel({ revenue = {} }) {
-  return (
-    <SectionShell eyebrow="Revenue" title="Revenue Forecast" description="Commission forecast visibility where configured." className="min-w-0">
-      {!revenue.isConfigured ? (
-        <CompactEmptyState title="Revenue forecast not configured yet." description="Connect commission rules to enable forecasting." />
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-3">
-          <SummaryMetric label="This Month" value={formatNullableCurrency(revenue.thisMonth)} emphasis />
-          <SummaryMetric label="Next 30 Days" value={formatNullableCurrency(revenue.next30Days)} />
-          <SummaryMetric label="Quarter Forecast" value={formatNullableCurrency(revenue.quarter)} />
-        </div>
-      )}
-    </SectionShell>
-  )
-}
-
 function HqOrganisationCommandCentre({ snapshot = {}, navigate = () => {}, canManage = false }) {
   const commandCentre = snapshot.organisationCommandCentre || {}
   return (
     <>
       <OrganisationExecutiveMetricStrip commandCentre={commandCentre} />
       <OrganisationSetupGuidancePanel commandCentre={commandCentre} navigate={navigate} canManage={canManage} />
-      <div className="grid gap-6 xl:grid-cols-[1.55fr_1fr]">
-        <OperatingStructureCard commandCentre={commandCentre} navigate={navigate} canManage={canManage} />
-        <OrganisationHealthCommandList items={commandCentre.health?.items || []} navigate={navigate} />
-      </div>
+      <OrganisationHealthCommandList items={commandCentre.health?.items || []} navigate={navigate} />
       <div className="grid gap-6 xl:grid-cols-2">
         <BranchPerformanceCommandTable rows={commandCentre.branchPerformance || []} navigate={navigate} />
         <ConsultantWorkloadCommandPanel rows={commandCentre.consultantWorkload || []} navigate={navigate} />
       </div>
-      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <WorkflowFunnelPanel funnel={commandCentre.workflowFunnel || {}} />
-        <RevenueForecastPanel revenue={commandCentre.revenueForecast || {}} />
-      </div>
-      <HqRecentOrganisationActivity rows={commandCentre.recentActivity || []} />
     </>
   )
 }
@@ -2230,17 +2101,26 @@ function getLeaderboardModeValue(row = {}, mode = 'pipeline') {
   return formatCurrency(row.pipelineValue)
 }
 
-function HqConsultantExecutiveKpiStrip({ summary = {} }) {
+function HqConsultantExecutiveKpiStrip({ summary = {}, rows = [] }) {
+  const activeConsultants = rows.filter((row) => normalizeLower(row.status) !== 'inactive').length
+  const totalConsultants = Number(summary.totalConsultants ?? summary.consultants ?? summary.activeConsultants ?? rows.length)
+  const activeApplications = Number(summary.activeApplications ?? rows.reduce((sum, row) => sum + Number(row.activeApplications || 0), 0))
+  const approvals = Number(summary.approvals ?? summary.approvedApplications ?? summary.approvedCount ?? rows.reduce((sum, row) => {
+    if (row.approvalRate === null || row.approvalRate === undefined) return sum
+    return sum + Math.round((Number(row.approvalRate || 0) / 100) * Number(row.decisionedApplications || 0))
+  }, 0))
+  const readyForReview = Number(summary.readyForReview ?? summary.readyForReviewApplications ?? rows.reduce((sum, row) => sum + Number(row.readyForReview || 0), 0))
+  const overloadedConsultants = Number(summary.overloadedConsultants ?? summary.consultantsOverCapacity ?? rows.filter((row) => normalizeLower(row.capacityStatus) === 'overloaded').length)
+  const averageApprovals = totalConsultants ? Number((approvals / totalConsultants).toFixed(1)) : null
+  const averageActiveFiles = totalConsultants ? Number((activeApplications / totalConsultants).toFixed(1)) : null
   const cards = [
-    { key: 'pipeline', label: 'Total Pipeline Value', value: formatCurrency(summary.totalPipelineValue), helper: 'Active consultant application value', icon: BarChart3 },
-    { key: 'active-applications', label: 'Active Applications', value: summary.activeApplications || 0, helper: 'Open consultant-owned files', icon: FileText },
-    { key: 'approval-rate', label: 'Approval Rate', value: formatNullablePercent(summary.approvalRate), helper: 'Approved over submitted or decisioned', icon: ShieldCheck },
-    { key: 'registrations', label: 'Registrations', value: summary.registrations || 0, helper: 'Registered this month', icon: UserCheck },
-    { key: 'forecast-revenue', label: 'Forecast Revenue', value: formatNullableCurrency(summary.forecastRevenue), helper: 'Configured commission/revenue only', icon: DollarSign },
-    { key: 'average-revenue', label: 'Avg Revenue / Consultant', value: formatNullableCurrency(summary.averageRevenuePerConsultant), helper: 'Forecast per active consultant', icon: TrendingUp },
+    { key: 'consultants', label: 'Total Consultants', value: totalConsultants, helper: `${summary.activeConsultants ?? activeConsultants} active in the visible network`, icon: Users },
+    { key: 'avg-approvals', label: 'Avg Approvals / Consultant', value: averageApprovals === null ? '-' : averageApprovals, helper: 'Approved applications per consultant', icon: ShieldCheck },
+    { key: 'avg-active-files', label: 'Active Files / Consultant', value: averageActiveFiles === null ? '-' : averageActiveFiles, helper: `${activeApplications} active consultant-owned files`, icon: FileText },
+    { key: 'ready-review', label: 'Ready For Review', value: readyForReview, helper: `${overloadedConsultants} consultants currently overloaded`, icon: UserCheck },
   ]
   return (
-    <section className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
+    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       {cards.map((card) => {
         const Icon = card.icon
         return (
@@ -2264,23 +2144,41 @@ function HqConsultantExecutiveKpiStrip({ summary = {} }) {
 
 function HqConsultantLeaderboard({ leaderboards = {}, navigate = () => {} }) {
   const [mode, setMode] = useState('pipeline')
+  const [viewMode, setViewMode] = useState('table')
   const rows = leaderboards[mode] || leaderboards.pipeline || []
   return (
     <SectionShell
       title="Top Consultants Leaderboard"
-      description="Rank consultants by the executive metric that matters right now."
+      description="Rank consultants by production, approvals, registrations, and forecast contribution."
       action={(
-        <div className="flex flex-wrap gap-2">
-          {CONSULTANT_LEADERBOARD_MODES.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => setMode(item.key)}
-              className={`h-9 rounded-full border px-3 text-xs font-semibold transition ${mode === item.key ? 'border-[#143250] bg-[#143250] text-white' : 'border-[#d9e4ef] bg-white text-[#31475d] hover:border-[#bfd0e1]'}`}
-            >
-              {item.label}
-            </button>
-          ))}
+        <div className="flex flex-col gap-2 sm:items-end">
+          <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
+            {CONSULTANT_LEADERBOARD_MODES.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setMode(item.key)}
+                className={`h-9 shrink-0 rounded-full border px-3 text-xs font-semibold transition ${mode === item.key ? 'border-[#143250] bg-[#143250] text-white' : 'border-[#d9e4ef] bg-white text-[#31475d] hover:border-[#bfd0e1]'}`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <div className="inline-flex rounded-[12px] border border-[#d9e4ef] bg-[#f8fbff] p-1">
+            {[
+              { key: 'table', label: 'Table' },
+              { key: 'cards', label: 'Cards' },
+            ].map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setViewMode(item.key)}
+                className={`h-8 rounded-[9px] px-3 text-xs font-semibold transition ${viewMode === item.key ? 'bg-white text-[#143250] shadow-[0_5px_12px_rgba(15,23,42,0.08)]' : 'text-[#60758d] hover:text-[#143250]'}`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
       className="min-w-0"
@@ -2289,7 +2187,7 @@ function HqConsultantLeaderboard({ leaderboards = {}, navigate = () => {} }) {
         <CompactEmptyState title="Performance metrics will appear once consultants begin processing applications." description="Add consultants and assign applications to unlock rankings." />
       ) : (
         <>
-          <div className="hidden overflow-x-auto rounded-[18px] border border-[#e1e9f2] md:block">
+          <div className={`${viewMode === 'table' ? 'block' : 'hidden'} overflow-x-auto rounded-[18px] border border-[#e1e9f2]`}>
             <table className="w-full min-w-[760px] border-collapse">
               <thead>
                 <tr>
@@ -2328,7 +2226,7 @@ function HqConsultantLeaderboard({ leaderboards = {}, navigate = () => {} }) {
               </tbody>
             </table>
           </div>
-          <div className="grid gap-3 md:hidden">
+          <div className={`${viewMode === 'cards' ? 'grid' : 'hidden'} gap-3 md:grid-cols-2 xl:grid-cols-3`}>
             {rows.map((row) => (
               <button key={row.id || row.consultant} type="button" onClick={() => row.href && navigate(row.href)} className="rounded-[18px] border border-[#e1e9f2] bg-white p-4 text-left">
                 <div className="flex items-start justify-between gap-3">
@@ -2494,6 +2392,7 @@ function HqConsultantDirectory({
   const [status, setStatus] = useState('all')
   const [workload, setWorkload] = useState('all')
   const [role, setRole] = useState('all')
+  const [showFilters, setShowFilters] = useState(false)
 
   const roleOptions = useMemo(() => {
     const roles = [...new Set(rows.map((row) => normalizeText(row.role)).filter(Boolean))]
@@ -2507,6 +2406,19 @@ function HqConsultantDirectory({
     () => [{ value: 'all', label: 'All Branches' }, ...branches.map((branch) => ({ value: normalizeText(branch.id), label: branch.name || branch.branch || 'Branch' }))],
     [branches],
   )
+  const statusOptions = [
+    { value: 'all', label: 'All Statuses' },
+    { value: 'active', label: 'Active' },
+    { value: 'inactive', label: 'Inactive' },
+  ]
+  const workloadOptions = [
+    { value: 'all', label: 'All Workloads' },
+    { value: 'light', label: 'Light' },
+    { value: 'normal', label: 'Normal' },
+    { value: 'busy', label: 'Busy' },
+    { value: 'overloaded', label: 'Overloaded' },
+  ]
+  const activeFilterCount = [regionId, branchId, status, workload, role].filter((value) => value !== 'all').length
   const filteredRows = useMemo(() => {
     const query = normalizeLower(search)
     return rows.filter((row) => {
@@ -2540,40 +2452,56 @@ function HqConsultantDirectory({
         />
       ) : (
         <>
-          <FilterBar
-            searchPlaceholder="Search consultant..."
-            searchValue={search}
-            onSearchChange={setSearch}
-            filters={[
-              { key: 'region', label: 'Region', value: regionId, onChange: setRegionId, options: regionOptions },
-              { key: 'branch', label: 'Branch', value: branchId, onChange: setBranchId, options: branchOptions },
-              {
-                key: 'status',
-                label: 'Status',
-                value: status,
-                onChange: setStatus,
-                options: [
-                  { value: 'all', label: 'All Statuses' },
-                  { value: 'active', label: 'Active' },
-                  { value: 'inactive', label: 'Inactive' },
-                ],
-              },
-              {
-                key: 'workload',
-                label: 'Workload',
-                value: workload,
-                onChange: setWorkload,
-                options: [
-                  { value: 'all', label: 'All Workloads' },
-                  { value: 'light', label: 'Light' },
-                  { value: 'normal', label: 'Normal' },
-                  { value: 'busy', label: 'Busy' },
-                  { value: 'overloaded', label: 'Overloaded' },
-                ],
-              },
-              { key: 'role', label: 'Role', value: role, onChange: setRole, options: roleOptions },
-            ]}
-          />
+          <div className="mb-4 rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <label className="relative block min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#8da1b6]" size={18} />
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search consultant, email, branch or region..."
+                  className="h-12 w-full rounded-[14px] border border-[#d9e4ef] bg-white pl-12 pr-4 text-sm font-medium text-[#17324d] outline-none transition placeholder:text-[#8da1b6] focus:border-[#24518a] focus:ring-4 focus:ring-[#24518a]/10"
+                />
+              </label>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="hidden text-xs font-semibold text-[#71869d] sm:inline">{filteredRows.length} of {rows.length} consultants</span>
+                <button
+                  type="button"
+                  onClick={() => setShowFilters((value) => !value)}
+                  className={`inline-flex h-12 items-center gap-2 rounded-[14px] border px-4 text-sm font-semibold transition ${showFilters || activeFilterCount ? 'border-[#143250] bg-[#143250] text-white' : 'border-[#d9e4ef] bg-white text-[#31475d] hover:border-[#bfd0e1]'}`}
+                >
+                  <SlidersHorizontal size={16} />
+                  Filters
+                  {activeFilterCount ? <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">{activeFilterCount}</span> : null}
+                </button>
+              </div>
+            </div>
+            {showFilters ? (
+              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                {[
+                  { key: 'region', label: 'Region', value: regionId, onChange: setRegionId, options: regionOptions },
+                  { key: 'branch', label: 'Branch', value: branchId, onChange: setBranchId, options: branchOptions },
+                  { key: 'status', label: 'Status', value: status, onChange: setStatus, options: statusOptions },
+                  { key: 'workload', label: 'Workload', value: workload, onChange: setWorkload, options: workloadOptions },
+                  { key: 'role', label: 'Role', value: role, onChange: setRole, options: roleOptions },
+                ].map((filter) => (
+                  <label key={filter.key} className="grid gap-1.5">
+                    <span className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7d90a5]">{filter.label}</span>
+                    <select
+                      value={filter.value}
+                      onChange={(event) => filter.onChange(event.target.value)}
+                      className="h-11 rounded-[13px] border border-[#d9e4ef] bg-white px-3 text-sm font-semibold text-[#17324d] outline-none transition focus:border-[#24518a] focus:ring-4 focus:ring-[#24518a]/10"
+                    >
+                      {filter.options.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <div className="overflow-x-auto rounded-[18px] border border-[#e1e9f2]">
             <table className="w-full min-w-[1080px] border-collapse">
               <thead>
@@ -2671,11 +2599,9 @@ function HqConsultantCommandCentre({
   const directoryRows = command.directory || []
   return (
     <>
-      <HqConsultantExecutiveKpiStrip summary={command.summary || {}} />
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <HqConsultantLeaderboard leaderboards={command.leaderboards || {}} navigate={navigate} />
-        <HqConsultantHealthPanel rows={command.healthCards || []} navigate={navigate} />
-      </div>
+      <HqConsultantExecutiveKpiStrip summary={command.summary || {}} rows={directoryRows} />
+      <HqConsultantLeaderboard leaderboards={command.leaderboards || {}} navigate={navigate} />
+      <HqConsultantHealthPanel rows={command.healthCards || []} navigate={navigate} />
       <div className="grid gap-6 lg:grid-cols-2">
         <HqConsultantDistributionPanel
           title="Workload Distribution"
@@ -5370,7 +5296,7 @@ export default function BondOrganisationPage({
             </section>
           ) : null}
           {selectedView !== 'overview' && canRenderSelectedView && !isHqBranchCommandView && !isHqConsultantCommandView ? <OrganisationKpiStrip kpis={viewKpis} /> : null}
-          {!regionWorkspaceId && !branchWorkspaceId && !consultantWorkspaceId && !partnerWorkspaceId ? <BondViewTabs tabs={tabs} value={selectedView} counts={snapshot?.counts || {}} onChange={handleViewChange} /> : null}
+          {selectedView !== 'overview' && !isHqBranchCommandView && !isHqConsultantCommandView && !regionWorkspaceId && !branchWorkspaceId && !consultantWorkspaceId && !partnerWorkspaceId ? <BondViewTabs tabs={tabs} value={selectedView} counts={snapshot?.counts || {}} onChange={handleViewChange} /> : null}
 
           {!canRenderSelectedView ? (
             <OrganisationViewUnavailable view={selectedView} />
