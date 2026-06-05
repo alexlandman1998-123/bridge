@@ -571,25 +571,6 @@ function isBondPipelineLifecycleRow(row) {
   return getBondOriginatorQueueState(row).bucket === 'pipeline'
 }
 
-function isLegacyBondPipelineLifecycleRow(row) {
-  const explicitBucket = String(row?.transaction?.lifecycle_bucket || row?.transaction?.lifecycleBucket || '')
-    .trim()
-    .toLowerCase()
-  if (explicitBucket === 'pipeline') return true
-  if (explicitBucket === 'transaction') return false
-
-  const applicationStage = getBondApplicationStage(row)
-  const mainStage = resolveMainStage(row)
-  const signal = getBondSignalText(row)
-
-  if (applicationStage === 'declined') return true
-  if (applicationStage === 'approval_granted') return false
-  if (['ATTY', 'XFER', 'REG'].includes(mainStage)) return false
-  if (/(grant signed|instruction sent|attorney instructed|proceed to attorneys|registered)/i.test(signal)) return false
-
-  return true
-}
-
 function Units() {
   const navigate = useNavigate()
   const location = useLocation()

@@ -7,6 +7,7 @@ import {
   Handshake,
   Home,
   Mail,
+  SlidersHorizontal,
   Route,
   Shield,
   UserCircle2,
@@ -88,6 +89,27 @@ const SETTINGS_CARDS = [
   },
 ]
 
+const BOND_SETTINGS_CARDS = [
+  {
+    to: '/settings/account',
+    title: 'Account',
+    description: 'Manage your profile, notification preferences, and personal defaults.',
+    icon: UserCircle2,
+  },
+  {
+    to: '/settings/organisation',
+    title: 'Bond Originator Organisation',
+    description: 'Manage company identity, HQ contact details, regions, branches, consultants, visibility, and branding.',
+    icon: Building2,
+  },
+  {
+    to: '/bond/automation',
+    title: 'Automation & Rules',
+    description: 'Configure routing, assignment, SLA, escalation, and workflow automation for bond applications.',
+    icon: SlidersHorizontal,
+  },
+]
+
 export default function SettingsLanding() {
   const { role } = useWorkspace()
   const [membershipRole, setMembershipRole] = useState('viewer')
@@ -119,7 +141,8 @@ export default function SettingsLanding() {
     appRole: role,
     membershipRole: normalizeOrganisationMembershipRole(membershipRole),
   })
-  const visibleCards = SETTINGS_CARDS.filter((card) => {
+  const cards = role === 'bond_originator' ? BOND_SETTINGS_CARDS : SETTINGS_CARDS
+  const visibleCards = cards.filter((card) => {
     if (
       !canManage &&
       ['Users & Permissions', 'Billing', 'Commission Structures', 'Developments', 'Partner Routing Rules'].includes(card.title)
@@ -133,8 +156,12 @@ export default function SettingsLanding() {
     <div className={settingsPageClass}>
       <SettingsPageHeader
         kicker="Settings"
-        title="Manage how Bridge runs"
-        description="Use one control panel for account, organisation, developments, workflows, users, and billing."
+        title={role === 'bond_originator' ? 'Manage your bond originator workspace' : 'Manage how Bridge runs'}
+        description={
+          role === 'bond_originator'
+            ? 'Control the workspace details, operating structure, automation, and account defaults used across the bond origination module.'
+            : 'Use one control panel for account, organisation, developments, workflows, users, and billing.'
+        }
       />
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

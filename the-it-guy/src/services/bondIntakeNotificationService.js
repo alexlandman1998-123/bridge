@@ -1,3 +1,4 @@
+import { buildFinanceReadinessHandoffPacket } from '../core/finance/financeReadinessSelectors'
 import { getBondApplicationProgress, getBondIntakeSummary } from '../core/transactions/bondIntakeSelectors'
 import { isBondFinanceType } from '../core/transactions/financeType'
 import { invokeEdgeFunction, supabase } from '../lib/supabaseClient'
@@ -35,6 +36,7 @@ const HQ_MANAGER_ROLE_KEYS = new Set(['owner', 'principal', 'director', 'manager
 const REGIONAL_MANAGER_ROLE_KEYS = new Set(['regional_manager', 'hq_manager', 'director', 'owner', 'manager'])
 const BRANCH_MANAGER_ROLE_KEYS = new Set(['branch_manager', 'team_lead', 'manager', 'owner', 'hq_manager'])
 const ACTIVE_STATUSES = new Set(['', 'active', 'approved', 'assigned', 'current', 'in_progress', 'pending', 'notified'])
+const FINANCE_READINESS_EMAIL_ROLE_KEYS = new Set(['bond_originator', 'consultant', 'branch_manager', 'regional_manager', 'hq_manager', 'manager', 'owner', 'director', 'admin'])
 const EMAIL_EVENTS = new Set([
   BOND_NOTIFICATION_EVENTS.BOND_INTAKE_STARTED,
   BOND_NOTIFICATION_EVENTS.BOND_INTAKE_RECEIVED,
@@ -944,6 +946,14 @@ async function sendEmailIfAllowed({ eventType, transactionId, recipient, copy, m
     return { sent: false, suppressed: true }
   }
   const isBuyer = normalizeRoleKey(recipient.roleType) === 'client' || normalizeRoleKey(recipient.roleType) === 'buyer'
+  const baseMessage = isBuyer && copy.buyerMessage ? copy.buyerMessage : copy.message
+  const message = shouldIncludeFinanceReadinessInEmail({
+    eventType,
+    role,
+    handoff: metadata.financeReadinessHandoff,
+  })
+    ? appendFinanceReadinessToEmailMessage(baseMessage, metadata.financeReadinessHandoff)
+    : baseMessage
   const result = await invokeEmailFunction('send-email', {
     client,
     body: {
@@ -953,7 +963,7 @@ async function sendEmailIfAllowed({ eventType, transactionId, recipient, copy, m
       recipientName: recipient.name,
       subject: isBuyer && copy.buyerSubject ? copy.buyerSubject : copy.subject,
       title: copy.title,
-      message: isBuyer && copy.buyerMessage ? copy.buyerMessage : copy.message,
+      message,
       metadata,
     },
   })
@@ -969,6 +979,64 @@ function formatFinanceType(value = '') {
   if (normalized === 'bond') return 'Bond'
   if (normalized === 'cash') return 'Cash'
   return normalizeText(value) || 'Not specified'
+}
+
+function compactFinanceReadinessHandoff(handoff = null) {
+  if (!handoff || typeof handoff !== 'object') return null
+  return compactObject({
+    statusLabel: normalizeText(handoff.statusLabel),
+    statusTone: normalizeText(handoff.statusTone),
+    score: Number.isFinite(Number(handoff.score)) ? Number(handoff.score) : null,
+    scoreLabel: normalizeText(handoff.scoreLabel),
+    readinessLabel: normalizeText(handoff.readinessLabel),
+    affordabilityRangeLabel: normalizeText(handoff.affordabilityRangeLabel),
+    repaymentEstimateLabel: normalizeText(handoff.repaymentEstimateLabel),
+    depositStrengthLabel: normalizeText(handoff.depositStrengthLabel),
+    recommendedAction: normalizeText(handoff.recommendedAction),
+    summaryLine: normalizeText(handoff.summaryLine),
+    topMissingItems: Array.isArray(handoff.topMissingItems) ? handoff.topMissingItems.slice(0, 5) : [],
+    topRiskFlags: Array.isArray(handoff.topRiskFlags) ? handoff.topRiskFlags.slice(0, 5) : [],
+    topStrengths: Array.isArray(handoff.topStrengths) ? handoff.topStrengths.slice(0, 4) : [],
+    topBlockers: Array.isArray(handoff.topBlockers) ? handoff.topBlockers.slice(0, 5) : [],
+    handoffChecklist: Array.isArray(handoff.handoffChecklist) ? handoff.handoffChecklist.slice(0, 4) : [],
+    disclaimer: normalizeText(handoff.disclaimer),
+  })
+}
+
+function buildFinanceReadinessNotificationHandoff({ transaction = {}, metadata = {}, intakeSummary = null, financeType = '' } = {}) {
+  if (!isBondFinanceType(financeType)) return null
+  const documentReadiness = intakeSummary?.documentReadiness || {}
+  const documentSummary = metadata.documentSummary || metadata.document_readiness_summary || {
+    totalRequired: documentReadiness.requiredCount || 0,
+    uploadedCount: documentReadiness.uploadedCount || 0,
+    missingCount: documentReadiness.missingCount || 0,
+  }
+  return compactFinanceReadinessHandoff(buildFinanceReadinessHandoffPacket({
+    transaction,
+    onboardingFormData: metadata.onboardingFormData || metadata.formData || metadata.form_data || {},
+    documentSummary,
+  }))
+}
+
+function shouldIncludeFinanceReadinessInEmail({ eventType, role, handoff = null } = {}) {
+  if (!handoff) return false
+  if (eventType === BOND_NOTIFICATION_EVENTS.BUYER_BOND_ORIGINATOR_INTRO) return false
+  return FINANCE_READINESS_EMAIL_ROLE_KEYS.has(normalizeRoleKey(role))
+}
+
+function appendFinanceReadinessToEmailMessage(message = '', handoff = null) {
+  if (!handoff) return message
+  const blockers = [...new Set([...(handoff.topMissingItems || []), ...(handoff.topRiskFlags || [])])].slice(0, 3)
+  const lines = [
+    'Indicative Finance Readiness',
+    `Readiness: ${handoff.scoreLabel || 'Not captured'}${handoff.statusLabel ? ` (${handoff.statusLabel})` : ''}`,
+    handoff.affordabilityRangeLabel ? `Affordability range: ${handoff.affordabilityRangeLabel}` : '',
+    handoff.repaymentEstimateLabel ? `Repayment estimate: ${handoff.repaymentEstimateLabel}` : '',
+    handoff.recommendedAction ? `Recommended action: ${handoff.recommendedAction}` : '',
+    blockers.length ? `Watch items: ${blockers.join(', ')}` : '',
+    handoff.disclaimer ? `Note: ${handoff.disclaimer}` : '',
+  ].filter(Boolean)
+  return `${normalizeText(message)}\n\n${lines.join('\n')}`
 }
 
 function buildApplicationLink(transactionId = '', metadata = {}) {
@@ -1009,6 +1077,9 @@ function enrichNotificationMetadata({ transaction = {}, metadata = {}, recipient
     metadata?.financeType ||
     metadata?.onboardingFormData?.purchase_finance_type ||
     metadata?.onboardingFormData?.finance?.purchase_finance_type
+  const financeReadinessHandoff =
+    metadata.financeReadinessHandoff ||
+    buildFinanceReadinessNotificationHandoff({ transaction, metadata, intakeSummary, financeType })
   const documentStatus =
     metadata.documentStatus ||
     (intakeSummary?.documentReadiness?.isComplete
@@ -1033,6 +1104,14 @@ function enrichNotificationMetadata({ transaction = {}, metadata = {}, recipient
     consultantTitle: metadata.consultantTitle || introConsultant?.title || '',
     consultantBranch: metadata.consultantBranch || recipients.organisationContact?.scope?.scopeName || '',
     organisationName,
+    ...(financeReadinessHandoff ? {
+      financeReadinessHandoff,
+      financeReadinessScore: financeReadinessHandoff.score,
+      financeReadinessStatus: financeReadinessHandoff.statusLabel,
+      financeReadinessSummary: financeReadinessHandoff.summaryLine,
+      financeReadinessRecommendedAction: financeReadinessHandoff.recommendedAction,
+      financeReadinessDisclaimer: financeReadinessHandoff.disclaimer,
+    } : {}),
     applicationLink: buildApplicationLink(transaction.id || transaction.transaction_id, metadata),
     timestamp: metadata.timestamp || new Date().toISOString(),
   }

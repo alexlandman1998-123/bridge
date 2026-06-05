@@ -10,6 +10,7 @@ import {
 } from '../core/transactions/bondHybridFinanceWorkflow'
 import Button from './ui/Button'
 import Field from './ui/Field'
+import IndicativeFinanceReadinessContainer from './finance/IndicativeFinanceReadinessContainer'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -70,6 +71,7 @@ function TransactionBondHybridFinanceWorkflowPanel({
   workflowData = null,
   canEdit = false,
   variant = 'agent',
+  financeReadinessHandoff = null,
   loadingAction = '',
   onAdvanceStage,
   onAddApplication,
@@ -169,6 +171,8 @@ function TransactionBondHybridFinanceWorkflowPanel({
         <MiniStat label="Updated By" value={workflow.lastUpdatedByName || 'Not captured'} />
         <MiniStat label="Instruction Sent" value={summary.instructionSent ? 'Yes' : 'No'} />
       </div>
+
+      <IndicativeFinanceReadinessContainer handoff={financeReadinessHandoff} className="mt-4" />
 
       <div className="mt-4 grid gap-4 xl:grid-cols-3">
         <section className="rounded-[16px] border border-[#e4ebf4] bg-[#fbfcfe] p-4">

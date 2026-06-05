@@ -242,7 +242,7 @@ try {
   const api = await server.ssrLoadModule('/src/lib/api.js')
   const queueService = await server.ssrLoadModule('/src/services/bondOperationalQueueService.js')
   const { addBondApplication, __transactionBondApplicationClassificationTestUtils } = api
-  const { getNewApplicationsQueue } = queueService
+  const { getBondOriginatorQueueState, getNewApplicationsQueue, isBondApplicationTrackerRow } = queueService
   const client = buildMockClient()
 
   const intake = await __transactionBondApplicationClassificationTestUtils.ensureBondApplicationWorkspaceRecord(client, {
@@ -303,8 +303,30 @@ try {
     bondApplications: applications,
     primaryBondApplication: originatorRows[0],
   }])
-  assert.equal(originatorQueueRows.length, 1)
-  assert.equal(originatorQueueRows[0].intakeStatus, 'READY_FOR_REVIEW')
+  assert.equal(originatorQueueRows.length, 0, 'ready for review file is no longer in Pipeline')
+  const trackerInput = {
+    transaction: {
+      id: 'tx-bond-1',
+      finance_type: 'bond',
+      bond_workspace_id: 'bond-org-1',
+      onboarding_completed_at: '2026-06-04T08:05:00.000Z',
+      otp_status: 'fully_signed',
+    },
+    onboardingFormData: {
+      form_data: {
+        bond_application: {
+          status: 'Submitted',
+          submitted_at: '2026-06-04T08:10:00.000Z',
+        },
+      },
+    },
+    documentRequests: [{ id: 'req-bank', category: 'finance', title: 'Bank statement', status: 'requested' }],
+    documents: [{ document_request_id: 'req-bank', status: 'uploaded', uploaded_at: '2026-06-04T08:15:00.000Z' }],
+    bondApplications: applications,
+    primaryBondApplication: originatorRows[0],
+  }
+  assert.equal(isBondApplicationTrackerRow(trackerInput), true)
+  assert.equal(getBondOriginatorQueueState(trackerInput).status, 'READY_FOR_REVIEW')
 
   console.log('bondApplicationClassification tests passed')
 } finally {

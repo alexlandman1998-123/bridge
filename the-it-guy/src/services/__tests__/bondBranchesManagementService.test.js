@@ -1,4 +1,3 @@
-/* global process */
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -52,6 +51,7 @@ try {
     { id: 'user-hq', user_id: 'user-hq', first_name: 'HQ', last_name: 'Owner', role: 'owner', workspace_role: 'owner' },
     { id: 'regional-north', user_id: 'regional-north', first_name: 'Regional', last_name: 'North', role: 'regional_manager', workspace_role: 'regional_manager', region_id: 'region-north' },
     { id: 'branch-manager', user_id: 'branch-manager', first_name: 'Branch', last_name: 'Manager', role: 'branch_manager', workspace_role: 'branch_manager', region_id: 'region-north', workspace_unit_id: 'branch-north' },
+    { id: 'team-lead', user_id: 'team-lead', first_name: 'Team', last_name: 'Lead', role: 'team_lead', workspace_role: 'team_lead', region_id: 'region-north' },
     { id: 'consultant-a', user_id: 'consultant-a', first_name: 'Consultant', last_name: 'One', role: 'consultant', workspace_role: 'consultant', region_id: 'region-north', workspace_unit_id: 'branch-north' },
   ]
   const hqContext = makeContext()
@@ -83,13 +83,20 @@ try {
     (error) => error.fieldErrors?.contactEmail === 'Enter a valid contact email.',
   )
 
+  await assert.rejects(
+    () => service.createBondBranch({ name: 'Missing Region' }, hqContext, 'workspace-branches', { users, regions, forceLocal: true }),
+    (error) => error.fieldErrors?.regionId === 'Region is required.',
+  )
+
   const southBranch = await service.createBondBranch({
     id: 'branch-south',
     name: 'Cape Branch',
     regionId: 'region-south',
     code: 'CPT',
+    managerUserId: 'team-lead',
   }, hqContext, 'workspace-branches', { users, regions, forceLocal: true })
   assert.equal(southBranch.regionId, 'region-south')
+  assert.equal(southBranch.managerUserId, 'team-lead')
 
   const editedNorth = await service.updateBondBranch('branch-north', {
     name: 'Pretoria Central Branch',
@@ -136,6 +143,11 @@ try {
   assert.equal(hqSnapshot.overview.metrics.totalBranches, 2)
   assert.equal(hqSnapshot.regionPerformance.find((row) => row.id === 'region-north').branches, 1)
   assert.ok(hqSnapshot.recentActivity.some((row) => row.type === 'Branch manager assigned'))
+  assert.deepEqual(
+    hqSnapshot.eligibleBranchManagers.map((row) => row.id).sort(),
+    ['branch-manager', 'regional-north', 'team-lead', 'user-hq'].sort(),
+  )
+  assert.equal(hqSnapshot.eligibleBranchManagers.find((row) => row.id === 'team-lead')?.role, 'team_lead')
 
   const branchWorkspace = service.getBondBranchWorkspace('branch-north', {
     organisationScope: hqSnapshot.organisationScope,

@@ -322,6 +322,21 @@ try {
     eventType: BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_SUBMITTED,
     transaction: transaction(),
     recipients: [{ userId: 'originator-user-1', email: 'originator@example.test', name: 'Olive Originator', roleType: 'bond_originator' }],
+    metadata: {
+      onboardingFormData: {
+        finance_type: 'bond',
+        monthly_income: 85000,
+        monthly_living_expenses: 26000,
+        monthly_credit_commitments: 6000,
+        employment_duration_months: 42,
+        purchase_price: 1800000,
+        deposit_amount: 220000,
+        cash_contribution_source: 'Savings',
+        bank_statements_available: 'yes',
+        bond_readiness_consent: 'yes',
+      },
+      documentSummary: { totalRequired: 4, uploadedCount: 4 },
+    },
     emailEnabled: true,
     invokeEmailFunction,
     client: emailClient,
@@ -335,6 +350,12 @@ try {
     client: emailClient,
   })
   assert.equal(emailCalls.length, 1)
+  assert.match(emailCalls[0].request.body.message, /Indicative Finance Readiness/)
+  assert.match(emailCalls[0].request.body.message, /Readiness:/)
+  assert.match(emailCalls[0].request.body.message, /Recommended action:/)
+  assert.doesNotMatch(emailCalls[0].request.body.message, /pre-approved/i)
+  assert.equal(typeof emailCalls[0].request.body.metadata.financeReadinessScore, 'number')
+  assert.ok(emailCalls[0].request.body.metadata.financeReadinessHandoff.statusLabel)
 
   const managerEmailCalls = []
   const managerEmailClient = createMockClient(baseState)

@@ -18,6 +18,7 @@ import {
 import Button from '../ui/Button'
 import Field from '../ui/Field'
 import { buildTransactionFinanceWorkspace } from '../../services/transactionFinanceService'
+import IndicativeFinanceReadinessContainer from '../finance/IndicativeFinanceReadinessContainer'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -817,6 +818,7 @@ function FinanceCommandCenter({
   documents = [],
   viewerRole = '',
   activeViewerPermissions = null,
+  financeReadinessHandoff = null,
   loadingAction = '',
   onUploadDocument,
   onSubmitBankApplication,
@@ -959,6 +961,10 @@ function FinanceCommandCenter({
       </div>
 
       <ProgressRail groups={workspace.railGroups} />
+
+      {hasBondWorkflow ? (
+        <IndicativeFinanceReadinessContainer handoff={financeReadinessHandoff} />
+      ) : null}
 
       {hasBondWorkflow ? (
         <SectionCard

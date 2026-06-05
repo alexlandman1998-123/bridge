@@ -44,7 +44,7 @@ const MANAGEMENT_SCOPE_LEVELS = new Set([
   BOND_SCOPE_LEVELS.team,
 ])
 const REGION_MANAGER_ROLES = new Set(['regional_manager', 'hq_manager', 'manager', 'director', 'owner'])
-const BRANCH_MANAGER_ROLES = new Set(['branch_manager', 'regional_manager', 'manager', 'director', 'owner'])
+const BRANCH_MANAGER_ROLES = new Set(['branch_manager', 'team_lead', 'regional_manager', 'hq_manager', 'manager', 'director', 'owner'])
 const CONSULTANT_ROLES = new Set(['consultant', 'bond_originator', 'processor', 'admin_staff'])
 const REGION_STATUS_VALUES = new Set(['active', 'inactive'])
 const LOCAL_REGION_STORE = new Map()
@@ -88,6 +88,18 @@ function normalizeLower(value) {
 
 function normalizeUpper(value) {
   return normalizeText(value).toUpperCase()
+}
+
+function normalizeWorkspaceRole(value) {
+  const normalized = normalizeLower(value).replaceAll(' ', '_')
+  if (normalized === 'bond_branch_manager') return 'branch_manager'
+  if (normalized === 'bond_team_lead') return 'team_lead'
+  if (normalized === 'bond_hq_manager' || normalized === 'bond_hq_admin') return 'hq_manager'
+  if (normalized === 'bond_regional_manager') return 'regional_manager'
+  if (normalized === 'bond_independent_consultant') return 'consultant'
+  if (normalized === 'bond_consultant') return 'consultant'
+  if (normalized === 'bond_processor') return 'processor'
+  return normalized
 }
 
 function normalizeStructureType(value, fallback = BOND_ORGANISATION_STRUCTURE_TYPES.independent) {
@@ -496,13 +508,39 @@ function getStatusFromPressure({ activeApplications = 0, pendingDocs = 0, avgLea
   return 'Healthy'
 }
 
+function isBranchOverloaded(row = {}) {
+  const activeApplications = Number(row.activeApplications || 0)
+  const consultants = Number(row.consultants || row.consultantCount || 0)
+  if (!activeApplications) return false
+  if (!consultants) return true
+  return activeApplications / consultants >= 20 || activeApplications >= 30
+}
+
+function getBranchSlaStatus(row = {}) {
+  const avgLeadTime = Number(row.averageTurnaround || row.avgLeadTime || 0)
+  const pendingDocs = Number(row.pendingDocuments || row.pendingDocs || 0)
+  if (!Number(row.activeApplications || 0)) return 'Not enough data'
+  if (avgLeadTime >= 5 || pendingDocs >= 10) return 'Below SLA'
+  return 'Within SLA'
+}
+
+function getBranchRiskLevel(row = {}) {
+  if (normalizeLower(row.status) === 'inactive') return 'Inactive'
+  if (!normalizeText(row.regionId || row.region_id || row.region) || normalizeLower(row.region) === 'unassigned') return 'Needs Attention'
+  if (!normalizeText(row.managerUserId || row.manager_user_id || row.manager) || normalizeLower(row.manager) === 'unassigned') return 'Needs Attention'
+  if (!Number(row.consultants || row.consultantCount || 0)) return 'Needs Attention'
+  if (isBranchOverloaded(row)) return 'Overloaded'
+  if (getBranchSlaStatus(row) === 'Below SLA') return 'Below SLA'
+  return 'Healthy'
+}
+
 function getManagerName(managerId = '', users = []) {
   const manager = users.find((user) => normalizeText(user.user_id || user.userId || user.id) === normalizeText(managerId))
   return manager?.name || 'Unassigned'
 }
 
 function getUserRole(user = {}) {
-  return normalizeLower(user.workspace_role || user.workspaceRole || user.organisation_role || user.organisationRole || user.role)
+  return normalizeWorkspaceRole(user.workspace_role || user.workspaceRole || user.organisation_role || user.organisationRole || user.role)
 }
 
 function getRegionManagerId(region = {}) {
@@ -671,6 +709,64 @@ function normalizeConsultantRow(consultant = {}, fallbackWorkspaceId = '') {
     updatedAt: consultant.updatedAt || consultant.updated_at || '',
     updated_at: consultant.updated_at || consultant.updatedAt || '',
   }
+}
+
+function normalizeOrganisationUserRow(user = {}, fallbackWorkspaceId = '') {
+  const userId = getUserId(user)
+  const id = normalizeText(user.id || userId || user.email)
+  const role = getUserRole(user)
+  const firstName = normalizeText(user.firstName || user.first_name)
+  const lastName = normalizeText(user.lastName || user.last_name)
+  const branchId = getUserUnitId(user)
+  const regionId = getUserRegionId(user)
+  return {
+    ...user,
+    id,
+    organisationId: normalizeText(user.organisationId || user.organisation_id || user.workspace_id || fallbackWorkspaceId),
+    organisation_id: normalizeText(user.organisation_id || user.organisationId || user.workspace_id || fallbackWorkspaceId),
+    userId: userId || id,
+    user_id: userId || id,
+    firstName,
+    first_name: firstName,
+    lastName,
+    last_name: lastName,
+    name: getUserName({ ...user, firstName, first_name: firstName, lastName, last_name: lastName }),
+    email: normalizeLower(user.email),
+    role,
+    workspaceRole: role,
+    workspace_role: role,
+    organisationRole: role,
+    organisation_role: role,
+    regionId,
+    region_id: regionId,
+    branchId,
+    branch_id: branchId,
+    workspaceUnitId: branchId,
+    workspace_unit_id: branchId,
+    status: getConsultantStatus(user),
+  }
+}
+
+function buildEligibleManagerRows(users = [], roles = new Set()) {
+  return users
+    .filter((user) => {
+      const userId = normalizeText(user.user_id || user.userId || user.id)
+      return userId && roles.has(getUserRole(user))
+    })
+    .map((user) => ({
+      id: normalizeText(user.user_id || user.userId || user.id),
+      userId: normalizeText(user.user_id || user.userId || user.id),
+      user_id: normalizeText(user.user_id || user.userId || user.id),
+      name: getUserName(user),
+      email: normalizeLower(user.email),
+      role: getUserRole(user),
+      workspaceRole: getUserRole(user),
+      workspace_role: getUserRole(user),
+      regionId: getUserRegionId(user),
+      region_id: getUserRegionId(user),
+      workspaceUnitId: getUserUnitId(user),
+      workspace_unit_id: getUserUnitId(user),
+    }))
 }
 
 function getLocalRegions(workspaceId = '') {
@@ -1181,6 +1277,8 @@ export function getBranchPerformance(scope = {}) {
       bottleneck,
       status: getBranchStatus(branch),
       healthStatus: getStatusFromPressure({ activeApplications: rows.length, pendingDocs, avgLeadTime: leadTime, lastActivityAt: rows[0]?.lastActivityAt }),
+      createdAt: branch.createdAt || branch.created_at || '',
+      updatedAt: branch.updatedAt || branch.updated_at || '',
     }
   })
 }
@@ -1236,17 +1334,24 @@ export function getConsultantPerformance(scope = {}) {
     const rows = getConsultantApplicationRows(consultant, scope.applications)
     const approved = rows.filter(isApplicationApproved).length
     const pendingDocs = rows.filter(isPendingDocs).length
+    const readyForReview = rows.filter(isApplicationReadyForReview).length
     const submittedApplications = rows.filter(isApplicationSubmitted).length
     const leadTime = averageNumber(rows.map(getApplicationLeadDays))
+    const staleApplications = rows.filter((row) => {
+      const lastActivityAt = row.lastActivityAt || row.updatedAt || row.updated_at || row.createdAt || row.created_at
+      return lastActivityAt && getDaysBetween(lastActivityAt, new Date().toISOString()) >= 7
+    }).length
     const newThisMonth = rows.filter((row) => {
       const date = new Date(row.lastActivityAt || '')
       const now = new Date()
       return !Number.isNaN(date.getTime()) && date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()
     }).length
     const branch = (scope.branches || []).find((item) => normalizeText(item.id) === getUserUnitId(consultant))
+    const activeApplications = rows.length
     return {
       id: consultant.id || consultant.user_id || consultant.email,
       consultant: consultant.name,
+      name: consultant.name,
       email: consultant.email,
       regionId: normalizeText(consultant.regionId || consultant.region_id || branch?.regionId || branch?.region_id),
       region: branch?.region || consultant.region || 'Unassigned',
@@ -1254,18 +1359,25 @@ export function getConsultantPerformance(scope = {}) {
       branch: branch?.name || consultant.branch || 'Unassigned',
       role: consultant.workspaceRole || consultant.role || 'consultant',
       status: getConsultantStatus(consultant),
-      activeApplications: rows.length,
+      activeApplications,
       submittedApplications,
+      readyForReview,
       newThisMonth,
       pendingDocs,
       pendingDocuments: pendingDocs,
+      awaitingDocs: pendingDocs,
+      staleApplications,
       avgLeadTime: leadTime,
       averageTurnaround: leadTime,
-      approvalRate: percent(approved, rows.length),
+      approvalRate: percent(approved, activeApplications),
       lastActivity: rows[0]?.lastActivityLabel || 'No recent activity',
-      healthStatus: getStatusFromPressure({ activeApplications: rows.length, pendingDocs, avgLeadTime: leadTime, lastActivityAt: rows[0]?.lastActivityAt }),
-      capacityStatus: getConsultantCapacity(rows.length),
+      lastActivityAt: rows[0]?.lastActivityAt || consultant.updatedAt || consultant.updated_at || consultant.createdAt || consultant.created_at || '',
+      healthStatus: getStatusFromPressure({ activeApplications, pendingDocs, avgLeadTime: leadTime, lastActivityAt: rows[0]?.lastActivityAt }),
+      capacityStatus: getConsultantCapacity(activeApplications),
+      capacityPercent: getConsultantCapacityPercent(activeApplications),
       scope: consultant.scope_level || consultant.scopeLevel || '',
+      createdAt: consultant.createdAt || consultant.created_at || '',
+      updatedAt: consultant.updatedAt || consultant.updated_at || '',
     }
   })
 }
@@ -1291,6 +1403,11 @@ export function getOrganisationKpis(scope = {}) {
 function isApplicationSubmitted(row = {}) {
   const signal = normalizeLower(`${row.status || ''} ${row.financeStageKey || ''} ${row.financeStageLabel || ''} ${row.registrationStatus || ''} ${row.nextAction || ''}`)
   return signal.includes('submitted') || signal.includes('submission') || signal.includes('bank feedback') || signal.includes('approved') || signal.includes('grant')
+}
+
+function isApplicationReadyForReview(row = {}) {
+  const signal = normalizeLower(`${row.status || ''} ${row.financeStageKey || ''} ${row.financeStageLabel || ''} ${row.registrationStatus || ''} ${row.nextAction || ''}`)
+  return signal.includes('ready for review') || signal.includes('review ready') || signal.includes('quality review')
 }
 
 function isApplicationUnassigned(row = {}) {
@@ -1369,25 +1486,59 @@ export function getOrganisationOverview({
   const totalConsultants = scope.consultants?.length || 0
   const setupState = getOverviewSetupState(scope)
 
-  const branchesById = new Map((scope.branches || []).map((branch) => [normalizeText(branch.id), branch]))
   const branchRows = (scope.branches || []).map((branch) => {
     const performance = branchPerformance.find((row) => normalizeText(row.id) === normalizeText(branch.id)) || {}
     const branchId = normalizeText(branch.id)
-    return {
+    const managerUserId = getBranchManagerId(branch) || normalizeText(performance.managerUserId)
+    const managerName = normalizeText(branch.manager_name || branch.managerName || performance.manager)
+    const regionId = normalizeText(branch.region_id || branch.regionId || performance.regionId)
+    const regionName = normalizeText(branch.region || performance.region) || 'Unassigned'
+    const consultants = Number(performance.consultants || performance.consultantCount || (scope.consultants || []).filter((consultant) => getUserUnitId(consultant) === branchId).length || 0)
+    const activeApplicationsForBranch = Number(performance.activeApplications || 0)
+    const submittedApplicationsForBranch = Number(performance.submittedApplications || 0)
+    const pendingDocumentsForBranch = Number(performance.pendingDocuments || performance.pendingDocs || 0)
+    const averageTurnaroundForBranch = Number(performance.averageTurnaround || performance.avgLeadTime || 0)
+    const hasManager = Boolean(managerUserId || (managerName && normalizeLower(managerName) !== 'unassigned'))
+    const status = performance.status || getBranchStatus(branch)
+    const baseRow = {
       id: branchId,
-      name: normalizeText(branch.name || branch.branch) || 'Branch',
-      regionId: normalizeText(branch.region_id || branch.regionId),
-      region: normalizeText(branch.region || branchesById.get(branchId)?.region) || 'Unassigned',
-      manager: normalizeText(branch.manager_name || branch.managerName || performance.manager),
-      hasManager: Boolean(normalizeText(branch.manager_user_id || branch.managerUserId || branch.manager_name || branch.managerName || performance.manager) && normalizeLower(performance.manager) !== 'unassigned'),
-      consultants: performance.consultants || (scope.consultants || []).filter((consultant) => getUserUnitId(consultant) === branchId).length,
-      activeApplications: performance.activeApplications || 0,
+      name: normalizeText(branch.name || branch.branch || performance.branch || performance.name) || 'Branch',
+      branch: normalizeText(branch.name || branch.branch || performance.branch || performance.name) || 'Branch',
+      code: normalizeUpper(branch.code || performance.code),
+      regionId,
+      region: regionName,
+      managerUserId,
+      manager: managerName || 'Unassigned',
+      hasManager,
+      consultants,
+      consultantCount: consultants,
+      activeApplications: activeApplicationsForBranch,
+      submittedApplications: submittedApplicationsForBranch,
+      pendingDocuments: pendingDocumentsForBranch,
+      pendingDocs: pendingDocumentsForBranch,
       approvalRate: performance.approvalRate || 0,
-      avgLeadTime: performance.avgLeadTime || 0,
-      status: performance.status || 'Healthy',
+      avgLeadTime: averageTurnaroundForBranch,
+      averageTurnaround: averageTurnaroundForBranch,
+      status,
+      createdAt: branch.createdAt || branch.created_at || performance.createdAt || '',
+      updatedAt: branch.updatedAt || branch.updated_at || performance.updatedAt || '',
       href: getBondBranchWorkspaceRoute(branchId),
     }
+    return {
+      ...baseRow,
+      slaStatus: getBranchSlaStatus(baseRow),
+      riskLevel: getBranchRiskLevel(baseRow),
+      risk: getBranchRiskLevel(baseRow),
+      utilisationLabel: consultants ? `${Math.round(activeApplicationsForBranch / consultants)} files / consultant` : activeApplicationsForBranch ? 'No consultants' : 'No workload',
+    }
   })
+  const branchesWithoutManagers = branchRows.filter((branch) => !branch.hasManager).length
+  const regionsWithoutBranches = (scope.regions || []).filter((region) => {
+    const regionId = normalizeText(region.id)
+    const regionName = normalizeText(region.name || region.region)
+    return !branchRows.some((branch) => normalizeText(branch.regionId) === regionId || normalizeText(branch.region) === regionName)
+  }).length
+  const consultantsWithoutBranch = (scope.consultants || []).filter((consultant) => !getUserUnitId(consultant)).length
 
   const structure = {
     regions: (scope.regions || []).map((region) => {
@@ -1489,6 +1640,206 @@ export function getOrganisationOverview({
   const workloadSpread = workloadValues.length
     ? `${Math.min(...workloadValues)}-${Math.max(...workloadValues)} active files`
     : 'No workload yet'
+  const overloadedConsultants = consultantPerformance.filter((consultant) => normalizeLower(consultant.capacityStatus) === 'overloaded' || Number(consultant.activeApplications || 0) > 40).length
+  const consultantCapacity = consultantPerformance.map((consultant) => {
+    const sourceConsultant = (scope.consultants || []).find((row) => (
+      normalizeText(row.id) === normalizeText(consultant.id) ||
+      getUserId(row) === normalizeText(consultant.id) ||
+      normalizeLower(row.email) === normalizeLower(consultant.email) ||
+      normalizeLower(getUserName(row)) === normalizeLower(consultant.consultant)
+    )) || {}
+    const consultantKeys = new Set([
+      normalizeText(consultant.id),
+      getUserId(sourceConsultant),
+      normalizeLower(consultant.email),
+      normalizeLower(sourceConsultant.email),
+      normalizeLower(consultant.consultant),
+    ].filter(Boolean))
+    const rows = applications.filter((row) => (
+      consultantKeys.has(normalizeText(row.assignedUserId || row.assigned_user_id || row.primaryBondConsultantUserId || row.primary_bond_consultant_user_id)) ||
+      consultantKeys.has(normalizeLower(row.assignedUserEmail || row.assigned_user_email)) ||
+      consultantKeys.has(normalizeLower(row.consultant))
+    ))
+    return {
+      id: consultant.id,
+      consultant: consultant.consultant || consultant.name || 'Consultant',
+      branch: consultant.branch || 'Unassigned',
+      activeFiles: consultant.activeApplications || 0,
+      readyForReview: rows.filter(isApplicationReadyForReview).length,
+      awaitingDocs: consultant.pendingDocuments || rows.filter(isPendingDocs).length,
+      capacityStatus: !normalizeText(consultant.branchId) ? 'Unassigned' : normalizeLower(consultant.capacityStatus) === 'overloaded' ? 'Overloaded' : normalizeLower(consultant.capacityStatus) === 'busy' ? 'Busy' : 'Healthy',
+    }
+  })
+  const sortedBranchDirectory = [...branchRows].sort((left, right) => (
+    Number(right.activeApplications || 0) - Number(left.activeApplications || 0) ||
+    new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime() ||
+    normalizeText(left.name).localeCompare(normalizeText(right.name))
+  ))
+  const branchManagers = new Set(branchRows.map((branch) => normalizeText(branch.managerUserId)).filter(Boolean))
+  const branchesWithNoConsultants = branchRows.filter((branch) => !Number(branch.consultants || 0)).length
+  const overloadedBranches = branchRows.filter(isBranchOverloaded).length
+  const branchesBelowSla = branchRows.filter((branch) => getBranchSlaStatus(branch) === 'Below SLA').length
+  const branchHealthCards = [
+    {
+      key: 'branches-without-managers',
+      label: 'Branches Without Managers',
+      count: branchesWithoutManagers,
+      description: branchesWithoutManagers ? 'Assign manager ownership to keep branch routing clear.' : 'Every branch has manager ownership.',
+      href: getBondOrganisationRouteForTab('branches'),
+      actionLabel: branchesWithoutManagers ? 'Fix' : 'View',
+    },
+    {
+      key: 'branches-with-no-consultants',
+      label: 'Branches With No Consultants',
+      count: branchesWithNoConsultants,
+      description: branchesWithNoConsultants ? 'Add consultants or consolidate inactive branches.' : 'Every branch has consultant coverage.',
+      href: getBondOrganisationRouteForTab('consultants'),
+      actionLabel: branchesWithNoConsultants ? 'Fix' : 'View',
+    },
+    {
+      key: 'overloaded-branches',
+      label: 'Overloaded Branches',
+      count: overloadedBranches,
+      description: overloadedBranches ? 'Workload is high relative to consultant capacity.' : 'Branch workloads are within capacity.',
+      href: getBondOrganisationRouteForTab('branches'),
+      actionLabel: overloadedBranches ? 'Review' : 'View',
+    },
+    {
+      key: 'branches-below-sla',
+      label: 'Branches Below SLA',
+      count: branchesBelowSla,
+      description: branchesBelowSla ? 'Turnaround or document blockers need attention.' : 'Branch SLA indicators look healthy.',
+      href: getBondOrganisationRouteForTab('branches'),
+      actionLabel: branchesBelowSla ? 'Review' : 'View',
+    },
+  ]
+  const branchCapacity = {
+    highestWorkload: sortedBranchDirectory
+      .filter((branch) => Number(branch.activeApplications || 0) > 0)
+      .slice(0, 6),
+    lowestWorkload: [...branchRows]
+      .sort((left, right) => (
+        Number(left.activeApplications || 0) - Number(right.activeApplications || 0) ||
+        Number(left.consultants || 0) - Number(right.consultants || 0) ||
+        normalizeText(left.name).localeCompare(normalizeText(right.name))
+      ))
+      .slice(0, 6),
+  }
+  const branchStructure = {
+    regions: (scope.regions || []).map((region) => {
+      const regionId = normalizeText(region.id)
+      const regionName = normalizeText(region.name || region.region) || 'Region'
+      return {
+        id: regionId,
+        name: regionName,
+        branches: branchRows.filter((branch) => (
+          normalizeText(branch.regionId) === regionId ||
+          normalizeLower(branch.region) === normalizeLower(regionName)
+        )),
+        href: getBondRegionWorkspaceRoute(regionId),
+      }
+    }),
+    directBranches: branchRows.filter((branch) => !normalizeText(branch.regionId) || normalizeLower(branch.region) === 'unassigned'),
+  }
+  const branchActivityTypes = new Set([
+    BOND_ORGANISATION_ACTIVITY_EVENTS.branchCreated,
+    BOND_ORGANISATION_ACTIVITY_EVENTS.branchUpdated,
+    BOND_ORGANISATION_ACTIVITY_EVENTS.branchManagerAssigned,
+    BOND_ORGANISATION_ACTIVITY_EVENTS.branchMovedRegion,
+    BOND_ORGANISATION_ACTIVITY_EVENTS.consultantAssignedBranch,
+    BOND_ORGANISATION_ACTIVITY_EVENTS.applicationReassigned,
+  ])
+  const recentBranchActivity = recentActivity.filter((event) => branchActivityTypes.has(event.eventType || event.event_type)).slice(0, 9)
+  const consultantRows = consultantPerformance.map((consultant) => ({
+    id: normalizeText(consultant.id),
+    consultant: consultant.consultant || consultant.name || 'Consultant',
+    name: consultant.consultant || consultant.name || 'Consultant',
+    email: normalizeLower(consultant.email),
+    role: normalizeText(consultant.role) || 'consultant',
+    status: normalizeLower(consultant.status || 'active'),
+    regionId: normalizeText(consultant.regionId),
+    region: consultant.region || 'Unassigned',
+    branchId: normalizeText(consultant.branchId),
+    branch: consultant.branch || 'Unassigned',
+    activeApplications: Number(consultant.activeApplications || 0),
+    readyForReview: Number(consultant.readyForReview || 0),
+    awaitingDocs: Number(consultant.awaitingDocs || consultant.pendingDocuments || consultant.pendingDocs || 0),
+    submittedApplications: Number(consultant.submittedApplications || 0),
+    approvalRate: Number(consultant.approvalRate || 0),
+    averageTurnaround: Number(consultant.averageTurnaround || consultant.avgLeadTime || 0),
+    capacityStatus: consultant.capacityStatus || getConsultantCapacity(consultant.activeApplications),
+    capacityPercent: Number(consultant.capacityPercent || getConsultantCapacityPercent(consultant.activeApplications)),
+    staleApplications: Number(consultant.staleApplications || 0),
+    lastActivity: consultant.lastActivity || 'No recent activity',
+    lastActivityAt: consultant.lastActivityAt || '',
+    createdAt: consultant.createdAt || '',
+    updatedAt: consultant.updatedAt || '',
+    href: getBondConsultantWorkspaceRoute(consultant.id),
+  }))
+  const sortedConsultantDirectory = [...consultantRows].sort((left, right) => (
+    Number(right.activeApplications || 0) - Number(left.activeApplications || 0) ||
+    new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime() ||
+    normalizeText(left.consultant).localeCompare(normalizeText(right.consultant))
+  ))
+  const consultantCommandWithoutBranch = consultantRows.filter((consultant) => !normalizeText(consultant.branchId) || normalizeLower(consultant.branch) === 'unassigned').length
+  const consultantsWithoutActiveFiles = consultantRows.filter((consultant) => !Number(consultant.activeApplications || 0)).length
+  const overloadedConsultantRows = consultantRows.filter((consultant) => normalizeLower(consultant.capacityStatus) === 'overloaded')
+  const inactiveConsultantKeys = new Set(consultantRows
+    .filter((consultant) => normalizeLower(consultant.status) === 'inactive')
+    .flatMap((consultant) => [normalizeText(consultant.id), normalizeLower(consultant.email), normalizeLower(consultant.consultant)])
+    .filter(Boolean))
+  const applicationsAssignedToInactiveConsultant = applications.filter((row) => (
+    inactiveConsultantKeys.has(normalizeText(row.assignedUserId || row.assigned_user_id || row.primaryBondConsultantUserId || row.primary_bond_consultant_user_id)) ||
+    inactiveConsultantKeys.has(normalizeLower(row.assignedUserEmail || row.assigned_user_email)) ||
+    inactiveConsultantKeys.has(normalizeLower(row.consultant))
+  )).length
+  const consultantHealthCards = [
+    {
+      key: 'consultants-without-branch',
+      label: 'Consultants Without Branch',
+      count: consultantCommandWithoutBranch,
+      description: consultantCommandWithoutBranch ? 'Assign these consultants to a branch for routing and reporting.' : 'All consultants are linked to branches.',
+      href: getBondOrganisationRouteForTab('consultants'),
+      actionLabel: consultantCommandWithoutBranch ? 'Fix' : 'View',
+    },
+    {
+      key: 'consultants-without-active-files',
+      label: 'Consultants Without Active Files',
+      count: consultantsWithoutActiveFiles,
+      description: consultantsWithoutActiveFiles ? 'Review spare capacity or inactive roster members.' : 'Every consultant has active workload.',
+      href: getBondOrganisationRouteForTab('consultants'),
+      actionLabel: consultantsWithoutActiveFiles ? 'Review' : 'View',
+    },
+    {
+      key: 'overloaded-consultants',
+      label: 'Overloaded Consultants',
+      count: overloadedConsultantRows.length,
+      description: overloadedConsultantRows.length ? 'Redistribute applications from overloaded consultants.' : 'Consultant workload is within capacity.',
+      href: getBondOrganisationRouteForTab('consultants'),
+      actionLabel: overloadedConsultantRows.length ? 'Review' : 'View',
+    },
+    {
+      key: 'applications-without-consultant',
+      label: 'Applications Without Consultant',
+      count: unassignedApplications,
+      description: unassignedApplications ? 'Assign owners to prevent files from stalling.' : 'Application ownership is clear.',
+      href: '/bond/applications',
+      actionLabel: unassignedApplications ? 'Fix' : 'View',
+    },
+  ]
+  const byApprovalRate = consultantRows.filter((consultant) => Number(consultant.activeApplications || 0) > 0).sort((left, right) => Number(right.approvalRate || 0) - Number(left.approvalRate || 0))
+  const byTurnaround = consultantRows.filter((consultant) => Number(consultant.averageTurnaround || 0) > 0).sort((left, right) => Number(left.averageTurnaround || 0) - Number(right.averageTurnaround || 0))
+  const bySubmitted = [...consultantRows].sort((left, right) => Number(right.submittedApplications || 0) - Number(left.submittedApplications || 0))
+  const byReadyForReview = [...consultantRows].sort((left, right) => Number(right.readyForReview || 0) - Number(left.readyForReview || 0))
+  const byStale = [...consultantRows].sort((left, right) => Number(right.staleApplications || 0) - Number(left.staleApplications || 0))
+  const consultantActivityTypes = new Set([
+    BOND_ORGANISATION_ACTIVITY_EVENTS.consultantCreated,
+    BOND_ORGANISATION_ACTIVITY_EVENTS.consultantUpdated,
+    BOND_ORGANISATION_ACTIVITY_EVENTS.consultantAssignedBranch,
+    BOND_ORGANISATION_ACTIVITY_EVENTS.consultantDeactivated,
+    BOND_ORGANISATION_ACTIVITY_EVENTS.applicationReassigned,
+  ])
+  const recentConsultantActivity = recentActivity.filter((event) => consultantActivityTypes.has(event.eventType || event.event_type)).slice(0, 9)
 
   return {
     metrics: {
@@ -1502,6 +1853,12 @@ export function getOrganisationOverview({
       approvalRate,
       averageTurnaround,
     },
+    snapshotCards: [
+      { key: 'regions', label: 'Regions', value: totalRegions, description: totalRegions ? 'Active regional groups' : 'No regions created yet', statusLine: totalRegions ? 'Configured network regions' : 'Create your first region' },
+      { key: 'branches', label: 'Branches', value: totalBranches, description: totalBranches && totalRegions ? `Across ${totalRegions} active regions` : 'No branches created yet', statusLine: totalBranches ? 'Branch coverage configured' : 'Add your first branch' },
+      { key: 'consultants', label: 'Consultants', value: totalConsultants, description: totalConsultants ? 'Active consultant roster' : 'No consultants added yet', statusLine: totalConsultants ? 'Consultant capacity tracked' : 'Add your first consultant' },
+      { key: 'activeApplications', label: 'Active Applications', value: activeApplications, description: activeApplications ? 'Scoped application workload' : 'No active applications yet', statusLine: `${unassignedApplications} without owners` },
+    ],
     setupState,
     summaryCards: [
       { key: 'regions', label: 'Regions', value: totalRegions, description: totalRegions ? 'Active regional groups' : 'No regions created yet', trend: 'Trend coming soon' },
@@ -1514,6 +1871,83 @@ export function getOrganisationOverview({
       { key: 'pendingDocuments', label: 'Pending Documents', value: pendingDocumentApplications, description: pendingDocumentApplications ? 'Applications blocked on docs' : 'No document blockers', trend: 'Trend coming soon' },
     ],
     structure,
+    healthCards: [
+      { key: 'branches-without-managers', label: 'Branches Without Managers', count: branchesWithoutManagers, description: 'Branches that need clear management ownership.', href: getBondOrganisationRouteForTab('branches'), actionLabel: branchesWithoutManagers ? 'Fix' : 'View' },
+      { key: 'regions-without-branches', label: 'Regions Without Branches', count: regionsWithoutBranches, description: 'Regions created without branch coverage.', href: getBondOrganisationRouteForTab('regions'), actionLabel: regionsWithoutBranches ? 'Fix' : 'View' },
+      { key: 'applications-without-owners', label: 'Applications Without Owners', count: unassignedApplications, description: 'Applications that need consultant ownership.', href: '/bond/applications', actionLabel: unassignedApplications ? 'Fix' : 'View' },
+      { key: 'consultants-without-branch', label: 'Consultants Without Branch', count: consultantsWithoutBranch, description: 'Consultants not assigned to a branch.', href: getBondOrganisationRouteForTab('consultants'), actionLabel: consultantsWithoutBranch ? 'Fix' : 'View' },
+      { key: 'overloaded-consultants', label: 'Overloaded Consultants', count: overloadedConsultants, description: 'Consultants above healthy active file capacity.', href: getBondOrganisationRouteForTab('consultants'), actionLabel: overloadedConsultants ? 'Fix' : 'View' },
+    ],
+    branchPerformance: branchPerformance.map((branch) => ({
+      id: branch.id,
+      branch: branch.branch || branch.name || 'Branch',
+      name: branch.branch || branch.name || 'Branch',
+      code: branch.code || '',
+      regionId: branch.regionId || '',
+      region: branch.region || 'Unassigned',
+      managerUserId: branch.managerUserId || '',
+      manager: branch.manager || 'Unassigned',
+      activeApplications: branch.activeApplications || 0,
+      submittedApplications: branch.submittedApplications || 0,
+      pendingDocuments: branch.pendingDocuments || branch.pendingDocs || 0,
+      consultants: branch.consultants || 0,
+      approvalRate: branch.approvalRate || 0,
+      averageTurnaround: branch.averageTurnaround || branch.avgLeadTime || 0,
+      slaStatus: getBranchSlaStatus(branch),
+      risk: getBranchRiskLevel(branch),
+      riskLevel: getBranchRiskLevel(branch),
+      status: branch.status || 'active',
+      createdAt: branch.createdAt || '',
+      updatedAt: branch.updatedAt || '',
+      href: getBondBranchWorkspaceRoute(branch.id),
+    })),
+    consultantCapacity,
+    branchCommandCentre: {
+      snapshotCards: [
+        { key: 'branches', label: 'Branches', value: totalBranches, description: totalBranches ? 'Configured national branch network' : 'No branches created yet', statusLine: totalBranches ? `${totalRegions} regions in scope` : 'Add first branch' },
+        { key: 'branchManagers', label: 'Branch Managers', value: branchManagers.size, description: branchManagers.size ? 'Assigned branch owners' : 'No branch managers assigned', statusLine: branchesWithoutManagers ? `${branchesWithoutManagers} missing` : 'All assigned' },
+        { key: 'consultants', label: 'Consultants', value: totalConsultants, description: totalConsultants ? 'Consultants in branch scope' : 'No consultants assigned yet', statusLine: branchesWithNoConsultants ? `${branchesWithNoConsultants} branches uncovered` : 'Coverage active' },
+        { key: 'activeApplications', label: 'Active Applications', value: activeApplications, description: activeApplications ? 'Applications currently carried by branches' : 'No active branch workload', statusLine: unassignedApplications ? `${unassignedApplications} without owners` : 'Ownership clear' },
+      ],
+      healthCards: branchHealthCards,
+      directory: sortedBranchDirectory,
+      capacity: branchCapacity,
+      structure: branchStructure,
+      recentActivity: recentBranchActivity,
+    },
+    consultantCommandCentre: {
+      snapshotCards: [
+        { key: 'consultants', label: 'Consultants', value: totalConsultants, description: totalConsultants ? 'National consultant roster' : 'No consultants added yet', statusLine: totalConsultants ? 'Roster active' : 'Add first consultant' },
+        { key: 'activeApplications', label: 'Active Applications', value: activeApplications, description: activeApplications ? 'Applications owned in consultant scope' : 'No active consultant workload', statusLine: unassignedApplications ? `${unassignedApplications} unassigned` : 'Ownership clear' },
+        { key: 'readyForReview', label: 'Ready For Review', value: consultantRows.reduce((sum, consultant) => sum + Number(consultant.readyForReview || 0), 0), description: 'Files waiting for quality or submission review', statusLine: 'Review queue' },
+        { key: 'overloadedConsultants', label: 'Overloaded Consultants', value: overloadedConsultantRows.length, description: overloadedConsultantRows.length ? 'Consultants above capacity threshold' : 'No overload detected', statusLine: overloadedConsultantRows.length ? 'Action needed' : 'Healthy' },
+      ],
+      healthCards: consultantHealthCards,
+      directory: sortedConsultantDirectory,
+      capacity: {
+        highestWorkload: sortedConsultantDirectory.filter((consultant) => Number(consultant.activeApplications || 0) > 0).slice(0, 6),
+        underutilised: [...consultantRows]
+          .sort((left, right) => (
+            Number(left.activeApplications || 0) - Number(right.activeApplications || 0) ||
+            normalizeText(left.consultant).localeCompare(normalizeText(right.consultant))
+          ))
+          .slice(0, 6),
+      },
+      performance: [
+        { key: 'top-approval-rate', label: 'Top Approval Rate', consultant: byApprovalRate[0]?.consultant || 'Not enough data', value: byApprovalRate[0] ? `${byApprovalRate[0].approvalRate}%` : 'Not enough data', href: byApprovalRate[0]?.href || '' },
+        { key: 'fastest-turnaround', label: 'Fastest Turnaround', consultant: byTurnaround[0]?.consultant || 'Not enough data', value: byTurnaround[0] ? `${byTurnaround[0].averageTurnaround} days` : 'Not enough data', href: byTurnaround[0]?.href || '' },
+        { key: 'most-submitted', label: 'Most Submitted Applications', consultant: bySubmitted[0]?.consultant || 'Not enough data', value: bySubmitted[0]?.submittedApplications || 'Not enough data', href: bySubmitted[0]?.href || '' },
+        { key: 'most-ready', label: 'Most Ready For Review', consultant: byReadyForReview[0]?.consultant || 'Not enough data', value: byReadyForReview[0]?.readyForReview || 'Not enough data', href: byReadyForReview[0]?.href || '' },
+        { key: 'highest-stale', label: 'Highest Stale File Count', consultant: byStale[0]?.consultant || 'Not enough data', value: byStale[0]?.staleApplications || 'Not enough data', href: byStale[0]?.href || '' },
+      ],
+      assignmentGaps: [
+        { key: 'consultants-without-branch', label: 'Consultants not linked to branch', count: consultantCommandWithoutBranch, description: 'Consultants need branch allocation for routing.', href: getBondOrganisationRouteForTab('consultants'), actionLabel: consultantCommandWithoutBranch ? 'Assign' : 'View' },
+        { key: 'branches-without-consultants', label: 'Branches without consultants', count: branchesWithNoConsultants, description: 'Branches need consultant coverage.', href: getBondOrganisationRouteForTab('branches'), actionLabel: branchesWithNoConsultants ? 'Fix' : 'View' },
+        { key: 'applications-without-consultant', label: 'Applications without consultant', count: unassignedApplications, description: 'Applications need consultant ownership.', href: '/bond/applications', actionLabel: unassignedApplications ? 'Assign' : 'View' },
+        { key: 'inactive-consultant-applications', label: 'Applications assigned to inactive consultant', count: applicationsAssignedToInactiveConsultant, description: 'Move files away from inactive users.', href: getBondOrganisationRouteForTab('consultants'), actionLabel: applicationsAssignedToInactiveConsultant ? 'Reassign' : 'View' },
+      ],
+      recentActivity: recentConsultantActivity,
+    },
     alerts: alerts.slice(0, 8),
     performance: {
       applicationsByStatus,
@@ -2304,6 +2738,10 @@ function getConsultantCapacity(activeApplications = 0) {
   return 'Overloaded'
 }
 
+function getConsultantCapacityPercent(activeApplications = 0) {
+  return Math.min(100, Math.round((Number(activeApplications || 0) / 40) * 100))
+}
+
 function getConsultantWorkloadBreakdown(rows = []) {
   const labels = [
     { key: 'newApplications', label: 'New Applications', match: (signal) => signal.includes('new') || signal.includes('intake') || signal.includes('pre') },
@@ -2633,6 +3071,9 @@ export function buildBondOrganisationSnapshot({
   const includeDemoRows = options.includeDemoRows !== false
 
   const allRegions = (options.regions || hierarchy.regions || []).map((region) => normalizeRegionRow(region, safeWorkspaceId))
+  const allOrganisationUsers = (options.organisationUsers || users || [])
+    .filter(isActiveRecord)
+    .map((user) => normalizeOrganisationUserRow(user, safeWorkspaceId))
   const allConsultants = (options.consultants || users || []).map((user) => normalizeConsultantRow(user, safeWorkspaceId))
   const hierarchyUnits = hierarchy.units || []
   const sourceBranches = (options.branches || hierarchyUnits.filter((unit) => getUnitType(unit) === WORKSPACE_UNIT_TYPES.branch))
@@ -2685,6 +3126,7 @@ export function buildBondOrganisationSnapshot({
     regionId: getUserRegionId(user),
     workspaceUnitId: getUserUnitId(user),
   }))
+  const scopedOrganisationUsers = scopeUsers(allOrganisationUsers, capabilities)
   let scopedApplications = scopeApplicationRows(enrichedApplicationRows, capabilities)
   const regionById = buildLookup(allRegions)
   const usedDerivedBranches = !scopedBranches.length && scopedApplications.length && capabilities.canViewBranches
@@ -2822,6 +3264,8 @@ export function buildBondOrganisationSnapshot({
     branches: scopedBranchesWithRegions,
     teams: scopedTeams,
     consultants: visibleConsultants,
+    eligibleRegionManagers: buildEligibleManagerRows(scopedOrganisationUsers, REGION_MANAGER_ROLES),
+    eligibleBranchManagers: buildEligibleManagerRows(scopedOrganisationUsers, BRANCH_MANAGER_ROLES),
     applications: scopedApplications,
     visibleScope,
     kpis,
@@ -2882,13 +3326,14 @@ export async function getBondOrganisationSnapshot(context = {}, workspaceId = ''
     workspaceId: safeWorkspaceId,
     settingsContext,
     hierarchy,
-    users: consultantRows.length ? consultantRows : users,
+    users,
     applicationSnapshot,
     options: {
       ...options,
       regions,
       branches,
       partners,
+      organisationUsers: users,
       consultants: consultantRows.length ? consultantRows : options.consultants,
       activityEvents: options.activityEvents || activityEvents,
       routingRules,

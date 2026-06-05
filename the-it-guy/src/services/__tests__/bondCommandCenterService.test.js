@@ -231,6 +231,37 @@ try {
     assert.equal(managerSnapshot.hqCommandCentre.nationalSnapshot.length, 6)
     assert.equal(managerSnapshot.hqCommandCentre.pipelineFunnel.stages.some((stage) => stage.label === 'Intake Received'), true)
 
+    const hqTrackerSnapshot = await service.getBondTransactionTrackerSnapshot(manager, 'workspace-1', {
+      transactions: [
+        createTransaction({
+          id: 'demo-hq-application',
+          source: 'demo',
+          transaction_reference: 'DEMO-HQ-001',
+          buyer_name: 'Demo Buyer HQ',
+        }),
+        createTransaction({
+          id: 'real-hq-application',
+          transaction_reference: 'APP-HQ-001',
+          buyer_name: 'Real Buyer HQ',
+          property_address_line_1: '7 National Register Road',
+          assigned_region_name: 'Western Cape',
+          region_id: 'region-western-cape',
+          branch_id: 'branch-cape-town',
+          assigned_branch_name: 'Cape Town',
+          bond_originator: 'Mira Manager',
+          primary_bond_consultant_user_id: '77777777-7777-4777-8777-777777777777',
+          finance_status: 'bank_feedback_pending',
+        }),
+      ],
+      status: 'all',
+    })
+    assert.equal(hqTrackerSnapshot.rows.length, 1)
+    assert.equal(hqTrackerSnapshot.rows[0].transactionId, 'real-hq-application')
+    assert.equal(hqTrackerSnapshot.rows[0].regionName, 'Western Cape')
+    assert.equal(hqTrackerSnapshot.rows[0].branchName, 'Cape Town')
+    assert.equal(hqTrackerSnapshot.rows[0].consultantName, 'Mira Manager')
+    assert.ok(hqTrackerSnapshot.rows[0].createdAt)
+
     const transactionSnapshot = await service.getBondTransactionTrackerSnapshot(consultant, 'workspace-1', {
       transactions,
       status: 'all',
@@ -239,6 +270,41 @@ try {
     assert.ok(linkedApprovedRow)
     assert.equal(linkedApprovedRow.linkedApplicationId, 'tx-approved-linked')
     assert.equal(['instruction_sent', 'in_transfer', 'bond_approved', 'grant_signed'].includes(linkedApprovedRow.status), true)
+
+    const readyForReviewSnapshot = await service.getBondTransactionTrackerSnapshot(manager, 'workspace-1', {
+      rows: [
+        {
+          transaction: {
+            id: 'tx-ready-review',
+            organisation_id: 'workspace-1',
+            bond_workspace_id: 'workspace-1',
+            finance_type: 'bond',
+            buyer_name: 'Ready Buyer',
+            property_address_line_1: '14 Review Road',
+            onboarding_completed_at: '2026-06-04T08:00:00.000Z',
+            otp_status: 'fully_signed',
+            sales_price: 1850000,
+            updated_at: '2026-06-04T09:00:00.000Z',
+          },
+          onboardingFormData: {
+            form_data: {
+              bond_application: {
+                status: 'Submitted',
+                submitted_at: '2026-06-04T08:30:00.000Z',
+              },
+            },
+          },
+          documentRequests: [{ id: 'req-bank', category: 'finance', title: 'Bank statement', status: 'requested' }],
+          documents: [{ document_request_id: 'req-bank', status: 'uploaded', uploaded_at: '2026-06-04T08:45:00.000Z' }],
+        },
+      ],
+      status: 'all',
+    })
+    const readyForReviewRow = readyForReviewSnapshot.rows.find((row) => row.transactionId === 'tx-ready-review')
+    assert.ok(readyForReviewRow)
+    assert.equal(readyForReviewRow.financeStageKey, 'ready_for_review')
+    assert.equal(readyForReviewRow.tags.some((tag) => tag.key === 'new'), true)
+    assert.equal(readyForReviewRow.nextAction, 'Review submitted application')
 
     const registeredSnapshot = await service.getBondTransactionTrackerSnapshot(manager, 'workspace-1', {
       transactions,

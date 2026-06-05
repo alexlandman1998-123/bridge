@@ -141,15 +141,24 @@ const PURCHASER_STRUCTURED_KEYS = [
   'income_frequency',
   'number_of_dependants',
   'monthly_credit_commitments',
+  'monthly_living_expenses',
   'first_time_buyer',
   'primary_residence',
   'investment_purchase',
+  'under_debt_review',
+  'under_administration',
+  'ever_declared_insolvent',
+  'surety_obligations',
 ]
 
 const FINANCE_DETAIL_KEYS = [
   'purchase_price',
   'cash_amount',
   'bond_amount',
+  'cash_contribution_available',
+  'cash_contribution_source',
+  'bank_statements_available',
+  'bond_readiness_consent',
   'bond_current_status',
   'bond_help_requested',
   'ooba_assist_requested',
@@ -372,9 +381,54 @@ const NATURAL_PURCHASER_SECTIONS = [
     fields: [
       { key: 'number_of_dependants', label: 'Number of Dependants', type: 'number', required: true },
       { key: 'monthly_credit_commitments', label: 'Monthly Credit Commitments', type: 'number', required: true },
+      {
+        key: 'monthly_living_expenses',
+        label: 'Monthly Living Expenses',
+        type: 'number',
+        required: true,
+        visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
+      },
       { key: 'first_time_buyer', label: 'First-time Buyer?', type: 'select', required: true, options: YES_NO_OPTIONS },
       { key: 'primary_residence', label: 'Primary Residence?', type: 'select', required: true, options: YES_NO_OPTIONS },
       { key: 'investment_purchase', label: 'Investment Purchase?', type: 'select', required: true, options: YES_NO_OPTIONS },
+    ],
+  },
+  {
+    key: 'bond_readiness_declarations',
+    title: 'Bond Readiness Declarations',
+    fields: [
+      {
+        key: 'under_debt_review',
+        label: 'Currently under debt review?',
+        type: 'select',
+        required: true,
+        options: YES_NO_OPTIONS,
+        visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
+      },
+      {
+        key: 'under_administration',
+        label: 'Currently under administration?',
+        type: 'select',
+        required: true,
+        options: YES_NO_OPTIONS,
+        visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
+      },
+      {
+        key: 'ever_declared_insolvent',
+        label: 'Ever declared insolvent?',
+        type: 'select',
+        required: true,
+        options: YES_NO_OPTIONS,
+        visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
+      },
+      {
+        key: 'surety_obligations',
+        label: 'Any surety obligations?',
+        type: 'select',
+        required: true,
+        options: YES_NO_OPTIONS,
+        visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
+      },
     ],
   },
 ]
@@ -423,6 +477,37 @@ const FINANCE_DETAIL_FIELDS = [
     label: 'Bond Amount',
     type: 'number',
     required: true,
+    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
+  },
+  {
+    key: 'cash_contribution_available',
+    label: 'Available Deposit / Cash Contribution',
+    type: 'number',
+    required: true,
+    allowZero: true,
+    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
+  },
+  {
+    key: 'cash_contribution_source',
+    label: 'Source of Deposit / Cash Contribution',
+    type: 'text',
+    required: true,
+    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
+  },
+  {
+    key: 'bank_statements_available',
+    label: 'Recent Bank Statements Available?',
+    type: 'select',
+    required: true,
+    options: YES_NO_OPTIONS,
+    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
+  },
+  {
+    key: 'bond_readiness_consent',
+    label: 'Consent to share this finance snapshot with the bond originator?',
+    type: 'select',
+    required: true,
+    options: YES_NO_OPTIONS,
     visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
   },
   {
@@ -644,9 +729,14 @@ function createEmptyPurchaser() {
     income_frequency: '',
     number_of_dependants: '',
     monthly_credit_commitments: '',
+    monthly_living_expenses: '',
     first_time_buyer: '',
     primary_residence: '',
     investment_purchase: '',
+    under_debt_review: '',
+    under_administration: '',
+    ever_declared_insolvent: '',
+    surety_obligations: '',
   }
 }
 
@@ -655,6 +745,10 @@ function createEmptyFinance() {
     purchase_price: '',
     cash_amount: '',
     bond_amount: '',
+    cash_contribution_available: '',
+    cash_contribution_source: '',
+    bank_statements_available: '',
+    bond_readiness_consent: '',
     bond_current_status: '',
     bond_help_requested: '',
     ooba_assist_requested: '',
@@ -694,7 +788,16 @@ function hasPurchaserData(entry = {}) {
 function normalizePurchaserRecord(record = {}) {
   const normalized = createEmptyPurchaser()
   PURCHASER_STRUCTURED_KEYS.forEach((key) => {
-    if (key === 'spouse_is_co_purchaser' || key === 'first_time_buyer' || key === 'primary_residence' || key === 'investment_purchase') {
+    if (
+      key === 'spouse_is_co_purchaser' ||
+      key === 'first_time_buyer' ||
+      key === 'primary_residence' ||
+      key === 'investment_purchase' ||
+      key === 'under_debt_review' ||
+      key === 'under_administration' ||
+      key === 'ever_declared_insolvent' ||
+      key === 'surety_obligations'
+    ) {
       normalized[key] = normalizeYesNoChoice(record?.[key])
       return
     }
@@ -890,15 +993,45 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
 
   if (financeType === 'cash') {
     cleaned.bond_amount = ''
+    cleaned.cash_contribution_available = ''
+    cleaned.cash_contribution_source = ''
+    cleaned.bank_statements_available = ''
+    cleaned.bond_readiness_consent = ''
     cleaned.bond_current_status = ''
     cleaned.bond_help_requested = ''
     cleaned.ooba_assist_requested = ''
     cleaned.joint_bond_application = ''
     cleaned.finance.bond_amount = ''
+    cleaned.finance.cash_contribution_available = ''
+    cleaned.finance.cash_contribution_source = ''
+    cleaned.finance.bank_statements_available = ''
+    cleaned.finance.bond_readiness_consent = ''
     cleaned.finance.bond_current_status = ''
     cleaned.finance.bond_help_requested = ''
     cleaned.finance.ooba_assist_requested = ''
     cleaned.finance.joint_bond_application = ''
+    if (Array.isArray(cleaned.purchasers)) {
+      cleaned.purchasers = cleaned.purchasers.map((purchaser) => {
+        const nextPurchaser = { ...purchaser }
+        nextPurchaser.monthly_living_expenses = ''
+        nextPurchaser.under_debt_review = ''
+        nextPurchaser.under_administration = ''
+        nextPurchaser.ever_declared_insolvent = ''
+        nextPurchaser.surety_obligations = ''
+        return nextPurchaser
+      })
+    }
+    const purchaserBondReadinessKeys = [
+      'monthly_living_expenses',
+      'under_debt_review',
+      'under_administration',
+      'ever_declared_insolvent',
+      'surety_obligations',
+    ]
+    purchaserBondReadinessKeys.forEach((key) => {
+      cleaned[key] = ''
+      delete cleaned[`co_${key}`]
+    })
   }
 
   return cleaned
@@ -1191,8 +1324,18 @@ function ClientOnboarding() {
         return
       }
       const parsed = Number(String(value).replace(/[^\d.-]/g, ''))
-      if (!Number.isFinite(parsed) || parsed <= 0) {
+      if (!Number.isFinite(parsed) || parsed < 0 || parsed === 0) {
         nextErrors[pathKey] = `${label} must be greater than zero.`
+      }
+    }
+
+    function requireNonNegativeFinanceAmount(pathKey, label, value) {
+      if (nextErrors[pathKey] || !normalizeInputValue(value)) {
+        return
+      }
+      const parsed = Number(String(value).replace(/[^\d.-]/g, ''))
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        nextErrors[pathKey] = `${label} must be zero or greater.`
       }
     }
 
@@ -1256,7 +1399,11 @@ function ClientOnboarding() {
         required: shouldRequire,
       })
       if (fieldConfig.type === 'number' && shouldRequire) {
-        requirePositiveFinanceAmount(pathKey, fieldConfig.label, value)
+        if (fieldConfig.allowZero) {
+          requireNonNegativeFinanceAmount(pathKey, fieldConfig.label, value)
+        } else {
+          requirePositiveFinanceAmount(pathKey, fieldConfig.label, value)
+        }
       }
     })
 

@@ -1,4 +1,3 @@
-/* global process */
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -47,6 +46,34 @@ try {
   assert.equal(page.resolveSelectedHierarchyRow('stale-region-id', rows, ['region']), null)
   assert.equal(page.hasStaleHierarchySelection('stale-region-id', null), true)
   assert.equal(page.hasStaleHierarchySelection('', null), false)
+
+  assert.deepEqual(page.getBranchManagerOptions({
+    eligibleBranchManagers: [
+      { user_id: 'manager-1', name: 'Branch Manager', workspace_role: 'branch_manager' },
+      { user_id: 'lead-1', name: 'Team Lead', workspace_role: 'team_lead' },
+      { user_id: 'hq-1', name: 'HQ Manager', workspace_role: 'hq_manager' },
+      { user_id: 'consultant-1', name: 'Consultant', workspace_role: 'consultant' },
+    ],
+    consultants: [
+      { user_id: 'legacy-manager', name: 'Legacy Manager', workspace_role: 'branch_manager' },
+    ],
+  }).map((option) => option.id), ['manager-1', 'lead-1', 'hq-1'])
+
+  assert.deepEqual(page.getBranchManagerOptions({
+    consultants: [
+      { user_id: 'legacy-manager', name: 'Legacy Manager', workspace_role: 'branch_manager' },
+      { user_id: 'legacy-consultant', name: 'Legacy Consultant', workspace_role: 'consultant' },
+    ],
+  }).map((option) => option.id), ['legacy-manager'])
+
+  assert.deepEqual(page.getBranchManagerOptions({ eligibleBranchManagers: [] }), [])
+
+  assert.deepEqual(page.getRegionManagerOptions({
+    eligibleRegionManagers: [
+      { user_id: 'regional-1', name: 'Regional Manager', workspace_role: 'bond_regional_manager' },
+      { user_id: 'branch-1', name: 'Branch Manager', workspace_role: 'branch_manager' },
+    ],
+  }).map((option) => option.id), ['regional-1'])
 
   console.log('BondOrganisationPage tests passed')
 } finally {

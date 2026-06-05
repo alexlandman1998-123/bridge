@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import {
+  buildFinanceReadinessHandoffPacket,
   calculateAffordabilityEstimate,
   calculateFinanceReadinessScore,
   FINANCE_READINESS_DISCLAIMER,
@@ -101,6 +102,196 @@ test('readiness summary survives missing data', () => {
   assert.ok(Array.isArray(summary.missingItems))
 })
 
+test('readiness summary derives inputs from submitted buyer onboarding fields', () => {
+  const summary = getFinanceReadinessSummary({
+    transaction: { finance_type: 'bond', purchase_price: 1800000 },
+    onboardingFormData: {
+      purchase_finance_type: 'bond',
+      purchase_price: '1800000',
+      bond_amount: '1600000',
+      purchasers: [
+        {
+          employment_type: 'full_time',
+          employment_start_date: '2022-01-01',
+          gross_monthly_income: '64000',
+          net_monthly_income: '48000',
+          monthly_credit_commitments: '9000',
+          number_of_dependants: '0',
+        },
+      ],
+    },
+  })
+  assert.ok(summary.inputs.monthlyIncome >= 64000)
+  assert.equal(summary.inputs.monthlyDebt, 9000)
+  assert.equal(summary.inputs.dependants, 0)
+  assert.ok(summary.inputs.employmentDurationMonths > 24)
+  assert.ok(summary.readinessScore.score > 0)
+  assert.ok(summary.missingItems.includes('Monthly expenses'))
+})
+
+test('hybrid onboarding cash contribution feeds deposit strength', () => {
+  const summary = getFinanceReadinessSummary({
+    transaction: { finance_type: 'combination', purchase_price: 2200000 },
+    onboardingFormData: {
+      purchase_finance_type: 'combination',
+      purchase_price: '2200000',
+      cash_amount: '350000',
+      bond_amount: '1850000',
+      purchasers: [
+        {
+          employment_type: 'self_employed',
+          years_in_business: '4',
+          gross_monthly_income: '95000',
+          monthly_credit_commitments: '12000',
+          number_of_dependants: '2',
+        },
+      ],
+    },
+  })
+  assert.equal(summary.inputs.deposit, 350000)
+  assert.equal(summary.depositStrength, 'Strong')
+  assert.ok(!summary.missingItems.includes('Cash contribution / deposit position'))
+})
+
+test('phase 2 onboarding inputs complete readiness blockers', () => {
+  const summary = getFinanceReadinessSummary({
+    transaction: { finance_type: 'bond', purchase_price: 1800000 },
+    onboardingFormData: {
+      purchase_finance_type: 'bond',
+      purchase_price: '1800000',
+      cash_contribution_available: '0',
+      cash_contribution_source: 'No deposit - 100% bond requested',
+      bank_statements_available: 'yes',
+      bond_readiness_consent: 'yes',
+      purchasers: [
+        {
+          employment_type: 'full_time',
+          employment_start_date: '2021-01-01',
+          gross_monthly_income: '78000',
+          net_monthly_income: '56000',
+          monthly_credit_commitments: '7000',
+          monthly_living_expenses: '18000',
+          number_of_dependants: '1',
+          under_debt_review: 'no',
+          under_administration: 'no',
+          ever_declared_insolvent: 'no',
+          surety_obligations: 'no',
+        },
+      ],
+    },
+  })
+  assert.ok(!summary.missingItems.includes('Deposit position'))
+  assert.ok(!summary.missingItems.includes('Cash contribution source'))
+  assert.ok(!summary.missingItems.includes('Bank statement availability'))
+  assert.ok(!summary.missingItems.includes('Bond readiness consent'))
+  assert.equal(summary.inputs.monthlyExpenses, 18000)
+})
+
+test('phase 2 risk declarations reduce readiness and surface flags', () => {
+  const clean = getFinanceReadinessSummary({
+    transaction: { finance_type: 'bond', purchase_price: 1800000 },
+    onboardingFormData: {
+      purchase_finance_type: 'bond',
+      purchase_price: '1800000',
+      cash_contribution_available: '150000',
+      cash_contribution_source: 'Savings',
+      bank_statements_available: 'yes',
+      bond_readiness_consent: 'yes',
+      purchasers: [
+        {
+          employment_type: 'full_time',
+          employment_start_date: '2021-01-01',
+          gross_monthly_income: '78000',
+          monthly_credit_commitments: '7000',
+          monthly_living_expenses: '18000',
+          number_of_dependants: '1',
+          under_debt_review: 'no',
+          under_administration: 'no',
+          ever_declared_insolvent: 'no',
+          surety_obligations: 'no',
+        },
+      ],
+    },
+  })
+  const risky = getFinanceReadinessSummary({
+    transaction: { finance_type: 'bond', purchase_price: 1800000 },
+    onboardingFormData: {
+      purchase_finance_type: 'bond',
+      purchase_price: '1800000',
+      cash_contribution_available: '150000',
+      cash_contribution_source: 'Savings',
+      bank_statements_available: 'no',
+      bond_readiness_consent: 'yes',
+      purchasers: [
+        {
+          employment_type: 'full_time',
+          employment_start_date: '2021-01-01',
+          gross_monthly_income: '78000',
+          monthly_credit_commitments: '7000',
+          monthly_living_expenses: '18000',
+          number_of_dependants: '1',
+          under_debt_review: 'yes',
+          under_administration: 'no',
+          ever_declared_insolvent: 'yes',
+          surety_obligations: 'yes',
+        },
+      ],
+    },
+  })
+  assert.ok(risky.readinessScore.score < clean.readinessScore.score)
+  assert.ok(risky.riskFlags.some((flag) => /debt review/i.test(flag)))
+  assert.ok(risky.riskFlags.some((flag) => /bank statements/i.test(flag)))
+})
+
+test('phase 4 handoff packet gives originator-safe operational context', () => {
+  const packet = buildFinanceReadinessHandoffPacket({
+    transaction: { finance_type: 'bond', purchase_price: 1800000 },
+    onboardingFormData: {
+      purchase_finance_type: 'bond',
+      purchase_price: '1800000',
+      cash_contribution_available: '150000',
+      cash_contribution_source: 'Savings',
+      bank_statements_available: 'yes',
+      bond_readiness_consent: 'yes',
+      purchasers: [
+        {
+          employment_type: 'full_time',
+          employment_start_date: '2021-01-01',
+          gross_monthly_income: '78000',
+          monthly_credit_commitments: '7000',
+          monthly_living_expenses: '18000',
+          number_of_dependants: '1',
+          under_debt_review: 'no',
+          under_administration: 'no',
+          ever_declared_insolvent: 'no',
+          surety_obligations: 'no',
+        },
+      ],
+    },
+  })
+  assert.ok(packet.score > 0)
+  assert.ok(packet.statusLabel)
+  assert.ok(packet.affordabilityRangeLabel.startsWith('R'))
+  assert.ok(Array.isArray(packet.handoffChecklist))
+  assert.equal(isFinanceReadinessSafeCopy(packet.statusLabel), true)
+  assert.equal(isFinanceReadinessSafeCopy(packet.summaryLine), true)
+  assert.match(packet.disclaimer, /do not constitute financial approval/i)
+})
+
+test('phase 4 handoff packet prioritises missing inputs before referral', () => {
+  const packet = buildFinanceReadinessHandoffPacket({
+    transaction: { finance_type: 'bond', purchase_price: 1800000 },
+    onboardingFormData: {
+      purchase_finance_type: 'bond',
+      purchase_price: '1800000',
+      purchasers: [{ gross_monthly_income: '78000' }],
+    },
+  })
+  assert.equal(packet.statusLabel, 'Inputs Outstanding')
+  assert.ok(packet.topMissingItems.length > 0)
+  assert.match(packet.recommendedAction, /Complete readiness inputs/i)
+})
+
 test('estimated repayment displays correctly', () => {
   const estimate = calculateAffordabilityEstimate(baseInput)
   assert.match(formatFinanceCurrency(estimate.estimatedMonthlyRepayment), /^R/)
@@ -152,6 +343,9 @@ test('finance readiness integrates with New Applications queue safely', () => {
   })
   assert.ok(item.financeReadinessScore > 0)
   assert.ok(item.affordabilityEstimate.estimatedPurchaseRangeMax > 0)
+  assert.ok(item.financeHandoff.statusLabel)
+  assert.ok(item.readinessOutcomeCalibration.label)
+  assert.equal(isFinanceReadinessSafeCopy(item.financeHandoff.summaryLine), true)
 })
 
 test('analytics helpers expose future dashboard metrics', () => {
@@ -162,4 +356,3 @@ test('analytics helpers expose future dashboard metrics', () => {
   assert.ok(analytics.averageReadinessScore >= 0)
   assert.ok(Array.isArray(analytics.readinessHeatmapInputs))
 })
-

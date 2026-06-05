@@ -106,24 +106,25 @@ async function main() {
 
     assert.deepEqual(
       viewsModule.bondViews.pipeline.tabs.map((tab) => tab.key),
-      ['all', 'new', 'awaiting-docs', 'ready-for-submission', 'submitted', 'stalled', 'declined'],
+      ['all', 'awaiting-otp', 'ready-to-start', 'in-progress', 'submitted', 'stalled', 'declined'],
     )
     assert.deepEqual(
       viewsModule.bondViews.transactions.tabs.map((tab) => tab.key),
       ['all', 'active', 'bond-approved', 'grant-signed', 'instruction-sent', 'attorney-stage', 'registered', 'at-risk', 'declined'],
     )
-    assert.equal(viewsModule.getBondPipelineView('awaiting-documents').filters.queue, 'missing_documents')
-    assert.equal(viewsModule.getBondPipelineView('awaiting-docs').filters.queue, 'missing_documents')
+    assert.equal(viewsModule.getBondPipelineView('new').filters.queue, 'awaiting_otp')
+    assert.equal(viewsModule.getBondPipelineView('awaiting-documents').filters.queue, 'application_in_progress')
+    assert.equal(viewsModule.getBondPipelineView('ready-for-submission').filters.queue, 'application_submitted')
     assert.equal(viewsModule.getBondTransactionView('bond-approved').status, 'bond_approved')
 
     const tabMarkup = renderToStaticMarkup(
       React.createElement(tabsModule.default, {
         tabs: viewsModule.bondViews.pipeline.tabs,
-        value: 'awaiting-docs',
-        counts: { 'awaiting-docs': 4 },
+        value: 'awaiting-otp',
+        counts: { 'awaiting-otp': 4 },
       }),
     )
-    assert.match(tabMarkup, /Awaiting Docs/)
+    assert.match(tabMarkup, /Awaiting OTP/)
     assert.match(tabMarkup, />4</)
 
     const snapshot = await serviceModule.getBondTransactionTrackerSnapshot(

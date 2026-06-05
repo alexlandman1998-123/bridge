@@ -80,6 +80,7 @@ import { createPerfTimer } from '../lib/performanceTrace'
 import { getPurchaserTypeOptions, getPurchaserTypeLabel, normalizePurchaserType } from '../lib/purchaserPersonas'
 import { getRequiredBuyerDocuments } from '../lib/buyerRequirementEngine'
 import { normalizeFinanceType } from '../core/transactions/financeType'
+import { buildFinanceReadinessHandoffPacket } from '../core/finance/financeReadinessSelectors'
 import {
   acceptBondOffer,
   captureBondOffer,
@@ -5542,6 +5543,14 @@ function UnitDetail() {
   const uploadedDocs = Number(detail.documentSummary?.uploadedCount || 0)
   const requiredDocs = Number(detail.documentSummary?.totalRequired || 0)
   const documentReadinessText = requiredDocs > 0 ? `${uploadedDocs}/${requiredDocs} uploaded` : 'Not configured'
+  const financeReadinessHandoff = buildFinanceReadinessHandoffPacket({
+    transaction,
+    onboardingFormData: onboardingFormData?.formData || {},
+    documentSummary: {
+      totalRequired: requiredDocs,
+      uploadedCount: uploadedDocs,
+    },
+  })
   const normalizedPurchaserType = normalizePurchaserType(stageForm.purchaser_type || transaction?.purchaser_type || 'individual')
   const normalizedClientFinanceType = normalizeFinanceType(
     clientInfoForm.finance_type || stageForm.finance_type || transaction?.finance_type || 'cash',
@@ -5689,6 +5698,7 @@ function UnitDetail() {
       workflowData={transactionFinanceWorkflow}
       requiredDocumentChecklist={requiredDocumentChecklist || []}
       documents={documents || []}
+      financeReadinessHandoff={financeReadinessHandoff}
       viewerRole={effectiveEditorRole}
       activeViewerPermissions={actingPermissions}
       loadingAction={bondHybridFinanceActionLoading}

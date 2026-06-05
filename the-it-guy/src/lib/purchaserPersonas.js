@@ -193,15 +193,24 @@ const STRUCTURED_PURCHASER_KEYS = [
   'income_frequency',
   'number_of_dependants',
   'monthly_credit_commitments',
+  'monthly_living_expenses',
   'first_time_buyer',
   'primary_residence',
   'investment_purchase',
+  'under_debt_review',
+  'under_administration',
+  'ever_declared_insolvent',
+  'surety_obligations',
 ]
 
 const STRUCTURED_FINANCE_KEYS = [
   'purchase_price',
   'cash_amount',
   'bond_amount',
+  'cash_contribution_available',
+  'cash_contribution_source',
+  'bank_statements_available',
+  'bond_readiness_consent',
   'bond_bank_name',
   'bond_current_status',
   'bond_process_started',
@@ -239,6 +248,10 @@ function normalizePurchaserEntry(entry = {}) {
   normalized.first_time_buyer = normalizeYesNoChoice(normalized.first_time_buyer)
   normalized.primary_residence = normalizeYesNoChoice(normalized.primary_residence)
   normalized.investment_purchase = normalizeYesNoChoice(normalized.investment_purchase)
+  normalized.under_debt_review = normalizeYesNoChoice(normalized.under_debt_review)
+  normalized.under_administration = normalizeYesNoChoice(normalized.under_administration)
+  normalized.ever_declared_insolvent = normalizeYesNoChoice(normalized.ever_declared_insolvent)
+  normalized.surety_obligations = normalizeYesNoChoice(normalized.surety_obligations)
   if (!String(normalized.spouse_identity_number || '').trim() && String(entry?.spouse_id_number || '').trim()) {
     normalized.spouse_identity_number = entry.spouse_id_number
   }
@@ -647,6 +660,7 @@ function getFinanceSections(financeType, purchaserType = 'individual') {
             currencyField('gross_monthly_income', 'Gross Monthly Income', { required: true }),
             currencyField('net_monthly_income', 'Net Monthly Income'),
             currencyField('monthly_credit_commitments', 'Monthly Credit Commitments'),
+            currencyField('monthly_living_expenses', 'Monthly Living Expenses', { required: true }),
           ],
           {
             description: 'These figures help the bond originator assess affordability and identify the correct supporting documents upfront.',
@@ -729,6 +743,22 @@ function getFinanceSections(financeType, purchaserType = 'individual') {
           },
         ),
       )
+
+      shared.push(
+        section(
+          'bond_readiness_declarations',
+          'Bond Readiness Declarations',
+          [
+            yesNoField('under_debt_review', 'Currently under debt review?', { required: true }),
+            yesNoField('under_administration', 'Currently under administration?', { required: true }),
+            yesNoField('ever_declared_insolvent', 'Ever declared insolvent?', { required: true }),
+            yesNoField('surety_obligations', 'Any surety obligations?', { required: true }),
+          ],
+          {
+            description: 'These declarations help the originator identify finance risks before bank submission.',
+          },
+        ),
+      )
     }
 
     shared.push(
@@ -752,6 +782,10 @@ function getFinanceSections(financeType, purchaserType = 'individual') {
           textField('bond_bank_name', 'Bank / Bond Provider'),
           yesNoField('ooba_assist_requested', 'Would you like OOBA to assist with the bond?', { required: true }),
           yesNoField('joint_bond_application', 'Is this a joint bond application?', { required: true }),
+          currencyField('cash_contribution_available', 'Available Deposit / Cash Contribution', { required: true }),
+          textField('cash_contribution_source', 'Source of Deposit / Cash Contribution', { required: true }),
+          yesNoField('bank_statements_available', 'Recent Bank Statements Available?', { required: true }),
+          yesNoField('bond_readiness_consent', 'Consent to share this finance snapshot with the bond originator?', { required: true }),
           textField('monthly_income_range', 'Monthly Income Range'),
         ],
         {
@@ -1904,6 +1938,12 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
       requireField(purchaser.net_monthly_income, `${buyerLabel} Net Monthly Income`)
       requireField(purchaser.income_frequency, `${buyerLabel} Income Frequency`)
     }
+
+    requireField(purchaser.monthly_living_expenses, `${buyerLabel} Monthly Living Expenses`)
+    requireYesNo(purchaser.under_debt_review, `${buyerLabel} Debt Review Declaration`)
+    requireYesNo(purchaser.under_administration, `${buyerLabel} Administration Declaration`)
+    requireYesNo(purchaser.ever_declared_insolvent, `${buyerLabel} Insolvency Declaration`)
+    requireYesNo(purchaser.surety_obligations, `${buyerLabel} Surety Obligations Declaration`)
   }
 
   if (isNaturalPersonPurchaserType(purchaserType)) {
@@ -1962,6 +2002,17 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
 
   if ((financeType === 'bond' || financeType === 'combination') && (!Number.isFinite(bondAmount) || bondAmount <= 0)) {
     throw new Error('Bond Amount is required.')
+  }
+
+  if (financeType === 'bond' || financeType === 'combination') {
+    const cashContributionAvailable = normalizeNumber(finance.cash_contribution_available)
+    requireField(finance.cash_contribution_available, 'Available Deposit / Cash Contribution')
+    if (!Number.isFinite(cashContributionAvailable) || cashContributionAvailable < 0) {
+      throw new Error('Available Deposit / Cash Contribution must be zero or greater.')
+    }
+    requireField(finance.cash_contribution_source, 'Source of Deposit / Cash Contribution')
+    requireYesNo(finance.bank_statements_available, 'Recent Bank Statements Available')
+    requireYesNo(finance.bond_readiness_consent, 'Bond Readiness Consent')
   }
 
   if (financeType === 'combination') {

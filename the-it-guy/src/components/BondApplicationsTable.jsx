@@ -7,7 +7,11 @@ import {
 import { BOND_INTAKE_STATUSES } from '../core/transactions/bondIntakeSelectors'
 import { getBondApplicationStage } from '../core/transactions/bondSelectors'
 import { getTransactionScopeForRow } from '../core/transactions/transactionScope'
-import { FINANCE_READINESS_DISCLAIMER, getFinanceReadinessSummary } from '../core/finance/financeReadinessSelectors'
+import {
+  buildFinanceReadinessHandoffPacket,
+  FINANCE_READINESS_DISCLAIMER,
+  getFinanceReadinessSummary,
+} from '../core/finance/financeReadinessSelectors'
 import { resolveEffectiveBondAssignment } from '../services/bondAssignmentService'
 import BondEmptyState from './bond/BondEmptyState'
 import BondRiskBadge from './bond/BondRiskBadge'
@@ -180,6 +184,17 @@ function readinessToneClass(tone = '') {
   return 'border-[#dbe5f0] bg-[#f8fbff] text-[#516a83]'
 }
 
+function getReadinessActionLabel(readiness = {}) {
+  const missingItems = Array.isArray(readiness.missingItems) ? readiness.missingItems.filter(Boolean) : []
+  const riskFlags = Array.isArray(readiness.riskFlags) ? readiness.riskFlags.filter(Boolean) : []
+  if (missingItems.length) {
+    const preview = missingItems.slice(0, 2).join(', ')
+    return `${missingItems.length} input${missingItems.length === 1 ? '' : 's'} missing: ${preview}`
+  }
+  if (riskFlags.length) return riskFlags[0]
+  return readiness.nextRecommendedAction || 'Ready for originator review'
+}
+
 function intakeFilterLabel(status = '') {
   if (status === BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION) return 'Awaiting Buyer'
   if (status === BOND_INTAKE_STATUSES.BUYER_IN_PROGRESS) return 'In Progress'
@@ -255,6 +270,11 @@ function getConsultantOptions(currentUser = {}, item = {}) {
 function NewApplicationCard({ item, currentUser, onRowClick, onAction }) {
   const sourceRow = item.sourceRow || {}
   const openRow = () => onRowClick(sourceRow)
+  const financeHandoff = item.financeHandoff || {}
+  const handoffHighlights = [
+    ...(Array.isArray(financeHandoff.topMissingItems) ? financeHandoff.topMissingItems : []),
+    ...(Array.isArray(financeHandoff.topRiskFlags) ? financeHandoff.topRiskFlags : []),
+  ].slice(0, 3)
   const missingPreview = item.missingDocumentLabels?.length
     ? item.missingDocumentLabels.slice(0, 2).join(', ')
     : 'No missing documents'
@@ -295,17 +315,29 @@ function NewApplicationCard({ item, currentUser, onRowClick, onAction }) {
           </div>
           <div className="rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-3 sm:col-span-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">Finance Readiness</p>
-              <span className={`rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold ${readinessToneClass(item.financeReadinessTone)}`}>
-                {item.financeReadinessScore}% · {item.financeReadinessLabel}
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">Originator Handoff</p>
+              <span className={`rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold ${readinessToneClass(financeHandoff.statusTone || item.financeReadinessTone)}`}>
+                {financeHandoff.statusLabel || `${item.financeReadinessScore}% · ${item.financeReadinessLabel}`}
               </span>
             </div>
             <p className="mt-2 text-sm font-semibold text-[#142132]">
-              {formatCurrency(item.affordabilityEstimate?.estimatedPurchaseRangeMin)} - {formatCurrency(item.affordabilityEstimate?.estimatedPurchaseRangeMax)}
+              {financeHandoff.scoreLabel || `${item.financeReadinessScore}% · ${item.financeReadinessLabel}`} · {financeHandoff.affordabilityRangeLabel || `${formatCurrency(item.affordabilityEstimate?.estimatedPurchaseRangeMin)} - ${formatCurrency(item.affordabilityEstimate?.estimatedPurchaseRangeMax)}`}
             </p>
             <p className="mt-1 truncate text-xs text-[#60758d]">
-              {item.financeRiskFlags?.[0] || item.financeNextRecommendedAction || 'Buyer readiness inputs pending'}
+              {financeHandoff.summaryLine || item.financeNextRecommendedAction || 'Buyer readiness inputs pending'}
             </p>
+            <p className="mt-1 truncate text-xs font-semibold text-[#31445a]">
+              Next: {financeHandoff.recommendedAction || item.financeNextRecommendedAction || 'Review readiness packet'}
+            </p>
+            {handoffHighlights.length ? (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {handoffHighlights.map((itemLabel) => (
+                  <span key={itemLabel} className="rounded-full border border-[#dbe5f0] bg-white px-2 py-0.5 text-[0.68rem] font-semibold text-[#60758d]">
+                    {itemLabel}
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </div>
           <div className="rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-3 sm:col-span-2">
             <div className="grid gap-2 sm:grid-cols-3">
@@ -322,6 +354,9 @@ function NewApplicationCard({ item, currentUser, onRowClick, onAction }) {
                 <p className="mt-2 text-sm font-semibold text-[#142132]">{item.velocity?.velocityScore || 0}% · {item.velocity?.expectedApprovalDays || 0}d est.</p>
               </div>
             </div>
+            <p className="mt-2 truncate text-xs font-semibold text-[#31445a]">
+              Outcome signal: {item.readinessOutcomeCalibration?.label || 'Outcome Pending'}
+            </p>
             <p className="mt-2 truncate text-xs text-[#60758d]">
               {item.financeInsights?.conversionOpportunities?.[0] || item.financeInsights?.operationalWarnings?.[0] || item.financeInsights?.recommendations?.[0] || 'No predictive warnings yet.'}
             </p>
@@ -694,6 +729,8 @@ function ApplicationRow({ row, onRowClick, index = 0 }) {
   const propertyLabel = getPropertyLabel(row)
   const readinessScore = financeReadiness.readinessScore?.score || 0
   const readinessLabel = financeReadiness.readinessScore?.label || 'Incomplete'
+  const financeHandoff = buildFinanceReadinessHandoffPacket(row)
+  const readinessActionLabel = getReadinessActionLabel(financeReadiness)
 
   const openRow = () => {
     if (!canOpenRow) return
@@ -760,9 +797,15 @@ function ApplicationRow({ row, onRowClick, index = 0 }) {
           <div className="transaction-progress-track" aria-hidden="true">
             <span style={{ width: `${Math.max(readinessScore > 0 ? 8 : 0, readinessScore)}%` }} />
           </div>
-          <span className={`transaction-workflow-chip ${readinessToneClass(financeReadiness.readinessScore?.tone)}`}>
-            {getMissingDocumentCount(row)} docs missing
+          <span className={`transaction-workflow-chip ${readinessToneClass(financeHandoff.statusTone || financeReadiness.readinessScore?.tone)}`}>
+            {financeHandoff.statusLabel || readinessActionLabel}
           </span>
+          <small className="transaction-cell-secondary" title={financeHandoff.recommendedAction || readinessActionLabel}>
+            {financeHandoff.recommendedAction || readinessActionLabel}
+          </small>
+          {getMissingDocumentCount(row) > 0 ? (
+            <small className="transaction-cell-secondary">{getMissingDocumentCount(row)} docs missing</small>
+          ) : null}
         </div>
       </td>
       <td data-label="Last Activity">

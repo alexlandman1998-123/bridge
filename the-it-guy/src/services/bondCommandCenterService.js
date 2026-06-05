@@ -349,6 +349,19 @@ function getUpdatedAt(row = {}) {
   )
 }
 
+function getApplicationCreatedAt(row = {}) {
+  return (
+    row?.transaction?.created_at ||
+    row?.transaction?.intake_created_at ||
+    row?.transaction?.application_created_at ||
+    row?.transaction?.bond_application_created_at ||
+    row?.application?.created_at ||
+    row?.intake?.created_at ||
+    row?.unit?.created_at ||
+    getUpdatedAt(row)
+  )
+}
+
 function getBondAmount(row = {}) {
   const explicit = normalizeNumber(row?.transaction?.bond_amount, 0)
   if (explicit > 0) return explicit
@@ -2155,10 +2168,14 @@ function mapTransactionTrackerRow(row = {}) {
   const operationalRisk = calculateOperationalRisk(row)
   const velocity = calculateTransactionVelocity(row)
   const financeInsights = generateFinanceInsights(row)
+  const createdAt = getApplicationCreatedAt(row)
+  const consultantName = getDisplayNameFromAssignment(assignment, row, 'consultant')
 
   return {
     key: transactionId || getPropertyLabel(row),
     transactionId,
+    bondApplicationId: normalizeText(row?.transaction?.bond_application_id || row?.transaction?.bond_application_uuid || row?.transaction?.application_id) || transactionId,
+    intakeId: normalizeText(row?.transaction?.bond_intake_id || row?.transaction?.intake_id) || transactionId,
     transactionReference: normalizeText(row?.transaction?.transaction_reference || row?.transaction?.reference),
     applicationReference: normalizeText(row?.transaction?.application_reference || row?.transaction?.bond_application_reference),
     linkedApplicationId: transactionId,
@@ -2166,11 +2183,13 @@ function mapTransactionTrackerRow(row = {}) {
     property: getPropertyLabel(row),
     partner: getPartnerLabel(row),
     attorney: normalizeText(row?.transaction?.attorney) || 'Awaiting attorney',
-    consultant: getDisplayNameFromAssignment(assignment, row, 'consultant'),
+    consultant: consultantName,
+    consultantName,
     assignedUserId: normalizeText(assignment.primaryConsultantUserId || row?.transaction?.primary_bond_consultant_user_id),
     assignedUserEmail: normalizeText(assignment.primaryConsultantEmail || row?.transaction?.assigned_bond_originator_email),
     processor: getDisplayNameFromAssignment(assignment, row, 'processor'),
     regionId: normalizeText(assignment.bondRegionId || row?.transaction?.bond_region_id || row?.transaction?.region_id),
+    regionName: getRegionLabel(row),
     workspaceUnitId: normalizeText(
       assignment.bondWorkspaceUnitId ||
         row?.transaction?.bond_workspace_unit_id ||
@@ -2179,10 +2198,13 @@ function mapTransactionTrackerRow(row = {}) {
         row?.transaction?.team_id,
     ),
     branchId: normalizeText(row?.transaction?.branch_id || row?.transaction?.assigned_branch_id),
+    branchName: getBranchLabel(row),
     teamId: normalizeText(row?.transaction?.team_id),
     bank: normalizeText(row?.transaction?.bank) || 'Bank pending',
     bondAmount,
     bondAmountLabel: formatCurrency(bondAmount),
+    financeType: normalizeFinanceType(row?.transaction?.finance_type, { allowUnknown: true }),
+    bankSubmissionStatus: normalizeText(row?.transaction?.bank_submission_status || row?.transaction?.bank_status || row?.transaction?.finance_submission_status),
     financeStageKey: financeLane.key,
     financeStageLabel: financeLane.label,
     originatorQueueStatus: queueState.status,
@@ -2193,11 +2215,17 @@ function mapTransactionTrackerRow(row = {}) {
     ].filter(Boolean),
     transferStageKey: transferStage,
     transferStageLabel: stageLabelFromAttorneyKey(transferStage),
+    createdAt,
+    intakeCreatedAt: normalizeText(row?.transaction?.intake_created_at || row?.intake?.created_at),
+    applicationCreatedAt: normalizeText(row?.transaction?.application_created_at || row?.transaction?.bond_application_created_at || row?.application?.created_at),
+    transactionCreatedAt: normalizeText(row?.transaction?.created_at),
     lastActivityAt: getUpdatedAt(row),
     lastActivityLabel: formatRelativeTime(getUpdatedAt(row)),
     nextAction: normalizeText(row?.transaction?.next_action) || (queueState.status === 'READY_FOR_REVIEW' ? 'Review submitted application' : 'No next action set'),
     approvalConfidence,
     operationalRisk,
+    riskScore: operationalRisk.riskScore,
+    riskLevel: operationalRisk.riskLevel,
     velocity,
     financeInsights,
     transactionConfidence: Math.round((approvalConfidence.score * 0.55) + ((100 - operationalRisk.riskScore) * 0.25) + (velocity.velocityScore * 0.2)),
@@ -2499,7 +2527,8 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
 
 export async function getBondTransactionTrackerSnapshot(user = {}, workspaceId = '', options = {}) {
   const reportingScope = options.reportingScope || (await getBondDashboardReportingScope(user, workspaceId, options))
-  const allRows = await resolveBondRows(user, workspaceId, options)
+  const includeDemoRows = options.includeDemoRows ?? !isHqReportingScope(reportingScope)
+  const allRows = await resolveBondRows(user, workspaceId, { ...options, includeDemoRows })
   const scopedRows = filterRowsByDevelopment(allRows, options.developmentId)
   const bondRows = scopedRows.filter((row) => {
     const financeType = normalizeFinanceType(row?.transaction?.finance_type, { allowUnknown: true })

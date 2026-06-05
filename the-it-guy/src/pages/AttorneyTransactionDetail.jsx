@@ -36,6 +36,7 @@ import {
   buildBondHybridFinanceStageSteps,
   summarizeBondHybridFinanceWorkflow,
 } from '../core/transactions/bondHybridFinanceWorkflow'
+import { buildFinanceReadinessHandoffPacket } from '../core/finance/financeReadinessSelectors'
 import { getAttorneyTransferStage, stageLabelFromAttorneyKey } from '../core/transactions/attorneySelectors'
 import { isBondFinanceType, normalizeFinanceType } from '../core/transactions/financeType'
 import {
@@ -3286,6 +3287,18 @@ function AttorneyTransactionDetail() {
     : documents.length
       ? `${documents.length} files uploaded`
       : 'No requirements configured'
+  const financeReadinessHandoff = useMemo(
+    () =>
+      buildFinanceReadinessHandoffPacket({
+        transaction,
+        onboardingFormData: data?.onboardingFormData || {},
+        documentSummary: {
+          totalRequired: requiredDocumentChecklist.length,
+          uploadedCount: documents.length,
+        },
+      }),
+    [data?.onboardingFormData, documents.length, requiredDocumentChecklist.length, transaction],
+  )
   const workspaceMenuTabs = availableWorkspaceTabs.map((tab) => {
     if (tab.id === 'parties') {
       return { ...tab, meta: `${transactionParticipants.length} parties` }
@@ -3818,6 +3831,7 @@ function AttorneyTransactionDetail() {
       workflowData={transactionFinanceWorkflow}
       canEdit={canEditBondHybridFinanceWorkflow}
       variant={workspaceRole === 'bond_originator' ? 'originator' : 'agent'}
+      financeReadinessHandoff={financeReadinessHandoff}
       loadingAction={bondHybridFinanceActionLoading}
       onAdvanceStage={(stageKey) => void handleBondHybridFinanceStage(stageKey)}
       onAddApplication={(payload) => void handleAddBondHybridApplication(payload)}
@@ -3837,6 +3851,7 @@ function AttorneyTransactionDetail() {
       workflowData={transactionFinanceWorkflow}
       requiredDocumentChecklist={requiredDocumentChecklist}
       documents={documents}
+      financeReadinessHandoff={financeReadinessHandoff}
       viewerRole={workspaceRole}
       activeViewerPermissions={{ canEditFinanceWorkflow: canEditBondHybridFinanceWorkflow }}
       loadingAction={bondHybridFinanceActionLoading}

@@ -45,6 +45,56 @@ function getTransaction(row = {}) {
   return row?.transaction || row || {}
 }
 
+function getOutcomeSignal(row = {}) {
+  const tx = getTransaction(row)
+  const events = Array.isArray(row?.transactionEvents)
+    ? row.transactionEvents
+    : Array.isArray(row?.transaction_events)
+      ? row.transaction_events
+      : []
+  return lower([
+    tx.finance_outcome,
+    tx.financeOutcome,
+    tx.bond_outcome,
+    tx.bondOutcome,
+    tx.bank_feedback_status,
+    tx.bankFeedbackStatus,
+    tx.finance_status,
+    tx.financeStatus,
+    tx.bond_application_status,
+    tx.bondApplicationStatus,
+    tx.current_main_stage,
+    tx.currentMainStage,
+    tx.stage,
+    tx.status,
+    tx.next_action,
+    tx.nextAction,
+    ...events.map((event) => `${event?.event_type || event?.eventType || event?.type || ''} ${event?.outcome || ''} ${event?.status || ''}`),
+  ].filter(Boolean).join(' '))
+}
+
+export function getActualFinanceOutcome(row = {}) {
+  const signal = getOutcomeSignal(row)
+  if (/(declined|decline|rejected|lost|cancelled|canceled)/i.test(signal)) {
+    return { key: 'declined', label: 'Declined / Lost', terminal: true, positive: false }
+  }
+  if (/(approved|approval granted|grant letter|granted|registered|accepted by lender|quote accepted)/i.test(signal)) {
+    return { key: 'approved', label: 'Approved / Granted', terminal: true, positive: true }
+  }
+  if (/(submitted|bank feedback|feedback|review|application|quote|instruction)/i.test(signal)) {
+    return { key: 'in_progress', label: 'In Progress', terminal: false, positive: null }
+  }
+  return { key: 'unknown', label: 'Outcome Pending', terminal: false, positive: null }
+}
+
+function getReadinessBand(score = 0) {
+  const value = number(score)
+  if (value >= 76) return { key: 'strong', label: 'Strong', expectedPositiveRate: 75 }
+  if (value >= 55) return { key: 'moderate', label: 'Moderate', expectedPositiveRate: 55 }
+  if (value >= 25) return { key: 'needs_attention', label: 'Needs Attention', expectedPositiveRate: 30 }
+  return { key: 'incomplete', label: 'Incomplete', expectedPositiveRate: 10 }
+}
+
 function getFormData(row = {}) {
   const form = row?.onboardingFormData || row?.onboarding_form_data || row?.onboarding?.formData || row?.onboarding?.form_data || {}
   return form?.form_data || form?.formData || form
@@ -99,7 +149,7 @@ function getBranch(row = {}) {
 }
 
 function getReadinessInputs(input = {}) {
-  const source = input.row || input.transaction || input
+  const source = input.row || input
   const summary = input.financeReadiness || getFinanceReadinessSummary(source)
   const readiness = summary.readinessScore || {}
   const docs = input.documentStats || getDocumentStats(source)
@@ -168,7 +218,7 @@ export function calculateApprovalProbability(input = {}) {
 }
 
 export function calculateOperationalRisk(input = {}) {
-  const row = input.row || input.transaction || input
+  const row = input.row || input
   const tx = getTransaction(row)
   const docs = getDocumentStats(row)
   const ageDays = daysSince(tx.updated_at || tx.created_at)
@@ -220,7 +270,7 @@ export function calculateOperationalRisk(input = {}) {
 }
 
 export function calculateTransactionVelocity(input = {}) {
-  const row = input.row || input.transaction || input
+  const row = input.row || input
   const tx = getTransaction(row)
   const docs = getDocumentStats(row)
   const stageKey = getStageKey(row)
@@ -257,7 +307,7 @@ export function calculateTransactionVelocity(input = {}) {
 }
 
 export function generateFinanceInsights(input = {}) {
-  const row = input.row || input.transaction || input
+  const row = input.row || input
   const approval = calculateApprovalProbability(row)
   const risk = calculateOperationalRisk(row)
   const velocity = calculateTransactionVelocity(row)
@@ -391,6 +441,130 @@ export function calculateReadinessDistribution(rows = []) {
   return buckets
 }
 
+export function buildReadinessOutcomeCalibration(rows = []) {
+  const buckets = new Map()
+  const terminalRows = []
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const readiness = getFinanceReadinessSummary(row)
+    const score = number(readiness.readinessScore?.score)
+    const band = getReadinessBand(score)
+    const outcome = getActualFinanceOutcome(row)
+    const bucket = buckets.get(band.key) || {
+      key: band.key,
+      label: band.label,
+      expectedPositiveRate: band.expectedPositiveRate,
+      applications: 0,
+      terminalOutcomes: 0,
+      approved: 0,
+      declined: 0,
+      pending: 0,
+      scoreTotal: 0,
+      examples: [],
+    }
+    bucket.applications += 1
+    bucket.scoreTotal += score
+    if (outcome.key === 'approved') {
+      bucket.approved += 1
+      bucket.terminalOutcomes += 1
+      terminalRows.push({ row, score, band, outcome })
+    } else if (outcome.key === 'declined') {
+      bucket.declined += 1
+      bucket.terminalOutcomes += 1
+      terminalRows.push({ row, score, band, outcome })
+    } else {
+      bucket.pending += 1
+    }
+    if (bucket.examples.length < 3) {
+      bucket.examples.push({
+        transactionId: getTransaction(row).id || '',
+        buyer: row?.buyer?.name || getTransaction(row).buyer_name || 'Buyer pending',
+        score,
+        outcome: outcome.label,
+      })
+    }
+    buckets.set(band.key, bucket)
+  }
+
+  const rowsByBand = [...buckets.values()].map((bucket) => {
+    const approvalRate = bucket.terminalOutcomes ? Math.round((bucket.approved / bucket.terminalOutcomes) * 100) : 0
+    const variance = bucket.terminalOutcomes ? approvalRate - bucket.expectedPositiveRate : 0
+    const calibrationLabel =
+      bucket.terminalOutcomes < 3 ? 'Needs More Outcomes' :
+      Math.abs(variance) <= 12 ? 'Aligned' :
+      variance > 12 ? 'Understated Readiness' :
+      'Overstated Readiness'
+    return {
+      ...bucket,
+      averageScore: Math.round(bucket.scoreTotal / Math.max(1, bucket.applications)),
+      approvalRate,
+      declineRate: bucket.terminalOutcomes ? Math.round((bucket.declined / bucket.terminalOutcomes) * 100) : 0,
+      variance,
+      calibrationLabel,
+      calibrationTone:
+        calibrationLabel === 'Aligned' ? 'success' :
+        calibrationLabel === 'Needs More Outcomes' ? 'neutral' :
+        'warning',
+    }
+  })
+  const terminalCount = terminalRows.length
+  const approvedCount = terminalRows.filter((item) => item.outcome.key === 'approved').length
+  const strongDeclines = terminalRows.filter((item) => item.band.key === 'strong' && item.outcome.key === 'declined').length
+  const lowScoreApprovals = terminalRows.filter((item) => ['needs_attention', 'incomplete'].includes(item.band.key) && item.outcome.key === 'approved').length
+  return {
+    totalApplications: Array.isArray(rows) ? rows.length : 0,
+    terminalOutcomes: terminalCount,
+    approvalRate: terminalCount ? Math.round((approvedCount / terminalCount) * 100) : 0,
+    strongDeclines,
+    lowScoreApprovals,
+    bands: rowsByBand,
+    recommendations: [
+      strongDeclines > 0 ? 'Review high-readiness files that still declined to refine risk weighting.' : '',
+      lowScoreApprovals > 0 ? 'Review lower-scored approvals to identify missing positive signals.' : '',
+      terminalCount < 10 ? 'Keep collecting finance outcomes before changing score weights.' : '',
+    ].filter(Boolean),
+    disclaimer: FINANCE_INTELLIGENCE_DISCLAIMER,
+  }
+}
+
+export function getReadinessOutcomeCalibrationForRow(row = {}, calibration = null) {
+  const readiness = getFinanceReadinessSummary(row)
+  const score = number(readiness.readinessScore?.score)
+  const band = getReadinessBand(score)
+  const outcome = getActualFinanceOutcome(row)
+  const cohort = calibration?.bands?.find((item) => item.key === band.key) || null
+  let label = 'Outcome Pending'
+  let tone = 'neutral'
+  let detail = `${band.label} readiness; outcome still pending.`
+
+  if (outcome.key === 'approved' && ['needs_attention', 'incomplete'].includes(band.key)) {
+    label = 'Readiness Underestimated'
+    tone = 'warning'
+    detail = `${band.label} readiness later produced a positive finance outcome.`
+  } else if (outcome.key === 'declined' && band.key === 'strong') {
+    label = 'Readiness Overstated'
+    tone = 'warning'
+    detail = 'Strong readiness later produced a negative finance outcome.'
+  } else if (outcome.terminal) {
+    label = 'Outcome Aligned'
+    tone = outcome.positive ? 'success' : 'danger'
+    detail = `${band.label} readiness tracked to ${outcome.label}.`
+  }
+
+  return {
+    readinessBand: band.label,
+    readinessBandKey: band.key,
+    readinessScore: score,
+    actualOutcome: outcome.label,
+    actualOutcomeKey: outcome.key,
+    label,
+    tone,
+    detail,
+    cohortApprovalRate: cohort?.approvalRate || 0,
+    cohortTerminalOutcomes: cohort?.terminalOutcomes || 0,
+    disclaimer: FINANCE_INTELLIGENCE_DISCLAIMER,
+  }
+}
+
 export function buildReadinessFunnel(rows = []) {
   const total = rows.length || 0
   const stages = [
@@ -450,12 +624,14 @@ export function buildExecutiveReportModel(rows = [], { title = 'Bond Operations 
   const bankEfficiency = calculateBankEfficiency(rows)
   const consultantPerformance = calculateConsultantPerformance(rows)
   const readinessFunnel = buildReadinessFunnel(rows)
+  const readinessOutcomeCalibration = buildReadinessOutcomeCalibration(rows)
   const riskRows = rows.map((row) => ({
     transactionId: getTransaction(row).id || '',
     buyer: row?.buyer?.name || getTransaction(row).buyer_name || 'Buyer pending',
     approvalConfidence: calculateApprovalProbability(row),
     operationalRisk: calculateOperationalRisk(row),
     velocity: calculateTransactionVelocity(row),
+    readinessOutcomeCalibration: getReadinessOutcomeCalibrationForRow(row, readinessOutcomeCalibration),
   }))
   return {
     title,
@@ -472,6 +648,7 @@ export function buildExecutiveReportModel(rows = [], { title = 'Bond Operations 
       readinessFunnel,
       bankEfficiency,
       consultantPerformance,
+      readinessOutcomeCalibration,
       heatmaps: {
         bank: buildOperationalHeatmapModel(rows, { groupBy: 'bank' }),
         consultant: buildOperationalHeatmapModel(rows, { groupBy: 'consultant' }),
@@ -484,6 +661,7 @@ export function buildExecutiveReportModel(rows = [], { title = 'Bond Operations 
       approvalPredictionModelInput: 'approvalConfidence + readiness + document + workflow features',
       documentAnomalyDetectionInput: 'documentRequests + documents + revision history',
       bankRecommendationInput: 'bankEfficiency + buyer profile + historical outcome features',
+      readinessCalibrationInput: 'readinessScore + handoffStatus + lender outcome features',
       workflowOptimizationInput: 'operationalRisk + velocity + bottleneck heatmaps',
     },
   }
@@ -497,6 +675,7 @@ export function getCachedFinanceIntelligence(rows = [], cacheKey = 'default') {
   const value = {
     readinessDistribution: calculateReadinessDistribution(rows),
     readinessFunnel: buildReadinessFunnel(rows),
+    readinessOutcomeCalibration: buildReadinessOutcomeCalibration(rows),
     bankEfficiency: calculateBankEfficiency(rows),
     consultantPerformance: calculateConsultantPerformance(rows),
     heatmaps: {
@@ -521,4 +700,3 @@ export function getCachedFinanceIntelligence(rows = [], cacheKey = 'default') {
 export function isPredictiveCopySafe(value = '') {
   return !/(guaranteed|guarantee|pre-approved|approved by bank|accepted by bank|will be approved)/i.test(text(value))
 }
-

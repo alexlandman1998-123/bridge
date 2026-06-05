@@ -59,7 +59,13 @@ try {
   const queueService = await server.ssrLoadModule('/src/services/bondOperationalQueueService.js')
   const intakeSelectors = await server.ssrLoadModule('/src/core/transactions/bondIntakeSelectors.js')
   const { BOND_INTAKE_STATUSES } = intakeSelectors
-  const { getNewApplicationsQueue, buildBondNewApplicationViewModel } = queueService
+  const {
+    getBondOriginatorQueueState,
+    getNewApplicationsQueue,
+    buildBondNewApplicationViewModel,
+    isBondApplicationTrackerRow,
+    isNewBondApplicationReadyForReview,
+  } = queueService
 
   const cash = makeRow('cash', { transaction: { finance_type: 'cash' } })
   assert.equal(getNewApplicationsQueue([cash]).length, 0, 'cash transaction is excluded')
@@ -128,7 +134,19 @@ try {
       { document_request_id: 'req-bank', status: 'uploaded', uploaded_at: '2026-05-03T11:00:00.000Z' },
     ],
   })
-  assert.equal(getNewApplicationsQueue([ready])[0].intakeStatus, BOND_INTAKE_STATUSES.READY_FOR_REVIEW)
+  assert.equal(getNewApplicationsQueue([ready]).length, 0, 'ready for review moves out of Pipeline')
+  assert.equal(isBondApplicationTrackerRow(ready), true, 'ready for review appears in Applications')
+  assert.equal(isNewBondApplicationReadyForReview(ready), true, 'unaccepted ready for review files are tagged new')
+  assert.deepEqual(
+    getBondOriginatorQueueState(ready),
+    {
+      status: BOND_INTAKE_STATUSES.READY_FOR_REVIEW,
+      bucket: 'applications',
+      label: 'Ready for review',
+      isNew: true,
+      actionRequired: true,
+    },
+  )
 
   const accepted = makeRow('accepted', {
     transaction: { assigned_bond_originator_email: 'originator@example.test' },

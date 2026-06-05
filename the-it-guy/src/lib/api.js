@@ -78,6 +78,7 @@ import {
   BOND_APPLICATION_PROGRESS_STATUSES,
   getBondApplicationProgress,
 } from '../core/transactions/bondIntakeSelectors'
+import { buildFinanceReadinessPayload } from '../core/finance/financeReadinessSelectors'
 import {
   OTP_DOCUMENT_TYPES,
   normalizeOtpDocumentType,
@@ -29743,6 +29744,230 @@ function toBoolean(value, fallback = false) {
   return fallback
 }
 
+function isCapturedOnboardingValue(value) {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string') return value.trim().length > 0
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (typeof value === 'boolean') return true
+  return false
+}
+
+function getOnboardingPurchaserEntries(formData = {}) {
+  if (Array.isArray(formData.purchasers) && formData.purchasers.length) {
+    return formData.purchasers.filter((entry) => entry && typeof entry === 'object')
+  }
+
+  const primary = {}
+  const secondary = {}
+  Object.entries(formData || {}).forEach(([key, value]) => {
+    if (key.startsWith('co_')) {
+      secondary[key.slice(3)] = value
+    } else {
+      primary[key] = value
+    }
+  })
+
+  const entries = []
+  if (Object.values(primary).some(isCapturedOnboardingValue)) entries.push(primary)
+  if (Object.values(secondary).some(isCapturedOnboardingValue)) entries.push(secondary)
+  return entries
+}
+
+function sumOnboardingPurchaserNumbers(entries = [], keys = []) {
+  return entries.reduce((total, entry) => {
+    const value = keys.map((key) => entry?.[key]).find(isCapturedOnboardingValue)
+    return total + (normalizeOptionalNumber(value) || 0)
+  }, 0)
+}
+
+function firstOnboardingPurchaserValue(entries = [], keys = []) {
+  for (const entry of entries) {
+    for (const key of keys) {
+      if (isCapturedOnboardingValue(entry?.[key])) return entry[key]
+    }
+  }
+  return ''
+}
+
+function firstCapturedOnboardingValue(candidates = []) {
+  for (const candidate of candidates) {
+    if (isCapturedOnboardingValue(candidate)) return candidate
+  }
+  return ''
+}
+
+function normalizeOnboardingChoice(value) {
+  return normalizeTextValue(value).toLowerCase()
+}
+
+function isOnboardingYes(value) {
+  return ['yes', 'true', '1'].includes(normalizeOnboardingChoice(value))
+}
+
+function isOnboardingNo(value) {
+  return ['no', 'false', '0'].includes(normalizeOnboardingChoice(value))
+}
+
+function getOnboardingReadinessRiskFlags(formData = {}) {
+  const purchasers = getOnboardingPurchaserEntries(formData)
+  const finance = formData.finance && typeof formData.finance === 'object' ? formData.finance : {}
+  const flags = []
+  const anyPurchaserYes = (keys = []) => purchasers.some((entry) => keys.some((key) => isOnboardingYes(entry?.[key])))
+
+  if (anyPurchaserYes(['under_debt_review', 'underDebtReview'])) flags.push('Debt review declared')
+  if (anyPurchaserYes(['under_administration', 'underAdministration'])) flags.push('Administration declared')
+  if (anyPurchaserYes(['ever_declared_insolvent', 'everDeclaredInsolvent'])) flags.push('Prior insolvency declared')
+  if (anyPurchaserYes(['surety_obligations', 'suretyObligations'])) flags.push('Surety obligations declared')
+
+  const bankStatementsAvailable = firstCapturedOnboardingValue([
+    finance.bank_statements_available,
+    finance.bankStatementsAvailable,
+    formData.bank_statements_available,
+    formData.bankStatementsAvailable,
+  ])
+  if (isOnboardingNo(bankStatementsAvailable)) flags.push('Bank statements not confirmed')
+
+  const consent = firstCapturedOnboardingValue([
+    finance.bond_readiness_consent,
+    finance.bondReadinessConsent,
+    formData.bond_readiness_consent,
+    formData.bondReadinessConsent,
+  ])
+  if (isOnboardingNo(consent)) flags.push('Bond readiness sharing consent not granted')
+
+  return flags
+}
+
+function monthsSinceOnboardingDate(value) {
+  const normalized = normalizeTextValue(value)
+  if (!normalized) return 0
+  const parsed = new Date(normalized)
+  if (Number.isNaN(parsed.getTime())) return 0
+  const now = new Date()
+  return Math.max(0, (now.getFullYear() - parsed.getFullYear()) * 12 + (now.getMonth() - parsed.getMonth()))
+}
+
+function getOnboardingEmploymentDurationMonths(entries = []) {
+  return entries.reduce((maxMonths, entry) => {
+    const fromStartDate = monthsSinceOnboardingDate(entry?.employment_start_date || entry?.employmentStartDate)
+    const fromBusinessYears = (normalizeOptionalNumber(entry?.years_in_business || entry?.yearsInBusiness) || 0) * 12
+    const explicit =
+      normalizeOptionalNumber(entry?.employment_duration_months || entry?.employmentDurationMonths) ||
+      normalizeOptionalNumber(entry?.employment_months || entry?.employmentMonths) ||
+      0
+    return Math.max(maxMonths, fromStartDate, fromBusinessYears, explicit)
+  }, 0)
+}
+
+function buildOnboardingFinanceReadinessSnapshot(formData = {}, transaction = null) {
+  const financeType = normalizeFinanceType(formData.purchase_finance_type || transaction?.finance_type || 'cash')
+  if (!isBondFinanceType(financeType)) {
+    return formData.finance_readiness || null
+  }
+
+  const purchasers = getOnboardingPurchaserEntries(formData)
+  const monthlyIncome =
+    sumOnboardingPurchaserNumbers(purchasers, ['gross_monthly_income', 'grossMonthlyIncome', 'monthly_income', 'monthlyIncome']) ||
+    sumOnboardingPurchaserNumbers(purchasers, ['net_monthly_income', 'netMonthlyIncome'])
+  const monthlyDebt = sumOnboardingPurchaserNumbers(purchasers, [
+    'monthly_credit_commitments',
+    'monthlyCreditCommitments',
+    'monthly_debt',
+    'monthlyDebt',
+  ])
+  const monthlyExpenses = sumOnboardingPurchaserNumbers(purchasers, [
+    'monthly_living_expenses',
+    'monthlyLivingExpenses',
+    'monthly_expenses',
+    'monthlyExpenses',
+  ])
+  const dependants = sumOnboardingPurchaserNumbers(purchasers, [
+    'number_of_dependants',
+    'numberOfDependants',
+    'dependants',
+    'dependents',
+  ])
+  const employmentDurationMonths = getOnboardingEmploymentDurationMonths(purchasers)
+  const snapshot = getOnboardingFinanceSnapshot({ formData, transaction })
+  const finance = formData.finance && typeof formData.finance === 'object' ? formData.finance : {}
+  const deposit =
+    normalizeOptionalNumber(
+      finance.cash_contribution_available ??
+        finance.cashContributionAvailable ??
+        formData.cash_contribution_available ??
+        formData.cashContributionAvailable ??
+        formData.deposit_available ??
+        formData.deposit_amount ??
+        snapshot.cashAmount,
+    ) || 0
+  const hasCapturedPurchaserValue = (keys = []) =>
+    purchasers.some((entry) => keys.some((key) => isCapturedOnboardingValue(entry?.[key])))
+  const hasCapturedDeposit = [
+    finance.cash_contribution_available,
+    finance.cashContributionAvailable,
+    formData.cash_contribution_available,
+    formData.cashContributionAvailable,
+    formData.deposit_available,
+    formData.deposit_amount,
+  ].some(isCapturedOnboardingValue) || deposit > 0
+  const hasCashContributionSource = [
+    finance.cash_contribution_source,
+    finance.cashContributionSource,
+    formData.cash_contribution_source,
+    formData.cashContributionSource,
+  ].some(isCapturedOnboardingValue)
+  const hasBankStatementsChoice = [
+    finance.bank_statements_available,
+    finance.bankStatementsAvailable,
+    formData.bank_statements_available,
+    formData.bankStatementsAvailable,
+  ].some(isCapturedOnboardingValue)
+  const hasConsentChoice = [
+    finance.bond_readiness_consent,
+    finance.bondReadinessConsent,
+    formData.bond_readiness_consent,
+    formData.bondReadinessConsent,
+  ].some(isCapturedOnboardingValue)
+  const completenessChecks = [
+    monthlyIncome > 0,
+    employmentDurationMonths > 0,
+    snapshot.purchasePrice > 0,
+    hasCapturedPurchaserValue(['monthly_credit_commitments', 'monthlyCreditCommitments', 'monthly_debt', 'monthlyDebt']) || monthlyDebt > 0,
+    hasCapturedPurchaserValue(['number_of_dependants', 'numberOfDependants', 'dependants', 'dependents']) || dependants > 0,
+  ]
+  completenessChecks.push(
+    monthlyExpenses > 0,
+    hasCapturedDeposit,
+    hasCashContributionSource,
+    hasBankStatementsChoice,
+    hasConsentChoice,
+  )
+
+  const readiness = buildFinanceReadinessPayload(
+    {
+      monthlyIncome,
+      monthlyDebt,
+      monthlyExpenses,
+      deposit,
+      depositCaptured: hasCapturedDeposit,
+      employmentType: firstOnboardingPurchaserValue(purchasers, ['employment_type', 'employmentType']),
+      employmentDurationMonths,
+      dependants,
+      estimatedPurchaseRange: snapshot.purchasePrice || transaction?.purchase_price || transaction?.sales_price,
+      documentReadiness: 0,
+      onboardingCompleteness: completenessChecks.length
+        ? completenessChecks.filter(Boolean).length / completenessChecks.length
+        : 0,
+    },
+    formData,
+  ).finance_readiness
+
+  return {
+    ...readiness,
+    risk_flags: [...new Set([...(readiness.risk_flags || []), ...getOnboardingReadinessRiskFlags(formData)])],
+  }
+}
+
 function getOnboardingFinanceSnapshot({ formData = {}, transaction = null } = {}) {
   const financeType = normalizeFinanceType(formData.purchase_finance_type || transaction?.finance_type || 'cash')
   const purchasePrice = resolvePurchasePrice({ formData, transaction })
@@ -30523,6 +30748,15 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       submit: true,
     })
   }
+  const financeReadinessSnapshot = submit
+    ? buildOnboardingFinanceReadinessSnapshot(normalizedFormData, transaction)
+    : normalizedFormData.finance_readiness || null
+  const formDataForPersistence = financeReadinessSnapshot
+    ? {
+        ...normalizedFormData,
+        finance_readiness: financeReadinessSnapshot,
+      }
+    : normalizedFormData
 
   const now = new Date().toISOString()
   const nextStatus = submit ? 'Submitted' : onboarding.status === 'Not Started' ? 'In Progress' : onboarding.status
@@ -30533,7 +30767,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       transaction_id: transaction.id,
       purchaser_type: purchaserType,
       form_data: {
-        ...normalizedFormData,
+        ...formDataForPersistence,
         funding_sources: fundingSources,
       },
       updated_at: now,
@@ -30551,7 +30785,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
 
   await syncOnboardingTransactionFinanceSnapshot(client, {
     transaction,
-    formData: normalizedFormData,
+    formData: formDataForPersistence,
     purchaserType,
     onboardingStatus: lifecycleStatus,
     onboardingCompletedAt: submit ? now : null,
@@ -30564,7 +30798,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
   })
 
   const financeSnapshot = getOnboardingFinanceSnapshot({
-    formData: normalizedFormData,
+    formData: formDataForPersistence,
     transaction,
   })
   let clientPortalLink = null
@@ -30589,7 +30823,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
     reservationRequired: financeSnapshot.reservationRequired,
     cashAmount: financeSnapshot.cashAmount,
     bondAmount: financeSnapshot.bondAmount,
-    formData: normalizedFormData,
+    formData: formDataForPersistence,
   })
 
   const { data: updatedOnboarding, error: onboardingUpdateError } = await client
@@ -30716,13 +30950,13 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
         transaction,
         financeType: financeSnapshot.financeType || transaction.finance_type,
         buyer,
-        formData: normalizedFormData,
+        formData: formDataForPersistence,
       })
       const activation = await activateSelectedBondOriginatorForOnboarding(client, {
         transaction,
         financeType: financeSnapshot.financeType || transaction.finance_type,
         buyer,
-        formData: normalizedFormData,
+        formData: formDataForPersistence,
       })
       if (activation?.reason === 'no_selected_bond_originator') {
         console.warn('Bond finance selected during onboarding but no bond originator was selected for the transaction.')
@@ -30747,7 +30981,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
                 ? unit.development[0]?.name || null
                 : unit?.development?.name || null,
           },
-          formData: normalizedFormData,
+          formData: formDataForPersistence,
           actor: { roleType: 'client' },
           client,
           emailEnabled: true,
@@ -30775,7 +31009,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
         transactionId: transaction.id,
         financeType: financeSnapshot.financeType || transaction.finance_type,
         buyer,
-        formData: normalizedFormData,
+        formData: formDataForPersistence,
       })
 
       await sendRoleplayerHandoffEmailForOnboarding(client, {

@@ -6,6 +6,7 @@ import {
   Handshake,
   Home,
   Mail,
+  SlidersHorizontal,
   Route,
   Settings2,
   Shield,
@@ -31,6 +32,13 @@ const SETTINGS_NAV = [
   { to: '/settings/communications/templates', label: 'Communications Templates', icon: Mail },
   { to: '/settings/users', label: 'Users & Permissions', icon: Shield },
   { to: '/settings/billing', label: 'Billing', icon: CreditCard },
+]
+
+const BOND_SETTINGS_NAV = [
+  { to: '/settings', label: 'Overview', icon: Settings2, end: true },
+  { to: '/settings/account', label: 'Account', icon: UserCircle2 },
+  { to: '/settings/organisation', label: 'Organisation', icon: Building2 },
+  { to: '/bond/automation', label: 'Automation & Rules', icon: SlidersHorizontal },
 ]
 
 export default function SettingsLayout() {
@@ -65,7 +73,8 @@ export default function SettingsLayout() {
     appRole: role,
     membershipRole,
   })
-  const navItems = SETTINGS_NAV.filter((item) => {
+  const baseNavItems = role === 'bond_originator' ? BOND_SETTINGS_NAV : SETTINGS_NAV
+  const navItems = baseNavItems.filter((item) => {
     if (
       !canManage &&
       (item.to === '/settings/users' ||

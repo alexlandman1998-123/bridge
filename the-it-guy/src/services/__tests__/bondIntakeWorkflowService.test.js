@@ -131,7 +131,7 @@ function createMockClient() {
             then(resolve) {
               calls.push({ table, action: 'select', columns, filters: query.filters })
               if (table === 'transaction_bond_applications') {
-                resolve({ data: [{ id: 'bond-application-1' }], error: null })
+                resolve({ data: [{ id: 'bond-application-1', assigned_organisation_id: 'bond-org-1' }], error: null })
                 return
               }
               resolve({ data: [], error: null })

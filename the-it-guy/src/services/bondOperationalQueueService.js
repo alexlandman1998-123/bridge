@@ -11,12 +11,16 @@ import {
   getBondIntakeSummary,
 } from '../core/transactions/bondIntakeSelectors'
 import { financeTypeShortLabel } from '../core/transactions/financeType'
-import { getFinanceReadinessSummary } from '../core/finance/financeReadinessSelectors'
+import {
+  buildFinanceReadinessHandoffPacket,
+  getFinanceReadinessSummary,
+} from '../core/finance/financeReadinessSelectors'
 import {
   calculateApprovalProbability,
   calculateOperationalRisk,
   calculateTransactionVelocity,
   generateFinanceInsights,
+  getReadinessOutcomeCalibrationForRow,
 } from './financeIntelligenceService'
 
 export const BOND_OPERATIONAL_QUEUE_KEYS = Object.freeze({
@@ -306,10 +310,12 @@ export function buildBondNewApplicationViewModel(row = {}) {
   const documentReadiness = intakeSummary.documentReadiness
   const transaction = row?.transaction || row || {}
   const financeReadiness = getFinanceReadinessSummary(row)
+  const financeHandoff = buildFinanceReadinessHandoffPacket(row)
   const approvalConfidence = calculateApprovalProbability(row)
   const operationalRisk = calculateOperationalRisk(row)
   const velocity = calculateTransactionVelocity(row)
   const financeInsights = generateFinanceInsights(row)
+  const readinessOutcomeCalibration = getReadinessOutcomeCalibrationForRow(row)
   const offerAmount = getOfferAmount(row)
 
   return {
@@ -343,10 +349,12 @@ export function buildBondNewApplicationViewModel(row = {}) {
     financeMissingItems: financeReadiness.missingItems || [],
     financeNextRecommendedAction: financeReadiness.nextRecommendedAction,
     financeReadinessDisclaimer: financeReadiness.disclaimer,
+    financeHandoff,
     approvalConfidence,
     operationalRisk,
     velocity,
     financeInsights,
+    readinessOutcomeCalibration,
     transactionConfidence: Math.round((approvalConfidence.score * 0.55) + ((100 - operationalRisk.riskScore) * 0.25) + (velocity.velocityScore * 0.2)),
     canAccept: intakeSummary.canAccept,
     ageLabel: getAgeLabel(applicationProgress.submittedAt || applicationProgress.startedAt || transaction.created_at || transaction.updated_at),

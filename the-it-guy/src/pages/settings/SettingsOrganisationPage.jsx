@@ -30,6 +30,74 @@ const CRM_VISIBILITY_OPTIONS = [
   { value: 'organisation', label: 'Visible to Organisation' },
 ]
 
+const BOND_ORIGINATOR_TYPE_OPTIONS = [
+  { value: 'independent', label: 'Independent originator' },
+  { value: 'regional', label: 'Regional bond originator' },
+  { value: 'national', label: 'National originator network' },
+]
+
+const BOND_BUSINESS_FOCUS_OPTIONS = [
+  { value: 'bond_applications', label: 'Bond applications' },
+  { value: 'prequalification', label: 'Pre-qualification' },
+  { value: 'full_service', label: 'Full finance support' },
+]
+
+const BOND_SETTINGS_COPY = {
+  header: {
+    title: 'Bond originator structure, governance, and branding',
+    description: 'HQ-owned setup used across reporting hierarchy, consultant scope, application visibility, and branch operations.',
+  },
+  unavailable: 'Bond originator organisation settings are unavailable right now. Please retry from the dashboard setup guide.',
+  readOnly: 'Read-only for your role. Only HQ administrators can edit bond originator organisation settings.',
+  saved: 'Bond originator organisation settings saved.',
+  organisationSection: {
+    title: 'Bond Originator Information',
+    description: 'Core bond originator details that drive workspace identity and operational ownership.',
+  },
+  adminSection: {
+    title: 'Executive Administrator',
+    description: 'Primary HQ administrator identity used for admin control and reporting lineage.',
+  },
+  branchesSection: {
+    title: 'Regions & Branches',
+    description: 'Regional and branch entities drive manager scope, reporting visibility, and operational ownership.',
+    addLabel: 'Add Branch',
+    rowLabel: 'Branch',
+  },
+  permissionsSection: {
+    title: 'Permissions & Visibility',
+    description: 'Controls for application ownership, consultant visibility, and regional/branch collaboration defaults.',
+  },
+}
+
+const AGENCY_SETTINGS_COPY = {
+  header: {
+    title: 'Agency structure, governance, and branding',
+    description: 'Principal-owned setup used across permissions, reporting hierarchy, CRM visibility, and branch operations.',
+  },
+  unavailable: 'Organisation settings are unavailable right now. Please retry from the dashboard setup guide.',
+  readOnly: 'Read-only for your role. Only Principal-level administrators can edit organisation settings.',
+  saved: 'Organisation settings saved.',
+  organisationSection: {
+    title: 'Agency Information',
+    description: 'Core agency details that drive organisation identity and operational ownership.',
+  },
+  adminSection: {
+    title: 'Principal Information',
+    description: 'Principal profile and ownership identity used for admin control and reporting lineage.',
+  },
+  branchesSection: {
+    title: 'Branches',
+    description: 'Branch entities drive manager scope, reporting visibility, and operational ownership.',
+    addLabel: 'Add Branch',
+    rowLabel: 'Branch',
+  },
+  permissionsSection: {
+    title: 'Permissions & Visibility',
+    description: 'Controls for CRM ownership and branch/agent visibility defaults.',
+  },
+}
+
 function getLogoPreviewLabel(sourceUrl, fallbackLabel = 'Uploaded logo') {
   const value = String(sourceUrl || '').trim()
   if (!value) return ''
@@ -44,6 +112,8 @@ function getLogoPreviewLabel(sourceUrl, fallbackLabel = 'Uploaded logo') {
 
 export default function SettingsOrganisationPage() {
   const { role } = useWorkspace()
+  const isBondOriginator = role === 'bond_originator'
+  const copy = isBondOriginator ? BOND_SETTINGS_COPY : AGENCY_SETTINGS_COPY
   const {
     state: organisationContextState,
     loading: organisationContextLoading,
@@ -280,7 +350,10 @@ export default function SettingsOrganisationPage() {
 
       const [organisationResponse, onboardingResponse] = await Promise.all([
         updateOrganisationSettings(state.organisation),
-        saveAgencyOnboardingDraft(state.onboarding),
+        saveAgencyOnboardingDraft({
+          ...state.onboarding,
+          organisationType: isBondOriginator ? 'bond_originator' : state.onboarding?.organisationType,
+        }),
       ])
 
       const nextState = {
@@ -300,7 +373,7 @@ export default function SettingsOrganisationPage() {
         window.dispatchEvent(new Event('itg:organisation-branding-updated'))
       }
 
-      setMessage('Organisation settings saved.')
+      setMessage(copy.saved)
     } catch (saveError) {
       setError(saveError.message)
     } finally {
@@ -317,11 +390,11 @@ export default function SettingsOrganisationPage() {
       <div className={settingsPageClass}>
         <SettingsPageHeader
           kicker="Organisation"
-          title="Agency structure, governance, and branding"
-          description="Principal-owned setup used across permissions, reporting hierarchy, CRM visibility, and branch operations."
+          title={copy.header.title}
+          description={copy.header.description}
         />
         <SettingsBanner tone="warning">
-          {error || 'Organisation settings are unavailable right now. Please retry from the dashboard setup guide.'}
+          {error || copy.unavailable}
         </SettingsBanner>
       </div>
     )
@@ -331,17 +404,17 @@ export default function SettingsOrganisationPage() {
     <div className={settingsPageClass}>
       <SettingsPageHeader
         kicker="Organisation"
-        title="Agency structure, governance, and branding"
-        description="Principal-owned setup used across permissions, reporting hierarchy, CRM visibility, and branch operations."
+        title={copy.header.title}
+        description={copy.header.description}
       />
 
-      {!canEdit ? <SettingsBanner tone="warning">Read-only for your role. Only Principal-level administrators can edit organisation settings.</SettingsBanner> : null}
+      {!canEdit ? <SettingsBanner tone="warning">{copy.readOnly}</SettingsBanner> : null}
 
       <form className="space-y-0" onSubmit={handleSave}>
-        <SettingsSectionCard title="Agency Information" description="Core agency details that drive organisation identity and operational ownership.">
+        <SettingsSectionCard title={copy.organisationSection.title} description={copy.organisationSection.description}>
           <div className={settingsGridClass}>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Agency name</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Bond originator company name' : 'Agency name'}</span>
               <Field
                 value={onboarding.agencyInformation?.agencyName || ''}
                 disabled={!canEdit}
@@ -365,29 +438,33 @@ export default function SettingsOrganisationPage() {
               />
             </label>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Agency type</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Originator operating model' : 'Agency type'}</span>
               <Field
                 as="select"
-                value={onboarding.agencyInformation?.agencyType || 'residential'}
+                value={onboarding.agencyInformation?.agencyType || (isBondOriginator ? 'national' : 'residential')}
                 disabled={!canEdit}
                 onChange={(event) => updateAgencyField('agencyType', event.target.value)}
               >
-                <option value="residential">Residential</option>
-                <option value="commercial">Commercial</option>
-                <option value="mixed">Mixed</option>
+                {(isBondOriginator ? BOND_ORIGINATOR_TYPE_OPTIONS : [
+                  { value: 'residential', label: 'Residential' },
+                  { value: 'commercial', label: 'Commercial' },
+                  { value: 'mixed', label: 'Mixed' },
+                ]).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </Field>
             </label>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Business focus</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Origination focus' : 'Business focus'}</span>
               <Field
                 as="select"
-                value={onboarding.agencyInformation?.businessFocus || 'sales'}
+                value={onboarding.agencyInformation?.businessFocus || (isBondOriginator ? 'bond_applications' : 'sales')}
                 disabled={!canEdit}
                 onChange={(event) => updateAgencyField('businessFocus', event.target.value)}
               >
-                <option value="sales">Sales</option>
-                <option value="rentals">Rentals</option>
-                <option value="sales_rentals">Sales &amp; Rentals</option>
+                {(isBondOriginator ? BOND_BUSINESS_FOCUS_OPTIONS : [
+                  { value: 'sales', label: 'Sales' },
+                  { value: 'rentals', label: 'Rentals' },
+                  { value: 'sales_rentals', label: 'Sales & Rentals' },
+                ]).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </Field>
             </label>
             <label className={settingsFieldClass}>
@@ -407,7 +484,7 @@ export default function SettingsOrganisationPage() {
               />
             </label>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">EAAB / PPRA number</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'NCR / FSP / compliance number' : 'EAAB / PPRA number'}</span>
               <Field
                 value={onboarding.agencyInformation?.eaabPpraNumber || ''}
                 disabled={!canEdit}
@@ -427,7 +504,7 @@ export default function SettingsOrganisationPage() {
               />
             </label>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Main office number</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ office number' : 'Main office number'}</span>
               <Field
                 value={onboarding.agencyInformation?.mainOfficeNumber || ''}
                 disabled={!canEdit}
@@ -439,7 +516,7 @@ export default function SettingsOrganisationPage() {
               />
             </label>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Main email address</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ email address' : 'Main email address'}</span>
               <Field
                 value={onboarding.agencyInformation?.mainEmailAddress || ''}
                 disabled={!canEdit}
@@ -489,14 +566,14 @@ export default function SettingsOrganisationPage() {
           </div>
         </SettingsSectionCard>
 
-        <SettingsSectionCard title="Principal Information" description="Principal profile and ownership identity used for admin control and reporting lineage.">
+        <SettingsSectionCard title={copy.adminSection.title} description={copy.adminSection.description}>
           <div className={settingsGridClass}>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Principal full name</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ administrator full name' : 'Principal full name'}</span>
               <Field value={onboarding.principalInformation?.principalFullName || ''} disabled={!canEdit} onChange={(event) => updatePrincipalField('principalFullName', event.target.value)} />
             </label>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Principal email</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ administrator email' : 'Principal email'}</span>
               <Field value={onboarding.principalInformation?.emailAddress || ''} disabled={!canEdit} onChange={(event) => updatePrincipalField('emailAddress', event.target.value)} />
             </label>
             <label className={settingsFieldClass}>
@@ -511,15 +588,15 @@ export default function SettingsOrganisationPage() {
         </SettingsSectionCard>
 
         <SettingsSectionCard
-          title="Branches"
-          description="Branch entities drive manager scope, reporting visibility, and operational ownership."
-          actions={canEdit ? <Button type="button" variant="secondary" onClick={addBranch}>Add Branch</Button> : null}
+          title={copy.branchesSection.title}
+          description={copy.branchesSection.description}
+          actions={canEdit ? <Button type="button" variant="secondary" onClick={addBranch}>{copy.branchesSection.addLabel}</Button> : null}
         >
           <div className="space-y-4">
             {(onboarding.branchStructure?.branches || []).map((branch, index) => (
               <article key={branch.id} className="rounded-[16px] border border-[#e1e9f3] bg-[#f8fbff] p-4">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.1em] text-[#2e4259]">Branch {index + 1}</h4>
+                  <h4 className="text-sm font-semibold uppercase tracking-[0.1em] text-[#2e4259]">{copy.branchesSection.rowLabel} {index + 1}</h4>
                   {canEdit ? (
                     <Button type="button" variant="ghost" onClick={() => removeBranch(branch.id)} disabled={(onboarding.branchStructure?.branches || []).length <= 1}>
                       Remove
@@ -528,19 +605,19 @@ export default function SettingsOrganisationPage() {
                 </div>
                 <div className={settingsGridClass}>
                   <label className={settingsFieldClass}>
-                    <span className="text-sm font-medium text-[#51657b]">Branch name</span>
+                    <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Branch / region name' : 'Branch name'}</span>
                     <Field value={branch.branchName || ''} disabled={!canEdit} onChange={(event) => updateBranch(branch.id, 'branchName', event.target.value)} />
                   </label>
                   <label className={settingsFieldClass}>
-                    <span className="text-sm font-medium text-[#51657b]">Office location</span>
+                    <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Office / region location' : 'Office location'}</span>
                     <Field value={branch.officeLocation || ''} disabled={!canEdit} onChange={(event) => updateBranch(branch.id, 'officeLocation', event.target.value)} />
                   </label>
                   <label className={settingsFieldClass}>
-                    <span className="text-sm font-medium text-[#51657b]">Branch manager</span>
+                    <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Regional / branch manager' : 'Branch manager'}</span>
                     <Field value={branch.branchManager || ''} disabled={!canEdit} onChange={(event) => updateBranch(branch.id, 'branchManager', event.target.value)} />
                   </label>
                   <label className={settingsFieldClass}>
-                    <span className="text-sm font-medium text-[#51657b]">Number of agents</span>
+                    <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Number of consultants' : 'Number of agents'}</span>
                     <Field value={branch.numberOfAgents || ''} disabled={!canEdit} onChange={(event) => updateBranch(branch.id, 'numberOfAgents', event.target.value)} />
                   </label>
                 </div>
@@ -618,10 +695,10 @@ export default function SettingsOrganisationPage() {
           </div>
         </SettingsSectionCard>
 
-        <SettingsSectionCard title="Permissions & Visibility" description="Controls for CRM ownership and branch/agent visibility defaults.">
+        <SettingsSectionCard title={copy.permissionsSection.title} description={copy.permissionsSection.description}>
           <div className={settingsGridClass}>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Principal scope</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ scope' : 'Principal scope'}</span>
               <Field as="select" value={onboarding.permissions?.principalScope || 'all'} disabled={!canEdit} onChange={(event) => updatePermissionField('principalScope', event.target.value)}>
                 {PERMISSION_SCOPE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
@@ -637,7 +714,7 @@ export default function SettingsOrganisationPage() {
               </Field>
             </label>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Agent scope</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Consultant scope' : 'Agent scope'}</span>
               <Field as="select" value={onboarding.permissions?.agentScope || 'own'} disabled={!canEdit} onChange={(event) => updatePermissionField('agentScope', event.target.value)}>
                 {PERMISSION_SCOPE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
@@ -645,7 +722,7 @@ export default function SettingsOrganisationPage() {
               </Field>
             </label>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">CRM lead visibility</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Application visibility' : 'CRM lead visibility'}</span>
               <Field as="select" value={onboarding.permissions?.crmLeadVisibility || 'private'} disabled={!canEdit} onChange={(event) => updatePermissionField('crmLeadVisibility', event.target.value)}>
                 {CRM_VISIBILITY_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
@@ -656,7 +733,7 @@ export default function SettingsOrganisationPage() {
               <span className="text-sm font-medium text-[#51657b]">Collaboration controls</span>
               <div className="grid gap-2 rounded-[12px] border border-[#e4ecf5] bg-white px-4 py-3">
                 <label className="flex items-center justify-between gap-3 text-sm text-[#51657b]">
-                  <span>Allow cross-branch collaboration</span>
+                  <span>{isBondOriginator ? 'Allow cross-branch application collaboration' : 'Allow cross-branch collaboration'}</span>
                   <input
                     type="checkbox"
                     checked={Boolean(onboarding.permissions?.allowCrossBranchCollaboration)}
@@ -665,7 +742,7 @@ export default function SettingsOrganisationPage() {
                   />
                 </label>
                 <label className="flex items-center justify-between gap-3 text-sm text-[#51657b]">
-                  <span>Allow shared lead pools</span>
+                  <span>{isBondOriginator ? 'Allow shared application queues' : 'Allow shared lead pools'}</span>
                   <input
                     type="checkbox"
                     checked={Boolean(onboarding.permissions?.allowSharedLeadPools)}
@@ -674,7 +751,7 @@ export default function SettingsOrganisationPage() {
                   />
                 </label>
                 <label className="flex items-center justify-between gap-3 text-sm text-[#51657b]">
-                  <span>Allow shared listings</span>
+                  <span>{isBondOriginator ? 'Allow shared developer/development access' : 'Allow shared listings'}</span>
                   <input
                     type="checkbox"
                     checked={Boolean(onboarding.permissions?.allowSharedListings)}
@@ -693,7 +770,7 @@ export default function SettingsOrganisationPage() {
         {canEdit ? (
           <div className={settingsActionRowClass}>
             <Button type="submit" disabled={saving}>
-              {saving ? 'Saving…' : 'Save Organisation Settings'}
+              {saving ? 'Saving…' : isBondOriginator ? 'Save Bond Originator Settings' : 'Save Organisation Settings'}
             </Button>
           </div>
         ) : null}
