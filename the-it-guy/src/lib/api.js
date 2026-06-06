@@ -23493,27 +23493,27 @@ async function resolveBondHqOrganisationMembership(client, { userId = '', email 
   const selectClause = 'id, user_id, email, organisation_id, workspace_role, organisation_role, scope_level, status'
   const candidates = []
 
-  if (userId) {
-    const byUser = await client
-      .from('organisation_users')
-      .select(selectClause)
-      .eq('organisation_id', normalizedOrganisationId)
-      .eq('user_id', userId)
-      .limit(3)
-    if (byUser.error && !isMissingSchemaError(byUser.error)) throw byUser.error
-    candidates.push(...(byUser.data || []))
-  }
-
-  if (email) {
-    const byEmail = await client
-      .from('organisation_users')
-      .select(selectClause)
-      .eq('organisation_id', normalizedOrganisationId)
-      .ilike('email', email)
-      .limit(3)
-    if (byEmail.error && !isMissingSchemaError(byEmail.error)) throw byEmail.error
-    candidates.push(...(byEmail.data || []))
-  }
+  const [byUser, byEmail] = await Promise.all([
+    userId
+      ? client
+          .from('organisation_users')
+          .select(selectClause)
+          .eq('organisation_id', normalizedOrganisationId)
+          .eq('user_id', userId)
+          .limit(3)
+      : Promise.resolve({ data: [], error: null }),
+    email
+      ? client
+          .from('organisation_users')
+          .select(selectClause)
+          .eq('organisation_id', normalizedOrganisationId)
+          .ilike('email', email)
+          .limit(3)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+  if (byUser.error && !isMissingSchemaError(byUser.error)) throw byUser.error
+  if (byEmail.error && !isMissingSchemaError(byEmail.error)) throw byEmail.error
+  candidates.push(...(byUser.data || []), ...(byEmail.data || []))
 
   return candidates.find(isBondHqOrganisationMembership) || null
 }
@@ -23552,8 +23552,10 @@ export async function getAccessibleTransactionIdsForUser({ userId, roleType = nu
 
   const normalizedRole = roleType ? normalizeRoleType(roleType) : null
   const normalizedOrganisationId = String(organisationId || '').trim()
-  const identity = await resolveProfileIdentityByUserId(client, userId)
-  const actorProfile = await resolveActiveProfileContext(client)
+  const [identity, actorProfile] = await Promise.all([
+    resolveProfileIdentityByUserId(client, userId),
+    resolveActiveProfileContext(client),
+  ])
   if (normalizeRoleType(actorProfile.role) === 'internal_admin') {
     let allTransactionsBuilder = client.from('transactions').select('id, organisation_id, is_active')
     if (normalizedOrganisationId) {
@@ -24888,32 +24890,32 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = [], { o
   const unitIds = [...new Set(transactionRows.map((item) => item?.unit_id).filter(Boolean))]
   const developmentIds = [...new Set(transactionRows.map((item) => item?.development_id).filter(Boolean))]
 
-  let buyersById = {}
-  if (buyerIds.length) {
-    const buyersQuery = await client.from('buyers').select('id, name, phone, email').in('id', buyerIds)
-    if (buyersQuery.error && !isMissingSchemaError(buyersQuery.error)) {
-      throw buyersQuery.error
-    }
-    buyersById = (buyersQuery.data || []).reduce((accumulator, item) => {
-      accumulator[item.id] = item
-      return accumulator
-    }, {})
+  const [buyersQuery, unitsQuery] = await Promise.all([
+    buyerIds.length
+      ? client.from('buyers').select('id, name, phone, email').in('id', buyerIds)
+      : Promise.resolve({ data: [], error: null }),
+    unitIds.length
+      ? client
+          .from('units')
+          .select('id, development_id, unit_number, phase, price, status')
+          .in('id', unitIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+  if (buyersQuery.error && !isMissingSchemaError(buyersQuery.error)) {
+    throw buyersQuery.error
+  }
+  if (unitsQuery.error && !isMissingSchemaError(unitsQuery.error)) {
+    throw unitsQuery.error
   }
 
-  let unitsById = {}
-  if (unitIds.length) {
-    const unitsQuery = await client
-      .from('units')
-      .select('id, development_id, unit_number, phase, price, status')
-      .in('id', unitIds)
-    if (unitsQuery.error && !isMissingSchemaError(unitsQuery.error)) {
-      throw unitsQuery.error
-    }
-    unitsById = (unitsQuery.data || []).reduce((accumulator, item) => {
-      accumulator[item.id] = item
-      return accumulator
-    }, {})
-  }
+  const buyersById = (buyersQuery.data || []).reduce((accumulator, item) => {
+    accumulator[item.id] = item
+    return accumulator
+  }, {})
+  const unitsById = (unitsQuery.data || []).reduce((accumulator, item) => {
+    accumulator[item.id] = item
+    return accumulator
+  }, {})
 
   const linkedDevelopmentIds = new Set(developmentIds)
   for (const unit of Object.values(unitsById)) {
@@ -24975,21 +24977,45 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = [], { o
     : enrichedRows
 }
 
+const participantSummaryRequests = new Map()
+
 export async function fetchTransactionsByParticipantSummary({ userId, roleType = null, organisationId = '' } = {}) {
   const normalizedOrganisationId = String(organisationId || '').trim()
-  const timer = createPerfTimer('api.fetchTransactionsByParticipantSummary', { userId, roleType, organisationId: normalizedOrganisationId })
-  if (!userId) {
-    timer.end({ rowCount: 0 })
-    return []
+  const normalizedRoleType = roleType ? normalizeRoleType(roleType) : ''
+  const requestKey = JSON.stringify({
+    userId: String(userId || ''),
+    roleType: normalizedRoleType,
+    organisationId: normalizedOrganisationId,
+  })
+  const pendingRequest = participantSummaryRequests.get(requestKey)
+  if (pendingRequest) {
+    return pendingRequest
   }
 
-  timer.mark('resolve_access_start')
-  const client = requireClient()
-  const transactionIds = await getAccessibleTransactionIdsForUser({ userId, roleType, organisationId: normalizedOrganisationId })
-  timer.mark('resolve_access_end', { transactionCount: transactionIds.length })
-  const rows = await fetchTransactionSummaryRowsByIds(client, transactionIds, { organisationId: normalizedOrganisationId, roleType })
-  timer.end({ rowCount: rows.length })
-  return rows
+  const request = (async () => {
+    const timer = createPerfTimer('api.fetchTransactionsByParticipantSummary', { userId, roleType, organisationId: normalizedOrganisationId })
+    if (!userId) {
+      timer.end({ rowCount: 0 })
+      return []
+    }
+
+    timer.mark('resolve_access_start')
+    const client = requireClient()
+    const transactionIds = await getAccessibleTransactionIdsForUser({ userId, roleType, organisationId: normalizedOrganisationId })
+    timer.mark('resolve_access_end', { transactionCount: transactionIds.length })
+    const rows = await fetchTransactionSummaryRowsByIds(client, transactionIds, { organisationId: normalizedOrganisationId, roleType })
+    timer.end({ rowCount: rows.length })
+    return rows
+  })()
+
+  participantSummaryRequests.set(requestKey, request)
+  try {
+    return await request
+  } finally {
+    if (participantSummaryRequests.get(requestKey) === request) {
+      participantSummaryRequests.delete(requestKey)
+    }
+  }
 }
 
 async function loadBondApplicationScopesByTransactionIds(client, transactionIds = []) {

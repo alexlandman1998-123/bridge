@@ -10,7 +10,7 @@ import {
   MoreHorizontal,
   TrendingUp,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { getNetworkIntelligenceDashboard } from '../../services/bondNetworkIntelligenceService'
 
 const KPI_ICONS = {
@@ -94,6 +94,8 @@ function IntelligenceKpiStrip({ items = [] }) {
 
 function TrendChart({ trend = {} }) {
   const [hoverIndex, setHoverIndex] = useState(null)
+  const [tooltipPosition, setTooltipPosition] = useState(null)
+  const chartAreaRef = useRef(null)
   const labels = trend.labels || []
   const series = trend.series || []
   const width = 980
@@ -106,6 +108,11 @@ function TrendChart({ trend = {} }) {
   const leftMax = Math.max(100, ...leftValues, 1)
   const rightMax = Math.max(...rightValues, 1)
   const activeIndex = hoverIndex ?? Math.max(labels.length - 1, 0)
+  const activeTooltipPosition = tooltipPosition || { x: width - padding.right - 120, y: padding.top + 92 }
+  const tooltipWidth = 220
+  const tooltipHeight = 196
+  const tooltipLeft = Math.max(12, Math.min(activeTooltipPosition.x + 18, width - tooltipWidth - 12))
+  const tooltipTop = Math.max(42, Math.min(activeTooltipPosition.y - 24, height - tooltipHeight - 12))
 
   const pointFor = (row, point, index) => {
     const max = row.axis === 'right' ? rightMax : leftMax
@@ -116,10 +123,16 @@ function TrendChart({ trend = {} }) {
 
   const handleMove = (event) => {
     if (!labels.length) return
-    const bounds = event.currentTarget.getBoundingClientRect()
-    const ratio = (event.clientX - bounds.left) / bounds.width
+    const svgBounds = event.currentTarget.getBoundingClientRect()
+    const svgX = ((event.clientX - svgBounds.left) / svgBounds.width) * width
+    const svgY = ((event.clientY - svgBounds.top) / svgBounds.height) * height
+    const ratio = (svgX - padding.left) / plotWidth
     const index = Math.max(0, Math.min(labels.length - 1, Math.round(ratio * (labels.length - 1))))
     setHoverIndex(index)
+    setTooltipPosition({
+      x: svgX,
+      y: svgY,
+    })
   }
 
   return (
@@ -150,14 +163,17 @@ function TrendChart({ trend = {} }) {
         ))}
       </div>
 
-      <div className="relative overflow-x-auto [scrollbar-width:thin]">
+      <div ref={chartAreaRef} className="relative overflow-x-auto [scrollbar-width:thin]">
         <svg
           className="min-w-[920px]"
           viewBox={`0 0 ${width} ${height}`}
           role="img"
           aria-label="Network momentum over time"
           onMouseMove={handleMove}
-          onMouseLeave={() => setHoverIndex(null)}
+          onMouseLeave={() => {
+            setHoverIndex(null)
+            setTooltipPosition(null)
+          }}
         >
           {[0, 25, 50, 75, 100].map((tick) => {
             const y = padding.top + plotHeight - (tick / 100) * plotHeight
@@ -209,7 +225,10 @@ function TrendChart({ trend = {} }) {
         </svg>
 
         {labels.length ? (
-          <div className="pointer-events-none absolute right-5 top-28 w-[220px] rounded-[14px] border border-[#dfe7ef] bg-white/95 p-4 text-sm shadow-[0_18px_45px_rgba(15,23,42,0.12)]">
+          <div
+            className="pointer-events-none absolute w-[220px] rounded-[14px] border border-[#dfe7ef] bg-white/95 p-4 text-sm shadow-[0_18px_45px_rgba(15,23,42,0.12)] transition-[left,top] duration-150 ease-out"
+            style={{ left: tooltipLeft, top: tooltipTop }}
+          >
             <p className="font-semibold text-[#111827]">{labels[activeIndex]}</p>
             <div className="mt-3 space-y-2">
               {series.map((row) => (
@@ -262,14 +281,7 @@ export default function NetworkIntelligencePanel({ source = {}, className = '' }
 
   return (
     <section className={`space-y-6 ${className}`}>
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#64748b]">Network Intelligence</p>
-          <h2 className="mt-1 text-[24px] font-semibold tracking-[-0.01em] text-[#111827]">Network Intelligence</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#475569]">
-            Real-time operational momentum, trend signals and performance intelligence across the bond network.
-          </p>
-        </div>
+      <header className="flex flex-wrap items-start justify-end gap-4">
         <div className="flex flex-wrap gap-2">
           <button type="button" className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-[#d8e2ec] bg-white px-3 text-sm font-semibold text-[#17324d] shadow-[0_6px_16px_rgba(15,23,42,0.035)]">
             <CalendarDays size={15} />

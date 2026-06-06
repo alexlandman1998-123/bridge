@@ -344,9 +344,9 @@ function makeSnapshot(overrides = {}) {
         },
       },
     })
-    assert.match(hqMarkup, /HQ Command Centre/)
-    assert.match(hqMarkup, /National overview of applications, pipeline performance and operational risk/)
-    assert.match(hqMarkup, /Live/)
+    assert.doesNotMatch(hqMarkup, /HQ Command Centre/)
+    assert.doesNotMatch(hqMarkup, /National overview of applications, pipeline performance and operational risk/)
+    assert.doesNotMatch(hqMarkup, /Live/)
     assert.match(hqMarkup, /Date Range/)
     assert.match(hqMarkup, /Filters/)
     assert.match(hqMarkup, /Refresh/)
@@ -358,12 +358,18 @@ function makeSnapshot(overrides = {}) {
     assert.doesNotMatch(hqMarkup, /Export report/)
     assert.doesNotMatch(hqMarkup, /National Command Centre/)
     assert.match(hqMarkup, /Applications/)
-    assert.doesNotMatch(hqMarkup, /Applications Submitted/)
+    assert.match(hqMarkup, /90 active applications/)
+    assert.match(hqMarkup, /3 approved • 87 pending/)
+    assert.match(hqMarkup, /R199\.8k/)
     assert.match(hqMarkup, /Revenue Forecast/)
+    assert.match(hqMarkup, /R22\.96m/)
     assert.match(hqMarkup, /Avg Approval Time/)
-    assert.match(hqMarkup, /Operational Health/)
-    assert.match(hqMarkup, /\/ 100/)
+    assert.match(hqMarkup, /46 days/)
+    assert.doesNotMatch(hqMarkup, /Operational Health/)
+    assert.doesNotMatch(hqMarkup, /\/ 100/)
     assert.match(hqMarkup, /pressure signals/)
+    assert.doesNotMatch(hqMarkup, /Network Intelligence/)
+    assert.doesNotMatch(hqMarkup, /Real-time operational momentum, trend signals and performance intelligence across the bond network/)
     assert.match(hqMarkup, /Operational Alerts/)
     assert.match(hqMarkup, /Unassigned/)
     assert.match(hqMarkup, /Applications waiting for OTP/)
@@ -397,11 +403,8 @@ function makeSnapshot(overrides = {}) {
     assert.doesNotMatch(hqMarkup, /Revenue Projection/)
     assert.doesNotMatch(hqMarkup, /Commission Breakdown/)
     assert.doesNotMatch(hqMarkup, /Revenue Trend/)
-    assert.match(hqMarkup, /Performance Trend/)
-    assert.match(hqMarkup, /12-month movement/)
     assert.match(hqMarkup, /Applications/)
     assert.match(hqMarkup, /Approval Rate/)
-    assert.match(hqMarkup, /Avg Response Time/)
     assert.match(hqMarkup, /Revenue/)
     assert.match(hqMarkup, /Data freshness/)
     assert.doesNotMatch(hqMarkup, /Bond Originator HQ/)
@@ -420,14 +423,12 @@ function makeSnapshot(overrides = {}) {
     assert.doesNotMatch(hqMarkup, /Applications Needing Attention/)
 
     const hqOrder = [
-      'HQ Command Centre',
       'Applications',
       'Operational Alerts',
       'Pipeline Snapshot',
       'Top Regions',
       'Top Consultants',
       'Top Banks',
-      'Performance Trend',
       'Data freshness',
     ]
     let previousHqIndex = -1

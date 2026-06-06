@@ -5,11 +5,17 @@ import {
   Check,
   CheckCircle2,
   Circle,
+  Clock3,
   Hammer,
   Landmark,
+  LockKeyhole,
+  Shield,
   Scale,
   ShieldCheck,
+  TrendingDown,
+  TrendingUp,
   UserRound,
+  UsersRound,
   WalletCards,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -136,17 +142,15 @@ const ROLE_DISPLAY_ORDER = [
   SIGNUP_BUSINESS_TYPES.client,
 ]
 const MARKET_METRICS = [
-  { label: 'Transactions Today', value: '24,812', delta: '+12.4% vs yesterday' },
-  { label: 'Avg Registration Time', value: '63 Days', delta: '-8.7%' },
-  { label: 'Active Professionals', value: '18,240', delta: '+5.3%' },
-  { label: 'Value Moving Today', value: 'R14.2B', delta: '+R1.8B' },
+  { label: 'Transactions Today', value: '24,812', delta: '143 since page load', trend: 'up', icon: TrendingUp },
+  { label: 'Avg. Registration Time', value: '63 Days', delta: '5 Days this week', trend: 'down', icon: Clock3 },
+  { label: 'Active Professionals', value: '18,240', delta: '78 this week', trend: 'up', icon: UsersRound },
+  { label: 'Value Moving Today', value: 'R14.2B', delta: 'R1.8B since yesterday', trend: 'up', icon: WalletCards },
 ]
-const TRANSACTION_FLOW = ['Buyer', 'Agent', 'Bond Originator', 'Attorney', 'Registration']
 const WORKSPACE_CHECKLIST = [
-  'Configuring permissions',
-  'Creating dashboards',
-  'Preparing workflows',
-  'Connecting role-player network',
+  'Configuring role permissions',
+  'Preparing transaction workflows',
+  'Creating your dashboard',
   'Securing workspace',
 ]
 
@@ -158,12 +162,18 @@ function getOrderedBusinessTypeOptions() {
 
 function getBusinessSetupCopy(businessTypeLabel = 'workspace') {
   const normalized = businessTypeLabel || 'workspace'
-  if (normalized === 'Estate Agency') return 'Tell us how you operate inside your agency'
-  if (normalized === 'Attorney Firm') return 'Tell us how you operate inside your firm'
-  if (normalized === 'Developer') return 'Tell us how you support your development pipeline'
-  if (normalized === 'Bond Originator') return 'Tell us how you operate inside your finance team'
-  if (normalized === 'Buyer / Seller') return 'Tell us how you are accessing Bridge'
+  if (normalized === 'Estate Agency') return 'Tell us about your agency'
+  if (normalized === 'Attorney Firm') return 'Tell us about your firm'
+  if (normalized === 'Developer') return 'Tell us about your development company'
+  if (normalized === 'Bond Originator') return 'Tell us about your bond business'
+  if (normalized === 'Buyer / Seller') return 'Tell us about your transaction'
   return `Tell us about your ${normalized.toLowerCase()}`
+}
+
+function handleKeyboardSelect(event, callback) {
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  event.preventDefault()
+  callback()
 }
 
 function normalizeErrorMessage(error) {
@@ -515,53 +525,42 @@ function Auth({ onDevBypass = null }) {
         <section className="auth-hero">
           <div className="auth-hero-glow" aria-hidden="true" />
           <div className="auth-network-pattern" aria-hidden="true" />
+          <div className="auth-hero-orbit" aria-hidden="true" />
           <div className="auth-hero-top">
             <p className="auth-brand">bridge.</p>
-            <span className="auth-live-pill">Live Market Pulse</span>
+            <span className="auth-live-pill">LIVE MARKET PULSE</span>
           </div>
-          <h1>The Property Industry,<br />Connected.</h1>
+          <h1>The Property Industry,<br /> <span>Connected.</span></h1>
           <p>Real-time infrastructure powering every transaction, every professional, every day.</p>
 
           <div className="auth-market-metrics" aria-label="Live market metrics">
-            {MARKET_METRICS.map((metric) => (
+            {MARKET_METRICS.map((metric) => {
+              const MetricIcon = metric.icon
+              const TrendIcon = metric.trend === 'down' ? TrendingDown : TrendingUp
+              return (
               <article key={metric.label}>
-                <span>{metric.label}</span>
+                <span className="auth-metric-icon"><MetricIcon size={18} /></span>
+                <span className="auth-metric-label">{metric.label}</span>
                 <strong>{metric.value}</strong>
-                <em>{metric.delta}</em>
+                <em className={metric.trend === 'down' ? 'down' : ''}>
+                  <TrendIcon size={13} />
+                  {metric.delta}
+                </em>
               </article>
-            ))}
+              )
+            })}
           </div>
 
-          <div className="auth-transaction-flow" aria-label="Transaction flow">
-            {TRANSACTION_FLOW.map((item, index) => (
-              <div key={item} className="auth-flow-row">
-                <span className="auth-flow-dot" />
-                <strong>{item}</strong>
-                {index < TRANSACTION_FLOW.length - 1 ? <span className="auth-flow-line" aria-hidden="true" /> : null}
-              </div>
-            ))}
+          <div className="auth-hero-trust">
+            <ShieldCheck size={22} />
+            <span>Trusted by 18,000+ property professionals across South Africa</span>
           </div>
-
-          <article className="auth-market-insight">
-            <span>Market Insight</span>
-            <strong>Property registrations are up 14% this month in Gauteng.</strong>
-            <a href="/" onClick={(event) => event.preventDefault()}>View more <ArrowRight size={14} /></a>
-          </article>
         </section>
 
         <section className="auth-card">
           <div className="auth-security-badge">
-            <ShieldCheck size={15} />
+            <LockKeyhole size={15} />
             <span>Your data is secure</span>
-          </div>
-          <div className="auth-card-head">
-            <span className="auth-card-eyebrow">{mode === 'login' ? 'Secure Access' : 'Welcome Screen'}</span>
-            <h2>{mode === 'login' ? 'Sign in to Bridge' : 'Welcome to Bridge'}</h2>
-            <p>
-              {mode === 'login'
-                ? 'Use your workspace credentials to open the property transaction platform.'
-                : "Let's get your workspace set up in minutes."}
-            </p>
           </div>
 
           {securityLogoutMessage ? (
@@ -601,7 +600,7 @@ function Auth({ onDevBypass = null }) {
                     const complete = signupStep > index
                     const active = signupStep === index
                     return (
-                      <div key={step.label} className="signup-stepper-item-wrap">
+                        <div key={step.label} className="signup-stepper-item-wrap">
                         <div className={`signup-stepper-item ${active ? 'active' : ''} ${complete ? 'complete' : ''}`}>
                           <span className="signup-stepper-node">
                             {complete ? <Check size={15} /> : active ? String(index + 1) : <Circle size={8} />}
@@ -626,32 +625,38 @@ function Auth({ onDevBypass = null }) {
                 ) : null}
 
                 {signupStep === 0 ? (
-                  <section className="signup-choice-stack">
-                    <div className="signup-section-heading">
-                      <span>Choose your role</span>
-                      <strong>Start with the way you work in property.</strong>
+                  <section className="signup-choice-stack signup-step-panel">
+                    <div className="auth-card-head compact">
+                      <span className="auth-card-eyebrow">STEP 1 OF 3</span>
+                      <h2>Welcome to Bridge 👋</h2>
+                      <p>Let&apos;s build your workspace.</p>
                     </div>
+                    <div className="signup-section-heading">
+                      <strong>What best describes you?</strong>
+                      <p>This helps us tailor Bridge to your business.</p>
+                    </div>
+                    <div className="signup-role-grid">
                     {orderedBusinessTypeOptions.map((option, index) => {
                       const active = businessType === option.value
                       const RoleIcon = ROLE_ICONS[option.value] || Building2
                       const display = ROLE_DISPLAY_COPY[option.value] || option
+                      const selectRole = () => {
+                        setBusinessType(option.value)
+                        setPosition('')
+                        setError('')
+                      }
                       return (
                         <button
                           key={option.value}
                           type="button"
                           className={`signup-role-card ${active ? 'active' : ''}`}
-                          onClick={() => {
-                            setBusinessType(option.value)
-                            setPosition('')
-                            setError('')
-                          }}
+                          aria-pressed={active}
+                          onClick={selectRole}
+                          onKeyDown={(event) => handleKeyboardSelect(event, selectRole)}
                         >
-                          <span className="signup-role-card-topline">
-                            <span>{String(index + 1).padStart(2, '0')}</span>
-                            {active ? <span className="signup-role-card-selected"><Check size={13} /> Selected</span> : null}
-                          </span>
+                          {active ? <span className="signup-role-card-selected" aria-label="Selected"><Check size={14} /></span> : null}
                           <span className="signup-role-card-main">
-                            <span className="signup-role-card-icon">
+                            <span className={`signup-role-card-icon role-tone-${index + 1}`}>
                               <RoleIcon size={22} />
                             </span>
                             <span>
@@ -662,6 +667,7 @@ function Auth({ onDevBypass = null }) {
                         </button>
                       )
                     })}
+                    </div>
                     <button
                       type="button"
                       className="auth-submit"
@@ -671,33 +677,34 @@ function Auth({ onDevBypass = null }) {
                         setSignupStep(1)
                       }}
                     >
-                      {selectedBusinessTypeLabel ? `Continue as ${selectedBusinessTypeLabel}` : 'Continue to Position Selection'}
+                      Continue
                       <ArrowRight size={15} />
                     </button>
                   </section>
                 ) : null}
 
                 {signupStep === 1 ? (
-                  <section className="signup-choice-stack">
-                    <div className="signup-section-heading">
-                      <span>{selectedBusinessTypeLabel || 'Business setup'}</span>
-                      <strong>{getBusinessSetupCopy(selectedBusinessTypeLabel)}</strong>
+                  <section className="signup-choice-stack signup-step-panel">
+                    <div className="auth-card-head compact">
+                      <span className="auth-card-eyebrow">STEP 2 OF 3</span>
+                      <h2>{getBusinessSetupCopy(selectedBusinessTypeLabel)}</h2>
+                      <p>Choose the existing position that best matches your access needs.</p>
                     </div>
-                    <p className="signup-step-note">
-                      Bridge will use this to create the same signup intent, role mapping, and onboarding path the current
-                      system already expects.
-                    </p>
+                    <div className="signup-position-grid">
                     {positionOptions.map((option) => {
                       const active = position === option.value
+                      const selectPosition = () => {
+                        setPosition(option.value)
+                        setError('')
+                      }
                       return (
                         <button
                           key={option.value}
                           type="button"
                           className={`signup-position-card ${active ? 'active' : ''}`}
-                          onClick={() => {
-                            setPosition(option.value)
-                            setError('')
-                          }}
+                          aria-pressed={active}
+                          onClick={selectPosition}
+                          onKeyDown={(event) => handleKeyboardSelect(event, selectPosition)}
                         >
                           <span className="signup-position-icon">
                             <POSITION_ICON size={18} />
@@ -710,7 +717,8 @@ function Auth({ onDevBypass = null }) {
                         </button>
                       )
                     })}
-                    <div className="grid gap-2 sm:grid-cols-2">
+                    </div>
+                    <div className="auth-action-row">
                       <button type="button" className="auth-secondary-cta" onClick={() => setSignupStep(0)}>
                         <ArrowLeft size={14} />
                         Back
@@ -735,6 +743,14 @@ function Auth({ onDevBypass = null }) {
 
             {mode === 'login' || signupStep === 2 ? (
               <>
+                {mode === 'login' ? (
+                  <div className="auth-card-head compact">
+                    <span className="auth-card-eyebrow">SECURE ACCESS</span>
+                    <h2>Sign in to Bridge</h2>
+                    <p>Use your workspace credentials to open the property transaction platform.</p>
+                  </div>
+                ) : null}
+
                 {showingWorkspaceBuild ? (
                   <section className="auth-workspace-build" aria-live="polite">
                     <div className="auth-workspace-orbit" aria-hidden="true">
@@ -760,77 +776,84 @@ function Auth({ onDevBypass = null }) {
 
                 {mode === 'signup' && !showingWorkspaceBuild ? (
                   <>
-                    <div className="signup-section-heading">
-                      <span>{selectedBusinessTypeLabel || 'Workspace'}</span>
-                      <strong>Create your secure Bridge account.</strong>
+                    <div className="auth-card-head compact">
+                      <span className="auth-card-eyebrow">STEP 3 OF 3</span>
+                      <h2>Create your secure account</h2>
+                      <p>{selectedBusinessTypeLabel ? `${selectedBusinessTypeLabel} workspace setup will continue after verification.` : 'Workspace setup will continue after verification.'}</p>
                     </div>
-                    <label>
-                      Full Name
-                      <input
-                        type="text"
-                        value={fullName}
-                        onChange={(event) => setFullName(event.target.value)}
-                        placeholder="Your full name"
-                        autoComplete="name"
-                        required
-                      />
-                    </label>
+                    <div className="auth-field-grid">
+                      <label>
+                        Full Name
+                        <input
+                          type="text"
+                          value={fullName}
+                          onChange={(event) => setFullName(event.target.value)}
+                          placeholder="Your full name"
+                          autoComplete="name"
+                          required
+                        />
+                      </label>
 
-                    <label>
-                      Phone
-                      <input
-                        type="tel"
-                        value={phone}
-                        onChange={(event) => setPhone(event.target.value)}
-                        placeholder="Your phone number"
-                        autoComplete="tel"
-                        required
-                      />
-                    </label>
+                      <label>
+                        Phone
+                        <input
+                          type="tel"
+                          value={phone}
+                          onChange={(event) => setPhone(event.target.value)}
+                          placeholder="Your phone number"
+                          autoComplete="tel"
+                          required
+                        />
+                      </label>
+                    </div>
                   </>
                 ) : null}
 
                 {!showingWorkspaceBuild ? (
                   <>
-                <label>
-                  Email
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    placeholder="you@company.com"
-                    autoComplete="email"
-                    required
-                  />
-                </label>
+                <div className={mode === 'signup' ? 'auth-field-grid' : 'auth-field-stack'}>
+                  <label>
+                    Email
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      placeholder="you@company.com"
+                      autoComplete="email"
+                      required
+                    />
+                  </label>
 
-                <label>
-                  Password
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    placeholder={mode === 'signup' ? 'At least 6 characters' : 'Your password'}
-                    autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                    required
-                  />
-                </label>
+                  <label>
+                    Password
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      placeholder={mode === 'signup' ? 'At least 6 characters' : 'Your password'}
+                      autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                      required
+                    />
+                  </label>
+                </div>
                   </>
                 ) : null}
 
                 {mode === 'signup' && !showingWorkspaceBuild ? (
                   <>
-                    <label>
-                      Confirm Password
-                      <input
-                        type="password"
-                        value={confirmPassword}
-                        onChange={(event) => setConfirmPassword(event.target.value)}
-                        placeholder="Re-enter password"
-                        autoComplete="new-password"
-                        required
-                      />
-                    </label>
+                    <div className="auth-field-grid single">
+                      <label>
+                        Confirm Password
+                        <input
+                          type="password"
+                          value={confirmPassword}
+                          onChange={(event) => setConfirmPassword(event.target.value)}
+                          placeholder="Re-enter password"
+                          autoComplete="new-password"
+                          required
+                        />
+                      </label>
+                    </div>
                     {currentIntent ? (
                       <p className="rounded-[14px] border border-[#dbe8f3] bg-[#f8fbff] px-4 py-3 text-sm leading-6 text-[#48627d]">
                         {currentIntent.workspace_action === 'create_workspace'
@@ -840,10 +863,12 @@ function Auth({ onDevBypass = null }) {
                             : 'After verification, Bridge will guide you to join or request access to the right workspace.'}
                       </p>
                     ) : null}
-                    <button type="button" className="auth-secondary-cta" onClick={() => setSignupStep(1)}>
-                      <ArrowLeft size={14} />
-                      Back to position
-                    </button>
+                    <div className="auth-action-row">
+                      <button type="button" className="auth-secondary-cta" onClick={() => setSignupStep(1)}>
+                        <ArrowLeft size={14} />
+                        Back to position
+                      </button>
+                    </div>
                   </>
                 ) : null}
               </>
@@ -854,19 +879,11 @@ function Auth({ onDevBypass = null }) {
 
             {mode === 'login' || signupStep === 2 ? (
               <button type="submit" className="auth-submit" disabled={loading}>
-                {loading ? 'Processing...' : mode === 'login' ? 'Launch Workspace' : 'Create Account'}
+                {loading ? 'Processing...' : mode === 'login' ? 'Sign in securely' : 'Create Account'}
                 {!loading ? <ArrowRight size={15} /> : null}
               </button>
             ) : null}
           </form>
-
-          {mode === 'login' ? (
-            <article className="auth-login-snapshot">
-              <span>Property intelligence snapshot</span>
-              <strong>14.2B</strong>
-              <p>Rand value moving through South African property rails today.</p>
-            </article>
-          ) : null}
 
           {mode === 'login' ? (
             <div className="auth-footer" style={{ borderTop: 0, paddingTop: 0 }}>
@@ -893,7 +910,7 @@ function Auth({ onDevBypass = null }) {
             </button>
           </div>
 
-          <p className="auth-trust-line">Trusted by property professionals across South Africa</p>
+          <p className="auth-trust-line"><Shield size={14} /> Trusted by property professionals across South Africa</p>
 
           {!isSupabaseConfigured ? (
             <p className="auth-demo-note">

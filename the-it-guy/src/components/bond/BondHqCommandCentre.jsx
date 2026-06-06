@@ -1,5 +1,4 @@
 import {
-  Activity,
   AlertTriangle,
   ArrowRight,
   Banknote,
@@ -19,6 +18,7 @@ import {
   TrendingUp,
   UsersRound,
 } from 'lucide-react'
+import { createElement } from 'react'
 import { Link } from 'react-router-dom'
 import NetworkIntelligencePanel from './NetworkIntelligencePanel'
 
@@ -115,6 +115,122 @@ function MicroTrend({ values = [], color = '#2563eb' }) {
   )
 }
 
+const KPI_TONES = {
+  green: {
+    accent: '#18a058',
+    icon: 'bg-[#edfdf4] text-[#149650] ring-[#d8f5e3]',
+    status: 'text-[#149650]',
+    dot: '#2ebd69',
+    panel: 'bg-[linear-gradient(180deg,rgba(232,250,240,0.78)_0%,rgba(247,253,250,0.96)_100%)] ring-[#d6f2e1]',
+    wash: 'bg-[radial-gradient(circle_at_12%_18%,rgba(34,197,94,0.12),transparent_36%),linear-gradient(180deg,#ffffff_0%,#f8fffb_100%)]',
+    line: '#78d89a',
+    fill: 'rgba(34,197,94,0.14)',
+  },
+  blue: {
+    accent: '#3b8edb',
+    icon: 'bg-[#eef7ff] text-[#2b76b9] ring-[#d9eafa]',
+    status: 'text-[#f79009]',
+    dot: '#3b8edb',
+    panel: 'bg-[linear-gradient(180deg,rgba(239,247,255,0.72)_0%,rgba(250,253,255,0.96)_100%)] ring-[#dbe9f7]',
+    wash: 'bg-[radial-gradient(circle_at_12%_18%,rgba(59,142,219,0.09),transparent_34%),linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)]',
+    line: '#80b9f2',
+    fill: 'rgba(59,142,219,0.13)',
+  },
+  purple: {
+    accent: '#8257e6',
+    icon: 'bg-[#f3efff] text-[#7654dc] ring-[#e4dbff]',
+    status: 'text-[#7c3aed]',
+    dot: '#8257e6',
+    panel: 'bg-[linear-gradient(180deg,rgba(245,240,255,0.72)_0%,rgba(253,251,255,0.96)_100%)] ring-[#e7ddff]',
+    wash: 'bg-[radial-gradient(circle_at_12%_18%,rgba(130,87,230,0.1),transparent_34%),linear-gradient(180deg,#ffffff_0%,#fdfbff_100%)]',
+    line: '#aa92f3',
+    fill: 'rgba(130,87,230,0.14)',
+  },
+  orange: {
+    accent: '#f97316',
+    icon: 'bg-[#fff5ed] text-[#f97316] ring-[#fde3cf]',
+    status: 'text-[#f97316]',
+    dot: '#3b8edb',
+    panel: 'bg-[linear-gradient(180deg,rgba(239,247,255,0.72)_0%,rgba(250,253,255,0.96)_100%)] ring-[#dbe9f7]',
+    wash: 'bg-[radial-gradient(circle_at_12%_18%,rgba(249,115,22,0.08),transparent_34%),linear-gradient(180deg,#ffffff_0%,#fffdfb_100%)]',
+    line: '#80b9f2',
+    fill: 'rgba(59,142,219,0.13)',
+  },
+}
+
+const hqKpis = [
+  {
+    label: 'Applications',
+    value: '90',
+    status: '+5.9% vs last month',
+    detail: '90 active applications',
+    tone: 'green',
+    featured: true,
+    icon: Layers3,
+    sparkline: [14, 16, 15, 24, 28, 23, 24, 26, 42, 39, 35, 48],
+    statusIcon: TrendingUp,
+  },
+  {
+    label: 'Approval Rate',
+    value: '3%',
+    status: 'Needs attention',
+    detail: '3 approved • 87 pending',
+    tone: 'blue',
+    icon: Gauge,
+    sparkline: [18, 19, 18, 23, 22, 24, 23, 26, 25, 27, 26, 29],
+    statusIcon: AlertTriangle,
+  },
+  {
+    label: 'Pipeline Value',
+    value: 'R199.8k',
+    status: 'Active finance pipeline',
+    detail: 'Across 90 applications',
+    tone: 'purple',
+    icon: Banknote,
+    sparkline: [12, 14, 13, 22, 25, 24, 29, 40, 43, 42, 39, 52],
+  },
+  {
+    label: 'Revenue Forecast',
+    value: 'R22.96m',
+    status: '+R7.65m vs last month',
+    detail: 'Forward revenue view',
+    tone: 'green',
+    icon: LineChart,
+    sparkline: [20, 28, 26, 31, 33, 37, 36, 45, 43, 48, 60, 55],
+    statusIcon: TrendingUp,
+  },
+  {
+    label: 'Avg Approval Time',
+    value: '46 days',
+    status: '38d over target',
+    detail: 'Needs operational focus',
+    tone: 'orange',
+    icon: Clock3,
+    sparkline: [13, 15, 14, 20, 19, 23, 22, 29, 28, 27, 31, 39],
+    statusIcon: Clock3,
+  },
+]
+
+function ExecutiveMiniTrend({ values = [], tone = {} }) {
+  const safeValues = (values.length ? values : [16, 20, 18, 26, 30, 28, 35]).map((value) => normalizeNumber(value))
+  const max = Math.max(...safeValues, 1)
+  const min = Math.min(...safeValues, 0)
+  const range = Math.max(max - min, 1)
+  const points = safeValues.map((value, index) => {
+    const x = safeValues.length === 1 ? 0 : (index / (safeValues.length - 1)) * 100
+    const y = 100 - ((value - min) / range) * 72 - 14
+    return `${x},${y}`
+  })
+  const areaPoints = [`0,100`, ...points, `100,100`].join(' ')
+
+  return (
+    <svg className="absolute inset-x-3 bottom-0 h-[42px] w-[calc(100%-24px)] overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <polygon points={areaPoints} fill={tone.fill} />
+      <polyline points={points.join(' ')} fill="none" stroke={tone.line} strokeWidth="2.4" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 function Donut({ segments = [], sizeClass = 'h-40 w-40', center = null }) {
   const total = segments.reduce((sum, segment) => sum + normalizeNumber(segment.value), 0)
   if (!total) {
@@ -207,7 +323,7 @@ export default function BondHqCommandCentre({ snapshot = {} }) {
   return (
     <div className="mx-auto max-w-[1600px] space-y-8 px-0 pb-8">
       <ExecutiveHeader />
-      <ExecutiveKpiStrip hq={hq} health={health} />
+      <ExecutiveKpiStrip />
       <NetworkIntelligencePanel source={{ snapshot, hq }} />
       <OperationalAlerts alerts={hq.alerts || []} bankPerformance={hq.bankPerformance || {}} />
       <PipelineSnapshot funnel={hq.pipelineFunnel || {}} />
@@ -223,16 +339,7 @@ export default function BondHqCommandCentre({ snapshot = {} }) {
 
 function ExecutiveHeader() {
   return (
-    <header className="flex flex-wrap items-start justify-between gap-4">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-[24px] font-semibold leading-tight tracking-[-0.01em] text-[#111827]">HQ Command Centre</h1>
-          <span className="inline-flex h-6 items-center rounded-full bg-[#ecfdf3] px-2.5 text-[11px] font-semibold text-[#027a48] ring-1 ring-[#abefc6]">
-            Live
-          </span>
-        </div>
-        <p className="mt-1 text-sm text-[#64748b]">National overview of applications, pipeline performance and operational risk.</p>
-      </div>
+    <header className="flex flex-wrap items-start justify-end gap-4">
       <div className="flex flex-wrap gap-2">
         <HeaderControl icon={CalendarDays}>Date Range</HeaderControl>
         <HeaderControl icon={Filter}>Filters</HeaderControl>
@@ -246,7 +353,7 @@ function ExecutiveHeader() {
 function HeaderControl({ icon: Icon, children }) {
   return (
     <button type="button" className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-[#d8e2ec] bg-white px-3 text-sm font-semibold text-[#17324d] shadow-[0_6px_16px_rgba(15,23,42,0.035)] transition hover:bg-[#f8fafc]">
-      <Icon size={15} />
+      {createElement(Icon, { size: 15 })}
       {children}
     </button>
   )
@@ -295,44 +402,46 @@ function buildOperationalHealthModel(hq = {}) {
   }
 }
 
-function ExecutiveKpiStrip({ hq = {}, health = {} }) {
-  const items = hq.nationalSnapshot || []
-  const active = findMetric(items, ['active_applications', 'active_book'], 0)
-  const approval = findMetric(items, ['approval_rate'], 2)
-  const pipeline = findMetric(items, ['pipeline_value', 'bond_value'], 4)
-  const approvalTime = findMetric(items, ['average_approval_time', 'avg_approval_time'], 3)
-  const revenue = hq.revenue || {}
-  const kpis = [
-    { key: 'applications', label: 'Applications', value: active.value || '0', trend: active.trend || 'Current period', helper: active.helper || active.microContext || 'Active national book', icon: Layers3 },
-    { key: 'approval', label: 'Approval Rate', value: approval.value || '0%', trend: approval.trend || 'Tracking', helper: approval.helper || approval.microContext || 'Submitted applications approved', icon: Gauge },
-    { key: 'pipeline', label: 'Pipeline Value', value: pipeline.value || 'Pending', trend: pipeline.trend || 'National pipeline', helper: pipeline.helper || pipeline.microContext || 'Open bond applications', icon: Banknote },
-    { key: 'revenue', label: 'Revenue Forecast', value: revenue.forecast90Day || revenue.projectedCommissionLabel || 'Pending', trend: revenue.revenueThisMonthLabel || 'Forecast building', helper: 'Forward revenue view', icon: LineChart },
-    { key: 'approval-time', label: 'Avg Approval Time', value: approvalTime.value || 'Pending', trend: approvalTime.trend || 'Against SLA target', helper: approvalTime.helper || approvalTime.microContext || 'Submission to outcome', icon: Clock3 },
-    {
-      key: 'health',
-      label: 'Operational Health',
-      value: health.score === null || health.score === undefined ? 'Pending' : `${health.score} / 100`,
-      trend: health.status || 'Tracking',
-      helper: `${formatNumber(health.pressureSignals || 0)} pressure signals`,
-      icon: Activity,
-    },
-  ]
-
+function ExecutiveKpiStrip() {
   return (
-    <section className="grid gap-4 md:grid-cols-3 2xl:grid-cols-6">
-      {kpis.map((item) => {
+    <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5 2xl:gap-5">
+      {hqKpis.map((item) => {
+        const tone = KPI_TONES[item.tone] || KPI_TONES.blue
         const Icon = item.icon
+        const StatusIcon = item.statusIcon
         return (
-          <article key={item.key} className="min-h-[146px] rounded-[16px] border border-[#dfe7ef] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.035)]">
-            <div className="flex items-start justify-between gap-3">
-              <CardLabel>{item.label}</CardLabel>
-              <span className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] bg-[#f8fafc] text-[#17324d] ring-1 ring-[#e2e8f0]">
-                <Icon size={17} />
+          <article
+            key={item.label}
+            className={`flex h-[220px] min-w-0 flex-col overflow-hidden rounded-[20px] border p-4 shadow-[0_18px_42px_rgba(15,23,42,0.07)] ring-1 transition ${tone.wash} ${
+              item.featured
+                ? 'border-[#24b86f] shadow-[0_22px_48px_rgba(22,163,74,0.16)] ring-[#bdeccd]'
+                : 'border-[rgba(15,23,42,0.08)] ring-[#e4ebf2]'
+            }`}
+          >
+            <div className="flex min-w-0 items-start justify-between gap-4">
+              <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[14px] ring-1 ${tone.icon}`}>
+                <Icon size={19} strokeWidth={2.4} />
               </span>
             </div>
-            <p className="mt-4 truncate text-[26px] font-semibold leading-none tracking-[-0.01em] text-[#111827]">{item.value}</p>
-            <p className="mt-3 truncate text-[13px] font-semibold text-[#166534]">{formatTrendLabel(item.trend)}</p>
-            <p className="mt-1 truncate text-xs text-[#64748b]">{item.helper}</p>
+
+            <div className="mt-4 min-w-0">
+              <p className="whitespace-nowrap text-[clamp(0.58rem,0.62vw,0.7rem)] font-bold uppercase leading-4 tracking-[0.13em] text-[#526178] 2xl:tracking-[0.2em]">{item.label}</p>
+              <p className="mt-2 max-w-full whitespace-nowrap text-[clamp(1.75rem,2.2vw,3.4rem)] font-bold leading-none tracking-normal text-[#07142b]">
+                {item.value}
+              </p>
+              <p className={`mt-2 flex min-w-0 items-center gap-1.5 text-[clamp(0.68rem,0.72vw,0.86rem)] font-bold leading-5 ${tone.status}`}>
+                {StatusIcon ? <StatusIcon size={14} className="shrink-0" strokeWidth={2.5} /> : null}
+                <span className="min-w-0 break-words">{item.status}</span>
+              </p>
+            </div>
+
+            <div className={`relative mt-auto h-[64px] overflow-hidden rounded-[15px] px-3 pt-3 ring-1 ${tone.panel}`}>
+              <p className="relative z-10 flex min-w-0 items-center gap-2 text-[clamp(0.68rem,0.7vw,0.84rem)] font-bold leading-4 text-[#0f1f36]">
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tone.dot }} />
+                <span className="min-w-0 break-words">{item.detail}</span>
+              </p>
+              <ExecutiveMiniTrend values={item.sparkline} tone={tone} />
+            </div>
           </article>
         )
       })}
@@ -786,7 +895,6 @@ export function HqPipelineFlow({ funnel = {} }) {
 }
 
 function NationalPipelineFlow({ funnel = {} }) {
-  const configByKey = new Map(PIPELINE_STAGE_CONFIG.map((stage) => [stage.key, stage]))
   const stagesByKey = new Map((funnel?.stages || []).map((stage) => [stage.key, stage]))
   const stageRows = PIPELINE_STAGE_CONFIG.map((config) => {
     const stage = stagesByKey.get(config.key) || {}

@@ -5,6 +5,13 @@ import { propertyIntelligenceDemoData } from '../../data/propertyIntelligenceDem
 const CHART_WIDTH = 720
 const CHART_HEIGHT = 260
 const CHART_PADDING = 28
+const PANEL_CLASS = 'rounded-lg border border-[#d8dde5] bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.05)] lg:p-6'
+const SOFT_PANEL_CLASS = 'rounded-lg border border-[#d8dde5] bg-[#f8fafc] p-5 lg:p-6'
+const DARK_PANEL_CLASS = 'rounded-lg bg-[#111827] p-5 text-white shadow-[0_24px_70px_rgba(15,23,42,0.16)] lg:p-6'
+const METRIC_GRID_CLASS = 'mt-5 grid grid-cols-[repeat(auto-fit,minmax(126px,1fr))] gap-3 lg:mt-6'
+const COMPACT_METRIC_CARD_CLASS = 'min-w-0 rounded-lg bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.04)]'
+const LABEL_CLASS = 'text-[0.68rem] font-semibold uppercase leading-5 tracking-[0.14em] text-[#667085]'
+const VALUE_CLASS = 'mt-3 break-words text-[clamp(1.55rem,2.1vw,2.35rem)] font-semibold leading-none text-[#111827]'
 
 function normalizeArray(value) {
   return Array.isArray(value) ? value : []
@@ -329,21 +336,25 @@ function QuadrantGrid({ matrix }) {
 
 function PropertyTypeForecast({ forecast }) {
   return (
-    <section className="rounded-lg border border-[#d8dde5] bg-white p-7 shadow-[0_18px_50px_rgba(15,23,42,0.05)]">
+    <section className={PANEL_CLASS}>
       <SectionHeader title={forecast.title} copy={forecast.subtitle} />
-      <div className="mt-7 grid gap-4">
+      <div className="mt-6 grid gap-4">
         {forecast.rows.map((row) => (
-          <article key={row.propertyType} className="grid gap-4 rounded-lg bg-[#f8fafc] p-4 md:grid-cols-[180px_minmax(0,1fr)_minmax(0,1fr)_80px] md:items-center">
-            <p className="font-semibold text-[#111827]">{row.propertyType}</p>
-            <div>
-              <div className="flex justify-between text-xs font-semibold uppercase tracking-[0.12em] text-[#667085]"><span>{forecast.columns[1]}</span><span>{row.currentDemand}</span></div>
-              <div className="mt-2 h-2 rounded-full bg-[#e4e7ec]"><div className="h-2 rounded-full bg-[#667085]" style={{ width: `${row.currentDemand}%` }} /></div>
+          <article key={row.propertyType} className="rounded-lg bg-[#f8fafc] p-4">
+            <div className="flex items-start justify-between gap-4">
+              <p className="font-semibold text-[#111827]">{row.propertyType}</p>
+              <p className={`shrink-0 text-xl font-semibold ${row.direction === 'down' ? 'text-[#b54708]' : 'text-[#28684a]'}`}>{row.change}</p>
             </div>
-            <div>
-              <div className="flex justify-between text-xs font-semibold uppercase tracking-[0.12em] text-[#667085]"><span>{forecast.columns[2]}</span><span>{row.forecastDemand}</span></div>
-              <div className="mt-2 h-2 rounded-full bg-[#e4e7ec]"><div className="h-2 rounded-full bg-[#111827]" style={{ width: `${row.forecastDemand}%` }} /></div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div className="min-w-0">
+                <div className="flex justify-between gap-3 text-[0.68rem] font-semibold uppercase leading-5 tracking-[0.1em] text-[#667085]"><span>{forecast.columns[1]}</span><span>{row.currentDemand}</span></div>
+                <div className="mt-2 h-2 rounded-full bg-[#e4e7ec]"><div className="h-2 rounded-full bg-[#667085]" style={{ width: `${row.currentDemand}%` }} /></div>
+              </div>
+              <div className="min-w-0">
+                <div className="flex justify-between gap-3 text-[0.68rem] font-semibold uppercase leading-5 tracking-[0.1em] text-[#667085]"><span>{forecast.columns[2]}</span><span>{row.forecastDemand}</span></div>
+                <div className="mt-2 h-2 rounded-full bg-[#e4e7ec]"><div className="h-2 rounded-full bg-[#111827]" style={{ width: `${row.forecastDemand}%` }} /></div>
+              </div>
             </div>
-            <p className={`text-right text-xl font-semibold ${row.direction === 'down' ? 'text-[#b54708]' : 'text-[#28684a]'}`}>{row.change}</p>
           </article>
         ))}
       </div>
@@ -420,24 +431,24 @@ function ForecastGauge({ metric }) {
   const value = Number(metric.value || 0)
   const rotation = -90 + (Math.max(0, Math.min(100, value)) / 100) * 180
   return (
-    <article className="rounded-lg bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
-      <p className="text-sm font-semibold text-[#111827]">{metric.label}</p>
-      <div className="relative mt-5 h-28">
-        <div className="absolute inset-x-3 bottom-0 h-24 rounded-t-full border-[14px] border-b-0 border-[#e4e7ec]" />
-        <div className="absolute inset-x-3 bottom-0 h-24 rounded-t-full border-[14px] border-b-0 border-[#111827] [clip-path:inset(0_0_0_0)]" style={{ opacity: value / 100 }} />
-        <div className="absolute bottom-0 left-1/2 h-1 w-20 origin-left rounded-full bg-[#111827]" style={{ transform: `rotate(${rotation}deg)` }} />
-        <div className="absolute bottom-[-8px] left-1/2 h-4 w-4 -translate-x-1/2 rounded-full bg-[#111827]" />
+    <article className="min-w-0 rounded-lg bg-white p-3 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+      <p className="min-h-[2.4rem] text-sm font-semibold leading-5 text-[#111827]">{metric.label}</p>
+      <div className="relative mt-4 h-20">
+        <div className="absolute inset-x-2 bottom-0 h-16 rounded-t-full border-[10px] border-b-0 border-[#e4e7ec]" />
+        <div className="absolute inset-x-2 bottom-0 h-16 rounded-t-full border-[10px] border-b-0 border-[#111827] [clip-path:inset(0_0_0_0)]" style={{ opacity: value / 100 }} />
+        <div className="absolute bottom-0 left-1/2 h-1 w-14 origin-left rounded-full bg-[#111827]" style={{ transform: `rotate(${rotation}deg)` }} />
+        <div className="absolute bottom-[-6px] left-1/2 h-3 w-3 -translate-x-1/2 rounded-full bg-[#111827]" />
       </div>
-      <p className="mt-3 text-3xl font-semibold text-[#111827]">{metric.value}%</p>
+      <p className="mt-2 text-[clamp(1.6rem,2.1vw,2.25rem)] font-semibold leading-none text-[#111827]">{metric.value}%</p>
     </article>
   )
 }
 
 function ForecastConfidenceEngine({ confidence }) {
   return (
-    <section className="rounded-lg border border-[#d8dde5] bg-[#f8fafc] p-7">
+    <section className={SOFT_PANEL_CLASS}>
       <h2 className="text-2xl font-semibold tracking-normal text-[#111827]">{confidence.title}</h2>
-      <div className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-5">
         {confidence.metrics.map((metric) => (
           <ForecastGauge key={metric.label} metric={metric} />
         ))}
@@ -1011,14 +1022,14 @@ function CapacityLoadMap({ mapData }) {
 
 function CapacityRankingTable({ table }) {
   return (
-    <section className="rounded-lg border border-[#d8dde5] bg-white p-7 shadow-[0_18px_50px_rgba(15,23,42,0.05)]">
+    <section className={PANEL_CLASS}>
       <h2 className="text-2xl font-semibold tracking-normal text-[#111827]">{table.title}</h2>
       <div className="mt-6 overflow-x-auto [scrollbar-width:thin]">
-        <table className="w-full min-w-[760px] border-separate border-spacing-y-2 text-left">
+        <table className="w-full min-w-[640px] border-separate border-spacing-y-2 text-left">
           <thead>
-            <tr className="text-xs font-semibold uppercase tracking-[0.14em] text-[#667085]">
+            <tr className="text-[0.68rem] font-semibold uppercase leading-4 tracking-[0.12em] text-[#667085]">
               {table.columns.map((column) => (
-                <th key={column} className="px-4 py-2">{column}</th>
+                <th key={column} className="px-3 py-2">{column}</th>
               ))}
             </tr>
           </thead>
@@ -1028,7 +1039,7 @@ function CapacityRankingTable({ table }) {
                 {row.values.map((value, columnIndex) => (
                   <td
                     key={`${row.id}-${table.columns[columnIndex]}`}
-                    className={`${columnIndex === 0 ? 'rounded-l-lg text-lg font-semibold text-[#111827]' : 'font-semibold'} ${columnIndex === row.values.length - 1 ? 'rounded-r-lg text-[#111827]' : ''} px-4 py-4`}
+                    className={`${columnIndex === 0 ? 'rounded-l-lg text-base font-semibold text-[#111827]' : 'font-semibold'} ${columnIndex === row.values.length - 1 ? 'rounded-r-lg text-[#111827]' : ''} px-3 py-4`}
                   >
                     {value}
                   </td>
@@ -1098,10 +1109,10 @@ function SlaRiskMonitor({ riskData }) {
 
 function ResourceOptimisation({ recommendations }) {
   return (
-    <section className="rounded-lg bg-[#111827] p-7 text-white shadow-[0_24px_70px_rgba(15,23,42,0.16)]">
+    <section className={DARK_PANEL_CLASS}>
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#98a2b3]">{recommendations.eyebrow}</p>
       <h2 className="mt-3 text-3xl font-semibold tracking-normal text-white">{recommendations.title}</h2>
-      <div className="mt-7 grid gap-5 lg:grid-cols-2">
+      <div className="mt-6 grid gap-5 lg:grid-cols-2">
         {recommendations.recommendations.map((item) => (
           <article key={item.action} className="border-t border-[#273241] pt-5">
             <h3 className="text-xl font-semibold leading-8 text-white">{item.action}</h3>
@@ -1124,13 +1135,13 @@ function ResourceOptimisation({ recommendations }) {
 
 function VolumeForecastImpact({ impact }) {
   return (
-    <section className="rounded-lg border border-[#d8dde5] bg-white p-7 shadow-[0_18px_50px_rgba(15,23,42,0.05)]">
+    <section className={PANEL_CLASS}>
       <SectionHeader title={impact.title} copy={impact.subtitle} />
-      <div className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(112px,1fr))] gap-4">
         {impact.metrics.map((metric) => (
           <article key={metric.label} className="border-t border-[#d8dde5] pt-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#667085]">{metric.label}</p>
-            <p className="mt-4 text-3xl font-semibold text-[#111827]">{metric.value}</p>
+            <p className={LABEL_CLASS}>{metric.label}</p>
+            <p className={VALUE_CLASS}>{metric.value}</p>
           </article>
         ))}
       </div>
@@ -1319,7 +1330,7 @@ function DigitalTwinVisual({ network }) {
   const nodeLookup = new Map(network.nodes.map((node) => [node.id, node]))
 
   return (
-    <section className="rounded-lg bg-[#101720] p-7 text-white shadow-[0_24px_70px_rgba(15,23,42,0.16)]">
+    <section className="rounded-lg bg-[#101720] p-5 text-white shadow-[0_24px_70px_rgba(15,23,42,0.16)] lg:p-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#98a2b3]">{network.eyebrow}</p>
@@ -1328,8 +1339,8 @@ function DigitalTwinVisual({ network }) {
         </div>
         <p className="w-fit rounded-full border border-[#344054] bg-[#17212d] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#cbd5e1]">{network.flowLabel}</p>
       </div>
-      <div className="mt-8 overflow-hidden rounded-lg border border-[#273241] bg-[#121b27]">
-        <svg viewBox="0 0 100 100" role="img" aria-label={network.title} className="h-[560px] w-full">
+      <div className="mt-6 overflow-hidden rounded-lg border border-[#273241] bg-[#121b27]">
+        <svg viewBox="0 0 100 100" role="img" aria-label={network.title} className="h-[360px] w-full 2xl:h-[500px]">
           <defs>
             <radialGradient id="digital-twin-node-glow">
               <stop offset="0%" stopColor="#f8fafc" stopOpacity="0.34" />
@@ -1385,9 +1396,9 @@ function DigitalTwinVisual({ network }) {
 
 function SimulationControlPanel({ controls, selectedControls, onControlChange }) {
   return (
-    <section className="rounded-lg border border-[#d8dde5] bg-white p-7 shadow-[0_18px_50px_rgba(15,23,42,0.05)]">
+    <section className={PANEL_CLASS}>
       <SectionHeader title={controls.title} copy={controls.subtitle} />
-      <div className="mt-7 grid gap-7">
+      <div className="mt-6 grid gap-5">
         {controls.groups.map((group) => {
           const selectedValue = selectedControls[group.key] || group.defaultValue
           const selectedIndex = Math.max(0, group.options.findIndex((option) => option.value === selectedValue))
@@ -1407,7 +1418,7 @@ function SimulationControlPanel({ controls, selectedControls, onControlChange })
                 className="mt-5 h-2 w-full accent-[#111827]"
                 aria-label={group.label}
               />
-              <div className="mt-3 grid gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#667085]" style={{ gridTemplateColumns: `repeat(${group.options.length}, minmax(0, 1fr))` }}>
+              <div className="mt-3 grid gap-2 text-[0.72rem] font-semibold uppercase leading-5 tracking-[0.08em] text-[#667085]" style={{ gridTemplateColumns: `repeat(${group.options.length}, minmax(0, 1fr))` }}>
                 {group.options.map((option) => (
                   <span key={option.value} className="text-center">{option.label}</span>
                 ))}
@@ -1423,14 +1434,14 @@ function SimulationControlPanel({ controls, selectedControls, onControlChange })
 function ProjectedOutcome({ outputs, activeSimulationKey }) {
   const output = outputs.outputs[activeSimulationKey] || outputs.outputs[Object.keys(outputs.outputs)[0]]
   return (
-    <section className="rounded-lg border border-[#d8dde5] bg-[#f8fafc] p-7">
+    <section className={SOFT_PANEL_CLASS}>
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#667085]">{output.label}</p>
       <h2 className="mt-3 text-3xl font-semibold tracking-normal text-[#111827]">{outputs.title}</h2>
-      <div className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className={METRIC_GRID_CLASS}>
         {output.metrics.map((metric) => (
-          <article key={metric.label} className="rounded-lg bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#667085]">{metric.label}</p>
-            <p className="mt-4 text-3xl font-semibold text-[#111827]">{metric.value}</p>
+          <article key={metric.label} className={COMPACT_METRIC_CARD_CLASS}>
+            <p className={LABEL_CLASS}>{metric.label}</p>
+            <p className={VALUE_CLASS}>{metric.value}</p>
           </article>
         ))}
       </div>
@@ -1441,7 +1452,7 @@ function ProjectedOutcome({ outputs, activeSimulationKey }) {
 function SimulationNarrative({ narratives, activeSimulationKey }) {
   const paragraphs = narratives.narratives[activeSimulationKey] || narratives.narratives[Object.keys(narratives.narratives)[0]]
   return (
-    <section className="rounded-lg border border-[#d8dde5] bg-white p-8 shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
+    <section className={PANEL_CLASS}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-4">
           <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-[#111827] text-white">
@@ -1449,11 +1460,11 @@ function SimulationNarrative({ narratives, activeSimulationKey }) {
           </span>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6d7785]">{narratives.generatedLabel}</p>
-            <h2 className="mt-2 text-3xl font-semibold tracking-normal text-[#111827]">{narratives.title}</h2>
+            <h2 className="mt-2 text-[clamp(1.65rem,2.3vw,2.25rem)] font-semibold leading-tight tracking-normal text-[#111827]">{narratives.title}</h2>
           </div>
         </div>
       </div>
-      <div className="mt-7 grid gap-4 text-lg leading-8 text-[#344054]">
+      <div className="mt-6 grid gap-4 text-base leading-7 text-[#344054]">
         {paragraphs.map((paragraph) => (
           <p key={paragraph}>{paragraph}</p>
         ))}
@@ -1464,17 +1475,17 @@ function SimulationNarrative({ narratives, activeSimulationKey }) {
 
 function ExecutiveScenarioCards({ scenarios, activeSimulationKey, onSelect }) {
   return (
-    <section className="rounded-lg border border-[#d8dde5] bg-white p-7 shadow-[0_18px_50px_rgba(15,23,42,0.05)]">
-      <h2 className="text-3xl font-semibold tracking-normal text-[#111827]">{scenarios.title}</h2>
-      <div className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+    <section className={PANEL_CLASS}>
+      <h2 className="text-[clamp(1.75rem,2.4vw,2.35rem)] font-semibold leading-tight tracking-normal text-[#111827]">{scenarios.title}</h2>
+      <div className="mt-6 grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
         {scenarios.cards.map((scenario) => (
           <button
             key={scenario.id}
             type="button"
             onClick={() => onSelect(scenario.id)}
-            className={`rounded-lg border p-5 text-left transition ${activeSimulationKey === scenario.id ? 'border-[#111827] bg-[#111827] text-white shadow-[0_18px_44px_rgba(15,23,42,0.18)]' : 'border-[#d8dde5] bg-[#f8fafc] text-[#111827] hover:border-[#111827]'}`}
+            className={`min-w-0 rounded-lg border p-4 text-left transition ${activeSimulationKey === scenario.id ? 'border-[#111827] bg-[#111827] text-white shadow-[0_18px_44px_rgba(15,23,42,0.18)]' : 'border-[#d8dde5] bg-[#f8fafc] text-[#111827] hover:border-[#111827]'}`}
           >
-            <h3 className="text-xl font-semibold leading-8">{scenario.title}</h3>
+            <h3 className={`text-[clamp(1.05rem,1.4vw,1.35rem)] font-semibold leading-7 ${activeSimulationKey === scenario.id ? 'text-white' : 'text-[#111827]'}`}>{scenario.title}</h3>
             <p className={`mt-3 text-sm leading-6 ${activeSimulationKey === scenario.id ? 'text-[#cbd5e1]' : 'text-[#667085]'}`}>{scenario.description}</p>
           </button>
         ))}
@@ -1485,14 +1496,14 @@ function ExecutiveScenarioCards({ scenarios, activeSimulationKey, onSelect }) {
 
 function ScenarioMetricPanel({ scenario, dark = false }) {
   return (
-    <section className={`${dark ? 'bg-[#111827] text-white shadow-[0_24px_70px_rgba(15,23,42,0.16)]' : 'border border-[#d8dde5] bg-white text-[#111827] shadow-[0_18px_50px_rgba(15,23,42,0.05)]'} rounded-lg p-7`}>
-      <h2 className="text-3xl font-semibold tracking-normal">{scenario.title}</h2>
+    <section className={`${dark ? 'bg-[#111827] text-white shadow-[0_24px_70px_rgba(15,23,42,0.16)]' : 'border border-[#d8dde5] bg-white text-[#111827] shadow-[0_18px_50px_rgba(15,23,42,0.05)]'} rounded-lg p-5 lg:p-6`}>
+      <h2 className={`text-[clamp(1.6rem,2.3vw,2.3rem)] font-semibold leading-tight tracking-normal ${dark ? 'text-white' : 'text-[#111827]'}`}>{scenario.title}</h2>
       {scenario.subtitle ? <p className={`mt-3 text-sm leading-6 ${dark ? 'text-[#cbd5e1]' : 'text-[#667085]'}`}>{scenario.subtitle}</p> : null}
-      <div className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-4">
         {scenario.metrics.map((metric) => (
           <article key={metric.label} className={`${dark ? 'border-[#273241]' : 'border-[#d8dde5]'} border-t pt-5`}>
-            <p className={`text-xs font-semibold uppercase tracking-[0.16em] ${dark ? 'text-[#98a2b3]' : 'text-[#667085]'}`}>{metric.label}</p>
-            <p className="mt-4 text-3xl font-semibold">{metric.value}</p>
+            <p className={`text-[0.68rem] font-semibold uppercase leading-5 tracking-[0.14em] ${dark ? 'text-[#98a2b3]' : 'text-[#667085]'}`}>{metric.label}</p>
+            <p className={`mt-3 break-words text-[clamp(1.6rem,2.2vw,2.25rem)] font-semibold leading-tight ${dark ? 'text-white' : 'text-[#111827]'}`}>{metric.value}</p>
           </article>
         ))}
       </div>
@@ -1502,23 +1513,23 @@ function ScenarioMetricPanel({ scenario, dark = false }) {
 
 function InterestRateImpact({ scenario }) {
   return (
-    <section className="rounded-lg border border-[#d8dde5] bg-white p-7 shadow-[0_18px_50px_rgba(15,23,42,0.05)]">
-      <h2 className="text-3xl font-semibold tracking-normal text-[#111827]">{scenario.title}</h2>
-      <div className="mt-7 grid gap-4 md:grid-cols-2">
+    <section className={PANEL_CLASS}>
+      <h2 className="text-[clamp(1.6rem,2.3vw,2.3rem)] font-semibold leading-tight tracking-normal text-[#111827]">{scenario.title}</h2>
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
         <article className="rounded-lg bg-[#f8fafc] p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#667085]">{scenario.currentRateLabel}</p>
-          <p className="mt-3 text-4xl font-semibold text-[#111827]">{scenario.currentRate}</p>
+          <p className="mt-3 text-[clamp(2rem,3vw,2.8rem)] font-semibold text-[#111827]">{scenario.currentRate}</p>
         </article>
         <article className="rounded-lg bg-[#111827] p-5 text-white">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#98a2b3]">{scenario.projectedRateLabel}</p>
-          <p className="mt-3 text-4xl font-semibold">{scenario.projectedRate}</p>
+          <p className="mt-3 text-[clamp(2rem,3vw,2.8rem)] font-semibold text-white">{scenario.projectedRate}</p>
         </article>
       </div>
-      <div className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(112px,1fr))] gap-4">
         {scenario.effects.map((effect) => (
           <article key={effect.label} className="border-t border-[#d8dde5] pt-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#667085]">{effect.label}</p>
-            <p className="mt-3 text-3xl font-semibold text-[#b54708]">{effect.value}</p>
+            <p className={LABEL_CLASS}>{effect.label}</p>
+            <p className="mt-3 break-words text-[clamp(1.55rem,2.1vw,2.25rem)] font-semibold leading-tight text-[#b54708]">{effect.value}</p>
           </article>
         ))}
       </div>
@@ -1528,9 +1539,9 @@ function InterestRateImpact({ scenario }) {
 
 function MarketImpactScenario({ scenario }) {
   return (
-    <section className="rounded-lg border border-[#d8dde5] bg-white p-7 shadow-[0_18px_50px_rgba(15,23,42,0.05)]">
-      <h2 className="text-3xl font-semibold tracking-normal text-[#111827]">{scenario.title}</h2>
-      <div className="mt-7 grid gap-4 md:grid-cols-3">
+    <section className={PANEL_CLASS}>
+      <h2 className="text-[clamp(1.6rem,2.3vw,2.3rem)] font-semibold leading-tight tracking-normal text-[#111827]">{scenario.title}</h2>
+      <div className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
         {scenario.metrics.map((metric) => (
           <article key={metric.label} className="border-t border-[#d8dde5] pt-5">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#667085]">{metric.label}</p>
@@ -1989,7 +2000,7 @@ function ForecastingContent({ data }) {
 
       <ForecastInsightCard insights={data.forecastInsights} />
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <section className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_420px]">
         <QuadrantGrid matrix={data.forecastRiskMatrix} />
         <ForecastConfidenceEngine confidence={data.forecastConfidenceMetrics} />
       </section>
@@ -2071,7 +2082,7 @@ function CapacityPlanningContent({ data }) {
 
       <CapacityLoadMap mapData={data.nationalCapacityMap} />
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]">
+      <section className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_520px]">
         <CapacityRankingTable table={data.branchCapacityData} />
         <ConsultantUtilisation utilisation={data.consultantUtilisationData} />
       </section>
@@ -2080,7 +2091,7 @@ function CapacityPlanningContent({ data }) {
 
       <ResourceOptimisation recommendations={data.resourceOptimisationRecommendations} />
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]">
+      <section className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_520px]">
         <EcosystemRankingTable table={data.hiringIntelligenceData} />
         <VolumeForecastImpact impact={data.volumeForecastImpact} />
       </section>
@@ -2157,7 +2168,7 @@ function ScenarioSimulatorContent({ data }) {
 
       <DigitalTwinVisual network={data.digitalTwinNetwork} />
 
-      <section className="grid gap-6 xl:grid-cols-[520px_minmax(0,1fr)]">
+      <section className="grid gap-6 2xl:grid-cols-[500px_minmax(0,1fr)]">
         <SimulationControlPanel
           controls={data.simulationControls}
           selectedControls={selectedControls}
