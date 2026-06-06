@@ -3,6 +3,7 @@ import { ENTITLEMENT_KEYS } from '../constants/workspaceEntitlements'
 import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
 import { can, resolvePermissionContext } from '../auth/permissions/permissionResolver'
+import { createPerfTimer } from '../lib/performanceTrace'
 import { isMissingTableError } from './attorneyFirmServiceShared'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
@@ -2949,13 +2950,35 @@ async function getAllBranchRows(workspaceId = '', options = {}) {
 
 async function getAllConsultantRows(workspaceId = '', options = {}) {
   const safeWorkspaceId = normalizeText(workspaceId)
-  if (Array.isArray(options.consultants) || Array.isArray(options.users)) {
-    const optionRows = (options.consultants || options.users || []).map((row) => normalizeConsultantRow(row, safeWorkspaceId))
+  if (Array.isArray(options.consultants)) {
+    const optionRows = options.consultants.map((row) => normalizeConsultantRow(row, safeWorkspaceId))
+    const optionIds = new Set(optionRows.map((row) => normalizeText(row.id)))
+    return [...optionRows, ...getLocalConsultants(safeWorkspaceId).filter((row) => !optionIds.has(normalizeText(row.id)))]
+  }
+  if (Array.isArray(options.users)) {
+    const optionRows = options.users
+      .filter((user) => CONSULTANT_ROLES.has(getConsultantRole(user)) || getConsultantBranchId(user))
+      .map((row) => normalizeConsultantRow(row, safeWorkspaceId))
     const optionIds = new Set(optionRows.map((row) => normalizeText(row.id)))
     return [...optionRows, ...getLocalConsultants(safeWorkspaceId).filter((row) => !optionIds.has(normalizeText(row.id)))]
   }
   if (options.forceLocal) return getLocalConsultants(safeWorkspaceId)
   return fetchConsultantRows(safeWorkspaceId)
+}
+
+async function traceOrganisationSnapshotStep(timer, label = '', task = async () => null) {
+  timer.mark(`${label}_start`)
+  try {
+    const result = await task()
+    timer.mark(`${label}_end`, {
+      rowCount: Array.isArray(result) ? result.length : undefined,
+      hasResult: Boolean(result),
+    })
+    return result
+  } catch (error) {
+    timer.mark(`${label}_error`, { message: String(error?.message || error || 'unknown_error') })
+    throw error
+  }
 }
 
 async function persistRegionActivity(workspaceId = '', event = {}) {
@@ -4066,41 +4089,67 @@ export function buildBondOrganisationSnapshot({
 
 export async function getBondOrganisationSnapshot(context = {}, workspaceId = '', options = {}) {
   const safeWorkspaceId = normalizeText(workspaceId)
-  const [settingsContext, hierarchy, users, consultantRows, applicationSnapshot, regions, branches, partners, activityEvents, routingRules] = await Promise.all([
-    fetchSettings(),
-    fetchHierarchy(safeWorkspaceId),
-    fetchOrganisationUsers(safeWorkspaceId),
-    getAllConsultantRows(safeWorkspaceId, options),
-    getBondTransactionTrackerSnapshot(context, safeWorkspaceId, {
-      ...options,
-      status: 'all',
-      developmentId: options.developmentId || 'all',
-    }),
-    getAllRegionRows(safeWorkspaceId, options),
-    getAllBranchRows(safeWorkspaceId, options),
-    getAllBondPartnerRows(safeWorkspaceId, options),
-    fetchActivityRows(safeWorkspaceId),
-    getRoutingRules(context, safeWorkspaceId, options),
-  ])
-
-  return buildBondOrganisationSnapshot({
-    context,
-    workspaceId: safeWorkspaceId,
-    settingsContext,
-    hierarchy,
-    users,
-    applicationSnapshot,
-    options: {
-      ...options,
+  const timer = createPerfTimer('bondOrganisation.getSnapshot', { workspaceId: safeWorkspaceId })
+  try {
+    const usersPromise = traceOrganisationSnapshotStep(timer, 'users', () => fetchOrganisationUsers(safeWorkspaceId))
+    const [
+      settingsContext,
+      hierarchy,
+      users,
+      consultantRows,
+      applicationSnapshot,
       regions,
       branches,
       partners,
-      organisationUsers: users,
-      consultants: consultantRows.length ? consultantRows : options.consultants,
-      activityEvents: options.activityEvents || activityEvents,
+      activityEvents,
       routingRules,
-    },
-  })
+    ] = await Promise.all([
+      traceOrganisationSnapshotStep(timer, 'settings', () => fetchSettings()),
+      traceOrganisationSnapshotStep(timer, 'hierarchy', () => fetchHierarchy(safeWorkspaceId)),
+      usersPromise,
+      usersPromise.then((users) => traceOrganisationSnapshotStep(timer, 'consultants', () => getAllConsultantRows(safeWorkspaceId, { ...options, users }))),
+      traceOrganisationSnapshotStep(timer, 'applications', () => getBondTransactionTrackerSnapshot(context, safeWorkspaceId, {
+        ...options,
+        status: 'all',
+        developmentId: options.developmentId || 'all',
+      })),
+      traceOrganisationSnapshotStep(timer, 'regions', () => getAllRegionRows(safeWorkspaceId, options)),
+      traceOrganisationSnapshotStep(timer, 'branches', () => getAllBranchRows(safeWorkspaceId, options)),
+      traceOrganisationSnapshotStep(timer, 'partners', () => getAllBondPartnerRows(safeWorkspaceId, options)),
+      traceOrganisationSnapshotStep(timer, 'activity', () => fetchActivityRows(safeWorkspaceId)),
+      traceOrganisationSnapshotStep(timer, 'routing_rules', () => getRoutingRules(context, safeWorkspaceId, options)),
+    ])
+
+    timer.mark('build_snapshot_start')
+    const snapshot = buildBondOrganisationSnapshot({
+      context,
+      workspaceId: safeWorkspaceId,
+      settingsContext,
+      hierarchy,
+      users,
+      applicationSnapshot,
+      options: {
+        ...options,
+        regions,
+        branches,
+        partners,
+        organisationUsers: users,
+        consultants: consultantRows.length ? consultantRows : options.consultants,
+        activityEvents: options.activityEvents || activityEvents,
+        routingRules,
+      },
+    })
+    timer.mark('build_snapshot_end', {
+      applicationCount: snapshot.applications?.length || 0,
+      branchCount: snapshot.branches?.length || 0,
+      consultantCount: snapshot.consultants?.length || 0,
+    })
+    timer.end({ status: 'ok' })
+    return snapshot
+  } catch (error) {
+    timer.end({ status: 'error', message: String(error?.message || error || 'unknown_error') })
+    throw error
+  }
 }
 
 export function getBondOrganisationRouteForTab(tabKey = 'overview', options = {}) {

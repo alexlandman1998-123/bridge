@@ -339,7 +339,7 @@ function makeSnapshot(overrides = {}) {
     assert.doesNotMatch(hqMarkup, /Last 30 Days/)
     assert.doesNotMatch(hqMarkup, /All Regions/)
     assert.doesNotMatch(hqMarkup, /Export report/)
-    assert.match(hqMarkup, /National Command Centre/)
+    assert.doesNotMatch(hqMarkup, /National Command Centre/)
     assert.match(hqMarkup, /Active Book/)
     assert.doesNotMatch(hqMarkup, /Applications Submitted/)
     assert.doesNotMatch(hqMarkup, /Projected Commission/)
@@ -384,7 +384,7 @@ function makeSnapshot(overrides = {}) {
     assert.doesNotMatch(hqMarkup, /Applications Needing Attention/)
 
     const hqOrder = [
-      'National Command Centre',
+      'Active Book',
       'Operational Health',
       'National Pipeline Flow',
       'Performance Layer',

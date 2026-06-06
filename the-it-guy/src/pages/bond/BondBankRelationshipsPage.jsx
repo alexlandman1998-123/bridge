@@ -46,6 +46,10 @@ import {
   getSystemBanks,
   updateOriginatorBank,
 } from '../../services/bondOriginatorBankService'
+import {
+  getBondBankRelationshipSeedData,
+  isBondBankRelationshipSeedBank,
+} from '../../services/bondBankRelationshipSeedData'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -1460,33 +1464,49 @@ export default function BondBankRelationshipsPage() {
   const [feedbackDraft, setFeedbackDraft] = useState({ feedbackType: 'Relationship Feedback', message: '' })
   const [panelDraft, setPanelDraft] = useState(null)
   const options = useMemo(() => ({ workspaceId, refreshKey }), [workspaceId, refreshKey])
+  const seededOptions = useMemo(() => ({ ...options, ...getBondBankRelationshipSeedData(workspaceId) }), [options, workspaceId])
   const currentView = bankId ? 'profile' : (searchParams.get('view') || 'overview')
   const canManageBankPanel = isHqUser(workspaceContext)
 
   const state = useMemo(() => {
     try {
       if (bankId) {
+        const liveBankPanel = getBankPanelForCurrentUser(workspaceContext, options)
+        const activeOptions = !liveBankPanel.length && isBondBankRelationshipSeedBank(bankId) ? seededOptions : options
         return {
           commandCentre: null,
-          workspace: getBankWorkspace(bankId, workspaceContext, options),
-          analytics: getBankSubmissionAnalytics(bankId, workspaceContext, options),
+          workspace: getBankWorkspace(bankId, workspaceContext, activeOptions),
+          analytics: getBankSubmissionAnalytics(bankId, workspaceContext, activeOptions),
           bankPanel: [],
           systemBanks: [],
           error: '',
         }
       }
+      const commandCentre = getBankRelationshipCommandCentre(workspaceContext, options)
+      const bankPanel = getBankPanelForCurrentUser(workspaceContext, options)
+      const shouldUseSeed = !bankPanel.length && !(commandCentre.performanceMatrix || []).length
+      if (shouldUseSeed) {
+        return {
+          commandCentre: getBankRelationshipCommandCentre(workspaceContext, seededOptions),
+          workspace: null,
+          analytics: [],
+          bankPanel: getBankPanelForCurrentUser(workspaceContext, seededOptions),
+          systemBanks: getSystemBanks(seededOptions),
+          error: '',
+        }
+      }
       return {
-        commandCentre: getBankRelationshipCommandCentre(workspaceContext, options),
+        commandCentre,
         workspace: null,
         analytics: [],
-        bankPanel: getBankPanelForCurrentUser(workspaceContext, options),
+        bankPanel,
         systemBanks: getSystemBanks(options),
         error: '',
       }
     } catch (error) {
       return { commandCentre: null, workspace: null, analytics: [], bankPanel: [], systemBanks: [], error: String(error?.message || 'Could not load bank relationships.') }
     }
-  }, [bankId, workspaceContext, options])
+  }, [bankId, workspaceContext, options, seededOptions])
 
   function refresh() {
     setNotice('Bank relationships refreshed.')

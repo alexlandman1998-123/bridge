@@ -217,7 +217,14 @@ function Section({ title, subtitle, icon: Icon, children, action = null, classNa
   )
 }
 
-function DataTable({ columns = [], rows = [], emptyTitle = 'No records match this view yet.', emptyDescription = '' }) {
+function DataTable({
+  columns = [],
+  rows = [],
+  emptyTitle = 'No records match this view yet.',
+  emptyDescription = '',
+  onRowClick = null,
+  rowLabel = () => 'Open row',
+}) {
   if (!rows.length) {
     return (
       <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-sm">
@@ -239,15 +246,22 @@ function DataTable({ columns = [], rows = [], emptyTitle = 'No records match thi
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {rows.map((row, index) => (
-            <tr key={row.id || row.applicationId || row.key || `${row.partyName || row.bank || 'row'}-${index}`} className="align-middle">
+          {rows.map((row, index) => {
+            const clickable = typeof onRowClick === 'function'
+            return (
+            <tr
+              key={row.id || row.applicationId || row.key || `${row.partyName || row.bank || 'row'}-${index}`}
+              className={`align-middle ${clickable ? 'cursor-pointer transition hover:bg-slate-50 focus-within:bg-slate-50' : ''}`}
+              title={clickable ? rowLabel(row) : undefined}
+              onClick={clickable ? () => onRowClick(row) : undefined}
+            >
               {columns.map((column) => (
                 <td key={column.key} className="whitespace-nowrap px-4 py-4 text-slate-700">
                   {column.render ? column.render(row) : row[column.key]}
                 </td>
               ))}
             </tr>
-          ))}
+          )})}
         </tbody>
       </table>
     </div>
@@ -690,6 +704,8 @@ export default function BondRevenueManagementPage() {
             rows={dashboard.commissionRules}
             emptyTitle="No commission rules configured."
             emptyDescription="Add originator, consultant and partner commission rules to start calculating revenue automatically."
+            onRowClick={canManageCommissionRules ? openCommissionRuleEditor : null}
+            rowLabel={(row) => `${row.isDefault ? 'Customise' : 'Edit'} ${row.partyName || row.name || 'commission rule'}`}
             columns={[
               { key: 'partyType', label: 'Applies To', render: (row) => formatPartyType(row.partyType) },
               { key: 'partyName', label: 'Partner / Role', render: (row) => row.partyName || row.name || 'Default rule' },
@@ -698,6 +714,22 @@ export default function BondRevenueManagementPage() {
               { key: 'partnerShare', label: 'Partner Share', render: (row) => ruleShareCells(row).partner },
               { key: 'consultantShare', label: 'Consultant Share', render: (row) => ruleShareCells(row).consultant },
               { key: 'status', label: 'Status', render: (row) => <StatusPill status={row.status} /> },
+              {
+                key: 'edit',
+                label: 'Action',
+                render: (row) => canManageCommissionRules ? (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      openCommissionRuleEditor(row)
+                    }}
+                    className="font-semibold text-blue-700 hover:underline"
+                  >
+                    {row.isDefault ? 'Customise' : 'Edit'}
+                  </button>
+                ) : <span className="text-slate-400">View only</span>,
+              },
             ]}
           />
           {dashboard.hasConfiguredCommissionRules ? null : (

@@ -1530,6 +1530,14 @@ function branchRiskTone(value = '') {
   return 'border-[#ccebd8] bg-[#eefbf3] text-[#1f7a4d]'
 }
 
+function branchRiskScore(value = '') {
+  const normalized = normalizeText(value).toLowerCase()
+  if (normalized === 'high' || normalized.includes('over') || normalized.includes('below')) return 3
+  if (normalized === 'medium' || normalized.includes('attention') || normalized.includes('inactive')) return 2
+  if (normalized === 'low' || normalized.includes('healthy')) return 1
+  return 0
+}
+
 function formatBranchRisk(value = '') {
   const normalized = normalizeText(value).toLowerCase()
   if (!normalized) return '—'
@@ -1996,6 +2004,10 @@ function getLeaderboardModeValue(row = {}, mode = 'pipeline') {
   return formatCurrency(row.pipelineValue)
 }
 
+function getConsultantAvatarUrl(row = {}) {
+  return normalizeText(row.avatarUrl || row.avatar_url || row.profilePhotoUrl || row.profile_photo_url || row.photoUrl || row.photo_url || row.imageUrl || row.image_url)
+}
+
 function HqConsultantExecutiveKpiStrip({ summary = {}, rows = [] }) {
   const activeConsultants = rows.filter((row) => normalizeLower(row.status) !== 'inactive').length
   const totalConsultants = Number(summary.totalConsultants ?? summary.consultants ?? summary.activeConsultants ?? rows.length)
@@ -2397,82 +2409,83 @@ function HqConsultantDirectory({
               </div>
             ) : null}
           </div>
-          <div className="overflow-x-auto rounded-[18px] border border-[#e1e9f2]">
-            <table className="w-full min-w-[1080px] border-collapse">
-              <thead>
-                <tr>
-                  <HeaderCell>Consultant</HeaderCell>
-                  <HeaderCell>Branch</HeaderCell>
-                  <HeaderCell>Region</HeaderCell>
-                  <HeaderCell>Applications</HeaderCell>
-                  <HeaderCell>Pipeline</HeaderCell>
-                  <HeaderCell>Approval</HeaderCell>
-                  <HeaderCell>Registrations</HeaderCell>
-                  <HeaderCell>Capacity</HeaderCell>
-                  <HeaderCell>Status</HeaderCell>
-                  <HeaderCell>Actions</HeaderCell>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRows.map((row) => {
-                  const noBranch = !normalizeText(row.branchId) || normalizeLower(row.branch) === 'unassigned'
-                  const overloaded = normalizeLower(row.capacityStatus) === 'overloaded'
-                  const inactive = normalizeLower(row.status) === 'inactive'
-                  return (
-                    <tr key={row.id || row.email || row.consultant} className={`h-[68px] border-t border-[#edf2f7] bg-white align-top transition hover:bg-[#fbfdff] ${inactive ? 'opacity-70' : ''}`}>
-                      <td className="px-4 py-4">
-                        <button type="button" onClick={() => onView(row)} className="flex items-center gap-3 text-left">
-                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#eef5ff] text-sm font-semibold text-[#24518a]">{getInitials(row.consultant)}</span>
-                          <span className="min-w-0">
-                            <span className="block text-sm font-semibold text-[#142132]">{row.consultant || row.name}</span>
-                            <span className="mt-1 block text-xs text-[#71869d]">{row.email || 'No email captured'}</span>
-                          </span>
-                        </button>
-                      </td>
-                      <td className="px-4 py-4 text-sm text-[#17324d]">{noBranch ? <BranchWarningPill>Unassigned branch</BranchWarningPill> : row.branch}</td>
-                      <td className="px-4 py-4 text-sm text-[#17324d]">{row.region || 'Unassigned'}</td>
-                      <td className="px-4 py-4">
-                        <p className="text-sm font-semibold text-[#17324d]">{row.activeApplications || 0}</p>
-                        <p className="mt-1 text-xs text-[#71869d]">{row.awaitingDocs || 0} awaiting docs</p>
-                      </td>
-                      <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{formatCurrency(row.pipelineValue)}</td>
-                      <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{formatNullablePercent(row.approvalRate)}</td>
-                      <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{row.registrations || 0}</td>
-                      <td className="px-4 py-4">
-                        <div className="min-w-32">
-                          <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${riskTone(row.capacityStatus)}`}>{overloaded ? 'Overloaded' : row.capacityStatus || 'Light'}</span>
-                          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#e8eef5]">
-                            <span className={`block h-full rounded-full ${capacityBarTone(row.capacityStatus)}`} style={{ width: `${Math.min(100, Number(row.capacityPercent || 0))}%` }} />
-                          </div>
+          {!filteredRows.length ? (
+            <CompactEmptyState title="No consultants match these filters." description="Try a broader region, branch, workload, role, or status filter." />
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+              {filteredRows.map((row) => {
+                const noBranch = !normalizeText(row.branchId) || normalizeLower(row.branch) === 'unassigned'
+                const inactive = normalizeLower(row.status) === 'inactive'
+                const avatarUrl = getConsultantAvatarUrl(row)
+                const capacityPercent = Math.min(100, Number(row.capacityPercent || 0))
+                return (
+                  <article
+                    key={row.id || row.email || row.consultant}
+                    className={`group flex min-h-[320px] flex-col rounded-[22px] border border-[#dbe5f0] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.035)] transition hover:-translate-y-0.5 hover:border-[#bfd0e1] hover:shadow-[0_18px_42px_rgba(15,23,42,0.07)] ${inactive ? 'opacity-75' : ''}`}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <button type="button" onClick={() => onView(row)} className="flex min-w-0 items-center gap-4 text-left">
+                        <span className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-[22px] bg-[linear-gradient(145deg,#eef5ff,#f8fbff)] text-lg font-bold text-[#24518a] ring-1 ring-[#dbe7f2]">
+                          {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : getInitials(row.consultant || row.name)}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-base font-semibold text-[#142132]">{row.consultant || row.name || 'Unnamed consultant'}</span>
+                          <span className="mt-1 block truncate text-xs font-medium text-[#71869d]">{row.email || 'No email captured'}</span>
+                          <span className="mt-2 inline-flex rounded-full bg-[#f4f8fc] px-2.5 py-1 text-[11px] font-semibold text-[#52677f]">{formatRoleLabel(row.role)}</span>
+                        </span>
+                      </button>
+                      <StatusPill status={row.status || 'active'} />
+                    </div>
+
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-[16px] bg-[#f8fbff] p-3">
+                        <p className="text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-[#7d90a5]">Region</p>
+                        <p className="mt-1 truncate text-sm font-semibold text-[#17324d]">{row.region || 'Unassigned'}</p>
+                      </div>
+                      <div className="rounded-[16px] bg-[#f8fbff] p-3">
+                        <p className="text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-[#7d90a5]">Branch</p>
+                        <div className="mt-1 min-w-0">
+                          {noBranch ? <BranchWarningPill>Unassigned</BranchWarningPill> : <p className="truncate text-sm font-semibold text-[#17324d]">{row.branch}</p>}
                         </div>
-                      </td>
-                      <td className="px-4 py-4"><StatusPill status={row.status || 'active'} /></td>
-                      <td className="px-4 py-4">
-                        <div className="flex flex-wrap gap-2">
-                          <button type="button" onClick={() => onView(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#24518a]"><Eye size={13} /> View</button>
-                          {canManage ? (
-                            <>
-                              <button type="button" onClick={() => onAssignBranch(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#31475d]"><Building2 size={13} /> Assign</button>
-                              <button type="button" onClick={() => onReassign(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#31475d]"><ArrowRight size={13} /> Reassign</button>
-                              <button type="button" onClick={() => onEdit(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#d9e4ef] px-2.5 py-1.5 text-xs font-semibold text-[#31475d]"><Pencil size={13} /> Edit</button>
-                              <button type="button" onClick={() => onDeactivate(row)} className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#f3d4d4] px-2.5 py-1.5 text-xs font-semibold text-[#8f2f2f]">Deactivate</button>
-                            </>
-                          ) : null}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <SummaryMetric label="Applications" value={row.activeApplications || 0} emphasis />
+                      <SummaryMetric label="Pipeline" value={formatCurrency(row.pipelineValue)} emphasis />
+                      <SummaryMetric label="Approval" value={formatNullablePercent(row.approvalRate)} emphasis />
+                      <SummaryMetric label="Registrations" value={row.registrations || 0} emphasis />
+                    </div>
+
+                    <div className="mt-4 rounded-[16px] bg-[#fbfdff] p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold text-[#17324d]">Capacity</p>
+                          <p className="mt-0.5 text-xs text-[#71869d]">{row.awaitingDocs || 0} awaiting docs</p>
                         </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-                {!filteredRows.length ? (
-                  <tr>
-                    <td colSpan={10} className="px-4 py-6">
-                      <CompactEmptyState title="No consultants match these filters." description="Try a broader region, branch, workload, role, or status filter." />
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
+                        <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${riskTone(row.capacityStatus)}`}>{row.capacityStatus || 'Light'}</span>
+                      </div>
+                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#e8eef5]">
+                        <span className={`block h-full rounded-full ${capacityBarTone(row.capacityStatus)}`} style={{ width: `${capacityPercent}%` }} />
+                      </div>
+                    </div>
+
+                    <div className="mt-auto flex flex-wrap gap-2 pt-5">
+                      <button type="button" onClick={() => onView(row)} className="inline-flex h-9 items-center gap-1.5 rounded-[11px] border border-[#d9e4ef] px-3 text-xs font-semibold text-[#24518a] transition hover:border-[#bfd0e1] hover:bg-[#f8fbff]"><Eye size={13} /> View</button>
+                      {canManage ? (
+                        <>
+                          <button type="button" onClick={() => onAssignBranch(row)} className="inline-flex h-9 items-center gap-1.5 rounded-[11px] border border-[#d9e4ef] px-3 text-xs font-semibold text-[#31475d] transition hover:border-[#bfd0e1] hover:bg-[#f8fbff]"><Building2 size={13} /> Assign</button>
+                          <button type="button" onClick={() => onReassign(row)} className="inline-flex h-9 items-center gap-1.5 rounded-[11px] border border-[#d9e4ef] px-3 text-xs font-semibold text-[#31475d] transition hover:border-[#bfd0e1] hover:bg-[#f8fbff]"><ArrowRight size={13} /> Reassign</button>
+                          <button type="button" onClick={() => onEdit(row)} className="inline-flex h-9 items-center gap-1.5 rounded-[11px] border border-[#d9e4ef] px-3 text-xs font-semibold text-[#31475d] transition hover:border-[#bfd0e1] hover:bg-[#f8fbff]"><Pencil size={13} /> Edit</button>
+                          <button type="button" onClick={() => onDeactivate(row)} className="inline-flex h-9 items-center rounded-[11px] border border-[#f3d4d4] px-3 text-xs font-semibold text-[#8f2f2f] transition hover:bg-[#fff7f7]">Deactivate</button>
+                        </>
+                      ) : null}
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          )}
         </>
       )}
     </SectionShell>
@@ -2496,25 +2509,7 @@ function HqConsultantCommandCentre({
     <>
       <HqConsultantExecutiveKpiStrip summary={command.summary || {}} rows={directoryRows} />
       <HqConsultantLeaderboard leaderboards={command.leaderboards || {}} navigate={navigate} />
-      <HqConsultantHealthPanel rows={command.healthCards || []} navigate={navigate} />
-      <div className="grid gap-6 lg:grid-cols-2">
-        <HqConsultantDistributionPanel
-          title="Workload Distribution"
-          description="Consultant capacity bands based on active file load."
-          rows={command.workloadDistribution || []}
-          total={directoryRows.length}
-          mode="workload"
-        />
-        <HqConsultantDistributionPanel
-          title="Performance Distribution"
-          description="Consultants grouped by weighted pipeline, conversion, and registrations."
-          rows={command.performanceDistribution || []}
-          total={directoryRows.length}
-          mode="performance"
-        />
-      </div>
       <HqConsultantWorkloadHeatmap rows={command.workloadHeatmap || []} navigate={navigate} />
-      <HqConsultantRankings rankings={command.rankings || {}} />
       <HqConsultantDirectory
         rows={directoryRows}
         regions={snapshot.regions || []}

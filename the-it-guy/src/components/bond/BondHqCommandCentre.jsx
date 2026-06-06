@@ -67,21 +67,30 @@ function getKpiValueClass(key = '') {
   return 'text-[#101828]'
 }
 
-function Sparkline({ values = [], color = '#2563eb' }) {
-  const safeValues = values.length ? values.map((value) => normalizeNumber(value)) : [18, 22, 20, 28, 31, 29, 36, 44, 38, 34, 37, 41]
+function formatTrendLabel(value = '') {
+  const trend = String(value || 'Tracking').trim()
+  return trend.toLowerCase().includes('last month') ? trend : `${trend} vs last month`
+}
+
+function MicroTrend({ values = [], color = '#2563eb' }) {
+  const safeValues = (values.length ? values : [18, 22, 20, 28, 31, 29, 36, 44]).slice(-8).map((value) => normalizeNumber(value))
   const max = Math.max(...safeValues, 1)
   const min = Math.min(...safeValues, 0)
   const range = Math.max(max - min, 1)
-  const points = safeValues.map((value, index) => {
-    const x = (index / Math.max(safeValues.length - 1, 1)) * 100
-    const y = 34 - ((value - min) / range) * 28
-    return `${x},${y}`
-  }).join(' ')
 
   return (
-    <svg viewBox="0 0 100 40" aria-hidden="true" className="h-12 w-full overflow-visible">
-      <polyline fill="none" points={points} stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.8" />
-    </svg>
+    <div className="flex h-9 items-end gap-1.5" aria-hidden="true">
+      {safeValues.map((value, index) => {
+        const height = 8 + ((value - min) / range) * 22
+        return (
+          <span
+            key={`${value}-${index}`}
+            className="flex-1 rounded-full"
+            style={{ height: `${height}px`, backgroundColor: index === safeValues.length - 1 ? color : '#dbe6f0' }}
+          />
+        )
+      })}
+    </div>
   )
 }
 
@@ -103,7 +112,7 @@ function Donut({ segments = [], sizeClass = 'h-40 w-40', center = null }) {
 
   return (
     <div className={`relative flex ${sizeClass} items-center justify-center rounded-full`} style={{ background: `conic-gradient(${gradient})` }}>
-      <div className="flex h-[58%] w-[58%] flex-col items-center justify-center rounded-full bg-white text-center shadow-[0_10px_24px_rgba(15,23,42,0.08)]">
+      <div className="flex h-[62%] w-[62%] flex-col items-center justify-center rounded-full bg-white text-center shadow-[0_10px_24px_rgba(15,23,42,0.08)]">
         {center}
       </div>
     </div>
@@ -112,7 +121,7 @@ function Donut({ segments = [], sizeClass = 'h-40 w-40', center = null }) {
 
 function HqCard({ children, className = '' }) {
   return (
-    <section className={`rounded-[16px] bg-white p-6 shadow-[0_16px_36px_rgba(15,23,42,0.045)] ring-1 ring-[#e4edf5] ${className}`}>
+    <section className={`rounded-[24px] bg-white p-6 shadow-[0_16px_36px_rgba(15,23,42,0.045)] ring-1 ring-[#e4edf5] ${className}`}>
       {children}
     </section>
   )
@@ -121,7 +130,7 @@ function HqCard({ children, className = '' }) {
 function SectionTitle({ children, action = null }) {
   return (
     <div className="mb-4 flex items-center justify-between gap-4">
-      <h2 className="text-[22px] font-bold tracking-[-0.01em] text-[#142132]">{children}</h2>
+      <h2 className="text-[20px] font-bold tracking-[-0.01em] text-[#142132]">{children}</h2>
       {action}
     </div>
   )
@@ -129,7 +138,7 @@ function SectionTitle({ children, action = null }) {
 
 function CardLabel({ children }) {
   return (
-    <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-[#71869d]">{children}</p>
+    <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#71869d]">{children}</p>
   )
 }
 
@@ -208,22 +217,23 @@ function NationalCommandCentre({ items = [] }) {
 
   return (
     <section className="col-span-12 mt-0">
-      <SectionTitle>National Command Centre</SectionTitle>
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
         {kpis.map((item) => {
           const Icon = item.icon
           return (
-            <HqCard key={item.key || item.label} className="flex min-h-[230px] flex-col">
+            <HqCard key={item.key || item.label} className="flex min-h-[188px] flex-col overflow-hidden bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-5">
               <div className="flex items-start justify-between gap-4">
-                <span className="flex h-12 w-12 items-center justify-center rounded-[16px] bg-[#f2f6fb] text-[#17324d]">
-                  <Icon size={20} />
+                <span className="flex h-11 w-11 items-center justify-center rounded-[18px] bg-[#f2f6fb] text-[#17324d] ring-1 ring-[#e5edf5]">
+                  <Icon size={18} />
                 </span>
               </div>
-              <CardLabel>{item.label}</CardLabel>
-              <p className={`mt-2 text-[42px] font-bold leading-none tracking-[-0.03em] ${getKpiValueClass(item.key)}`}>{item.value || '0'}</p>
-              <p className="mt-3 text-sm font-semibold text-[#177245]">{item.trend || 'Tracking'} <span className="font-medium text-[#64748b]">vs last month</span></p>
-              <div className="mt-auto pt-6">
-                <Sparkline values={item.sparkline} color={item.color} />
+              <div className="mt-4 min-w-0">
+                <CardLabel>{item.label}</CardLabel>
+                <p className={`mt-2 truncate text-[32px] font-bold leading-none tracking-[-0.02em] ${getKpiValueClass(item.key)}`}>{item.value || '0'}</p>
+                <p className="mt-2 truncate text-[13px] font-semibold text-[#177245]">{formatTrendLabel(item.trend)}</p>
+              </div>
+              <div className="mt-auto pt-4">
+                <MicroTrend values={item.sparkline} color={item.color} />
               </div>
             </HqCard>
           )
@@ -254,7 +264,7 @@ function OperationalHealth({ alerts = [], funnel = {} }) {
   ]
 
   return (
-    <section className="col-span-12 mt-8">
+    <section className="col-span-12 mt-7">
       <SectionTitle
         action={(
           <Link to="/bond/reports?view=executive-risk" className="inline-flex items-center gap-2 rounded-[12px] bg-[#f5f8fc] px-4 py-2 text-sm font-semibold text-[#17324d] transition hover:bg-[#edf3f8]">
@@ -264,46 +274,44 @@ function OperationalHealth({ alerts = [], funnel = {} }) {
       >
         Operational Health
       </SectionTitle>
-      <HqCard>
-        <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)_160px] lg:items-center">
-          <div className="flex items-center gap-5">
-            <Donut
-              segments={[
-                { label: 'Health', value: healthScore, color: healthColor },
-                { label: 'Remaining', value: 100 - healthScore, color: '#e8eef5' },
-              ]}
-              sizeClass="h-36 w-36"
-              center={(
-                <>
-                  <strong className="text-3xl font-bold leading-none text-[#142132]">{formatPercent(healthScore)}</strong>
-                  <span className="mt-1 text-xs font-semibold text-[#64748b]">{healthLabel}</span>
-                </>
-              )}
-            />
+      <HqCard className="p-5">
+        <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)] xl:items-center">
+          <div className="flex min-w-0 items-center gap-5 rounded-[20px] bg-[#f8fbfe] p-5">
+            <div className="shrink-0">
+              <Donut
+                segments={[
+                  { label: 'Health', value: healthScore, color: healthColor },
+                  { label: 'Remaining', value: 100 - healthScore, color: '#e8eef5' },
+                ]}
+                sizeClass="h-32 w-32"
+                center={(
+                  <>
+                    <strong className="text-[25px] font-bold leading-none text-[#142132]">{formatPercent(healthScore)}</strong>
+                    <span className="mt-1 text-[11px] font-semibold text-[#64748b]">{healthLabel}</span>
+                  </>
+                )}
+              />
+            </div>
             <div className="min-w-0">
               <CardLabel>Health Score</CardLabel>
-              <p className="mt-2 text-xl font-bold text-[#142132]">{healthLabel}</p>
-              <p className="mt-2 text-sm leading-6 text-[#64748b]">National operations are running with {formatNumber(pressure)} active pressure signals.</p>
+              <p className="mt-2 text-lg font-bold text-[#142132]">{healthLabel}</p>
+              <p className="mt-2 text-[13px] leading-6 text-[#64748b]">National operations are running with {formatNumber(pressure)} active pressure signals.</p>
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {metrics.map((metric) => {
               const Icon = metric.icon
               return (
-                <Link key={metric.label} to="/bond/reports?view=executive-risk" className="group min-h-[112px] rounded-[16px] bg-[#f8fbfe] p-4 transition hover:bg-[#f1f6fb]">
-                  <Icon size={23} color={metric.color} />
-                  <p className="mt-3 text-[28px] font-bold leading-none text-[#142132]">{formatNumber(metric.value)}</p>
-                  <p className="mt-2 text-sm font-semibold text-[#17324d]">{metric.label}</p>
+                <Link key={metric.label} to="/bond/reports?view=executive-risk" className="group min-h-[118px] rounded-[20px] bg-[#f8fbfe] p-4 transition hover:bg-[#f1f6fb]">
+                  <Icon size={21} color={metric.color} />
+                  <p className="mt-3 text-[24px] font-bold leading-none text-[#142132]">{formatNumber(metric.value)}</p>
+                  <p className="mt-2 text-[13px] font-semibold text-[#17324d]">{metric.label}</p>
                   <p className="mt-1 text-xs font-medium text-[#64748b]">{metric.helper}</p>
                 </Link>
               )
             })}
           </div>
-
-          <Link to="/bond/reports?view=executive-risk" className="hidden min-h-[112px] items-center justify-center rounded-[16px] bg-[#07183f] px-5 text-center text-sm font-bold text-white shadow-[0_16px_30px_rgba(7,24,63,0.18)] transition hover:bg-[#102a63] lg:flex">
-            View All Issues
-          </Link>
         </div>
       </HqCard>
     </section>
@@ -346,7 +354,7 @@ function NationalPipelineFlow({ funnel = {} }) {
   const highestStage = [...stageRows].sort((left, right) => right.count - left.count)[0]
 
   return (
-    <section className="col-span-12 mt-8">
+    <section className="col-span-12 mt-7">
       <SectionTitle action={<Link to="/bond/pipeline" className="text-sm font-semibold text-[#204b84] hover:text-[#17324d]">View pipeline</Link>}>National Pipeline Flow</SectionTitle>
       <HqCard>
         <div className="overflow-x-auto pb-1">
@@ -358,17 +366,17 @@ function NationalPipelineFlow({ funnel = {} }) {
                   {index < stageRows.length - 1 ? (
                     <span className="pointer-events-none absolute left-[calc(50%+30px)] top-16 h-px w-[calc(100%-28px)] bg-[#dbe6f0]" />
                   ) : null}
-                  <Link to={stage.href} className="relative z-10 flex min-h-[180px] flex-col rounded-[16px] bg-[#f8fbfe] p-6 transition hover:-translate-y-0.5 hover:bg-[#f2f7fc]">
-                    <span className="flex h-14 w-14 items-center justify-center rounded-[16px] bg-white text-[#17324d] shadow-sm">
-                      <Icon size={22} color={stage.color} />
+                  <Link to={stage.href} className="relative z-10 flex min-h-[164px] flex-col rounded-[22px] bg-[#f8fbfe] p-5 transition hover:-translate-y-0.5 hover:bg-[#f2f7fc]">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-[16px] bg-white text-[#17324d] shadow-sm">
+                      <Icon size={19} color={stage.color} />
                     </span>
-                    <p className="mt-5 text-base font-bold text-[#17324d]">{stage.label}</p>
-                    <p className="mt-3 text-[38px] font-bold leading-none tracking-[-0.03em] text-[#101828]">{formatNumber(stage.count)}</p>
-                    <div className="mt-auto pt-5">
+                    <p className="mt-4 text-[15px] font-bold text-[#17324d]">{stage.label}</p>
+                    <p className="mt-3 text-[30px] font-bold leading-none tracking-[-0.02em] text-[#101828]">{formatNumber(stage.count)}</p>
+                    <div className="mt-auto pt-4">
                       <div className="h-2 overflow-hidden rounded-full bg-[#e6eef6]">
                         <span className="block h-full rounded-full" style={{ width: `${Math.max(4, Math.min(100, (stage.count / maxCount) * 100))}%`, backgroundColor: stage.color }} />
                       </div>
-                      <p className="mt-3 text-sm font-semibold" style={{ color: stage.color }}>{formatPercent(stage.conversionRate)} conversion</p>
+                      <p className="mt-3 text-[13px] font-semibold" style={{ color: stage.color }}>{formatPercent(stage.conversionRate)} conversion</p>
                     </div>
                   </Link>
                 </li>
@@ -392,7 +400,7 @@ function SummaryBlock({ label = '', value = '', tone = 'default' }) {
   return (
     <div className="rounded-[16px] bg-[#f8fbfe] p-5">
       <CardLabel>{label}</CardLabel>
-      <p className={`mt-2 truncate text-2xl font-bold ${toneClass}`}>{value}</p>
+      <p className={`mt-2 truncate text-xl font-bold ${toneClass}`}>{value}</p>
     </div>
   )
 }
@@ -493,7 +501,7 @@ function PartnerIntelligence({ partners = [] }) {
               sizeClass="h-48 w-48"
               center={(
                 <>
-                  <strong className="text-3xl font-bold text-[#142132]">{formatNumber(partners.length)}</strong>
+                  <strong className="text-2xl font-bold text-[#142132]">{formatNumber(partners.length)}</strong>
                   <span className="text-xs font-semibold text-[#64748b]">Partners</span>
                 </>
               )}
@@ -556,7 +564,7 @@ function RevenueIntelligence({ revenue = {} }) {
       <div className="grid gap-6 xl:grid-cols-3">
         <HqCard className="min-h-[360px]">
           <CardLabel>Revenue Projection</CardLabel>
-          <p className="mt-4 text-[40px] font-bold leading-none tracking-[-0.03em] text-[#101828]">{revenue.projectedCommissionLabel || 'Pending'}</p>
+          <p className="mt-4 truncate text-[32px] font-bold leading-none tracking-[-0.02em] text-[#101828]">{revenue.projectedCommissionLabel || 'Pending'}</p>
           <p className="mt-3 text-sm font-semibold text-[#177245]">{formatPercent(confirmedPercent)} secured</p>
           <div className="mt-8 grid gap-4">
             <RevenueStat label="Confirmed" value={revenue.commissionConfirmedLabel || 'Pending'} />
@@ -572,7 +580,7 @@ function RevenueIntelligence({ revenue = {} }) {
               sizeClass="h-40 w-40"
               center={(
                 <>
-                  <strong className="text-xl font-bold text-[#142132]">{revenue.commissionConfirmedLabel || 'Pending'}</strong>
+                  <strong className="text-lg font-bold text-[#142132]">{revenue.commissionConfirmedLabel || 'Pending'}</strong>
                   <span className="text-xs font-semibold text-[#64748b]">Confirmed</span>
                 </>
               )}
@@ -597,7 +605,7 @@ function RevenueIntelligence({ revenue = {} }) {
             <Link to="/bond/revenue?view=trend" className="text-sm font-semibold text-[#204b84]">View trend</Link>
           </div>
           <div className="mt-8">
-            <Sparkline values={[8, 10, 9, 14, 16, 18, 24, 27, 32, 36, 42, 51]} color="#2563eb" />
+            <MicroTrend values={[8, 10, 9, 14, 16, 18, 24, 27, 32, 36, 42, 51]} color="#2563eb" />
           </div>
           <div className="mt-8 grid grid-cols-4 gap-3 text-sm font-semibold text-[#64748b]">
             <span>Mar</span>
@@ -619,7 +627,7 @@ function RevenueStat({ label = '', value = '' }) {
   return (
     <div className="rounded-[16px] bg-[#f8fbfe] p-4">
       <CardLabel>{label}</CardLabel>
-      <p className="mt-2 text-xl font-bold text-[#142132]">{value}</p>
+      <p className="mt-2 text-lg font-bold text-[#142132]">{value}</p>
     </div>
   )
 }
