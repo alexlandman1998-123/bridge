@@ -640,15 +640,78 @@ function BankStatusBar({ label, value, total, color }) {
 }
 
 const SA_PROVINCE_SHAPES = [
-  { key: 'western-cape', label: 'Western Cape', x: 92, y: 234, points: '47,232 98,212 154,228 170,268 137,309 74,294' },
-  { key: 'northern-cape', label: 'Northern Cape', x: 154, y: 135, points: '74,112 180,72 276,104 260,182 201,232 154,228 98,212 47,232' },
-  { key: 'eastern-cape', label: 'Eastern Cape', x: 236, y: 260, points: '170,268 201,232 286,214 344,256 312,310 224,326 137,309' },
-  { key: 'free-state', label: 'Free State', x: 290, y: 162, points: '260,142 330,122 380,154 362,214 286,214 260,182' },
-  { key: 'north-west', label: 'North West', x: 310, y: 96, points: '276,78 350,58 404,88 380,154 330,122 276,104' },
-  { key: 'gauteng', label: 'Gauteng', x: 400, y: 112, points: '392,96 428,94 444,124 418,148 386,132' },
-  { key: 'limpopo', label: 'Limpopo', x: 430, y: 54, points: '350,58 396,22 484,24 526,72 470,118 428,94 404,88' },
-  { key: 'mpumalanga', label: 'Mpumalanga', x: 474, y: 130, points: '444,124 470,118 526,72 548,124 514,174 454,168 418,148' },
-  { key: 'kwazulu-natal', label: 'KwaZulu-Natal', x: 424, y: 236, points: '362,214 454,168 514,174 490,248 424,306 344,256' },
+  {
+    key: 'northern-cape',
+    label: 'Northern Cape',
+    shortLabel: 'Northern Cape',
+    x: 240,
+    y: 210,
+    path: 'M92 238 L122 154 L245 102 L362 128 L438 188 L415 298 L326 334 L222 316 L126 282 Z',
+  },
+  {
+    key: 'western-cape',
+    label: 'Western Cape',
+    shortLabel: 'Western Cape',
+    x: 214,
+    y: 378,
+    path: 'M126 282 L222 316 L326 334 L348 398 L292 458 L174 438 L108 376 L82 310 Z',
+  },
+  {
+    key: 'eastern-cape',
+    label: 'Eastern Cape',
+    shortLabel: 'Eastern Cape',
+    x: 420,
+    y: 392,
+    path: 'M326 334 L415 298 L512 344 L562 404 L498 458 L362 478 L292 458 L348 398 Z',
+  },
+  {
+    key: 'free-state',
+    label: 'Free State',
+    shortLabel: 'Free State',
+    x: 458,
+    y: 272,
+    path: 'M415 298 L438 188 L548 226 L588 306 L512 344 Z',
+  },
+  {
+    key: 'north-west',
+    label: 'North West',
+    shortLabel: 'North West',
+    x: 488,
+    y: 164,
+    path: 'M362 128 L486 90 L574 126 L548 226 L438 188 Z',
+  },
+  {
+    key: 'gauteng',
+    label: 'Gauteng',
+    shortLabel: 'Gauteng',
+    x: 590,
+    y: 226,
+    path: 'M548 226 L600 202 L636 238 L606 286 L588 306 Z',
+  },
+  {
+    key: 'limpopo',
+    label: 'Limpopo',
+    shortLabel: 'Limpopo',
+    x: 590,
+    y: 92,
+    path: 'M486 90 L536 44 L650 58 L720 124 L690 204 L636 238 L600 202 L574 126 Z',
+  },
+  {
+    key: 'mpumalanga',
+    label: 'Mpumalanga',
+    shortLabel: 'Mpumalanga',
+    x: 664,
+    y: 250,
+    path: 'M636 238 L690 204 L720 124 L748 230 L706 310 L606 286 Z',
+  },
+  {
+    key: 'kwazulu-natal',
+    label: 'KwaZulu-Natal',
+    shortLabel: 'KZN',
+    x: 632,
+    y: 374,
+    path: 'M512 344 L588 306 L606 286 L706 310 L674 392 L562 480 L562 404 Z',
+  },
 ]
 
 const DEMO_BUYER_FINANCE_MIX = { bond: 8, cash: 2, hybrid: 3 }
@@ -723,23 +786,30 @@ function RegionalHeatmapOverview({ rows = [] }) {
           </span>
         </div>
 
-        <div className="overflow-hidden rounded-[16px] bg-[#f6f9fc] p-4 ring-1 ring-[#e6eef6]">
-          <svg className="h-[360px] w-full" viewBox="0 0 590 350" role="img" aria-label="South Africa regional heatmap">
-            <rect x="0" y="0" width="590" height="350" rx="18" fill="#f6f9fc" />
+        <div className="overflow-hidden rounded-[16px] bg-[#f6f9fc] px-4 py-5 ring-1 ring-[#e6eef6]">
+          <svg className="mx-auto h-[min(430px,54vw)] min-h-[310px] w-full max-w-[820px]" viewBox="50 20 730 480" preserveAspectRatio="xMidYMid meet" role="img" aria-label="South Africa regional heatmap">
+            <rect x="50" y="20" width="730" height="480" rx="18" fill="#f6f9fc" />
+            <path
+              d="M92 238 L122 154 L245 102 L362 128 L486 90 L536 44 L650 58 L720 124 L748 230 L706 310 L674 392 L562 480 L362 478 L174 438 L108 376 L82 310 Z"
+              fill="#e8eef5"
+              stroke="#dbe6f0"
+              strokeWidth="10"
+              strokeLinejoin="round"
+            />
             {provinceRows.map((province) => (
               <g key={province.key}>
-                <polygon
-                  points={province.points}
+                <path
+                  d={province.path}
                   fill={getHeatColor(province.health)}
                   stroke="#ffffff"
-                  strokeWidth="4"
+                  strokeWidth="7"
                   strokeLinejoin="round"
                   opacity={province.applications ? 0.92 : 0.68}
                 />
-                <text x={province.x} y={province.y} textAnchor="middle" className="fill-white text-[10px] font-bold" style={{ paintOrder: 'stroke', stroke: 'rgba(15,23,42,0.24)', strokeWidth: 3 }}>
-                  {province.label}
+                <text x={province.x} y={province.y} textAnchor="middle" className="fill-white text-[14px] font-bold" style={{ paintOrder: 'stroke', stroke: 'rgba(15,23,42,0.34)', strokeWidth: 5 }}>
+                  {province.shortLabel || province.label}
                 </text>
-                <text x={province.x} y={province.y + 15} textAnchor="middle" className="fill-white text-[11px] font-bold" style={{ paintOrder: 'stroke', stroke: 'rgba(15,23,42,0.24)', strokeWidth: 3 }}>
+                <text x={province.x} y={province.y + 20} textAnchor="middle" className="fill-white text-[15px] font-bold" style={{ paintOrder: 'stroke', stroke: 'rgba(15,23,42,0.34)', strokeWidth: 5 }}>
                   {formatNumber(province.applications)}
                 </text>
               </g>
