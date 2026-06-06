@@ -1777,6 +1777,8 @@ function getRiskLevel({ riskCount = 0, total = 0, approvalRate = 0, avgApprovalT
 
 function summarizeRows(rows = []) {
   const safeRows = Array.isArray(rows) ? rows : []
+  const now = Date.now()
+  const thirtyDays = 30 * 24 * 60 * 60 * 1000
   const activeApplications = safeRows.filter((row) => deriveTransactionStatus(row) !== 'registered' && deriveTransactionStatus(row) !== 'cancelled').length
   const submitted = safeRows.filter(isSubmittedStage).length
   const approved = safeRows.filter(isApprovedStage).length
@@ -1785,6 +1787,31 @@ function summarizeRows(rows = []) {
   const pipelineValue = safeRows.reduce((sum, row) => sum + getBondAmount(row), 0)
   const projectedCommission = safeRows.reduce((sum, row) => sum + getCommissionValue(row), 0)
   const approvalRate = safeRows.length ? roundTo((approved / safeRows.length) * 100, 0) : 0
+  const currentPeriodApplications = safeRows.filter((row) => {
+    const created = getTimestamp(getApplicationCreatedAt(row))
+    return created && created >= now - thirtyDays
+  }).length
+  const previousPeriodApplications = safeRows.filter((row) => {
+    const created = getTimestamp(getApplicationCreatedAt(row))
+    return created && created < now - thirtyDays && created >= now - thirtyDays * 2
+  }).length
+  const monthlyTrend = previousPeriodApplications
+    ? roundTo(((currentPeriodApplications - previousPeriodApplications) / previousPeriodApplications) * 100, 0)
+    : currentPeriodApplications
+      ? 100
+      : 0
+  const slaCompliance = safeRows.length ? roundTo(((safeRows.length - riskCount) / safeRows.length) * 100, 0) : 100
+  const responseScore = avgApprovalTime ? Math.max(0, 100 - Math.max(0, avgApprovalTime - 7) * 4) : 78
+  const throughputScore = Math.min(100, activeApplications * 4)
+  const escalationScore = Math.max(0, 100 - riskCount * 12)
+  const healthScore = roundTo(
+    approvalRate * 0.34 +
+      slaCompliance * 0.26 +
+      responseScore * 0.18 +
+      throughputScore * 0.12 +
+      escalationScore * 0.1,
+    0,
+  )
 
   return {
     total: safeRows.length,
@@ -1797,6 +1824,12 @@ function summarizeRows(rows = []) {
     pipelineValueLabel: formatCurrency(pipelineValue),
     projectedCommission,
     projectedCommissionLabel: formatCurrency(projectedCommission),
+    slaCompliance,
+    healthScore,
+    currentPeriodApplications,
+    previousPeriodApplications,
+    monthlyTrend,
+    monthlyTrendLabel: `${monthlyTrend >= 0 ? '+' : ''}${monthlyTrend}% vs last month`,
     riskCount,
     riskLevel: getRiskLevel({ riskCount, total: safeRows.length, approvalRate, avgApprovalTime }),
   }

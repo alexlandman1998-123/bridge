@@ -3258,7 +3258,7 @@ body.sidebar-compact .ui-main-region {
   margin: 0;
   color: #c5d6ef;
   font-size: 0.72rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.16em;
   line-height: 1.2;
   text-transform: uppercase;
@@ -3269,7 +3269,7 @@ body.sidebar-compact .ui-main-region {
   color: #f8fbff;
   font-family: var(--font-display);
   font-size: clamp(1.65rem, 3vw, 2.25rem);
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0;
   line-height: 1.04;
 }
@@ -3309,7 +3309,7 @@ body.sidebar-compact .ui-main-region {
   display: block;
   color: #f1f5f9;
   font-size: 0.82rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.2;
 }
@@ -3346,7 +3346,7 @@ body.sidebar-compact .ui-main-region {
 .auth-platform-preview header span {
   color: #94a9c6;
   font-size: 0.68rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.1em;
   line-height: 1.2;
   text-transform: uppercase;
@@ -3354,9 +3354,9 @@ body.sidebar-compact .ui-main-region {
 
 .auth-platform-preview header strong {
   color: #f8fafc;
-  font-family: var(--font-display);
+  font-family: var(--font-ui);
   font-size: 1rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.1;
 }
@@ -3410,7 +3410,7 @@ body.sidebar-compact .ui-main-region {
   display: block;
   color: #eff6ff;
   font-size: 0.82rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.2;
 }
@@ -3439,7 +3439,7 @@ body.sidebar-compact .ui-main-region {
   background: rgba(255, 255, 255, 0.07);
   color: #dbeafe;
   font-size: 0.68rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.2;
   text-align: center;
@@ -3463,9 +3463,9 @@ body.sidebar-compact .ui-main-region {
 .auth-card-head h2 {
   margin: 0;
   color: #0f172a;
-  font-family: var(--font-display);
+  font-family: var(--font-ui);
   font-size: clamp(1.55rem, 2.15vw, 2.02rem);
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0;
   line-height: 1.05;
 }
@@ -3475,7 +3475,7 @@ body.sidebar-compact .ui-main-region {
   margin-bottom: 0.42rem;
   color: #6d829a;
   font-size: 0.68rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.18em;
   line-height: 1.15;
   text-transform: uppercase;
@@ -3507,7 +3507,7 @@ body.sidebar-compact .ui-main-region {
   padding: 0.45rem 0.85rem;
   font: inherit;
   font-size: 0.79rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.2;
   cursor: pointer;
@@ -3529,7 +3529,7 @@ body.sidebar-compact .ui-main-region {
   gap: 0.24rem;
   color: #45566f;
   font-size: 0.76rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.25;
 }
@@ -3608,7 +3608,7 @@ body.sidebar-compact .ui-main-region {
   background: linear-gradient(135deg, #082449 0%, #17476a 100%);
   color: #ffffff;
   font: inherit;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0;
   line-height: 1.2;
   text-align: center;
@@ -3641,7 +3641,7 @@ body.sidebar-compact .ui-main-region {
   background: #ffffff;
   color: #20364d;
   font: inherit;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0;
   line-height: 1.2;
   cursor: pointer;
@@ -3711,7 +3711,7 @@ body.sidebar-compact .ui-main-region {
   justify-content: center;
   flex: 0 0 auto;
   font-size: 0.82rem;
-  font-weight: 800;
+  font-weight: 700;
   transition:
     background 180ms ease,
     border-color 180ms ease,
@@ -3741,7 +3741,7 @@ body.sidebar-compact .ui-main-region {
   color: currentColor;
   font-size: 0.64rem;
   font-style: normal;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.08em;
   line-height: 1.1;
   text-transform: uppercase;
@@ -3749,9 +3749,9 @@ body.sidebar-compact .ui-main-region {
 
 .signup-stepper-copy strong {
   color: currentColor;
-  font-family: var(--font-display);
+  font-family: var(--font-ui);
   font-size: 0.88rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.05;
 }
@@ -3842,7 +3842,7 @@ body.sidebar-compact .ui-main-region {
   gap: 0.75rem;
   color: #718198;
   font-size: 0.67rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.08em;
   line-height: 1.15;
   text-transform: uppercase;
@@ -3858,7 +3858,7 @@ body.sidebar-compact .ui-main-region {
   color: #16724d;
   padding: 0.2rem 0.48rem;
   font-size: 0.68rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0;
   line-height: 1.15;
 }
@@ -3892,9 +3892,9 @@ body.sidebar-compact .ui-main-region {
 .signup-position-card strong {
   display: block;
   color: #101f32;
-  font-family: var(--font-display);
+  font-family: var(--font-ui);
   font-size: 1rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.08;
 }
@@ -3905,7 +3905,7 @@ body.sidebar-compact .ui-main-region {
   margin-top: 0.24rem;
   color: #5a6f86;
   font-size: 0.84rem;
-  font-weight: 500;
+  font-weight: 400;
   letter-spacing: 0;
   line-height: 1.42;
 }
@@ -3948,7 +3948,7 @@ body.sidebar-compact .ui-main-region {
   gap: 0.45rem;
   color: #667891;
   font-size: 0.78rem;
-  font-weight: 500;
+  font-weight: 400;
   letter-spacing: 0;
   line-height: 1.35;
 }
@@ -3958,7 +3958,7 @@ body.sidebar-compact .ui-main-region {
   background: transparent;
   color: #1d4ed8;
   font: inherit;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0;
   padding: 0;
   cursor: pointer;
@@ -5126,7 +5126,7 @@ button.agency-setup-row-card:hover {
   color: #f8fbff;
   font-family: var(--font-display);
   font-size: 1rem;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0;
   text-transform: none;
 }
@@ -5141,7 +5141,7 @@ button.agency-setup-row-card:hover {
   color: #d8e8f8;
   padding: 0.42rem 0.68rem;
   font-size: 0.67rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.14em;
   line-height: 1.1;
   text-transform: uppercase;
@@ -5161,7 +5161,7 @@ button.agency-setup-row-card:hover {
   color: #ffffff;
   font-family: var(--font-display);
   font-size: clamp(2.45rem, 4.6vw, 4.4rem);
-  font-weight: 860;
+  font-weight: 700;
   letter-spacing: 0;
   line-height: 0.96;
 }
@@ -5200,7 +5200,7 @@ button.agency-setup-row-card:hover {
   display: block;
   color: #6f8296;
   font-size: 0.7rem;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0.12em;
   line-height: 1.15;
   text-transform: uppercase;
@@ -5217,7 +5217,7 @@ button.agency-setup-row-card:hover {
   color: #ffffff;
   font-family: var(--font-display);
   font-size: clamp(1.45rem, 2.5vw, 2.05rem);
-  font-weight: 830;
+  font-weight: 700;
   letter-spacing: 0;
   line-height: 1;
 }
@@ -5228,7 +5228,7 @@ button.agency-setup-row-card:hover {
   color: #9de3bb;
   font-size: 0.78rem;
   font-style: normal;
-  font-weight: 750;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.25;
 }
@@ -5252,7 +5252,7 @@ button.agency-setup-row-card:hover {
 .auth-flow-row strong {
   color: #eff6ff;
   font-size: 0.86rem;
-  font-weight: 760;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.2;
 }
@@ -5291,7 +5291,7 @@ button.agency-setup-row-card:hover {
   margin-top: 0.5rem;
   color: #ffffff;
   font-size: 1rem;
-  font-weight: 760;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.45;
 }
@@ -5303,7 +5303,7 @@ button.agency-setup-row-card:hover {
   margin-top: 0.82rem;
   color: #b9e2ff;
   font-size: 0.84rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0;
   text-decoration: none;
 }
@@ -5333,7 +5333,7 @@ button.agency-setup-row-card:hover {
   color: #314257;
   padding: 0.44rem 0.68rem;
   font-size: 0.76rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.15;
 }
@@ -5345,9 +5345,9 @@ button.agency-setup-row-card:hover {
 .auth-card-head h2 {
   margin: 0;
   color: #0c1726;
-  font-family: var(--font-display);
+  font-family: var(--font-ui);
   font-size: clamp(2rem, 3vw, 3rem);
-  font-weight: 860;
+  font-weight: 700;
   letter-spacing: 0;
   line-height: 1;
 }
@@ -5357,7 +5357,7 @@ button.agency-setup-row-card:hover {
   margin-bottom: 0.58rem;
   color: #64758a;
   font-size: 0.7rem;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0.16em;
   line-height: 1.15;
   text-transform: uppercase;
@@ -5391,7 +5391,7 @@ button.agency-setup-row-card:hover {
   padding: 0.62rem 1rem;
   font: inherit;
   font-size: 0.86rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.15;
   cursor: pointer;
@@ -5414,7 +5414,7 @@ button.agency-setup-row-card:hover {
   gap: 0.45rem;
   color: #314154;
   font-size: 0.82rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.2;
 }
@@ -5484,7 +5484,7 @@ button.agency-setup-row-card:hover {
   justify-content: center;
   flex: 0 0 auto;
   font-size: 0.8rem;
-  font-weight: 850;
+  font-weight: 700;
 }
 
 .signup-stepper-item.active .signup-stepper-node {
@@ -5509,7 +5509,7 @@ button.agency-setup-row-card:hover {
   color: currentColor;
   font-size: 0.64rem;
   font-style: normal;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0.1em;
   line-height: 1;
   text-transform: uppercase;
@@ -5517,9 +5517,9 @@ button.agency-setup-row-card:hover {
 
 .signup-stepper-copy strong {
   color: currentColor;
-  font-family: var(--font-display);
+  font-family: var(--font-ui);
   font-size: 0.93rem;
-  font-weight: 760;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.05;
 }
@@ -5553,9 +5553,9 @@ button.agency-setup-row-card:hover {
 
 .signup-section-heading strong {
   color: #0d1828;
-  font-family: var(--font-display);
+  font-family: var(--font-ui);
   font-size: 1.12rem;
-  font-weight: 790;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.16;
 }
@@ -5614,7 +5614,7 @@ button.agency-setup-row-card:hover {
   gap: 0.75rem;
   color: #7d8da1;
   font-size: 0.68rem;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0.12em;
   line-height: 1.15;
   text-transform: uppercase;
@@ -5630,7 +5630,7 @@ button.agency-setup-row-card:hover {
   color: #157a58;
   padding: 0.22rem 0.5rem;
   font-size: 0.68rem;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0;
   line-height: 1.15;
 }
@@ -5669,9 +5669,9 @@ button.agency-setup-row-card:hover {
 .signup-position-card strong {
   display: block;
   color: #101d2d;
-  font-family: var(--font-display);
+  font-family: var(--font-ui);
   font-size: 1.02rem;
-  font-weight: 780;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.12;
 }
@@ -5698,7 +5698,7 @@ button.agency-setup-row-card:hover {
   background: #f7fafc;
   color: #56687c;
   font-size: 0.9rem;
-  font-weight: 520;
+  font-weight: 400;
   letter-spacing: 0;
   line-height: 1.55;
   padding: 0.9rem 1rem;
@@ -5718,7 +5718,7 @@ button.agency-setup-row-card:hover {
   gap: 0.45rem;
   padding: 0.78rem 1.1rem;
   font: inherit;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0;
   line-height: 1.2;
   cursor: pointer;
@@ -5750,7 +5750,7 @@ button.agency-setup-row-card:hover {
   gap: 0.42rem;
   padding: 0.78rem 1rem;
   font: inherit;
-  font-weight: 820;
+  font-weight: 700;
   letter-spacing: 0;
   line-height: 1.2;
   cursor: pointer;
@@ -5768,7 +5768,7 @@ button.agency-setup-row-card:hover {
   border-radius: 14px;
   padding: 0.74rem 0.9rem;
   font-size: 0.86rem;
-  font-weight: 650;
+  font-weight: 500;
   letter-spacing: 0;
   line-height: 1.45;
 }
@@ -5802,9 +5802,9 @@ button.agency-setup-row-card:hover {
 .auth-workspace-build h3 {
   margin: 0;
   color: #0d1828;
-  font-family: var(--font-display);
+  font-family: var(--font-ui);
   font-size: clamp(1.55rem, 3vw, 2.2rem);
-  font-weight: 840;
+  font-weight: 700;
   letter-spacing: 0;
   line-height: 1.05;
 }
@@ -5814,7 +5814,7 @@ button.agency-setup-row-card:hover {
   max-width: 28rem;
   color: #607083;
   font-size: 0.95rem;
-  font-weight: 520;
+  font-weight: 400;
   letter-spacing: 0;
   line-height: 1.55;
 }
@@ -5881,7 +5881,7 @@ button.agency-setup-row-card:hover {
   color: #25364a;
   padding: 0.72rem 0.85rem;
   font-size: 0.86rem;
-  font-weight: 750;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.2;
   animation: authChecklist 420ms ease forwards;
@@ -5904,9 +5904,9 @@ button.agency-setup-row-card:hover {
   display: block;
   margin-top: 0.38rem;
   color: #0e263f;
-  font-family: var(--font-display);
+  font-family: var(--font-ui);
   font-size: 1.65rem;
-  font-weight: 840;
+  font-weight: 700;
   letter-spacing: 0;
   line-height: 1;
 }
@@ -5915,7 +5915,7 @@ button.agency-setup-row-card:hover {
   margin: 0.45rem 0 0;
   color: #5c6d7f;
   font-size: 0.86rem;
-  font-weight: 520;
+  font-weight: 400;
   letter-spacing: 0;
   line-height: 1.45;
 }
@@ -5928,7 +5928,7 @@ button.agency-setup-row-card:hover {
   gap: 0.45rem;
   color: #637385;
   font-size: 0.84rem;
-  font-weight: 560;
+  font-weight: 400;
   letter-spacing: 0;
   line-height: 1.35;
 }
@@ -5939,7 +5939,7 @@ button.agency-setup-row-card:hover {
   color: #1c4c78;
   padding: 0;
   font: inherit;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0;
   cursor: pointer;
 }
@@ -5949,7 +5949,7 @@ button.agency-setup-row-card:hover {
   margin: 0;
   color: #718092;
   font-size: 0.8rem;
-  font-weight: 620;
+  font-weight: 500;
   letter-spacing: 0;
   line-height: 1.4;
 }
@@ -6258,9 +6258,9 @@ button.agency-setup-row-card:hover {
 .auth-page:not(.onboarding-page) .auth-brand {
   margin: 0;
   color: #ffffff;
-  font-family: var(--font-display);
+  font-family: var(--font-ui);
   font-size: clamp(1.1rem, 1.5vw, 1.55rem);
-  font-weight: 820;
+  font-weight: 700;
   letter-spacing: 0.22em;
   text-transform: lowercase;
 }
@@ -6276,7 +6276,7 @@ button.agency-setup-row-card:hover {
   color: #d8e7f5;
   padding: 0.58rem 0.82rem;
   font-size: 0.72rem;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0.16em;
   line-height: 1;
   text-transform: uppercase;
@@ -6296,7 +6296,7 @@ button.agency-setup-row-card:hover {
   color: #f8fbff;
   font-family: var(--font-display);
   font-size: clamp(34px, 2.55vw, 46px);
-  font-weight: 860;
+  font-weight: 700;
   letter-spacing: 0;
   line-height: 0.98;
 }
@@ -6310,7 +6310,7 @@ button.agency-setup-row-card:hover {
   max-width: 30rem;
   color: #d7e3f1;
   font-size: clamp(0.98rem, 1.2vw, 1.08rem);
-  font-weight: 520;
+  font-weight: 400;
   line-height: 1.55;
 }
 
@@ -6362,7 +6362,7 @@ button.agency-setup-row-card:hover {
   margin-top: 10px;
   color: #d9e7f6;
   font-size: 0.78rem;
-  font-weight: 720;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.25;
   text-transform: none;
@@ -6372,9 +6372,9 @@ button.agency-setup-row-card:hover {
   display: block;
   margin-top: 14px;
   color: #ffffff;
-  font-family: var(--font-display);
+  font-family: var(--font-ui);
   font-size: clamp(1.55rem, 2.15vw, 2.05rem);
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0;
   line-height: 1;
 }
@@ -6387,7 +6387,7 @@ button.agency-setup-row-card:hover {
   color: #62f0b3;
   font-size: 0.86rem;
   font-style: normal;
-  font-weight: 730;
+  font-weight: 600;
   line-height: 1.2;
 }
 
@@ -6402,7 +6402,7 @@ button.agency-setup-row-card:hover {
   gap: 14px;
   color: #d6e5f4;
   font-size: 0.93rem;
-  font-weight: 560;
+  font-weight: 400;
   line-height: 1.45;
 }
 
@@ -6439,7 +6439,7 @@ button.agency-setup-row-card:hover {
   color: #315064;
   padding: 0.55rem 0.82rem;
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1;
 }
 
@@ -6467,7 +6467,7 @@ button.agency-setup-row-card:hover {
   padding: 0.56rem 0.95rem;
   font: inherit;
   font-size: 0.84rem;
-  font-weight: 800;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -6493,7 +6493,7 @@ button.agency-setup-row-card:hover {
   margin: 0;
   color: #009688;
   font-size: 0.78rem;
-  font-weight: 880;
+  font-weight: 700;
   letter-spacing: 0.04em;
   line-height: 1.1;
   text-transform: uppercase;
@@ -6502,9 +6502,9 @@ button.agency-setup-row-card:hover {
 .auth-page:not(.onboarding-page) .auth-card-head h2 {
   margin: 0;
   color: #0b1426;
-  font-family: var(--font-display);
+  font-family: var(--font-ui);
   font-size: clamp(2rem, 3.2vw, 2.8rem);
-  font-weight: 860;
+  font-weight: 700;
   letter-spacing: 0;
   line-height: 1.02;
 }
@@ -6513,7 +6513,7 @@ button.agency-setup-row-card:hover {
   margin: 0;
   color: #52657e;
   font-size: 1rem;
-  font-weight: 540;
+  font-weight: 400;
   line-height: 1.45;
 }
 
@@ -6548,7 +6548,7 @@ button.agency-setup-row-card:hover {
   align-items: center;
   justify-content: center;
   font-size: 0.82rem;
-  font-weight: 850;
+  font-weight: 700;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
 }
 
@@ -6581,7 +6581,7 @@ button.agency-setup-row-card:hover {
 .auth-page:not(.onboarding-page) .signup-stepper-copy strong {
   color: currentColor;
   font-size: 0.9rem;
-  font-weight: 760;
+  font-weight: 600;
   line-height: 1;
 }
 
@@ -6627,9 +6627,9 @@ button.agency-setup-row-card:hover {
 
 .auth-page:not(.onboarding-page) .signup-section-heading strong {
   color: #0b1426;
-  font-family: var(--font-display);
+  font-family: var(--font-ui);
   font-size: clamp(1.1rem, 1.7vw, 1.38rem);
-  font-weight: 820;
+  font-weight: 600;
   line-height: 1.12;
 }
 
@@ -6637,7 +6637,7 @@ button.agency-setup-row-card:hover {
   margin: 0;
   color: #52657e;
   font-size: 0.96rem;
-  font-weight: 530;
+  font-weight: 400;
   line-height: 1.45;
 }
 
@@ -6753,9 +6753,9 @@ button.agency-setup-row-card:hover {
 .auth-page:not(.onboarding-page) .signup-position-card strong {
   display: block;
   color: #0b1426;
-  font-family: var(--font-display);
+  font-family: var(--font-ui);
   font-size: 0.98rem;
-  font-weight: 820;
+  font-weight: 600;
   line-height: 1.18;
 }
 
@@ -6765,7 +6765,7 @@ button.agency-setup-row-card:hover {
   margin-top: 8px;
   color: #52657e;
   font-size: 0.88rem;
-  font-weight: 520;
+  font-weight: 400;
   line-height: 1.45;
 }
 
@@ -6808,7 +6808,7 @@ button.agency-setup-row-card:hover {
   gap: 7px;
   color: #304156;
   font-size: 0.82rem;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1.2;
 }
 
@@ -6823,7 +6823,7 @@ button.agency-setup-row-card:hover {
   color: #0b1426;
   font: inherit;
   font-size: 0.95rem;
-  font-weight: 560;
+  font-weight: 400;
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
@@ -6862,7 +6862,7 @@ button.agency-setup-row-card:hover {
   padding: 0.78rem 1.2rem;
   font: inherit;
   font-size: 0.98rem;
-  font-weight: 850;
+  font-weight: 700;
   cursor: pointer;
   box-shadow: 0 16px 34px rgba(0, 140, 137, 0.24);
   transition: transform 170ms ease, box-shadow 170ms ease, opacity 170ms ease;
@@ -6897,7 +6897,7 @@ button.agency-setup-row-card:hover {
   gap: 0.42rem;
   padding: 0.78rem 1rem;
   font: inherit;
-  font-weight: 820;
+  font-weight: 700;
   cursor: pointer;
   transition: transform 170ms ease, border-color 170ms ease, background 170ms ease;
 }
@@ -6913,7 +6913,7 @@ button.agency-setup-row-card:hover {
   border-radius: 14px;
   padding: 0.72rem 0.9rem;
   font-size: 0.84rem;
-  font-weight: 660;
+  font-weight: 500;
   line-height: 1.45;
 }
 
@@ -6946,9 +6946,9 @@ button.agency-setup-row-card:hover {
 .auth-page:not(.onboarding-page) .auth-workspace-build h3 {
   margin: 0;
   color: #0b1426;
-  font-family: var(--font-display);
+  font-family: var(--font-ui);
   font-size: clamp(1.7rem, 3vw, 2.3rem);
-  font-weight: 840;
+  font-weight: 700;
   line-height: 1.05;
 }
 
@@ -6957,7 +6957,7 @@ button.agency-setup-row-card:hover {
   max-width: 28rem;
   color: #52657e;
   font-size: 0.95rem;
-  font-weight: 520;
+  font-weight: 400;
   line-height: 1.55;
 }
 
@@ -6999,7 +6999,7 @@ button.agency-setup-row-card:hover {
   color: #25364a;
   padding: 0.72rem 0.85rem;
   font-size: 0.86rem;
-  font-weight: 750;
+  font-weight: 600;
   animation: authChecklist 420ms ease forwards;
   animation-delay: calc(var(--build-index) * 320ms);
 }
@@ -7017,7 +7017,7 @@ button.agency-setup-row-card:hover {
   gap: 0.45rem;
   color: #61738a;
   font-size: 0.84rem;
-  font-weight: 560;
+  font-weight: 400;
   line-height: 1.35;
 }
 
@@ -7027,7 +7027,7 @@ button.agency-setup-row-card:hover {
   color: #008f85;
   padding: 0;
   font: inherit;
-  font-weight: 850;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -7041,7 +7041,7 @@ button.agency-setup-row-card:hover {
   margin: 0;
   color: #708196;
   font-size: 0.8rem;
-  font-weight: 620;
+  font-weight: 500;
   line-height: 1.4;
 }
 

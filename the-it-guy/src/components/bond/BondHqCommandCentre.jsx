@@ -93,6 +93,122 @@ function formatTrendLabel(value = '') {
   return trend.toLowerCase().includes('last month') ? trend : `${trend} vs last month`
 }
 
+function clampScore(value) {
+  return Math.max(0, Math.min(100, Math.round(normalizeNumber(value))))
+}
+
+function getRegionalName(row = {}) {
+  return row.region || row.regionName || row.name || 'Unassigned Region'
+}
+
+function getRegionalApplications(row = {}) {
+  return normalizeNumber(row.applications || row.activeApplications || row.submittedApplications || row.submitted || row.total)
+}
+
+function getRegionalRevenueLabel(row = {}) {
+  if (row.revenueLabel || row.revenueGeneratedLabel || row.projectedCommissionLabel || row.pipelineValueLabel) {
+    return row.revenueLabel || row.revenueGeneratedLabel || row.projectedCommissionLabel || row.pipelineValueLabel
+  }
+  return formatCompactMoney(row.revenue || row.revenueGenerated || row.projectedCommission || row.pipelineValue, 'R0')
+}
+
+function getRegionalSla(row = {}) {
+  if (row.slaCompliance !== undefined) return clampScore(row.slaCompliance)
+  if (row.sla !== undefined) return clampScore(row.sla)
+  const applications = Math.max(getRegionalApplications(row), 1)
+  const riskCount = normalizeNumber(row.escalations || row.riskCount || row.slaBreaches)
+  return clampScore(((applications - riskCount) / applications) * 100)
+}
+
+function getRegionalApproval(row = {}) {
+  return clampScore(row.approvalRate || row.approval || row.approvals)
+}
+
+function getRegionalHealth(row = {}) {
+  if (row.healthScore !== undefined || row.health !== undefined || row.score !== undefined) {
+    return clampScore(row.healthScore || row.health || row.score)
+  }
+  const approval = getRegionalApproval(row)
+  const sla = getRegionalSla(row)
+  const applications = getRegionalApplications(row)
+  const responseDays = normalizeNumber(row.avgApprovalTime || row.averageApprovalTime || row.averageResponseTime)
+  const escalationCount = normalizeNumber(row.escalations || row.riskCount || row.slaBreaches)
+  const responseScore = responseDays ? Math.max(0, 100 - Math.max(0, responseDays - 7) * 4) : 78
+  const throughputScore = Math.min(100, applications * 4)
+  const escalationScore = Math.max(0, 100 - escalationCount * 12)
+  return clampScore(approval * 0.34 + sla * 0.26 + responseScore * 0.18 + throughputScore * 0.12 + escalationScore * 0.1)
+}
+
+function getRegionalTrend(row = {}) {
+  const rawTrend = row.monthlyTrendLabel || row.growth || row.trend || row.applicationTrend || row.revenueTrend || '0%'
+  const trend = String(rawTrend).trim()
+  const direction = trend.includes('▼') || trend.startsWith('-') ? 'down' : 'up'
+  return {
+    direction,
+    label: formatTrendLabel(trend.replace(/[▲▼]/g, '').trim()),
+  }
+}
+
+function getRegionalHref(row = {}, name = '') {
+  const regionalHref = row.regionHref || row.regionDetailHref || row.regionalHref || ''
+  if (regionalHref) return regionalHref
+  const existingHref = row.href || ''
+  if (existingHref.includes('view=regions') || existingHref.includes('regional-operations')) return existingHref
+  return `/bond/organisation?view=regions&region=${encodeURIComponent(row.regionId || name)}`
+}
+
+function getRegionalTone(score = 0) {
+  if (score >= 85) {
+    return {
+      label: 'Strong',
+      ring: '#16a34a',
+      soft: 'bg-[#ecfdf3] text-[#027a48] ring-[#bbf7d0]',
+      border: 'border-[#bbf7d0] hover:border-[#86efac]',
+      glow: 'shadow-[0_14px_34px_rgba(22,163,74,0.08)]',
+      trend: 'text-[#027a48]',
+    }
+  }
+  if (score >= 70) {
+    return {
+      label: 'Watch',
+      ring: '#f59e0b',
+      soft: 'bg-[#fffaeb] text-[#b54708] ring-[#fedf89]',
+      border: 'border-[#fde68a] hover:border-[#fbbf24]',
+      glow: 'shadow-[0_14px_34px_rgba(245,158,11,0.08)]',
+      trend: 'text-[#b54708]',
+    }
+  }
+  return {
+    label: 'Needs Attention',
+    ring: '#dc2626',
+    soft: 'bg-[#fef3f2] text-[#b42318] ring-[#fecaca]',
+    border: 'border-[#fecaca] hover:border-[#fca5a5]',
+    glow: 'shadow-[0_14px_34px_rgba(220,38,38,0.08)]',
+    trend: 'text-[#b42318]',
+  }
+}
+
+function buildRegionalStripRows(rows = []) {
+  return (rows || [])
+    .map((row) => {
+      const name = getRegionalName(row)
+      const healthScore = getRegionalHealth(row)
+      return {
+        key: row.key || row.id || row.regionId || name,
+        name,
+        healthScore,
+        applications: getRegionalApplications(row),
+        revenue: getRegionalRevenueLabel(row),
+        approval: getRegionalApproval(row),
+        sla: getRegionalSla(row),
+        trend: getRegionalTrend(row),
+        href: getRegionalHref(row, name),
+      }
+    })
+    .sort((left, right) => right.healthScore - left.healthScore || right.applications - left.applications)
+    .map((row, index) => ({ ...row, rank: index + 1 }))
+}
+
 function MicroTrend({ values = [], color = '#2563eb' }) {
   const safeValues = (values.length ? values : [18, 22, 20, 28, 31, 29, 36, 44]).slice(-8).map((value) => normalizeNumber(value))
   const max = Math.max(...safeValues, 1)
@@ -224,7 +340,7 @@ function ExecutiveMiniTrend({ values = [], tone = {} }) {
   const areaPoints = [`0,100`, ...points, `100,100`].join(' ')
 
   return (
-    <svg className="absolute inset-x-3 bottom-0 h-[42px] w-[calc(100%-24px)] overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+    <svg className="absolute inset-x-3 bottom-0 h-[34px] w-[calc(100%-24px)] overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
       <polygon points={areaPoints} fill={tone.fill} />
       <polyline points={points.join(' ')} fill="none" stroke={tone.line} strokeWidth="2.4" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
@@ -324,6 +440,7 @@ export default function BondHqCommandCentre({ snapshot = {} }) {
     <div className="mx-auto max-w-[1600px] space-y-8 px-0 pb-8">
       <ExecutiveHeader />
       <ExecutiveKpiStrip />
+      <RegionalPerformanceStrip rows={hq.regionalPerformance || hq.regionComparison || []} loading={snapshot.loading || hq.loading} />
       <NetworkIntelligencePanel source={{ snapshot, hq }} />
       <OperationalAlerts alerts={hq.alerts || []} bankPerformance={hq.bankPerformance || {}} />
       <PipelineSnapshot funnel={hq.pipelineFunnel || {}} />
@@ -412,7 +529,7 @@ function ExecutiveKpiStrip() {
         return (
           <article
             key={item.label}
-            className={`flex h-[220px] min-w-0 flex-col overflow-hidden rounded-[20px] border p-4 shadow-[0_18px_42px_rgba(15,23,42,0.07)] ring-1 transition ${tone.wash} ${
+            className={`flex min-h-[252px] min-w-0 flex-col overflow-hidden rounded-[20px] border p-5 shadow-[0_18px_42px_rgba(15,23,42,0.07)] ring-1 transition xl:min-h-[264px] ${tone.wash} ${
               item.featured
                 ? 'border-[#24b86f] shadow-[0_22px_48px_rgba(22,163,74,0.16)] ring-[#bdeccd]'
                 : 'border-[rgba(15,23,42,0.08)] ring-[#e4ebf2]'
@@ -424,9 +541,9 @@ function ExecutiveKpiStrip() {
               </span>
             </div>
 
-            <div className="mt-4 min-w-0">
+            <div className="mt-5 min-w-0">
               <p className="whitespace-nowrap text-[clamp(0.58rem,0.62vw,0.7rem)] font-bold uppercase leading-4 tracking-[0.13em] text-[#526178] 2xl:tracking-[0.2em]">{item.label}</p>
-              <p className="mt-2 max-w-full whitespace-nowrap text-[clamp(1.75rem,2.2vw,3.4rem)] font-bold leading-none tracking-normal text-[#07142b]">
+              <p className="mt-3 max-w-full whitespace-nowrap text-[clamp(1.75rem,2.2vw,3.4rem)] font-bold leading-none tracking-normal text-[#07142b]">
                 {item.value}
               </p>
               <p className={`mt-2 flex min-w-0 items-center gap-1.5 text-[clamp(0.68rem,0.72vw,0.86rem)] font-bold leading-5 ${tone.status}`}>
@@ -435,8 +552,8 @@ function ExecutiveKpiStrip() {
               </p>
             </div>
 
-            <div className={`relative mt-auto h-[64px] overflow-hidden rounded-[15px] px-3 pt-3 ring-1 ${tone.panel}`}>
-              <p className="relative z-10 flex min-w-0 items-center gap-2 text-[clamp(0.68rem,0.7vw,0.84rem)] font-bold leading-4 text-[#0f1f36]">
+            <div className={`relative mt-auto h-[82px] overflow-hidden rounded-[15px] px-3 pt-3.5 ring-1 ${tone.panel}`}>
+              <p className="relative z-10 flex min-w-0 items-start gap-2 text-[clamp(0.68rem,0.7vw,0.84rem)] font-bold leading-5 text-[#0f1f36]">
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tone.dot }} />
                 <span className="min-w-0 break-words">{item.detail}</span>
               </p>
@@ -446,6 +563,102 @@ function ExecutiveKpiStrip() {
         )
       })}
     </section>
+  )
+}
+
+function RegionalPerformanceStrip({ rows = [], loading = false }) {
+  const regionalRows = buildRegionalStripRows(rows)
+
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-[20px] font-bold tracking-[-0.01em] text-[#142132]">Regional Performance</h2>
+          <p className="mt-1 text-sm font-medium text-[#64748b]">Live performance across your national network</p>
+        </div>
+        <Link to="/bond/organisation?view=regions" className="inline-flex items-center gap-2 text-sm font-semibold text-[#204b84] transition hover:text-[#0f2f5f]">
+          View all regions <ArrowRight size={15} />
+        </Link>
+      </div>
+
+      {loading ? (
+        <div className="flex snap-x gap-4 overflow-x-auto pb-2">
+          {[0, 1, 2, 3].map((item) => (
+            <div key={item} className="h-[140px] w-[260px] min-w-[260px] snap-start animate-pulse rounded-[16px] border border-[#e2e8f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.035)]">
+              <div className="h-4 w-28 rounded-full bg-[#e2e8f0]" />
+              <div className="mt-4 h-12 w-12 rounded-full bg-[#e2e8f0]" />
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <div className="h-3 rounded-full bg-[#e2e8f0]" />
+                <div className="h-3 rounded-full bg-[#e2e8f0]" />
+                <div className="h-3 rounded-full bg-[#e2e8f0]" />
+                <div className="h-3 rounded-full bg-[#e2e8f0]" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : !regionalRows.length ? (
+        <div className="rounded-[16px] border border-dashed border-[#cbd5e1] bg-white px-5 py-6 text-sm font-medium text-[#64748b] shadow-[0_10px_28px_rgba(15,23,42,0.025)]">
+          <p className="font-semibold text-[#17324d]">No regions available yet.</p>
+          <p className="mt-1">Create your first region to begin tracking performance.</p>
+        </div>
+      ) : (
+        <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 [scrollbar-width:thin]">
+          {regionalRows.map((row) => (
+            <RegionalPerformanceCard key={row.key} row={row} />
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function RegionalPerformanceCard({ row = {} }) {
+  const tone = getRegionalTone(row.healthScore)
+  const trendArrow = row.trend.direction === 'down' ? '▼' : '▲'
+  const trendClass = row.trend.direction === 'down' ? 'text-[#b54708]' : tone.trend
+
+  return (
+    <Link
+      to={row.href}
+      aria-label={`Open ${row.name} regional performance`}
+      className={`group h-[140px] w-[260px] min-w-[260px] snap-start overflow-hidden rounded-[16px] border bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.035)] ring-1 ring-[#e9eff5] transition hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(15,23,42,0.08)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#24518a] ${tone.border} ${tone.glow}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="truncate text-[15px] font-bold leading-5 tracking-[-0.01em] text-[#142132]">{row.name}</p>
+            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${tone.soft}`}>#{row.rank}</span>
+          </div>
+          <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#71869d]">{tone.label}</p>
+        </div>
+        <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#f8fafc]" style={{ background: `conic-gradient(${tone.ring} ${row.healthScore * 3.6}deg, #e2e8f0 0deg)` }}>
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-[15px] font-bold text-[#142132]">
+            {row.healthScore}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-4 gap-2">
+        <RegionalMiniMetric label="Applications" value={formatNumber(row.applications)} />
+        <RegionalMiniMetric label="Revenue" value={row.revenue} />
+        <RegionalMiniMetric label="Approval" value={formatPercent(row.approval)} />
+        <RegionalMiniMetric label="SLA" value={formatPercent(row.sla)} />
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-3 border-t border-[#eef3f8] pt-2">
+        <p className={`truncate text-xs font-bold ${trendClass}`}>{trendArrow} {row.trend.label}</p>
+        <ArrowRight size={14} className="shrink-0 text-[#8aa0b7] transition group-hover:translate-x-0.5 group-hover:text-[#204b84]" />
+      </div>
+    </Link>
+  )
+}
+
+function RegionalMiniMetric({ label, value }) {
+  return (
+    <div className="min-w-0">
+      <p className="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-[#71869d]">{label}</p>
+      <p className="mt-0.5 truncate text-[12px] font-bold leading-4 text-[#17324d]">{value}</p>
+    </div>
   )
 }
 

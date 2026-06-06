@@ -346,7 +346,7 @@ function makeSnapshot(overrides = {}) {
     })
     assert.doesNotMatch(hqMarkup, /HQ Command Centre/)
     assert.doesNotMatch(hqMarkup, /National overview of applications, pipeline performance and operational risk/)
-    assert.doesNotMatch(hqMarkup, /Live/)
+    assert.doesNotMatch(hqMarkup, /Live operational command layer/)
     assert.match(hqMarkup, /Date Range/)
     assert.match(hqMarkup, /Filters/)
     assert.match(hqMarkup, /Refresh/)
@@ -365,6 +365,11 @@ function makeSnapshot(overrides = {}) {
     assert.match(hqMarkup, /R22\.96m/)
     assert.match(hqMarkup, /Avg Approval Time/)
     assert.match(hqMarkup, /46 days/)
+    assert.match(hqMarkup, /Regional Performance/)
+    assert.match(hqMarkup, /Live performance across your national network/)
+    assert.match(hqMarkup, /View all regions/)
+    assert.match(hqMarkup, /Gauteng/)
+    assert.match(hqMarkup, /SLA/)
     assert.doesNotMatch(hqMarkup, /Operational Health/)
     assert.doesNotMatch(hqMarkup, /\/ 100/)
     assert.match(hqMarkup, /pressure signals/)
@@ -424,6 +429,7 @@ function makeSnapshot(overrides = {}) {
 
     const hqOrder = [
       'Applications',
+      'Regional Performance',
       'Operational Alerts',
       'Pipeline Snapshot',
       'Top Regions',
