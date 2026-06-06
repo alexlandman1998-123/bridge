@@ -624,7 +624,7 @@ function StageProgress({ row = {} }) {
   const activeIndex = row.progressStageIndex || 0
   const accent = getRiskAccent(row)
   return (
-    <div className="min-w-0">
+    <div className="min-w-0 overflow-hidden">
       <div className="flex items-center justify-between gap-3">
         <p className="truncate text-sm font-semibold text-[#102448]">{row.statusLabel}</p>
         <span className="shrink-0 text-xs font-semibold text-[#60758d]">{row.progressPercent}% Complete</span>
@@ -677,9 +677,10 @@ function OverflowMenuButton() {
 
 export function HqApplicationsTable({ rows = [], onOpen }) {
   if (!rows.length) return null
+  const registerGridClass = '2xl:grid-cols-[minmax(190px,1.05fr)_minmax(150px,0.72fr)_minmax(270px,1.35fr)_76px_76px_minmax(110px,0.72fr)_minmax(160px,0.9fr)]'
   return (
     <section className="space-y-3">
-      <div className="hidden grid-cols-[minmax(230px,1.15fr)_minmax(170px,0.75fr)_minmax(330px,1.45fr)_90px_92px_120px_minmax(180px,0.9fr)] gap-6 px-6 text-xs font-semibold uppercase tracking-[0.12em] text-[#75889e] xl:grid">
+      <div className={`hidden gap-4 px-6 text-xs font-semibold uppercase tracking-[0.12em] text-[#75889e] 2xl:grid ${registerGridClass}`}>
         <span>Application</span>
         <span>Consultant</span>
         <span>Stage & Progress</span>
@@ -696,7 +697,7 @@ export function HqApplicationsTable({ rows = [], onOpen }) {
             className="relative overflow-hidden rounded-[16px] border border-[#dbe5f0] bg-white px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-[#bfd0e0] hover:shadow-[0_18px_36px_rgba(15,23,42,0.07)] sm:px-6"
           >
             <span className="absolute inset-y-0 left-0 w-1.5" style={{ backgroundColor: getRiskAccent(row) }} />
-            <div className="grid gap-5 xl:grid-cols-[minmax(230px,1.15fr)_minmax(170px,0.75fr)_minmax(330px,1.45fr)_90px_92px_120px_minmax(180px,0.9fr)] xl:items-center xl:gap-6">
+            <div className={`grid min-w-0 gap-5 2xl:items-center 2xl:gap-4 ${registerGridClass}`}>
               <div className="flex min-w-0 items-start gap-3">
                 <span className="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#dce8f2] bg-[#f4f8fd] text-[#23518a]">
                   <UserRound size={18} />
@@ -728,27 +729,27 @@ export function HqApplicationsTable({ rows = [], onOpen }) {
 
               <StageProgress row={row} />
 
-              <div><HqBadge tone={riskTone(row)}>{row.riskLabel}</HqBadge></div>
+              <div className="min-w-0"><HqBadge tone={riskTone(row)}>{row.riskLabel}</HqBadge></div>
 
-              <div className="text-sm text-[#425a72]">
+              <div className="min-w-0 text-sm text-[#425a72]">
                 <p className="text-lg font-semibold leading-none text-[#102448]">{row.ageLabel.replace(' days', '')}</p>
                 <p className="mt-1 text-xs font-medium text-[#64788f]">{row.ageLabel.includes('day') ? 'days' : ''}</p>
                 <p className="mt-1 text-xs text-[#64788f]">{row.createdDateLabel}</p>
               </div>
 
-              <div className="text-left xl:text-right">
-                <p className="text-base font-semibold text-[#102448]">{row.bondValueLabel}</p>
+              <div className="min-w-0 text-left 2xl:text-right">
+                <p className="break-words text-base font-semibold leading-tight text-[#102448]">{row.bondValueLabel}</p>
               </div>
 
               <div className="flex min-w-0 flex-col gap-3">
-                <p className="text-sm font-medium leading-5 text-[#213a56]">{row.nextActionLabel}</p>
-                <div className="flex items-center gap-2">
+                <p className="text-sm font-medium leading-5 text-[#213a56] 2xl:line-clamp-2">{row.nextActionLabel}</p>
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={() => onOpen(row)}
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-[10px] bg-[#07183f] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(7,24,63,0.18)] transition hover:bg-[#102a63]"
+                    className="inline-flex h-10 min-w-0 items-center justify-center gap-2 rounded-[10px] bg-[#07183f] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(7,24,63,0.18)] transition hover:bg-[#102a63] 2xl:px-3"
                   >
-                    Open Application
+                    <span className="truncate">Open Application</span>
                     <ArrowRight size={15} />
                   </button>
                   <OverflowMenuButton />
@@ -1020,8 +1021,8 @@ export default function BondTransactionsPage({
               </span>
               <div className="min-w-0">
                 <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7890a8]">{item.label}</p>
-                <p className="mt-1 truncate text-2xl font-semibold text-[#142132]">{item.value}</p>
-                <p className="mt-1 text-xs font-semibold text-[#14884d]">{item.trend}</p>
+                <p className="mt-1 break-words text-[clamp(1.15rem,1.25vw,1.5rem)] font-semibold leading-tight text-[#142132]">{item.value}</p>
+                <p className="mt-1 text-xs font-semibold leading-4 text-[#14884d]">{item.trend}</p>
               </div>
             </div>
           ))}

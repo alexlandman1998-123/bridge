@@ -9,6 +9,7 @@ import {
   CircleDollarSign,
   Clock3,
   Copy,
+  Download,
   FileText,
   Landmark,
   MessageSquarePlus,
@@ -34,7 +35,7 @@ import TransactionBondHybridFinanceWorkflowPanel from '../components/Transaction
 import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import FinanceProgressBar from '../components/finance/FinanceProgressBar'
-import IndicativeFinanceReadinessContainer from '../components/finance/IndicativeFinanceReadinessContainer'
+import FinanceReadinessDashboard from '../components/finance/FinanceReadinessDashboard'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
@@ -68,6 +69,7 @@ import {
   approveBondQuote,
   archiveTransactionLifecycle,
   cancelTransactionLifecycle,
+  declineBondQuote,
   fetchTransactionCoreById,
   fetchTransactionById,
   getCompletionBlockers,
@@ -96,6 +98,7 @@ import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partnersRepository'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { getFinanceReadiness } from '../services/bondFinanceReadinessService'
 import { getBankPanelForCurrentUser } from '../services/bondOriginatorBankService'
 
 const ATTORNEY_WORKSPACE_TABS = [
@@ -584,6 +587,155 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;')
+}
+
+function formatDownloadToken(value, fallback = 'bond-application') {
+  const token = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return token || fallback
+}
+
+function formatApplicationFieldValue(value) {
+  if (value === null || value === undefined || value === '') return 'Not captured'
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (Array.isArray(value)) {
+    const items = value
+      .map((item) => formatApplicationFieldValue(item))
+      .filter((item) => item && item !== 'Not captured')
+    return items.length ? items.join(', ') : 'Not captured'
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value, null, 2)
+  }
+  return String(value)
+}
+
+function formatApplicationFieldLabel(key) {
+  return toTitle(
+    String(key || '')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/[-_]+/g, ' '),
+  )
+}
+
+function buildBondApplicationFormHtml({
+  reference = '',
+  buyerName = '',
+  propertyLabel = '',
+  generatedAt = new Date().toISOString(),
+  consultant = '',
+  owner = '',
+  statusLabel = '',
+  reviewItems = [],
+  onboardingFormData = {},
+  documents = [],
+} = {}) {
+  const summaryRows = reviewItems
+    .map(
+      ([label, value]) => `
+        <tr>
+          <th>${escapeHtml(label)}</th>
+          <td>${escapeHtml(formatApplicationFieldValue(value))}</td>
+        </tr>
+      `,
+    )
+    .join('')
+
+  const sourceRows = Object.entries(onboardingFormData || {})
+    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+    .map(
+      ([key, value]) => `
+        <tr>
+          <th>${escapeHtml(formatApplicationFieldLabel(key))}</th>
+          <td><pre>${escapeHtml(formatApplicationFieldValue(value))}</pre></td>
+        </tr>
+      `,
+    )
+    .join('')
+
+  const documentRows = documents
+    .map(
+      (item) => `
+        <tr>
+          <td>${escapeHtml(item.displayName || item.name || 'Untitled document')}</td>
+          <td>${escapeHtml(item.categoryLabel || item.category || 'Application document')}</td>
+          <td>${escapeHtml(getDocumentCommandStatusLabel(item.status))}</td>
+          <td>${escapeHtml(formatDateTime(item.uploadedAt || item.createdAt || item.updatedAt))}</td>
+        </tr>
+      `,
+    )
+    .join('')
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Bond Application Form ${escapeHtml(reference || '')}</title>
+  <style>
+    body { margin: 0; padding: 28px; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #101827; background: #fff; }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: 26px; letter-spacing: -0.03em; }
+    h2 { margin-bottom: 12px; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: #334155; }
+    .meta { margin-top: 8px; color: #60758d; font-size: 12px; line-height: 1.6; }
+    .hero { border-bottom: 2px solid #10243a; padding-bottom: 18px; }
+    .pill { display: inline-block; margin-top: 12px; border: 1px solid #d7e0ea; border-radius: 999px; padding: 5px 10px; color: #274c69; font-size: 12px; font-weight: 700; }
+    .section { margin-top: 20px; border: 1px solid #d7e0ea; border-radius: 10px; padding: 16px; page-break-inside: avoid; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .kv { border: 1px solid #e3ebf4; border-radius: 8px; padding: 10px; }
+    .kv strong { display: block; margin-bottom: 4px; color: #71849b; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+    .kv span { color: #101827; font-size: 13px; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+    th, td { border-bottom: 1px solid #e5edf5; padding: 9px 6px; text-align: left; vertical-align: top; word-break: break-word; }
+    th { width: 34%; color: #60758d; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+    td { color: #101827; font-weight: 600; }
+    pre { margin: 0; white-space: pre-wrap; font-family: inherit; font-weight: 600; }
+    @media print {
+      body { padding: 16px; }
+      .section { page-break-inside: avoid; }
+      .grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <h1>Bond Application Form</h1>
+    <p class="meta">Generated ${escapeHtml(formatDateTime(generatedAt))}</p>
+    <p class="meta">Application ${escapeHtml(reference || '-')} • ${escapeHtml(buyerName || 'Applicant not captured')}</p>
+    <p class="meta">${escapeHtml(propertyLabel || 'Property not captured')}</p>
+    <span class="pill">${escapeHtml(statusLabel || 'Status not captured')}</span>
+  </header>
+
+  <section class="section">
+    <h2>Application Identity</h2>
+    <div class="grid">
+      <div class="kv"><strong>Applicant</strong><span>${escapeHtml(buyerName || 'Not captured')}</span></div>
+      <div class="kv"><strong>Consultant</strong><span>${escapeHtml(consultant || 'Unassigned')}</span></div>
+      <div class="kv"><strong>Owner</strong><span>${escapeHtml(owner || 'Unassigned')}</span></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>Review Summary</h2>
+    <table><tbody>${summaryRows || '<tr><td>No application summary available.</td></tr>'}</tbody></table>
+  </section>
+
+  <section class="section">
+    <h2>Captured Onboarding Fields</h2>
+    <table><tbody>${sourceRows || '<tr><td>No onboarding form fields have been captured yet.</td></tr>'}</tbody></table>
+  </section>
+
+  <section class="section">
+    <h2>Uploaded Documents</h2>
+    <table>
+      <thead><tr><th>Document</th><th>Category</th><th>Status</th><th>Uploaded</th></tr></thead>
+      <tbody>${documentRows || '<tr><td colspan="4">No documents have been uploaded yet.</td></tr>'}</tbody>
+    </table>
+  </section>
+</body>
+</html>`
 }
 
 function buildAttorneyFinalReportHtml(report) {
@@ -2107,7 +2259,7 @@ function buildMatterPreviewShell(matterPreview, transactionId) {
   }
 }
 
-function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange, premium = false }) {
+function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange, premium = false, spread = false }) {
   const iconByTab = {
     overview: Workflow,
     application: FileText,
@@ -2126,7 +2278,16 @@ function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange, premium = fa
       className={`${premium ? 'rounded-[22px] p-2 shadow-[0_14px_32px_rgba(15,23,42,0.055)]' : 'rounded-[16px] px-2 py-2 shadow-[0_10px_22px_rgba(15,23,42,0.04)]'} no-print w-full border border-borderDefault bg-white`}
       aria-label="Transaction workspace tabs"
     >
-      <div className={`${premium ? 'flex min-w-0 gap-2 overflow-x-auto xl:grid xl:grid-cols-6' : 'flex min-w-0 gap-1 overflow-x-auto'}`}>
+      <div
+        className={
+          premium
+            ? 'flex min-w-0 gap-2 overflow-x-auto xl:grid xl:grid-cols-6'
+            : spread
+              ? 'flex min-w-0 gap-2 overflow-x-auto xl:grid xl:overflow-visible'
+              : 'flex min-w-0 gap-1 overflow-x-auto'
+        }
+        style={spread ? { gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` } : undefined}
+      >
         {tabs.map((tab) => {
           const active = activeTab === tab.id
           const Icon = iconByTab[tab.id] || FileText
@@ -2134,7 +2295,7 @@ function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange, premium = fa
             <button
               key={tab.id}
               type="button"
-              className={`${premium ? 'min-h-[46px] flex-1 justify-center rounded-[15px] px-4' : 'min-h-[38px] shrink-0 rounded-[11px] px-3'} inline-flex items-center gap-2 border text-sm font-semibold transition ${
+              className={`${premium ? 'min-h-[46px] flex-1 justify-center rounded-[15px] px-4' : spread ? 'min-h-[46px] min-w-[150px] flex-1 justify-center rounded-[15px] px-3 xl:min-w-0' : 'min-h-[38px] shrink-0 rounded-[11px] px-3'} inline-flex items-center gap-2 border text-sm font-semibold transition ${
                 active
                   ? premium
                     ? 'border-primary bg-primary text-white shadow-[0_10px_20px_rgba(15,70,110,0.16)]'
@@ -2387,6 +2548,471 @@ function BestQuoteSummary({ quote = null, quotes = [], onAccept, onViewAll, load
           No quotes received yet. Quotes will appear here once banks respond to the submitted application.
         </p>
       )}
+    </section>
+  )
+}
+
+function getQuoteBankName(quote = {}) {
+  return String(quote.bankName || quote.bank_name || '').trim()
+}
+
+function getQuoteRate(quote = {}) {
+  const rate = Number(quote.interestRate ?? quote.interest_rate)
+  return Number.isFinite(rate) && rate > 0 ? rate : null
+}
+
+function getQuoteRepayment(quote = {}) {
+  const repayment = Number(quote.monthlyRepayment ?? quote.monthly_repayment)
+  return Number.isFinite(repayment) && repayment > 0 ? repayment : null
+}
+
+function getQuoteApprovalAmount(quote = {}) {
+  const amount = Number(quote.quotedAmount ?? quote.quoted_amount ?? quote.approvalAmount ?? quote.approval_amount)
+  return Number.isFinite(amount) && amount > 0 ? amount : null
+}
+
+function getQuoteFees(quote = {}) {
+  const fees = Number(quote.fees ?? quote.feeAmount ?? quote.fee_amount ?? 0)
+  return Number.isFinite(fees) ? fees : 0
+}
+
+function getQuoteStatusLabel(quote = {}) {
+  const status = quote.quoteStatus || quote.quote_status || quote.status || 'received'
+  if (String(status).toLowerCase() === 'approved_by_buyer') return 'Accepted'
+  return quote.quoteStatusLabel || toTitle(status)
+}
+
+function getRelativeUpdateLabel(value = '') {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  const diffDays = Math.max(0, Math.floor((Date.now() - date.getTime()) / 86_400_000))
+  if (diffDays === 0) return `Today, ${date.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}`
+  return diffDays === 1 ? '1 day ago' : `${diffDays} days ago`
+}
+
+function getRecommendationContext(quotes = []) {
+  const usableQuotes = (quotes || []).filter((quote) => getQuoteBankName(quote))
+  if (!usableQuotes.length) return { recommended: null, rows: [] }
+
+  const rates = usableQuotes.map(getQuoteRate).filter((value) => value !== null)
+  const repayments = usableQuotes.map(getQuoteRepayment).filter((value) => value !== null)
+  const approvals = usableQuotes.map(getQuoteApprovalAmount).filter((value) => value !== null)
+  const minRate = rates.length ? Math.min(...rates) : null
+  const maxRate = rates.length ? Math.max(...rates) : null
+  const minRepayment = repayments.length ? Math.min(...repayments) : null
+  const maxRepayment = repayments.length ? Math.max(...repayments) : null
+  const minApproval = approvals.length ? Math.min(...approvals) : null
+  const maxApproval = approvals.length ? Math.max(...approvals) : null
+
+  const scoreRows = usableQuotes.map((quote) => {
+    const rate = getQuoteRate(quote)
+    const repayment = getQuoteRepayment(quote)
+    const approval = getQuoteApprovalAmount(quote)
+    const rateScore = rate !== null && maxRate !== minRate ? (maxRate - rate) / (maxRate - minRate) : rate !== null ? 1 : 0
+    const repaymentScore = repayment !== null && maxRepayment !== minRepayment ? (maxRepayment - repayment) / (maxRepayment - minRepayment) : repayment !== null ? 1 : 0
+    const approvalScore = approval !== null && maxApproval !== minApproval ? (approval - minApproval) / (maxApproval - minApproval) : approval !== null ? 1 : 0
+    return {
+      quote,
+      score: repaymentScore * 0.45 + rateScore * 0.35 + approvalScore * 0.2,
+      rate,
+      repayment,
+      approval,
+    }
+  })
+  const recommended = [...scoreRows].sort((left, right) => right.score - left.score)[0]?.quote || null
+  return { recommended, rows: scoreRows }
+}
+
+function buildBankCommandRows({ submissionRows = [], workflowData = null } = {}) {
+  const quotes = Array.isArray(workflowData?.quotes) ? workflowData.quotes : Array.isArray(workflowData?.offers) ? workflowData.offers : []
+  const quoteByBank = new Map()
+  for (const quote of quotes) {
+    const key = getQuoteBankName(quote).toLowerCase()
+    if (!key) continue
+    const existing = quoteByBank.get(key)
+    const quoteDate = new Date(quote.quoteReceivedAt || quote.quote_received_at || quote.updatedAt || quote.updated_at || quote.createdAt || quote.created_at || 0).getTime()
+    const existingDate = new Date(existing?.quoteReceivedAt || existing?.quote_received_at || existing?.updatedAt || existing?.updated_at || existing?.createdAt || existing?.created_at || 0).getTime()
+    if (!existing || quoteDate >= existingDate) quoteByBank.set(key, quote)
+  }
+
+  return (submissionRows || []).map((row) => {
+    const quote = quoteByBank.get(String(row.bankName || '').trim().toLowerCase()) || null
+    const lastUpdate = [row.lastUpdate, quote?.quoteReceivedAt, quote?.quote_received_at, quote?.updatedAt, quote?.updated_at, quote?.createdAt, quote?.created_at]
+      .filter(Boolean)
+      .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] || ''
+    return {
+      ...row,
+      quote,
+      quoteReceived: Boolean(quote),
+      rate: getQuoteRate(quote || {}),
+      approvalAmount: getQuoteApprovalAmount(quote || {}),
+      lastUpdate,
+    }
+  })
+}
+
+function getBankRowActionLabel(row = {}) {
+  const status = String(row.status || '').toLowerCase()
+  if (!row.submittedAt && ['pending', 'not_submitted', ''].includes(status)) return 'Submit'
+  if (status === 'additional_documents_required') return 'Upload Docs'
+  if (row.quoteReceived) return 'View Quote'
+  return 'View'
+}
+
+function BondBankSubmissionCommandCenter({
+  rows = [],
+  loadingAction = '',
+  onSubmitBank,
+  onUploadDocs,
+  onViewQuote,
+}) {
+  const [submitOpen, setSubmitOpen] = useState(false)
+  const [selectedBank, setSelectedBank] = useState('')
+  const [submittedAt, setSubmittedAt] = useState(() => new Date().toISOString().slice(0, 10))
+  const notSubmittedRows = rows.filter((row) => !row.submittedAt && ['pending', 'not_submitted', ''].includes(String(row.status || '').toLowerCase()))
+  const selectedBankName = selectedBank || notSubmittedRows[0]?.bankName || ''
+
+  function submitBank(event) {
+    event.preventDefault()
+    if (!selectedBankName) return
+    onSubmitBank?.({
+      bankName: selectedBankName,
+      status: 'submitted',
+      submittedAt,
+      notes: 'Submitted from Banks & Quotes command centre.',
+    })
+    setSubmitOpen(false)
+  }
+
+  return (
+    <section className="rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Bank Submission Tracker</h3>
+          <p className="mt-1 text-sm text-textMuted">Track all banks this application has been submitted to and their responses.</p>
+        </div>
+        <Button type="button" variant="secondary" onClick={() => setSubmitOpen((value) => !value)} disabled={!notSubmittedRows.length || Boolean(loadingAction)}>
+          <Send size={14} />
+          Submit To More Banks
+        </Button>
+      </div>
+
+      {submitOpen ? (
+        <form onSubmit={submitBank} className="mt-5 grid gap-3 rounded-[14px] border border-borderSoft bg-surfaceAlt p-4 md:grid-cols-[minmax(0,1fr)_220px_auto]">
+          <Field as="select" value={selectedBankName} onChange={(event) => setSelectedBank(event.target.value)} required>
+            {notSubmittedRows.map((row) => (
+              <option key={row.bankName} value={row.bankName}>{row.bankName}</option>
+            ))}
+          </Field>
+          <Field type="date" value={submittedAt} onChange={(event) => setSubmittedAt(event.target.value)} />
+          <Button type="submit" disabled={Boolean(loadingAction)}>Submit Bank</Button>
+        </form>
+      ) : null}
+
+      {rows.length ? (
+        <div className="mt-5 overflow-x-auto">
+          <table className="min-w-[1060px] w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-borderSoft text-left text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">
+                <th className="py-3 pr-4">Bank</th>
+                <th className="px-4 py-3">Submitted</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Quote Received</th>
+                <th className="px-4 py-3">Rate</th>
+                <th className="px-4 py-3">Approval Amount</th>
+                <th className="px-4 py-3">Last Update</th>
+                <th className="py-3 pl-4 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-borderSoft">
+              {rows.map((row) => {
+                const actionLabel = getBankRowActionLabel(row)
+                return (
+                  <tr key={row.bankName} className="align-middle">
+                    <td className="py-4 pr-4 font-semibold text-textStrong">{row.bankName}</td>
+                    <td className="px-4 py-4">
+                      <strong className={row.submittedAt ? 'block text-xs text-success' : 'block text-xs text-danger'}>{row.submittedAt ? 'Yes' : 'No'}</strong>
+                      <span className="mt-1 block text-xs text-textMuted">{formatDate(row.submittedAt, row.submittedAt ? '-' : 'Not submitted')}</span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${getBankSubmissionTone(row.status)}`}>
+                        {row.statusLabel}
+                      </span>
+                      <span className="mt-1 block text-xs text-textMuted">{row.daysWaiting && row.daysWaiting !== '-' ? `Waiting ${row.daysWaiting}` : row.sla ? `SLA: ${row.sla}` : ''}</span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className={row.quoteReceived ? 'font-semibold text-success' : 'font-semibold text-danger'}>{row.quoteReceived ? 'Yes' : 'No'}</span>
+                    </td>
+                    <td className="px-4 py-4 font-semibold text-textStrong">{row.rate ? `${row.rate}%` : '-'}</td>
+                    <td className="px-4 py-4 font-semibold text-textStrong">{row.approvalAmount ? formatCurrencyValue(row.approvalAmount, '-') : '-'}</td>
+                    <td className="px-4 py-4 text-textBody">{getRelativeUpdateLabel(row.lastUpdate)}</td>
+                    <td className="py-4 pl-4">
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          disabled={Boolean(loadingAction)}
+                          onClick={() => {
+                            if (actionLabel === 'Submit') {
+                              onSubmitBank?.({ bankName: row.bankName, status: 'submitted', submittedAt: new Date().toISOString().slice(0, 10) })
+                            } else if (actionLabel === 'Upload Docs') {
+                              onUploadDocs?.()
+                            } else if (actionLabel === 'View Quote') {
+                              onViewQuote?.(row.quote)
+                            }
+                          }}
+                        >
+                          {actionLabel}
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="mt-5 rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm text-textMuted">
+          No bank submissions yet. Submit this application to one or more banks to start tracking responses.
+        </p>
+      )}
+    </section>
+  )
+}
+
+function QuoteComparisonCommandCenter({ quotes = [], recommendedQuote = null, loadingAction = '', onAcceptQuote, onRequestRevision, onDeclineAll, onViewAll }) {
+  if (!quotes.length) {
+    return (
+      <section className="rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+        <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Quote Comparison</h3>
+        <p className="mt-1 text-sm text-textMuted">Compare quotes from responding banks.</p>
+        <p className="mt-5 rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm leading-6 text-textMuted">
+          No quotes received yet. Quotes will appear once banks return offers.
+        </p>
+      </section>
+    )
+  }
+
+  return (
+    <section className="rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Quote Comparison</h3>
+          <p className="mt-1 text-sm text-textMuted">Compare quotes from responding banks.</p>
+        </div>
+        {recommendedQuote ? (
+          <span className="rounded-full border border-success/25 bg-successSoft px-3 py-1 text-xs font-semibold text-success">
+            {getQuoteBankName(recommendedQuote)} Offer Recommended
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-5 overflow-x-auto">
+        <table className="min-w-[860px] w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-borderSoft text-left text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">
+              <th className="py-3 pr-4">Bank</th>
+              <th className="px-4 py-3">Interest Rate</th>
+              <th className="px-4 py-3">Est. Monthly Repayment</th>
+              <th className="px-4 py-3">Approval Amount</th>
+              <th className="px-4 py-3">Fees</th>
+              <th className="py-3 pl-4">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-borderSoft">
+            {quotes.map((quote) => {
+              const recommended = String(quote.id || '') === String(recommendedQuote?.id || '')
+              return (
+                <tr key={quote.id || getQuoteBankName(quote)} className="align-middle">
+                  <td className="py-4 pr-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <strong className="font-semibold text-textStrong">{getQuoteBankName(quote)}</strong>
+                      {recommended ? <span className="rounded-full bg-successSoft px-2 py-0.5 text-[0.68rem] font-semibold text-success">Recommended</span> : null}
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 font-semibold text-textStrong">{getQuoteRate(quote) ? `${getQuoteRate(quote)}%` : quote.interestRateDisplay || quote.interest_rate_display || '-'}</td>
+                  <td className="px-4 py-4 font-semibold text-textStrong">{formatCurrencyValue(getQuoteRepayment(quote), '-')}</td>
+                  <td className="px-4 py-4 font-semibold text-textStrong">{formatCurrencyValue(getQuoteApprovalAmount(quote), '-')}</td>
+                  <td className="px-4 py-4 font-semibold text-textStrong">{formatCurrencyValue(getQuoteFees(quote), 'R0')}</td>
+                  <td className="py-4 pl-4">
+                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${getBankSubmissionTone(quote.quoteStatus || quote.quote_status || quote.status)}`}>
+                      {getQuoteStatusLabel(quote)}
+                    </span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" disabled={!recommendedQuote || Boolean(loadingAction)} onClick={() => onAcceptQuote?.(recommendedQuote)}>
+            Accept {recommendedQuote ? getQuoteBankName(recommendedQuote) : ''} Quote
+          </Button>
+          <Button type="button" variant="secondary" disabled={!recommendedQuote} onClick={() => onRequestRevision?.(recommendedQuote)}>
+            Request Revision
+          </Button>
+          <Button type="button" variant="secondary" disabled={Boolean(loadingAction)} onClick={onDeclineAll}>
+            <X size={14} />
+            Decline All Quotes
+          </Button>
+        </div>
+        <Button type="button" variant="ghost" size="sm" onClick={onViewAll}>
+          View all quotes
+          <ChevronRight size={14} />
+        </Button>
+      </div>
+    </section>
+  )
+}
+
+function BuyerDecisionPanel({ acceptedQuote = null, quotes = [], onRecordDecision, onAddNote }) {
+  const latestQuote = acceptedQuote || quotes[0] || null
+  const decisionStatus = acceptedQuote
+    ? 'Accepted'
+    : quotes.some((quote) => String(quote.quoteStatus || quote.quote_status || '').toLowerCase() === 'declined')
+      ? 'Declined'
+      : quotes.some((quote) => String(quote.quoteStatus || quote.quote_status || '').toLowerCase() === 'expired')
+        ? 'Expired'
+        : 'Pending Decision'
+
+  return (
+    <aside className="rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+      <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Buyer Decision</h3>
+      <p className="mt-1 text-sm leading-6 text-textMuted">Track the buyer's decision on the selected quote.</p>
+      <div className="mt-5 divide-y divide-borderSoft">
+        {[
+          ['Status', decisionStatus],
+          ['Selected Quote', acceptedQuote ? getQuoteBankName(acceptedQuote) : 'Not selected'],
+          ['Decision Date', acceptedQuote?.approvedAt || acceptedQuote?.approved_at ? formatDate(acceptedQuote.approvedAt || acceptedQuote.approved_at) : '-'],
+          ['Notes', acceptedQuote ? 'Buyer accepted this quote.' : 'Buyer has not accepted or declined any quotes yet.'],
+        ].map(([label, value]) => (
+          <article key={label} className="py-3 first:pt-0 last:pb-0">
+            <span className="block text-label font-semibold uppercase text-textMuted">{label}</span>
+            <strong className="mt-1 block text-sm font-semibold text-textStrong">{value}</strong>
+          </article>
+        ))}
+      </div>
+      <div className="mt-5 flex flex-wrap gap-2">
+        <Button type="button" size="sm" disabled={!latestQuote || Boolean(acceptedQuote)} onClick={() => onRecordDecision?.(latestQuote)}>
+          Record Decision
+        </Button>
+        <Button type="button" variant="secondary" size="sm" onClick={onAddNote}>
+          Add Note
+        </Button>
+      </div>
+    </aside>
+  )
+}
+
+function BondMatterConversationPanel({
+  discussionBody = '',
+  setDiscussionBody,
+  handleAddDiscussion,
+  discussionType = '',
+  setDiscussionType,
+  discussionVisibility = '',
+  setDiscussionVisibility,
+  availableDiscussionVisibilityOptions = [],
+  overviewConversationEntries = [],
+  saving = false,
+  canPostInternalDiscussion = false,
+  canPostSharedDiscussion = false,
+  canPublishClientVisibleDiscussion = false,
+  onAttachDocument,
+  onViewActivity,
+}) {
+  return (
+    <section className="grid gap-6 rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)] xl:grid-cols-[minmax(0,0.9fr)_minmax(360px,0.7fr)]">
+      <form onSubmit={handleAddDiscussion} className="min-w-0">
+        <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Matter Conversation</h3>
+        <p className="mt-1 text-sm text-textMuted">Internal updates, bank updates, document requests, notes, and system events.</p>
+        <div className="mt-5 flex gap-2 border-b border-borderSoft">
+          <button type="button" className="border-b-2 border-primary px-3 py-2 text-sm font-semibold text-primary">Updates</button>
+          <button type="button" className="px-3 py-2 text-sm font-semibold text-textMuted">Notes</button>
+        </div>
+        <Field
+          as="textarea"
+          rows={4}
+          value={discussionBody}
+          onChange={(event) => setDiscussionBody(event.target.value)}
+          placeholder="Write an update, note, or @mention someone..."
+          className="mt-4"
+        />
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <label className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
+            Update Type
+            <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)} className="mt-1 min-h-9 text-xs">
+              {DISCUSSION_TYPES.map((item) => (
+                <option key={item.key} value={item.key}>{item.label}</option>
+              ))}
+            </Field>
+          </label>
+          <label className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
+            Visibility
+            <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)} className="mt-1 min-h-9 text-xs">
+              {availableDiscussionVisibilityOptions.map((item) => (
+                <option key={item.key} value={item.key}>{item.label}</option>
+              ))}
+            </Field>
+          </label>
+        </div>
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <Button type="button" variant="secondary" size="sm" onClick={onAttachDocument}>
+            <Paperclip size={14} />
+            Attach Document
+          </Button>
+          <Button
+            type="submit"
+            size="sm"
+            disabled={
+              saving ||
+              !discussionBody.trim() ||
+              (discussionVisibility === 'internal' && !canPostInternalDiscussion) ||
+              (discussionVisibility === 'shared' && !canPostSharedDiscussion) ||
+              (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion)
+            }
+          >
+            <Send size={14} />
+            {saving ? 'Posting...' : 'Post Update'}
+          </Button>
+        </div>
+      </form>
+      <div className="min-w-0">
+        <div className="flex items-center justify-between gap-3">
+          <h4 className="text-sm font-semibold text-textStrong">Recent Activity</h4>
+          <Button type="button" variant="ghost" size="sm" onClick={onViewActivity}>View all activity</Button>
+        </div>
+        <div className="mt-4 space-y-3">
+          {overviewConversationEntries.slice(0, 4).map((entry) => {
+            const meta = entry.meta || getActivityCategoryMeta(entry.category)
+            return (
+              <article key={entry.id} className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3">
+                <div className="flex items-start gap-3">
+                  <span className={`mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-[12px] ring-1 ${meta.icon}`}>
+                    {createElement(meta.Icon, { size: 16 })}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <strong className="text-sm text-textStrong">{entry.authorName}</strong>
+                      <span className="text-xs text-textMuted">{formatDateTime(entry.createdAt)}</span>
+                    </div>
+                    <p className="mt-1 text-sm leading-6 text-textBody">{entry.body || entry.title}</p>
+                  </div>
+                </div>
+              </article>
+            )
+          })}
+          {!overviewConversationEntries.length ? (
+            <p className="rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm text-textMuted">
+              No activity yet. Updates, notes and system events will appear here.
+            </p>
+          ) : null}
+        </div>
+      </div>
     </section>
   )
 }
@@ -3562,6 +4188,20 @@ function AttorneyTransactionDetail() {
       }),
     [data?.onboardingFormData, documents.length, requiredDocumentChecklist.length, transaction],
   )
+  const financeReadinessDashboard = useMemo(
+    () =>
+      getFinanceReadiness(transaction?.id || workspaceReference, {
+        transaction,
+        onboardingFormData: data?.onboardingFormData || {},
+        documents,
+        requiredDocumentChecklist,
+        documentSummary: {
+          totalRequired: requiredDocumentChecklist.length,
+          uploadedCount: documents.length,
+        },
+      }),
+    [data?.onboardingFormData, documents, requiredDocumentChecklist, transaction, workspaceReference],
+  )
   const workspaceMenuTabs = availableWorkspaceTabs.map((tab) => {
     if (tab.id === 'parties') {
       return { ...tab, meta: `${transactionParticipants.length} parties` }
@@ -4113,6 +4753,33 @@ function AttorneyTransactionDetail() {
     () => getBestQuote(transactionFinanceWorkflow?.quotes || transactionFinanceWorkflow?.offers || []),
     [transactionFinanceWorkflow],
   )
+  const bondQuoteRows = useMemo(
+    () => transactionFinanceWorkflow?.quotes || transactionFinanceWorkflow?.offers || [],
+    [transactionFinanceWorkflow],
+  )
+  const bondQuoteRecommendation = useMemo(() => getRecommendationContext(bondQuoteRows), [bondQuoteRows])
+  const recommendedBondQuote = bondQuoteRecommendation.recommended || bestBondQuote
+  const sortedBondQuoteRows = useMemo(
+    () =>
+      [...bondQuoteRows].sort((left, right) => {
+        if (String(left.id || '') === String(recommendedBondQuote?.id || '')) return -1
+        if (String(right.id || '') === String(recommendedBondQuote?.id || '')) return 1
+        return (getQuoteRepayment(left) || Number.POSITIVE_INFINITY) - (getQuoteRepayment(right) || Number.POSITIVE_INFINITY)
+      }),
+    [bondQuoteRows, recommendedBondQuote],
+  )
+  const bondBankCommandRows = useMemo(
+    () => buildBankCommandRows({ submissionRows: bondSubmissionRows, workflowData: transactionFinanceWorkflow }),
+    [bondSubmissionRows, transactionFinanceWorkflow],
+  )
+  const acceptedBondQuote = useMemo(
+    () =>
+      transactionFinanceWorkflow?.acceptedOffer ||
+      transactionFinanceWorkflow?.acceptedQuote ||
+      bondQuoteRows.find((quote) => ['approved_by_buyer', 'accepted'].includes(String(quote.quoteStatus || quote.quote_status || '').toLowerCase())) ||
+      null,
+    [bondQuoteRows, transactionFinanceWorkflow],
+  )
   const applicationReviewItems = useMemo(
     () => [
       ['Applicant', buyerDisplayName],
@@ -4143,6 +4810,31 @@ function AttorneyTransactionDetail() {
       transaction?.sales_price,
     ],
   )
+  function handleDownloadBondApplicationForm() {
+    if (typeof window === 'undefined' || typeof window.document === 'undefined') return
+
+    const html = buildBondApplicationFormHtml({
+      reference: workspaceReference,
+      buyerName: buyerDisplayName,
+      propertyLabel: matterHeadline,
+      generatedAt: new Date().toISOString(),
+      consultant: transaction?.bond_originator || transaction?.assigned_bond_originator_name || getParticipantDisplayName(assignedBondOriginator) || 'Unassigned',
+      owner: transaction?.bond_originator || transaction?.assigned_bond_processor_name || transaction?.processor_name || 'Unassigned',
+      statusLabel: displayedLifecycleLabel,
+      reviewItems: applicationReviewItems,
+      onboardingFormData: data?.onboardingFormData || {},
+      documents: documentLibraryRows,
+    })
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = window.document.createElement('a')
+    link.href = url
+    link.download = `${formatDownloadToken(workspaceReference || buyerDisplayName || transaction?.id)}-bond-application-form.html`
+    window.document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  }
   const bondHybridFinanceWorkflowPanel = isBondOrHybridFinance ? (
     <TransactionBondHybridFinanceWorkflowPanel
       workflowData={transactionFinanceWorkflow}
@@ -4289,6 +4981,50 @@ function AttorneyTransactionDetail() {
     } finally {
       setBondHybridFinanceActionLoading('')
     }
+  }
+
+  async function handleDeclineBondHybridQuote(quoteId) {
+    try {
+      setBondHybridFinanceActionLoading(quoteId)
+      setError('')
+      const result = await declineBondQuote(quoteId, { actorRole: workspaceRole })
+      await refreshBondHybridFinanceWorkflow(result)
+      await loadData({ background: true })
+    } catch (workflowActionError) {
+      setError(workflowActionError?.message || 'Unable to decline finance quote.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  async function handleDeclineAllBondHybridQuotes() {
+    const declineableQuotes = bondQuoteRows.filter((quote) => {
+      const status = String(quote.quoteStatus || quote.quote_status || '').toLowerCase()
+      return quote.id && !['declined', 'expired', 'not_selected', 'approved_by_buyer', 'accepted'].includes(status)
+    })
+    if (!declineableQuotes.length) return
+
+    try {
+      setBondHybridFinanceActionLoading('decline_all_quotes')
+      setError('')
+      let latestResult = null
+      for (const quote of declineableQuotes) {
+        latestResult = await declineBondQuote(quote.id, { actorRole: workspaceRole })
+      }
+      if (latestResult) await refreshBondHybridFinanceWorkflow(latestResult)
+      await loadData({ background: true })
+    } catch (workflowActionError) {
+      setError(workflowActionError?.message || 'Unable to decline finance quotes.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  function handleRequestBondQuoteRevision(quote = null) {
+    const bankName = getQuoteBankName(quote)
+    setDiscussionType('workflow')
+    setDiscussionVisibility('shared')
+    setDiscussionBody(bankName ? `Requesting a revised quote from ${bankName}.` : 'Requesting a revised bond quote.')
   }
 
   async function handleMarkBondHybridInstructionSent() {
@@ -6291,7 +7027,13 @@ function AttorneyTransactionDetail() {
                 isAgentView={isAgentTransactionView}
               />
             )}
-          <MatterWorkspaceTabs tabs={workspaceMenuTabs} activeTab={activeWorkspaceMenu} onChange={openWorkspaceMenu} premium={isAgentTransactionView} />
+          <MatterWorkspaceTabs
+            tabs={workspaceMenuTabs}
+            activeTab={activeWorkspaceMenu}
+            onChange={openWorkspaceMenu}
+            premium={isAgentTransactionView}
+            spread={workspaceRole === 'bond_originator'}
+          />
           {onboardingActionMessage ? (
             <p className="rounded-[14px] border border-borderDefault bg-surfaceAlt px-4 py-2.5 text-helper text-textMuted">
               {onboardingActionMessage}
@@ -6311,7 +7053,11 @@ function AttorneyTransactionDetail() {
               onStageChange={(stageKey) => void handleBondHybridFinanceStage(stageKey)}
             />
 
-            <IndicativeFinanceReadinessContainer handoff={financeReadinessHandoff} />
+            <FinanceReadinessDashboard
+              readiness={financeReadinessDashboard}
+              onViewIssues={() => openWorkspaceMenu('documents')}
+              onViewActionPlan={() => openWorkspaceMenu('tasks')}
+            />
 
             <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
               <BankSubmissionTracker rows={bondSubmissionRows} onViewAll={() => setWorkspaceMenu('banks_quotes')} />
@@ -7463,9 +8209,15 @@ function AttorneyTransactionDetail() {
                     Buyer onboarding is the source of truth. This tab reviews the submitted application data rather than recapturing it.
                   </p>
                 </div>
-                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-helper font-semibold ${onboardingCompleted ? 'border-success/30 bg-successSoft text-success' : 'border-warning/30 bg-warningSoft text-warning'}`}>
-                  {onboardingCompleted ? 'Onboarding complete' : 'Onboarding pending'}
-                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="button" variant="secondary" size="sm" onClick={handleDownloadBondApplicationForm}>
+                    <Download size={14} />
+                    Download Form
+                  </Button>
+                  <span className={`inline-flex items-center rounded-full border px-3 py-1 text-helper font-semibold ${onboardingCompleted ? 'border-success/30 bg-successSoft text-success' : 'border-warning/30 bg-warningSoft text-warning'}`}>
+                    {onboardingCompleted ? 'Onboarding complete' : 'Onboarding pending'}
+                  </span>
+                </div>
               </div>
               <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {applicationReviewItems.map(([label, value]) => (
@@ -7498,8 +8250,54 @@ function AttorneyTransactionDetail() {
         ) : null}
 
         {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'banks_quotes' ? (
-          <section className="space-y-5">
-            {financeCommandCenterPanel}
+          <section className="space-y-7">
+            <BondBankSubmissionCommandCenter
+              rows={bondBankCommandRows}
+              loadingAction={bondHybridFinanceActionLoading}
+              onSubmitBank={(payload) => void handleAddBondHybridApplication(payload)}
+              onUploadDocs={() => openWorkspaceMenu('documents')}
+              onViewQuote={(quote) => handleOpenFinanceDocument(quote)}
+            />
+
+            <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+              <QuoteComparisonCommandCenter
+                quotes={sortedBondQuoteRows}
+                recommendedQuote={recommendedBondQuote}
+                loadingAction={bondHybridFinanceActionLoading}
+                onAcceptQuote={(quote) => quote?.id ? void handleApproveBondHybridQuote(quote.id) : null}
+                onRequestRevision={handleRequestBondQuoteRevision}
+                onDeclineAll={() => void handleDeclineAllBondHybridQuotes()}
+                onViewAll={() => openWorkspaceMenu('banks_quotes')}
+              />
+              <BuyerDecisionPanel
+                acceptedQuote={acceptedBondQuote}
+                quotes={sortedBondQuoteRows}
+                onRecordDecision={(quote) => quote?.id ? void handleApproveBondHybridQuote(quote.id) : null}
+                onAddNote={() => {
+                  setDiscussionType('internal_note')
+                  setDiscussionVisibility('shared')
+                  setDiscussionBody('Buyer decision note: ')
+                }}
+              />
+            </section>
+
+            <BondMatterConversationPanel
+              discussionBody={discussionBody}
+              setDiscussionBody={setDiscussionBody}
+              handleAddDiscussion={handleAddDiscussion}
+              discussionType={discussionType}
+              setDiscussionType={setDiscussionType}
+              discussionVisibility={discussionVisibility}
+              setDiscussionVisibility={setDiscussionVisibility}
+              availableDiscussionVisibilityOptions={availableDiscussionVisibilityOptions}
+              overviewConversationEntries={overviewConversationEntries}
+              saving={saving}
+              canPostInternalDiscussion={canPostInternalDiscussion}
+              canPostSharedDiscussion={canPostSharedDiscussion}
+              canPublishClientVisibleDiscussion={canPublishClientVisibleDiscussion}
+              onAttachDocument={() => openWorkspaceMenu('documents')}
+              onViewActivity={() => openWorkspaceMenu('activity')}
+            />
           </section>
         ) : null}
 

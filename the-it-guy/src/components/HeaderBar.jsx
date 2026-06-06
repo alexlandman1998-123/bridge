@@ -26,6 +26,7 @@ function getPageTitle(pathname, stateTitle, role) {
   }
   if (pathname.startsWith('/transactions/')) return isAgentWorkspaceRole ? '' : 'Transactions'
   if (pathname.startsWith('/developments/')) return 'Developments'
+  if (pathname === '/bond/files' || pathname.startsWith('/bond/files/')) return ''
   if (role === 'bond_originator' && pathname === '/documents') return ''
 
   if (stateTitle) {
@@ -272,6 +273,8 @@ function HeaderBar({ onLogout, user }) {
       location.pathname === '/bond/pipeline' ||
       location.pathname === '/bond/applications' ||
       location.pathname === '/bond/transactions' ||
+      location.pathname === '/bond/files' ||
+      location.pathname.startsWith('/bond/files/') ||
       location.pathname === '/bond/partner-intelligence' ||
       location.pathname === '/bond/consultant-performance' ||
       location.pathname === '/bond/branch-operations' ||

@@ -428,34 +428,70 @@ function PartnerPieChart({ partners = [] }) {
   }, { cursor: 0, parts: [] })
   const gradient = gradientParts.parts.join(', ')
   const leadPartner = rows[0]
+  const leadShare = Math.round((normalizeNumber(leadPartner.applicationsReferred) / total) * 100)
 
   return (
-    <div className="grid gap-3 sm:grid-cols-[132px_minmax(0,1fr)] lg:grid-cols-1 xl:grid-cols-[132px_minmax(0,1fr)]">
-      <div className="relative mx-auto flex h-[132px] w-[132px] items-center justify-center rounded-full shadow-[inset_0_0_0_1px_rgba(219,229,240,0.95)]" style={{ background: `conic-gradient(${gradient})` }}>
-        <div className="flex h-[76px] w-[76px] flex-col items-center justify-center rounded-full bg-white text-center shadow-[0_8px_20px_rgba(15,35,57,0.08)]">
-          <span className="text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-[#74879b]">Referrals</span>
-          <strong className="mt-0.5 text-xl font-semibold leading-none text-[#142132]">{formatNumber(total)}</strong>
+    <div className="min-h-[360px] rounded-[20px] border border-[#dce8f2] bg-[linear-gradient(145deg,#fbfdff_0%,#f3f7fb_100%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
+      <div className="grid gap-4 xl:grid-cols-[164px_minmax(0,1fr)] xl:items-start">
+        <div className="rounded-[18px] border border-[#e1ebf4] bg-white px-4 py-4 text-center shadow-[0_12px_24px_rgba(15,35,57,0.04)]">
+          <div className="relative mx-auto flex h-[148px] w-[148px] items-center justify-center rounded-full shadow-[inset_0_0_0_1px_rgba(219,229,240,0.95)]" style={{ background: `conic-gradient(${gradient})` }}>
+            <div className="flex h-[84px] w-[84px] flex-col items-center justify-center rounded-full bg-white text-center shadow-[0_8px_20px_rgba(15,35,57,0.08)]">
+              <span className="text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-[#74879b]">Referrals</span>
+              <strong className="mt-0.5 text-2xl font-semibold leading-none text-[#142132]">{formatNumber(total)}</strong>
+            </div>
+          </div>
+          <p className="mt-4 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#74879b]">Top source share</p>
+          <p className="mt-1 text-lg font-semibold leading-none text-[#17324d]">{formatPercent(leadShare)}</p>
+        </div>
+
+        <div className="min-w-0">
+          <Link to={leadPartner.href || '/bond/partners'} className="group block rounded-[18px] border border-[#d6e3ef] bg-white px-4 py-3.5 shadow-[0_10px_22px_rgba(15,35,57,0.035)] transition hover:-translate-y-0.5 hover:border-[#bdd0e1]">
+            <div className="flex items-start justify-between gap-3">
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold text-[#17324d]">{leadPartner.partner}</span>
+                <span className="mt-1 block truncate text-xs font-medium text-[#71869d]">{leadPartner.sourceType} · {formatPercent(leadPartner.conversionRate)} conversion</span>
+              </span>
+              <span className="shrink-0 rounded-full border border-[#d9e7d9] bg-[#f3fbf4] px-2.5 py-1 text-xs font-semibold text-[#25714f]">
+                Lead
+              </span>
+            </div>
+          </Link>
+
+          <div className="mt-3 space-y-2">
+            {rows.map((partner, index) => {
+              const share = Math.round((normalizeNumber(partner.applicationsReferred) / total) * 100)
+              return (
+                <Link key={partner.key} to={partner.href || '/bond/partners'} className="grid grid-cols-[minmax(0,1fr)_44px] items-center gap-3 rounded-[14px] border border-transparent px-2.5 py-2 transition hover:border-[#dce8f2] hover:bg-white">
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: PARTNER_PIE_COLORS[index % PARTNER_PIE_COLORS.length] }} />
+                    <span className="min-w-0">
+                      <span className="block truncate text-xs font-semibold text-[#17324d]">{partner.partner}</span>
+                      <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-[#e6eef6]">
+                        <span className="block h-full rounded-full" style={{ width: `${Math.max(4, share)}%`, backgroundColor: PARTNER_PIE_COLORS[index % PARTNER_PIE_COLORS.length] }} />
+                      </span>
+                    </span>
+                  </span>
+                  <span className="text-right text-xs font-semibold text-[#60758d]">{share}%</span>
+                </Link>
+              )
+            })}
+          </div>
         </div>
       </div>
-      <div className="min-w-0 space-y-2">
-        <Link to={leadPartner.href || '/bond/partners'} className="block rounded-[14px] border border-[#dce8f2] bg-[#fbfdff] px-3 py-2.5 transition hover:border-[#c6d8e8] hover:bg-white">
-          <p className="truncate text-sm font-semibold text-[#17324d]">{leadPartner.partner}</p>
-          <p className="mt-0.5 truncate text-xs font-medium text-[#71869d]">{leadPartner.sourceType} · {formatPercent(leadPartner.conversionRate)} conversion</p>
-        </Link>
-        <div className="space-y-1.5">
-          {rows.map((partner, index) => {
-            const share = Math.round((normalizeNumber(partner.applicationsReferred) / total) * 100)
-            return (
-              <Link key={partner.key} to={partner.href || '/bond/partners'} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-[10px] px-2 py-1.5 transition hover:bg-[#f7fbff]">
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: PARTNER_PIE_COLORS[index % PARTNER_PIE_COLORS.length] }} />
-                  <span className="truncate text-xs font-semibold text-[#17324d]">{partner.partner}</span>
-                </span>
-                <span className="text-xs font-semibold text-[#60758d]">{share}%</span>
-              </Link>
-            )
-          })}
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        <div className="rounded-[14px] border border-[#e1ebf4] bg-white px-3 py-2.5">
+          <p className="text-[0.62rem] font-semibold uppercase tracking-[0.1em] text-[#74879b]">Partners</p>
+          <p className="mt-1 text-sm font-semibold text-[#17324d]">{formatNumber(rows.length)}</p>
         </div>
+        <div className="rounded-[14px] border border-[#e1ebf4] bg-white px-3 py-2.5">
+          <p className="text-[0.62rem] font-semibold uppercase tracking-[0.1em] text-[#74879b]">Leader</p>
+          <p className="mt-1 truncate text-sm font-semibold text-[#17324d]">{leadPartner.partner}</p>
+        </div>
+        <Link to="/bond/partners" className="inline-flex min-h-[54px] items-center justify-between gap-3 rounded-[14px] border border-[#d6e3ef] bg-white px-3 py-2.5 text-sm font-semibold text-[#204b84] transition hover:border-[#bdd0e1] hover:bg-[#fbfdff]">
+          Partner view
+          <ArrowRight size={15} />
+        </Link>
       </div>
     </div>
   )
