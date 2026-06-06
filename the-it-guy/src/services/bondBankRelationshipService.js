@@ -57,6 +57,17 @@ const DECLINE_REASONS = ['Affordability', 'Credit Profile', 'Income Verification
 const OPEN_ESCALATION_STATUSES = new Set(['open', 'in_progress', 'assigned', 'new'])
 const PRE_APPROVAL_TERMS = ['pre-approved', 'pre approved', 'preapproval', 'pre approval']
 const ACCEPTED_TERMS = ['accepted', 'buyer approved', 'buyer_approved', 'approved_by_buyer']
+const DEFAULT_REGIONAL_SLA_ROWS = Object.freeze([
+  'Gauteng',
+  'Western Cape',
+  'KZN',
+  'Eastern Cape',
+  'Free State',
+  'Limpopo',
+  'Mpumalanga',
+  'North West',
+  'Northern Cape',
+])
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -416,11 +427,11 @@ function getRawRows(context = {}, options = {}) {
     name: bank.bankName,
     shortName: bank.shortName,
     status: bank.status,
-    relationshipOwner: bank.relationshipOwner,
+    relationshipOwner: bank.relationshipOwner || bank.slaOwner,
     contactName: bank.primaryContactName,
     contactEmail: bank.primaryContactEmail,
     contactPhone: bank.primaryContactPhone,
-    nextReviewDate: bank.nextReviewDate,
+    nextReviewDate: bank.nextReviewDate || bank.agreementReviewDate,
     relationshipNotes: bank.notes,
     createdAt: bank.createdAt,
     updatedAt: bank.updatedAt,
@@ -490,7 +501,7 @@ function scopeRows(rawRows = {}) {
     ...rawRows,
     applications,
     branches: rawRows.branches.filter((row) => scopeMatchesBranch(rawRows.scope, row)),
-    banks: rawRows.banks.filter((bank) => bankIds.has(bank.id) || rawRows.scope.scopeLevel === BOND_ORGANISATION_LEVELS.hq),
+    banks: rawRows.banks,
     escalations,
     feedback,
   }
@@ -748,6 +759,7 @@ function buildBankPeriodTrend(rows = {}, bankId = '', now = new Date()) {
 function buildCommandBankRow(rows = {}, bank = {}, options = {}) {
   const metrics = bankMetrics(rows, bank.id)
   const revenuePerBond = resolveRevenuePerBond(options)
+  const revenueGeneratingApplications = Math.max(metrics.approvalCount, metrics.instructionCount)
   const healthScore = calculateBankRelationshipCommandHealthScore({
     applications: metrics.applications.length,
     approvalRate: metrics.approvalRate,
@@ -774,7 +786,8 @@ function buildCommandBankRow(rows = {}, bank = {}, options = {}) {
     instructionsIssued: metrics.instructionCount,
     escalations: metrics.escalationCount,
     openEscalations: metrics.openEscalationCount,
-    revenueGenerated: metrics.approvalCount * revenuePerBond,
+    escalationRate: percent(metrics.escalationCount, metrics.submitted.length || metrics.applications.length),
+    revenueGenerated: revenueGeneratingApplications * revenuePerBond,
     healthScore,
     healthStatus: commandHealthStatus(healthScore),
     trend: buildBankPeriodTrend(rows, bank.id, options.now ? new Date(options.now) : new Date()),
@@ -782,9 +795,25 @@ function buildCommandBankRow(rows = {}, bank = {}, options = {}) {
   }
 }
 
+function calculateRelationshipRankScore(row = {}, maxRevenue = 0) {
+  if (!Number(row.applications || 0)) return null
+  const responseTargetHours = 72
+  const responseScore = row.averageResponseTime > 0 ? clamp(100 - Math.max(0, Number(row.averageResponseTime) - responseTargetHours) * 1.15) : 55
+  const revenueScore = maxRevenue ? clamp((Number(row.revenueGenerated || 0) / maxRevenue) * 100) : 0
+  const escalationScore = clamp(100 - Number(row.escalationRate || 0) * 2 - Number(row.openEscalations || 0) * 10)
+  return clamp(
+    clamp(row.approvalRate) * 0.28 +
+      responseScore * 0.2 +
+      clamp(row.instructionRate) * 0.18 +
+      revenueScore * 0.22 +
+      escalationScore * 0.12,
+  )
+}
+
 function buildCommandKpis(rows = {}, bankRows = [], options = {}) {
   const submitted = rows.applications.filter(isSubmittedApplication)
   const approvals = rows.applications.filter(isApprovedApplication)
+  const instructions = rows.applications.filter(isInstructionApplication)
   const activeRows = bankRows.filter((row) => row.applications > 0)
   const fastest = [...activeRows].filter((row) => row.averageResponseTime > 0).sort((left, right) => left.averageResponseTime - right.averageResponseTime)[0] || null
   const mostUsed = [...activeRows].sort((left, right) => right.applications - left.applications)[0] || null
@@ -794,7 +823,7 @@ function buildCommandKpis(rows = {}, bankRows = [], options = {}) {
     fastestBank: fastest ? { bankId: fastest.bankId, bankName: fastest.bankName, responseTime: fastest.averageResponseTime } : null,
     mostUsedBank: mostUsed ? { bankId: mostUsed.bankId, bankName: mostUsed.bankName, applications: mostUsed.applications } : null,
     averageResponseTime: average(rows.applications.map(getApplicationResponseHours)),
-    revenueGenerated: approvals.length * resolveRevenuePerBond(options),
+    revenueGenerated: Math.max(approvals.length, instructions.length) * resolveRevenuePerBond(options),
   }
 }
 
@@ -839,14 +868,14 @@ function buildApprovalFunnel(rows = {}) {
 }
 
 function buildRegionalSlaHeatmap(regionalPerformance = [], bankRows = []) {
-  const regionNames = [...new Set(regionalPerformance.map((row) => row.regionName).filter(Boolean))]
+  const discoveredRegionNames = regionalPerformance.map((row) => row.regionName).filter(Boolean)
+  const regionNames = [...new Set([...DEFAULT_REGIONAL_SLA_ROWS, ...discoveredRegionNames])]
   const banks = (bankRows.length ? bankRows : regionalPerformance)
     .reduce((items, row) => {
       const bankId = slugify(row.bankId || row.id)
       if (!bankId || items.some((item) => item.bankId === bankId)) return items
       return [...items, { bankId, bankName: normalizeText(row.bankName || row.name || bankNameForId(bankId)) }]
     }, [])
-    .slice(0, 5)
   return {
     banks,
     rows: regionNames.map((regionName) => ({
@@ -865,6 +894,44 @@ function buildRegionalSlaHeatmap(regionalPerformance = [], bankRows = []) {
         }
       }),
     })),
+  }
+}
+
+function buildBankOpportunityMatrix(bankRows = []) {
+  const activeRows = bankRows.filter((row) => Number(row.applications || 0) > 0)
+  if (!activeRows.length) {
+    return {
+      quadrants: [
+        { id: 'preferred', title: 'Preferred Banks', approval: 'High Approval', revenue: 'High Revenue', description: 'Send more high-fit applications here.', banks: [] },
+        { id: 'growth', title: 'Growth Opportunity', approval: 'High Approval', revenue: 'Low Revenue', description: 'Underutilised relationships with room to grow.', banks: [] },
+        { id: 'review', title: 'Needs Review', approval: 'Low Approval', revenue: 'High Revenue', description: 'Commercially meaningful relationships needing intervention.', banks: [] },
+        { id: 'low-priority', title: 'Low Priority', approval: 'Low Approval', revenue: 'Low Revenue', description: 'Lower immediate routing priority.', banks: [] },
+      ],
+      hasData: false,
+    }
+  }
+  const approvalThreshold = average(activeRows.map((row) => row.approvalRate))
+  const revenueThreshold = average(activeRows.map((row) => row.revenueGenerated))
+  const quadrants = [
+    { id: 'preferred', title: 'Preferred Banks', approval: 'High Approval', revenue: 'High Revenue', description: 'Send more high-fit applications here.', banks: [] },
+    { id: 'growth', title: 'Growth Opportunity', approval: 'High Approval', revenue: 'Low Revenue', description: 'Underutilised relationships with room to grow.', banks: [] },
+    { id: 'review', title: 'Needs Review', approval: 'Low Approval', revenue: 'High Revenue', description: 'Commercially meaningful relationships needing intervention.', banks: [] },
+    { id: 'low-priority', title: 'Low Priority', approval: 'Low Approval', revenue: 'Low Revenue', description: 'Lower immediate routing priority.', banks: [] },
+  ]
+  activeRows.forEach((row) => {
+    const highApproval = Number(row.approvalRate || 0) >= approvalThreshold
+    const highRevenue = Number(row.revenueGenerated || 0) >= revenueThreshold
+    const quadrantId = highApproval && highRevenue ? 'preferred' : highApproval ? 'growth' : highRevenue ? 'review' : 'low-priority'
+    quadrants.find((quadrant) => quadrant.id === quadrantId)?.banks.push(row)
+  })
+  quadrants.forEach((quadrant) => {
+    quadrant.banks.sort((left, right) => (right.relationshipRankScore || 0) - (left.relationshipRankScore || 0) || left.bankName.localeCompare(right.bankName))
+  })
+  return {
+    approvalThreshold,
+    revenueThreshold,
+    quadrants,
+    hasData: true,
   }
 }
 
@@ -1078,12 +1145,19 @@ export function getBankDashboard(context = {}, options = {}) {
 export function getBankRelationshipCommandCentre(context = {}, options = {}) {
   const rows = getRows(context, options)
   assertBankDashboardAccess(rows)
-  const bankRows = rows.banks
+  const rawBankRows = rows.banks
     .map((bank) => buildCommandBankRow(rows, bank, options))
     .sort((left, right) => right.applications - left.applications || (right.healthScore || 0) - (left.healthScore || 0))
+  const maxRevenue = Math.max(...rawBankRows.map((row) => Number(row.revenueGenerated || 0)), 0)
+  const totalRevenue = rawBankRows.reduce((sum, row) => sum + Number(row.revenueGenerated || 0), 0)
+  const bankRows = rawBankRows.map((row) => ({
+    ...row,
+    revenueShare: percent(row.revenueGenerated, totalRevenue),
+    relationshipRankScore: calculateRelationshipRankScore(row, maxRevenue),
+  }))
   const rankedRows = [...bankRows]
     .filter((row) => row.applications > 0)
-    .sort((left, right) => (right.healthScore || 0) - (left.healthScore || 0))
+    .sort((left, right) => (right.relationshipRankScore || 0) - (left.relationshipRankScore || 0) || (right.healthScore || 0) - (left.healthScore || 0))
   const regionalPerformance = getRegionalBankPerformance(context, options)
   const performanceMatrix = [...bankRows].sort((left, right) => right.applications - left.applications || left.bankName.localeCompare(right.bankName))
   const model = {
@@ -1097,10 +1171,11 @@ export function getBankRelationshipCommandCentre(context = {}, options = {}) {
     distribution: buildBankDistribution(bankRows),
     approvalFunnel: buildApprovalFunnel(rows),
     performanceMatrix,
+    opportunityMatrix: buildBankOpportunityMatrix(performanceMatrix),
     regionalPerformance,
     regionalSlaHeatmap: buildRegionalSlaHeatmap(regionalPerformance, performanceMatrix),
     trends: buildTrendWidgets(rows, options),
-    profiles: buildBankProfiles(rows, performanceMatrix).filter((profile) => profile.applications > 0 || profile.bankName !== 'Other').slice(0, 6),
+    profiles: buildBankProfiles(rows, performanceMatrix).filter((profile) => profile.bankName !== 'Other'),
   }
   return {
     ...model,

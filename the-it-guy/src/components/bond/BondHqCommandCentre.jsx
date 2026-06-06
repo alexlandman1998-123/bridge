@@ -52,7 +52,7 @@ function getAlert(alerts = [], keys = []) {
 
 function SectionCard({ eyebrow = '', title = '', description = '', action = null, children, className = '' }) {
   return (
-    <section className={`rounded-[18px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.032)] ${className}`}>
+    <section className={`rounded-[18px] border border-[#dbe5f0] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.032)] ${className}`}>
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           {eyebrow ? <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#74879b]">{eyebrow}</p> : null}
@@ -71,7 +71,7 @@ export default function BondHqCommandCentre({ snapshot = {} }) {
   const regions = hq.regionalPerformance || []
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <HqKpiGrid items={hq.nationalSnapshot || []} />
       <HqExecutiveAlerts alerts={hq.alerts || []} funnel={hq.pipelineFunnel} />
       <HqPipelineFlow funnel={hq.pipelineFunnel} />
@@ -91,27 +91,47 @@ export function HqKpiGrid({ items = [] }) {
   if (!rows.length) {
     return <HqEmptyState title="No national snapshot yet" description="Not enough data." />
   }
+  const primary = rows[0]
+  const secondaryRows = rows.slice(1)
+  const PrimaryIcon = icons[0] || BarChart3
 
   return (
-    <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-      {rows.map((item, index) => {
-        const Icon = icons[index] || BarChart3
-        return (
-          <article key={item.key || item.label} className="flex min-h-[148px] flex-col justify-between rounded-[18px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
-            <div>
-              <span className="flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#eef5ff] text-[#24518a]">
-                <Icon size={18} />
-              </span>
-              <p className="mt-4 text-[0.8rem] font-semibold leading-4 text-[#60758d]">{item.label}</p>
-              <p className="mt-2 text-[1.55rem] font-semibold leading-none text-[#101828]">{item.value || 'Not enough data'}</p>
+    <section className="rounded-[22px] border border-[#dbe5f0] bg-white p-5 shadow-[0_16px_34px_rgba(15,23,42,0.04)]">
+      <div className="grid gap-4 xl:grid-cols-[1.05fr_2fr]">
+        <article className="relative overflow-hidden rounded-[20px] border border-[#d7e4ef] bg-[linear-gradient(135deg,#f8fbff_0%,#eef5fb_100%)] p-5">
+          <span className="pointer-events-none absolute right-[-42px] top-[-52px] h-32 w-32 rounded-full bg-white/65" />
+          <div className="relative">
+            <span className="flex h-11 w-11 items-center justify-center rounded-[15px] bg-white text-[#24518a] shadow-sm ring-1 ring-[#dbe7f2]">
+              <PrimaryIcon size={19} />
+            </span>
+            <p className="mt-5 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#60758d]">{primary.label}</p>
+            <p className="mt-2 text-4xl font-semibold leading-none text-[#101828]">{primary.value || 'Not enough data'}</p>
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-[#d9e7d9] bg-white px-3 py-1 text-xs font-semibold text-[#25714f]">{primary.trend || 'Tracking'}</span>
+              <span className="min-w-0 text-xs font-medium text-[#71869d]">{primary.helper || 'Not enough data'}</span>
             </div>
-            <div className="mt-3 flex items-center justify-between gap-2">
-              <p className="min-w-0 truncate text-[0.68rem] font-medium text-[#74879b]">{item.helper || 'Not enough data'}</p>
-              <span className="shrink-0 rounded-full border border-[#d9e7d9] bg-[#f3fbf4] px-2 py-0.5 text-[0.62rem] font-semibold text-[#25714f]">{item.trend || 'Tracking'}</span>
-            </div>
-          </article>
-        )
-      })}
+          </div>
+        </article>
+
+        <div className="grid overflow-hidden rounded-[20px] border border-[#dbe5f0] bg-[#fbfdff] sm:grid-cols-2 xl:grid-cols-4">
+          {secondaryRows.map((item, index) => {
+            const Icon = icons[index + 1] || BarChart3
+            return (
+              <article key={item.key || item.label} className="min-h-[136px] border-[#e1ebf4] p-4 sm:border-l xl:first:border-l-0">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-[#eef5ff] text-[#24518a]">
+                    <Icon size={17} />
+                  </span>
+                  <span className="rounded-full border border-[#d9e7d9] bg-white px-2 py-0.5 text-[0.62rem] font-semibold text-[#25714f]">{item.trend || 'Tracking'}</span>
+                </div>
+                <p className="mt-4 text-[0.78rem] font-semibold leading-4 text-[#60758d]">{item.label}</p>
+                <p className="mt-2 truncate text-2xl font-semibold leading-none text-[#101828]">{item.value || 'Not enough data'}</p>
+                <p className="mt-3 truncate text-[0.68rem] font-medium text-[#74879b]">{item.helper || 'Not enough data'}</p>
+              </article>
+            )
+          })}
+        </div>
+      </div>
     </section>
   )
 }
@@ -154,38 +174,43 @@ export function HqExecutiveAlerts({ alerts = [], funnel = {} }) {
       value: normalizeNumber(getAlert(alerts, ['branches', 'high_risk_branches'])?.value),
     },
   ]
+  const riskTotal = alertRows.reduce((total, item) => total + item.value, 0)
 
   return (
-    <section className="relative overflow-hidden rounded-[18px] border border-[#cfddea] bg-white p-4 shadow-[0_14px_32px_rgba(15,35,57,0.055)]">
+    <section className="relative overflow-hidden rounded-[22px] border border-[#cfddea] bg-white p-5 shadow-[0_14px_32px_rgba(15,35,57,0.055)]">
       <span className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#17324d] via-[#35698b] to-[#d8a34d]" />
       <span className="pointer-events-none absolute right-[-54px] top-[-74px] h-36 w-36 rounded-full bg-[#eef5ff]" />
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div className="relative grid gap-5 xl:grid-cols-[0.8fr_1.8fr] xl:items-center">
         <div className="relative">
           <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#5f7d99]">Risk Monitor</p>
           <h2 className="mt-1 text-[1rem] font-semibold text-[#142132]">Executive Alerts</h2>
+          <p className="mt-2 text-sm leading-6 text-[#64788f]">Open items that need operational attention before they slow the application book.</p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <span className="text-3xl font-semibold leading-none text-[#142132]">{formatNumber(riskTotal)}</span>
+            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[#74879b]">active risk signals</span>
+          </div>
+          <Link to="/bond/reports?view=executive-risk" className="mt-5 inline-flex items-center gap-2 rounded-full border border-[#d4e1ed] bg-[#f8fbff] px-3 py-1.5 text-[0.82rem] font-semibold text-[#17324d] transition hover:border-[#b8ccde] hover:bg-white">
+            View risk report <ArrowRight size={15} />
+          </Link>
         </div>
-        <Link to="/bond/reports?view=executive-risk" className="relative inline-flex items-center gap-2 rounded-full border border-[#d4e1ed] bg-[#f8fbff] px-3 py-1.5 text-[0.82rem] font-semibold text-[#17324d] transition hover:border-[#b8ccde] hover:bg-white">
-          View risk report <ArrowRight size={15} />
-        </Link>
-      </div>
-      <div className="relative mt-3 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
-        {alertRows.map((item) => {
-          const Icon = item.icon
-          return (
-            <Link key={item.key} to={item.href} className="group flex min-h-[76px] items-center justify-between gap-3 rounded-[14px] border border-[#dfe8f1] bg-[#fbfdff] px-3 py-2.5 transition hover:-translate-y-0.5 hover:border-[#bdd0e1] hover:bg-white hover:shadow-[0_12px_24px_rgba(15,35,57,0.055)]">
-              <span className="flex min-w-0 items-center gap-3">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[11px] bg-[#fff6e6] text-[#a36612] ring-1 ring-[#f1d8a8]">
-                  <Icon size={15} />
+
+        <div className="grid overflow-hidden rounded-[18px] border border-[#dfe8f1] bg-[#fbfdff] sm:grid-cols-2 lg:grid-cols-5">
+          {alertRows.map((item) => {
+            const Icon = item.icon
+            return (
+              <Link key={item.key} to={item.href} className="group min-h-[96px] border-[#e1ebf4] px-4 py-3 transition hover:bg-white sm:border-l lg:first:border-l-0">
+                <span className="flex items-center justify-between gap-3">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[11px] bg-[#fff6e6] text-[#a36612] ring-1 ring-[#f1d8a8]">
+                    <Icon size={15} />
+                  </span>
+                  <span className="text-[0.68rem] font-semibold text-[#24518a] transition group-hover:translate-x-0.5">View</span>
                 </span>
-                <span className="min-w-0">
-                  <strong className="block text-lg font-semibold text-[#142132]">{formatNumber(item.value)}</strong>
-                  <span className="block truncate text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#60758d]">{item.label}</span>
-                </span>
-              </span>
-              <span className="shrink-0 text-[0.68rem] font-semibold text-[#24518a] transition group-hover:translate-x-0.5">View</span>
-            </Link>
-          )
-        })}
+                <strong className="mt-3 block text-2xl font-semibold leading-none text-[#142132]">{formatNumber(item.value)}</strong>
+                <span className="mt-2 block truncate text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#60758d]">{item.label}</span>
+              </Link>
+            )
+          })}
+        </div>
       </div>
     </section>
   )
@@ -553,7 +578,25 @@ export function HqLowerInsightGrid({ leaderboard = {}, partners = [], revenue = 
   const topPartners = partners.slice(0, 4)
 
   return (
-    <section className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-4">
+    <section className="grid gap-4 lg:grid-cols-2">
+      <SectionCard
+        eyebrow="Partner Performance"
+        title="Top Partner Performance"
+        description="Highest-value referral channels and partner sources."
+        action={<Link to="/bond/partners" className="shrink-0 text-sm font-semibold text-[#204b84] hover:text-[#17324d]">View all</Link>}
+      >
+        <PartnerPieChart partners={topPartners} />
+      </SectionCard>
+
+      <SectionCard
+        eyebrow="Revenue"
+        title="Revenue Overview"
+        description="Projected, confirmed and forecast commission at a glance."
+        action={<Link to="/bond/revenue" className="shrink-0 text-sm font-semibold text-[#204b84] hover:text-[#17324d]">View report</Link>}
+      >
+        <RevenueOverview revenue={revenue} />
+      </SectionCard>
+
       <SectionCard
         eyebrow="Branch Leaderboard"
         title="Top Performing Branches"
@@ -574,24 +617,6 @@ export function HqLowerInsightGrid({ leaderboard = {}, partners = [], revenue = 
         <div className="grid gap-2.5">
           {attentionBranches.length ? attentionBranches.slice(0, 4).map((branch) => <CompactBranchRow key={branch.key} branch={branch} attention />) : <HqEmptyState title="No branch risks" description="Not enough data." icon={ShieldAlert} />}
         </div>
-      </SectionCard>
-
-      <SectionCard
-        eyebrow="Partner Performance"
-        title="Top Partner Performance"
-        description="Highest-value referral channels and partner sources."
-        action={<Link to="/bond/partners" className="shrink-0 text-sm font-semibold text-[#204b84] hover:text-[#17324d]">View all</Link>}
-      >
-        <PartnerPieChart partners={topPartners} />
-      </SectionCard>
-
-      <SectionCard
-        eyebrow="Revenue"
-        title="Revenue Overview"
-        description="Projected, confirmed and forecast commission at a glance."
-        action={<Link to="/bond/revenue" className="shrink-0 text-sm font-semibold text-[#204b84] hover:text-[#17324d]">View report</Link>}
-      >
-        <RevenueOverview revenue={revenue} />
       </SectionCard>
     </section>
   )

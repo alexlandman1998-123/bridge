@@ -5,11 +5,13 @@ import {
   Bell,
   Building2,
   CalendarDays,
+  CheckCircle2,
   ChevronRight,
   CircleDollarSign,
   Clock3,
   Copy,
   Download,
+  FileCheck2,
   FileText,
   Landmark,
   MessageSquarePlus,
@@ -69,6 +71,7 @@ import {
   approveBondQuote,
   archiveTransactionLifecycle,
   cancelTransactionLifecycle,
+  createTransactionDocumentRequests,
   declineBondQuote,
   fetchTransactionCoreById,
   fetchTransactionById,
@@ -99,6 +102,7 @@ import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partn
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { getFinanceReadiness } from '../services/bondFinanceReadinessService'
+import { getDocumentReadiness } from '../services/documentReadinessService'
 import { getBankPanelForCurrentUser } from '../services/bondOriginatorBankService'
 
 const ATTORNEY_WORKSPACE_TABS = [
@@ -216,6 +220,11 @@ function getAttorneyCategoryForRequiredDocument(requirement = {}) {
 
 const DOCUMENT_LIBRARY_FILTERS = [
   { key: 'all', label: 'All' },
+  { key: 'critical', label: 'Critical' },
+  { key: 'missing', label: 'Missing' },
+  { key: 'pending_review', label: 'Pending Review' },
+  { key: 'bank_requested', label: 'Bank Requested' },
+  { key: 'verified', label: 'Verified' },
   { key: 'buyer', label: 'Buyer' },
   { key: 'seller', label: 'Seller' },
   { key: 'finance', label: 'Finance' },
@@ -225,6 +234,8 @@ const DOCUMENT_LIBRARY_FILTERS = [
   { key: 'generated', label: 'Generated' },
   { key: 'internal', label: 'Internal' },
 ]
+
+const DOCUMENT_LIBRARY_OPERATIONAL_FILTERS = new Set(['critical', 'missing', 'pending_review', 'bank_requested', 'verified'])
 
 const DOCUMENT_RELATED_WORKFLOW_OPTIONS = [
   { value: '', label: 'Select workflow' },
@@ -242,6 +253,28 @@ const DOCUMENT_VISIBILITY_OPTIONS = [
   { key: 'client_visible', label: 'Client visible' },
   { key: 'shared', label: 'Shared with roleplayers' },
   { key: 'internal', label: 'Internal only' },
+]
+
+const ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS = [
+  { value: 'buyer', label: 'Buyer' },
+  { value: 'seller', label: 'Seller' },
+  { value: 'buyer_and_seller', label: 'Both Buyer and Seller' },
+  { value: 'agent', label: 'Agent' },
+  { value: 'developer', label: 'Developer' },
+  { value: 'attorney', label: 'Attorney' },
+  { value: 'bond_originator', label: 'Bond Originator' },
+  { value: 'other', label: 'Other' },
+]
+
+const ADDITIONAL_DOCUMENT_VISIBILITY_OPTIONS = [
+  { value: 'client_visible', label: 'Client visible' },
+  { value: 'shared_role_players', label: 'Shared roleplayers' },
+  { value: 'internal_only', label: 'Internal only' },
+]
+
+const ADDITIONAL_DOCUMENT_PRIORITY_OPTIONS = [
+  { value: 'normal', label: 'Normal' },
+  { value: 'urgent', label: 'Urgent' },
 ]
 
 const LEGAL_WORKFLOW_DETAIL_ROUTE_KEYS = ['transfer', 'bond-registration', 'bond-cancellation']
@@ -347,7 +380,22 @@ function resolveDocumentWorkflowLabel(document = {}) {
 
 function normalizeLibraryCategory(category = '') {
   const normalized = String(category || '').trim().toLowerCase()
-  if (['all', 'buyer', 'seller', 'finance', 'transfer', 'bond', 'cancellation', 'generated', 'internal'].includes(normalized)) {
+  if ([
+    'all',
+    'critical',
+    'missing',
+    'pending_review',
+    'bank_requested',
+    'verified',
+    'buyer',
+    'seller',
+    'finance',
+    'transfer',
+    'bond',
+    'cancellation',
+    'generated',
+    'internal',
+  ].includes(normalized)) {
     return normalized
   }
   return ''
@@ -414,6 +462,31 @@ function getDocumentPriorityTone(priority = '') {
   return 'border-orange-100 bg-orange-50 text-orange-700'
 }
 
+function getAdditionalRequestStatusLabel(status = '') {
+  const normalized = String(status || '').trim().toLowerCase()
+  if (normalized === 'uploaded') return 'Uploaded'
+  if (normalized === 'under_review' || normalized === 'reviewed') return 'Under Review'
+  if (normalized === 'completed') return 'Completed'
+  if (normalized === 'rejected') return 'Rejected'
+  if (normalized === 'cancelled') return 'Cancelled'
+  return 'Requested'
+}
+
+function getAdditionalRequestStatusTone(status = '') {
+  const normalized = String(status || '').trim().toLowerCase()
+  if (normalized === 'completed') return 'border-emerald-100 bg-emerald-50 text-emerald-700'
+  if (normalized === 'uploaded' || normalized === 'under_review' || normalized === 'reviewed') return 'border-blue-100 bg-blue-50 text-blue-700'
+  if (normalized === 'rejected' || normalized === 'cancelled') return 'border-red-100 bg-red-50 text-red-700'
+  return 'border-orange-100 bg-orange-50 text-orange-700'
+}
+
+function getAdditionalRequestOptionLabel(options, value, fallback = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  const matched = options.find((option) => option.value === normalized || option.key === normalized)
+  if (matched?.label) return matched.label
+  return fallback || toTitle(normalized || 'not set')
+}
+
 function getDocumentCommandCategoryLabel(category = '') {
   const normalized = normalizeLibraryCategory(category)
   const labels = {
@@ -425,6 +498,11 @@ function getDocumentCommandCategoryLabel(category = '') {
     cancellation: 'Cancellation',
     generated: 'Generated',
     internal: 'Internal',
+    critical: 'Critical',
+    missing: 'Missing',
+    pending_review: 'Pending Review',
+    bank_requested: 'Bank Requested',
+    verified: 'Verified',
   }
   return labels[normalized] || 'Instruction / OTP'
 }
@@ -1482,6 +1560,8 @@ function humanizeTransactionEvent(event = {}) {
   const eventData = getActivityEventData(event)
   const laneCategory = getLaneCategory(eventData.laneKey || eventData.lane_key || eventData.workflowLane || eventData.attorneyRole)
   const lowerType = eventType.toLowerCase()
+  const source = String(eventData.source || eventData.trigger || '').trim().toLowerCase()
+  const isAdditionalDocumentRequest = source === 'additional_document_requested'
   const stepLabel = eventData.stepLabel || eventData.step_label || toTitle(eventData.stepKey || eventData.step_key || '')
   const laneLabel = laneCategory ? `${toTitle(laneCategory)} workflow` : 'Workflow'
   let category = laneCategory || 'system'
@@ -1490,7 +1570,7 @@ function humanizeTransactionEvent(event = {}) {
   let attachmentName = eventData.fileName || eventData.documentName || eventData.title || ''
   const extraFilterKeys = []
 
-  if (lowerType.includes('document')) {
+  if (lowerType.includes('document') || isAdditionalDocumentRequest) {
     category = 'documents'
     title = eventData.title ? `${eventData.title} requested` : 'Document activity recorded'
     detail = eventData.requestedFrom ? `Requested from ${toTitle(eventData.requestedFrom)}` : detail || 'Document workflow updated.'
@@ -1550,7 +1630,7 @@ function humanizeTransactionEvent(event = {}) {
 
   const meta = getActivityCategoryMeta(category)
   let messageType = 'system_update'
-  if (lowerType.includes('document') && lowerType.includes('request')) messageType = 'document_request'
+  if ((lowerType.includes('document') && lowerType.includes('request')) || isAdditionalDocumentRequest) messageType = 'document_request'
   else if (lowerType.includes('document') && (lowerType.includes('upload') || lowerType.includes('approved') || lowerType.includes('completed'))) messageType = 'document_uploaded'
   else if (lowerType.includes('portal') || lowerType.includes('onboarding') || lowerType.includes('intro') || lowerType.includes('handoff')) messageType = 'portal_event'
   else if (lowerType.includes('finance') || lowerType.includes('bond')) messageType = 'finance_update'
@@ -3610,9 +3690,20 @@ function AttorneyTransactionDetail() {
   const [discussionType, setDiscussionType] = useState('operational')
   const [discussionVisibility, setDiscussionVisibility] = useState('shared')
   const [activeDocumentLibraryCategory, setActiveDocumentLibraryCategory] = useState('all')
+  const [documentLibrarySearch, setDocumentLibrarySearch] = useState('')
   const [showAllRequiredDocuments, setShowAllRequiredDocuments] = useState(false)
   const [uploadInputVersion, setUploadInputVersion] = useState(0)
   const [uploadDocumentModalOpen, setUploadDocumentModalOpen] = useState(false)
+  const [requestDocumentModalOpen, setRequestDocumentModalOpen] = useState(false)
+  const [documentRequestSaving, setDocumentRequestSaving] = useState(false)
+  const [documentRequestForm, setDocumentRequestForm] = useState({
+    title: '',
+    requestedFrom: 'buyer',
+    visibility: 'client_visible',
+    notes: '',
+    priority: 'normal',
+    dueDate: '',
+  })
   const [documentUploadForm, setDocumentUploadForm] = useState({
     file: null,
     fileName: '',
@@ -3916,6 +4007,14 @@ function AttorneyTransactionDetail() {
   )
   const transactionEvents = data?.transactionEvents ?? EMPTY_ARRAY
   const documentRequests = data?.documentRequests ?? EMPTY_ARRAY
+  const additionalDocumentRequests = useMemo(
+    () =>
+      (documentRequests || []).filter((request) => {
+        const category = String(request?.category || '').trim().toLowerCase()
+        return request?.requestType === 'additional_document_request' || category === 'additional requests'
+      }),
+    [documentRequests],
+  )
   const transactionFinanceWorkflow = data?.transactionFinanceWorkflow || null
   const transactionParticipants = data?.transactionParticipants ?? EMPTY_ARRAY
   const rawTransactionRolePlayers = data?.transactionRolePlayers || data?.rolePlayers || data?.transaction_role_players
@@ -3939,6 +4038,11 @@ function AttorneyTransactionDetail() {
   )
   const activeLegalWorkflowDetailKey = normalizeLegalWorkflowDetailKey(workflowDetailKey)
   const canManageTransactionRoleplayers = ['agent', 'agency_admin', 'principal', 'admin', 'internal_admin', 'developer'].includes(String(workspaceRole || '').toLowerCase())
+  const canRequestTransactionDocuments =
+    workspaceRole === 'bond_originator' ||
+    workspaceRole === 'attorney' ||
+    canPostSharedDiscussion ||
+    canManageTransactionRoleplayers
   const requestedWorkspaceMenu = useMemo(() => {
     if (activeLegalWorkflowDetailKey) return 'transfer'
     if (workspaceRole === 'bond_originator' && (workspaceMenu === 'finance' || workspaceMenu === 'bond')) return 'banks_quotes'
@@ -4325,7 +4429,7 @@ function AttorneyTransactionDetail() {
     const pendingReview = requiredDocumentRows.filter((row) => row.status === 'pending_review').length
     return { totalRequired, received, missing, pendingReview }
   }, [requiredDocumentRows])
-  const documentLibraryRows = useMemo(
+  const allDocumentLibraryRows = useMemo(
     () =>
       uniqueDocumentsByRenderKey(documents)
         .filter((document) => !document?.archived_at)
@@ -4363,9 +4467,8 @@ function AttorneyTransactionDetail() {
             blocksStage: Boolean(linkedRequirement?.isBlocking || linkedRequirement?.blocksStage || linkedRequirement?.blocks_stage),
             raw: document,
           }
-        })
-        .filter((row) => activeDocumentLibraryCategory === 'all' || row.category === activeDocumentLibraryCategory),
-    [activeDocumentLibraryCategory, documents, getLinkedRequirementForDocument, transaction?.id, transactionParticipants],
+        }),
+    [documents, getLinkedRequirementForDocument, transaction?.id, transactionParticipants],
   )
   const activeStakeholders = useMemo(
     () => transactionParticipants.filter((item) => item?.stakeholderStatus !== 'removed'),
@@ -4749,6 +4852,149 @@ function AttorneyTransactionDetail() {
     () => buildConfiguredBankRows({ workflowData: transactionFinanceWorkflow, bankPanel: configuredOriginatorBanks }),
     [configuredOriginatorBanks, transactionFinanceWorkflow],
   )
+  const documentReadiness = useMemo(
+    () =>
+      getDocumentReadiness({
+        applicationId: transaction?.bond_application_id || transaction?.bondApplicationId || transaction?.id || null,
+        requiredDocumentRows,
+        documentRequests: additionalDocumentRequests,
+        documentLibraryRows: allDocumentLibraryRows,
+        configuredBanks: configuredOriginatorBanks,
+        workflowData: transactionFinanceWorkflow,
+      }),
+    [
+      additionalDocumentRequests,
+      allDocumentLibraryRows,
+      configuredOriginatorBanks,
+      requiredDocumentRows,
+      transaction?.bondApplicationId,
+      transaction?.bond_application_id,
+      transaction?.id,
+      transactionFinanceWorkflow,
+    ],
+  )
+  const documentLibraryRows = useMemo(() => {
+    const activeFilter = String(activeDocumentLibraryCategory || 'all').trim().toLowerCase()
+    const search = String(documentLibrarySearch || '').trim().toLowerCase()
+    const criticalIds = new Set((documentReadiness.criticalDocuments || []).map((row) => String(row.id || '')))
+    const bankRequestIds = new Set(
+      (documentReadiness.bankRequestedDocuments || [])
+        .flatMap((group) => group.items || [])
+        .map((row) => String(row.id || '')),
+    )
+
+    const mapRequirementAsLibraryRow = (row, suffix = 'requirement') => ({
+      id: `${suffix}-${row.id || row.displayName}`,
+      transactionId: row.transactionId || transaction?.id || '',
+      displayName: row.displayName || row.title || 'Document requirement',
+      category: row.category || 'finance',
+      categoryLabel: row.categoryLabel || getDocumentCommandCategoryLabel(row.category || 'finance'),
+      status: row.status || 'missing',
+      visibility: 'Client visible',
+      requiredParty: row.requiredParty || 'Buyer',
+      uploadedBy: row.requiredParty || 'Buyer',
+      uploadedAt: row.linkedDocument?.created_at || row.linkedDocument?.uploaded_at || row.updatedAt || '',
+      updatedAt: row.linkedDocument?.updated_at || row.updatedAt || '',
+      source: 'requirement',
+      fileUrl: row.fileUrl || row.linkedDocument?.url || '',
+      relatedWorkflow: row.relatedWorkflow || '',
+      requiredDocumentId: row.requiredDocumentId || '',
+      requiredDocumentKey: row.requiredDocumentKey || '',
+      requiredDocument: row.requirement || row.requiredDocument || null,
+      requiredDocumentStatus: row.status || '',
+      requiredDocumentCanonicalId: row.canonicalRequirementInstanceId || row.id || '',
+      documentRequestId: '',
+      satisfiesRequirement: row.satisfiesRequirement,
+      priority: row.priority || '',
+      blocksStage: row.blocksStage,
+      raw: row.linkedDocument || null,
+    })
+
+    const mapRequestAsLibraryRow = (request, bankName = '') => ({
+      id: `request-${request.id || request.title}`,
+      transactionId: request.transactionId || transaction?.id || '',
+      displayName: request.title || request.documentType || 'Bank requested document',
+      category: 'bank_requested',
+      categoryLabel: bankName || 'Bank Requested',
+      status: request.status || 'missing',
+      visibility: request.clientVisible ? 'Client visible' : 'Shared',
+      requiredParty: getAdditionalRequestOptionLabel(ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS, request.requestedFrom, 'Buyer'),
+      uploadedBy: bankName || 'Bank request',
+      uploadedAt: request.createdAt || '',
+      updatedAt: request.updatedAt || request.createdAt || '',
+      source: 'document_request',
+      fileUrl: '',
+      relatedWorkflow: 'bank requested',
+      requiredDocumentId: '',
+      requiredDocumentKey: request.documentType || request.title || '',
+      requiredDocument: null,
+      requiredDocumentStatus: request.status || '',
+      requiredDocumentCanonicalId: '',
+      documentRequestId: request.id || '',
+      satisfiesRequirement: false,
+      priority: getAdditionalRequestOptionLabel(ADDITIONAL_DOCUMENT_PRIORITY_OPTIONS, request.additionalPriority || request.priority, 'Normal'),
+      blocksStage: true,
+      raw: null,
+    })
+
+    let rows = allDocumentLibraryRows
+
+    if (activeFilter === 'critical') {
+      rows = [
+        ...allDocumentLibraryRows.filter((row) => criticalIds.has(String(row.requiredDocumentCanonicalId || row.requiredDocumentId || row.requiredDocumentKey || row.id))),
+        ...(documentReadiness.criticalDocuments || [])
+          .filter((row) => !row.fileUrl)
+          .map((row) => mapRequirementAsLibraryRow(row, 'critical')),
+      ]
+    } else if (activeFilter === 'missing') {
+      rows = (documentReadiness.missingDocuments || []).map((row) => mapRequirementAsLibraryRow(row, 'missing'))
+    } else if (activeFilter === 'pending_review') {
+      rows = [
+        ...allDocumentLibraryRows.filter((row) => row.status === 'pending_review'),
+        ...requiredDocumentRows
+          .filter((row) => row.status === 'pending_review' && !row.fileUrl)
+          .map((row) => mapRequirementAsLibraryRow(row, 'pending')),
+      ]
+    } else if (activeFilter === 'verified') {
+      rows = allDocumentLibraryRows.filter((row) => row.status === 'verified')
+    } else if (activeFilter === 'bank_requested') {
+      rows = (documentReadiness.bankRequestedDocuments || []).flatMap((group) =>
+        (group.items || [])
+          .filter((request) => !bankRequestIds.size || bankRequestIds.has(String(request.id || '')))
+          .map((request) => mapRequestAsLibraryRow(request, group.bankName)),
+      )
+    } else if (activeFilter !== 'all') {
+      rows = allDocumentLibraryRows.filter((row) => row.category === activeFilter)
+    }
+
+    const deduped = []
+    const seen = new Set()
+    for (const row of rows) {
+      const key = String(row.id || `${row.displayName}:${row.source}`)
+      if (seen.has(key)) continue
+      seen.add(key)
+      deduped.push(row)
+    }
+
+    if (!search) return deduped
+    return deduped.filter((row) =>
+      [
+        row.displayName,
+        row.categoryLabel,
+        row.uploadedBy,
+        row.status,
+        row.requiredParty,
+      ].map((value) => String(value || '').toLowerCase()).join(' ').includes(search),
+    )
+  }, [
+    activeDocumentLibraryCategory,
+    additionalDocumentRequests,
+    allDocumentLibraryRows,
+    documentLibrarySearch,
+    documentReadiness,
+    requiredDocumentRows,
+    transaction?.id,
+  ])
   const bestBondQuote = useMemo(
     () => getBestQuote(transactionFinanceWorkflow?.quotes || transactionFinanceWorkflow?.offers || []),
     [transactionFinanceWorkflow],
@@ -5127,19 +5373,59 @@ function AttorneyTransactionDetail() {
   }
 
   const handleQuickRequestDocuments = useCallback(() => {
-    const lane = workflowLanes[0]
-    if (!lane) {
-      setWorkspaceMenu('documents')
+    setWorkspaceMenu('documents')
+    setRequestDocumentModalOpen(true)
+  }, [])
+
+  async function handleCreateDocumentRequest(event) {
+    event.preventDefault()
+    if (!transaction?.id) {
+      setError('Transaction data is not available.')
       return
     }
-    openWorkflowDrawer(lane)
-    setWorkflowDocumentDraft({
-      laneKey: lane.laneKey,
-      title: '',
-      description: '',
-      requestedFrom: 'client',
-    })
-  }, [workflowLanes])
+
+    const title = String(documentRequestForm.title || '').trim()
+    if (!title) {
+      setError('Document request title is required.')
+      return
+    }
+
+    try {
+      setDocumentRequestSaving(true)
+      setError('')
+      await createTransactionDocumentRequests({
+        transactionId: transaction.id,
+        createdByRole: workspaceRole,
+        requests: [
+          {
+            title,
+            notes: String(documentRequestForm.notes || '').trim(),
+            category: 'Additional Requests',
+            requestedFrom: documentRequestForm.requestedFrom || 'buyer',
+            visibility: documentRequestForm.visibility || 'client_visible',
+            priority: documentRequestForm.priority || 'normal',
+            dueDate: documentRequestForm.dueDate || null,
+            status: 'requested',
+          },
+        ],
+      })
+      setDocumentRequestForm({
+        title: '',
+        requestedFrom: 'buyer',
+        visibility: 'client_visible',
+        notes: '',
+        priority: 'normal',
+        dueDate: '',
+      })
+      setRequestDocumentModalOpen(false)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadData({ background: true })
+    } catch (requestError) {
+      setError(requestError?.message || 'Unable to request this document.')
+    } finally {
+      setDocumentRequestSaving(false)
+    }
+  }
 
   const handleQuickAddWorkflowNote = useCallback(() => {
     const lane = workflowLanes[0]
@@ -6880,6 +7166,27 @@ function AttorneyTransactionDetail() {
     setUploadInputVersion((previous) => previous + 1)
   }
 
+  function openDocumentRequestUploadModal(row = {}) {
+    setUploadDraft((previous) => ({
+      ...previous,
+      file: null,
+      fileName: '',
+      category: getUploadCategoryForLibraryFilter(row.category || 'finance'),
+      documentType: row.requiredDocumentKey || row.displayName || previous.documentType || '',
+      visibility: previous.visibility || 'client_visible',
+      relatedWorkflow: row.relatedWorkflow || previous.relatedWorkflow || 'finance',
+      satisfiesRequiredDocument: 'no',
+      requiredDocumentKey: '',
+      requiredDocumentId: '',
+      canonicalRequirementInstanceId: '',
+      documentRequestId: row.documentRequestId || '',
+      notes: '',
+      requestTitle: row.displayName || '',
+    }))
+    setUploadInputVersion((previous) => previous + 1)
+    setUploadDocumentModalOpen(true)
+  }
+
   async function handleSubmitReviewAction() {
     const requirement = reviewActionDraft.requirement || null
     const document = reviewActionDraft.document || null
@@ -7777,76 +8084,111 @@ function AttorneyTransactionDetail() {
 
         {activeWorkspaceMenu === 'documents' ? (
           <section className="space-y-5">
-            <section className="grid overflow-hidden rounded-[12px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.05)] sm:grid-cols-2 xl:grid-cols-4">
-              {[
-                ['Required Documents', documentHealthSummary.totalRequired, FileText, 'text-blue-700 bg-blue-50'],
-                ['Received', documentHealthSummary.received, Upload, 'text-emerald-700 bg-emerald-50'],
-                ['Missing', documentHealthSummary.missing, AlertTriangle, 'text-orange-700 bg-orange-50'],
-                ['Pending Review', documentHealthSummary.pendingReview, Clock3, 'text-violet-700 bg-violet-50'],
-              ].map(([label, value, Icon, tone]) => (
-                <article key={label} className="flex items-center gap-4 border-b border-r border-[#e6edf5] px-5 py-4 last:border-r-0 sm:border-b-0">
-                  <span className={`inline-flex size-11 shrink-0 items-center justify-center rounded-[10px] ${tone}`}>
-                    {createElement(Icon, { size: 20 })}
-                  </span>
-                  <div className="min-w-0">
-                    <span className="block truncate text-xs font-medium text-[#6b7d93]">{label}</span>
-                    <strong className="mt-1 block text-xl font-semibold text-[#142132]">{value}</strong>
+            <section className="rounded-[18px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_34px_rgba(15,23,42,0.055)]">
+              <div className="grid gap-6 xl:grid-cols-[220px_minmax(0,1fr)_minmax(360px,0.9fr)] xl:items-center">
+                <div className="flex items-center justify-center">
+                  <div
+                    className="relative flex size-40 items-center justify-center rounded-full"
+                    style={{
+                      background: `conic-gradient(${documentReadiness.score >= 61 ? '#2fb344' : documentReadiness.score >= 31 ? '#f59f00' : '#e03131'} ${documentReadiness.score}%, #edf2f7 0)`,
+                    }}
+                  >
+                    <div className="flex size-28 flex-col items-center justify-center rounded-full bg-white shadow-inner">
+                      <strong className="text-3xl font-semibold text-[#142132]">{documentReadiness.score}%</strong>
+                      <span className="mt-1 text-xs font-semibold text-[#60758d]">{documentReadiness.scoreLabel}</span>
+                    </div>
                   </div>
-                </article>
-              ))}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#71839a]">Document Readiness</p>
+                  <h3 className="mt-2 text-xl font-semibold text-[#142132]">{documentReadiness.summaryText}</h3>
+                  <p className="mt-2 max-w-xl text-sm leading-6 text-[#60758d]">
+                    {documentReadiness.submissionReady
+                      ? 'All critical documents are received. This application can move toward bank submission once the consultant is satisfied.'
+                      : 'Complete the missing or rejected critical items before submitting this application to banks.'}
+                  </p>
+                  <div className={`mt-4 inline-flex max-w-full items-start gap-3 rounded-[14px] border px-4 py-3 text-sm ${
+                    documentReadiness.submissionReady
+                      ? 'border-emerald-100 bg-emerald-50 text-emerald-800'
+                      : 'border-orange-100 bg-orange-50 text-orange-800'
+                  }`}>
+                    {documentReadiness.submissionReady ? <CheckCircle2 size={18} className="mt-0.5 shrink-0" /> : <AlertTriangle size={18} className="mt-0.5 shrink-0" />}
+                    <div>
+                      <strong className="block">{documentReadiness.submissionReady ? 'Ready For Submission' : 'Not Ready For Submission'}</strong>
+                      <span className="mt-1 block text-xs leading-5">
+                        {documentReadiness.submissionReady ? 'All critical documents received.' : `${documentReadiness.blockerCount} critical item${documentReadiness.blockerCount === 1 ? '' : 's'} missing or rejected.`}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {[
+                    ['Required', documentReadiness.kpis.required, FileText, 'text-blue-700 bg-blue-50'],
+                    ['Received', documentReadiness.kpis.received, Upload, 'text-emerald-700 bg-emerald-50'],
+                    ['Missing', documentReadiness.kpis.missing, AlertTriangle, 'text-red-700 bg-red-50'],
+                    ['Verified', documentReadiness.kpis.verified, FileCheck2, 'text-emerald-700 bg-emerald-50'],
+                    ['Pending Review', documentReadiness.kpis.pendingReview, Clock3, 'text-orange-700 bg-orange-50'],
+                    ['Rejected', documentReadiness.kpis.rejected, X, 'text-red-700 bg-red-50'],
+                  ].map(([label, value, Icon, tone]) => (
+                    <article key={label} className="flex items-center gap-3 rounded-[14px] border border-[#e6edf5] bg-white px-4 py-3">
+                      <span className={`inline-flex size-10 shrink-0 items-center justify-center rounded-[10px] ${tone}`}>
+                        {createElement(Icon, { size: 18 })}
+                      </span>
+                      <div className="min-w-0">
+                        <span className="block truncate text-xs font-medium text-[#60758d]">{label}</span>
+                        <strong className="mt-1 block text-lg font-semibold text-[#142132]">{value}</strong>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
             </section>
 
-            <section className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-              <div className="min-w-0">
-                <section className="h-full rounded-[12px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-base font-semibold text-[#142132]">Required Documents</h3>
-                      <p className="mt-1 text-sm text-[#60758d]">Documents still needed to complete this transaction.</p>
-                    </div>
-                    {requiredDocumentRows.length > 5 ? (
-                      <button
-                        type="button"
-                        className="text-sm font-semibold text-primary hover:text-primaryDark"
-                        onClick={() => setShowAllRequiredDocuments((previous) => !previous)}
-                      >
-                        {showAllRequiredDocuments ? 'Show first 5' : 'View all requirements'}
-                      </button>
-                    ) : null}
+            <section className="grid items-stretch gap-5 xl:grid-cols-2">
+              <section className="min-w-0 rounded-[12px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-[#142132]">Critical Documents</h3>
+                    <p className="mt-1 text-sm text-[#60758d]">Required for bank submission.</p>
                   </div>
+                  <button
+                    type="button"
+                    className="text-sm font-semibold text-primary hover:text-primaryDark"
+                    onClick={() => setActiveDocumentLibraryCategory('critical')}
+                  >
+                    View all requirements
+                  </button>
+                </div>
                 <div className="mt-4 overflow-x-auto">
-                  <table className="min-w-[760px] w-full border-collapse text-sm">
+                  <table className="min-w-[640px] w-full border-collapse text-sm">
                     <thead>
                       <tr className="border-b border-[#dde4ee] text-left text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#71839a]">
                         <th className="py-2.5 pr-4">Document</th>
-                        <th className="px-4 py-2.5">Category</th>
+                        <th className="px-4 py-2.5">Owner</th>
                         <th className="px-4 py-2.5">Status</th>
-                        <th className="px-4 py-2.5">Priority</th>
+                        <th className="px-4 py-2.5">Last Updated</th>
                         <th className="py-2.5 pl-4 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {displayedRequiredDocumentRows.length ? (
-                        displayedRequiredDocumentRows.map((row) => {
+                      {documentReadiness.criticalDocuments.length ? (
+                        documentReadiness.criticalDocuments.slice(0, 5).map((row) => {
                           const document = row.linkedDocument || {}
                           const showReviewActions = canReviewDocumentRequirement(row.requirement, document)
                           const showReplaceAction = canReplaceDocumentRequirement(row.requirement, document)
+                          const lastUpdatedAt = row.linkedDocument?.updated_at || row.linkedDocument?.created_at || row.requirement?.updated_at || row.requirement?.created_at || ''
                           return (
                             <tr key={row.id} className="border-b border-[#edf2f7] last:border-0">
                               <td className="max-w-[280px] py-3 pr-4 font-medium text-[#142132]">
                                 <span className="block truncate">{row.displayName}</span>
                               </td>
-                              <td className="px-4 py-3 text-[#52677f]">{row.categoryLabel}</td>
+                              <td className="px-4 py-3 text-[#52677f]">{row.requiredParty || 'Buyer'}</td>
                               <td className="px-4 py-3">
                                 <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
                                   {row.statusLabel}
                                 </span>
                               </td>
-                              <td className="px-4 py-3">
-                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getDocumentPriorityTone(row.priority)}`}>
-                                  {row.priority}
-                                </span>
-                              </td>
+                              <td className="px-4 py-3 text-[#52677f]">{lastUpdatedAt ? formatShortDayMonth(lastUpdatedAt) : '-'}</td>
                               <td className="py-3 pl-4">
                                 <div className="flex items-center justify-end gap-2">
                                   {row.fileUrl ? (
@@ -7890,82 +8232,138 @@ function AttorneyTransactionDetail() {
                       ) : (
                         <tr>
                           <td colSpan="5" className="py-8 text-center text-sm text-[#60758d]">
-                            No required documents are configured for this transaction.
+                            No critical document requirements are blocking bank submission.
                           </td>
                         </tr>
                       )}
                     </tbody>
                   </table>
                 </div>
-                {requiredDocumentRows.length ? (
-                  <p className="mt-3 text-xs text-[#60758d]">
-                    Showing {displayedRequiredDocumentRows.length} of {requiredDocumentRows.length} required documents
-                  </p>
-                ) : null}
-                </section>
-              </div>
+              </section>
 
-              <aside className="flex min-h-0 flex-col gap-5">
-                <section className="shrink-0 rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                  <h3 className="text-sm font-semibold text-textStrong">Quick Actions</h3>
-                  <div className="mt-3 grid gap-2">
-                    {[
-                      ['Request Documents', FileText, handleQuickRequestDocuments, canPostSharedDiscussion || canManageTransactionRoleplayers],
-                      ['Add Note', MessageSquarePlus, handleQuickAddWorkflowNote, canPostSharedDiscussion || canPostInternalDiscussion],
-                      ['Schedule Signing', CalendarDays, handleQuickScheduleSigning, workspaceRole !== 'bond_originator' && (canManageTransactionRoleplayers || workspaceRole === 'attorney')],
-                      ['Generate Sales Agreement', FileText, openAgentSalesAgreementWorkspace, workspaceRole !== 'bond_originator' && canManageTransactionRoleplayers],
-                      ['Submit to Banks', Landmark, () => setWorkspaceMenu('banks_quotes'), workspaceRole === 'bond_originator'],
-                      ['Compare Quotes', CircleDollarSign, () => setWorkspaceMenu('banks_quotes'), workspaceRole === 'bond_originator'],
-                    ]
-                      .filter(([, , , allowed]) => allowed)
-                      .map(([label, Icon, action]) => (
-                        <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
-                          {createElement(Icon, { size: 14 })}
-                          {label}
-                        </Button>
-                      ))}
-                  </div>
-                </section>
-
-                <section className="flex min-h-0 flex-1 flex-col rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                  <h3 className="text-sm font-semibold text-textStrong">Recent Activity</h3>
-                  <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-                    {documentRecentActivity.length ? (
-                      documentRecentActivity.map((item) => (
-                        <article key={item.id} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <strong className="block truncate text-sm text-textStrong">{item.attachmentName || item.title}</strong>
-                              <p className="mt-1 line-clamp-2 text-xs leading-5 text-textMuted">
-                                {item.body}
-                              </p>
-                              <p className="mt-1 truncate text-xs text-textMuted">
-                                {item.authorName} · {item.categoryLabel || 'Documents'}
-                              </p>
-                            </div>
-                            <span className="shrink-0 text-xs text-textMuted">{formatShortDayMonth(item.createdAt)}</span>
-                          </div>
-                        </article>
-                      ))
-                    ) : (
-                      <p className="rounded-[12px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-4 text-sm text-textMuted">
-                        No document activity yet.
-                      </p>
-                    )}
+              <section className="min-w-0 rounded-[12px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-[#142132]">Documents Requested By Banks</h3>
+                    <p className="mt-1 text-sm text-[#60758d]">Operational requests received from lenders.</p>
                   </div>
                   <button
                     type="button"
-                    className="mt-4 inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-primary hover:text-primaryDark"
-                    onClick={() => {
-                      setActivityFilter('documents')
-                      setWorkspaceMenu('activity')
-                    }}
+                    className="text-sm font-semibold text-primary hover:text-primaryDark"
+                    onClick={() => setActiveDocumentLibraryCategory('bank_requested')}
                   >
-                    View all activity
-                    <ChevronRight size={14} />
+                    View all requests
                   </button>
-                </section>
-              </aside>
+                </div>
+                <div className="mt-4 overflow-hidden rounded-[12px] border border-[#e6edf5]">
+                  {documentReadiness.bankRequestedDocuments.length ? (
+                    <div className="divide-y divide-[#edf2f7]">
+                      {documentReadiness.bankRequestedDocuments.slice(0, 4).map((group) => (
+                        <article key={group.bankName} className="grid gap-4 bg-white px-4 py-4 md:grid-cols-[190px_minmax(0,1fr)]">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-3">
+                              <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-primary">
+                                <Landmark size={18} />
+                              </span>
+                              <div className="min-w-0">
+                                <strong className="block truncate text-sm text-[#142132]">{group.bankName}</strong>
+                                <p className="mt-1 text-xs text-[#60758d]">{group.requestedAt ? `Requested on ${formatShortDayMonth(group.requestedAt)}` : 'Request date pending'}</p>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="min-w-0 divide-y divide-[#edf2f7]">
+                            {(group.items || []).slice(0, 4).map((request) => (
+                              <div key={request.id || request.title} className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
+                                <span className="min-w-0 truncate text-sm font-medium text-[#142132]">{request.title || request.documentType || 'Requested document'}</span>
+                                <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${getAdditionalRequestStatusTone(request.status)}`}>
+                                  {getAdditionalRequestStatusLabel(request.status)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="bg-[#f8fbff] px-4 py-8 text-sm text-[#60758d]">
+                      No bank document requests yet. Requests from ABSA, FNB, Nedbank, Investec, and other configured banks will appear here.
+                    </div>
+                  )}
+                </div>
+              </section>
+            </section>
+
+            <section className="grid items-stretch gap-5 xl:grid-cols-2">
+              <section className="rounded-[12px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-[#142132]">Missing Documents</h3>
+                    <p className="mt-1 text-sm text-[#60758d]">Top priority items blocking progress.</p>
+                  </div>
+                  <button type="button" className="text-sm font-semibold text-primary hover:text-primaryDark" onClick={() => setActiveDocumentLibraryCategory('missing')}>
+                    View all missing
+                  </button>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  {documentReadiness.missingDocuments.length ? (
+                    documentReadiness.missingDocuments.map((row) => (
+                      <article key={row.id} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e6edf5] bg-white px-4 py-3">
+                        <div className="min-w-0">
+                          <strong className="block truncate text-sm text-[#142132]">{row.displayName}</strong>
+                          <p className="mt-1 text-xs text-[#60758d]">{row.requiredParty || 'Buyer'}</p>
+                          <span className="mt-2 inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">
+                            High Priority
+                          </span>
+                        </div>
+                        <Button type="button" variant="secondary" size="sm" onClick={() => openDocumentUploadModal({ requirement: row.requirement })}>
+                          <Upload size={14} />
+                          Upload
+                        </Button>
+                      </article>
+                    ))
+                  ) : (
+                    <p className="rounded-[12px] border border-dashed border-[#dbe5ef] bg-[#f8fbff] px-4 py-6 text-sm text-[#60758d] md:col-span-2">
+                      No critical missing documents. Keep reviewing new uploads and bank conditions.
+                    </p>
+                  )}
+                </div>
+              </section>
+
+              <section className="rounded-[12px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-[#142132]">Recent Uploads</h3>
+                    <p className="mt-1 text-sm text-[#60758d]">Latest files added to the application.</p>
+                  </div>
+                  <button type="button" className="text-sm font-semibold text-primary hover:text-primaryDark" onClick={() => setActiveDocumentLibraryCategory('all')}>
+                    View all uploads
+                  </button>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {documentReadiness.recentUploads.length ? (
+                    documentReadiness.recentUploads.map((row) => (
+                      <article key={row.id} className="min-w-0 rounded-[12px] border border-[#e6edf5] bg-white px-3 py-3">
+                        <div className="flex items-start gap-3">
+                          <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-emerald-50 text-emerald-700">
+                            <FileText size={16} />
+                          </span>
+                          <div className="min-w-0">
+                            <strong className="block truncate text-sm text-[#142132]">{row.displayName}</strong>
+                            <p className="mt-1 text-xs text-[#60758d]">{formatShortDayMonth(row.uploadedAt || row.updatedAt)}</p>
+                            <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
+                              {getDocumentCommandStatusLabel(row.status)}
+                            </span>
+                          </div>
+                        </div>
+                      </article>
+                    ))
+                  ) : (
+                    <p className="rounded-[12px] border border-dashed border-[#dbe5ef] bg-[#f8fbff] px-4 py-6 text-sm text-[#60758d] sm:col-span-2 xl:col-span-4">
+                      No uploads yet. Uploaded buyer and bank documents will appear here.
+                    </p>
+                  )}
+                </div>
+              </section>
             </section>
 
             <section className="rounded-[12px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
@@ -7974,7 +8372,7 @@ function AttorneyTransactionDetail() {
                   <h3 className="text-base font-semibold text-[#142132]">Document Library</h3>
                   <p className="mt-1 text-sm text-[#60758d]">All uploaded and generated documents.</p>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex max-w-5xl flex-1 flex-wrap justify-end gap-2">
                   {DOCUMENT_LIBRARY_FILTERS.map((filter) => (
                     <button
                       key={filter.key}
@@ -7989,6 +8387,15 @@ function AttorneyTransactionDetail() {
                       {filter.label}
                     </button>
                   ))}
+                  <label className="relative min-w-[220px] flex-1 sm:max-w-[280px]">
+                    <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8aa0b8]" />
+                    <Field
+                      value={documentLibrarySearch}
+                      onChange={(event) => setDocumentLibrarySearch(event.target.value)}
+                      placeholder="Search documents..."
+                      className="h-9 pl-9 text-sm"
+                    />
+                  </label>
                 </div>
               </div>
               <div className="mt-4 overflow-x-auto">
@@ -8007,6 +8414,8 @@ function AttorneyTransactionDetail() {
                     {documentLibraryRows.length ? (
                       documentLibraryRows.map((row) => {
                         const document = row.raw || {}
+                        const canUploadRequirementRow = !row.fileUrl && row.source === 'requirement' && row.requiredDocument
+                        const canUploadRequestRow = !row.fileUrl && row.source === 'document_request'
                         return (
                           <tr key={row.id} className="border-b border-[#edf2f7] last:border-0">
                             <td className="max-w-[260px] py-3 pr-4 font-medium text-[#142132]">
@@ -8032,9 +8441,21 @@ function AttorneyTransactionDetail() {
                                     </a>
                                   </>
                                 ) : null}
-                                <Button type="button" variant="secondary" size="sm" onClick={() => handleReplaceDocument(document, row.requiredDocument)} disabled={saving}>
-                                  Replace
-                                </Button>
+                                {canUploadRequirementRow ? (
+                                  <Button type="button" variant="secondary" size="sm" onClick={() => openDocumentUploadModal({ requirement: row.requiredDocument })} disabled={saving}>
+                                    Upload
+                                  </Button>
+                                ) : null}
+                                {canUploadRequestRow ? (
+                                  <Button type="button" variant="secondary" size="sm" onClick={() => openDocumentRequestUploadModal(row)} disabled={saving}>
+                                    Upload
+                                  </Button>
+                                ) : null}
+                                {row.fileUrl ? (
+                                  <Button type="button" variant="secondary" size="sm" onClick={() => handleReplaceDocument(document, row.requiredDocument)} disabled={saving}>
+                                    Replace
+                                  </Button>
+                                ) : null}
                                 <button type="button" className="ui-icon-button h-8 w-8" aria-label={`More actions for ${row.displayName}`}>
                                   <MoreHorizontal size={15} />
                                 </button>
@@ -8057,6 +8478,96 @@ function AttorneyTransactionDetail() {
                 Showing {documentLibraryRows.length} document{documentLibraryRows.length === 1 ? '' : 's'}
               </p>
             </section>
+
+            <Modal
+              open={requestDocumentModalOpen}
+              onClose={documentRequestSaving ? undefined : () => setRequestDocumentModalOpen(false)}
+              title="Request Document"
+              subtitle="Ask a buyer, seller, or roleplayer for an additional document."
+              className="max-w-2xl"
+              footer={(
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+                  <Button type="button" variant="secondary" onClick={() => setRequestDocumentModalOpen(false)} disabled={documentRequestSaving}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" form="transaction-document-request-form" disabled={documentRequestSaving}>
+                    <Send size={14} />
+                    {documentRequestSaving ? 'Requesting...' : 'Request Document'}
+                  </Button>
+                </div>
+              )}
+            >
+              <form id="transaction-document-request-form" onSubmit={handleCreateDocumentRequest} className="grid gap-4">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-label font-semibold uppercase text-textMuted">Document requested</span>
+                  <Field
+                    value={documentRequestForm.title}
+                    onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, title: event.target.value }))}
+                    placeholder="e.g. Latest 3 months bank statements"
+                    autoFocus
+                  />
+                </label>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Requested from</span>
+                    <Field
+                      as="select"
+                      value={documentRequestForm.requestedFrom}
+                      onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, requestedFrom: event.target.value }))}
+                    >
+                      {ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </Field>
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Visibility</span>
+                    <Field
+                      as="select"
+                      value={documentRequestForm.visibility}
+                      onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, visibility: event.target.value }))}
+                    >
+                      {ADDITIONAL_DOCUMENT_VISIBILITY_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </Field>
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Priority</span>
+                    <Field
+                      as="select"
+                      value={documentRequestForm.priority}
+                      onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, priority: event.target.value }))}
+                    >
+                      {ADDITIONAL_DOCUMENT_PRIORITY_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </Field>
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Due date</span>
+                    <Field
+                      type="date"
+                      value={documentRequestForm.dueDate}
+                      onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, dueDate: event.target.value }))}
+                    />
+                  </label>
+                </div>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-label font-semibold uppercase text-textMuted">Notes</span>
+                  <Field
+                    as="textarea"
+                    rows={4}
+                    value={documentRequestForm.notes}
+                    onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, notes: event.target.value }))}
+                    placeholder="Add context for the buyer or roleplayer..."
+                  />
+                </label>
+                <p className="rounded-[12px] border border-[#dbe8f7] bg-[#f7fbff] px-3 py-2 text-xs leading-5 text-[#60758d]">
+                  Buyer-visible requests are shown in the client portal, logged as a system update, and emailed to the buyer or seller when contact details are available.
+                </p>
+              </form>
+            </Modal>
 
             <Modal
               open={uploadDocumentModalOpen}
@@ -8337,7 +8848,7 @@ function AttorneyTransactionDetail() {
               <OverviewSidePanel title="Quick Actions">
                 <div className="grid gap-2">
                   {[
-                    ['Request Documents', FileText, () => setWorkspaceMenu('documents')],
+                    ['Request Documents', FileText, handleQuickRequestDocuments],
                     ['Submit to Banks', Landmark, () => setWorkspaceMenu('banks_quotes')],
                     ['Compare Quotes', CircleDollarSign, () => setWorkspaceMenu('banks_quotes')],
                     ['Assign Consultant', UsersRound, () => setWorkspaceMenu('stakeholders')],

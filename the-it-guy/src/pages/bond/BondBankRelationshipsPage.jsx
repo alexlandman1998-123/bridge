@@ -150,20 +150,13 @@ function statusClass(status = '') {
   return 'bg-slate-100 text-slate-700 ring-slate-200'
 }
 
-const BANK_ACCENTS = {
-  fnb: 'bg-amber-400 text-slate-950',
-  absa: 'bg-red-600 text-white',
-  nedbank: 'bg-emerald-600 text-white',
-  'standard-bank': 'bg-blue-700 text-white',
-  investec: 'bg-slate-100 text-slate-950 ring-1 ring-slate-300',
-  other: 'bg-slate-800 text-white',
-}
-
 function BankLogo({ bankId = '', bankName = '', size = 'md' }) {
   const label = normalizeText(bankName).split(/\s+/).map((part) => part[0]).join('').slice(0, 2) || 'B'
   const dimensions = size === 'sm' ? 'h-8 w-8 text-xs' : 'h-10 w-10 text-sm'
+  const palette = ['#0f172a', '#2563eb', '#059669', '#7c3aed', '#c2410c', '#be123c', '#0369a1', '#4f46e5']
+  const index = [...normalizeText(bankId || bankName)].reduce((sum, char) => sum + char.charCodeAt(0), 0) % palette.length
   return (
-    <span className={`inline-flex shrink-0 items-center justify-center rounded-full font-black ${dimensions} ${BANK_ACCENTS[bankId] || BANK_ACCENTS.other}`}>
+    <span className={`inline-flex shrink-0 items-center justify-center rounded-full font-black text-white ${dimensions}`} style={{ backgroundColor: palette[index] }}>
       {label}
     </span>
   )
@@ -292,8 +285,8 @@ function EmptyState({ title = 'Not enough data', description = 'This section wil
 
 function CommandSection({ eyebrow, title, description, action, children, className = '' }) {
   return (
-    <section className={`rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/60 ${className}`}>
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+    <section className={`rounded-[22px] border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200/60 ${className}`}>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           {eyebrow ? <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">{eyebrow}</p> : null}
           <h2 className="mt-1 text-xl font-semibold text-slate-950">{title}</h2>
@@ -306,7 +299,18 @@ function CommandSection({ eyebrow, title, description, action, children, classNa
   )
 }
 
-function CommandKpiCard({ label, value, helper, icon, accent = 'blue' }) {
+function TrendBadge({ value, label = 'vs last month', inverse = false }) {
+  const number = Number(value || 0)
+  if (!number) return label ? <span className="text-xs font-semibold text-slate-400">Pending trend</span> : null
+  const positive = inverse ? number < 0 : number > 0
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs font-bold ${positive ? 'text-emerald-700' : 'text-red-700'}`}>
+      {number > 0 ? '▲' : '▼'} {formatTrendValue(Math.abs(number))} {label}
+    </span>
+  )
+}
+
+function CommandKpiCard({ label, value, helper, trend, icon, accent = 'blue', pending = false, inverseTrend = false }) {
   const IconComponent = icon
   const accentClass = {
     blue: 'bg-blue-50 text-blue-700',
@@ -317,7 +321,7 @@ function CommandKpiCard({ label, value, helper, icon, accent = 'blue' }) {
     slate: 'bg-slate-100 text-slate-700',
   }[accent] || 'bg-blue-50 text-blue-700'
   return (
-    <article className="flex min-h-[156px] flex-col justify-between rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/60">
+    <article className="flex min-h-[148px] flex-col justify-between rounded-[22px] border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200/60">
       <div className="flex items-start justify-between gap-3">
         <span className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl ${accentClass}`}>
           <IconComponent className="h-5 w-5" aria-hidden="true" />
@@ -325,8 +329,9 @@ function CommandKpiCard({ label, value, helper, icon, accent = 'blue' }) {
       </div>
       <div>
         <p className="text-sm font-semibold text-slate-500">{label}</p>
-        <p className="mt-2 text-2xl font-bold tracking-normal text-slate-950">{value}</p>
+        <p className={`mt-2 text-2xl font-bold tracking-normal ${pending ? 'text-slate-400' : 'text-slate-950'}`}>{value}</p>
         {helper ? <p className="mt-2 text-xs font-semibold text-slate-500">{helper}</p> : null}
+        {trend !== undefined ? <p className="mt-2"><TrendBadge value={trend} inverse={inverseTrend} /></p> : null}
       </div>
     </article>
   )
@@ -351,42 +356,52 @@ function Sparkline({ values = [], tone = 'emerald', height = 48 }) {
     red: '#ef4444',
   }[tone] || '#10b981'
   return (
-    <svg viewBox={`0 0 100 ${height}`} className="h-12 w-full overflow-visible" aria-hidden="true">
+    <svg viewBox={`0 0 100 ${height}`} className="w-full overflow-visible" style={{ height }} aria-hidden="true">
       <polyline points={points} fill="none" stroke={stroke} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
     </svg>
   )
 }
 
 function LeaderboardCard({ row, rank }) {
+  const rankLabel = rank === 1 ? '#1 Best Relationship' : rank === 2 ? '#2 Strong Performer' : '#3 Growth Opportunity'
   return (
-    <article className="flex min-h-[258px] flex-col rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/60">
+    <article className="flex min-h-[330px] flex-col rounded-[22px] border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200/60">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-950 text-sm font-bold text-white">{rank}</span>
           <BankLogo bankId={row.bankId} bankName={row.bankName} />
           <div>
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">{rankLabel}</p>
             <h3 className="text-base font-bold text-slate-950">{row.bankName}</h3>
-            <StatusPill status={row.healthStatus} />
           </div>
         </div>
+        <StatusPill status={row.healthStatus} />
       </div>
-      <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
+      <div className="mt-6 grid grid-cols-2 gap-4 text-sm">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Approval</p>
-          <p className="mt-1 text-xl font-bold text-slate-950">{formatPercent(row.approvalRate)}</p>
+          <p className="mt-1 text-xl font-bold text-slate-950">{row.applications ? formatPercent(row.approvalRate) : 'Pending'}</p>
         </div>
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Response</p>
-          <p className="mt-1 text-xl font-bold text-slate-950">{formatResponseDays(row.averageResponseTime)}</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Avg Response</p>
+          <p className="mt-1 text-xl font-bold text-slate-950">{row.averageResponseTime ? formatResponseDays(row.averageResponseTime) : 'Pending'}</p>
         </div>
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Apps</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Revenue</p>
+          <p className="mt-1 text-xl font-bold text-slate-950">{formatCompactCurrency(row.revenueGenerated)}</p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Applications</p>
           <p className="mt-1 text-xl font-bold text-slate-950">{row.applications}</p>
         </div>
       </div>
+      <div className="mt-5 flex flex-wrap items-center gap-2">
+        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">Health {row.healthScore ?? 'Pending'}</span>
+        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">Instruction {formatPercent(row.instructionRate)}</span>
+        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">Escalations {row.escalations}</span>
+      </div>
       <div className="mt-auto pt-5">
         <Sparkline values={row.sparkline} />
-        <p className="mt-2 text-xs font-semibold text-emerald-700">{formatTrendValue(row.trend?.applicationsChangePercent)} application trend</p>
+        <p className="mt-2"><TrendBadge value={row.trend?.applicationsChangePercent} label="application trend" /></p>
       </div>
     </article>
   )
@@ -459,7 +474,7 @@ function SortablePerformanceMatrix({ rows = [] }) {
     ['instructionRate', 'Instruction %'],
     ['escalations', 'Escalations'],
     ['revenueGenerated', 'Revenue'],
-    ['healthScore', 'Health'],
+    ['healthScore', 'Health Score'],
     ['trend', 'Trend'],
     ['action', 'Action'],
   ]
@@ -505,12 +520,25 @@ function SortablePerformanceMatrix({ rows = [] }) {
               <td className="px-4 py-4 font-semibold text-slate-700">{formatPercent(row.instructionRate)}</td>
               <td className="px-4 py-4 font-semibold text-slate-700">{row.escalations}</td>
               <td className="px-4 py-4 font-semibold text-slate-700">{formatCompactCurrency(row.revenueGenerated)}</td>
-              <td className="px-4 py-4"><StatusPill status={row.healthStatus} /></td>
-              <td className="px-4 py-4"><Sparkline values={row.sparkline} tone={row.trend?.direction === 'down' ? 'red' : 'emerald'} /></td>
               <td className="px-4 py-4">
-                <Link className="inline-flex items-center gap-1 font-bold text-blue-700 hover:text-blue-900" to={`/bond/banks/${encodeURIComponent(row.bankId)}`}>
-                  View Profile <ArrowRight className="h-4 w-4" />
-                </Link>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-950">{row.healthScore ?? 'Pending'}</span>
+                  <StatusPill status={row.healthStatus} />
+                </div>
+              </td>
+              <td className="px-4 py-4 min-w-[140px]"><Sparkline values={row.sparkline} tone={row.trend?.direction === 'down' ? 'red' : 'emerald'} /></td>
+              <td className="px-4 py-4">
+                <div className="flex flex-wrap gap-2">
+                  <Link className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50" to={`/bond/banks/${encodeURIComponent(row.bankId)}`}>
+                    <Eye className="h-3.5 w-3.5" /> View Profile
+                  </Link>
+                  <Link className="inline-flex h-9 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-bold text-amber-700 hover:bg-amber-100" to={`/bond/banks/${encodeURIComponent(row.bankId)}#escalations`}>
+                    <AlertTriangle className="h-3.5 w-3.5" /> Log Escalation
+                  </Link>
+                  <Link className="inline-flex h-9 items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 text-xs font-bold text-blue-700 hover:bg-blue-100" to={`/bond/banks/${encodeURIComponent(row.bankId)}#notes`}>
+                    <MessageSquare className="h-3.5 w-3.5" /> Add Note
+                  </Link>
+                </div>
               </td>
             </tr>
           ))}
@@ -524,7 +552,7 @@ function RegionalSlaHeatmap({ heatmap }) {
   const rows = heatmap?.rows || []
   const banks = heatmap?.banks || []
   const hasValues = rows.some((row) => row.cells.some((cell) => cell.responseTime !== null))
-  if (!hasValues) return <EmptyState title="No regional SLA data yet" description="Regional bank response times will appear once scoped applications have region and bank activity." icon={LineChart} />
+  if (!hasValues) return <EmptyState title="Regional SLA data is pending" description="Regional SLA data will appear once applications have region and bank activity." icon={LineChart} />
   const cellClass = {
     excellent: 'bg-emerald-100 text-emerald-900',
     average: 'bg-amber-100 text-amber-900',
@@ -533,29 +561,37 @@ function RegionalSlaHeatmap({ heatmap }) {
     empty: 'bg-slate-50 text-slate-300',
   }
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-200">
-      <table className="min-w-[760px] w-full text-sm">
-        <thead className="bg-slate-50 text-xs uppercase tracking-[0.14em] text-slate-500">
-          <tr>
-            <th className="px-4 py-3 text-left font-bold">Region</th>
-            {banks.map((bank) => <th key={bank.bankId} className="px-3 py-3 text-center font-bold">{bank.bankName}</th>)}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100 bg-white">
-          {rows.map((row) => (
-            <tr key={row.id}>
-              <td className="px-4 py-3 font-bold text-slate-950">{row.regionName}</td>
-              {row.cells.map((cell) => (
-                <td key={cell.id} className="px-3 py-3 text-center">
-                  <span className={`inline-flex min-w-[66px] justify-center rounded-lg px-3 py-2 text-xs font-bold ${cellClass[cell.status]}`}>
-                    {cell.responseTime === null ? '—' : formatResponseDays(cell.responseTime)}
-                  </span>
-                </td>
-              ))}
+    <div>
+      <div className="mb-4 flex flex-wrap gap-3 text-xs font-bold text-slate-600">
+        <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-emerald-200" /> Within SLA</span>
+        <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-amber-200" /> Approaching SLA</span>
+        <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-orange-200" /> Slow</span>
+        <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-red-200" /> Breach</span>
+      </div>
+      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+        <table className="min-w-[920px] w-full text-sm">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-[0.14em] text-slate-500">
+            <tr>
+              <th className="px-4 py-3.5 text-left font-bold">Region</th>
+              {banks.map((bank) => <th key={bank.bankId} className="px-3 py-3.5 text-center font-bold">{bank.bankName}</th>)}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {rows.map((row) => (
+              <tr key={row.id}>
+                <td className="px-4 py-3.5 font-bold text-slate-950">{row.regionName}</td>
+                {row.cells.map((cell) => (
+                  <td key={cell.id} className="px-3 py-3.5 text-center">
+                    <span className={`inline-flex min-w-[82px] justify-center rounded-lg px-3 py-2 text-xs font-bold ${cellClass[cell.status]}`}>
+                      {cell.responseTime === null ? '—' : formatResponseDays(cell.responseTime)}
+                    </span>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
@@ -563,14 +599,208 @@ function RegionalSlaHeatmap({ heatmap }) {
 function TrendWidget({ widget }) {
   const tone = { blue: 'blue', green: 'emerald', purple: 'purple', orange: 'orange' }[widget.tone] || 'blue'
   const values = (widget.series || []).map((point) => point.value)
+  const latest = values[values.length - 1] || 0
+  const displayValue = widget.id === 'revenue' ? formatCompactCurrency(latest) : widget.id === 'approval-rate' ? formatPercent(latest) : widget.id === 'turnaround' ? `${latest} days` : latest.toLocaleString?.('en-ZA') || latest
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4">
+    <article className="rounded-2xl border border-slate-200 bg-white p-6">
       <div className="flex items-start justify-between gap-3">
-        <h3 className="text-sm font-bold text-slate-950">{widget.title}</h3>
-        <span className={`text-xs font-bold ${widget.changePercent >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{formatTrendValue(widget.changePercent)}</span>
+        <div>
+          <h3 className="text-sm font-bold text-slate-950">{widget.title}</h3>
+          <p className="mt-2 text-2xl font-bold text-slate-950">{displayValue}</p>
+        </div>
+        <TrendBadge value={widget.changePercent} inverse={widget.id === 'turnaround'} />
       </div>
-      <div className="mt-4"><Sparkline values={values} tone={tone} height={54} /></div>
+      <div className="mt-6 min-h-[128px] rounded-2xl bg-slate-50 px-3 py-5">
+        <Sparkline values={values} tone={tone} height={96} />
+        <div className="mt-3 grid grid-cols-6 gap-1 text-center text-[11px] font-semibold text-slate-400">
+          {(widget.series || []).filter((_, index) => index % 2 === 0).map((point) => <span key={point.id}>{point.label}</span>)}
+        </div>
+      </div>
     </article>
+  )
+}
+
+function RelationshipHealthCards({ profiles = [], onManageHref = '/bond/banks?view=manage' }) {
+  if (!profiles.length) {
+    return (
+      <EmptyState
+        title="No banks configured yet."
+        description="Add banks to your bank panel to start tracking bank performance."
+        icon={Landmark}
+      />
+    )
+  }
+  return (
+    <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+      {profiles.map((profile) => {
+        const hasContact = Boolean(profile.primaryContact?.name)
+        const profileHref = `/bond/banks/${encodeURIComponent(profile.bankId)}`
+        return (
+          <article key={profile.bankId} className="flex min-h-[360px] flex-col rounded-2xl border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200/60">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <BankLogo bankId={profile.bankId} bankName={profile.bankName} />
+                <div className="min-w-0">
+                  <h3 className="truncate text-lg font-bold text-slate-950">{profile.bankName}</h3>
+                  <p className="text-sm text-slate-500">Health score {profile.healthScore ?? 'Pending'}</p>
+                </div>
+              </div>
+              <StatusPill status={profile.relationshipHealth} />
+            </div>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Primary Contact</p>
+                <p className="mt-1 font-semibold text-slate-950">{profile.primaryContact?.name || 'No contact assigned'}</p>
+                {profile.primaryContact?.email ? <p className="text-xs text-slate-500">{profile.primaryContact.email}</p> : null}
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Relationship Owner</p>
+                <p className="mt-1 font-semibold text-slate-950">{profile.relationshipOwner || 'No owner assigned'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Applications</p>
+                <p className="mt-1 font-bold text-slate-950">{profile.applications}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Revenue</p>
+                <p className="mt-1 font-bold text-slate-950">{formatCompactCurrency(profile.revenueGenerated)}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Approval Rate</p>
+                <p className="mt-1 font-bold text-slate-950">{profile.applications ? formatPercent(profile.approvalRate) : 'Pending'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Escalations</p>
+                <p className="mt-1 font-bold text-slate-950">{profile.escalations}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Last Escalation</p>
+                <p className="mt-1 font-semibold text-slate-950">{profile.lastEscalationAt ? new Date(profile.lastEscalationAt).toLocaleDateString('en-ZA') : 'None logged'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Next Review</p>
+                <p className="mt-1 font-semibold text-slate-950">{profile.nextReviewDate || 'Not scheduled'}</p>
+              </div>
+            </div>
+            <div className="mt-auto flex flex-wrap gap-3 pt-6">
+              <Link className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white hover:bg-slate-800" to={profileHref}>
+                View Profile <ArrowRight className="h-4 w-4" />
+              </Link>
+              {!hasContact ? (
+                <Link className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50" to={onManageHref}>
+                  Add Contact
+                </Link>
+              ) : null}
+            </div>
+          </article>
+        )
+      })}
+    </div>
+  )
+}
+
+function BankOpportunityMatrix({ matrix }) {
+  const quadrants = matrix?.quadrants || []
+  if (!matrix?.hasData) {
+    return <EmptyState title="Bank opportunity data is pending" description="Opportunity quadrants will appear once configured banks have application, approval and revenue activity." icon={BarChart3} />
+  }
+  const quadrantClass = {
+    preferred: 'bg-emerald-50 ring-emerald-100',
+    growth: 'bg-blue-50 ring-blue-100',
+    review: 'bg-amber-50 ring-amber-100',
+    'low-priority': 'bg-slate-50 ring-slate-200',
+  }
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      {quadrants.map((quadrant) => (
+        <article key={quadrant.id} className={`min-h-[220px] rounded-2xl p-6 ring-1 ${quadrantClass[quadrant.id] || 'bg-slate-50 ring-slate-200'}`}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">{quadrant.approval} + {quadrant.revenue}</p>
+              <h3 className="mt-1 text-lg font-bold text-slate-950">{quadrant.title}</h3>
+              <p className="mt-1 text-sm text-slate-600">{quadrant.description}</p>
+            </div>
+          </div>
+          <div className="mt-5 flex flex-wrap gap-3">
+            {quadrant.banks.length ? quadrant.banks.map((bank) => (
+              <Link key={bank.bankId} to={`/bond/banks/${encodeURIComponent(bank.bankId)}`} className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white px-3 py-2 text-sm font-bold text-slate-800 shadow-sm hover:border-slate-300">
+                <BankLogo bankId={bank.bankId} bankName={bank.bankName} size="sm" />
+                <span>{bank.bankName}</span>
+                <span className="text-xs text-slate-500">{formatPercent(bank.approvalRate)} · {formatCompactCurrency(bank.revenueGenerated)}</span>
+              </Link>
+            )) : <p className="text-sm font-semibold text-slate-500">No banks currently sit in this quadrant.</p>}
+          </div>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function RelationshipSignals({ insights = [] }) {
+  const rows = insights.filter((insight) => insight.id !== 'no-insights')
+  if (!rows.length) {
+    return (
+      <EmptyState
+        title="Relationship signals are pending"
+        description="Relationship signals will appear once bank applications, approvals, response times and escalations are available."
+        icon={LineChart}
+      />
+    )
+  }
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {rows.map((insight) => (
+        <article key={insight.id} className="flex gap-4 rounded-2xl border border-slate-200 bg-white p-5">
+          <span className={`mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${insight.tone === 'warning' ? 'bg-amber-50 text-amber-700' : insight.tone === 'positive' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>
+            {insight.tone === 'warning' ? <AlertTriangle className="h-5 w-5" /> : insight.tone === 'positive' ? <TrendingUp className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+          </span>
+          <div>
+            <p className="text-sm font-bold text-slate-950">{insight.title}</p>
+            <p className="mt-1 text-sm text-slate-500">{insight.description}</p>
+          </div>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function BankProfilesTable({ profiles = [] }) {
+  if (!profiles.length) {
+    return <EmptyState title="No bank profiles yet" description="Configured bank profile details will appear after banks are added to the originator bank panel." icon={Users} />
+  }
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-slate-200">
+      <table className="min-w-[1180px] w-full text-left text-sm">
+        <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-[0.14em] text-slate-500">
+          <tr>
+            {['Bank', 'Primary Contact', 'Contact Email', 'Contact Phone', 'Relationship Owner', 'Next Review Date', 'Notes', 'Status'].map((label) => (
+              <th key={label} className="px-4 py-3.5 font-bold">{label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 bg-white">
+          {profiles.map((profile) => (
+            <tr key={profile.bankId} className="transition hover:bg-slate-50/80">
+              <td className="px-4 py-3.5">
+                <div className="flex items-center gap-3">
+                  <BankLogo bankId={profile.bankId} bankName={profile.bankName} size="sm" />
+                  <span className="font-bold text-slate-950">{profile.bankName}</span>
+                </div>
+              </td>
+              <td className="px-4 py-3.5 font-semibold text-slate-700">{profile.primaryContact?.name || 'No contact assigned'}</td>
+              <td className="px-4 py-3.5 text-slate-600">{profile.primaryContact?.email || '—'}</td>
+              <td className="px-4 py-3.5 text-slate-600">{profile.primaryContact?.phone || '—'}</td>
+              <td className="px-4 py-3.5 font-semibold text-slate-700">{profile.relationshipOwner || 'No owner assigned'}</td>
+              <td className="px-4 py-3.5 text-slate-600">{profile.nextReviewDate || 'Not scheduled'}</td>
+              <td className="max-w-[260px] px-4 py-3.5 text-slate-600">
+                <span className="block max-h-10 overflow-hidden">{profile.relationshipNotes || 'No notes captured'}</span>
+              </td>
+              <td className="px-4 py-3.5"><StatusPill status={profile.relationshipHealth} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -965,13 +1195,18 @@ function DashboardView({ commandCentre, refresh, notice }) {
   const kpis = model.kpis || {}
   const topBanks = model.leaderboard?.topBanks || []
   const otherBanks = model.leaderboard?.otherBanks || []
+  const performanceRows = model.performanceMatrix || []
+  const hasConfiguredBanks = performanceRows.length > 0
+  const hasApplicationData = Number(kpis.totalApplications || 0) > 0
+  const fastestRow = kpis.fastestBank ? performanceRows.find((row) => row.bankId === kpis.fastestBank.bankId) : null
+  const mostUsedRow = kpis.mostUsedBank ? performanceRows.find((row) => row.bankId === kpis.mostUsedBank.bankId) : null
   return (
     <>
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Command Centre</p>
-          <h1 className="mt-1 text-3xl font-bold tracking-normal text-slate-950">Bank Relationships</h1>
-          <p className="mt-1 text-sm text-slate-500">Strategic view of bank performance, revenue, turnaround and relationship health.</p>
+          <h1 className="mt-1 text-3xl font-bold tracking-normal text-slate-950">Bank Relationship Command Centre</h1>
+          <p className="mt-1 text-sm text-slate-500">Manage bank performance, revenue, service levels and relationship health.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={refresh} className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
@@ -985,85 +1220,87 @@ function DashboardView({ commandCentre, refresh, notice }) {
 
       {notice ? <p className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">{notice}</p> : null}
 
+      {!hasConfiguredBanks ? (
+        <CommandSection eyebrow="Bank Panel" title="No banks configured yet." description="Add banks to your bank panel to start tracking bank performance.">
+          <Link className="inline-flex h-11 items-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white shadow-sm hover:bg-slate-800" to="/bond/banks?view=manage">
+            Manage Bank Panel <ArrowRight className="h-4 w-4" />
+          </Link>
+        </CommandSection>
+      ) : null}
+
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <CommandKpiCard label="Total Applications" value={kpis.totalApplications?.toLocaleString('en-ZA') || 0} helper="Submitted or active bank-linked files" icon={FileText} accent="blue" />
-        <CommandKpiCard label="Approval Rate" value={formatPercent(kpis.approvalRate)} helper="Approved against decisionable volume" icon={Percent} accent="green" />
-        <CommandKpiCard label="Fastest Bank" value={kpis.fastestBank?.bankName || '—'} helper={kpis.fastestBank ? formatResponseDays(kpis.fastestBank.responseTime) : 'Not enough data'} icon={Zap} accent="amber" />
-        <CommandKpiCard label="Most Used Bank" value={kpis.mostUsedBank?.bankName || '—'} helper={kpis.mostUsedBank ? `${kpis.mostUsedBank.applications} applications` : 'Not enough data'} icon={Landmark} accent="purple" />
-        <CommandKpiCard label="Avg Response Time" value={formatResponseDays(kpis.averageResponseTime)} helper="Across scoped bank activity" icon={Clock3} accent="slate" />
-        <CommandKpiCard label="Revenue Generated" value={formatCompactCurrency(kpis.revenueGenerated)} helper={`R${model.revenuePerBond || 500} per approved bond`} icon={Coins} accent="orange" />
+        <CommandKpiCard label="Total Applications" value={hasApplicationData ? kpis.totalApplications.toLocaleString('en-ZA') : 'Pending'} helper={hasApplicationData ? 'Submitted or active bank-linked files' : 'Waiting for bank-linked applications'} icon={FileText} accent="blue" pending={!hasApplicationData} />
+        <CommandKpiCard label="Approval Rate" value={hasApplicationData ? formatPercent(kpis.approvalRate) : 'Pending'} helper={hasApplicationData ? 'Approvals over submitted applications' : 'Waiting for decisions'} icon={Percent} accent="green" pending={!hasApplicationData} />
+        <CommandKpiCard label="Fastest Bank" value={kpis.fastestBank?.bankName || 'Pending'} helper={kpis.fastestBank ? formatResponseDays(kpis.fastestBank.responseTime) : 'Waiting for response data'} trend={fastestRow?.trend?.responseTimeChange} icon={Zap} accent="amber" pending={!kpis.fastestBank} />
+        <CommandKpiCard label="Most Used Bank" value={kpis.mostUsedBank?.bankName || 'Pending'} helper={kpis.mostUsedBank ? `${kpis.mostUsedBank.applications} applications` : 'Waiting for volume data'} trend={mostUsedRow?.trend?.applicationsChangePercent} icon={Landmark} accent="purple" pending={!kpis.mostUsedBank} />
+        <CommandKpiCard label="Average Response Time" value={kpis.averageResponseTime ? formatResponseDays(kpis.averageResponseTime) : 'Pending'} helper={kpis.averageResponseTime ? 'Across scoped bank activity' : 'Waiting for first bank response'} icon={Clock3} accent="slate" pending={!kpis.averageResponseTime} />
+        <CommandKpiCard label="Revenue Generated" value={kpis.revenueGenerated ? formatCompactCurrency(kpis.revenueGenerated) : 'Pending'} helper={`R${model.revenuePerBond || 500} per approved or instructed file`} icon={Coins} accent="orange" pending={!kpis.revenueGenerated} />
       </section>
 
-      <CommandSection eyebrow="Leaderboard" title="Bank Leaderboard" description="Ranked by approval, response speed, instruction conversion and escalation pressure.">
+      <CommandSection eyebrow="Relationship Leaderboard" title="Relationship Leaderboard" description="Ranked by approval, response speed, instruction conversion, revenue and escalation pressure.">
         {topBanks.length ? (
-          <div className="grid gap-4 xl:grid-cols-[repeat(3,minmax(0,1fr))_260px]">
+          <div className="grid gap-6 xl:grid-cols-3">
             {topBanks.map((row, index) => <LeaderboardCard key={row.bankId} row={row} rank={index + 1} />)}
-            <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+          </div>
+        ) : <EmptyState title="Relationship leaderboard is pending" description="Ranking cards will appear once configured banks have application activity." icon={Trophy} />}
+        {otherBanks.length ? (
+          <div className="mt-6 rounded-[22px] border border-slate-200 bg-slate-50/70 p-5">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-bold text-slate-950">Other Banks</h3>
-                <Link to="/bond/banks" className="text-xs font-bold text-blue-700">View all</Link>
+              <h3 className="text-sm font-bold text-slate-950">Other configured relationships</h3>
+              <Link to="/bond/banks?view=profiles" className="text-xs font-bold text-blue-700">View all profiles</Link>
               </div>
-              <div className="mt-4 space-y-4">
-                {otherBanks.length ? otherBanks.map((row, index) => (
-                  <div key={row.bankId} className="flex items-center justify-between gap-3">
+            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {otherBanks.map((row, index) => (
+                <Link key={row.bankId} to={`/bond/banks/${encodeURIComponent(row.bankId)}`} className="flex items-center justify-between gap-3 rounded-2xl bg-white p-4 text-sm shadow-sm hover:ring-1 hover:ring-slate-200">
                     <div className="flex min-w-0 items-center gap-3">
                       <span className="text-sm font-bold text-slate-400">{index + 4}</span>
                       <BankLogo bankId={row.bankId} bankName={row.bankName} size="sm" />
                       <span className="truncate text-sm font-bold text-slate-800">{row.bankName}</span>
                     </div>
-                    <span className="text-sm font-bold text-slate-950">{formatPercent(row.approvalRate)}</span>
-                  </div>
-                )) : <p className="text-sm text-slate-500">No additional bank data.</p>}
-              </div>
+                  <span className="text-sm font-bold text-slate-950">{formatPercent(row.approvalRate)}</span>
+                </Link>
+              ))}
             </div>
           </div>
-        ) : <EmptyState title="No bank leaderboard yet" icon={Trophy} />}
+        ) : null}
       </CommandSection>
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        <CommandSection eyebrow="Market Share" title="Bank Distribution" description="Application volume split by bank.">
-          <BankDistribution rows={model.distribution} />
-        </CommandSection>
-        <CommandSection eyebrow="Conversion" title="Approval Funnel" description="Conversion from bank submission to instruction issued.">
-          <ApprovalFunnel stages={model.approvalFunnel} />
-        </CommandSection>
-      </div>
+      <CommandSection eyebrow="Relationship Health" title="Relationship Health" description="Configured bank profiles, ownership, contact coverage and relationship risk.">
+        <RelationshipHealthCards profiles={model.profiles || []} />
+      </CommandSection>
 
       <CommandSection eyebrow="Performance Matrix" title="Bank Performance Matrix" description="Sortable command view with revenue, health score and relationship trend.">
         <SortablePerformanceMatrix rows={model.performanceMatrix} />
       </CommandSection>
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        <CommandSection eyebrow="Regional SLA" title="Regional SLA Heatmap" description="Average bank response time by visible region.">
-          <RegionalSlaHeatmap heatmap={model.regionalSlaHeatmap} />
-        </CommandSection>
-        <CommandSection eyebrow="Analytics" title="Trends & Analytics" description="Twelve-month movement across volume, approval, response and revenue.">
-          <div className="grid gap-4 sm:grid-cols-2">
+      <CommandSection eyebrow="Opportunity Matrix" title="Bank Opportunity Matrix" description="Decision matrix for routing more business, growing relationships and prioritising intervention.">
+        <BankOpportunityMatrix matrix={model.opportunityMatrix} />
+      </CommandSection>
+
+      <CommandSection eyebrow="Regional SLA" title="Regional SLA Heatmap" description="Average response time by region and configured bank.">
+        <RegionalSlaHeatmap heatmap={model.regionalSlaHeatmap} />
+      </CommandSection>
+
+      <CommandSection eyebrow="12 Month Trends" title="12 Month Trends" description="Twelve-month movement across submitted applications, approval rate, response time and revenue.">
+        {hasApplicationData ? (
+          <div className="grid gap-6 lg:grid-cols-2">
             {(model.trends || []).map((widget) => <TrendWidget key={widget.id} widget={widget} />)}
           </div>
-        </CommandSection>
-      </div>
+        ) : <EmptyState title="12 month trends are pending" description="Trend visuals will appear once bank-linked applications create monthly activity." icon={LineChart} />}
+      </CommandSection>
 
-      <div className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
-        <CommandSection eyebrow="Executive Insights" title="Relationship Signals" description="Rules-based observations from scoped bank metrics.">
-          <div className="space-y-3">
-            {(model.insights || []).map((insight) => (
-              <div key={insight.id} className="flex gap-3 rounded-2xl border border-slate-200 bg-white p-4">
-                <span className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${insight.tone === 'warning' ? 'bg-amber-50 text-amber-700' : insight.tone === 'positive' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>
-                  {insight.tone === 'warning' ? <AlertTriangle className="h-4 w-4" /> : insight.tone === 'positive' ? <TrendingUp className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </span>
-                <div>
-                  <p className="text-sm font-bold text-slate-950">{insight.title}</p>
-                  <p className="mt-1 text-sm text-slate-500">{insight.description}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </CommandSection>
-        <CommandSection eyebrow="Relationship Management" title="Bank Relationship Profiles" description="Bank-level ownership, contacts and relationship health foundation.">
-          <RelationshipProfiles profiles={model.profiles} />
-        </CommandSection>
-      </div>
+      <CommandSection eyebrow="Relationship Signals" title="Relationship Signals" description="Rules-based observations for HQ follow-up and bank relationship attention.">
+        <RelationshipSignals insights={model.insights || []} />
+      </CommandSection>
+
+      <CommandSection
+        eyebrow="Bank Profiles"
+        title="Bank Profiles"
+        description="Configured profile details for bank contacts, ownership, reviews and notes."
+        action={<Link className="inline-flex h-10 items-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white hover:bg-slate-800" to="/bond/banks?view=manage">Manage Bank Profiles <ArrowRight className="h-4 w-4" /></Link>}
+      >
+        <BankProfilesTable profiles={model.profiles || []} />
+      </CommandSection>
     </>
   )
 }

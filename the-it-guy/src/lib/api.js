@@ -11827,7 +11827,7 @@ async function loadTransactionDocumentRequestsByIds(client, transactionIds = [])
   let query = await client
     .from('document_requests')
     .select(
-      'id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, status, created_by, created_by_role, completed_at, created_at',
+      'id, transaction_id, category, document_type, title, description, notes, priority, due_date, assigned_to_role, assigned_to_user_id, request_group_id, status, requires_review, requested_document_id, created_by, created_by_role, completed_at, rejected_reason, resend_count, last_resent_at, requested_from, visibility_scope, request_type, created_at, updated_at',
     )
     .in('transaction_id', ids)
     .order('created_at', { ascending: false })
@@ -12032,6 +12032,172 @@ const ADDITIONAL_DOCUMENT_REQUESTER_ROLES = new Set([
   'bond_originator',
   'internal_admin',
 ])
+
+function buildAdditionalDocumentRequestEmailCopy({ actorRole, request, transaction = {}, portalLink = '' } = {}) {
+  const actorLabel =
+    TRANSACTION_ROLE_LABELS[normalizeRoleType(actorRole)] ||
+    String(actorRole || 'Bridge team')
+      .replaceAll('_', ' ')
+      .replace(/\b\w/g, (match) => match.toUpperCase())
+  const documentTitle = normalizeTextValue(request?.title || request?.document_type || 'Additional document')
+  const reference = normalizeTextValue(transaction?.transaction_reference || transaction?.matter_number)
+  const propertyLabel = [
+    transaction?.property_address_line_1,
+    transaction?.property_description,
+    transaction?.suburb,
+    transaction?.city,
+  ].map(normalizeTextValue).filter(Boolean).join(', ')
+  const dueDate = normalizeOptionalDate(request?.due_date || request?.dueDate)
+  const lines = [
+    `${actorLabel} requested ${documentTitle} for your application${reference ? ` (${reference})` : ''}.`,
+    propertyLabel ? `Property: ${propertyLabel}.` : '',
+    dueDate ? `Due date: ${dueDate}.` : '',
+    portalLink ? 'Please open your Bridge portal to upload the document.' : 'Please upload the requested document in your Bridge portal.',
+  ].filter(Boolean)
+
+  return {
+    subject: `Document requested: ${documentTitle}`,
+    title: 'Document requested',
+    message: lines.join(' '),
+    metadata: {
+      documentTitle,
+      requestId: request?.id || null,
+      requestType: request?.request_type || request?.requestType || 'additional_document_request',
+      requestedFrom: request?.requested_from || request?.requestedFrom || null,
+      priority: request?.priority || null,
+      dueDate,
+      transactionReference: reference || null,
+      propertyLabel: propertyLabel || null,
+      portalLink: portalLink || null,
+    },
+  }
+}
+
+async function fetchTransactionDocumentRequestEmailContext(client, transactionId) {
+  if (!transactionId) return { transaction: null, buyer: null, portalLink: null }
+
+  let transactionQuery = await client
+    .from('transactions')
+    .select(
+      'id, buyer_id, development_id, unit_id, matter_number, transaction_reference, property_address_line_1, property_description, suburb, city, seller_name, seller_email',
+    )
+    .eq('id', transactionId)
+    .maybeSingle()
+
+  if (
+    transactionQuery.error &&
+    (isMissingColumnError(transactionQuery.error, 'matter_number') ||
+      isMissingColumnError(transactionQuery.error, 'transaction_reference') ||
+      isMissingColumnError(transactionQuery.error, 'property_address_line_1') ||
+      isMissingColumnError(transactionQuery.error, 'property_description') ||
+      isMissingColumnError(transactionQuery.error, 'seller_name') ||
+      isMissingColumnError(transactionQuery.error, 'seller_email'))
+  ) {
+    transactionQuery = await client
+      .from('transactions')
+      .select('id, buyer_id, development_id, unit_id')
+      .eq('id', transactionId)
+      .maybeSingle()
+  }
+
+  if (transactionQuery.error) {
+    throw transactionQuery.error
+  }
+
+  const transaction = transactionQuery.data || null
+  let buyer = null
+
+  if (transaction?.buyer_id) {
+    const buyerQuery = await client
+      .from('buyers')
+      .select('id, name, email')
+      .eq('id', transaction.buyer_id)
+      .maybeSingle()
+
+    if (!buyerQuery.error) {
+      buyer = buyerQuery.data || null
+    } else if (!isMissingTableError(buyerQuery.error, 'buyers') && !isPermissionDeniedError(buyerQuery.error)) {
+      throw buyerQuery.error
+    }
+  }
+
+  let portalLink = null
+  if (transaction?.development_id && transaction?.unit_id && transaction?.id) {
+    portalLink = await getOrCreateClientPortalLinkRecord(client, {
+      developmentId: transaction.development_id,
+      unitId: transaction.unit_id,
+      transactionId: transaction.id,
+      buyerId: transaction.buyer_id || null,
+    }).catch(() => null)
+  }
+
+  return { transaction, buyer, portalLink }
+}
+
+async function sendAdditionalDocumentRequestEmails(client, { transactionId, actorRole, requests = [] } = {}) {
+  if (!transactionId || !requests.length) return []
+
+  const context = await fetchTransactionDocumentRequestEmailContext(client, transactionId).catch((contextError) => {
+    console.warn('[document-requests] Unable to resolve email context', contextError)
+    return { transaction: null, buyer: null, portalLink: null }
+  })
+  const transaction = context.transaction || {}
+  const buyerEmail = normalizeTextValue(context.buyer?.email || transaction?.buyer_email || transaction?.buyerEmail || '').toLowerCase()
+  const sellerEmail = normalizeTextValue(transaction?.seller_email || transaction?.sellerEmail || '').toLowerCase()
+  const portalToken = normalizeTextValue(context.portalLink?.token || '')
+  const portalPath = portalToken ? `/client/${portalToken}` : ''
+  const appBaseUrl = resolveClientAppBaseUrl()
+  const portalUrl = portalPath ? (appBaseUrl ? `${appBaseUrl}${portalPath}` : portalPath) : ''
+  const results = []
+
+  for (const request of requests) {
+    const audience = resolveAdditionalDocumentRequestAudience(request?.requested_from || request?.requestedFrom || 'buyer')
+    const recipients = []
+    if (audience.forBuyer && buyerEmail) {
+      recipients.push({
+        email: buyerEmail,
+        name: normalizeTextValue(context.buyer?.name || transaction?.buyer_name || transaction?.buyerName || 'Buyer'),
+      })
+    }
+    if (audience.forSeller && sellerEmail) {
+      recipients.push({
+        email: sellerEmail,
+        name: normalizeTextValue(transaction?.seller_name || transaction?.sellerName || 'Seller'),
+      })
+    }
+
+    for (const recipient of recipients) {
+      const copy = buildAdditionalDocumentRequestEmailCopy({
+        actorRole,
+        request,
+        transaction,
+        portalLink: portalUrl,
+      })
+      const { data, error } = await invokeEdgeFunction('send-email', {
+        client,
+        body: {
+          type: 'bond_intake_notification',
+          transactionId,
+          to: recipient.email,
+          recipientName: recipient.name,
+          subject: copy.subject,
+          title: copy.title,
+          message: copy.message,
+          metadata: copy.metadata,
+        },
+      }).catch((emailError) => ({ data: null, error: emailError }))
+
+      if (error || data?.error || data?.ok === false) {
+        console.warn('[document-requests] Unable to send document request email', error || data?.error || data?.message)
+        results.push({ email: recipient.email, sent: false, error: error || data?.error || data?.message || 'not_sent' })
+      } else {
+        results.push({ email: recipient.email, sent: true })
+      }
+    }
+  }
+
+  return results
+}
 
 async function canUserRequestAdditionalDocumentsForTransaction(client, { transactionId, actor = null } = {}) {
   const userId = actor?.userId || null
@@ -12244,6 +12410,10 @@ export async function createTransactionDocumentRequests({
     throw insert.error
   }
 
+  const normalizedCreatedRequests = (insert.data || []).map((row) => normalizeDocumentRequestRow(row))
+  const firstRequest = normalizedCreatedRequests[0] || insertRows[0] || {}
+  const firstRequestTitle = firstRequest.title || firstRequest.document_type || firstRequest.documentType || 'Additional document'
+
   await logTransactionEventIfPossible(client, {
     transactionId,
     eventType: 'TransactionUpdated',
@@ -12251,6 +12421,10 @@ export async function createTransactionDocumentRequests({
     createdByRole: normalizedActorRole,
     eventData: {
       source: 'additional_document_requested',
+      title: firstRequestTitle,
+      message: `${TRANSACTION_ROLE_LABELS[normalizedActorRole] || normalizedActorRole} requested ${firstRequestTitle}.`,
+      requestedFrom: firstRequest.requestedFrom || firstRequest.requested_from || insertRows[0]?.requested_from || 'buyer',
+      visibility: firstRequest.visibility || firstRequest.visibility_scope || insertRows[0]?.visibility_scope || 'client_visible',
       count: insertRows.length,
       requestGroupId: groupId,
       requestType: 'additional_document_request',
@@ -12262,6 +12436,14 @@ export async function createTransactionDocumentRequests({
         due_date: row.due_date,
       })),
     },
+  })
+
+  await sendAdditionalDocumentRequestEmails(client, {
+    transactionId,
+    actorRole: normalizedActorRole,
+    requests: normalizedCreatedRequests.length ? normalizedCreatedRequests : insertRows,
+  }).catch((emailError) => {
+    console.warn('[document-requests] Document request email notification failed', emailError)
   })
 
   for (const createdRequest of insertRows) {
@@ -12293,7 +12475,7 @@ export async function createTransactionDocumentRequests({
     }
   }
 
-  return (insert.data || []).map((row) => normalizeDocumentRequestRow(row))
+  return normalizedCreatedRequests
 }
 
 export async function updateTransactionDocumentRequestStatus({
