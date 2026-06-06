@@ -375,26 +375,31 @@ function makeSnapshot(overrides = {}) {
     assert.match(hqMarkup, /pressure signals/)
     assert.doesNotMatch(hqMarkup, /Network Intelligence/)
     assert.doesNotMatch(hqMarkup, /Real-time operational momentum, trend signals and performance intelligence across the bond network/)
-    assert.match(hqMarkup, /Operational Alerts/)
-    assert.match(hqMarkup, /Unassigned/)
-    assert.match(hqMarkup, /Applications waiting for OTP/)
-    assert.match(hqMarkup, /Missing documents/)
-    assert.match(hqMarkup, /Applications exceeded SLA/)
-    assert.match(hqMarkup, /Bank response delays/)
+    assert.doesNotMatch(hqMarkup, /Operational Alerts/)
+    assert.doesNotMatch(hqMarkup, /Applications waiting for OTP/)
+    assert.doesNotMatch(hqMarkup, /Missing documents/)
+    assert.doesNotMatch(hqMarkup, /Applications exceeded SLA/)
+    assert.doesNotMatch(hqMarkup, /Bank response delays/)
     assert.doesNotMatch(hqMarkup, /High Risk Branches/)
-    assert.match(hqMarkup, /Pipeline Snapshot/)
-    assert.match(hqMarkup, /Intake/)
-    assert.match(hqMarkup, /Documents/)
-    assert.match(hqMarkup, /Submitted/)
-    assert.match(hqMarkup, /Bank Review/)
-    assert.match(hqMarkup, /Approved/)
-    assert.match(hqMarkup, /Instruction/)
+    assert.doesNotMatch(hqMarkup, /Pipeline Snapshot/)
+    assert.doesNotMatch(hqMarkup, /Bank Review/)
+    assert.doesNotMatch(hqMarkup, /Instruction/)
     assert.doesNotMatch(hqMarkup, /Application Prep/)
     assert.doesNotMatch(hqMarkup, /Review &amp; Submit/)
     assert.doesNotMatch(hqMarkup, /Bank Decision/)
     assert.doesNotMatch(hqMarkup, /Registration/)
     assert.doesNotMatch(hqMarkup, /OTP Ready/)
     assert.doesNotMatch(hqMarkup, /Biggest Bottleneck/)
+    assert.match(hqMarkup, /Bank Relationship Breakdown/)
+    assert.match(hqMarkup, /Four-bank performance view/)
+    assert.match(hqMarkup, /Manage banks/)
+    assert.match(hqMarkup, /ABSA/)
+    assert.match(hqMarkup, /Standard Bank/)
+    assert.match(hqMarkup, /South Africa Regional Heatmap/)
+    assert.match(hqMarkup, /Heatmap Key/)
+    assert.match(hqMarkup, /Buyer Finance Mix/)
+    assert.match(hqMarkup, /Buyer Profile Mix/)
+    assert.match(hqMarkup, /Buyer Readiness Quality/)
     assert.match(hqMarkup, /Top Regions/)
     assert.match(hqMarkup, /Top Consultants/)
     assert.match(hqMarkup, /Top Banks/)
@@ -430,8 +435,9 @@ function makeSnapshot(overrides = {}) {
     const hqOrder = [
       'Applications',
       'Regional Performance',
-      'Operational Alerts',
-      'Pipeline Snapshot',
+      'Bank Relationship Breakdown',
+      'South Africa Regional Heatmap',
+      'Buyer Finance Mix',
       'Top Regions',
       'Top Consultants',
       'Top Banks',

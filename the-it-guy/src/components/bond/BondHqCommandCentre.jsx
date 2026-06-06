@@ -13,14 +13,16 @@ import {
   Landmark,
   Layers3,
   LineChart,
+  MapPinned,
+  PieChart,
   RefreshCw,
   ShieldAlert,
   TrendingUp,
+  UserRound,
   UsersRound,
 } from 'lucide-react'
 import { createElement } from 'react'
 import { Link } from 'react-router-dom'
-import NetworkIntelligencePanel from './NetworkIntelligencePanel'
 
 function normalizeNumber(value, fallback = 0) {
   const parsed = Number(value)
@@ -71,6 +73,15 @@ function getStageSourceCount(funnel = {}, stageKey = '', sourceKey = '') {
 function getNumericFromLabel(value = '') {
   const numeric = String(value || '').replace(/[^\d.-]/g, '')
   return normalizeNumber(numeric)
+}
+
+function getMoneyValueFromLabel(value = '') {
+  const label = String(value || '').trim().toLowerCase()
+  const numeric = getNumericFromLabel(label)
+  if (!numeric) return 0
+  if (label.includes('m')) return numeric * 1000000
+  if (label.includes('k')) return numeric * 1000
+  return numeric
 }
 
 function getInitials(value = '') {
@@ -481,15 +492,448 @@ export default function BondHqCommandCentre({ snapshot = {} }) {
       <ExecutiveHeader />
       <ExecutiveKpiStrip />
       <RegionalPerformanceStrip rows={hq.regionalPerformance || hq.regionComparison || []} loading={snapshot.loading || hq.loading} />
-      <NetworkIntelligencePanel source={{ snapshot, hq }} />
-      <OperationalAlerts alerts={hq.alerts || []} bankPerformance={hq.bankPerformance || {}} />
-      <PipelineSnapshot funnel={hq.pipelineFunnel || {}} />
+      <BankRelationshipBreakdown bankPerformance={hq.bankPerformance || {}} bankDistribution={snapshot.buyerDemographics?.bankDistribution || []} />
+      <RegionalHeatmapOverview rows={hq.regionalPerformance || hq.regionComparison || []} />
+      <BuyerStatsVisualRow demographics={snapshot.buyerDemographics || {}} qualityDistribution={snapshot.buyerQualityDistribution || {}} />
       <section className="grid gap-6 xl:grid-cols-[1.05fr_1fr_0.95fr]">
         <TopRegions rows={hq.regionalPerformance || []} />
         <TopConsultants rows={hq.topConsultants || hq.consultantPerformance || snapshot.teamPerformance || []} />
         <TopBanks bankPerformance={hq.bankPerformance || {}} />
       </section>
       <SystemFooter hq={hq} health={health} />
+    </div>
+  )
+}
+
+const BANK_BREAKDOWN_COLORS = ['#24518a', '#17946b', '#b7791f', '#7c3aed']
+const DEMO_BANK_BREAKDOWN_ROWS = [
+  { bank: 'Nedbank', submitted: 8, approvalRate: 75, averageResponseTime: 5, revenueGenerated: 210000 },
+  { bank: 'FNB', submitted: 6, approvalRate: 58, averageResponseTime: 9, revenueGenerated: 140000 },
+  { bank: 'ABSA', submitted: 5, approvalRate: 64, averageResponseTime: 8, revenueGenerated: 125000 },
+  { bank: 'Standard Bank', submitted: 4, approvalRate: 61, averageResponseTime: 7, revenueGenerated: 98000 },
+]
+
+function buildBankBreakdownRows(bankPerformance = {}, bankDistribution = []) {
+  const distributionByBank = new Map((bankDistribution || []).map((row) => [normalizeText(row.bank).toLowerCase(), row]))
+  const sourceRows = (bankPerformance.rows || []).map((row) => {
+    const distribution = distributionByBank.get(normalizeText(row.bank).toLowerCase()) || {}
+    return {
+      bank: row.bank || distribution.bank || 'Configured Bank',
+      submitted: normalizeNumber(row.submitted || row.applicationsSubmitted || row.total || distribution.submitted || distribution.total),
+      approved: normalizeNumber(row.approved || distribution.approved),
+      declined: normalizeNumber(row.declined || distribution.declined),
+      active: normalizeNumber(row.active || distribution.active),
+      approvalRate: clampScore(row.approvalRate || (distribution.total ? (normalizeNumber(distribution.approved) / normalizeNumber(distribution.total)) * 100 : 0)),
+      averageResponseTime: normalizeNumber(row.averageResponseTime || row.avgResponseTime || row.responseTimeHours),
+      revenue: row.revenueGenerated || row.revenue || row.projectedCommission || distribution.revenue,
+      revenueLabel: row.revenueLabel || row.revenueGeneratedLabel || row.projectedCommissionLabel || distribution.revenueLabel,
+    }
+  })
+  const rows = [...sourceRows]
+  const existingBanks = new Set(rows.map((row) => normalizeText(row.bank).toLowerCase()))
+  for (const row of DEMO_BANK_BREAKDOWN_ROWS) {
+    if (rows.length >= 4) break
+    if (!existingBanks.has(row.bank.toLowerCase())) rows.push(row)
+  }
+  return rows.slice(0, 4)
+}
+
+function BankRelationshipBreakdown({ bankPerformance = {}, bankDistribution = [] }) {
+  const rows = buildBankBreakdownRows(bankPerformance, bankDistribution)
+
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-[20px] font-bold tracking-[-0.01em] text-[#142132]">Bank Relationship Breakdown</h2>
+          <p className="mt-1 text-sm font-medium text-[#64748b]">Four-bank performance view across submissions, approvals, revenue and response speed.</p>
+        </div>
+        <Link to="/bond/banks" className="inline-flex items-center gap-2 text-sm font-semibold text-[#204b84] transition hover:text-[#0f2f5f]">
+          Manage banks <ArrowRight size={15} />
+        </Link>
+      </div>
+
+      <div className="grid w-full gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {rows.map((row, index) => (
+          <BankBreakdownCard key={row.bank} row={row} color={BANK_BREAKDOWN_COLORS[index % BANK_BREAKDOWN_COLORS.length]} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function BankBreakdownCard({ row = {}, color = '#24518a' }) {
+  const submitted = normalizeNumber(row.submitted || row.total)
+  const approved = row.approved || Math.round((submitted * normalizeNumber(row.approvalRate)) / 100)
+  const declined = normalizeNumber(row.declined)
+  const pending = Math.max(0, submitted - approved - declined)
+  const responseLabel = row.averageResponseTime ? `${formatNumber(row.averageResponseTime)}h avg` : 'Pending'
+  const approvalRate = clampScore(row.approvalRate)
+  const revenueValue = row.revenue || row.revenueGenerated || row.projectedCommission
+
+  return (
+    <Link to="/bond/banks" className="group min-w-0 rounded-[18px] border border-[#dfe7ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)] transition hover:-translate-y-0.5 hover:border-[#bfd0e1] hover:shadow-[0_18px_42px_rgba(15,23,42,0.08)]">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <CardLabel>Bank Partner</CardLabel>
+          <p className="mt-1 truncate text-lg font-bold text-[#142132]">{row.bank || 'Configured Bank'}</p>
+        </div>
+        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#f8fafc] ring-1 ring-[#e2e8f0]">
+          <Landmark size={18} color={color} />
+        </span>
+      </div>
+
+      <div className="mt-5 flex items-center justify-center">
+        <Donut
+          segments={[
+            { label: 'Approved', value: approved, color },
+            { label: 'Pending', value: pending, color: '#dbe6f0' },
+            { label: 'Declined', value: declined, color: '#f3b2a8' },
+          ]}
+          sizeClass="h-36 w-36"
+          center={(
+            <>
+              <strong className="text-[25px] font-bold leading-none text-[#142132]">{formatPercent(approvalRate)}</strong>
+              <span className="mt-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#64748b]">approval</span>
+            </>
+          )}
+        />
+      </div>
+
+      <div className="mt-5 grid grid-cols-3 gap-2">
+        <BankMiniStat label="Apps" value={formatNumber(submitted)} />
+        <BankMiniStat label="Rev." value={row.revenueLabel || formatCompactMoney(revenueValue, 'R0')} />
+        <BankMiniStat label="Resp." value={responseLabel} />
+      </div>
+
+      <div className="mt-5 space-y-2">
+        <BankStatusBar label="Approved" value={approved} total={Math.max(submitted, 1)} color={color} />
+        <BankStatusBar label="Pending" value={pending} total={Math.max(submitted, 1)} color="#8aa0b7" />
+        <BankStatusBar label="Declined" value={declined} total={Math.max(submitted, 1)} color="#d92d20" />
+      </div>
+    </Link>
+  )
+}
+
+function BankMiniStat({ label, value }) {
+  return (
+    <div className="min-w-0 rounded-[12px] bg-[#f8fafc] px-3 py-2 text-center ring-1 ring-[#edf2f7]">
+      <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#71869d]">{label}</p>
+      <p className="mt-1 text-[12px] font-bold leading-4 text-[#17324d]">{value}</p>
+    </div>
+  )
+}
+
+function BankStatusBar({ label, value, total, color }) {
+  const width = Math.max(4, Math.min(100, (normalizeNumber(value) / Math.max(normalizeNumber(total), 1)) * 100))
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-bold text-[#64748b]">
+        <span>{label}</span>
+        <span>{formatNumber(value)}</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-[#e7eef6]">
+        <span className="block h-full rounded-full" style={{ width: `${width}%`, backgroundColor: color }} />
+      </div>
+    </div>
+  )
+}
+
+const SA_PROVINCE_SHAPES = [
+  { key: 'western-cape', label: 'Western Cape', x: 92, y: 234, points: '47,232 98,212 154,228 170,268 137,309 74,294' },
+  { key: 'northern-cape', label: 'Northern Cape', x: 154, y: 135, points: '74,112 180,72 276,104 260,182 201,232 154,228 98,212 47,232' },
+  { key: 'eastern-cape', label: 'Eastern Cape', x: 236, y: 260, points: '170,268 201,232 286,214 344,256 312,310 224,326 137,309' },
+  { key: 'free-state', label: 'Free State', x: 290, y: 162, points: '260,142 330,122 380,154 362,214 286,214 260,182' },
+  { key: 'north-west', label: 'North West', x: 310, y: 96, points: '276,78 350,58 404,88 380,154 330,122 276,104' },
+  { key: 'gauteng', label: 'Gauteng', x: 400, y: 112, points: '392,96 428,94 444,124 418,148 386,132' },
+  { key: 'limpopo', label: 'Limpopo', x: 430, y: 54, points: '350,58 396,22 484,24 526,72 470,118 428,94 404,88' },
+  { key: 'mpumalanga', label: 'Mpumalanga', x: 474, y: 130, points: '444,124 470,118 526,72 548,124 514,174 454,168 418,148' },
+  { key: 'kwazulu-natal', label: 'KwaZulu-Natal', x: 424, y: 236, points: '362,214 454,168 514,174 490,248 424,306 344,256' },
+]
+
+const DEMO_BUYER_FINANCE_MIX = { bond: 8, cash: 2, hybrid: 3 }
+const DEMO_BUYER_PROFILE_MIX = { individual: 9, company: 2, trust: 1, foreign_buyer: 1 }
+
+function normalizeProvinceKey(value = '') {
+  const normalized = normalizeText(value).toLowerCase().replace(/&/g, 'and')
+  if (normalized.includes('gauteng')) return 'gauteng'
+  if (normalized.includes('western cape')) return 'western-cape'
+  if (normalized.includes('kwazulu') || normalized.includes('kzn')) return 'kwazulu-natal'
+  if (normalized.includes('eastern cape')) return 'eastern-cape'
+  if (normalized.includes('free state')) return 'free-state'
+  if (normalized.includes('mpumalanga')) return 'mpumalanga'
+  if (normalized.includes('limpopo')) return 'limpopo'
+  if (normalized.includes('north west')) return 'north-west'
+  if (normalized.includes('northern cape')) return 'northern-cape'
+  return normalized.replace(/\s+/g, '-')
+}
+
+function buildProvinceHeatRows(rows = []) {
+  const buckets = new Map()
+  for (const row of buildRegionalStripRows(rows)) {
+    const key = normalizeProvinceKey(getRegionalName(row))
+    const existing = buckets.get(key) || { applications: 0, revenueValue: 0, approvalTotal: 0, approvalRows: 0, healthTotal: 0, healthRows: 0 }
+    const applications = getRegionalApplications(row)
+    existing.applications += applications
+    existing.revenueValue += getMoneyValueFromLabel(row.revenue || getRegionalRevenueLabel(row))
+    existing.approvalTotal += getRegionalApproval(row)
+    existing.approvalRows += 1
+    existing.healthTotal += getRegionalHealth(row)
+    existing.healthRows += 1
+    buckets.set(key, existing)
+  }
+
+  return SA_PROVINCE_SHAPES.map((shape) => {
+    const bucket = buckets.get(shape.key) || {}
+    const applications = normalizeNumber(bucket.applications)
+    return {
+      ...shape,
+      applications,
+      revenueValue: normalizeNumber(bucket.revenueValue),
+      approval: bucket.approvalRows ? Math.round(bucket.approvalTotal / bucket.approvalRows) : 0,
+      health: bucket.healthRows ? Math.round(bucket.healthTotal / bucket.healthRows) : 0,
+    }
+  })
+}
+
+function getHeatColor(score = 0) {
+  if (score >= 80) return '#15935f'
+  if (score >= 72) return '#e59f24'
+  if (score > 0) return '#d85b46'
+  return '#d7e1ec'
+}
+
+function RegionalHeatmapOverview({ rows = [] }) {
+  const provinceRows = buildProvinceHeatRows(rows)
+  const activeRows = provinceRows.filter((row) => row.applications > 0)
+  const nationalApplications = provinceRows.reduce((sum, row) => sum + row.applications, 0)
+  const averageHealth = activeRows.length ? Math.round(activeRows.reduce((sum, row) => sum + row.health, 0) / activeRows.length) : 0
+  const topRegions = [...provinceRows].sort((left, right) => right.health - left.health || right.applications - left.applications).slice(0, 5)
+
+  return (
+    <section className="grid gap-5 rounded-[18px] border border-[#dfe7ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.04)] xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="min-w-0">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <CardLabel>South Africa Regional Heatmap</CardLabel>
+            <h2 className="mt-1 text-[20px] font-bold tracking-[-0.01em] text-[#142132]">Regional application concentration and health</h2>
+          </div>
+          <span className="inline-flex items-center gap-2 rounded-full bg-[#f8fafc] px-3 py-1.5 text-xs font-bold text-[#17324d] ring-1 ring-[#e2e8f0]">
+            <MapPinned size={14} /> {formatNumber(nationalApplications)} applications
+          </span>
+        </div>
+
+        <div className="overflow-hidden rounded-[16px] bg-[#f6f9fc] p-4 ring-1 ring-[#e6eef6]">
+          <svg className="h-[360px] w-full" viewBox="0 0 590 350" role="img" aria-label="South Africa regional heatmap">
+            <rect x="0" y="0" width="590" height="350" rx="18" fill="#f6f9fc" />
+            {provinceRows.map((province) => (
+              <g key={province.key}>
+                <polygon
+                  points={province.points}
+                  fill={getHeatColor(province.health)}
+                  stroke="#ffffff"
+                  strokeWidth="4"
+                  strokeLinejoin="round"
+                  opacity={province.applications ? 0.92 : 0.68}
+                />
+                <text x={province.x} y={province.y} textAnchor="middle" className="fill-white text-[10px] font-bold" style={{ paintOrder: 'stroke', stroke: 'rgba(15,23,42,0.24)', strokeWidth: 3 }}>
+                  {province.label}
+                </text>
+                <text x={province.x} y={province.y + 15} textAnchor="middle" className="fill-white text-[11px] font-bold" style={{ paintOrder: 'stroke', stroke: 'rgba(15,23,42,0.24)', strokeWidth: 3 }}>
+                  {formatNumber(province.applications)}
+                </text>
+              </g>
+            ))}
+          </svg>
+        </div>
+      </div>
+
+      <aside className="rounded-[16px] bg-[#f8fafc] p-5 ring-1 ring-[#e6eef6]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <CardLabel>Heatmap Key</CardLabel>
+            <p className="mt-1 text-3xl font-bold leading-none text-[#142132]">{averageHealth ? formatPercent(averageHealth) : 'Pending'}</p>
+            <p className="mt-2 text-sm font-medium text-[#64748b]">Average active region health</p>
+          </div>
+          <PieChart size={22} className="text-[#24518a]" />
+        </div>
+
+        <div className="mt-5 space-y-2">
+          <HeatKey color="#15935f" label="Strong" description="80%+ regional health" />
+          <HeatKey color="#e59f24" label="Watch" description="72-79% regional health" />
+          <HeatKey color="#d85b46" label="Needs attention" description="Below 72% regional health" />
+          <HeatKey color="#d7e1ec" label="Unassigned" description="No active regional data" />
+        </div>
+
+        <div className="mt-6 space-y-3">
+          {topRegions.map((row) => (
+            <div key={row.key} className="rounded-[13px] bg-white p-3 ring-1 ring-[#edf2f7]">
+              <div className="flex items-center justify-between gap-3">
+                <span className="truncate text-sm font-bold text-[#17324d]">{row.label}</span>
+                <span className="shrink-0 text-sm font-bold text-[#142132]">{row.health ? formatPercent(row.health) : '0%'}</span>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#e2e8f0]">
+                <span className="block h-full rounded-full" style={{ width: `${Math.max(4, row.health)}%`, backgroundColor: getHeatColor(row.health) }} />
+              </div>
+              <p className="mt-2 text-xs font-semibold text-[#64748b]">{formatNumber(row.applications)} applications · {formatCompactMoney(row.revenueValue, 'R0')}</p>
+            </div>
+          ))}
+        </div>
+      </aside>
+    </section>
+  )
+}
+
+function HeatKey({ color, label, description }) {
+  return (
+    <div className="flex items-center gap-3 rounded-[12px] bg-white px-3 py-2 ring-1 ring-[#edf2f7]">
+      <span className="h-3 w-3 rounded-full" style={{ backgroundColor: color }} />
+      <div className="min-w-0">
+        <p className="text-sm font-bold text-[#17324d]">{label}</p>
+        <p className="text-xs font-medium text-[#64748b]">{description}</p>
+      </div>
+    </div>
+  )
+}
+
+function formatBuyerLabel(value = '') {
+  return normalizeText(value).replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function objectEntriesWithValues(items = {}) {
+  return Object.entries(items || {}).filter(([, value]) => normalizeNumber(value) > 0)
+}
+
+function BuyerStatsVisualRow({ demographics = {}, qualityDistribution = {} }) {
+  const financeMix = objectEntriesWithValues(demographics.bondVsCash || {}).length ? demographics.bondVsCash : DEMO_BUYER_FINANCE_MIX
+  const clientType = objectEntriesWithValues(demographics.clientType || {}).length ? demographics.clientType : DEMO_BUYER_PROFILE_MIX
+  const readiness = qualityDistribution.readiness || qualityDistribution || {}
+
+  return (
+    <section className="grid gap-5 xl:grid-cols-3">
+      <BuyerDonutPanel title="Buyer Finance Mix" icon={Banknote} items={financeMix} colors={['#24518a', '#17946b', '#b7791f']} />
+      <BuyerBarsPanel title="Buyer Profile Mix" icon={UserRound} items={clientType} colors={['#17946b', '#24518a', '#b7791f', '#7c3aed']} />
+      <BuyerReadinessPanel title="Buyer Readiness Quality" items={readiness} />
+    </section>
+  )
+}
+
+function BuyerDonutPanel({ title, icon: Icon, items = {}, colors = [] }) {
+  const entries = objectEntriesWithValues(items)
+  const total = entries.reduce((sum, [, value]) => sum + normalizeNumber(value), 0)
+  const segments = entries.map(([key, value], index) => ({ label: key, value, color: colors[index % colors.length] || '#24518a' }))
+
+  return (
+    <HqCard className="min-h-[360px]">
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div>
+          <CardLabel>Buyer Stats</CardLabel>
+          <p className="mt-1 text-lg font-bold text-[#142132]">{title}</p>
+        </div>
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-[14px] bg-[#f8fafc] ring-1 ring-[#e2e8f0]">
+          {createElement(Icon, { size: 18, className: 'text-[#24518a]' })}
+        </span>
+      </div>
+
+      <div className="grid gap-5">
+        <div className="flex justify-center">
+          <Donut
+            segments={segments}
+            sizeClass="h-40 w-40"
+            center={(
+              <>
+                <strong className="text-[28px] font-bold leading-none text-[#142132]">{formatNumber(total)}</strong>
+                <span className="mt-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#64748b]">buyers</span>
+              </>
+            )}
+          />
+        </div>
+        <div className="space-y-3">
+          {entries.map(([key, value], index) => (
+            <BuyerLegendBar key={key} label={formatBuyerLabel(key)} value={value} total={total} color={colors[index % colors.length] || '#24518a'} />
+          ))}
+        </div>
+      </div>
+    </HqCard>
+  )
+}
+
+function BuyerBarsPanel({ title, icon: Icon, items = {}, colors = [] }) {
+  const entries = objectEntriesWithValues(items)
+  const total = entries.reduce((sum, [, value]) => sum + normalizeNumber(value), 0)
+
+  return (
+    <HqCard className="min-h-[360px]">
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div>
+          <CardLabel>Buyer Stats</CardLabel>
+          <p className="mt-1 text-lg font-bold text-[#142132]">{title}</p>
+        </div>
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-[14px] bg-[#f8fafc] ring-1 ring-[#e2e8f0]">
+          {createElement(Icon, { size: 18, className: 'text-[#17946b]' })}
+        </span>
+      </div>
+
+      <div className="space-y-4">
+        {entries.map(([key, value], index) => (
+          <BuyerLegendBar key={key} label={formatBuyerLabel(key)} value={value} total={total} color={colors[index % colors.length] || '#24518a'} size="large" />
+        ))}
+      </div>
+    </HqCard>
+  )
+}
+
+function BuyerReadinessPanel({ title, items = {} }) {
+  const entries = objectEntriesWithValues(items)
+  const fallbackEntries = entries.length ? entries : [['strong', 7], ['watch', 4], ['at_risk', 2]]
+  const total = fallbackEntries.reduce((sum, [, value]) => sum + normalizeNumber(value), 0)
+  const colors = ['#17946b', '#e59f24', '#d85b46', '#24518a']
+  const max = Math.max(...fallbackEntries.map(([, value]) => normalizeNumber(value)), 1)
+
+  return (
+    <HqCard className="min-h-[360px]">
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div>
+          <CardLabel>Buyer Stats</CardLabel>
+          <p className="mt-1 text-lg font-bold text-[#142132]">{title}</p>
+        </div>
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-[14px] bg-[#f8fafc] ring-1 ring-[#e2e8f0]">
+          <Gauge size={18} className="text-[#b7791f]" />
+        </span>
+      </div>
+
+      <div className="flex h-[210px] items-end gap-4 rounded-[16px] bg-[#f8fafc] px-4 pb-4 pt-6 ring-1 ring-[#e6eef6]">
+        {fallbackEntries.map(([key, value], index) => {
+          const height = Math.max(14, (normalizeNumber(value) / max) * 100)
+          return (
+            <div key={key} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-2">
+              <span className="text-sm font-bold text-[#142132]">{formatNumber(value)}</span>
+              <span className="w-full rounded-t-[10px]" style={{ height: `${height}%`, backgroundColor: colors[index % colors.length] }} />
+              <span className="max-w-full truncate text-[10px] font-bold uppercase tracking-[0.06em] text-[#64748b]">{formatBuyerLabel(key)}</span>
+            </div>
+          )
+        })}
+      </div>
+      <p className="mt-4 text-sm font-semibold text-[#64748b]">{formatNumber(total)} buyers represented across readiness bands</p>
+    </HqCard>
+  )
+}
+
+function BuyerLegendBar({ label, value, total, color, size = 'default' }) {
+  const pct = Math.round((normalizeNumber(value) / Math.max(normalizeNumber(total), 1)) * 100)
+  return (
+    <div className={size === 'large' ? 'rounded-[14px] bg-[#f8fafc] p-3 ring-1 ring-[#edf2f7]' : ''}>
+      <div className="flex items-center justify-between gap-3">
+        <span className="inline-flex min-w-0 items-center gap-2 text-sm font-bold text-[#17324d]">
+          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+          <span className="min-w-0 break-words">{label}</span>
+        </span>
+        <span className="shrink-0 text-sm font-bold text-[#142132]">{pct}%</span>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#e2e8f0]">
+        <span className="block h-full rounded-full" style={{ width: `${Math.max(4, pct)}%`, backgroundColor: color }} />
+      </div>
+      <p className="mt-1 text-xs font-semibold text-[#64748b]">{formatNumber(value)} buyers</p>
     </div>
   )
 }
