@@ -10,7 +10,7 @@ import {
   UserPlus as InviteIcon,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
@@ -174,7 +174,7 @@ function PartnerLogo({ partner }) {
   )
 }
 
-function PartnerCard({ partner, relationship, action, actionLabel, muted = false }) {
+function PartnerCard({ partner, relationship, action, actionLabel, profileHref = '', muted = false }) {
   const isPreferred = Boolean(relationship?.preferred || relationship?.relationshipType === 'preferred')
   const statusLabel = relationship?.relationshipStatus || 'Pending'
   const typeLabel = getPartnerTypeLabel(partner?.type)
@@ -220,7 +220,7 @@ function PartnerCard({ partner, relationship, action, actionLabel, muted = false
 
       <div className="mt-4 flex items-center justify-between gap-3 border-t border-[#edf2f7] pt-3">
         <Link
-          to={`/partners/${partner?.id || ''}`}
+          to={profileHref || `/partners/${partner?.id || ''}`}
           className="inline-flex h-9 items-center gap-2 rounded-[8px] border border-[#d9e4ef] bg-white px-3 text-sm font-semibold text-[#264563] transition hover:bg-[#f8fafc]"
         >
           Profile <ArrowUpRight size={14} />
@@ -508,6 +508,7 @@ function PartnerInviteModal({
 
 export default function PartnersPage() {
   const { partnerId = '' } = useParams()
+  const location = useLocation()
   const { workspace, workspaceType, role, profile, currentMembership } = useWorkspace()
   const { organisation } = useOrganisation()
   const organisationId = organisation?.partnerOrganisationId || organisation?.organisationId || workspace?.organisationId || organisation?.id || workspace?.id || ''
@@ -562,6 +563,7 @@ export default function PartnersPage() {
     }),
     [currentMembership, organisationId, profile, role],
   )
+  const isBondPartnersRoute = location.pathname.startsWith('/bond/partners')
 
   const allowedScopes = useMemo(
     () =>
@@ -1048,6 +1050,14 @@ export default function PartnersPage() {
                       key={relationship.id}
                       partner={relationship.partner}
                       relationship={relationship}
+                      profileHref={
+                        isBondPartnersRoute &&
+                        relationship.relationshipStatus === 'accepted' &&
+                        ['agency', 'agency_network'].includes(relationship.partner?.type) &&
+                        relationship.id
+                          ? `/bond/partners/${relationship.id}`
+                          : ''
+                      }
                       action={() => handleMarkPreferred(relationship)}
                       actionLabel={relationship.preferred || relationship.relationshipType === 'preferred' ? 'Remove Preferred' : 'Make Preferred'}
                     />

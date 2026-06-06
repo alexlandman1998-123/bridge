@@ -1,4 +1,4 @@
-import { ArrowRight, Building2, CheckCircle2, CircleAlert, FolderKanban, Loader2, MoreVertical, Plus, Search, Trash2, UserRound } from 'lucide-react'
+import { ArrowRight, Building2, CheckCircle2, CircleAlert, FolderKanban, Loader2, MoreVertical, Plus, Search, Share2, Trash2, UserRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -38,6 +38,7 @@ import {
   getPrivateListingStatusGroup,
 } from '../lib/privateListingLifecycle'
 import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListings, updatePrivateListing, uploadPrivateListingDocument } from '../services/privateListingService'
+import { getListingPartnerShareOptions, shareListingWithPartner, unshareListingWithPartner } from '../services/partnerListingSharingService'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 import {
   getPropertyCategoryLabel,
@@ -758,6 +759,11 @@ function AgentListings({ initialTab = null } = {}) {
   const [organisationId, setOrganisationId] = useState('')
   const [deletingListingId, setDeletingListingId] = useState('')
   const [openListingMenuId, setOpenListingMenuId] = useState('')
+  const [shareModalListing, setShareModalListing] = useState(null)
+  const [shareOptions, setShareOptions] = useState([])
+  const [shareOptionsLoading, setShareOptionsLoading] = useState(false)
+  const [shareActionKey, setShareActionKey] = useState('')
+  const [shareError, setShareError] = useState('')
   const [filters, setFilters] = useState({
     statusGroup: 'all',
     search: '',
@@ -1474,6 +1480,73 @@ function AgentListings({ initialTab = null } = {}) {
     }
   }
 
+  function getRemoteListingIdForCard(card = {}) {
+    const listingIdentityKeys = Array.from(new Set([
+      ...(Array.isArray(card?.identityKeys) ? card.identityKeys : []),
+      ...getListingIdentityKeys(card?.listingRecord || {}),
+      card?.id,
+    ].map((value) => String(value || '').trim()).filter(Boolean)))
+    return listingIdentityKeys.find((value) => isUuidLike(value)) || ''
+  }
+
+  async function openPartnerShareModal(card, event) {
+    event.stopPropagation()
+    const remoteListingId = getRemoteListingIdForCard(card)
+    if (!remoteListingId) {
+      setError('Partner sharing is only available for saved agency listings.')
+      return
+    }
+
+    setOpenListingMenuId('')
+    setShareModalListing({
+      id: remoteListingId,
+      title: String(card?.title || 'Shared listing').trim(),
+    })
+    setShareOptions([])
+    setShareError('')
+    setShareOptionsLoading(true)
+
+    try {
+      const options = await getListingPartnerShareOptions(remoteListingId)
+      setShareOptions(options)
+    } catch (loadShareError) {
+      setShareError(loadShareError?.message || 'Unable to load partner sharing options.')
+    } finally {
+      setShareOptionsLoading(false)
+    }
+  }
+
+  async function handlePartnerShareToggle(option = {}) {
+    if (!shareModalListing?.id || !option.relationshipId) return
+    const actionKey = `${option.relationshipId}:${shareModalListing.id}`
+    setShareActionKey(actionKey)
+    setShareError('')
+
+    try {
+      if (option.isShared) {
+        await unshareListingWithPartner({
+          relationshipId: option.relationshipId,
+          listingId: shareModalListing.id,
+        })
+      } else {
+        await shareListingWithPartner({
+          relationshipId: option.relationshipId,
+          listingId: shareModalListing.id,
+        })
+      }
+      setShareOptions((previous) => previous.map((item) => (
+        item.relationshipId === option.relationshipId
+          ? { ...item, isShared: !option.isShared }
+          : item
+      )))
+      setWorkflowMessage(option.isShared ? 'Listing sharing was turned off for this partner.' : 'Listing shared with partner.')
+    } catch (shareToggleError) {
+      setShareError(shareToggleError?.message || 'Unable to update partner sharing.')
+    } finally {
+      setShareActionKey('')
+    }
+  }
+
   const privateListingCards = useMemo(() => {
     const agentName = String(profile?.fullName || profile?.name || profile?.email || 'Assigned Agent').trim()
     return privateListings
@@ -1943,6 +2016,16 @@ function AgentListings({ initialTab = null } = {}) {
                             className="absolute right-0 top-9 z-20 w-44 overflow-hidden rounded-[12px] border border-[#dce6f2] bg-white py-1 shadow-[0_14px_30px_rgba(15,23,42,0.16)]"
                             onClick={(event) => event.stopPropagation()}
                           >
+                            {getRemoteListingIdForCard(card) ? (
+                              <button
+                                type="button"
+                                onClick={(event) => openPartnerShareModal(card, event)}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-semibold text-[#1f4f78] transition hover:bg-[#f5f9fd]"
+                              >
+                                <Share2 size={14} />
+                                Share With Partners
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               onClick={(event) => {
@@ -2107,6 +2190,80 @@ function AgentListings({ initialTab = null } = {}) {
           )
         ) : null}
       </section>
+
+      {shareModalListing ? (
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-[#091322]/40 p-5 backdrop-blur-[1.5px]">
+          <div className="w-full max-w-2xl rounded-[22px] border border-[#dce4ef] bg-white p-6 shadow-[0_22px_56px_rgba(15,23,42,0.24)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Partner visibility</p>
+                <h3 className="mt-2 text-xl font-semibold text-[#142132]">Share With Partners</h3>
+                <p className="mt-2 text-sm leading-6 text-[#607387]">{shareModalListing.title}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShareModalListing(null)
+                  setShareOptions([])
+                  setShareError('')
+                }}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-[#dce6f2] text-[#607387] transition hover:bg-[#f7fbff]"
+                aria-label="Close partner sharing"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="mt-5 rounded-[16px] border border-[#dce6f2] bg-[#f8fbfe] p-4 text-sm leading-6 text-[#51657b]">
+              Only accepted partner relationships can receive shared listings. This does not expose seller details, internal notes, mandates, documents, or campaign tools.
+            </div>
+
+            {shareError ? (
+              <div className="mt-4 rounded-[14px] border border-[#f1c6c2] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#a13b35]">
+                {shareError}
+              </div>
+            ) : null}
+
+            <div className="mt-5 space-y-3">
+              {shareOptionsLoading ? (
+                <div className="rounded-[16px] border border-[#dce6f2] bg-white px-4 py-6 text-sm text-[#607387]">Loading partner relationships...</div>
+              ) : null}
+
+              {!shareOptionsLoading && !shareOptions.length ? (
+                <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-5 py-8 text-center">
+                  <Building2 className="mx-auto text-[#8da0b5]" size={24} />
+                  <p className="mt-3 text-base font-semibold text-[#142132]">No accepted partner relationships found.</p>
+                  <p className="mt-1 text-sm text-[#6b7d93]">Accepted partners will appear here once this agency has active organisation relationships.</p>
+                </div>
+              ) : null}
+
+              {shareOptions.map((option) => {
+                const actionKey = `${option.relationshipId}:${shareModalListing.id}`
+                const loadingAction = shareActionKey === actionKey
+                return (
+                  <div key={option.relationshipId} className="flex flex-col gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-[#142132]">{option.partnerName}</p>
+                      <p className="mt-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">
+                        {option.partnerType ? option.partnerType.replace(/_/g, ' ') : 'Partner'} / {option.isShared ? 'Shared' : 'Not shared'}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant={option.isShared ? 'secondary' : 'primary'}
+                      disabled={loadingAction || Boolean(shareActionKey)}
+                      onClick={() => handlePartnerShareToggle(option)}
+                    >
+                      {loadingAction ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />}
+                      {option.isShared ? 'Unshare' : 'Share'}
+                    </Button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {showNewListingModal ? (
         <div className="fixed inset-0 z-[70] grid place-items-center bg-[#091322]/40 p-5 backdrop-blur-[1.5px]">

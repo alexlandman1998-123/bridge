@@ -295,6 +295,10 @@ function makeSnapshot(overrides = {}) {
               { key: 'gauteng', region: 'Gauteng', activeApplications: 21, submitted: 10, approvalRate: 74, avgApprovalTime: 7, pipelineValueLabel: 'R 21 000 000', projectedCommissionLabel: 'R 252 000', riskLevel: 'Low', href: '/bond/organisation?view=branches&region=Gauteng' },
               { key: 'western-cape', region: 'Western Cape', activeApplications: 14, submitted: 5, approvalRate: 61, avgApprovalTime: 10, pipelineValueLabel: 'R 14 000 000', projectedCommissionLabel: 'R 168 000', riskLevel: 'Medium', href: '/bond/organisation?view=branches&region=Western%20Cape' },
             ],
+            topConsultants: [
+              { key: 'emma', name: 'Emma Roberts', branch: 'Sandton HQ', applicationsSubmitted: 18, approvalRate: 78, growth: '+9%' },
+              { key: 'lerato', name: 'Lerato Khumalo', branch: 'Cape Town Central', applicationsSubmitted: 12, approvalRate: 64, growth: '+4%' },
+            ],
             branchLeaderboard: {
               topBranches: [
                 { key: 'sandton', branch: 'Sandton HQ', region: 'Gauteng', activeApplications: 12, approvalRate: 82, avgApprovalTime: 6, projectedCommissionLabel: 'R 144 000', topScore: 91, riskLevel: 'Low', href: '/bond/organisation?view=branches&branch=Sandton%20HQ' },
@@ -320,10 +324,16 @@ function makeSnapshot(overrides = {}) {
               bestBank: 'Nedbank',
               bottleneckBank: 'FNB',
               rows: [
-                { bank: 'Nedbank', submitted: 8, approvalRate: 75, averageResponseTime: 5 },
-                { bank: 'FNB', submitted: 6, approvalRate: 58, averageResponseTime: 9 },
+                { bank: 'Nedbank', submitted: 8, approvalRate: 75, averageResponseTime: 5, revenueGenerated: 210000 },
+                { bank: 'FNB', submitted: 6, approvalRate: 58, averageResponseTime: 9, revenueGenerated: 140000 },
               ],
             },
+            performanceTrend: [
+              { key: 'applications', label: 'Applications', color: '#24518a', values: [24, 26, 27, 31, 34, 36, 39, 40, 42, 45, 47, 49] },
+              { key: 'approval', label: 'Approval Rate', color: '#15803d', values: [62, 63, 64, 65, 66, 68, 70, 69, 71, 72, 73, 74] },
+              { key: 'response', label: 'Avg Response Time', color: '#b45309', values: [11, 10, 9, 9, 8, 8, 7, 7, 7, 6, 6, 5] },
+              { key: 'revenue', label: 'Revenue', color: '#7c3aed', values: [80, 92, 105, 120, 135, 144, 156, 164, 172, 180, 196, 210] },
+            ],
           },
         }),
         reportingScope: {
@@ -334,40 +344,66 @@ function makeSnapshot(overrides = {}) {
         },
       },
     })
+    assert.match(hqMarkup, /HQ Command Centre/)
+    assert.match(hqMarkup, /National overview of applications, pipeline performance and operational risk/)
+    assert.match(hqMarkup, /Live/)
+    assert.match(hqMarkup, /Date Range/)
+    assert.match(hqMarkup, /Filters/)
+    assert.match(hqMarkup, /Refresh/)
+    assert.match(hqMarkup, /Export/)
     assert.doesNotMatch(hqMarkup, /National Bond Command Centre/)
     assert.doesNotMatch(hqMarkup, /Executive view of national bond performance, pipeline, revenue and risk/)
     assert.doesNotMatch(hqMarkup, /Last 30 Days/)
     assert.doesNotMatch(hqMarkup, /All Regions/)
     assert.doesNotMatch(hqMarkup, /Export report/)
     assert.doesNotMatch(hqMarkup, /National Command Centre/)
-    assert.match(hqMarkup, /Active Book/)
+    assert.match(hqMarkup, /Applications/)
     assert.doesNotMatch(hqMarkup, /Applications Submitted/)
-    assert.doesNotMatch(hqMarkup, /Projected Commission/)
+    assert.match(hqMarkup, /Revenue Forecast/)
+    assert.match(hqMarkup, /Avg Approval Time/)
     assert.match(hqMarkup, /Operational Health/)
-    assert.match(hqMarkup, /Health Score/)
+    assert.match(hqMarkup, /\/ 100/)
+    assert.match(hqMarkup, /pressure signals/)
+    assert.match(hqMarkup, /Operational Alerts/)
     assert.match(hqMarkup, /Unassigned/)
-    assert.match(hqMarkup, /Awaiting OTP/)
-    assert.match(hqMarkup, /Missing Docs/)
-    assert.match(hqMarkup, /SLA Breaches/)
+    assert.match(hqMarkup, /Applications waiting for OTP/)
+    assert.match(hqMarkup, /Missing documents/)
+    assert.match(hqMarkup, /Applications exceeded SLA/)
+    assert.match(hqMarkup, /Bank response delays/)
     assert.doesNotMatch(hqMarkup, /High Risk Branches/)
-    assert.match(hqMarkup, /National Pipeline Flow/)
-    assert.match(hqMarkup, /Application Prep/)
-    assert.match(hqMarkup, /Review &amp; Submit/)
-    assert.match(hqMarkup, /Bank Decision/)
-    assert.match(hqMarkup, /Registration/)
+    assert.match(hqMarkup, /Pipeline Snapshot/)
+    assert.match(hqMarkup, /Intake/)
+    assert.match(hqMarkup, /Documents/)
+    assert.match(hqMarkup, /Submitted/)
+    assert.match(hqMarkup, /Bank Review/)
+    assert.match(hqMarkup, /Approved/)
+    assert.match(hqMarkup, /Instruction/)
+    assert.doesNotMatch(hqMarkup, /Application Prep/)
+    assert.doesNotMatch(hqMarkup, /Review &amp; Submit/)
+    assert.doesNotMatch(hqMarkup, /Bank Decision/)
+    assert.doesNotMatch(hqMarkup, /Registration/)
     assert.doesNotMatch(hqMarkup, /OTP Ready/)
-    assert.match(hqMarkup, /Biggest Bottleneck/)
-    assert.match(hqMarkup, /Performance Layer/)
-    assert.match(hqMarkup, /Regional Performance/)
-    assert.match(hqMarkup, /Top Performing Branches/)
+    assert.doesNotMatch(hqMarkup, /Biggest Bottleneck/)
+    assert.match(hqMarkup, /Top Regions/)
+    assert.match(hqMarkup, /Top Consultants/)
+    assert.match(hqMarkup, /Top Banks/)
+    assert.match(hqMarkup, /Emma Roberts/)
+    assert.match(hqMarkup, /Nedbank/)
     assert.doesNotMatch(hqMarkup, /Branches Requiring Attention/)
-    assert.match(hqMarkup, /Partner Intelligence/)
-    assert.match(hqMarkup, /Top Partner Performance/)
-    assert.match(hqMarkup, /Partner Risk Overview/)
-    assert.match(hqMarkup, /Revenue Intelligence/)
-    assert.match(hqMarkup, /Revenue Projection/)
-    assert.match(hqMarkup, /Commission Breakdown/)
-    assert.match(hqMarkup, /Revenue Trend/)
+    assert.doesNotMatch(hqMarkup, /Partner Intelligence/)
+    assert.doesNotMatch(hqMarkup, /Top Partner Performance/)
+    assert.doesNotMatch(hqMarkup, /Partner Risk Overview/)
+    assert.doesNotMatch(hqMarkup, /Revenue Intelligence/)
+    assert.doesNotMatch(hqMarkup, /Revenue Projection/)
+    assert.doesNotMatch(hqMarkup, /Commission Breakdown/)
+    assert.doesNotMatch(hqMarkup, /Revenue Trend/)
+    assert.match(hqMarkup, /Performance Trend/)
+    assert.match(hqMarkup, /12-month movement/)
+    assert.match(hqMarkup, /Applications/)
+    assert.match(hqMarkup, /Approval Rate/)
+    assert.match(hqMarkup, /Avg Response Time/)
+    assert.match(hqMarkup, /Revenue/)
+    assert.match(hqMarkup, /Data freshness/)
     assert.doesNotMatch(hqMarkup, /Bond Originator HQ/)
     assert.doesNotMatch(hqMarkup, /Company-wide view of applications, revenue, approvals, partner performance, and operational risk/)
     assert.doesNotMatch(hqMarkup, /National Pipeline Funnel/)
@@ -384,12 +420,15 @@ function makeSnapshot(overrides = {}) {
     assert.doesNotMatch(hqMarkup, /Applications Needing Attention/)
 
     const hqOrder = [
-      'Active Book',
-      'Operational Health',
-      'National Pipeline Flow',
-      'Performance Layer',
-      'Partner Intelligence',
-      'Revenue Intelligence',
+      'HQ Command Centre',
+      'Applications',
+      'Operational Alerts',
+      'Pipeline Snapshot',
+      'Top Regions',
+      'Top Consultants',
+      'Top Banks',
+      'Performance Trend',
+      'Data freshness',
     ]
     let previousHqIndex = -1
     for (const label of hqOrder) {

@@ -1,20 +1,26 @@
 import {
+  Activity,
   AlertTriangle,
   ArrowRight,
   Banknote,
   Building2,
+  CalendarDays,
   Clock3,
+  Download,
   FileCheck2,
   FileText,
+  Filter,
   Gauge,
   Landmark,
   Layers3,
   LineChart,
+  RefreshCw,
   ShieldAlert,
   TrendingUp,
   UsersRound,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import NetworkIntelligencePanel from './NetworkIntelligencePanel'
 
 function normalizeNumber(value, fallback = 0) {
   const parsed = Number(value)
@@ -27,6 +33,15 @@ function formatNumber(value) {
 
 function formatPercent(value) {
   return `${normalizeNumber(value)}%`
+}
+
+function formatCompactMoney(value, fallback = 'Pending') {
+  if (value === null || value === undefined || value === '') return fallback
+  const amount = normalizeNumber(value, 0)
+  if (!amount) return fallback
+  if (amount >= 1000000) return `R${Math.round((amount / 1000000) * 10) / 10}m`
+  if (amount >= 1000) return `R${Math.round(amount / 1000)}k`
+  return `R${formatNumber(amount)}`
 }
 
 function findMetric(items = [], keys = [], fallbackIndex = 0) {
@@ -52,6 +67,12 @@ function getStageSourceCount(funnel = {}, stageKey = '', sourceKey = '') {
 function getNumericFromLabel(value = '') {
   const numeric = String(value || '').replace(/[^\d.-]/g, '')
   return normalizeNumber(numeric)
+}
+
+function getInitials(value = '') {
+  const parts = String(value || '').trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return 'HQ'
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('')
 }
 
 function getRiskClass(value = '') {
@@ -121,7 +142,7 @@ function Donut({ segments = [], sizeClass = 'h-40 w-40', center = null }) {
 
 function HqCard({ children, className = '' }) {
   return (
-    <section className={`rounded-[24px] bg-white p-6 shadow-[0_16px_36px_rgba(15,23,42,0.045)] ring-1 ring-[#e4edf5] ${className}`}>
+    <section className={`rounded-[16px] bg-white p-6 shadow-[0_10px_28px_rgba(15,23,42,0.035)] ring-1 ring-[#dfe7ef] ${className}`}>
       {children}
     </section>
   )
@@ -138,14 +159,14 @@ function SectionTitle({ children, action = null }) {
 
 function CardLabel({ children }) {
   return (
-    <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#71869d]">{children}</p>
+    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748b]">{children}</p>
   )
 }
 
 function DataTable({ columns = [], rows = [], emptyLabel = 'Not enough data.' }) {
   if (!rows.length) {
     return (
-      <div className="flex min-h-[220px] items-center justify-center rounded-[16px] bg-[#f8fbfe] text-sm font-medium text-[#64748b]">
+      <div className="flex min-h-[220px] items-center justify-center rounded-[14px] bg-[#f8fafc] px-6 text-center text-sm font-medium text-[#64748b]">
         {emptyLabel}
       </div>
     )
@@ -181,21 +202,455 @@ function DataTable({ columns = [], rows = [], emptyLabel = 'Not enough data.' })
 
 export default function BondHqCommandCentre({ snapshot = {} }) {
   const hq = snapshot.hqCommandCentre || {}
+  const health = buildOperationalHealthModel(hq)
 
   return (
-    <div className="mx-auto max-w-[1600px] px-0 pb-8">
-      <div className="grid grid-cols-12 gap-6">
-        <NationalCommandCentre items={hq.nationalSnapshot || []} />
-        <OperationalHealth alerts={hq.alerts || []} funnel={hq.pipelineFunnel} />
-        <NationalPipelineFlow funnel={hq.pipelineFunnel} />
-        <PerformanceLayer
-          regions={hq.regionalPerformance || []}
-          leaderboard={hq.branchLeaderboard || {}}
-        />
-        <PartnerIntelligence partners={hq.partnerPerformance || []} />
-        <RevenueIntelligence revenue={hq.revenue || {}} />
-      </div>
+    <div className="mx-auto max-w-[1600px] space-y-8 px-0 pb-8">
+      <ExecutiveHeader />
+      <ExecutiveKpiStrip hq={hq} health={health} />
+      <NetworkIntelligencePanel source={{ snapshot, hq }} />
+      <OperationalAlerts alerts={hq.alerts || []} bankPerformance={hq.bankPerformance || {}} />
+      <PipelineSnapshot funnel={hq.pipelineFunnel || {}} />
+      <section className="grid gap-6 xl:grid-cols-[1.05fr_1fr_0.95fr]">
+        <TopRegions rows={hq.regionalPerformance || []} />
+        <TopConsultants rows={hq.topConsultants || hq.consultantPerformance || snapshot.teamPerformance || []} />
+        <TopBanks bankPerformance={hq.bankPerformance || {}} />
+      </section>
+      <SystemFooter hq={hq} health={health} />
     </div>
+  )
+}
+
+function ExecutiveHeader() {
+  return (
+    <header className="flex flex-wrap items-start justify-between gap-4">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-[24px] font-semibold leading-tight tracking-[-0.01em] text-[#111827]">HQ Command Centre</h1>
+          <span className="inline-flex h-6 items-center rounded-full bg-[#ecfdf3] px-2.5 text-[11px] font-semibold text-[#027a48] ring-1 ring-[#abefc6]">
+            Live
+          </span>
+        </div>
+        <p className="mt-1 text-sm text-[#64748b]">National overview of applications, pipeline performance and operational risk.</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <HeaderControl icon={CalendarDays}>Date Range</HeaderControl>
+        <HeaderControl icon={Filter}>Filters</HeaderControl>
+        <HeaderControl icon={RefreshCw}>Refresh</HeaderControl>
+        <HeaderControl icon={Download}>Export</HeaderControl>
+      </div>
+    </header>
+  )
+}
+
+function HeaderControl({ icon: Icon, children }) {
+  return (
+    <button type="button" className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-[#d8e2ec] bg-white px-3 text-sm font-semibold text-[#17324d] shadow-[0_6px_16px_rgba(15,23,42,0.035)] transition hover:bg-[#f8fafc]">
+      <Icon size={15} />
+      {children}
+    </button>
+  )
+}
+
+function buildOperationalHealthModel(hq = {}) {
+  const alerts = hq.alerts || []
+  const hasOperationalData = Boolean(
+    (hq.nationalSnapshot || []).some((item) => getNumericFromLabel(item.value) > 0) ||
+      (hq.pipelineFunnel?.stages || []).some((stage) => normalizeNumber(stage.count) > 0) ||
+      (hq.regionalPerformance || []).length ||
+      (hq.bankPerformance?.rows || []).length,
+  )
+  const missingDocs = normalizeNumber(getAlert(alerts, 'missing_docs')?.value)
+  const awaitingOtp = normalizeNumber(getAlert(alerts, 'awaiting_otp')?.value, getStageSourceCount(hq.pipelineFunnel, 'intake', 'awaiting_otp'))
+  const unassigned = normalizeNumber(getAlert(alerts, 'unassigned')?.value)
+  const slaBreaches = normalizeNumber(getAlert(alerts, ['sla', 'sla_breaches'])?.value)
+  const highRiskBranches = normalizeNumber(getAlert(alerts, ['branches', 'high_risk_branches'])?.value)
+  const bankDelays = (hq.bankPerformance?.rows || []).filter((row) => normalizeNumber(row.averageResponseTime) >= 48).length
+  const staleApplications = normalizeNumber(getAlert(alerts, ['stale', 'stale_applications'])?.value)
+  const noNextAction = normalizeNumber(getAlert(alerts, ['no_next_action', 'next_action'])?.value)
+  const pressure =
+    slaBreaches * 9 +
+    bankDelays * 7 +
+    highRiskBranches * 6 +
+    missingDocs * 2 +
+    awaitingOtp * 3 +
+    unassigned * 5 +
+    staleApplications * 4 +
+    noNextAction * 4
+  if (!hasOperationalData && pressure === 0) {
+    return {
+      score: null,
+      status: 'Baseline Pending',
+      pressureSignals: 0,
+      metrics: { missingDocs, awaitingOtp, unassigned, slaBreaches, highRiskBranches, bankDelays, staleApplications, noNextAction },
+    }
+  }
+  const score = Math.max(0, Math.min(100, 100 - pressure))
+  const status = score >= 90 ? 'Excellent' : score >= 75 ? 'Stable' : score >= 60 ? 'Needs Attention' : 'Critical'
+  return {
+    score,
+    status,
+    pressureSignals: missingDocs + awaitingOtp + unassigned + slaBreaches + highRiskBranches + bankDelays + staleApplications + noNextAction,
+    metrics: { missingDocs, awaitingOtp, unassigned, slaBreaches, highRiskBranches, bankDelays, staleApplications, noNextAction },
+  }
+}
+
+function ExecutiveKpiStrip({ hq = {}, health = {} }) {
+  const items = hq.nationalSnapshot || []
+  const active = findMetric(items, ['active_applications', 'active_book'], 0)
+  const approval = findMetric(items, ['approval_rate'], 2)
+  const pipeline = findMetric(items, ['pipeline_value', 'bond_value'], 4)
+  const approvalTime = findMetric(items, ['average_approval_time', 'avg_approval_time'], 3)
+  const revenue = hq.revenue || {}
+  const kpis = [
+    { key: 'applications', label: 'Applications', value: active.value || '0', trend: active.trend || 'Current period', helper: active.helper || active.microContext || 'Active national book', icon: Layers3 },
+    { key: 'approval', label: 'Approval Rate', value: approval.value || '0%', trend: approval.trend || 'Tracking', helper: approval.helper || approval.microContext || 'Submitted applications approved', icon: Gauge },
+    { key: 'pipeline', label: 'Pipeline Value', value: pipeline.value || 'Pending', trend: pipeline.trend || 'National pipeline', helper: pipeline.helper || pipeline.microContext || 'Open bond applications', icon: Banknote },
+    { key: 'revenue', label: 'Revenue Forecast', value: revenue.forecast90Day || revenue.projectedCommissionLabel || 'Pending', trend: revenue.revenueThisMonthLabel || 'Forecast building', helper: 'Forward revenue view', icon: LineChart },
+    { key: 'approval-time', label: 'Avg Approval Time', value: approvalTime.value || 'Pending', trend: approvalTime.trend || 'Against SLA target', helper: approvalTime.helper || approvalTime.microContext || 'Submission to outcome', icon: Clock3 },
+    {
+      key: 'health',
+      label: 'Operational Health',
+      value: health.score === null || health.score === undefined ? 'Pending' : `${health.score} / 100`,
+      trend: health.status || 'Tracking',
+      helper: `${formatNumber(health.pressureSignals || 0)} pressure signals`,
+      icon: Activity,
+    },
+  ]
+
+  return (
+    <section className="grid gap-4 md:grid-cols-3 2xl:grid-cols-6">
+      {kpis.map((item) => {
+        const Icon = item.icon
+        return (
+          <article key={item.key} className="min-h-[146px] rounded-[16px] border border-[#dfe7ef] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.035)]">
+            <div className="flex items-start justify-between gap-3">
+              <CardLabel>{item.label}</CardLabel>
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] bg-[#f8fafc] text-[#17324d] ring-1 ring-[#e2e8f0]">
+                <Icon size={17} />
+              </span>
+            </div>
+            <p className="mt-4 truncate text-[26px] font-semibold leading-none tracking-[-0.01em] text-[#111827]">{item.value}</p>
+            <p className="mt-3 truncate text-[13px] font-semibold text-[#166534]">{formatTrendLabel(item.trend)}</p>
+            <p className="mt-1 truncate text-xs text-[#64748b]">{item.helper}</p>
+          </article>
+        )
+      })}
+    </section>
+  )
+}
+
+function OperationalAlerts({ alerts = [], bankPerformance = {} }) {
+  const rows = [
+    {
+      key: 'awaiting_otp',
+      label: 'Applications waiting for OTP',
+      value: normalizeNumber(getAlert(alerts, 'awaiting_otp')?.value),
+      severity: 'Needs attention',
+      href: '/bond/pipeline?view=all',
+    },
+    {
+      key: 'sla',
+      label: 'Applications exceeded SLA',
+      value: normalizeNumber(getAlert(alerts, ['sla', 'sla_breaches'])?.value),
+      severity: 'High priority',
+      href: '/bond/reports?view=sla-breaches',
+    },
+    {
+      key: 'bank_delays',
+      label: 'Bank response delays',
+      value: (bankPerformance.rows || []).filter((row) => normalizeNumber(row.averageResponseTime) >= 48).length,
+      severity: 'Monitor',
+      href: '/bond/banks',
+    },
+    {
+      key: 'unassigned',
+      label: 'Unassigned applications',
+      value: normalizeNumber(getAlert(alerts, 'unassigned')?.value),
+      severity: 'Needs owner',
+      href: '/bond/applications?filter=unassigned',
+    },
+    {
+      key: 'missing_docs',
+      label: 'Missing documents',
+      value: normalizeNumber(getAlert(alerts, 'missing_docs')?.value),
+      severity: 'Needs attention',
+      href: '/bond/pipeline?view=awaiting-docs',
+    },
+  ]
+
+  return (
+    <section>
+      <SectionTitle action={<Link to="/bond/reports?view=executive-risk" className="inline-flex items-center gap-2 text-sm font-semibold text-[#204b84]">View all alerts <ArrowRight size={15} /></Link>}>
+        Operational Alerts
+      </SectionTitle>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        {rows.map((row) => {
+          const clear = row.value === 0
+          return (
+            <Link key={row.key} to={row.href} className="rounded-[16px] border border-[#dfe7ef] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.03)] transition hover:border-[#bfd0e1] hover:bg-[#fbfdff]">
+              <div className="flex items-start justify-between gap-3">
+                <p className={`text-[28px] font-semibold leading-none ${clear ? 'text-[#166534]' : row.key === 'sla' ? 'text-[#b42318]' : 'text-[#111827]'}`}>{formatNumber(row.value)}</p>
+                <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${clear ? 'bg-[#ecfdf3] text-[#027a48]' : row.key === 'sla' ? 'bg-[#fef3f2] text-[#b42318]' : 'bg-[#fffaeb] text-[#b54708]'}`}>
+                  {clear ? 'No action required' : row.severity}
+                </span>
+              </div>
+              <p className="mt-4 text-sm font-semibold text-[#17324d]">{row.label}</p>
+              <p className="mt-2 text-xs font-semibold text-[#204b84]">Open queue</p>
+            </Link>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+const EXECUTIVE_PIPELINE_CONFIG = [
+  { key: 'intake', label: 'Intake', icon: FileText, color: '#2563eb' },
+  { key: 'documents', label: 'Documents', icon: FileCheck2, color: '#0f766e' },
+  { key: 'submitted', label: 'Submitted', icon: Layers3, color: '#7c3aed' },
+  { key: 'bank_review', label: 'Bank Review', icon: Landmark, color: '#b45309' },
+  { key: 'approved', label: 'Approved', icon: Gauge, color: '#15803d' },
+  { key: 'instruction', label: 'Instruction', icon: Building2, color: '#24518a' },
+]
+
+function buildExecutivePipelineRows(funnel = {}) {
+  const applicationPrepCount = getStageCount(funnel, 'application_prep')
+  const reviewSubmitCount = getStageCount(funnel, 'review_submit')
+  const bankDecisionCount = getStageCount(funnel, 'bank_decision')
+  return [
+    { key: 'intake', count: getStageCount(funnel, 'intake'), trend: `${formatPercent(getStageSourceCount(funnel, 'intake', 'awaiting_otp'))} awaiting OTP` },
+    { key: 'documents', count: applicationPrepCount, trend: `${formatNumber(getStageSourceCount(funnel, 'application_prep', 'awaiting_documents'))} awaiting docs` },
+    { key: 'submitted', count: reviewSubmitCount, trend: `${formatNumber(getStageSourceCount(funnel, 'review_submit', 'submitted_to_banks'))} submitted to banks` },
+    { key: 'bank_review', count: bankDecisionCount, trend: `${formatNumber(getStageSourceCount(funnel, 'bank_decision', 'bank_feedback'))} awaiting feedback` },
+    { key: 'approved', count: getStageSourceCount(funnel, 'bank_decision', 'approved'), trend: 'Approved offers' },
+    { key: 'instruction', count: getStageCount(funnel, 'registration'), trend: 'Instruction or registration' },
+  ].map((row) => ({ ...EXECUTIVE_PIPELINE_CONFIG.find((item) => item.key === row.key), ...row }))
+}
+
+function PipelineSnapshot({ funnel = {} }) {
+  const rows = buildExecutivePipelineRows(funnel)
+  const maxCount = Math.max(...rows.map((row) => row.count), 1)
+
+  return (
+    <section>
+      <SectionTitle action={<Link to="/bond/pipeline" className="text-sm font-semibold text-[#204b84]">View pipeline</Link>}>Pipeline Snapshot</SectionTitle>
+      <HqCard>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+          {rows.map((row) => {
+            const Icon = row.icon
+            const width = Math.max(4, Math.min(100, (row.count / maxCount) * 100))
+            return (
+              <Link key={row.key} to="/bond/pipeline" className="rounded-[14px] bg-[#f8fafc] p-4 transition hover:bg-[#f1f5f9]">
+                <span className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] bg-white ring-1 ring-[#e2e8f0]">
+                  <Icon size={16} color={row.color} />
+                </span>
+                <p className="mt-4 text-sm font-semibold text-[#17324d]">{row.label}</p>
+                <p className="mt-2 text-[28px] font-semibold leading-none text-[#111827]">{formatNumber(row.count)}</p>
+                <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#e2e8f0]">
+                  <span className="block h-full rounded-full" style={{ width: `${width}%`, backgroundColor: row.color }} />
+                </div>
+                <p className="mt-3 truncate text-xs font-medium text-[#64748b]">{row.trend}</p>
+              </Link>
+            )
+          })}
+        </div>
+      </HqCard>
+    </section>
+  )
+}
+
+function TopRegions({ rows = [] }) {
+  const topRows = [...rows]
+    .sort((left, right) => getNumericFromLabel(right.pipelineValueLabel || right.pipelineValue) - getNumericFromLabel(left.pipelineValueLabel || left.pipelineValue))
+    .slice(0, 5)
+  const maxValue = Math.max(...topRows.map((row) => getNumericFromLabel(row.pipelineValueLabel || row.pipelineValue)), 1)
+
+  return (
+    <HqCard className="min-h-[390px]">
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div>
+          <CardLabel>Top Regions</CardLabel>
+          <p className="mt-1 text-sm text-[#64748b]">Ranked by national pipeline value.</p>
+        </div>
+        <Link to="/bond/organisation?view=regions" className="text-sm font-semibold text-[#204b84]">View all regions</Link>
+      </div>
+      {!topRows.length ? <HqEmptyState title="No regional performance yet." description="Region rankings will appear once applications are assigned to regional structures." /> : (
+        <div className="space-y-4">
+          {topRows.map((row) => {
+            const value = getNumericFromLabel(row.pipelineValueLabel || row.pipelineValue)
+            return (
+              <div key={row.key || row.region} className="grid gap-3">
+                <div className="flex items-center justify-between gap-4">
+                  <p className="truncate text-sm font-semibold text-[#17324d]">{row.region || row.regionName || 'Unassigned Region'}</p>
+                  <p className="shrink-0 text-sm font-semibold text-[#111827]">{row.pipelineValueLabel || formatCompactMoney(row.pipelineValue)}</p>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-[#e2e8f0]">
+                  <span className="block h-full rounded-full bg-[#24518a]" style={{ width: `${Math.max(4, (value / maxValue) * 100)}%` }} />
+                </div>
+                <p className="text-xs font-semibold text-[#166534]">{row.growth || row.trend || `${formatPercent(row.approvalRate)} approval`}</p>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </HqCard>
+  )
+}
+
+function getConsultantApplications(row = {}) {
+  return normalizeNumber(row.applicationsSubmitted || row.submittedApplications || row.activeFiles || row.activeApplications || row.applications)
+}
+
+function TopConsultants({ rows = [] }) {
+  const topRows = [...rows].sort((left, right) => getConsultantApplications(right) - getConsultantApplications(left)).slice(0, 5)
+
+  return (
+    <HqCard className="min-h-[390px]">
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div>
+          <CardLabel>Top Consultants</CardLabel>
+          <p className="mt-1 text-sm text-[#64748b]">Ranked by applications submitted.</p>
+        </div>
+        <Link to="/bond/organisation?view=consultants" className="text-sm font-semibold text-[#204b84]">View all consultants</Link>
+      </div>
+      {!topRows.length ? <HqEmptyState title="No consultant ranking available yet." description="Consultants will appear once applications are assigned and active." /> : (
+        <div className="space-y-3">
+          {topRows.map((row, index) => {
+            const name = row.name || row.consultantName || row.consultant || 'Unassigned Consultant'
+            return (
+              <div key={row.key || row.id || name} className="flex items-center gap-3 rounded-[14px] bg-[#f8fafc] p-3">
+                <span className="w-5 text-xs font-semibold text-[#64748b]">{index + 1}</span>
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#e8f0f8] text-sm font-semibold text-[#17324d]">{getInitials(name)}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-[#17324d]">{name}</p>
+                  <p className="truncate text-xs text-[#64748b]">{row.branch || row.region || row.role || 'National book'}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-[#111827]">{formatNumber(getConsultantApplications(row))}</p>
+                  <p className="text-xs font-semibold text-[#166534]">{row.growth || formatPercent(row.approvalRate || 0)}</p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </HqCard>
+  )
+}
+
+function TopBanks({ bankPerformance = {} }) {
+  const rows = [...(bankPerformance.rows || [])]
+    .sort((left, right) => normalizeNumber(right.approvalRate) - normalizeNumber(left.approvalRate) || normalizeNumber(right.submitted) - normalizeNumber(left.submitted))
+    .slice(0, 3)
+
+  return (
+    <HqCard className="min-h-[390px]">
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div>
+          <CardLabel>Top Banks</CardLabel>
+          <p className="mt-1 text-sm text-[#64748b]">Configured bank performance by approval quality.</p>
+        </div>
+        <Link to="/bond/banks" className="text-sm font-semibold text-[#204b84]">View bank relationships</Link>
+      </div>
+      {!rows.length ? <HqEmptyState title="No bank performance data yet." description="Bank performance will appear once applications are submitted to configured banks." /> : (
+        <div className="space-y-4">
+          {rows.map((row) => (
+            <div key={row.bank || row.bankId} className="rounded-[14px] border border-[#e2e8f0] bg-[#fbfdff] p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-[#17324d]">{row.bank || 'Configured Bank'}</p>
+                  <p className="mt-1 text-xs text-[#64748b]">{formatNumber(row.submitted || row.applicationsSubmitted || row.total)} applications</p>
+                </div>
+                <p className="text-lg font-semibold text-[#111827]">{formatPercent(row.approvalRate)}</p>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                <p><span className="font-semibold text-[#64748b]">Revenue</span><br /><span className="font-semibold text-[#17324d]">{row.revenueLabel || row.revenueGeneratedLabel || formatCompactMoney(row.revenueGenerated || row.revenue, 'Pending')}</span></p>
+                <p><span className="font-semibold text-[#64748b]">Response</span><br /><span className="font-semibold text-[#17324d]">{row.averageResponseTime ? `${row.averageResponseTime}h avg` : 'Pending'}</span></p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </HqCard>
+  )
+}
+
+function buildTrendSeries(hq = {}) {
+  if (Array.isArray(hq.performanceTrend) && hq.performanceTrend.length) return hq.performanceTrend
+  const metrics = hq.nationalSnapshot || []
+  return [
+    { key: 'applications', label: 'Applications', color: '#24518a', values: findMetric(metrics, 'active_applications')?.sparkline || [] },
+    { key: 'approval', label: 'Approval Rate', color: '#15803d', values: findMetric(metrics, 'approval_rate')?.sparkline || [] },
+    { key: 'response', label: 'Avg Response Time', color: '#b45309', values: findMetric(metrics, 'average_approval_time')?.sparkline || [] },
+    { key: 'revenue', label: 'Revenue', color: '#7c3aed', values: findMetric(metrics, 'pipeline_value')?.sparkline || [] },
+  ].filter((series) => Array.isArray(series.values) && series.values.length >= 2)
+}
+
+function PerformanceTrend({ hq = {} }) {
+  const series = buildTrendSeries(hq)
+  const months = ['Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
+  const allValues = series.flatMap((row) => row.values.map((value) => normalizeNumber(value)))
+  const max = Math.max(...allValues, 1)
+  const min = Math.min(...allValues, 0)
+  const range = Math.max(max - min, 1)
+
+  return (
+    <HqCard className="min-h-[430px]">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <CardLabel>Performance Trend</CardLabel>
+          <p className="mt-1 text-sm text-[#64748b]">12-month movement across applications, approval, response time and revenue.</p>
+        </div>
+        <span className="text-sm font-semibold text-[#64748b]">12 months</span>
+      </div>
+      {!series.length ? <HqEmptyState title="Performance trend is building." description="A 12-month trend will appear once historical application, approval, response-time and revenue data is available." /> : (
+        <>
+          <div className="relative h-[260px] rounded-[14px] bg-[#f8fafc] p-5">
+            <svg className="h-full w-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="12 month performance trend">
+              {[0, 25, 50, 75, 100].map((line) => <line key={line} x1="0" x2="100" y1={line} y2={line} stroke="#e2e8f0" strokeWidth="0.45" />)}
+              {series.map((row) => {
+                const values = row.values.slice(-12)
+                const points = values.map((value, index) => {
+                  const x = values.length === 1 ? 0 : (index / (values.length - 1)) * 100
+                  const y = 100 - ((normalizeNumber(value) - min) / range) * 88 - 6
+                  return `${x},${y}`
+                }).join(' ')
+                return <polyline key={row.key || row.label} points={points} fill="none" stroke={row.color} strokeWidth="2.2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+              })}
+            </svg>
+          </div>
+          <div className="mt-4 grid grid-cols-6 gap-2 text-xs font-semibold text-[#64748b] md:grid-cols-12">
+            {months.map((month) => <span key={month}>{month}</span>)}
+          </div>
+          <div className="mt-5 flex flex-wrap gap-4">
+            {series.map((row) => (
+              <span key={row.key || row.label} className="inline-flex items-center gap-2 text-sm font-semibold text-[#17324d]">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.color }} />
+                {row.label}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
+    </HqCard>
+  )
+}
+
+function SystemFooter({ hq = {}, health = {} }) {
+  const updatedAt = hq.updatedAt || hq.dataUpdatedAt || new Date().toISOString()
+  const formatted = new Intl.DateTimeFormat('en-ZA', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(updatedAt))
+  return (
+    <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#dfe7ef] pt-5 text-xs text-[#64748b]">
+      <span>Data freshness: {formatted}</span>
+      <span>Operational health: {health.status || 'Tracking'} · {formatNumber(health.pressureSignals || 0)} pressure signals</span>
+    </footer>
   )
 }
 

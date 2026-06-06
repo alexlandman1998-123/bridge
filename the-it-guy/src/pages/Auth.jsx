@@ -94,9 +94,9 @@ const DEV_BYPASS_ROLES = ['developer', 'agent', 'attorney', 'bond_originator']
 const RESEND_COOLDOWN_SECONDS = 90
 const RESEND_COOLDOWN_STORAGE_KEY = 'itg:auth:resend-cooldown-until'
 const SIGNUP_STEPS = [
-  { eyebrow: 'Step 1', label: 'Select Role' },
-  { eyebrow: 'Step 2', label: 'Your Position' },
-  { eyebrow: 'Step 3', label: 'Create Account' },
+  { eyebrow: '01', label: 'Account' },
+  { eyebrow: '02', label: 'Business' },
+  { eyebrow: '03', label: 'Workspace' },
 ]
 const ROLE_ICONS = {
   [SIGNUP_BUSINESS_TYPES.agency]: Building2,
@@ -106,12 +106,65 @@ const ROLE_ICONS = {
   [SIGNUP_BUSINESS_TYPES.client]: UserRound,
 }
 const POSITION_ICON = Landmark
-const PREVIEW_STAGES = [
-  { label: 'Offer Accepted', state: 'Complete' },
-  { label: 'Bond Approved', state: 'Active' },
-  { label: 'Transfer In Progress', state: 'Live' },
-  { label: 'Registration Pending', state: 'Next' },
+const ROLE_DISPLAY_COPY = {
+  [SIGNUP_BUSINESS_TYPES.agency]: {
+    label: 'Estate Agency',
+    description: 'Sell properties and manage transactions',
+  },
+  [SIGNUP_BUSINESS_TYPES.attorney]: {
+    label: 'Attorney Firm',
+    description: 'Handle transfers, bonds and documents',
+  },
+  [SIGNUP_BUSINESS_TYPES.developer]: {
+    label: 'Developer',
+    description: 'Develop projects and manage sales',
+  },
+  [SIGNUP_BUSINESS_TYPES.bondOriginator]: {
+    label: 'Bond Originator',
+    description: 'Source bonds and manage applications',
+  },
+  [SIGNUP_BUSINESS_TYPES.client]: {
+    label: 'Buyer / Seller',
+    description: 'Buy or sell property privately',
+  },
+}
+const ROLE_DISPLAY_ORDER = [
+  SIGNUP_BUSINESS_TYPES.agency,
+  SIGNUP_BUSINESS_TYPES.attorney,
+  SIGNUP_BUSINESS_TYPES.developer,
+  SIGNUP_BUSINESS_TYPES.bondOriginator,
+  SIGNUP_BUSINESS_TYPES.client,
 ]
+const MARKET_METRICS = [
+  { label: 'Transactions Today', value: '24,812', delta: '+12.4% vs yesterday' },
+  { label: 'Avg Registration Time', value: '63 Days', delta: '-8.7%' },
+  { label: 'Active Professionals', value: '18,240', delta: '+5.3%' },
+  { label: 'Value Moving Today', value: 'R14.2B', delta: '+R1.8B' },
+]
+const TRANSACTION_FLOW = ['Buyer', 'Agent', 'Bond Originator', 'Attorney', 'Registration']
+const WORKSPACE_CHECKLIST = [
+  'Configuring permissions',
+  'Creating dashboards',
+  'Preparing workflows',
+  'Connecting role-player network',
+  'Securing workspace',
+]
+
+function getOrderedBusinessTypeOptions() {
+  return ROLE_DISPLAY_ORDER
+    .map((value) => BUSINESS_TYPE_OPTIONS.find((option) => option.value === value))
+    .filter(Boolean)
+}
+
+function getBusinessSetupCopy(businessTypeLabel = 'workspace') {
+  const normalized = businessTypeLabel || 'workspace'
+  if (normalized === 'Estate Agency') return 'Tell us how you operate inside your agency'
+  if (normalized === 'Attorney Firm') return 'Tell us how you operate inside your firm'
+  if (normalized === 'Developer') return 'Tell us how you support your development pipeline'
+  if (normalized === 'Bond Originator') return 'Tell us how you operate inside your finance team'
+  if (normalized === 'Buyer / Seller') return 'Tell us how you are accessing Bridge'
+  return `Tell us about your ${normalized.toLowerCase()}`
+}
 
 function normalizeErrorMessage(error) {
   return String(error?.message || error || '').trim()
@@ -178,7 +231,7 @@ function Auth({ onDevBypass = null }) {
     })
   }, [inviteDrivenSignup, inviteToken, position])
   const positionOptions = POSITION_OPTIONS_BY_BUSINESS_TYPE[businessType] || []
-  const selectedBusinessTypeLabel = BUSINESS_TYPE_OPTIONS.find((option) => option.value === businessType)?.label || ''
+  const selectedBusinessTypeLabel = ROLE_DISPLAY_COPY[businessType]?.label || BUSINESS_TYPE_OPTIONS.find((option) => option.value === businessType)?.label || ''
   const selectedPositionLabel = positionOptions.find((option) => option.value === position)?.label || ''
   const resendSecondsRemaining = Math.max(0, Math.ceil((resendCooldownUntil - nowTick) / 1000))
   const resendCooldownActive = resendSecondsRemaining > 0
@@ -453,71 +506,61 @@ function Auth({ onDevBypass = null }) {
   }
 
   const securityLogoutMessage = new URLSearchParams(location.search).get('security') === '1'
+  const orderedBusinessTypeOptions = getOrderedBusinessTypeOptions()
+  const showingWorkspaceBuild = mode === 'signup' && signupStep === 2 && loading
 
   return (
     <div className="auth-page">
       <main className="auth-shell">
         <section className="auth-hero">
-          <p className="auth-brand">bridge.</p>
-          <h1 style={{ color: '#ffffff' }}>Property Transaction Command Centre</h1>
-          <p>Secure workspace access for authorized transaction teams and partners.</p>
+          <div className="auth-hero-glow" aria-hidden="true" />
+          <div className="auth-network-pattern" aria-hidden="true" />
+          <div className="auth-hero-top">
+            <p className="auth-brand">bridge.</p>
+            <span className="auth-live-pill">Live Market Pulse</span>
+          </div>
+          <h1>The Property Industry,<br />Connected.</h1>
+          <p>Real-time infrastructure powering every transaction, every professional, every day.</p>
 
-          <div className="auth-hero-points">
-            <article>
-              <ShieldCheck size={16} />
-              <div>
-                <strong>Secure Access</strong>
-                <span>Role-based entry to the internal operations platform.</span>
-              </div>
-            </article>
-            <article>
-              <Building2 size={16} />
-              <div>
-                <strong>Portfolio Control</strong>
-                <span>Track developments, units, transfer milestones, and risk in one place.</span>
-              </div>
-            </article>
-            <article>
-              <CheckCircle2 size={16} />
-              <div>
-                <strong>Executive Ready</strong>
-                <span>Management-grade reporting and mobile snapshot views.</span>
-              </div>
-            </article>
+          <div className="auth-market-metrics" aria-label="Live market metrics">
+            {MARKET_METRICS.map((metric) => (
+              <article key={metric.label}>
+                <span>{metric.label}</span>
+                <strong>{metric.value}</strong>
+                <em>{metric.delta}</em>
+              </article>
+            ))}
           </div>
 
-          <div className="auth-platform-preview" aria-label="Transaction workflow preview">
-            <header>
-              <span>Operations Preview</span>
-              <strong>Live Transaction Rail</strong>
-            </header>
-            <div className="auth-preview-stages">
-              {PREVIEW_STAGES.map((stage, index) => (
-                <article key={stage.label} className={index < 2 ? 'complete' : index === 2 ? 'active' : ''}>
-                  <span className="auth-preview-dot">{index < 2 ? <Check size={12} /> : null}</span>
-                  <div>
-                    <strong>{stage.label}</strong>
-                    <em>{stage.state}</em>
-                  </div>
-                </article>
-              ))}
-            </div>
-            <div className="auth-preview-metrics">
-              <span>Docs 84%</span>
-              <span>Risk Low</span>
-              <span>SLA On Track</span>
-            </div>
+          <div className="auth-transaction-flow" aria-label="Transaction flow">
+            {TRANSACTION_FLOW.map((item, index) => (
+              <div key={item} className="auth-flow-row">
+                <span className="auth-flow-dot" />
+                <strong>{item}</strong>
+                {index < TRANSACTION_FLOW.length - 1 ? <span className="auth-flow-line" aria-hidden="true" /> : null}
+              </div>
+            ))}
           </div>
+
+          <article className="auth-market-insight">
+            <span>Market Insight</span>
+            <strong>Property registrations are up 14% this month in Gauteng.</strong>
+            <a href="/" onClick={(event) => event.preventDefault()}>View more <ArrowRight size={14} /></a>
+          </article>
         </section>
 
         <section className="auth-card">
+          <div className="auth-security-badge">
+            <ShieldCheck size={15} />
+            <span>Your data is secure</span>
+          </div>
           <div className="auth-card-head">
-            <span className="auth-card-eyebrow">Launch App</span>
-            <h2>{mode === 'login' ? 'Sign in to Bridge' : 'Create your Bridge account'}</h2>
+            <span className="auth-card-eyebrow">{mode === 'login' ? 'Secure Access' : 'Welcome Screen'}</span>
+            <h2>{mode === 'login' ? 'Sign in to Bridge' : 'Welcome to Bridge'}</h2>
             <p>
               {mode === 'login'
-                ? 'Use your assigned workspace credentials to open the transaction platform.'
-                : 'Set up your secure workspace access to continue into the app.'}
+                ? 'Use your workspace credentials to open the property transaction platform.'
+                : "Let's get your workspace set up in minutes."}
             </p>
           </div>
 
@@ -584,9 +627,14 @@ function Auth({ onDevBypass = null }) {
 
                 {signupStep === 0 ? (
                   <section className="signup-choice-stack">
-                    {BUSINESS_TYPE_OPTIONS.map((option, index) => {
+                    <div className="signup-section-heading">
+                      <span>Choose your role</span>
+                      <strong>Start with the way you work in property.</strong>
+                    </div>
+                    {orderedBusinessTypeOptions.map((option, index) => {
                       const active = businessType === option.value
                       const RoleIcon = ROLE_ICONS[option.value] || Building2
+                      const display = ROLE_DISPLAY_COPY[option.value] || option
                       return (
                         <button
                           key={option.value}
@@ -599,7 +647,7 @@ function Auth({ onDevBypass = null }) {
                           }}
                         >
                           <span className="signup-role-card-topline">
-                            <span>Role {String(index + 1).padStart(2, '0')}</span>
+                            <span>{String(index + 1).padStart(2, '0')}</span>
                             {active ? <span className="signup-role-card-selected"><Check size={13} /> Selected</span> : null}
                           </span>
                           <span className="signup-role-card-main">
@@ -607,8 +655,8 @@ function Auth({ onDevBypass = null }) {
                               <RoleIcon size={22} />
                             </span>
                             <span>
-                              <strong>{option.label}</strong>
-                              <span>{option.description}</span>
+                              <strong>{display.label}</strong>
+                              <span>{display.description}</span>
                             </span>
                           </span>
                         </button>
@@ -631,9 +679,13 @@ function Auth({ onDevBypass = null }) {
 
                 {signupStep === 1 ? (
                   <section className="signup-choice-stack">
+                    <div className="signup-section-heading">
+                      <span>{selectedBusinessTypeLabel || 'Business setup'}</span>
+                      <strong>{getBusinessSetupCopy(selectedBusinessTypeLabel)}</strong>
+                    </div>
                     <p className="signup-step-note">
-                      Choose the option that best describes your authority. Staff users will need an invite or approval before
-                      entering a workspace.
+                      Bridge will use this to create the same signup intent, role mapping, and onboarding path the current
+                      system already expects.
                     </p>
                     {positionOptions.map((option) => {
                       const active = position === option.value
@@ -683,8 +735,35 @@ function Auth({ onDevBypass = null }) {
 
             {mode === 'login' || signupStep === 2 ? (
               <>
-                {mode === 'signup' ? (
+                {showingWorkspaceBuild ? (
+                  <section className="auth-workspace-build" aria-live="polite">
+                    <div className="auth-workspace-orbit" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                    <div>
+                      <span className="auth-card-eyebrow">Workspace Creation</span>
+                      <h3>Building your workspace</h3>
+                      <p>Preparing your Bridge account using the selected role contract.</p>
+                    </div>
+                    <div className="auth-build-checklist">
+                      {WORKSPACE_CHECKLIST.map((item, index) => (
+                        <span key={item} style={{ '--build-index': index }}>
+                          <CheckCircle2 size={16} />
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+
+                {mode === 'signup' && !showingWorkspaceBuild ? (
                   <>
+                    <div className="signup-section-heading">
+                      <span>{selectedBusinessTypeLabel || 'Workspace'}</span>
+                      <strong>Create your secure Bridge account.</strong>
+                    </div>
                     <label>
                       Full Name
                       <input
@@ -711,6 +790,8 @@ function Auth({ onDevBypass = null }) {
                   </>
                 ) : null}
 
+                {!showingWorkspaceBuild ? (
+                  <>
                 <label>
                   Email
                   <input
@@ -734,8 +815,10 @@ function Auth({ onDevBypass = null }) {
                     required
                   />
                 </label>
+                  </>
+                ) : null}
 
-                {mode === 'signup' ? (
+                {mode === 'signup' && !showingWorkspaceBuild ? (
                   <>
                     <label>
                       Confirm Password
@@ -778,6 +861,14 @@ function Auth({ onDevBypass = null }) {
           </form>
 
           {mode === 'login' ? (
+            <article className="auth-login-snapshot">
+              <span>Property intelligence snapshot</span>
+              <strong>14.2B</strong>
+              <p>Rand value moving through South African property rails today.</p>
+            </article>
+          ) : null}
+
+          {mode === 'login' ? (
             <div className="auth-footer" style={{ borderTop: 0, paddingTop: 0 }}>
               <span>Didn&apos;t receive the verification email?</span>
               <button
@@ -785,7 +876,7 @@ function Auth({ onDevBypass = null }) {
                 onClick={() => void handleResendVerification()}
                 disabled={resendLoading || resendCooldownActive}
               >
-                {resendLoading ? 'Resending…' : resendCooldownActive ? `Resend in ${resendSecondsRemaining}s` : 'Resend verification'}
+                {resendLoading ? 'Resending...' : resendCooldownActive ? `Resend in ${resendSecondsRemaining}s` : 'Resend verification'}
               </button>
             </div>
           ) : null}
@@ -801,6 +892,8 @@ function Auth({ onDevBypass = null }) {
               {mode === 'login' ? 'Create one' : 'Sign in'}
             </button>
           </div>
+
+          <p className="auth-trust-line">Trusted by property professionals across South Africa</p>
 
           {!isSupabaseConfigured ? (
             <p className="auth-demo-note">

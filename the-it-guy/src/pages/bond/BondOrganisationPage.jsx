@@ -193,6 +193,15 @@ function formatCurrency(value) {
   }).format(Number.isFinite(amount) ? amount : 0)
 }
 
+function formatCompactCurrency(value) {
+  const amount = Number(value || 0)
+  if (!Number.isFinite(amount)) return 'R0'
+  if (Math.abs(amount) >= 1000000000) return `R ${(amount / 1000000000).toFixed(amount >= 10000000000 ? 0 : 1)}bn`
+  if (Math.abs(amount) >= 1000000) return `R ${(amount / 1000000).toFixed(amount >= 10000000 ? 0 : 1)}m`
+  if (Math.abs(amount) >= 1000) return `R ${(amount / 1000).toFixed(amount >= 100000 ? 0 : 1)}k`
+  return formatCurrency(amount)
+}
+
 function formatNullableCurrency(value) {
   if (value === null || value === undefined || value === '') return 'Not configured'
   return formatCurrency(value)
@@ -1530,14 +1539,6 @@ function branchRiskTone(value = '') {
   return 'border-[#ccebd8] bg-[#eefbf3] text-[#1f7a4d]'
 }
 
-function branchRiskScore(value = '') {
-  const normalized = normalizeText(value).toLowerCase()
-  if (normalized === 'high' || normalized.includes('over') || normalized.includes('below')) return 3
-  if (normalized === 'medium' || normalized.includes('attention') || normalized.includes('inactive')) return 2
-  if (normalized === 'low' || normalized.includes('healthy')) return 1
-  return 0
-}
-
 function formatBranchRisk(value = '') {
   const normalized = normalizeText(value).toLowerCase()
   if (!normalized) return '—'
@@ -1556,31 +1557,29 @@ function HqBranchExecutiveKpiStrip({ summary = {}, rows = [] }) {
     activeApplications: branchRows.map((row) => Number(row.activeApplications || 0)),
     pipeline: branchRows.map((row) => Number(row.pipelineValue || 0)),
     approval: branchRows.map((row) => Number(row.approvalRate || 0)),
-    risk: branchRows.map((row) => branchRiskScore(row.riskLevel || row.risk)),
   }
   const cards = [
     { key: 'totalBranches', label: 'Total Branches', value: summary.totalBranches || 0, trend: summary.totalBranchesTrend, icon: Building2, tone: 'bg-[#eef5ff] text-[#24518a]' },
     { key: 'activeApplications', label: 'Active Applications', value: summary.activeApplications || 0, trend: summary.activeApplicationsTrend, icon: FileText, tone: 'bg-[#e9f8ef] text-[#1f7a4d]' },
-    { key: 'pipeline', label: 'Pipeline Value', value: formatCurrency(summary.pipelineValue), trend: summary.pipelineTrend, icon: BarChart3, tone: 'bg-[#f2edff] text-[#6c4cc2]' },
+    { key: 'pipeline', label: 'Pipeline Value', value: formatCompactCurrency(summary.pipelineValue), trend: summary.pipelineTrend, icon: BarChart3, tone: 'bg-[#f2edff] text-[#6c4cc2]' },
     { key: 'approval', label: 'Approval Rate', value: summary.approvalRate === null || summary.approvalRate === undefined ? '—' : formatPercent(summary.approvalRate), trend: summary.approvalRateTrend, icon: ShieldCheck, tone: 'bg-[#fff4e5] text-[#c26a17]' },
-    { key: 'risk', label: 'Branches At Risk', value: summary.branchesAtRisk || 0, trend: summary.branchesAtRiskTrend, icon: AlertTriangle, tone: 'bg-[#fff0f0] text-[#b42318]' },
   ]
   return (
-    <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-5">
+    <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
       {cards.map((card) => {
         const Icon = card.icon
         return (
-          <article key={card.key} className="flex h-[160px] flex-col justify-between rounded-[16px] border border-[#dbe5f0] bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.035)]">
-            <div className="flex items-start justify-between gap-4">
-              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] ${card.tone}`}>
+          <article key={card.key} className="flex min-h-[142px] flex-col justify-between overflow-hidden rounded-[18px] border border-[#dbe5f0] bg-white p-5 shadow-[0_16px_36px_rgba(15,23,42,0.035)]">
+            <div className="flex items-center justify-between gap-4">
+              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] ${card.tone}`}>
                 <Icon size={18} strokeWidth={2.1} />
               </span>
               <BranchMiniSparkline values={sparkSets[card.key] || []} />
             </div>
             <div>
-              <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7d90a5]">{card.label}</p>
-              <p className="mt-2 text-[clamp(1.8rem,2.4vw,42px)] font-bold leading-none tracking-normal text-[#142132]">{card.value}</p>
-              <p className="mt-3 text-sm text-[#64748b]">{card.trend || 'Trend pending'}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#7d90a5]">{card.label}</p>
+              <p className="mt-2 truncate text-[clamp(1.85rem,2.25vw,36px)] font-bold leading-none tracking-normal text-[#142132]">{card.value}</p>
+              <p className="mt-2 truncate text-sm text-[#64748b]">{card.trend || 'Trend pending'}</p>
             </div>
           </article>
         )
@@ -1629,7 +1628,7 @@ function branchRankTone(rank = 0) {
 }
 
 function HqBranchLeaderboard({ command = {}, navigate = () => {} }) {
-  const rows = (command.leaderboards?.pipeline || command.leaderboard || []).slice(0, 5)
+  const rows = command.leaderboards?.pipeline || command.leaderboard || []
   return (
     <SectionShell
       eyebrow="National Standings"
@@ -1641,13 +1640,14 @@ function HqBranchLeaderboard({ command = {}, navigate = () => {} }) {
       {!rows.length ? (
         <CompactEmptyState title="Branch performance will appear once branches are created." description="Create a region and branch to start routing applications and measuring performance." />
       ) : (
-        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-5">
+        <div className="-mx-1 overflow-x-auto px-1 pb-2">
+          <div className="flex min-w-max gap-4">
           {rows.map((row) => (
             <button
               key={row.branchId || row.id}
               type="button"
               onClick={() => row.href && navigate(row.href)}
-              className={`flex min-h-[340px] flex-col rounded-[16px] border bg-white p-6 text-left shadow-[0_18px_40px_rgba(15,23,42,0.035)] transition hover:-translate-y-0.5 hover:shadow-[0_24px_54px_rgba(15,23,42,0.07)] ${row.rank === 1 ? 'border-[#efca6d]' : 'border-[#dbe5f0]'}`}
+              className={`flex min-h-[246px] w-[286px] shrink-0 flex-col rounded-[18px] border bg-white p-5 text-left shadow-[0_14px_34px_rgba(15,23,42,0.035)] transition hover:-translate-y-0.5 hover:shadow-[0_22px_48px_rgba(15,23,42,0.07)] ${row.rank === 1 ? 'border-[#efca6d]' : 'border-[#dbe5f0]'}`}
             >
               <div className="flex items-start justify-between gap-3">
                 <span className={`inline-flex h-9 min-w-9 items-center justify-center gap-1 rounded-full border px-2 text-sm font-bold ${branchRankTone(row.rank)}`}>
@@ -1655,26 +1655,36 @@ function HqBranchLeaderboard({ command = {}, navigate = () => {} }) {
                 </span>
                 <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${branchStatusTone(row)}`}>{getBranchStatusLabel(row)}</span>
               </div>
-              <div className="mt-6">
-                <p className="text-lg font-bold leading-tight text-[#142132]">{row.branchName || row.name}</p>
+              <div className="mt-4">
+                <p className="truncate text-lg font-bold leading-tight text-[#142132]">{row.branchName || row.name}</p>
                 <p className="mt-1 text-sm text-[#64748b]">{row.regionName || 'Region not assigned'}</p>
               </div>
-              <div className="mt-6 space-y-4 border-y border-[#edf2f7] py-5">
-                <BranchCardMetric label="Pipeline" value={formatCurrency(row.pipelineValue)} />
-                <BranchCardMetric label="Applications" value={row.activeApplications || 0} />
-                <BranchCardMetric label="Approval Rate" value={formatNullablePercent(row.approvalRate)} />
+              <div className="mt-4 grid grid-cols-3 gap-2 border-y border-[#edf2f7] py-4">
+                <BranchCardMetric label="Pipeline" value={formatCompactCurrency(row.pipelineValue)} />
+                <BranchCardMetric label="Apps" value={row.activeApplications || 0} />
+                <BranchCardMetric label="Approval" value={formatNullablePercent(row.approvalRate)} />
               </div>
-              <div className="mt-auto flex items-center gap-3 pt-5">
+              <div className="mt-4">
+                <div className="flex items-center justify-between text-xs font-semibold text-[#64748b]">
+                  <span>Capacity</span>
+                  <span>{formatCapacity(row.capacityPercent)}</span>
+                </div>
+                <div className="mt-2 h-2 rounded-full bg-[#e8eef6]">
+                  <div className="h-full rounded-full bg-[#24518a]" style={{ width: `${Math.min(100, Math.max(0, Number(row.capacityPercent || 0)))}%` }} />
+                </div>
+              </div>
+              <div className="mt-auto flex items-center gap-3 pt-4">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#dbe5f0] bg-[#f8fbff] text-xs font-bold text-[#60758d]">
                   {getInitials(row.managerName || row.manager || 'Unassigned')}
                 </span>
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-semibold text-[#142132]">{row.managerName || row.manager || 'Unassigned'}</span>
-                  <span className="mt-0.5 block text-xs text-[#64748b]">Manager · {formatCapacity(row.capacityPercent)} capacity</span>
+                  <span className="mt-0.5 block text-xs text-[#64748b]">Branch manager</span>
                 </span>
               </div>
             </button>
           ))}
+          </div>
         </div>
       )}
     </SectionShell>
@@ -1885,62 +1895,107 @@ function HqBranchExecutiveDirectory({
               },
             ]}
           />
-          <div className="overflow-hidden rounded-[16px] border border-[#dbe5f0] bg-white">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[940px] border-collapse">
-                <thead className="bg-[#f8fbff]">
-                  <tr className="border-b border-[#dbe5f0]">
-                    <HeaderCell>Branch</HeaderCell>
-                    <HeaderCell>Manager</HeaderCell>
-                    <HeaderCell>Performance</HeaderCell>
-                    <HeaderCell>Status</HeaderCell>
-                    <HeaderCell>Action</HeaderCell>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#edf2f7]">
-                {filteredRows.map((row) => (
-                  <tr key={row.branchId || row.id} className="bg-white transition hover:bg-[#fbfdff]">
-                    <td className="px-5 py-5">
-                      <button type="button" onClick={() => onView(row)} className="text-left">
-                        <span className="block text-sm font-bold text-[#142132]">{row.branchName || row.name}</span>
-                        <span className="mt-1 block text-xs font-semibold uppercase tracking-[0.08em] text-[#71869d]">{row.code || 'No code'}</span>
-                        <span className="mt-1 block text-sm text-[#64748b]">{row.regionName || 'Region not assigned'}</span>
-                      </button>
-                    </td>
-                    <td className="px-5 py-5 text-sm text-[#31475d]">
-                      {row.managerName || row.manager || <BranchWarningPill>Unassigned</BranchWarningPill>}
-                    </td>
-                    <td className="px-5 py-5">
-                      <div className="grid gap-1.5 text-sm">
-                        <span className="font-semibold text-[#142132]">{row.activeApplications || 0} Applications</span>
-                        <span className="text-[#31475d]">{formatCurrency(row.pipelineValue)} Pipeline</span>
-                        <span className="text-[#31475d]">{formatNullablePercent(row.approvalRate)} Approval · {formatCapacity(row.capacityPercent)} Capacity</span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-5">
-                      <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${branchStatusTone(row)}`}>{getBranchStatusLabel(row)}</span>
-                    </td>
-                    <td className="px-5 py-5">
-                      <button type="button" onClick={() => onView(row)} className="inline-flex items-center gap-1.5 rounded-[12px] border border-[#d9e4ef] bg-white px-3 py-2 text-xs font-semibold text-[#24518a] shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition hover:border-[#b9cadd] hover:bg-[#f7fbff]">
-                        Open Branch <ArrowRight size={13} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {!filteredRows.length ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-6">
-                      <CompactEmptyState title="No branches match these filters." description="Try a broader region, manager, risk, or status filter." />
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
+          {!filteredRows.length ? (
+            <CompactEmptyState title="No branches match these filters." description="Try a broader region, manager, risk, or status filter." />
+          ) : (
+            <div className="grid gap-4">
+              {filteredRows.map((row) => (
+                <BranchDirectoryVisualRow
+                  key={row.branchId || row.id}
+                  row={row}
+                  canManage={canManage}
+                  onView={onView}
+                  onAssign={onAssign}
+                  onEdit={onEdit}
+                />
+              ))}
             </div>
-          </div>
+          )}
         </>
       )}
     </SectionShell>
+  )
+}
+
+function BranchDirectoryVisualRow({ row = {}, canManage = false, onView = () => {}, onAssign = () => {}, onEdit = () => {} }) {
+  const managerName = row.managerName || row.manager || 'Unassigned'
+  const capacity = Math.min(100, Math.max(0, Number(row.capacityPercent || 0)))
+  const isUnassigned = normalizeLower(managerName) === 'unassigned'
+  return (
+    <article className="group overflow-hidden rounded-[18px] border border-[#dbe5f0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.03)] transition hover:border-[#bfd0e1] hover:shadow-[0_20px_48px_rgba(15,23,42,0.06)]">
+      <div className="grid gap-0 xl:grid-cols-[minmax(260px,1.1fr)_minmax(430px,1.6fr)_minmax(220px,0.8fr)]">
+        <button type="button" onClick={() => onView(row)} className="relative min-w-0 border-b border-[#edf2f7] p-5 text-left xl:border-b-0 xl:border-r">
+          <span className={`absolute inset-y-0 left-0 w-1.5 ${getBranchStatusLabel(row) === 'At Risk' ? 'bg-[#ef4444]' : getBranchStatusLabel(row) === 'Watch' ? 'bg-[#f59e0b]' : 'bg-[#2f9d62]'}`} />
+          <div className="pl-2">
+            <div className="flex items-start justify-between gap-3">
+              <span className="min-w-0">
+                <span className="block truncate text-base font-bold text-[#142132]">{row.branchName || row.name}</span>
+                <span className="mt-1 block text-sm text-[#64748b]">{row.regionName || 'Region not assigned'} · {row.code || 'No code'}</span>
+              </span>
+              <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${branchStatusTone(row)}`}>{getBranchStatusLabel(row)}</span>
+            </div>
+            <div className="mt-5 flex items-center gap-3">
+              <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-bold ${isUnassigned ? 'bg-[#fff7ed] text-[#b45309]' : 'bg-[#eef5ff] text-[#24518a]'}`}>
+                {getInitials(managerName)}
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold text-[#142132]">{managerName}</span>
+                <span className="mt-0.5 block text-xs text-[#71869d]">Branch manager</span>
+              </span>
+            </div>
+          </div>
+        </button>
+
+        <div className="grid gap-3 border-b border-[#edf2f7] p-5 sm:grid-cols-2 xl:border-b-0 xl:border-r">
+          <BranchDirectoryMetric label="Applications" value={row.activeApplications || 0} helper={`${row.submittedApplications || 0} submitted`} />
+          <BranchDirectoryMetric label="Pipeline" value={formatCompactCurrency(row.pipelineValue)} helper={formatCurrency(row.pipelineValue)} />
+          <BranchDirectoryMetric label="Approval" value={formatNullablePercent(row.approvalRate)} helper={`${formatLeadTime(row.averageTurnaround || row.avgLeadTime)} avg turnaround`} />
+          <div className="rounded-[14px] bg-[#f8fbff] p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#7d90a5]">Capacity</p>
+              <p className="text-sm font-bold text-[#142132]">{formatCapacity(row.capacityPercent)}</p>
+            </div>
+            <div className="mt-3 h-2 rounded-full bg-[#e3ebf5]">
+              <div className="h-full rounded-full bg-[#24518a]" style={{ width: `${capacity}%` }} />
+            </div>
+            <p className="mt-2 text-xs text-[#64748b]">{row.consultantsCount || row.consultants || 0} consultants</p>
+          </div>
+        </div>
+
+        <div className="flex flex-col justify-between gap-4 p-5">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#7d90a5]">Operational Focus</p>
+            <p className="mt-2 text-sm font-semibold text-[#142132]">{isUnassigned ? 'Assign manager' : getBranchStatusLabel(row) === 'At Risk' ? 'Review performance' : 'Monitor branch health'}</p>
+            <p className="mt-1 text-xs leading-5 text-[#64748b]">{row.pendingDocuments || row.pendingDocs || 0} document blockers · {formatBranchRisk(row.riskLevel || row.risk)} risk</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => onView(row)} className="inline-flex items-center gap-1.5 rounded-[12px] bg-[#071942] px-3 py-2 text-xs font-semibold text-white shadow-[0_12px_24px_rgba(7,25,66,0.18)] transition hover:bg-[#10285b]">
+              Open <ArrowRight size={13} />
+            </button>
+            {canManage ? (
+              <>
+                <button type="button" onClick={() => onAssign(row)} className="inline-flex items-center gap-1.5 rounded-[12px] border border-[#d9e4ef] bg-white px-3 py-2 text-xs font-semibold text-[#31475d] transition hover:bg-[#f8fbff]">
+                  <UserCheck size={13} /> Assign
+                </button>
+                <button type="button" onClick={() => onEdit(row)} className="inline-flex items-center gap-1.5 rounded-[12px] border border-[#d9e4ef] bg-white px-3 py-2 text-xs font-semibold text-[#31475d] transition hover:bg-[#f8fbff]">
+                  <Pencil size={13} /> Edit
+                </button>
+              </>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function BranchDirectoryMetric({ label = '', value = '', helper = '' }) {
+  return (
+    <div className="rounded-[14px] bg-[#f8fbff] p-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#7d90a5]">{label}</p>
+      <p className="mt-2 truncate text-lg font-bold text-[#142132]">{value}</p>
+      <p className="mt-1 truncate text-xs text-[#64748b]">{helper}</p>
+    </div>
   )
 }
 
@@ -1958,7 +2013,6 @@ function HqBranchCommandCentre({
     <div className="mx-auto grid w-full max-w-[1600px] gap-8">
       <HqBranchExecutiveKpiStrip summary={command.summary || {}} rows={directoryRows} />
       <HqBranchLeaderboard command={command} navigate={navigate} />
-      <HqBranchHealthPanel command={command} canManage={canManage} navigate={navigate} onAdd={() => navigate(getSettingsIntentRoute('add-bond-branch'))} onAssign={onAssign} />
       <HqBranchExecutiveDirectory
         rows={directoryRows}
         regions={snapshot.regions || []}
@@ -1968,6 +2022,7 @@ function HqBranchCommandCentre({
         onEdit={onEdit}
         onAdd={() => navigate(getSettingsIntentRoute('add-bond-branch'))}
       />
+      <HqBranchHealthPanel command={command} canManage={canManage} navigate={navigate} onAdd={() => navigate(getSettingsIntentRoute('add-bond-branch'))} onAssign={onAssign} />
     </div>
   )
 }
@@ -2412,7 +2467,8 @@ function HqConsultantDirectory({
           {!filteredRows.length ? (
             <CompactEmptyState title="No consultants match these filters." description="Try a broader region, branch, workload, role, or status filter." />
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+            <div className="-mx-1 overflow-x-auto px-1 pb-2">
+              <div className="flex min-w-max gap-4">
               {filteredRows.map((row) => {
                 const noBranch = !normalizeText(row.branchId) || normalizeLower(row.branch) === 'unassigned'
                 const inactive = normalizeLower(row.status) === 'inactive'
@@ -2421,7 +2477,7 @@ function HqConsultantDirectory({
                 return (
                   <article
                     key={row.id || row.email || row.consultant}
-                    className={`group flex min-h-[320px] flex-col rounded-[22px] border border-[#dbe5f0] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.035)] transition hover:-translate-y-0.5 hover:border-[#bfd0e1] hover:shadow-[0_18px_42px_rgba(15,23,42,0.07)] ${inactive ? 'opacity-75' : ''}`}
+                    className={`group flex min-h-[320px] w-[min(86vw,390px)] shrink-0 flex-col rounded-[22px] border border-[#dbe5f0] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.035)] transition hover:-translate-y-0.5 hover:border-[#bfd0e1] hover:shadow-[0_18px_42px_rgba(15,23,42,0.07)] ${inactive ? 'opacity-75' : ''}`}
                   >
                     <div className="flex items-start justify-between gap-4">
                       <button type="button" onClick={() => onView(row)} className="flex min-w-0 items-center gap-4 text-left">
@@ -2484,6 +2540,7 @@ function HqConsultantDirectory({
                   </article>
                 )
               })}
+              </div>
             </div>
           )}
         </>

@@ -14,6 +14,7 @@ import {
   Landmark,
   LineChart,
   MessageSquare,
+  MoreVertical,
   Percent,
   Plus,
   Power,
@@ -50,6 +51,7 @@ import {
   getBondBankRelationshipSeedData,
   isBondBankRelationshipSeedBank,
 } from '../../services/bondBankRelationshipSeedData'
+import NetworkIntelligencePanel from '../../components/bond/NetworkIntelligencePanel'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -126,6 +128,19 @@ function formatDays(value) {
 function formatResponseDays(value) {
   const days = Math.round((Number(value || 0) / 24) * 10) / 10
   return `${days} days`
+}
+
+function responseDaysNumber(value) {
+  return Math.round((Number(value || 0) / 24) * 10) / 10
+}
+
+function classifySlaStatus(responseTime) {
+  if (responseTime === null || responseTime === undefined) return 'empty'
+  const days = responseDaysNumber(responseTime)
+  if (days <= 2) return 'excellent'
+  if (days <= 3) return 'average'
+  if (days <= 4) return 'slow'
+  return 'problem'
 }
 
 function formatCurrency(value) {
@@ -314,6 +329,17 @@ function TrendBadge({ value, label = 'vs last month', inverse = false }) {
   )
 }
 
+function ResponseTrendBadge({ value }) {
+  const number = Math.round(Number(value || 0) * 10) / 10
+  if (!number) return <span className="text-xs font-semibold text-slate-400">Pending trend</span>
+  const positive = number < 0
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs font-bold ${positive ? 'text-emerald-700' : 'text-red-700'}`}>
+      {number > 0 ? '▲' : '▼'} {Math.abs(number)} days
+    </span>
+  )
+}
+
 function CommandKpiCard({ label, value, helper, trend, icon, accent = 'blue', pending = false, inverseTrend = false }) {
   const IconComponent = icon
   const accentClass = {
@@ -366,48 +392,113 @@ function Sparkline({ values = [], tone = 'emerald', height = 48 }) {
   )
 }
 
-function LeaderboardCard({ row, rank }) {
-  const rankLabel = rank === 1 ? '#1 Best Relationship' : rank === 2 ? '#2 Strong Performer' : '#3 Growth Opportunity'
+function relationshipTier(row = {}, rank = 0) {
+  const score = Number(row.healthScore || 0)
+  if (rank === 1 || score >= 80) return 'Strategic Banking Partner'
+  if (score >= 72) return 'Preferred Partner'
+  if (score >= 62) return 'Growth Opportunity'
+  return 'Partner'
+}
+
+function healthScoreTone(score = 0) {
+  const value = Number(score || 0)
+  if (value >= 75) return '#22c55e'
+  if (value >= 62) return '#2563eb'
+  if (value >= 50) return '#f97316'
+  return '#ef4444'
+}
+
+function relationshipRankTone(rank = 0) {
+  if (rank === 1) return 'bg-emerald-500 text-white'
+  if (rank === 2) return 'bg-violet-600 text-white'
+  if (rank === 3) return 'bg-blue-600 text-white'
+  return 'bg-slate-100 text-slate-600'
+}
+
+function HealthRing({ score, size = 'md' }) {
+  const value = Math.max(0, Math.min(100, Number(score || 0)))
+  const ringSize = size === 'lg' ? 'h-28 w-28' : 'h-20 w-20'
+  const innerSize = size === 'lg' ? 'h-[78px] w-[78px]' : 'h-14 w-14'
+  const color = healthScoreTone(value)
   return (
-    <article className="flex min-h-[330px] flex-col rounded-[22px] border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200/60">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <BankLogo bankId={row.bankId} bankName={row.bankName} />
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">{rankLabel}</p>
-            <h3 className="text-base font-bold text-slate-950">{row.bankName}</h3>
+    <span className={`relative inline-flex ${ringSize} shrink-0 items-center justify-center rounded-full`} style={{ background: `conic-gradient(${color} ${value * 3.6}deg, #e8eef5 0deg)` }}>
+      <span className={`flex ${innerSize} flex-col items-center justify-center rounded-full bg-white text-center shadow-inner`}>
+        <span className={`${size === 'lg' ? 'text-3xl' : 'text-xl'} font-black leading-none text-slate-950`}>{value || '—'}</span>
+        <span className="mt-0.5 text-[10px] font-bold text-slate-400">/100</span>
+      </span>
+    </span>
+  )
+}
+
+function LeaderboardMetric({ icon: Icon, label, value, trend, inverseTrend = false, dark = false }) {
+  return (
+    <div className={`${dark ? 'border-white/20' : 'border-slate-200'} min-w-0 border-l pl-4 first:border-l-0 first:pl-0`}>
+      <span className={`inline-flex h-9 w-9 items-center justify-center rounded-full ${dark ? 'bg-white/10 text-emerald-300' : 'bg-blue-50 text-blue-700'}`}>
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <p className={`mt-3 text-xs font-medium ${dark ? 'text-white/75' : 'text-slate-500'}`}>{label}</p>
+      <p className={`mt-1 truncate text-2xl font-black ${dark ? 'text-white' : 'text-slate-950'}`}>{value}</p>
+      {trend !== undefined ? <p className="mt-2">{inverseTrend ? <ResponseTrendBadge value={trend} /> : <TrendBadge value={trend} label="vs last month" />}</p> : null}
+    </div>
+  )
+}
+
+function LeaderboardCard({ row, rank }) {
+  const isHero = rank === 1
+  const profileHref = `/bond/banks/${encodeURIComponent(row.bankId)}`
+  const approvalDisplay = row.applications ? formatPercent(row.approvalRate) : 'Pending'
+  const responseDisplay = row.averageResponseTime ? formatResponseDays(row.averageResponseTime) : 'Pending'
+  return (
+    <Link
+      to={profileHref}
+      className={`${isHero ? 'w-[min(86vw,690px)] bg-[radial-gradient(circle_at_20%_10%,rgba(34,197,94,0.18),transparent_32%),linear-gradient(135deg,#062f20,#062817_58%,#0a3b27)] text-white' : 'w-[min(82vw,500px)] bg-white'} flex min-h-[300px] shrink-0 flex-col overflow-hidden rounded-[24px] border ${isHero ? 'border-emerald-900/30' : 'border-slate-200'} shadow-[0_22px_54px_rgba(15,23,42,0.10)] transition hover:-translate-y-0.5 hover:shadow-[0_28px_68px_rgba(15,23,42,0.14)]`}
+    >
+      <div className={`${isHero ? 'p-7' : 'p-6'} flex flex-1 flex-col`}>
+        <div className="flex items-start justify-between gap-5">
+          <div className="flex min-w-0 items-center gap-4">
+            <span className={`inline-flex h-12 min-w-12 items-center justify-center rounded-2xl text-lg font-black ${relationshipRankTone(rank)}`}>#{rank}</span>
+            <BankLogo bankId={row.bankId} bankName={row.bankName} />
+            <div className="min-w-0">
+              <h3 className={`truncate text-2xl font-black ${isHero ? 'text-white' : 'text-slate-950'}`}>{row.bankName}</h3>
+              <p className={`mt-1 text-sm font-medium ${isHero ? 'text-white/80' : 'text-slate-500'}`}>{relationshipTier(row, rank)}</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className={`mb-2 text-[10px] font-black uppercase tracking-[0.16em] ${isHero ? 'text-white/75' : 'text-slate-500'}`}>Health Score</p>
+            <HealthRing score={row.healthScore} size={isHero ? 'lg' : 'md'} />
           </div>
         </div>
-        <StatusPill status={row.healthStatus} />
-      </div>
-      <div className="mt-6 grid grid-cols-2 gap-4 text-sm">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Approval</p>
-          <p className="mt-1 text-xl font-bold text-slate-950">{row.applications ? formatPercent(row.approvalRate) : 'Pending'}</p>
+
+        <div className={`${isHero ? 'mt-8 grid-cols-2 xl:grid-cols-4' : 'mt-6 grid-cols-2'} grid gap-5`}>
+          <LeaderboardMetric dark={isHero} icon={TrendingUp} label="Approval Rate" value={approvalDisplay} trend={row.trend?.approvalRateChangePercent} />
+          <LeaderboardMetric dark={isHero} icon={Clock3} label="Avg Response" value={responseDisplay} trend={row.trend?.responseTimeChange} inverseTrend />
+          <LeaderboardMetric dark={isHero} icon={Coins} label="Revenue" value={formatCompactCurrency(row.revenueGenerated)} trend={row.trend?.revenueChangePercent} />
+          <LeaderboardMetric dark={isHero} icon={FileText} label="Applications" value={row.applications || 0} trend={row.trend?.applicationsChangePercent} />
         </div>
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Avg Response</p>
-          <p className="mt-1 text-xl font-bold text-slate-950">{row.averageResponseTime ? formatResponseDays(row.averageResponseTime) : 'Pending'}</p>
-        </div>
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Revenue</p>
-          <p className="mt-1 text-xl font-bold text-slate-950">{formatCompactCurrency(row.revenueGenerated)}</p>
-        </div>
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Applications</p>
-          <p className="mt-1 text-xl font-bold text-slate-950">{row.applications}</p>
-        </div>
+
+        {isHero ? (
+          <div className="mt-7 grid gap-5 border-t border-white/20 pt-6 sm:grid-cols-2">
+            <div>
+              <p className="text-sm font-black text-emerald-300">Strengths</p>
+              <div className="mt-3 space-y-2 text-sm font-medium text-white/90">
+                <p className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-300" /> {row.averageResponseTime ? 'Fast response profile' : 'Response data pending'}</p>
+                <p className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-300" /> {row.approvalRate ? `${formatPercent(row.approvalRate)} approval rate` : 'Approval data pending'}</p>
+              </div>
+            </div>
+            <div>
+              <p className="text-sm font-black text-amber-300">Watch-outs</p>
+              <div className="mt-3 space-y-2 text-sm font-medium text-white/90">
+                <p className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-amber-300" /> {row.escalations || 0} escalations</p>
+                <p className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-amber-300" /> {row.healthStatus || 'Health status pending'}</p>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
-      <div className="mt-5 flex flex-wrap items-center gap-2">
-        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">Health {row.healthScore ?? 'Pending'}</span>
-        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">Instruction {formatPercent(row.instructionRate)}</span>
-        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">Escalations {row.escalations}</span>
+      <div className={`${isHero ? 'bg-emerald-50 text-emerald-800' : 'border-t border-slate-200 bg-white text-blue-700'} flex h-14 items-center justify-center gap-2 text-sm font-black`}>
+        Open Relationship <ArrowRight className="h-4 w-4" />
       </div>
-      <div className="mt-auto pt-5">
-        <Sparkline values={row.sparkline} />
-        <p className="mt-2"><TrendBadge value={row.trend?.applicationsChangePercent} label="application trend" /></p>
-      </div>
-    </article>
+    </Link>
   )
 }
 
@@ -469,22 +560,19 @@ function ApprovalFunnel({ stages = [] }) {
 }
 
 function SortablePerformanceMatrix({ rows = [] }) {
-  const [sort, setSort] = useState({ key: 'applications', direction: 'desc' })
+  const [sort, setSort] = useState({ key: 'healthScore', direction: 'desc' })
   const columns = [
+    ['rank', 'Rank'],
     ['bankName', 'Bank'],
-    ['applications', 'Applications'],
-    ['approvalRate', 'Approval %'],
-    ['averageResponseTime', 'Avg Response'],
-    ['instructionRate', 'Instruction %'],
-    ['escalations', 'Escalations'],
-    ['revenueGenerated', 'Revenue'],
+    ['performance', 'Performance'],
     ['healthScore', 'Health Score'],
+    ['revenueGenerated', 'Revenue'],
     ['trend', 'Trend'],
-    ['action', 'Action'],
+    ['action', 'Actions'],
   ]
   const sortedRows = useMemo(() => [...rows].sort((left, right) => {
-    if (sort.key === 'trend') return (right.trend?.applicationsChangePercent || 0) - (left.trend?.applicationsChangePercent || 0)
-    if (sort.key === 'action') return 0
+    if (sort.key === 'rank' || sort.key === 'action' || sort.key === 'performance') return 0
+    if (sort.key === 'trend') return (right.trend?.revenueChangePercent || 0) - (left.trend?.revenueChangePercent || 0)
     const leftValue = left[sort.key]
     const rightValue = right[sort.key]
     if (typeof leftValue === 'string') return sort.direction === 'asc' ? leftValue.localeCompare(rightValue) : rightValue.localeCompare(leftValue)
@@ -492,16 +580,18 @@ function SortablePerformanceMatrix({ rows = [] }) {
   }), [rows, sort])
   if (!rows.length) return <EmptyState title="No bank performance data yet" icon={Landmark} />
   function toggleSort(key) {
+    if (['rank', 'performance', 'action'].includes(key)) return
     setSort((current) => ({ key, direction: current.key === key && current.direction === 'desc' ? 'asc' : 'desc' }))
   }
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-200">
-      <table className="min-w-[1040px] w-full text-left text-sm">
-        <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-[0.14em] text-slate-500">
+    <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto [scrollbar-width:thin]">
+      <table className="w-full min-w-[1180px] text-left text-sm">
+        <thead className="sticky top-0 z-10 bg-white text-xs uppercase tracking-[0.14em] text-slate-500">
           <tr>
             {columns.map(([key, label]) => (
-              <th key={key} className="px-4 py-3 font-bold">
-                <button type="button" onClick={() => toggleSort(key)} className="inline-flex items-center gap-1 hover:text-slate-950">
+              <th key={key} className="border-b border-slate-200 px-5 py-4 font-bold">
+                <button type="button" onClick={() => toggleSort(key)} className={`inline-flex items-center gap-1 ${['rank', 'performance', 'action'].includes(key) ? 'cursor-default' : 'hover:text-slate-950'}`}>
                   {label}
                   {sort.key === key ? <span>{sort.direction === 'desc' ? '↓' : '↑'}</span> : null}
                 </button>
@@ -510,44 +600,80 @@ function SortablePerformanceMatrix({ rows = [] }) {
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 bg-white">
-          {sortedRows.map((row) => (
+          {sortedRows.map((row, index) => {
+            const rank = index + 1
+            const trendIsDown = row.trend?.direction === 'down' || Number(row.trend?.revenueChangePercent || 0) < 0
+            const healthStatus = row.healthStatus || (Number(row.healthScore || 0) >= 75 ? 'Excellent' : Number(row.healthScore || 0) >= 62 ? 'Good' : Number(row.healthScore || 0) >= 50 ? 'Average' : 'Needs attention')
+            const rankingBadge = rank === 1 ? 'Top Performer' : rank === 2 ? 'High Performer' : rank === 3 ? 'Focus Area' : 'Stable'
+            return (
             <tr key={row.bankId} className="transition hover:bg-slate-50/80">
-              <td className="px-4 py-4">
+              <td className="w-[84px] px-5 py-7 align-middle">
+                <div className="flex flex-col items-center gap-2">
+                  <span className={`text-3xl font-black ${rank <= 3 ? 'text-amber-600' : 'text-slate-500'}`}>{rank}</span>
+                  {rank <= 3 ? (
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-50 text-amber-600 ring-1 ring-amber-200">
+                      <Trophy className="h-4 w-4" aria-hidden="true" />
+                    </span>
+                  ) : null}
+                </div>
+              </td>
+              <td className="min-w-[230px] px-5 py-7 align-middle">
                 <div className="flex items-center gap-3">
-                  <BankLogo bankId={row.bankId} bankName={row.bankName} size="sm" />
-                  <span className="font-bold text-slate-950">{row.bankName}</span>
+                  <BankLogo bankId={row.bankId} bankName={row.bankName} />
+                  <div>
+                    <p className="text-lg font-black text-slate-950">{row.bankName}</p>
+                    <p className="mt-0.5 text-xs font-semibold text-slate-500">{relationshipTier(row, rank)}</p>
+                    <span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${statusClass(rankingBadge)}`}>{rankingBadge}</span>
+                  </div>
                 </div>
               </td>
-              <td className="px-4 py-4 font-semibold text-slate-700">{row.applications}</td>
-              <td className="px-4 py-4 font-semibold text-slate-700">{formatPercent(row.approvalRate)}</td>
-              <td className="px-4 py-4 font-semibold text-slate-700">{formatResponseDays(row.averageResponseTime)}</td>
-              <td className="px-4 py-4 font-semibold text-slate-700">{formatPercent(row.instructionRate)}</td>
-              <td className="px-4 py-4 font-semibold text-slate-700">{row.escalations}</td>
-              <td className="px-4 py-4 font-semibold text-slate-700">{formatCompactCurrency(row.revenueGenerated)}</td>
-              <td className="px-4 py-4">
+              <td className="min-w-[250px] px-5 py-7 align-middle">
+                <div className="space-y-2.5 text-sm font-semibold text-slate-700">
+                  <p className="flex items-center gap-3"><Users className="h-4 w-4 text-slate-500" /> <span className="font-black text-slate-950">{row.applications || 0}</span> Applications</p>
+                  <p className="flex items-center gap-3"><Percent className="h-4 w-4 text-slate-500" /> <span className="font-black text-slate-950">{formatPercent(row.approvalRate)}</span> Approval Rate</p>
+                  <p className="flex items-center gap-3"><Clock3 className="h-4 w-4 text-slate-500" /> <span className="font-black text-slate-950">{formatResponseDays(row.averageResponseTime)}</span> Avg Response</p>
+                  <p className="flex items-center gap-3"><CheckCircle2 className="h-4 w-4 text-slate-500" /> <span className="font-black text-slate-950">{formatPercent(row.instructionRate)}</span> Instruction Rate</p>
+                </div>
+              </td>
+              <td className="min-w-[150px] px-5 py-7 align-middle">
+                <div className="flex flex-col items-center gap-2">
+                  <HealthRing score={row.healthScore} />
+                  <StatusPill status={healthStatus} />
+                </div>
+              </td>
+              <td className="min-w-[160px] px-5 py-7 align-middle">
+                <p className="text-2xl font-black text-slate-950">{formatCompactCurrency(row.revenueGenerated)}</p>
+                <p className="mt-1 text-xs font-semibold text-slate-500">Revenue Generated</p>
+                <div className="mt-3"><TrendBadge value={row.trend?.revenueChangePercent} label="vs last month" /></div>
+              </td>
+              <td className="min-w-[190px] px-5 py-7 align-middle">
+                <Sparkline values={row.sparkline} tone={trendIsDown ? 'red' : 'emerald'} height={54} />
+                <p className={`mt-2 text-sm font-black ${trendIsDown ? 'text-red-700' : 'text-emerald-700'}`}>{trendIsDown ? 'Declining' : 'Improving'}</p>
+                <p className="mt-0.5 text-xs font-medium text-slate-500">{trendIsDown ? 'Monitor closely' : 'Positive trajectory'}</p>
+              </td>
+              <td className="w-[160px] px-5 py-7 align-middle">
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-slate-950">{row.healthScore ?? 'Pending'}</span>
-                  <StatusPill status={row.healthStatus} />
-                </div>
-              </td>
-              <td className="px-4 py-4 min-w-[140px]"><Sparkline values={row.sparkline} tone={row.trend?.direction === 'down' ? 'red' : 'emerald'} /></td>
-              <td className="px-4 py-4">
-                <div className="flex flex-wrap gap-2">
-                  <Link className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50" to={`/bond/banks/${encodeURIComponent(row.bankId)}`}>
-                    <Eye className="h-3.5 w-3.5" /> View Profile
+                  <Link className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-blue-950 shadow-sm hover:bg-slate-50" to={`/bond/banks/${encodeURIComponent(row.bankId)}`}>
+                    Open <ArrowRight className="h-4 w-4" />
                   </Link>
-                  <Link className="inline-flex h-9 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-bold text-amber-700 hover:bg-amber-100" to={`/bond/banks/${encodeURIComponent(row.bankId)}#escalations`}>
-                    <AlertTriangle className="h-3.5 w-3.5" /> Log Escalation
-                  </Link>
-                  <Link className="inline-flex h-9 items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 text-xs font-bold text-blue-700 hover:bg-blue-100" to={`/bond/banks/${encodeURIComponent(row.bankId)}#notes`}>
-                    <MessageSquare className="h-3.5 w-3.5" /> Add Note
-                  </Link>
+                  <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50" aria-label={`More actions for ${row.bankName}`}>
+                    <MoreVertical className="h-4 w-4" aria-hidden="true" />
+                  </button>
                 </div>
               </td>
             </tr>
-          ))}
+          )})}
         </tbody>
       </table>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-5 py-4 text-sm text-slate-500">
+        <span>Showing 1 to {sortedRows.length} of {rows.length} relationships</span>
+        <div className="flex gap-2">
+          <button type="button" className="inline-flex h-9 min-w-9 items-center justify-center rounded-xl bg-slate-950 px-3 text-sm font-bold text-white">1</button>
+          <button type="button" className="inline-flex h-9 min-w-9 items-center justify-center rounded-xl border border-slate-200 px-3 text-sm font-bold text-slate-700">2</button>
+          <button type="button" className="inline-flex h-9 min-w-9 items-center justify-center rounded-xl border border-slate-200 px-3 text-sm font-bold text-slate-700" aria-label="Next page"><ArrowRight className="h-4 w-4" /></button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -562,39 +688,76 @@ function RegionalSlaHeatmap({ heatmap }) {
     average: 'bg-amber-100 text-amber-900',
     slow: 'bg-orange-100 text-orange-900',
     problem: 'bg-red-100 text-red-900',
-    empty: 'bg-slate-50 text-slate-300',
+    empty: 'bg-slate-50 text-slate-300 ring-1 ring-slate-100',
   }
+  const rowsWithFastest = rows.map((row) => {
+    const validCells = row.cells.filter((cell) => cell.responseTime !== null)
+    const fastest = validCells.sort((left, right) => Number(left.responseTime || 0) - Number(right.responseTime || 0))[0] || null
+    return { ...row, fastest }
+  })
   return (
-    <div>
-      <div className="mb-4 flex flex-wrap gap-3 text-xs font-bold text-slate-600">
-        <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-emerald-200" /> Within SLA</span>
-        <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-amber-200" /> Approaching SLA</span>
-        <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-orange-200" /> Slow</span>
-        <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-red-200" /> Breach</span>
+    <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-center gap-5 border-b border-slate-200 px-5 py-4 text-xs font-black text-slate-700">
+        <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-emerald-400" /> Within SLA (&le; 2.0 days)</span>
+        <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-amber-400" /> Approaching (2.1 - 3.0 days)</span>
+        <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-orange-400" /> Slow (3.1 - 5.0 days)</span>
+        <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-red-400" /> Breach (&gt; 5.0 days)</span>
       </div>
-      <div className="overflow-x-auto rounded-2xl border border-slate-200">
-        <table className="min-w-[920px] w-full text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-[0.14em] text-slate-500">
+      <div className="overflow-x-auto [scrollbar-width:thin]">
+        <table className="w-full min-w-[1080px] text-sm">
+          <thead className="sticky top-0 z-10 bg-white text-xs uppercase tracking-[0.14em] text-slate-500">
             <tr>
-              <th className="px-4 py-3.5 text-left font-bold">Region</th>
-              {banks.map((bank) => <th key={bank.bankId} className="px-3 py-3.5 text-center font-bold">{bank.bankName}</th>)}
+              <th className="border-b border-slate-200 px-5 py-4 text-left font-black">Region</th>
+              {banks.map((bank) => (
+                <th key={bank.bankId} className="border-b border-slate-200 px-4 py-4 text-left font-black">
+                  <span className="inline-flex items-center gap-2">
+                    <BankLogo bankId={bank.bankId} bankName={bank.bankName} size="sm" />
+                    {bank.bankName}
+                  </span>
+                </th>
+              ))}
+              <th className="border-b border-slate-200 px-5 py-4 text-left font-black">
+                <span className="inline-flex items-center gap-2"><Trophy className="h-4 w-4 text-amber-500" /> Fastest Bank</span>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <td className="px-4 py-3.5 font-bold text-slate-950">{row.regionName}</td>
+            {rowsWithFastest.map((row) => (
+              <tr key={row.id} className="transition hover:bg-slate-50/70">
+                <td className="whitespace-nowrap px-5 py-4 text-base font-black text-slate-950">{row.regionName}</td>
                 {row.cells.map((cell) => (
-                  <td key={cell.id} className="px-3 py-3.5 text-center">
-                    <span className={`inline-flex min-w-[82px] justify-center rounded-lg px-3 py-2 text-xs font-bold ${cellClass[cell.status]}`}>
-                      {cell.responseTime === null ? '—' : formatResponseDays(cell.responseTime)}
-                    </span>
+                  <td key={cell.id} className="px-4 py-4">
+                    <div className="flex items-center gap-3">
+                      <span className={`inline-flex min-w-[82px] justify-center rounded-lg px-3 py-2 text-xs font-black ${cellClass[classifySlaStatus(cell.responseTime)]}`}>
+                        {cell.responseTime === null ? '—' : `${responseDaysNumber(cell.responseTime)} days`}
+                      </span>
+                      {cell.responseTime !== null ? (
+                        <span className="text-xs font-bold text-slate-400">
+                          {cell.applications || 0} apps
+                        </span>
+                      ) : null}
+                    </div>
                   </td>
                 ))}
+                <td className="whitespace-nowrap px-5 py-4">
+                  {row.fastest ? (
+                    <div className="flex items-center gap-3">
+                      <Trophy className="h-4 w-4 text-amber-500" aria-hidden="true" />
+                      <div>
+                        <p className="text-sm font-black text-slate-950">{row.fastest.bankName}</p>
+                        <p className="text-xs font-semibold text-slate-500">{responseDaysNumber(row.fastest.responseTime)} days</p>
+                      </div>
+                    </div>
+                  ) : <span className="text-sm font-semibold text-slate-400">Pending</span>}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-5 py-4 text-sm text-slate-500">
+        <span className="inline-flex items-center gap-2"><LineChart className="h-4 w-4 text-blue-700" /> SLA target: 2.0 days average response time</span>
+        <span>Showing 1 to {rowsWithFastest.length} of {rowsWithFastest.length} regions</span>
       </div>
     </div>
   )
@@ -1194,7 +1357,7 @@ function downloadBankPanelCsv(rows = []) {
   URL.revokeObjectURL(url)
 }
 
-function DashboardView({ commandCentre, refresh, notice }) {
+function DashboardView({ commandCentre, notice }) {
   const model = commandCentre || {}
   const kpis = model.kpis || {}
   const topBanks = model.leaderboard?.topBanks || []
@@ -1202,26 +1365,8 @@ function DashboardView({ commandCentre, refresh, notice }) {
   const performanceRows = model.performanceMatrix || []
   const hasConfiguredBanks = performanceRows.length > 0
   const hasApplicationData = Number(kpis.totalApplications || 0) > 0
-  const fastestRow = kpis.fastestBank ? performanceRows.find((row) => row.bankId === kpis.fastestBank.bankId) : null
-  const mostUsedRow = kpis.mostUsedBank ? performanceRows.find((row) => row.bankId === kpis.mostUsedBank.bankId) : null
   return (
     <>
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Command Centre</p>
-          <h1 className="mt-1 text-3xl font-bold tracking-normal text-slate-950">Bank Relationship Command Centre</h1>
-          <p className="mt-1 text-sm text-slate-500">Manage bank performance, revenue, service levels and relationship health.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={refresh} className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
-            <RefreshCw className="h-4 w-4" /> Refresh
-          </button>
-          <button type="button" onClick={() => downloadCsv(model.performanceMatrix || [])} className="inline-flex h-11 items-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white shadow-sm hover:bg-slate-800">
-            <Download className="h-4 w-4" /> Export CSV
-          </button>
-        </div>
-      </header>
-
       {notice ? <p className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">{notice}</p> : null}
 
       {!hasConfiguredBanks ? (
@@ -1232,19 +1377,17 @@ function DashboardView({ commandCentre, refresh, notice }) {
         </CommandSection>
       ) : null}
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <CommandKpiCard label="Total Applications" value={hasApplicationData ? kpis.totalApplications.toLocaleString('en-ZA') : 'Pending'} helper={hasApplicationData ? 'Submitted or active bank-linked files' : 'Waiting for bank-linked applications'} icon={FileText} accent="blue" pending={!hasApplicationData} />
-        <CommandKpiCard label="Approval Rate" value={hasApplicationData ? formatPercent(kpis.approvalRate) : 'Pending'} helper={hasApplicationData ? 'Approvals over submitted applications' : 'Waiting for decisions'} icon={Percent} accent="green" pending={!hasApplicationData} />
-        <CommandKpiCard label="Fastest Bank" value={kpis.fastestBank?.bankName || 'Pending'} helper={kpis.fastestBank ? formatResponseDays(kpis.fastestBank.responseTime) : 'Waiting for response data'} trend={fastestRow?.trend?.responseTimeChange} icon={Zap} accent="amber" pending={!kpis.fastestBank} />
-        <CommandKpiCard label="Most Used Bank" value={kpis.mostUsedBank?.bankName || 'Pending'} helper={kpis.mostUsedBank ? `${kpis.mostUsedBank.applications} applications` : 'Waiting for volume data'} trend={mostUsedRow?.trend?.applicationsChangePercent} icon={Landmark} accent="purple" pending={!kpis.mostUsedBank} />
-        <CommandKpiCard label="Average Response Time" value={kpis.averageResponseTime ? formatResponseDays(kpis.averageResponseTime) : 'Pending'} helper={kpis.averageResponseTime ? 'Across scoped bank activity' : 'Waiting for first bank response'} icon={Clock3} accent="slate" pending={!kpis.averageResponseTime} />
-        <CommandKpiCard label="Revenue Generated" value={kpis.revenueGenerated ? formatCompactCurrency(kpis.revenueGenerated) : 'Pending'} helper={`R${model.revenuePerBond || 500} per approved or instructed file`} icon={Coins} accent="orange" pending={!kpis.revenueGenerated} />
-      </section>
-
-      <CommandSection eyebrow="Relationship Leaderboard" title="Relationship Leaderboard" description="Ranked by approval, response speed, instruction conversion, revenue and escalation pressure.">
+      <CommandSection
+        eyebrow="Relationship Leaderboard"
+        title="Relationship Leaderboard"
+        description="Ranked by approval, response speed, instruction conversion, revenue and escalation pressure."
+        action={<Link to="/bond/banks?view=profiles" className="text-sm font-bold text-blue-700 hover:text-blue-900">View all profiles</Link>}
+      >
         {topBanks.length ? (
-          <div className="grid gap-6 xl:grid-cols-3">
-            {topBanks.map((row, index) => <LeaderboardCard key={row.bankId} row={row} rank={index + 1} />)}
+          <div className="-mx-1 overflow-x-auto px-1 pb-3 [scrollbar-width:thin]">
+            <div className="flex min-w-max gap-5">
+              {topBanks.map((row, index) => <LeaderboardCard key={row.bankId} row={row} rank={index + 1} />)}
+            </div>
           </div>
         ) : <EmptyState title="Relationship leaderboard is pending" description="Ranking cards will appear once configured banks have application activity." icon={Trophy} />}
         {otherBanks.length ? (
@@ -1269,29 +1412,20 @@ function DashboardView({ commandCentre, refresh, notice }) {
         ) : null}
       </CommandSection>
 
-      <CommandSection eyebrow="Relationship Health" title="Relationship Health" description="Configured bank profiles, ownership, contact coverage and relationship risk.">
-        <RelationshipHealthCards profiles={model.profiles || []} />
-      </CommandSection>
-
-      <CommandSection eyebrow="Performance Matrix" title="Bank Performance Matrix" description="Sortable command view with revenue, health score and relationship trend.">
+      <CommandSection
+        eyebrow="Performance Matrix"
+        title="Bank Performance Matrix"
+        description="Real-time overview of bank relationship performance and value contribution."
+        action={<button type="button" onClick={() => downloadCsv(model.performanceMatrix || [])} className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50"><Download className="h-4 w-4" /> Export</button>}
+      >
         <SortablePerformanceMatrix rows={model.performanceMatrix} />
       </CommandSection>
 
-      <CommandSection eyebrow="Opportunity Matrix" title="Bank Opportunity Matrix" description="Decision matrix for routing more business, growing relationships and prioritising intervention.">
-        <BankOpportunityMatrix matrix={model.opportunityMatrix} />
-      </CommandSection>
-
-      <CommandSection eyebrow="Regional SLA" title="Regional SLA Heatmap" description="Average response time by region and configured bank.">
+      <CommandSection eyebrow="Regional SLA" title="SLA Intelligence Centre" description="Average response time by region, configured bank and SLA performance.">
         <RegionalSlaHeatmap heatmap={model.regionalSlaHeatmap} />
       </CommandSection>
 
-      <CommandSection eyebrow="12 Month Trends" title="12 Month Trends" description="Twelve-month movement across submitted applications, approval rate, response time and revenue.">
-        {hasApplicationData ? (
-          <div className="grid gap-6 lg:grid-cols-2">
-            {(model.trends || []).map((widget) => <TrendWidget key={widget.id} widget={widget} />)}
-          </div>
-        ) : <EmptyState title="12 month trends are pending" description="Trend visuals will appear once bank-linked applications create monthly activity." icon={LineChart} />}
-      </CommandSection>
+      <NetworkIntelligencePanel source={model} />
 
       <CommandSection eyebrow="Relationship Signals" title="Relationship Signals" description="Rules-based observations for HQ follow-up and bank relationship attention.">
         <RelationshipSignals insights={model.insights || []} />
@@ -1456,7 +1590,7 @@ export default function BondBankRelationshipsPage() {
   const workspaceContext = useWorkspace()
   const workspaceId = resolveWorkspaceId(workspaceContext)
   const { bankId = '' } = useParams()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
   const [refreshKey, setRefreshKey] = useState(0)
   const [notice, setNotice] = useState('')
   const [contactDraft, setContactDraft] = useState({ name: '', role: 'Business Development Manager', email: '', phone: '', region: '', notes: '' })
@@ -1511,13 +1645,6 @@ export default function BondBankRelationshipsPage() {
   function refresh() {
     setNotice('Bank relationships refreshed.')
     setRefreshKey((value) => value + 1)
-  }
-
-  function selectView(view) {
-    const next = new URLSearchParams(searchParams)
-    if (view === 'overview') next.delete('view')
-    else next.set('view', view)
-    setSearchParams(next)
   }
 
   function openPanelEditor(row = null) {
@@ -1635,25 +1762,6 @@ export default function BondBankRelationshipsPage() {
           </header>
         ) : null}
 
-        {!state.workspace ? (
-          <nav className="flex gap-2 overflow-x-auto rounded-[18px] border border-slate-200 bg-white p-2 shadow-sm shadow-slate-200/60">
-            {[
-              ['overview', 'Overview'],
-              ['profiles', 'Bank Profiles'],
-              ['manage', 'Manage Bank Panel'],
-            ].map(([view, label]) => (
-              <button
-                key={view}
-                type="button"
-                onClick={() => selectView(view)}
-                className={`h-10 shrink-0 rounded-xl px-4 text-sm font-bold transition ${currentView === view ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
-              >
-                {label}
-              </button>
-            ))}
-          </nav>
-        ) : null}
-
         {state.workspace ? (
           <WorkspaceView
             workspace={state.workspace}
@@ -1682,7 +1790,7 @@ export default function BondBankRelationshipsPage() {
         ) : currentView === 'profiles' ? (
           <BankProfilesView profiles={state.commandCentre?.profiles || []} notice={notice} />
         ) : (
-          <DashboardView commandCentre={state.commandCentre} refresh={refresh} notice={notice} />
+          <DashboardView commandCentre={state.commandCentre} notice={notice} />
         )}
       </div>
       {panelDraft ? (
