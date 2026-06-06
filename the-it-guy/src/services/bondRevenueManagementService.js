@@ -2,6 +2,7 @@ import {
   BOND_ORGANISATION_LEVELS,
   resolveBondOrganisationScope,
 } from './bondOrganisationScopeResolver'
+import { DEV_BYPASS_WORKSPACE_IDS } from '../lib/demoIds'
 import { getPartnerPortalOperationalRows } from './bondPartnerPortalService'
 import {
   COMMISSION_CALCULATION_BASES,
@@ -143,6 +144,10 @@ function getWorkspaceKey(context = {}, options = {}) {
       context.currentMembership?.organisationId ||
       'default',
   )
+}
+
+function isBondOriginatorDemoWorkspace(workspaceKey = '') {
+  return normalizeText(workspaceKey) === DEV_BYPASS_WORKSPACE_IDS.bond_originator
 }
 
 function getActorId(context = {}) {
@@ -400,7 +405,20 @@ function getRows(context = {}, options = {}) {
   const regions = rawRegions.length ? rawRegions : deriveRegionsFromBranches(branches, applications)
   const consultants = normalizeArray(options.consultants || options.users || operationalRows.consultants || operationalRows.users)
   const configuredBanks = normalizeArray(options.banks || options.configuredBanks || operationalRows.banks).map((row) => normalizeConfiguredBank(row, workspaceKey))
-  const scope = resolveBondOrganisationScope(context, {
+  const scopeContext = isBondOriginatorDemoWorkspace(workspaceKey) && !context.resolvedPermissionContext
+    ? {
+        ...context,
+        resolvedPermissionContext: {
+          workspaceId: workspaceKey,
+          userId: getActorId(context),
+          workspaceRole: 'owner',
+          organisationRole: 'owner',
+          scopeLevel: 'workspace_hq',
+          scopeLevelRaw: 'workspace_hq',
+        },
+      }
+    : context
+  const scope = resolveBondOrganisationScope(scopeContext, {
     regions,
     branches,
     consultants,
@@ -408,6 +426,7 @@ function getRows(context = {}, options = {}) {
   })
   const configuredRules = [
     ...normalizeArray(options.commissionRules),
+    ...normalizeArray(operationalRows.commissionRules),
     ...getLocalRows(LOCAL_RULE_STORE, workspaceKey),
   ].map(normalizeCommissionRule)
   const rules = [

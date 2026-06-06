@@ -154,10 +154,9 @@ function formatCompactCurrency(value) {
   return formatCurrency(amount)
 }
 
-function formatTrendValue(value) {
-  const number = Math.round(Number(value || 0) * 10) / 10
-  if (!number) return '0%'
-  return `${number > 0 ? '+' : ''}${number}%`
+function formatTrendMagnitude(value) {
+  const number = Math.round(Math.abs(Number(value || 0)) * 10) / 10
+  return `${number}%`
 }
 
 function statusClass(status = '') {
@@ -169,14 +168,73 @@ function statusClass(status = '') {
   return 'bg-slate-100 text-slate-700 ring-slate-200'
 }
 
+function normalizeBankKey(bankId = '', bankName = '') {
+  const value = normalizeText(bankId || bankName).toLowerCase()
+  if (value.includes('fnb') || value.includes('first-national') || value.includes('first national')) return 'fnb'
+  if (value.includes('absa')) return 'absa'
+  if (value.includes('nedbank')) return 'nedbank'
+  if (value.includes('standard')) return 'standard-bank'
+  if (value.includes('investec')) return 'investec'
+  return value.replace(/[^a-z0-9]+/g, '-') || 'bank'
+}
+
+const BANK_LOGO_META = {
+  fnb: {
+    label: 'FNB',
+    compact: 'FNB',
+    bg: '#006c4f',
+    fg: '#ffffff',
+    accent: '#f59e0b',
+  },
+  absa: {
+    label: 'ABSA',
+    compact: 'ABSA',
+    bg: '#dc0032',
+    fg: '#ffffff',
+    accent: '#ffffff',
+  },
+  nedbank: {
+    label: 'Nedbank',
+    compact: 'Nedbank',
+    bg: '#006341',
+    fg: '#ffffff',
+    accent: '#7cc242',
+  },
+  'standard-bank': {
+    label: 'Standard Bank',
+    compact: 'SB',
+    bg: '#0033a1',
+    fg: '#ffffff',
+    accent: '#00a3e0',
+  },
+  investec: {
+    label: 'Investec',
+    compact: 'Investec',
+    bg: '#101828',
+    fg: '#ffffff',
+    accent: '#7dd3fc',
+  },
+}
+
 function BankLogo({ bankId = '', bankName = '', size = 'md' }) {
-  const label = normalizeText(bankName).split(/\s+/).map((part) => part[0]).join('').slice(0, 2) || 'B'
-  const dimensions = size === 'sm' ? 'h-8 w-8 text-xs' : 'h-10 w-10 text-sm'
-  const palette = ['#0f172a', '#2563eb', '#059669', '#7c3aed', '#c2410c', '#be123c', '#0369a1', '#4f46e5']
-  const index = [...normalizeText(bankId || bankName)].reduce((sum, char) => sum + char.charCodeAt(0), 0) % palette.length
+  const key = normalizeBankKey(bankId, bankName)
+  const meta = BANK_LOGO_META[key]
+  const fallbackLabel = normalizeText(bankName).split(/\s+/).map((part) => part[0]).join('').slice(0, 2) || 'B'
+  const label = meta?.compact || fallbackLabel
+  const compact = size === 'sm'
+  const dimensions = compact ? 'h-9 min-w-9 px-2 text-[10px]' : 'h-11 min-w-11 px-3 text-sm'
+  const bg = meta?.bg || '#0f172a'
+  const fg = meta?.fg || '#ffffff'
+  const accent = meta?.accent || '#38bdf8'
   return (
-    <span className={`inline-flex shrink-0 items-center justify-center rounded-full font-black text-white ${dimensions}`} style={{ backgroundColor: palette[index] }}>
-      {label}
+    <span
+      className={`relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-xl font-semibold tracking-normal shadow-sm ring-1 ring-black/5 ${dimensions}`}
+      style={{ backgroundColor: bg, color: fg }}
+      aria-label={`${meta?.label || bankName || 'Bank'} logo`}
+      title={meta?.label || bankName || 'Bank'}
+    >
+      <span className="absolute -left-2 -top-3 h-7 w-7 rounded-full opacity-70" style={{ backgroundColor: accent }} />
+      <span className="relative leading-none">{label}</span>
     </span>
   )
 }
@@ -318,23 +376,25 @@ function CommandSection({ eyebrow, title, description, action, children, classNa
   )
 }
 
-function TrendBadge({ value, label = 'vs last month', inverse = false }) {
+function TrendBadge({ value, label = 'vs last month', inverse = false, dark = false }) {
   const number = Number(value || 0)
-  if (!number) return label ? <span className="text-xs font-semibold text-slate-400">Pending trend</span> : null
+  if (!number) return label ? <span className={`text-xs font-medium ${dark ? 'text-emerald-50/65' : 'text-slate-400'}`}>Pending trend</span> : null
   const positive = inverse ? number < 0 : number > 0
+  const tone = positive ? (dark ? 'text-emerald-200' : 'text-emerald-700') : (dark ? 'text-red-200' : 'text-red-700')
   return (
-    <span className={`inline-flex items-center gap-1 text-xs font-bold ${positive ? 'text-emerald-700' : 'text-red-700'}`}>
-      {number > 0 ? '▲' : '▼'} {formatTrendValue(Math.abs(number))} {label}
+    <span className={`inline-flex items-center gap-1 text-xs font-semibold ${tone}`}>
+      {number > 0 ? '▲' : '▼'} {formatTrendMagnitude(number)} {label}
     </span>
   )
 }
 
-function ResponseTrendBadge({ value }) {
+function ResponseTrendBadge({ value, dark = false }) {
   const number = Math.round(Number(value || 0) * 10) / 10
-  if (!number) return <span className="text-xs font-semibold text-slate-400">Pending trend</span>
+  if (!number) return <span className={`text-xs font-medium ${dark ? 'text-emerald-50/65' : 'text-slate-400'}`}>Pending trend</span>
   const positive = number < 0
+  const tone = positive ? (dark ? 'text-emerald-200' : 'text-emerald-700') : (dark ? 'text-red-200' : 'text-red-700')
   return (
-    <span className={`inline-flex items-center gap-1 text-xs font-bold ${positive ? 'text-emerald-700' : 'text-red-700'}`}>
+    <span className={`inline-flex items-center gap-1 text-xs font-semibold ${tone}`}>
       {number > 0 ? '▲' : '▼'} {Math.abs(number)} days
     </span>
   )
@@ -423,22 +483,23 @@ function HealthRing({ score, size = 'md' }) {
   return (
     <span className={`relative inline-flex ${ringSize} shrink-0 items-center justify-center rounded-full`} style={{ background: `conic-gradient(${color} ${value * 3.6}deg, #e8eef5 0deg)` }}>
       <span className={`flex ${innerSize} flex-col items-center justify-center rounded-full bg-white text-center shadow-inner`}>
-        <span className={`${size === 'lg' ? 'text-3xl' : 'text-xl'} font-black leading-none text-slate-950`}>{value || '—'}</span>
-        <span className="mt-0.5 text-[10px] font-bold text-slate-400">/100</span>
+        <span className={`${size === 'lg' ? 'text-3xl' : 'text-xl'} font-semibold leading-none text-slate-950`}>{value || '—'}</span>
+        <span className="mt-0.5 text-[10px] font-medium text-slate-500">/100</span>
       </span>
     </span>
   )
 }
 
-function LeaderboardMetric({ icon: Icon, label, value, trend, inverseTrend = false, dark = false }) {
+function LeaderboardMetric({ icon, label, value, trend, inverseTrend = false, dark = false }) {
+  const IconComponent = icon
   return (
     <div className={`${dark ? 'border-white/20' : 'border-slate-200'} min-w-0 border-l pl-4 first:border-l-0 first:pl-0`}>
-      <span className={`inline-flex h-9 w-9 items-center justify-center rounded-full ${dark ? 'bg-white/10 text-emerald-300' : 'bg-blue-50 text-blue-700'}`}>
-        <Icon className="h-4 w-4" aria-hidden="true" />
+      <span className={`inline-flex h-9 w-9 items-center justify-center rounded-full ${dark ? 'bg-white/12 text-emerald-200 ring-1 ring-white/15' : 'bg-blue-50 text-blue-700'}`}>
+        <IconComponent className="h-4 w-4" aria-hidden="true" />
       </span>
-      <p className={`mt-3 text-xs font-medium ${dark ? 'text-white/75' : 'text-slate-500'}`}>{label}</p>
-      <p className={`mt-1 truncate text-2xl font-black ${dark ? 'text-white' : 'text-slate-950'}`}>{value}</p>
-      {trend !== undefined ? <p className="mt-2">{inverseTrend ? <ResponseTrendBadge value={trend} /> : <TrendBadge value={trend} label="vs last month" />}</p> : null}
+      <p className={`mt-3 text-xs font-medium ${dark ? 'text-emerald-50/85' : 'text-slate-500'}`}>{label}</p>
+      <p className={`mt-1 truncate text-2xl font-semibold tracking-normal ${dark ? 'text-white' : 'text-slate-950'}`}>{value}</p>
+      {trend !== undefined ? <p className="mt-2">{inverseTrend ? <ResponseTrendBadge value={trend} dark={dark} /> : <TrendBadge value={trend} label="vs last month" dark={dark} />}</p> : null}
     </div>
   )
 }
@@ -456,15 +517,15 @@ function LeaderboardCard({ row, rank }) {
       <div className={`${isHero ? 'p-7' : 'p-6'} flex flex-1 flex-col`}>
         <div className="flex items-start justify-between gap-5">
           <div className="flex min-w-0 items-center gap-4">
-            <span className={`inline-flex h-12 min-w-12 items-center justify-center rounded-2xl text-lg font-black ${relationshipRankTone(rank)}`}>#{rank}</span>
+            <span className={`inline-flex h-12 min-w-12 items-center justify-center rounded-2xl text-lg font-semibold ${relationshipRankTone(rank)}`}>#{rank}</span>
             <BankLogo bankId={row.bankId} bankName={row.bankName} />
             <div className="min-w-0">
-              <h3 className={`truncate text-2xl font-black ${isHero ? 'text-white' : 'text-slate-950'}`}>{row.bankName}</h3>
-              <p className={`mt-1 text-sm font-medium ${isHero ? 'text-white/80' : 'text-slate-500'}`}>{relationshipTier(row, rank)}</p>
+              <h3 className={`truncate text-2xl font-semibold tracking-normal ${isHero ? 'text-white' : 'text-slate-950'}`}>{row.bankName}</h3>
+              <p className={`mt-1 text-sm font-medium ${isHero ? 'text-emerald-50/85' : 'text-slate-500'}`}>{relationshipTier(row, rank)}</p>
             </div>
           </div>
-          <div className="text-right">
-            <p className={`mb-2 text-[10px] font-black uppercase tracking-[0.16em] ${isHero ? 'text-white/75' : 'text-slate-500'}`}>Health Score</p>
+          <div className="shrink-0 text-right">
+            <p className={`mb-2 whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.16em] ${isHero ? 'text-emerald-50/80' : 'text-slate-500'}`}>Health Score</p>
             <HealthRing score={row.healthScore} size={isHero ? 'lg' : 'md'} />
           </div>
         </div>
@@ -479,23 +540,23 @@ function LeaderboardCard({ row, rank }) {
         {isHero ? (
           <div className="mt-7 grid gap-5 border-t border-white/20 pt-6 sm:grid-cols-2">
             <div>
-              <p className="text-sm font-black text-emerald-300">Strengths</p>
-              <div className="mt-3 space-y-2 text-sm font-medium text-white/90">
-                <p className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-300" /> {row.averageResponseTime ? 'Fast response profile' : 'Response data pending'}</p>
-                <p className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-300" /> {row.approvalRate ? `${formatPercent(row.approvalRate)} approval rate` : 'Approval data pending'}</p>
+              <p className="text-sm font-semibold text-emerald-200">Strengths</p>
+              <div className="mt-3 space-y-2 text-sm font-medium text-emerald-50/90">
+                <p className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-200" /> {row.averageResponseTime ? 'Fast response profile' : 'Response data pending'}</p>
+                <p className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-200" /> {row.approvalRate ? `${formatPercent(row.approvalRate)} approval rate` : 'Approval data pending'}</p>
               </div>
             </div>
             <div>
-              <p className="text-sm font-black text-amber-300">Watch-outs</p>
-              <div className="mt-3 space-y-2 text-sm font-medium text-white/90">
-                <p className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-amber-300" /> {row.escalations || 0} escalations</p>
-                <p className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-amber-300" /> {row.healthStatus || 'Health status pending'}</p>
+              <p className="text-sm font-semibold text-amber-200">Watch-outs</p>
+              <div className="mt-3 space-y-2 text-sm font-medium text-emerald-50/90">
+                <p className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-amber-200" /> {row.escalations || 0} escalations</p>
+                <p className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-amber-200" /> {row.healthStatus || 'Health status pending'}</p>
               </div>
             </div>
           </div>
         ) : null}
       </div>
-      <div className={`${isHero ? 'bg-emerald-50 text-emerald-800' : 'border-t border-slate-200 bg-white text-blue-700'} flex h-14 items-center justify-center gap-2 text-sm font-black`}>
+      <div className={`${isHero ? 'bg-emerald-50 text-emerald-800' : 'border-t border-slate-200 bg-white text-blue-700'} flex h-14 items-center justify-center gap-2 text-sm font-semibold`}>
         Open Relationship <ArrowRight className="h-4 w-4" />
       </div>
     </Link>
@@ -609,7 +670,7 @@ function SortablePerformanceMatrix({ rows = [] }) {
             <tr key={row.bankId} className="transition hover:bg-slate-50/80">
               <td className="w-[84px] px-5 py-7 align-middle">
                 <div className="flex flex-col items-center gap-2">
-                  <span className={`text-3xl font-black ${rank <= 3 ? 'text-amber-600' : 'text-slate-500'}`}>{rank}</span>
+                  <span className={`text-3xl font-bold ${rank <= 3 ? 'text-amber-600' : 'text-slate-500'}`}>{rank}</span>
                   {rank <= 3 ? (
                     <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-50 text-amber-600 ring-1 ring-amber-200">
                       <Trophy className="h-4 w-4" aria-hidden="true" />
@@ -621,7 +682,7 @@ function SortablePerformanceMatrix({ rows = [] }) {
                 <div className="flex items-center gap-3">
                   <BankLogo bankId={row.bankId} bankName={row.bankName} />
                   <div>
-                    <p className="text-lg font-black text-slate-950">{row.bankName}</p>
+                    <p className="text-lg font-bold text-slate-950">{row.bankName}</p>
                     <p className="mt-0.5 text-xs font-semibold text-slate-500">{relationshipTier(row, rank)}</p>
                     <span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${statusClass(rankingBadge)}`}>{rankingBadge}</span>
                   </div>
@@ -629,10 +690,10 @@ function SortablePerformanceMatrix({ rows = [] }) {
               </td>
               <td className="min-w-[250px] px-5 py-7 align-middle">
                 <div className="space-y-2.5 text-sm font-semibold text-slate-700">
-                  <p className="flex items-center gap-3"><Users className="h-4 w-4 text-slate-500" /> <span className="font-black text-slate-950">{row.applications || 0}</span> Applications</p>
-                  <p className="flex items-center gap-3"><Percent className="h-4 w-4 text-slate-500" /> <span className="font-black text-slate-950">{formatPercent(row.approvalRate)}</span> Approval Rate</p>
-                  <p className="flex items-center gap-3"><Clock3 className="h-4 w-4 text-slate-500" /> <span className="font-black text-slate-950">{formatResponseDays(row.averageResponseTime)}</span> Avg Response</p>
-                  <p className="flex items-center gap-3"><CheckCircle2 className="h-4 w-4 text-slate-500" /> <span className="font-black text-slate-950">{formatPercent(row.instructionRate)}</span> Instruction Rate</p>
+                  <p className="flex items-center gap-3"><Users className="h-4 w-4 text-slate-500" /> <span className="font-bold text-slate-950">{row.applications || 0}</span> Applications</p>
+                  <p className="flex items-center gap-3"><Percent className="h-4 w-4 text-slate-500" /> <span className="font-bold text-slate-950">{formatPercent(row.approvalRate)}</span> Approval Rate</p>
+                  <p className="flex items-center gap-3"><Clock3 className="h-4 w-4 text-slate-500" /> <span className="font-bold text-slate-950">{formatResponseDays(row.averageResponseTime)}</span> Avg Response</p>
+                  <p className="flex items-center gap-3"><CheckCircle2 className="h-4 w-4 text-slate-500" /> <span className="font-bold text-slate-950">{formatPercent(row.instructionRate)}</span> Instruction Rate</p>
                 </div>
               </td>
               <td className="min-w-[150px] px-5 py-7 align-middle">
@@ -642,18 +703,18 @@ function SortablePerformanceMatrix({ rows = [] }) {
                 </div>
               </td>
               <td className="min-w-[160px] px-5 py-7 align-middle">
-                <p className="text-2xl font-black text-slate-950">{formatCompactCurrency(row.revenueGenerated)}</p>
+                <p className="text-2xl font-bold text-slate-950">{formatCompactCurrency(row.revenueGenerated)}</p>
                 <p className="mt-1 text-xs font-semibold text-slate-500">Revenue Generated</p>
                 <div className="mt-3"><TrendBadge value={row.trend?.revenueChangePercent} label="vs last month" /></div>
               </td>
               <td className="min-w-[190px] px-5 py-7 align-middle">
                 <Sparkline values={row.sparkline} tone={trendIsDown ? 'red' : 'emerald'} height={54} />
-                <p className={`mt-2 text-sm font-black ${trendIsDown ? 'text-red-700' : 'text-emerald-700'}`}>{trendIsDown ? 'Declining' : 'Improving'}</p>
+                <p className={`mt-2 text-sm font-bold ${trendIsDown ? 'text-red-700' : 'text-emerald-700'}`}>{trendIsDown ? 'Declining' : 'Improving'}</p>
                 <p className="mt-0.5 text-xs font-medium text-slate-500">{trendIsDown ? 'Monitor closely' : 'Positive trajectory'}</p>
               </td>
               <td className="w-[160px] px-5 py-7 align-middle">
                 <div className="flex items-center gap-2">
-                  <Link className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-blue-950 shadow-sm hover:bg-slate-50" to={`/bond/banks/${encodeURIComponent(row.bankId)}`}>
+                  <Link className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-blue-950 shadow-sm hover:bg-slate-50" to={`/bond/banks/${encodeURIComponent(row.bankId)}`}>
                     Open <ArrowRight className="h-4 w-4" />
                   </Link>
                   <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50" aria-label={`More actions for ${row.bankName}`}>
@@ -697,7 +758,7 @@ function RegionalSlaHeatmap({ heatmap }) {
   })
   return (
     <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center gap-5 border-b border-slate-200 px-5 py-4 text-xs font-black text-slate-700">
+      <div className="flex flex-wrap items-center gap-5 border-b border-slate-200 px-5 py-4 text-xs font-bold text-slate-700">
         <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-emerald-400" /> Within SLA (&le; 2.0 days)</span>
         <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-amber-400" /> Approaching (2.1 - 3.0 days)</span>
         <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-orange-400" /> Slow (3.1 - 5.0 days)</span>
@@ -707,16 +768,16 @@ function RegionalSlaHeatmap({ heatmap }) {
         <table className="w-full min-w-[1080px] text-sm">
           <thead className="sticky top-0 z-10 bg-white text-xs uppercase tracking-[0.14em] text-slate-500">
             <tr>
-              <th className="border-b border-slate-200 px-5 py-4 text-left font-black">Region</th>
+              <th className="border-b border-slate-200 px-5 py-4 text-left font-bold">Region</th>
               {banks.map((bank) => (
-                <th key={bank.bankId} className="border-b border-slate-200 px-4 py-4 text-left font-black">
+                <th key={bank.bankId} className="border-b border-slate-200 px-4 py-4 text-left font-bold">
                   <span className="inline-flex items-center gap-2">
                     <BankLogo bankId={bank.bankId} bankName={bank.bankName} size="sm" />
                     {bank.bankName}
                   </span>
                 </th>
               ))}
-              <th className="border-b border-slate-200 px-5 py-4 text-left font-black">
+              <th className="border-b border-slate-200 px-5 py-4 text-left font-bold">
                 <span className="inline-flex items-center gap-2"><Trophy className="h-4 w-4 text-amber-500" /> Fastest Bank</span>
               </th>
             </tr>
@@ -724,11 +785,11 @@ function RegionalSlaHeatmap({ heatmap }) {
           <tbody className="divide-y divide-slate-100 bg-white">
             {rowsWithFastest.map((row) => (
               <tr key={row.id} className="transition hover:bg-slate-50/70">
-                <td className="whitespace-nowrap px-5 py-4 text-base font-black text-slate-950">{row.regionName}</td>
+                <td className="whitespace-nowrap px-5 py-4 text-base font-bold text-slate-950">{row.regionName}</td>
                 {row.cells.map((cell) => (
                   <td key={cell.id} className="px-4 py-4">
                     <div className="flex items-center gap-3">
-                      <span className={`inline-flex min-w-[82px] justify-center rounded-lg px-3 py-2 text-xs font-black ${cellClass[classifySlaStatus(cell.responseTime)]}`}>
+                      <span className={`inline-flex min-w-[82px] justify-center rounded-lg px-3 py-2 text-xs font-bold ${cellClass[classifySlaStatus(cell.responseTime)]}`}>
                         {cell.responseTime === null ? '—' : `${responseDaysNumber(cell.responseTime)} days`}
                       </span>
                       {cell.responseTime !== null ? (
@@ -744,7 +805,7 @@ function RegionalSlaHeatmap({ heatmap }) {
                     <div className="flex items-center gap-3">
                       <Trophy className="h-4 w-4 text-amber-500" aria-hidden="true" />
                       <div>
-                        <p className="text-sm font-black text-slate-950">{row.fastest.bankName}</p>
+                        <p className="text-sm font-bold text-slate-950">{row.fastest.bankName}</p>
                         <p className="text-xs font-semibold text-slate-500">{responseDaysNumber(row.fastest.responseTime)} days</p>
                       </div>
                     </div>
@@ -1359,12 +1420,10 @@ function downloadBankPanelCsv(rows = []) {
 
 function DashboardView({ commandCentre, notice }) {
   const model = commandCentre || {}
-  const kpis = model.kpis || {}
   const topBanks = model.leaderboard?.topBanks || []
   const otherBanks = model.leaderboard?.otherBanks || []
   const performanceRows = model.performanceMatrix || []
   const hasConfiguredBanks = performanceRows.length > 0
-  const hasApplicationData = Number(kpis.totalApplications || 0) > 0
   return (
     <>
       {notice ? <p className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">{notice}</p> : null}

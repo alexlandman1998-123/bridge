@@ -162,32 +162,41 @@ function getRegionalHref(row = {}, name = '') {
 }
 
 function getRegionalTone(score = 0) {
-  if (score >= 85) {
+  if (score >= 80) {
     return {
       label: 'Strong',
       ring: '#16a34a',
+      track: '#dcfce7',
       soft: 'bg-[#ecfdf3] text-[#027a48] ring-[#bbf7d0]',
       border: 'border-[#bbf7d0] hover:border-[#86efac]',
-      glow: 'shadow-[0_14px_34px_rgba(22,163,74,0.08)]',
+      surface: 'bg-[linear-gradient(180deg,#ffffff_0%,#f0fdf4_100%)]',
+      metric: 'bg-white/80 ring-[#d9fbe5]',
+      glow: 'shadow-[0_14px_34px_rgba(22,163,74,0.1)]',
       trend: 'text-[#027a48]',
     }
   }
-  if (score >= 70) {
+  if (score >= 72) {
     return {
       label: 'Watch',
       ring: '#f59e0b',
+      track: '#fef3c7',
       soft: 'bg-[#fffaeb] text-[#b54708] ring-[#fedf89]',
       border: 'border-[#fde68a] hover:border-[#fbbf24]',
-      glow: 'shadow-[0_14px_34px_rgba(245,158,11,0.08)]',
+      surface: 'bg-[linear-gradient(180deg,#ffffff_0%,#fffbeb_100%)]',
+      metric: 'bg-white/80 ring-[#fdecc8]',
+      glow: 'shadow-[0_14px_34px_rgba(245,158,11,0.1)]',
       trend: 'text-[#b54708]',
     }
   }
   return {
     label: 'Needs Attention',
     ring: '#dc2626',
+    track: '#fee2e2',
     soft: 'bg-[#fef3f2] text-[#b42318] ring-[#fecaca]',
     border: 'border-[#fecaca] hover:border-[#fca5a5]',
-    glow: 'shadow-[0_14px_34px_rgba(220,38,38,0.08)]',
+    surface: 'bg-[linear-gradient(180deg,#ffffff_0%,#fff5f5_100%)]',
+    metric: 'bg-white/80 ring-[#fee2e2]',
+    glow: 'shadow-[0_14px_34px_rgba(220,38,38,0.1)]',
     trend: 'text-[#b42318]',
   }
 }
@@ -371,7 +380,7 @@ function ExecutiveMiniTrend({ values = [], tone = {} }) {
   const areaPoints = [`0,100`, ...points, `100,100`].join(' ')
 
   return (
-    <svg className="absolute inset-x-3 bottom-0 h-[38px] w-[calc(100%-24px)] overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+    <svg className="absolute inset-x-3 bottom-3 h-[44px] w-[calc(100%-24px)] overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
       <polygon points={areaPoints} fill={tone.fill} />
       <polyline points={points.join(' ')} fill="none" stroke={tone.line} strokeWidth="2.4" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
@@ -560,7 +569,7 @@ function ExecutiveKpiStrip() {
         return (
           <article
             key={item.label}
-            className={`flex min-h-[292px] min-w-0 flex-col overflow-hidden rounded-[20px] border p-6 shadow-[0_18px_42px_rgba(15,23,42,0.07)] ring-1 transition xl:min-h-[304px] ${tone.wash} ${
+            className={`flex min-h-[336px] min-w-0 flex-col overflow-hidden rounded-[20px] border p-6 shadow-[0_18px_42px_rgba(15,23,42,0.07)] ring-1 transition xl:min-h-[352px] ${tone.wash} ${
               item.featured
                 ? 'border-[#24b86f] shadow-[0_22px_48px_rgba(22,163,74,0.16)] ring-[#bdeccd]'
                 : 'border-[rgba(15,23,42,0.08)] ring-[#e4ebf2]'
@@ -572,7 +581,7 @@ function ExecutiveKpiStrip() {
               </span>
             </div>
 
-            <div className="mt-6 min-w-0">
+            <div className="mt-7 min-w-0">
               <p className="whitespace-nowrap text-[clamp(0.58rem,0.62vw,0.7rem)] font-bold uppercase leading-4 tracking-[0.13em] text-[#526178] 2xl:tracking-[0.2em]">{item.label}</p>
               <p className="mt-4 max-w-full whitespace-nowrap text-[clamp(1.85rem,2.35vw,3.5rem)] font-bold leading-none tracking-normal text-[#07142b]">
                 {item.value}
@@ -583,7 +592,7 @@ function ExecutiveKpiStrip() {
               </p>
             </div>
 
-            <div className={`relative mt-auto h-[96px] overflow-hidden rounded-[15px] px-3.5 pt-4 ring-1 ${tone.panel}`}>
+            <div className={`relative mt-auto h-[122px] overflow-hidden rounded-[15px] px-4 pt-5 ring-1 ${tone.panel}`}>
               <p className="relative z-10 flex min-w-0 items-start gap-2 text-[clamp(0.68rem,0.7vw,0.84rem)] font-bold leading-5 text-[#0f1f36]">
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tone.dot }} />
                 <span className="min-w-0 break-words">{item.detail}</span>
@@ -613,9 +622,9 @@ function RegionalPerformanceStrip({ rows = [], loading = false }) {
       </div>
 
       {loading ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        <div className="flex snap-x gap-4 overflow-x-auto pb-3 pr-2 [scrollbar-width:thin]">
           {[0, 1, 2, 3, 4, 5].map((item) => (
-            <div key={item} className="min-h-[190px] animate-pulse rounded-[18px] border border-[#e2e8f0] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.035)]">
+            <div key={item} className="min-h-[218px] w-[330px] min-w-[330px] snap-start animate-pulse rounded-[18px] border border-[#e2e8f0] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.035)]">
               <div className="h-4 w-28 rounded-full bg-[#e2e8f0]" />
               <div className="mt-4 h-12 w-12 rounded-full bg-[#e2e8f0]" />
               <div className="mt-4 grid grid-cols-2 gap-2">
@@ -633,7 +642,7 @@ function RegionalPerformanceStrip({ rows = [], loading = false }) {
           <p className="mt-1">Create your first region to begin tracking performance.</p>
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-3 pr-2 [scrollbar-width:thin]">
           {regionalRows.map((row) => (
             <RegionalPerformanceCard key={row.key} row={row} />
           ))}
@@ -646,13 +655,13 @@ function RegionalPerformanceStrip({ rows = [], loading = false }) {
 function RegionalPerformanceCard({ row = {} }) {
   const tone = getRegionalTone(row.healthScore)
   const trendArrow = row.trend.direction === 'down' ? '▼' : '▲'
-  const trendClass = row.trend.direction === 'down' ? 'text-[#b54708]' : tone.trend
+  const trendClass = row.trend.direction === 'down' ? 'text-[#b42318]' : tone.trend
 
   return (
     <Link
       to={row.href}
       aria-label={`Open ${row.name} regional performance`}
-      className={`group flex min-h-[198px] min-w-0 flex-col rounded-[18px] border bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.035)] ring-1 ring-[#e9eff5] transition hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(15,23,42,0.08)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#24518a] ${tone.border} ${tone.glow}`}
+      className={`group flex min-h-[226px] w-[340px] min-w-[340px] snap-start flex-col rounded-[18px] border p-5 shadow-[0_10px_28px_rgba(15,23,42,0.035)] ring-1 ring-[#e9eff5] transition hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(15,23,42,0.08)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#24518a] sm:w-[360px] sm:min-w-[360px] ${tone.surface} ${tone.border} ${tone.glow}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -662,7 +671,7 @@ function RegionalPerformanceCard({ row = {} }) {
           </div>
           <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#71869d]">{tone.label}</p>
         </div>
-        <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#f8fafc]" style={{ background: `conic-gradient(${tone.ring} ${row.healthScore * 3.6}deg, #e2e8f0 0deg)` }}>
+        <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#f8fafc] shadow-[inset_0_0_0_1px_rgba(15,23,42,0.04)]" style={{ background: `conic-gradient(${tone.ring} ${row.healthScore * 3.6}deg, ${tone.track} 0deg)` }}>
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-[15px] font-bold text-[#142132]">
             {row.healthScore}
           </div>
@@ -670,10 +679,10 @@ function RegionalPerformanceCard({ row = {} }) {
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-2.5">
-        <RegionalMiniMetric label="Applications" value={formatNumber(row.applications)} />
-        <RegionalMiniMetric label="Revenue" value={row.revenue} />
-        <RegionalMiniMetric label="Approval" value={formatPercent(row.approval)} />
-        <RegionalMiniMetric label="SLA" value={formatPercent(row.sla)} />
+        <RegionalMiniMetric tone={tone} label="Applications" value={formatNumber(row.applications)} />
+        <RegionalMiniMetric tone={tone} label="Revenue" value={row.revenue} />
+        <RegionalMiniMetric tone={tone} label="Approval" value={formatPercent(row.approval)} />
+        <RegionalMiniMetric tone={tone} label="SLA" value={formatPercent(row.sla)} />
       </div>
 
       <div className="mt-auto flex items-center justify-between gap-3 border-t border-[#eef3f8] pt-3">
@@ -684,9 +693,9 @@ function RegionalPerformanceCard({ row = {} }) {
   )
 }
 
-function RegionalMiniMetric({ label, value }) {
+function RegionalMiniMetric({ tone = {}, label, value }) {
   return (
-    <div className="min-w-0 rounded-[12px] bg-[#f8fafc] px-3 py-2 ring-1 ring-[#edf2f7]">
+    <div className={`min-w-0 rounded-[12px] px-3 py-2 ring-1 ${tone.metric || 'bg-[#f8fafc] ring-[#edf2f7]'}`}>
       <p className="truncate text-[9px] font-bold uppercase tracking-[0.08em] text-[#71869d]">{label}</p>
       <p className="mt-1 truncate text-[13px] font-bold leading-4 text-[#17324d]">{value}</p>
     </div>
