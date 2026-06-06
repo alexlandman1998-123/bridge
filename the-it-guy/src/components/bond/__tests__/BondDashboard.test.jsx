@@ -339,15 +339,17 @@ function makeSnapshot(overrides = {}) {
     assert.doesNotMatch(hqMarkup, /Last 30 Days/)
     assert.doesNotMatch(hqMarkup, /All Regions/)
     assert.doesNotMatch(hqMarkup, /Export report/)
-    assert.match(hqMarkup, /Applications Submitted/)
+    assert.match(hqMarkup, /National Command Centre/)
+    assert.match(hqMarkup, /Active Book/)
+    assert.doesNotMatch(hqMarkup, /Applications Submitted/)
     assert.doesNotMatch(hqMarkup, /Projected Commission/)
-    assert.match(hqMarkup, /Risk Monitor/)
-    assert.match(hqMarkup, /Executive Alerts/)
+    assert.match(hqMarkup, /Operational Health/)
+    assert.match(hqMarkup, /Health Score/)
     assert.match(hqMarkup, /Unassigned/)
     assert.match(hqMarkup, /Awaiting OTP/)
     assert.match(hqMarkup, /Missing Docs/)
     assert.match(hqMarkup, /SLA Breaches/)
-    assert.match(hqMarkup, /High Risk Branches/)
+    assert.doesNotMatch(hqMarkup, /High Risk Branches/)
     assert.match(hqMarkup, /National Pipeline Flow/)
     assert.match(hqMarkup, /Application Prep/)
     assert.match(hqMarkup, /Review &amp; Submit/)
@@ -355,11 +357,17 @@ function makeSnapshot(overrides = {}) {
     assert.match(hqMarkup, /Registration/)
     assert.doesNotMatch(hqMarkup, /OTP Ready/)
     assert.match(hqMarkup, /Biggest Bottleneck/)
+    assert.match(hqMarkup, /Performance Layer/)
     assert.match(hqMarkup, /Regional Performance/)
     assert.match(hqMarkup, /Top Performing Branches/)
-    assert.match(hqMarkup, /Branches Requiring Attention/)
+    assert.doesNotMatch(hqMarkup, /Branches Requiring Attention/)
+    assert.match(hqMarkup, /Partner Intelligence/)
     assert.match(hqMarkup, /Top Partner Performance/)
-    assert.match(hqMarkup, /Revenue Overview/)
+    assert.match(hqMarkup, /Partner Risk Overview/)
+    assert.match(hqMarkup, /Revenue Intelligence/)
+    assert.match(hqMarkup, /Revenue Projection/)
+    assert.match(hqMarkup, /Commission Breakdown/)
+    assert.match(hqMarkup, /Revenue Trend/)
     assert.doesNotMatch(hqMarkup, /Bond Originator HQ/)
     assert.doesNotMatch(hqMarkup, /Company-wide view of applications, revenue, approvals, partner performance, and operational risk/)
     assert.doesNotMatch(hqMarkup, /National Pipeline Funnel/)
@@ -374,6 +382,21 @@ function makeSnapshot(overrides = {}) {
     assert.doesNotMatch(hqMarkup, /Team Performance/)
     assert.doesNotMatch(hqMarkup, /Operational Bottleneck Heatmap/)
     assert.doesNotMatch(hqMarkup, /Applications Needing Attention/)
+
+    const hqOrder = [
+      'National Command Centre',
+      'Operational Health',
+      'National Pipeline Flow',
+      'Performance Layer',
+      'Partner Intelligence',
+      'Revenue Intelligence',
+    ]
+    let previousHqIndex = -1
+    for (const label of hqOrder) {
+      const index = hqMarkup.indexOf(label)
+      assert.ok(index > previousHqIndex, `${label} should render after the previous HQ section`)
+      previousHqIndex = index
+    }
 
     const emptyActiveMarkup = render(BondDashboard, {
       user: { role: 'bond_originator' },

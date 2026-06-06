@@ -567,29 +567,6 @@ function HqFilterSelect({ label, value, onChange, options = [] }) {
   )
 }
 
-function HqBadge({ tone = 'neutral', children }) {
-  const classes = {
-    neutral: 'border-[#dbe5f0] bg-[#f8fbff] text-[#52677f]',
-    warning: 'border-[#f6d7a8] bg-[#fff8eb] text-[#8a5b12]',
-    risk: 'border-[#f4bfc0] bg-[#fff4f4] text-[#9a3030]',
-    critical: 'border-[#f0a9b7] bg-[#fff1f3] text-[#8b1e36]',
-    success: 'border-[#bfe5cd] bg-[#f1fbf4] text-[#267347]',
-    info: 'border-[#c8d9f5] bg-[#f4f8ff] text-[#2a5d9f]',
-  }
-  return (
-    <span className={`inline-flex min-h-7 items-center rounded-full border px-2.5 text-xs font-semibold ${classes[tone] || classes.neutral}`}>
-      {children}
-    </span>
-  )
-}
-
-function riskTone(row = {}) {
-  if (row.riskKey === 'critical') return 'critical'
-  if (row.riskKey === 'high') return 'risk'
-  if (row.riskKey === 'medium') return 'warning'
-  return 'success'
-}
-
 function HqApplicationsEmptyState({ filtered = false }) {
   return (
     <section className="rounded-[18px] border border-[#dbe5f0] bg-white px-5 py-8 text-center shadow-[0_14px_34px_rgba(15,23,42,0.045)]">
@@ -677,17 +654,14 @@ function OverflowMenuButton() {
 
 export function HqApplicationsTable({ rows = [], onOpen }) {
   if (!rows.length) return null
-  const registerGridClass = '2xl:grid-cols-[minmax(190px,1.05fr)_minmax(150px,0.72fr)_minmax(270px,1.35fr)_76px_76px_minmax(110px,0.72fr)_minmax(160px,0.9fr)]'
+  const registerGridClass = 'md:grid-cols-[minmax(230px,1fr)_minmax(220px,0.9fr)] xl:grid-cols-[minmax(250px,1.05fr)_minmax(190px,0.78fr)_minmax(360px,1.45fr)_minmax(260px,0.92fr)]'
   return (
     <section className="space-y-3">
-      <div className={`hidden gap-4 px-6 text-xs font-semibold uppercase tracking-[0.12em] text-[#75889e] 2xl:grid ${registerGridClass}`}>
+      <div className={`hidden gap-5 px-6 text-xs font-semibold uppercase tracking-[0.12em] text-[#75889e] xl:grid ${registerGridClass}`}>
         <span>Application</span>
         <span>Consultant</span>
         <span>Stage & Progress</span>
-        <span>Risk</span>
-        <span>Age</span>
-        <span className="text-right">Value</span>
-        <span>Next Action</span>
+        <span className="text-right">Value & Next Action</span>
       </div>
 
       <div className="space-y-3">
@@ -697,7 +671,7 @@ export function HqApplicationsTable({ rows = [], onOpen }) {
             className="relative overflow-hidden rounded-[16px] border border-[#dbe5f0] bg-white px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-[#bfd0e0] hover:shadow-[0_18px_36px_rgba(15,23,42,0.07)] sm:px-6"
           >
             <span className="absolute inset-y-0 left-0 w-1.5" style={{ backgroundColor: getRiskAccent(row) }} />
-            <div className={`grid min-w-0 gap-5 2xl:items-center 2xl:gap-4 ${registerGridClass}`}>
+            <div className={`grid min-w-0 gap-5 xl:items-center ${registerGridClass}`}>
               <div className="flex min-w-0 items-start gap-3">
                 <span className="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#dce8f2] bg-[#f4f8fd] text-[#23518a]">
                   <UserRound size={18} />
@@ -727,27 +701,18 @@ export function HqApplicationsTable({ rows = [], onOpen }) {
                 </div>
               </div>
 
-              <StageProgress row={row} />
-
-              <div className="min-w-0"><HqBadge tone={riskTone(row)}>{row.riskLabel}</HqBadge></div>
-
-              <div className="min-w-0 text-sm text-[#425a72]">
-                <p className="text-lg font-semibold leading-none text-[#102448]">{row.ageLabel.replace(' days', '')}</p>
-                <p className="mt-1 text-xs font-medium text-[#64788f]">{row.ageLabel.includes('day') ? 'days' : ''}</p>
-                <p className="mt-1 text-xs text-[#64788f]">{row.createdDateLabel}</p>
+              <div className="min-w-0 md:col-span-2 xl:col-span-1">
+                <StageProgress row={row} />
               </div>
 
-              <div className="min-w-0 text-left 2xl:text-right">
-                <p className="break-words text-base font-semibold leading-tight text-[#102448]">{row.bondValueLabel}</p>
-              </div>
-
-              <div className="flex min-w-0 flex-col gap-3">
-                <p className="text-sm font-medium leading-5 text-[#213a56] 2xl:line-clamp-2">{row.nextActionLabel}</p>
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <div className="flex min-w-0 flex-col gap-3 md:col-span-2 xl:col-span-1 xl:items-end xl:text-right">
+                <p className="break-words text-lg font-semibold leading-tight text-[#102448]">{row.bondValueLabel}</p>
+                <p className="text-sm font-medium leading-5 text-[#213a56] xl:line-clamp-2">{row.nextActionLabel}</p>
+                <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
                   <button
                     type="button"
                     onClick={() => onOpen(row)}
-                    className="inline-flex h-10 min-w-0 items-center justify-center gap-2 rounded-[10px] bg-[#07183f] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(7,24,63,0.18)] transition hover:bg-[#102a63] 2xl:px-3"
+                    className="inline-flex h-10 min-w-0 items-center justify-center gap-2 rounded-[10px] bg-[#07183f] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(7,24,63,0.18)] transition hover:bg-[#102a63]"
                   >
                     <span className="truncate">Open Application</span>
                     <ArrowRight size={15} />
