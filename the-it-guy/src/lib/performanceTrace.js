@@ -53,6 +53,14 @@ export function createPerfTimer(scope, context = {}) {
   }
 }
 
+export function bondPerfLog(label = '', startedAt = 0, payload = {}) {
+  if (!isPerformanceTracingEnabled()) return
+  const now = startedAt > 1_000_000_000_000 ? Date.now() : getNow()
+  const elapsedMs = Math.round(now - startedAt)
+  // eslint-disable-next-line no-console
+  console.debug(`[bond-perf] ${label} ${elapsedMs}ms`, payload)
+}
+
 export function startRouteTransitionTrace({ from = '', to = '', label = 'route-transition' } = {}) {
   if (!isPerformanceTracingEnabled() || typeof window === 'undefined') {
     return

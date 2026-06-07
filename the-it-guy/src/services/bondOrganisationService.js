@@ -3,7 +3,7 @@ import { ENTITLEMENT_KEYS } from '../constants/workspaceEntitlements'
 import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
 import { can, resolvePermissionContext } from '../auth/permissions/permissionResolver'
-import { createPerfTimer } from '../lib/performanceTrace'
+import { bondPerfLog, createPerfTimer } from '../lib/performanceTrace'
 import { isMissingTableError } from './attorneyFirmServiceShared'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
@@ -4089,6 +4089,7 @@ export function buildBondOrganisationSnapshot({
 
 export async function getBondOrganisationSnapshot(context = {}, workspaceId = '', options = {}) {
   const safeWorkspaceId = normalizeText(workspaceId)
+  const snapshotStartedAt = Date.now()
   const timer = createPerfTimer('bondOrganisation.getSnapshot', { workspaceId: safeWorkspaceId })
   try {
     const usersPromise = traceOrganisationSnapshotStep(timer, 'users', () => fetchOrganisationUsers(safeWorkspaceId))
@@ -4143,6 +4144,13 @@ export async function getBondOrganisationSnapshot(context = {}, workspaceId = ''
       applicationCount: snapshot.applications?.length || 0,
       branchCount: snapshot.branches?.length || 0,
       consultantCount: snapshot.consultants?.length || 0,
+    })
+    bondPerfLog('organisation:snapshot-build', snapshotStartedAt, {
+      workspaceId: safeWorkspaceId,
+      applicationCount: snapshot.applications?.length || 0,
+      branchCount: snapshot.branches?.length || 0,
+      consultantCount: snapshot.consultants?.length || 0,
+      partnerCount: snapshot.partners?.length || 0,
     })
     timer.end({ status: 'ok' })
     return snapshot

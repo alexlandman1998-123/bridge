@@ -4,6 +4,7 @@ import { getBondApplicationStage } from '../core/transactions/bondSelectors'
 import { isBondFinanceType, normalizeFinanceType } from '../core/transactions/financeType'
 import { getTransactionScopeForRow } from '../core/transactions/transactionScope'
 import { fetchTransactionsByParticipantSummary } from '../lib/api'
+import { bondPerfLog } from '../lib/performanceTrace'
 import { canViewFinanceWorkflow } from './bondFinanceWorkflowOwnershipService'
 import {
   getBondOriginatorQueueState,
@@ -2697,9 +2698,16 @@ export async function getBondDevelopmentsWorkspaceSnapshot(user = {}, workspaceI
 }
 
 export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', options = {}) {
+  const snapshotStartedAt = Date.now()
   const reportingScope = options.reportingScope || (await getBondDashboardReportingScope(user, workspaceId, options))
   const includeDemoRows = options.includeDemoRows ?? !isHqReportingScope(reportingScope)
   const allRows = await resolveBondRows(user, workspaceId, { ...options, includeDemoRows })
+  bondPerfLog('command-center:rows', snapshotStartedAt, {
+    workspaceId,
+    rowCount: allRows.length,
+    scopeLevel: reportingScope.scopeLevel,
+  })
+  const buildStartedAt = Date.now()
   const rangeKey = options.rangeKey || DEFAULT_DASHBOARD_RANGE_KEY
   const dateRows = filterRowsByDateRange(allRows, rangeKey)
   const filteredRows = filterRowsByDevelopment(dateRows, options.developmentId)
@@ -2722,7 +2730,7 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
   const connectedPartners = buildConnectedPartnerRows()
   const performanceSnapshot = buildPerformanceSnapshot(filteredRows)
 
-  return {
+  const snapshot = {
     reportingScope,
     roleFocus: focus,
     userDisplayName: getUserDisplayName(user),
@@ -2767,12 +2775,30 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
       { key: 'all_time', label: 'All Time' },
     ],
   }
+  bondPerfLog('command-center:build', buildStartedAt, {
+    workspaceId,
+    totalApplications: snapshot.totalApplications,
+    rangeKey,
+  })
+  bondPerfLog('command-center:snapshot', snapshotStartedAt, {
+    workspaceId,
+    totalApplications: snapshot.totalApplications,
+    rangeKey,
+  })
+  return snapshot
 }
 
 export async function getBondTransactionTrackerSnapshot(user = {}, workspaceId = '', options = {}) {
+  const snapshotStartedAt = Date.now()
   const reportingScope = options.reportingScope || (await getBondDashboardReportingScope(user, workspaceId, options))
   const includeDemoRows = options.includeDemoRows ?? !isHqReportingScope(reportingScope)
   const allRows = await resolveBondRows(user, workspaceId, { ...options, includeDemoRows })
+  bondPerfLog('transaction-tracker:rows', snapshotStartedAt, {
+    workspaceId,
+    rowCount: allRows.length,
+    scopeLevel: reportingScope.scopeLevel,
+  })
+  const buildStartedAt = Date.now()
   const scopedRows = filterRowsByDevelopment(allRows, options.developmentId)
   const bondRows = scopedRows.filter((row) => {
     const financeType = normalizeFinanceType(row?.transaction?.finance_type, { allowUnknown: true })
@@ -2782,7 +2808,7 @@ export async function getBondTransactionTrackerSnapshot(user = {}, workspaceId =
   const selectedStatus = normalizeText(options.status || 'all') || 'all'
   const filteredRows = filterTransactionRows(transactionRows, selectedStatus)
 
-  return {
+  const snapshot = {
     reportingScope,
     selectedStatus,
     statusLabel: TRANSACTION_STATUS_META[selectedStatus]?.label || TRANSACTION_STATUS_META.all.label,
@@ -2796,4 +2822,15 @@ export async function getBondTransactionTrackerSnapshot(user = {}, workspaceId =
       description: 'Applications will stay visible here from finance work through attorney transfer and final registration.',
     },
   }
+  bondPerfLog('transaction-tracker:build', buildStartedAt, {
+    workspaceId,
+    totalRows: snapshot.totalRows,
+    selectedStatus,
+  })
+  bondPerfLog('transaction-tracker:snapshot', snapshotStartedAt, {
+    workspaceId,
+    totalRows: snapshot.totalRows,
+    selectedStatus,
+  })
+  return snapshot
 }

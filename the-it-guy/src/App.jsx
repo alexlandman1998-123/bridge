@@ -272,7 +272,6 @@ function AppLayout({ onLogout, session = null, user }) {
   const inactivityTimerRef = useRef(null)
   const warningTimerRef = useRef(null)
   const securityLogoutInProgressRef = useRef(false)
-  const routeContentKey = `${location.pathname}${location.search}`
   const [sessionWarningOpen, setSessionWarningOpen] = useState(false)
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardInitialDevelopmentId, setWizardInitialDevelopmentId] = useState('')
@@ -283,6 +282,8 @@ function AppLayout({ onLogout, session = null, user }) {
     /^\/legal-documents\/[^/]+/.test(location.pathname) ||
     /^\/pipeline\/leads\/[^/]+\/legal\/[^/]+/.test(location.pathname)
   const isCommercialRoute = location.pathname.startsWith('/commercial')
+  const isBondRoute = location.pathname.startsWith('/bond')
+  const routeContentKey = isBondRoute ? location.pathname : `${location.pathname}${location.search}`
   const hideSharedHeader = isLegalWorkspaceRoute || (role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/'))
   const isAttorneyDashboardRoute = role === 'attorney' && location.pathname === '/attorney/dashboard'
   const isDashboardRoute = location.pathname === '/dashboard' || location.pathname === '/'
@@ -525,7 +526,7 @@ function AppLayout({ onLogout, session = null, user }) {
             key={routeContentKey}
             className={`ui-content-container ${isDashboardRoute ? 'ui-content-container-dashboard' : ''} ${isAttorneyDashboardRoute ? 'ui-content-container-edge' : ''}`.trim()}
           >
-            <Suspense key={routeContentKey} fallback={<PageSkeleton />}>
+            <Suspense key={routeContentKey} fallback={<PageSkeleton label={isBondRoute ? 'Loading bond workspace' : 'Preparing workspace'} />}>
               <Outlet key={routeContentKey} />
             </Suspense>
           </div>

@@ -112,6 +112,36 @@ const DEFAULT_BOND_ORGANISATION_SERVICE = Object.freeze({
   resendBondPartnerInvite,
   setPartnerRoutingDefaults,
 })
+
+const ORGANISATION_SNAPSHOT_CACHE_TTL_MS = 90 * 1000
+const organisationSnapshotCache = new Map()
+
+function getOrganisationSnapshotCacheKey(workspaceId = '') {
+  return normalizeText(workspaceId) || 'default'
+}
+
+function getCachedOrganisationSnapshot(workspaceId = '') {
+  const key = getOrganisationSnapshotCacheKey(workspaceId)
+  const entry = organisationSnapshotCache.get(key)
+  if (!entry || entry.expiresAt <= Date.now()) {
+    organisationSnapshotCache.delete(key)
+    return null
+  }
+  return entry.snapshot
+}
+
+function setCachedOrganisationSnapshot(workspaceId = '', snapshot = null) {
+  if (!snapshot) return
+  organisationSnapshotCache.set(getOrganisationSnapshotCacheKey(workspaceId), {
+    snapshot,
+    expiresAt: Date.now() + ORGANISATION_SNAPSHOT_CACHE_TTL_MS,
+  })
+}
+
+function clearCachedOrganisationSnapshot(workspaceId = '') {
+  organisationSnapshotCache.delete(getOrganisationSnapshotCacheKey(workspaceId))
+}
+
 const REGION_MANAGER_UI_ROLES = new Set(['regional_manager', 'hq_manager', 'manager', 'director', 'owner'])
 const BRANCH_MANAGER_UI_ROLES = new Set(['branch_manager', 'team_lead', 'regional_manager', 'hq_manager', 'manager', 'director', 'owner'])
 const CONSULTANT_ROLE_OPTIONS = Object.freeze([
@@ -5074,14 +5104,27 @@ export default function BondOrganisationPage({
   const [reassignModal, setReassignModal] = useState({ open: false, consultant: null, values: {}, fieldErrors: {}, error: '', submitting: false })
   const [notice, setNotice] = useState('')
 
-  const loadOrganisation = useCallback(async () => {
+  const loadOrganisation = useCallback(async ({ force = false } = {}) => {
     if (!workspaceId) {
       setState({ loading: false, error: 'missing_workspace_context', snapshot: null })
       return
     }
+    if (!force && service === DEFAULT_BOND_ORGANISATION_SERVICE) {
+      const cachedSnapshot = getCachedOrganisationSnapshot(workspaceId)
+      if (cachedSnapshot) {
+        setState({ loading: false, error: '', snapshot: cachedSnapshot })
+        return
+      }
+    }
+    if (force && service === DEFAULT_BOND_ORGANISATION_SERVICE) {
+      clearCachedOrganisationSnapshot(workspaceId)
+    }
     setState((previous) => ({ ...previous, loading: true, error: '' }))
     try {
       const snapshot = await service.getBondOrganisationSnapshot(workspaceContext, workspaceId, { includeDemoRows: false })
+      if (service === DEFAULT_BOND_ORGANISATION_SERVICE) {
+        setCachedOrganisationSnapshot(workspaceId, snapshot)
+      }
       setState({ loading: false, error: '', snapshot })
     } catch (error) {
       setState({
@@ -5316,7 +5359,7 @@ export default function BondOrganisationPage({
         setNotice('Routing rule updated.')
       }
       setRoutingModal({ mode: '', rule: null, values: {}, fieldErrors: {}, error: '', submitting: false })
-      await loadOrganisation()
+      await loadOrganisation({ force: true })
     } catch (error) {
       setRoutingModal((previous) => ({
         ...previous,
@@ -5332,7 +5375,7 @@ export default function BondOrganisationPage({
     try {
       await service.disableRoutingRule(rule.id, workspaceContext, workspaceId)
       setNotice('Routing rule disabled.')
-      await loadOrganisation()
+      await loadOrganisation({ force: true })
     } catch (error) {
       setNotice(String(error?.message || 'Could not disable routing rule.'))
     }
@@ -5395,7 +5438,7 @@ export default function BondOrganisationPage({
         setNotice('Partner invitation sent.')
       }
       setPartnerModal({ mode: '', partner: null, values: {}, fieldErrors: {}, error: '', submitting: false })
-      await loadOrganisation()
+      await loadOrganisation({ force: true })
     } catch (error) {
       setPartnerModal((previous) => ({
         ...previous,
@@ -5411,7 +5454,7 @@ export default function BondOrganisationPage({
     try {
       await service.updateBondPartner(partner.id, { ...partner, status: 'disabled' }, workspaceContext, workspaceId)
       setNotice('Partner disabled.')
-      await loadOrganisation()
+      await loadOrganisation({ force: true })
     } catch (error) {
       setNotice(String(error?.message || 'Could not disable partner.'))
     }
@@ -5465,7 +5508,7 @@ export default function BondOrganisationPage({
         setNotice('Regional manager assigned.')
       }
       setRegionModal({ mode: '', region: null, values: {}, fieldErrors: {}, error: '', submitting: false })
-      await loadOrganisation()
+      await loadOrganisation({ force: true })
     } catch (error) {
       setRegionModal((previous) => ({
         ...previous,
@@ -5531,7 +5574,7 @@ export default function BondOrganisationPage({
         setNotice('Branch moved.')
       }
       setBranchModal({ mode: '', branch: null, values: {}, fieldErrors: {}, error: '', submitting: false })
-      await loadOrganisation()
+      await loadOrganisation({ force: true })
     } catch (error) {
       setBranchModal((previous) => ({
         ...previous,
@@ -5594,7 +5637,7 @@ export default function BondOrganisationPage({
         setNotice('Consultant assigned to branch.')
       }
       setConsultantModal({ mode: '', consultant: null, values: {}, fieldErrors: {}, error: '', submitting: false })
-      await loadOrganisation()
+      await loadOrganisation({ force: true })
     } catch (error) {
       setConsultantModal((previous) => ({
         ...previous,
@@ -5639,7 +5682,7 @@ export default function BondOrganisationPage({
       await service.reassignApplications(reassignModal.consultant?.id, reassignModal.values.toId, [], workspaceContext, workspaceId)
       setNotice('Applications reassigned.')
       setReassignModal({ open: false, consultant: null, values: {}, fieldErrors: {}, error: '', submitting: false })
-      await loadOrganisation()
+      await loadOrganisation({ force: true })
     } catch (error) {
       setReassignModal((previous) => ({
         ...previous,
@@ -5655,7 +5698,7 @@ export default function BondOrganisationPage({
     try {
       await service.deactivateConsultant(consultant.id, workspaceContext, workspaceId)
       setNotice('Consultant deactivated.')
-      await loadOrganisation()
+      await loadOrganisation({ force: true })
     } catch (error) {
       if (error?.fieldErrors?.activeApplications) {
         setReassignModal({

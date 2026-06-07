@@ -120,7 +120,7 @@ import {
   syncOperationalChecklistForTransaction as syncOperationalChecklistForTransactionService,
 } from '../services/transactionOperationalChecklistService'
 import { DEFAULT_APP_ROLE, normalizeAppRole } from './roles'
-import { createPerfTimer } from './performanceTrace'
+import { bondPerfLog, createPerfTimer } from './performanceTrace'
 import {
   runWorkflowAction as runCanonicalWorkflowAction,
   workflowActionErrorMessage,
@@ -24772,6 +24772,7 @@ export async function getAccessibleTransactionsForUser({ userId, roleType = null
 }
 
 async function fetchTransactionSummaryRowsByIds(client, transactionIds = [], { organisationId = '', roleType = null } = {}) {
+  const fetchStartedAt = Date.now()
   const ids = [...new Set((transactionIds || []).filter(Boolean))]
   if (!ids.length) {
     return []
@@ -24878,6 +24879,11 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = [], { o
   if (transactionsQuery.error) {
     throw transactionsQuery.error
   }
+  bondPerfLog('transaction-summary:fetch', fetchStartedAt, {
+    transactionCount: transactionsQuery.data?.length || 0,
+    organisationId: normalizedOrganisationId,
+    roleType: normalizedRoleType,
+  })
 
   const transactionRows = (transactionsQuery.data || [])
     .filter((item) => item?.is_active !== false)
@@ -24970,14 +24976,30 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = [], { o
     })
     .sort((a, b) => new Date(latestTimestamp(b) || 0) - new Date(latestTimestamp(a) || 0))
 
+  const enrichmentStartedAt = Date.now()
   const commissionRows = await hydrateRowsWithCommissionSnapshots(client, rows)
   const enrichedRows = await enrichRowsWithBondIntakeContext(commissionRows)
+  bondPerfLog('transaction-summary:enrichment', enrichmentStartedAt, {
+    rowCount: enrichedRows.length,
+    organisationId: normalizedOrganisationId,
+    roleType: normalizedRoleType,
+  })
   return normalizedOrganisationId && normalizedRoleType === 'bond_originator'
     ? enrichedRows.filter((row) => rowMatchesBondWorkspaceScope(row, normalizedOrganisationId))
     : enrichedRows
 }
 
 const participantSummaryRequests = new Map()
+const participantSummaryResultCache = new Map()
+const PARTICIPANT_SUMMARY_CACHE_TTL_MS = 90 * 1000
+
+function pruneParticipantSummaryResultCache(now = Date.now()) {
+  for (const [key, entry] of participantSummaryResultCache.entries()) {
+    if (!entry || entry.expiresAt <= now) {
+      participantSummaryResultCache.delete(key)
+    }
+  }
+}
 
 export async function fetchTransactionsByParticipantSummary({ userId, roleType = null, organisationId = '' } = {}) {
   const normalizedOrganisationId = String(organisationId || '').trim()
@@ -24987,8 +25009,25 @@ export async function fetchTransactionsByParticipantSummary({ userId, roleType =
     roleType: normalizedRoleType,
     organisationId: normalizedOrganisationId,
   })
+  const now = Date.now()
+  pruneParticipantSummaryResultCache(now)
+  const cachedResult = participantSummaryResultCache.get(requestKey)
+  if (cachedResult && cachedResult.expiresAt > now) {
+    bondPerfLog('participant-summary:cache-hit', now, {
+      userId,
+      roleType: normalizedRoleType,
+      organisationId: normalizedOrganisationId,
+      rowCount: cachedResult.rows.length,
+    })
+    return cachedResult.rows
+  }
   const pendingRequest = participantSummaryRequests.get(requestKey)
   if (pendingRequest) {
+    bondPerfLog('participant-summary:inflight-hit', now, {
+      userId,
+      roleType: normalizedRoleType,
+      organisationId: normalizedOrganisationId,
+    })
     return pendingRequest
   }
 
@@ -25000,10 +25039,23 @@ export async function fetchTransactionsByParticipantSummary({ userId, roleType =
     }
 
     timer.mark('resolve_access_start')
+    const accessStartedAt = Date.now()
     const client = requireClient()
     const transactionIds = await getAccessibleTransactionIdsForUser({ userId, roleType, organisationId: normalizedOrganisationId })
     timer.mark('resolve_access_end', { transactionCount: transactionIds.length })
+    bondPerfLog('resolve-access', accessStartedAt, {
+      userId,
+      roleType: normalizedRoleType,
+      organisationId: normalizedOrganisationId,
+      transactionCount: transactionIds.length,
+    })
+    timer.mark('transaction_summary_fetch_start')
     const rows = await fetchTransactionSummaryRowsByIds(client, transactionIds, { organisationId: normalizedOrganisationId, roleType })
+    timer.mark('transaction_summary_fetch_end', { rowCount: rows.length })
+    participantSummaryResultCache.set(requestKey, {
+      rows,
+      expiresAt: Date.now() + PARTICIPANT_SUMMARY_CACHE_TTL_MS,
+    })
     timer.end({ rowCount: rows.length })
     return rows
   })()

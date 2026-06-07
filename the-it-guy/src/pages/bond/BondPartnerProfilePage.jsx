@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useOrganisation } from '../../context/OrganisationContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { getPartnerTypeLabel } from '../../lib/partnersRepository'
+import { bondPerfLog } from '../../lib/performanceTrace'
 import {
   createBondPartnerFinanceCampaign,
   getBondPartnerApplications,
@@ -1502,96 +1503,109 @@ export default function BondPartnerProfilePage() {
         setAttributionError('')
         setCampaignMessage('')
         setNotAccepted(false)
+        const overviewStartedAt = Date.now()
         const overview = await getBondPartnerProfileOverview(relationshipId, {
           currentOrganisationId,
           currentMembership,
           currentWorkspace: workspace,
         })
+        bondPerfLog('partner-profile:overview', overviewStartedAt, { relationshipId })
         const profileRelationshipId = normalizeText(overview?.relationship?.id) || relationshipId
         if (!cancelled) setProfile(overview)
         if (!cancelled) setLoading(false)
 
-        try {
-          const nextPeople = await getBondPartnerPeople(profileRelationshipId)
-          if (!cancelled) setPeople(nextPeople)
-        } catch (peopleLoadError) {
-          if (!cancelled) {
-            setPeople(null)
-            setPeopleError(peopleLoadError?.message || 'Partner relationship not found or access denied.')
+        const loadSection = async ({
+          label,
+          task,
+          onSuccess,
+          onError,
+          onSettled,
+          fallbackMessage = 'Partner relationship not found or access denied.',
+        }) => {
+          const startedAt = Date.now()
+          try {
+            const result = await task()
+            if (!cancelled) onSuccess(result)
+          } catch (sectionError) {
+            if (!cancelled) onError(sectionError?.message || fallbackMessage)
+          } finally {
+            bondPerfLog(`partner-profile:${label}`, startedAt, { relationshipId: profileRelationshipId })
+            if (!cancelled) onSettled()
           }
-        } finally {
-          if (!cancelled) setPeopleLoading(false)
         }
 
-        try {
-          const nextListings = await getBondPartnerListings(profileRelationshipId)
-          if (!cancelled) setListings(nextListings)
-        } catch (listingsLoadError) {
-          if (!cancelled) {
-            setListings(null)
-            setListingsError(listingsLoadError?.message || 'Partner relationship not found or access denied.')
-          }
-        } finally {
-          if (!cancelled) setListingsLoading(false)
-        }
-
-        try {
-          const nextApplications = await getBondPartnerApplications(profileRelationshipId)
-          if (!cancelled) setApplications(nextApplications)
-        } catch (applicationsLoadError) {
-          if (!cancelled) {
-            setApplications(null)
-            setApplicationsError(applicationsLoadError?.message || 'Partner relationship not found or access denied.')
-          }
-        } finally {
-          if (!cancelled) setApplicationsLoading(false)
-        }
-
-        try {
-          const nextPerformance = await getBondPartnerPerformance(profileRelationshipId)
-          if (!cancelled) setPerformance(nextPerformance)
-        } catch (performanceLoadError) {
-          if (!cancelled) {
-            setPerformance(null)
-            setPerformanceError(performanceLoadError?.message || 'Partner relationship not found or access denied.')
-          }
-        } finally {
-          if (!cancelled) setPerformanceLoading(false)
-        }
-
-        try {
-          const nextCampaigns = await getBondPartnerCampaignCentre(profileRelationshipId)
-          if (!cancelled) setCampaigns(nextCampaigns)
-        } catch (campaignsLoadError) {
-          if (!cancelled) {
-            setCampaigns(null)
-            setCampaignsError(campaignsLoadError?.message || 'Partner relationship not found or access denied.')
-          }
-        } finally {
-          if (!cancelled) setCampaignsLoading(false)
-        }
-
-        try {
-          const [nextAttribution, nextCampaignPerformance, nextListingAttribution] = await Promise.all([
-            getPartnerAttributionSummary(profileRelationshipId),
-            getCampaignPerformance(profileRelationshipId),
-            getListingAttribution(profileRelationshipId),
-          ])
-          if (!cancelled) {
-            setAttribution(nextAttribution)
-            setCampaignPerformance(nextCampaignPerformance)
-            setListingAttribution(nextListingAttribution)
-          }
-        } catch (attributionLoadError) {
-          if (!cancelled) {
-            setAttribution(null)
-            setCampaignPerformance(null)
-            setListingAttribution(null)
-            setAttributionError(attributionLoadError?.message || 'Partner relationship not found or access denied.')
-          }
-        } finally {
-          if (!cancelled) setAttributionLoading(false)
-        }
+        await Promise.all([
+          loadSection({
+            label: 'people',
+            task: () => getBondPartnerPeople(profileRelationshipId),
+            onSuccess: setPeople,
+            onError: (message) => {
+              setPeople(null)
+              setPeopleError(message)
+            },
+            onSettled: () => setPeopleLoading(false),
+          }),
+          loadSection({
+            label: 'listings',
+            task: () => getBondPartnerListings(profileRelationshipId),
+            onSuccess: setListings,
+            onError: (message) => {
+              setListings(null)
+              setListingsError(message)
+            },
+            onSettled: () => setListingsLoading(false),
+          }),
+          loadSection({
+            label: 'applications',
+            task: () => getBondPartnerApplications(profileRelationshipId),
+            onSuccess: setApplications,
+            onError: (message) => {
+              setApplications(null)
+              setApplicationsError(message)
+            },
+            onSettled: () => setApplicationsLoading(false),
+          }),
+          loadSection({
+            label: 'performance',
+            task: () => getBondPartnerPerformance(profileRelationshipId),
+            onSuccess: setPerformance,
+            onError: (message) => {
+              setPerformance(null)
+              setPerformanceError(message)
+            },
+            onSettled: () => setPerformanceLoading(false),
+          }),
+          loadSection({
+            label: 'campaigns',
+            task: () => getBondPartnerCampaignCentre(profileRelationshipId),
+            onSuccess: setCampaigns,
+            onError: (message) => {
+              setCampaigns(null)
+              setCampaignsError(message)
+            },
+            onSettled: () => setCampaignsLoading(false),
+          }),
+          loadSection({
+            label: 'attribution',
+            task: () => Promise.all([
+              getPartnerAttributionSummary(profileRelationshipId),
+              getCampaignPerformance(profileRelationshipId),
+              getListingAttribution(profileRelationshipId),
+            ]),
+            onSuccess: ([nextAttribution, nextCampaignPerformance, nextListingAttribution]) => {
+              setAttribution(nextAttribution)
+              setCampaignPerformance(nextCampaignPerformance)
+              setListingAttribution(nextListingAttribution)
+            },
+            onError: (message) => {
+              setAttribution(null)
+              setCampaignPerformance(null)
+              setListingAttribution(null)
+              setAttributionError(message)
+            },
+            onSettled: () => setAttributionLoading(false),
+          }),
+        ])
       } catch (loadError) {
         if (cancelled) return
         setProfile(null)
