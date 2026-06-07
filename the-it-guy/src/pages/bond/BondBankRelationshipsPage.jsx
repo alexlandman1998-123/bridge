@@ -578,18 +578,18 @@ function BankDistribution({ rows = [] }) {
     <div className="grid items-center gap-6 sm:grid-cols-[220px_1fr]">
       <div className="mx-auto flex h-56 w-56 items-center justify-center rounded-full" style={{ background: `conic-gradient(${gradient})` }}>
         <div className="flex h-32 w-32 flex-col items-center justify-center rounded-full bg-white shadow-inner">
-          <span className="text-2xl font-bold text-slate-950">{rows.reduce((sum, row) => sum + row.applications, 0).toLocaleString('en-ZA')}</span>
-          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Applications</span>
+          <span className="text-2xl font-semibold text-slate-950">{rows.reduce((sum, row) => sum + row.applications, 0).toLocaleString('en-ZA')}</span>
+          <span className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">Applications</span>
         </div>
       </div>
       <div className="space-y-3">
         {rows.slice(0, 6).map((row, index) => (
           <div key={row.bankId} className="flex items-center justify-between gap-3 text-sm">
-            <span className="flex min-w-0 items-center gap-2 font-semibold text-slate-700">
+            <span className="flex min-w-0 items-center gap-2 font-medium text-slate-700">
               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />
               <span className="truncate">{row.bankName}</span>
             </span>
-            <span className="font-bold text-slate-950">{row.percentage}%</span>
+            <span className="font-semibold text-slate-950">{row.percentage}%</span>
           </div>
         ))}
       </div>
@@ -1530,9 +1530,9 @@ function SummaryStrip({ summary }) {
               <Icon className="h-4 w-4" />
             </span>
             <span className="min-w-0">
-              <span className="block text-xs font-bold uppercase tracking-[0.08em] text-slate-500">{item.label}</span>
-              <span className="mt-1 block text-xl font-bold text-slate-950">{item.value}</span>
-              <span className={`mt-1 block text-xs font-bold ${positive ? 'text-emerald-700' : 'text-red-700'}`}>
+              <span className="block text-xs font-medium uppercase tracking-[0.08em] text-slate-500">{item.label}</span>
+              <span className="mt-1 block text-xl font-semibold text-slate-950">{item.value}</span>
+              <span className={`mt-1 block text-xs font-medium ${positive ? 'text-emerald-700' : 'text-red-700'}`}>
                 {Number(item.change || 0) > 0 ? '↑ ' : Number(item.change || 0) < 0 ? '↓ ' : ''}
                 {Math.abs(Number(item.change || 0))}{item.suffix || '%'}
               </span>
@@ -1548,7 +1548,7 @@ function CompactHealthRing({ score }) {
   const value = Math.max(0, Math.min(100, Number(score || 0)))
   return (
     <span className="inline-flex h-12 w-12 items-center justify-center rounded-full" style={{ background: `conic-gradient(${healthScoreTone(value)} ${value * 3.6}deg, #e8eef5 0deg)` }}>
-      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-xs font-bold text-slate-950">{value}</span>
+      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-xs font-semibold text-slate-950">{value}</span>
     </span>
   )
 }
@@ -1566,14 +1566,14 @@ function RelationshipLeaderboardTable({ rows }) {
   return (
     <section className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-sm shadow-slate-200/70">
       <div className="border-b border-slate-200 px-5 py-4">
-        <h2 className="text-lg font-bold text-slate-950">Relationship Leaderboard</h2>
+        <h2 className="text-lg font-semibold text-slate-950">Relationship Leaderboard</h2>
       </div>
       <div className="overflow-x-auto [scrollbar-width:thin]">
         <table className="w-full min-w-[1080px] text-left text-sm">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-[0.12em] text-slate-500">
             <tr>
               {['Rank', 'Bank', 'Health Score', 'Approval Rate', 'Avg Response Time', 'Applications', 'Revenue MTD', 'Trend vs Last Month', 'Status'].map((label) => (
-                <th key={label} className="px-4 py-3 font-bold">{label}</th>
+                <th key={label} className="px-4 py-3 font-semibold">{label}</th>
               ))}
             </tr>
           </thead>
@@ -1583,38 +1583,38 @@ function RelationshipLeaderboardTable({ rows }) {
               const trendDown = Number(row.trend?.revenueChangePercent || row.trend?.approvalRateChangePercent || 0) < 0
               return (
                 <tr key={row.bankId} className="group cursor-pointer transition hover:bg-slate-50" onClick={() => { window.location.href = `/bond/banks/${encodeURIComponent(row.bankId)}` }}>
-                  <td className="px-4 py-4 font-bold text-slate-950">{rank}</td>
+                  <td className="px-4 py-4 font-semibold text-slate-700">{rank}</td>
                   <td className="px-4 py-4">
                     <div className="flex items-center gap-3">
                       <BankLogo bankId={row.bankId} bankName={row.bankName} size="sm" />
                       <div>
-                        <Link to={`/bond/banks/${encodeURIComponent(row.bankId)}`} onClick={(event) => event.stopPropagation()} className="font-bold text-slate-950 group-hover:text-blue-700">{row.bankName}</Link>
-                        <p className="mt-0.5 text-xs font-semibold text-slate-500">{relationshipSubtitle(rank)}</p>
+                        <Link to={`/bond/banks/${encodeURIComponent(row.bankId)}`} onClick={(event) => event.stopPropagation()} className="font-semibold text-slate-950 group-hover:text-blue-700">{row.bankName}</Link>
+                        <p className="mt-0.5 text-xs font-medium text-slate-500">{relationshipSubtitle(rank)}</p>
                       </div>
                     </div>
                   </td>
                   <td className="px-4 py-4"><CompactHealthRing score={row.healthScore} /></td>
                   <td className="px-4 py-4">
-                    <p className="font-bold text-slate-950">{formatPercent(row.approvalRate)}</p>
+                    <p className="font-semibold text-slate-950">{formatPercent(row.approvalRate)}</p>
                     <TrendBadge value={row.trend?.approvalRateChangePercent} label="vs last month" />
                   </td>
                   <td className="px-4 py-4">
-                    <p className="font-bold text-slate-950">{compactResponseTime(row.averageResponseTime)}</p>
+                    <p className="font-semibold text-slate-950">{compactResponseTime(row.averageResponseTime)}</p>
                     <ResponseTrendBadge value={row.trend?.responseTimeChange} />
                   </td>
                   <td className="px-4 py-4">
-                    <p className="font-bold text-slate-950">{row.applications || 0}</p>
+                    <p className="font-semibold text-slate-950">{row.applications || 0}</p>
                     <TrendBadge value={row.trend?.applicationsChangePercent} label="vs last month" />
                   </td>
                   <td className="px-4 py-4">
-                    <p className="font-bold text-slate-950">{formatCompactCurrency(row.revenueGenerated)}</p>
+                    <p className="font-semibold text-slate-950">{formatCompactCurrency(row.revenueGenerated)}</p>
                     <TrendBadge value={row.trend?.revenueChangePercent} label="vs last month" />
                   </td>
                   <td className="px-4 py-4">
                     <Sparkline values={row.sparkline} tone={trendDown ? 'red' : 'emerald'} height={34} />
                   </td>
                   <td className="px-4 py-4">
-                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${statusPillClass(row.status)}`}>{row.status}</span>
+                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${statusPillClass(row.status)}`}>{row.status}</span>
                   </td>
                 </tr>
               )
@@ -1640,12 +1640,12 @@ function MomentumCard({ icon: Icon, label, bank, value, helper, tone = 'emerald'
         <IconComponent className="h-5 w-5" />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-bold text-slate-500">{label}</p>
-        <p className="mt-1 truncate text-base font-bold text-slate-950">{bank?.bankName || 'Not enough data yet.'}</p>
+        <p className="text-xs font-medium text-slate-500">{label}</p>
+        <p className="mt-1 truncate text-base font-semibold text-slate-950">{bank?.bankName || 'Not enough data yet.'}</p>
       </div>
       <div className="shrink-0 text-right">
-        <p className="font-bold text-slate-950">{bank ? value : '—'}</p>
-        <p className="text-xs font-semibold text-slate-500">{helper}</p>
+        <p className="font-semibold text-slate-950">{bank ? value : '—'}</p>
+        <p className="text-xs font-medium text-slate-500">{helper}</p>
       </div>
     </article>
   )
@@ -1655,21 +1655,21 @@ function RelationshipMomentumPanel({ momentum, hasComparisonData }) {
   if (!hasComparisonData) {
     return (
       <section className="rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
-        <h2 className="text-lg font-bold text-slate-950">Relationship Momentum</h2>
-        <p className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm font-semibold text-slate-500">More bank data is needed to compare relationship momentum.</p>
+        <h2 className="text-lg font-semibold text-slate-950">Relationship Momentum</h2>
+        <p className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm font-medium text-slate-500">More bank data is needed to compare relationship momentum.</p>
       </section>
     )
   }
   return (
     <section className="rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
-      <h2 className="text-lg font-bold text-slate-950">Relationship Momentum</h2>
+      <h2 className="text-lg font-semibold text-slate-950">Relationship Momentum</h2>
       <div className="mt-5 space-y-3">
         <MomentumCard icon={TrendingUp} label="Most Improved" bank={momentum.mostImproved} value={`+${Math.max(0, momentum.mostImproved?.healthChange || 0)}`} helper="Health Score" />
         <MomentumCard icon={Clock3} label="Fastest Response" bank={momentum.fastestResponse} value={compactResponseTime(momentum.fastestResponse?.averageResponseTime)} helper="Avg Response" tone="blue" />
         <MomentumCard icon={Percent} label="Highest Approval Rate" bank={momentum.highestApproval} value={formatPercent(momentum.highestApproval?.approvalRate)} helper="Approval Rate" tone="purple" />
         <MomentumCard icon={Coins} label="Highest Revenue" bank={momentum.highestRevenue} value={formatCompactCurrency(momentum.highestRevenue?.revenueGenerated)} helper="MTD Revenue" tone="green" />
       </div>
-      <Link to="/bond/banks?view=profiles" className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-bold text-blue-700 hover:bg-blue-50">
+      <Link to="/bond/banks?view=profiles" className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">
         View all insights <ArrowRight className="h-4 w-4" />
       </Link>
     </section>
@@ -1702,7 +1702,7 @@ function HealthTrendChart({ series }) {
       </div>
       <div className="mt-4 flex flex-wrap gap-3">
         {series.map((row, index) => (
-          <span key={row.bankId} className="inline-flex items-center gap-2 text-xs font-bold text-slate-600">
+          <span key={row.bankId} className="inline-flex items-center gap-2 text-xs font-medium text-slate-600">
             <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />
             {row.bankName}
           </span>
@@ -1718,22 +1718,22 @@ function EscalationRiskTable({ rows }) {
       <table className="w-full min-w-[360px] text-left text-sm">
         <thead className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
           <tr>
-            <th className="pb-3 font-bold">Bank</th>
-            <th className="pb-3 font-bold">Escalations</th>
-            <th className="pb-3 font-bold">Delay Risk</th>
+            <th className="pb-3 font-semibold">Bank</th>
+            <th className="pb-3 font-semibold">Escalations</th>
+            <th className="pb-3 font-semibold">Delay Risk</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
           {rows.map((row) => (
             <tr key={row.bankId}>
               <td className="py-3">
-                <span className="inline-flex items-center gap-2 font-bold text-slate-800">
+                <span className="inline-flex items-center gap-2 font-semibold text-slate-800">
                   <BankLogo bankId={row.bankId} bankName={row.bankName} size="sm" />
                   {row.bankName}
                 </span>
               </td>
-              <td className="py-3 font-bold text-slate-950">{row.escalationCount}</td>
-              <td className="py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${statusPillClass(row.delayRisk)}`}>{row.delayRisk}</span></td>
+              <td className="py-3 font-semibold text-slate-950">{row.escalationCount}</td>
+              <td className="py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${statusPillClass(row.delayRisk)}`}>{row.delayRisk}</span></td>
             </tr>
           ))}
         </tbody>
@@ -1752,8 +1752,8 @@ function RelationshipNotes({ notes }) {
             {note.tone === 'warning' ? <AlertTriangle className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-bold text-slate-950">{note.bankName}</p>
-            <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">{note.message}</p>
+            <p className="text-sm font-semibold text-slate-950">{note.bankName}</p>
+            <p className="mt-1 text-xs font-medium leading-5 text-slate-500">{note.message}</p>
           </div>
           <span className="shrink-0 text-xs font-semibold text-slate-400">{note.age}</span>
         </article>
@@ -1765,7 +1765,7 @@ function RelationshipNotes({ notes }) {
 function AnalyticsCard({ title, children }) {
   return (
     <section className="rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
-      <h2 className="text-base font-bold text-slate-950">{title}</h2>
+      <h2 className="text-base font-semibold text-slate-950">{title}</h2>
       <div className="mt-5">{children}</div>
     </section>
   )
@@ -1839,22 +1839,22 @@ function DashboardView({ commandCentre, notice }) {
 
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-500">
+          <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-500">
             <Link to="/bond/organisation" className="hover:text-blue-700">Organisation</Link>
             <ArrowRight className="h-3.5 w-3.5" />
             <span className="text-slate-950">Bank Relationships</span>
           </div>
-          <h1 className="mt-4 text-3xl font-bold tracking-[-0.01em] text-slate-950">Bank Relationships</h1>
-          <p className="mt-1 text-sm font-semibold text-slate-500">Monitor and manage strategic banking partnerships.</p>
+          <h1 className="mt-4 text-3xl font-semibold tracking-[-0.01em] text-slate-950">Bank Relationships</h1>
+          <p className="mt-1 text-sm font-medium text-slate-500">Monitor and manage strategic banking partnerships.</p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <button type="button" className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+          <button type="button" className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
             <Clock3 className="h-4 w-4" /> Jun 2025 <span className="text-xs font-semibold text-slate-400">vs May 2025</span>
           </button>
-          <button type="button" onClick={() => downloadCsv(dashboard.rows)} className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+          <button type="button" onClick={() => downloadCsv(dashboard.rows)} className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
             <Download className="h-4 w-4" /> Export Report
           </button>
-          <Link to="/bond/banks?view=manage" className="inline-flex h-11 items-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white shadow-sm hover:bg-slate-800">
+          <Link to="/bond/banks?view=manage" className="inline-flex h-11 items-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800">
             Actions <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
@@ -1866,7 +1866,7 @@ function DashboardView({ commandCentre, notice }) {
           title="No bank relationship data available yet."
           description="Bank performance will appear here once applications are submitted to banks."
         >
-          <Link className="inline-flex h-11 items-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white shadow-sm hover:bg-slate-800" to="/bond/banks?view=manage">
+          <Link className="inline-flex h-11 items-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800" to="/bond/banks?view=manage">
             Manage Bank Panel <ArrowRight className="h-4 w-4" />
           </Link>
         </CommandSection>
@@ -1880,7 +1880,7 @@ function DashboardView({ commandCentre, notice }) {
       </section>
 
       {hasConfiguredBanks ? (
-        <section className="grid gap-5 lg:grid-cols-2 xl:grid-cols-4">
+        <section className="grid gap-5 lg:grid-cols-2">
           <AnalyticsCard title="Health Score Trend">
             <HealthTrendChart series={dashboard.healthTrend} />
           </AnalyticsCard>
@@ -1903,18 +1903,18 @@ function DashboardView({ commandCentre, notice }) {
               <Landmark className="h-5 w-5" />
             </span>
             <div className="min-w-0">
-              <h2 className="text-base font-bold text-slate-950">Strengthen your banking relationships</h2>
-              <p className="mt-1 text-sm font-semibold text-slate-500">Monitor performance, address risks, and drive better outcomes across your banking network.</p>
+              <h2 className="text-base font-semibold text-slate-950">Strengthen your banking relationships</h2>
+              <p className="mt-1 text-sm font-medium text-slate-500">Monitor performance, address risks, and drive better outcomes across your banking network.</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button type="button" className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+            <button type="button" className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
               <Clock3 className="h-4 w-4" /> Schedule Bank Review
             </button>
-            <Link to="/bond/banks?view=profiles" className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+            <Link to="/bond/banks?view=profiles" className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
               <MessageSquare className="h-4 w-4" /> Add Relationship Note
             </Link>
-            <Link to="/bond/banks?view=profiles" className="inline-flex h-11 items-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white shadow-sm hover:bg-slate-800">
+            <Link to="/bond/banks?view=profiles" className="inline-flex h-11 items-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800">
               <AlertTriangle className="h-4 w-4" /> View Escalations
             </Link>
           </div>
