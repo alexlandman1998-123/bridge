@@ -14,7 +14,6 @@ import {
   Layers3,
   LineChart,
   MapPinned,
-  PieChart,
   RefreshCw,
   ShieldAlert,
   TrendingUp,
@@ -706,72 +705,72 @@ function RegionalHeatmapOverview({ rows = [] }) {
   const topRegions = [...provinceRows].sort((left, right) => right.health - left.health || right.applications - left.applications).slice(0, 5)
 
   return (
-    <section className="grid gap-5 rounded-[18px] border border-[#dfe7ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.04)] xl:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="min-w-0">
-        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <CardLabel>South Africa Regional Heatmap</CardLabel>
-            <h2 className="mt-1 text-[20px] font-bold tracking-[-0.01em] text-[#142132]">Regional application concentration and health</h2>
-          </div>
+    <section className="rounded-[18px] border border-[#dfe7ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.04)]">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <CardLabel>South Africa Regional Heatmap</CardLabel>
+          <h2 className="mt-1 text-[20px] font-bold tracking-[-0.01em] text-[#142132]">Regional application concentration and health</h2>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-2 rounded-full bg-[#f8fafc] px-3 py-1.5 text-xs font-bold text-[#17324d] ring-1 ring-[#e2e8f0]">
             <MapPinned size={14} /> {formatNumber(nationalApplications)} applications
           </span>
-        </div>
-
-        <div className="overflow-hidden rounded-[16px] bg-[#f6f9fc] px-4 py-5 ring-1 ring-[#e6eef6]">
-          <svg className="mx-auto h-[min(430px,54vw)] min-h-[310px] w-full max-w-[820px]" viewBox={SOUTH_AFRICA_MAP_VIEWBOX} preserveAspectRatio="xMidYMid meet" role="img" aria-label="South Africa regional heatmap">
-            <rect x="0" y="0" width="760" height="520" rx="18" fill="#f6f9fc" />
-            {SOUTH_AFRICA_DISTRICT_PATHS.map((district) => {
-              const province = provinceRows.find((row) => row.label === district.province)
-              const fill = getHeatColor(province?.health || 0)
-              return (
-                <path
-                  key={district.name}
-                  d={district.path}
-                  fill={fill}
-                  stroke="#ffffff"
-                  strokeWidth="1.15"
-                  strokeLinejoin="round"
-                  opacity={province?.applications ? 0.92 : 0.7}
-                >
-                  <title>{`${district.name} · ${district.province}`}</title>
-                </path>
-              )
-            })}
-            {provinceRows.map((province) => (
-              <g key={province.key}>
-                <text x={province.x} y={province.y} textAnchor="middle" className="fill-white text-[14px] font-bold" style={{ paintOrder: 'stroke', stroke: 'rgba(15,23,42,0.34)', strokeWidth: 5 }}>
-                  {province.shortLabel || province.label}
-                </text>
-                <text x={province.x} y={province.y + 20} textAnchor="middle" className="fill-white text-[15px] font-bold" style={{ paintOrder: 'stroke', stroke: 'rgba(15,23,42,0.34)', strokeWidth: 5 }}>
-                  {formatNumber(province.applications)}
-                </text>
-              </g>
-            ))}
-          </svg>
+          <span className="inline-flex items-center gap-2 rounded-full bg-[#eff6f2] px-3 py-1.5 text-xs font-bold text-[#11653f] ring-1 ring-[#cfe7d9]">
+            {averageHealth ? formatPercent(averageHealth) : 'Pending'} avg health
+          </span>
         </div>
       </div>
 
-      <aside className="rounded-[16px] bg-[#f8fafc] p-5 ring-1 ring-[#e6eef6]">
-        <div className="flex items-start justify-between gap-4">
+      <div className="overflow-hidden rounded-[18px] bg-[#f6f9fc] px-4 py-5 ring-1 ring-[#e6eef6] sm:px-6 xl:px-8">
+        <svg className="mx-auto h-[min(560px,58vw)] min-h-[360px] w-full max-w-[1180px]" viewBox={SOUTH_AFRICA_MAP_VIEWBOX} preserveAspectRatio="xMidYMid meet" role="img" aria-label="South Africa regional heatmap">
+          <rect x="0" y="0" width="760" height="520" rx="18" fill="#f6f9fc" />
+          {SOUTH_AFRICA_DISTRICT_PATHS.map((district) => {
+            const province = provinceRows.find((row) => row.label === district.province)
+            const fill = getHeatColor(province?.health || 0)
+            return (
+              <path
+                key={district.name}
+                d={district.path}
+                fill={fill}
+                stroke="#ffffff"
+                strokeWidth="1.15"
+                strokeLinejoin="round"
+                opacity={province?.applications ? 0.92 : 0.7}
+              >
+                <title>{`${district.name} · ${district.province}`}</title>
+              </path>
+            )
+          })}
+          {provinceRows.map((province) => (
+            <g key={province.key}>
+              <text x={province.x} y={province.y} textAnchor="middle" className="fill-white text-[14px] font-bold" style={{ paintOrder: 'stroke', stroke: 'rgba(15,23,42,0.34)', strokeWidth: 5 }}>
+                {province.shortLabel || province.label}
+              </text>
+              <text x={province.x} y={province.y + 20} textAnchor="middle" className="fill-white text-[15px] font-bold" style={{ paintOrder: 'stroke', stroke: 'rgba(15,23,42,0.34)', strokeWidth: 5 }}>
+                {formatNumber(province.applications)}
+              </text>
+            </g>
+          ))}
+        </svg>
+      </div>
+
+      <div className="mt-4 rounded-[16px] bg-[#f8fafc] p-4 ring-1 ring-[#e6eef6]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <CardLabel>Heatmap Key</CardLabel>
-            <p className="mt-1 text-3xl font-bold leading-none text-[#142132]">{averageHealth ? formatPercent(averageHealth) : 'Pending'}</p>
-            <p className="mt-2 text-sm font-medium text-[#64748b]">Average active region health</p>
+            <p className="mt-1 text-sm font-semibold text-[#64748b]">{averageHealth ? formatPercent(averageHealth) : 'Pending'} average active region health</p>
           </div>
-          <PieChart size={22} className="text-[#24518a]" />
+          <div className="flex flex-wrap gap-2">
+            <HeatKey color="#15935f" label="Strong" description="80%+" />
+            <HeatKey color="#e59f24" label="Watch" description="72-79%" />
+            <HeatKey color="#d85b46" label="Needs attention" description="Below 72%" />
+            <HeatKey color="#d7e1ec" label="Unassigned" description="No data" />
+          </div>
         </div>
 
-        <div className="mt-5 space-y-2">
-          <HeatKey color="#15935f" label="Strong" description="80%+ regional health" />
-          <HeatKey color="#e59f24" label="Watch" description="72-79% regional health" />
-          <HeatKey color="#d85b46" label="Needs attention" description="Below 72% regional health" />
-          <HeatKey color="#d7e1ec" label="Unassigned" description="No active regional data" />
-        </div>
-
-        <div className="mt-6 space-y-3">
+        <div className="mt-4 flex gap-3 overflow-x-auto pb-1 [scrollbar-width:thin]">
           {topRegions.map((row) => (
-            <div key={row.key} className="rounded-[13px] bg-white p-3 ring-1 ring-[#edf2f7]">
+            <div key={row.key} className="min-w-[220px] rounded-[13px] bg-white p-3 ring-1 ring-[#edf2f7]">
               <div className="flex items-center justify-between gap-3">
                 <span className="truncate text-sm font-bold text-[#17324d]">{row.label}</span>
                 <span className="shrink-0 text-sm font-bold text-[#142132]">{row.health ? formatPercent(row.health) : '0%'}</span>
@@ -783,18 +782,18 @@ function RegionalHeatmapOverview({ rows = [] }) {
             </div>
           ))}
         </div>
-      </aside>
+      </div>
     </section>
   )
 }
 
 function HeatKey({ color, label, description }) {
   return (
-    <div className="flex items-center gap-3 rounded-[12px] bg-white px-3 py-2 ring-1 ring-[#edf2f7]">
-      <span className="h-3 w-3 rounded-full" style={{ backgroundColor: color }} />
+    <div className="flex items-center gap-2 rounded-full bg-white px-3 py-2 ring-1 ring-[#edf2f7]">
+      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
       <div className="min-w-0">
-        <p className="text-sm font-bold text-[#17324d]">{label}</p>
-        <p className="text-xs font-medium text-[#64748b]">{description}</p>
+        <p className="whitespace-nowrap text-xs font-bold text-[#17324d]">{label}</p>
+        <p className="whitespace-nowrap text-[0.68rem] font-medium text-[#64748b]">{description}</p>
       </div>
     </div>
   )

@@ -8759,10 +8759,10 @@ function AttorneyTransactionDetail() {
               ))}
             </section>
 
-            <section className="grid gap-5 xl:grid-cols-[minmax(0,0.7fr)_minmax(320px,0.3fr)]">
+            <section className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,0.68fr)_minmax(360px,0.32fr)]">
               <div className="space-y-5">
-                <section className="grid gap-5 lg:grid-cols-2">
-                  <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
+                <section className="grid items-stretch gap-5 lg:grid-cols-[minmax(0,0.96fr)_minmax(0,1.04fr)]">
+                  <article className="flex h-full min-h-[430px] flex-col rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
                     <h4 className="text-lg font-semibold tracking-[-0.025em] text-textStrong">Application Overview</h4>
                     <div className="mt-4 divide-y divide-borderSoft">
                       {[
@@ -8777,44 +8777,46 @@ function AttorneyTransactionDetail() {
                         ['Affordability / Risk', bondApplicationViewModel.risk.level, AlertTriangle],
                         ['Consent Status', bondApplicationViewModel.readinessItems.find((item) => item.key === 'consent')?.complete ? 'Captured' : 'Not captured', FileCheck2],
                       ].map(([label, value, Icon]) => (
-                        <div key={label} className="grid grid-cols-[22px_minmax(110px,0.45fr)_minmax(0,1fr)] items-center gap-3 py-2.5">
+                        <div key={label} className="grid grid-cols-[22px_minmax(106px,0.42fr)_minmax(0,1fr)] items-center gap-3 py-2">
                           {createElement(Icon, { size: 15, className: 'text-textMuted' })}
                           <span className="text-xs font-semibold text-textMuted">{label}</span>
                           <strong className="min-w-0 truncate text-right text-sm font-semibold text-textStrong">{value || 'Not captured'}</strong>
                         </div>
                       ))}
                     </div>
-                    <button type="button" className="mt-4 flex w-full items-center justify-between border-t border-borderSoft pt-4 text-sm font-semibold text-success" onClick={() => openWorkspaceMenu('overview')}>
+                    <button type="button" className="mt-auto flex w-full items-center justify-between border-t border-borderSoft pt-4 text-sm font-semibold text-success" onClick={() => openWorkspaceMenu('overview')}>
                       View Full Details
                       <ChevronRight size={16} />
                     </button>
                   </article>
 
-                  <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
+                  <article className="flex h-full min-h-[430px] flex-col rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
                     <h4 className="text-lg font-semibold tracking-[-0.025em] text-textStrong">Submission Readiness</h4>
-                    <div className="mt-5 grid gap-5 md:grid-cols-[160px_minmax(0,1fr)]">
+                    <div className="mt-5 grid items-start gap-4 md:grid-cols-[132px_minmax(0,1fr)]">
                       <div
-                        className="mx-auto grid h-36 w-36 place-items-center rounded-full"
+                        className="mx-auto grid h-32 w-32 place-items-center rounded-full"
                         style={{ background: `conic-gradient(#2fb344 ${bondApplicationViewModel.application.readinessPercent}%, #edf2f7 0)` }}
                       >
-                        <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center shadow-inner">
+                        <div className="grid h-[88px] w-[88px] place-items-center rounded-full bg-white text-center shadow-inner">
                           <div>
-                            <strong className="block text-3xl font-semibold text-textStrong">{bondApplicationViewModel.application.readinessPercent}%</strong>
-                            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-success">{bondApplicationViewModel.application.readinessLabel}</span>
+                            <strong className="block text-[1.7rem] font-semibold leading-none text-textStrong">{bondApplicationViewModel.application.readinessPercent}%</strong>
+                            <span className="mt-1 block text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-success">
+                              {bondApplicationOutstandingCount ? 'In Review' : 'Ready'}
+                            </span>
                           </div>
                         </div>
                       </div>
-                      <div className="space-y-2">
-                        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-textMuted">Required before submission</span>
+                      <div className="space-y-1.5">
+                        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Required before submission</span>
                         {bondApplicationViewModel.readinessItems.map((item) => (
-                          <div key={item.key} className="flex items-center gap-2 text-sm">
-                            {item.complete ? <CheckCircle2 size={14} className="text-success" /> : <AlertTriangle size={14} className="text-warning" />}
-                            <span className={item.complete ? 'text-textBody' : 'font-semibold text-textStrong'}>{item.label}</span>
+                          <div key={item.key} className="flex items-center gap-2 text-[0.84rem] leading-5">
+                            {item.complete ? <CheckCircle2 size={13} className="shrink-0 text-success" /> : <AlertTriangle size={13} className="shrink-0 text-warning" />}
+                            <span className={item.complete ? 'min-w-0 truncate text-textBody' : 'min-w-0 truncate font-semibold text-textStrong'}>{item.label}</span>
                           </div>
                         ))}
                       </div>
                     </div>
-                    <div className={`mt-5 flex items-center justify-between rounded-[14px] border px-4 py-3 ${bondApplicationOutstandingCount ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-success'}`}>
+                    <div className={`mt-auto flex items-center justify-between rounded-[14px] border px-4 py-3 ${bondApplicationOutstandingCount ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-success'}`}>
                       <div className="flex items-center gap-3">
                         {bondApplicationOutstandingCount ? <Clock3 size={18} /> : <CheckCircle2 size={18} />}
                         <div>
@@ -8857,8 +8859,8 @@ function AttorneyTransactionDetail() {
                 </article>
               </div>
 
-              <aside className="space-y-5">
-                <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
+              <aside className="grid gap-5 xl:h-full xl:grid-rows-[auto_minmax(0,1fr)_auto]">
+                <article className="flex min-h-[220px] flex-col rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
                   <h4 className="text-lg font-semibold tracking-[-0.025em] text-textStrong">Action Centre</h4>
                   <div className="mt-4 space-y-3">
                     {bondApplicationViewModel.actions.length ? bondApplicationViewModel.actions.map((action) => (
@@ -8888,15 +8890,15 @@ function AttorneyTransactionDetail() {
                       </div>
                     )}
                   </div>
-                  <button type="button" className="mt-4 flex w-full items-center justify-between border-t border-borderSoft pt-4 text-sm font-semibold text-success" onClick={() => openWorkspaceMenu('tasks')}>
+                  <button type="button" className="mt-auto flex w-full items-center justify-between border-t border-borderSoft pt-4 text-sm font-semibold text-success" onClick={() => openWorkspaceMenu('tasks')}>
                     View All Tasks ({bondApplicationViewModel.actions.length})
                     <ChevronRight size={16} />
                   </button>
                 </article>
 
-                <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
+                <article className="flex min-h-[320px] flex-col rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
                   <h4 className="text-lg font-semibold tracking-[-0.025em] text-textStrong">Recent Activity</h4>
-                  <div className="mt-4 space-y-4">
+                  <div className="mt-4 flex-1 space-y-4">
                     {bondApplicationViewModel.activity.length ? bondApplicationViewModel.activity.map((entry, index) => (
                       <div key={entry.id || index} className="flex gap-3">
                         <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-emerald-50 text-success">
@@ -8911,7 +8913,7 @@ function AttorneyTransactionDetail() {
                       <p className="rounded-[14px] border border-dashed border-borderDefault bg-slate-50 px-4 py-6 text-sm text-textMuted">No recent activity yet</p>
                     )}
                   </div>
-                  <button type="button" className="mt-4 flex w-full items-center justify-between border-t border-borderSoft pt-4 text-sm font-semibold text-success" onClick={() => openWorkspaceMenu('activity')}>
+                  <button type="button" className="mt-auto flex w-full items-center justify-between border-t border-borderSoft pt-4 text-sm font-semibold text-success" onClick={() => openWorkspaceMenu('activity')}>
                     View All Activity
                     <ChevronRight size={16} />
                   </button>
