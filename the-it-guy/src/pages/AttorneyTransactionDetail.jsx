@@ -10,6 +10,7 @@ import {
   CircleDollarSign,
   Clock3,
   Copy,
+  CreditCard,
   Download,
   FileCheck2,
   FileText,
@@ -104,6 +105,11 @@ import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supab
 import { getFinanceReadiness } from '../services/bondFinanceReadinessService'
 import { getDocumentReadiness } from '../services/documentReadinessService'
 import { getBankPanelForCurrentUser } from '../services/bondOriginatorBankService'
+import {
+  buildBondApplicationPdfHtml,
+  buildBondApplicationViewModel,
+  getBondApplicationPdfFilename,
+} from '../modules/bond/utils/bondApplicationViewModel'
 
 const ATTORNEY_WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
@@ -665,155 +671,6 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;')
-}
-
-function formatDownloadToken(value, fallback = 'bond-application') {
-  const token = String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return token || fallback
-}
-
-function formatApplicationFieldValue(value) {
-  if (value === null || value === undefined || value === '') return 'Not captured'
-  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
-  if (Array.isArray(value)) {
-    const items = value
-      .map((item) => formatApplicationFieldValue(item))
-      .filter((item) => item && item !== 'Not captured')
-    return items.length ? items.join(', ') : 'Not captured'
-  }
-  if (typeof value === 'object') {
-    return JSON.stringify(value, null, 2)
-  }
-  return String(value)
-}
-
-function formatApplicationFieldLabel(key) {
-  return toTitle(
-    String(key || '')
-      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-      .replace(/[-_]+/g, ' '),
-  )
-}
-
-function buildBondApplicationFormHtml({
-  reference = '',
-  buyerName = '',
-  propertyLabel = '',
-  generatedAt = new Date().toISOString(),
-  consultant = '',
-  owner = '',
-  statusLabel = '',
-  reviewItems = [],
-  onboardingFormData = {},
-  documents = [],
-} = {}) {
-  const summaryRows = reviewItems
-    .map(
-      ([label, value]) => `
-        <tr>
-          <th>${escapeHtml(label)}</th>
-          <td>${escapeHtml(formatApplicationFieldValue(value))}</td>
-        </tr>
-      `,
-    )
-    .join('')
-
-  const sourceRows = Object.entries(onboardingFormData || {})
-    .filter(([, value]) => value !== null && value !== undefined && value !== '')
-    .map(
-      ([key, value]) => `
-        <tr>
-          <th>${escapeHtml(formatApplicationFieldLabel(key))}</th>
-          <td><pre>${escapeHtml(formatApplicationFieldValue(value))}</pre></td>
-        </tr>
-      `,
-    )
-    .join('')
-
-  const documentRows = documents
-    .map(
-      (item) => `
-        <tr>
-          <td>${escapeHtml(item.displayName || item.name || 'Untitled document')}</td>
-          <td>${escapeHtml(item.categoryLabel || item.category || 'Application document')}</td>
-          <td>${escapeHtml(getDocumentCommandStatusLabel(item.status))}</td>
-          <td>${escapeHtml(formatDateTime(item.uploadedAt || item.createdAt || item.updatedAt))}</td>
-        </tr>
-      `,
-    )
-    .join('')
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>Bond Application Form ${escapeHtml(reference || '')}</title>
-  <style>
-    body { margin: 0; padding: 28px; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #101827; background: #fff; }
-    h1, h2, p { margin: 0; }
-    h1 { font-size: 26px; letter-spacing: -0.03em; }
-    h2 { margin-bottom: 12px; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: #334155; }
-    .meta { margin-top: 8px; color: #60758d; font-size: 12px; line-height: 1.6; }
-    .hero { border-bottom: 2px solid #10243a; padding-bottom: 18px; }
-    .pill { display: inline-block; margin-top: 12px; border: 1px solid #d7e0ea; border-radius: 999px; padding: 5px 10px; color: #274c69; font-size: 12px; font-weight: 700; }
-    .section { margin-top: 20px; border: 1px solid #d7e0ea; border-radius: 10px; padding: 16px; page-break-inside: avoid; }
-    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-    .kv { border: 1px solid #e3ebf4; border-radius: 8px; padding: 10px; }
-    .kv strong { display: block; margin-bottom: 4px; color: #71849b; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
-    .kv span { color: #101827; font-size: 13px; font-weight: 700; }
-    table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
-    th, td { border-bottom: 1px solid #e5edf5; padding: 9px 6px; text-align: left; vertical-align: top; word-break: break-word; }
-    th { width: 34%; color: #60758d; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
-    td { color: #101827; font-weight: 600; }
-    pre { margin: 0; white-space: pre-wrap; font-family: inherit; font-weight: 600; }
-    @media print {
-      body { padding: 16px; }
-      .section { page-break-inside: avoid; }
-      .grid { grid-template-columns: repeat(2, 1fr); }
-    }
-  </style>
-</head>
-<body>
-  <header class="hero">
-    <h1>Bond Application Form</h1>
-    <p class="meta">Generated ${escapeHtml(formatDateTime(generatedAt))}</p>
-    <p class="meta">Application ${escapeHtml(reference || '-')} • ${escapeHtml(buyerName || 'Applicant not captured')}</p>
-    <p class="meta">${escapeHtml(propertyLabel || 'Property not captured')}</p>
-    <span class="pill">${escapeHtml(statusLabel || 'Status not captured')}</span>
-  </header>
-
-  <section class="section">
-    <h2>Application Identity</h2>
-    <div class="grid">
-      <div class="kv"><strong>Applicant</strong><span>${escapeHtml(buyerName || 'Not captured')}</span></div>
-      <div class="kv"><strong>Consultant</strong><span>${escapeHtml(consultant || 'Unassigned')}</span></div>
-      <div class="kv"><strong>Owner</strong><span>${escapeHtml(owner || 'Unassigned')}</span></div>
-    </div>
-  </section>
-
-  <section class="section">
-    <h2>Review Summary</h2>
-    <table><tbody>${summaryRows || '<tr><td>No application summary available.</td></tr>'}</tbody></table>
-  </section>
-
-  <section class="section">
-    <h2>Captured Onboarding Fields</h2>
-    <table><tbody>${sourceRows || '<tr><td>No onboarding form fields have been captured yet.</td></tr>'}</tbody></table>
-  </section>
-
-  <section class="section">
-    <h2>Uploaded Documents</h2>
-    <table>
-      <thead><tr><th>Document</th><th>Category</th><th>Status</th><th>Uploaded</th></tr></thead>
-      <tbody>${documentRows || '<tr><td colspan="4">No documents have been uploaded yet.</td></tr>'}</tbody>
-    </table>
-  </section>
-</body>
-</html>`
 }
 
 function buildAttorneyFinalReportHtml(report) {
@@ -3801,6 +3658,7 @@ function AttorneyTransactionDetail() {
   const [workflowDocumentDraft, setWorkflowDocumentDraft] = useState(null)
   const [workflowSaving, setWorkflowSaving] = useState(false)
   const [bondHybridFinanceActionLoading, setBondHybridFinanceActionLoading] = useState('')
+  const [bondApplicationPdfBusy, setBondApplicationPdfBusy] = useState(false)
   const [activityFilter, setActivityFilter] = useState('all')
 
   const loadData = useCallback(async ({ background = false } = {}) => {
@@ -5026,60 +4884,62 @@ function AttorneyTransactionDetail() {
       null,
     [bondQuoteRows, transactionFinanceWorkflow],
   )
-  const applicationReviewItems = useMemo(
-    () => [
-      ['Applicant', buyerDisplayName],
-      ['Applicant Email', buyerEmail || 'Not captured'],
-      ['Employment', data?.onboardingFormData?.employmentStatus || data?.onboardingFormData?.employment_status || 'Not captured'],
-      ['Gross Income', formatCurrencyValue(data?.onboardingFormData?.grossMonthlyIncome || data?.onboardingFormData?.gross_monthly_income, 'Not captured')],
-      ['Monthly Expenses', formatCurrencyValue(data?.onboardingFormData?.monthlyExpenses || data?.onboardingFormData?.monthly_expenses, 'Not captured')],
-      ['Existing Debt', formatCurrencyValue(data?.onboardingFormData?.existingDebt || data?.onboardingFormData?.existing_debt, 'Not captured')],
-      ['Deposit', formatCurrencyValue(transaction?.deposit_amount, 'Not captured')],
-      ['Purchase Price', formatCurrencyValue(transaction?.purchase_price || transaction?.sales_price, 'Not captured')],
-      ['Bond Amount Required', formatCurrencyValue(transaction?.bond_amount, 'Not captured')],
-      ['Property / Unit', matterHeadline],
-      ['Documents Uploaded', documentReadinessText],
-      ['Consent Status', data?.onboardingFormData?.creditConsent || data?.onboardingFormData?.credit_consent ? 'Consent captured' : 'Not captured'],
-      ['Affordability / Risk', transaction?.risk_status || transaction?.compliance_status || 'Review pending'],
-    ],
-    [
-      buyerDisplayName,
-      buyerEmail,
-      data?.onboardingFormData,
-      documentReadinessText,
-      matterHeadline,
-      transaction?.bond_amount,
-      transaction?.compliance_status,
-      transaction?.deposit_amount,
-      transaction?.purchase_price,
-      transaction?.risk_status,
-      transaction?.sales_price,
-    ],
-  )
-  function handleDownloadBondApplicationForm() {
+  async function handleDownloadBondApplicationForm() {
     if (typeof window === 'undefined' || typeof window.document === 'undefined') return
 
-    const html = buildBondApplicationFormHtml({
-      reference: workspaceReference,
-      buyerName: buyerDisplayName,
-      propertyLabel: matterHeadline,
-      generatedAt: new Date().toISOString(),
-      consultant: transaction?.bond_originator || transaction?.assigned_bond_originator_name || getParticipantDisplayName(assignedBondOriginator) || 'Unassigned',
-      owner: transaction?.bond_originator || transaction?.assigned_bond_processor_name || transaction?.processor_name || 'Unassigned',
-      statusLabel: displayedLifecycleLabel,
-      reviewItems: applicationReviewItems,
-      onboardingFormData: data?.onboardingFormData || {},
-      documents: documentLibraryRows,
-    })
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = window.document.createElement('a')
-    link.href = url
-    link.download = `${formatDownloadToken(workspaceReference || buyerDisplayName || transaction?.id)}-bond-application-form.html`
-    window.document.body.appendChild(link)
-    link.click()
-    link.remove()
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    setBondApplicationPdfBusy(true)
+    let pdfContainer = null
+    try {
+      const { default: html2pdf } = await import('html2pdf.js')
+      const pdfDocument = new window.DOMParser().parseFromString(
+        buildBondApplicationPdfHtml(bondApplicationViewModel, new Date().toISOString()),
+        'text/html',
+      )
+      const container = window.document.createElement('div')
+      pdfContainer = container
+      const style = pdfDocument.head.querySelector('style')
+      const page = pdfDocument.body.firstElementChild
+      if (style) container.appendChild(style.cloneNode(true))
+      if (page) container.appendChild(page.cloneNode(true))
+      container.style.position = 'fixed'
+      container.style.left = '-10000px'
+      container.style.top = '0'
+      container.style.width = '980px'
+      window.document.body.appendChild(container)
+      await html2pdf()
+        .set({
+          margin: 0,
+          filename: getBondApplicationPdfFilename(bondApplicationViewModel),
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+          jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+        })
+        .from(container)
+        .save()
+    } finally {
+      pdfContainer?.remove()
+      setBondApplicationPdfBusy(false)
+    }
+  }
+  async function handleShareBondApplication() {
+    if (typeof window === 'undefined') return
+    const shareUrl = window.location.href
+    const shareTitle = `Bond application ${bondApplicationViewModel.application.id}`
+    try {
+      if (window.navigator?.share) {
+        await window.navigator.share({
+          title: shareTitle,
+          text: bondApplicationViewModel.applicant.fullName,
+          url: shareUrl,
+        })
+        return
+      }
+      await window.navigator?.clipboard?.writeText(shareUrl)
+      setOnboardingActionMessage('Application link copied to clipboard.')
+    } catch (shareError) {
+      if (shareError?.name !== 'AbortError') setError('Unable to share this application link.')
+    }
   }
   const bondHybridFinanceWorkflowPanel = isBondOrHybridFinance ? (
     <TransactionBondHybridFinanceWorkflowPanel
@@ -5639,6 +5499,45 @@ function AttorneyTransactionDetail() {
   const displayedLifecycleStatusClassName = usingTransactionRollupOverview
     ? getRollupLifecycleStatusClasses(transactionRollup?.parentStatus)
     : getLifecycleStateClasses(lifecycleState)
+  const bondApplicationViewModel = useMemo(
+    () =>
+      buildBondApplicationViewModel({
+        transaction,
+        buyer,
+        development,
+        unit,
+        onboarding: data?.onboarding || {},
+        onboardingFormData: data?.onboardingFormData || {},
+        documentRows: allDocumentLibraryRows,
+        requiredDocumentRows,
+        documentReadiness,
+        activityFeed,
+        reference: workspaceReference,
+        statusLabel: displayedLifecycleLabel,
+        assignedConsultant:
+          transaction?.bond_originator ||
+          transaction?.assigned_bond_originator_name ||
+          getParticipantDisplayName(assignedBondOriginator) ||
+          'Unassigned',
+      }),
+    [
+      activityFeed,
+      allDocumentLibraryRows,
+      assignedBondOriginator,
+      buyer,
+      data?.onboarding,
+      data?.onboardingFormData,
+      development,
+      displayedLifecycleLabel,
+      documentReadiness,
+      requiredDocumentRows,
+      transaction,
+      unit,
+      workspaceReference,
+    ],
+  )
+  const bondApplicationOutstandingCount = bondApplicationViewModel.readinessItems.filter((item) => !item.complete).length
+  const bondApplicationUploadedCount = bondApplicationViewModel.documents.reduce((total, item) => total + (item.uploadedCount || 0), 0)
   const displayedMatterHealthLabel = usingTransactionRollupOverview
     ? getRollupHealthLabel(transactionRollup?.parentStatus)
     : matterHealthLabel
@@ -8712,50 +8611,354 @@ function AttorneyTransactionDetail() {
 
         {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'application' ? (
           <section className="space-y-5">
-            <section className="rounded-[18px] border border-borderDefault bg-surface p-6 shadow-surface">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-section-title font-semibold text-textStrong">Application Review</h3>
-                  <p className="mt-1 text-secondary text-textMuted">
-                    Buyer onboarding is the source of truth. This tab reviews the submitted application data rather than recapturing it.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" variant="secondary" size="sm" onClick={handleDownloadBondApplicationForm}>
-                    <Download size={14} />
-                    Download Form
-                  </Button>
-                  <span className={`inline-flex items-center rounded-full border px-3 py-1 text-helper font-semibold ${onboardingCompleted ? 'border-success/30 bg-successSoft text-success' : 'border-warning/30 bg-warningSoft text-warning'}`}>
-                    {onboardingCompleted ? 'Onboarding complete' : 'Onboarding pending'}
-                  </span>
-                </div>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-section-title font-semibold text-textStrong">Application Review Workspace</h3>
+                <p className="mt-1 text-secondary text-textMuted">
+                  Buyer onboarding remains the source of truth. This workspace reviews the live application data without recapturing it.
+                </p>
               </div>
-              <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {applicationReviewItems.map(([label, value]) => (
-                  <article key={label} className="min-w-0 rounded-[14px] border border-borderSoft bg-white px-4 py-3">
-                    <span className="block text-label font-semibold uppercase text-textMuted">{label}</span>
-                    <strong className="mt-1 block truncate text-body font-semibold text-textStrong">{value || 'Not captured'}</strong>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant="secondary" size="sm" onClick={handleDownloadBondApplicationForm} disabled={bondApplicationPdfBusy}>
+                  <Download size={14} />
+                  {bondApplicationPdfBusy ? 'Preparing PDF...' : 'Download Form'}
+                </Button>
+                <Button type="button" variant="secondary" size="sm" onClick={() => void handleShareBondApplication()}>
+                  <Send size={14} />
+                  Share Application
+                </Button>
+              </div>
+            </div>
+
+            <section className="grid gap-4 md:grid-cols-3">
+              {[
+                {
+                  label: 'Application Completion',
+                  value: `${bondApplicationViewModel.application.completionPercent}%`,
+                  helper: bondApplicationOutstandingCount ? 'Nearly there! Just a few things left.' : 'Application is complete.',
+                  icon: CheckCircle2,
+                  tone: bondApplicationViewModel.application.completionPercent >= 85 ? 'emerald' : bondApplicationViewModel.application.completionPercent >= 65 ? 'amber' : 'slate',
+                },
+                {
+                  label: bondApplicationViewModel.application.onboardingStatus,
+                  value: 'Onboarding Status',
+                  helper: bondApplicationOutstandingCount ? 'Complete outstanding items to proceed.' : 'Ready for the next workflow step.',
+                  icon: Clock3,
+                  tone: bondApplicationOutstandingCount ? 'amber' : 'emerald',
+                },
+                {
+                  label: bondApplicationViewModel.risk.level,
+                  value: 'Risk Status',
+                  helper: bondApplicationViewModel.risk.factors[0] || 'Risk view pending.',
+                  icon: AlertTriangle,
+                  tone: bondApplicationViewModel.risk.tone === 'success' ? 'emerald' : bondApplicationViewModel.risk.tone === 'danger' ? 'red' : bondApplicationViewModel.risk.tone === 'warning' ? 'amber' : 'slate',
+                },
+              ].map((item) => {
+                const Icon = item.icon
+                const toneClass = item.tone === 'emerald'
+                  ? 'border-emerald-200 bg-emerald-50/70 text-emerald-700'
+                  : item.tone === 'amber'
+                    ? 'border-amber-200 bg-amber-50/75 text-amber-700'
+                    : item.tone === 'red'
+                      ? 'border-red-200 bg-red-50/75 text-red-700'
+                      : 'border-borderDefault bg-white text-textMuted'
+                return (
+                  <article key={`${item.label}-${item.value}`} className={`rounded-[18px] border p-4 shadow-[0_16px_45px_rgba(15,23,42,0.06)] ${toneClass}`}>
+                    <div className="flex items-center gap-3">
+                      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-current/15 bg-white/70">
+                        <Icon size={20} />
+                      </span>
+                      <div className="min-w-0">
+                        <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.14em]">{item.value}</span>
+                        <strong className="mt-1 block truncate text-sm font-semibold text-textStrong">{item.label}</strong>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-sm leading-5 text-textMuted">{item.helper}</p>
                   </article>
-                ))}
+                )
+              })}
+            </section>
+
+            <section className="rounded-[22px] border border-borderDefault bg-white p-5 shadow-surface">
+              <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(260px,0.7fr)_minmax(260px,0.95fr)]">
+                <div className="flex min-w-0 items-center gap-4">
+                  <span className="relative grid h-24 w-24 shrink-0 place-items-center rounded-full bg-slate-100 text-3xl font-semibold text-textStrong">
+                    {bondApplicationViewModel.applicant.initials}
+                    <span className="absolute -bottom-1 -right-1 grid h-8 w-8 place-items-center rounded-full border-4 border-white bg-emerald-600 text-white">
+                      <UserCircle size={16} />
+                    </span>
+                  </span>
+                  <div className="min-w-0">
+                    <h4 className="truncate text-[1.65rem] font-semibold leading-tight tracking-[-0.035em] text-textStrong">
+                      {bondApplicationViewModel.applicant.fullName}
+                    </h4>
+                    <p className="mt-1 text-lg font-semibold text-success">{bondApplicationViewModel.financials.purchasePrice.display} Purchase</p>
+                    <p className="mt-1 truncate text-sm font-semibold text-textMuted">{bondApplicationViewModel.property.label}</p>
+                    <span className="mt-3 inline-flex max-w-full items-center gap-2 rounded-full border border-borderSoft bg-white px-3 py-1.5 text-xs font-semibold text-textBody">
+                      Application ID: <span className="truncate text-textStrong">{bondApplicationViewModel.application.id}</span>
+                      <Copy size={13} className="text-textMuted" />
+                    </span>
+                  </div>
+                </div>
+
+                <div className="min-h-[150px] overflow-hidden rounded-[18px] border border-borderSoft bg-slate-100">
+                  {bondApplicationViewModel.property.imageUrl ? (
+                    <img
+                      src={bondApplicationViewModel.property.imageUrl}
+                      alt={bondApplicationViewModel.property.label}
+                      className="h-full min-h-[150px] w-full object-cover"
+                    />
+                  ) : (
+                    <div className="grid h-full min-h-[150px] place-items-center bg-[radial-gradient(circle_at_30%_20%,rgba(47,179,68,0.22),transparent_34%),linear-gradient(135deg,#ecfdf3,#e8f0f7)] p-4 text-center">
+                      <div>
+                        <Building2 size={28} className="mx-auto text-success" />
+                        <p className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-textMuted">Property image pending</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                  {[
+                    ['Property / Unit', bondApplicationViewModel.property.label, Building2],
+                    ['Stage', bondApplicationViewModel.application.stage, Workflow],
+                    ['Application Date', bondApplicationViewModel.application.createdAtDisplay, CalendarDays],
+                    ['Last Updated', bondApplicationViewModel.application.updatedAtDisplay, Clock3],
+                    ['Assigned Consultant', bondApplicationViewModel.consultant, UserCircle],
+                  ].map(([label, value, Icon]) => (
+                    <div key={label} className="flex min-w-0 items-start gap-3">
+                      {createElement(Icon, { size: 15, className: 'mt-0.5 shrink-0 text-textMuted' })}
+                      <div className="min-w-0">
+                        <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-textMuted">{label}</span>
+                        <strong className="mt-0.5 block truncate text-sm font-semibold text-textStrong">{value || 'Pending'}</strong>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </section>
 
-            <section className="rounded-[18px] border border-borderDefault bg-surface p-6 shadow-surface">
-              <h3 className="text-section-title font-semibold text-textStrong">Uploaded Application Documents</h3>
-              <p className="mt-1 text-secondary text-textMuted">Documents uploaded through onboarding and the transaction document centre.</p>
-              <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {documentLibraryRows.slice(0, 9).map((row) => (
-                  <article key={row.id} className="rounded-[14px] border border-borderSoft bg-white px-4 py-3">
-                    <strong className="block truncate text-sm text-textStrong">{row.displayName}</strong>
-                    <p className="mt-1 truncate text-xs text-textMuted">{row.categoryLabel} • {getDocumentCommandStatusLabel(row.status)}</p>
+            <section className="grid gap-3 rounded-[18px] border border-borderDefault bg-white p-4 shadow-surface md:grid-cols-2 xl:grid-cols-5">
+              {[
+                ['Purchase Price', bondApplicationViewModel.financials.purchasePrice.display, '', CircleDollarSign, 'bg-emerald-600 text-white'],
+                ['Deposit', bondApplicationViewModel.financials.deposit.display, bondApplicationViewModel.financials.deposit.secondary, FileCheck2, 'bg-blue-600 text-white'],
+                ['Monthly Income', bondApplicationViewModel.financials.grossIncome.display, '', Landmark, 'bg-violet-600 text-white'],
+                ['Monthly Expenses', bondApplicationViewModel.financials.monthlyExpenses.display, bondApplicationViewModel.financials.monthlyExpenses.secondary, CreditCard, 'bg-orange-500 text-white'],
+                ['Bond Amount Required', bondApplicationViewModel.financials.bondAmountRequired.display, '', Building2, 'bg-green-600 text-white'],
+              ].map(([label, value, secondary, Icon, tone]) => (
+                <article key={label} className="flex min-w-0 items-center gap-3 border-borderSoft px-2 py-2 xl:border-r last:xl:border-r-0">
+                  <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[12px] ${tone}`}>
+                    {createElement(Icon, { size: 18 })}
+                  </span>
+                  <div className="min-w-0">
+                    <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-textMuted">{label}</span>
+                    <strong className="mt-1 block truncate text-sm font-semibold text-textStrong">{value}</strong>
+                    {secondary ? <span className="mt-1 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[0.68rem] font-semibold text-success">{secondary}</span> : null}
+                  </div>
+                </article>
+              ))}
+            </section>
+
+            <section className="grid gap-5 xl:grid-cols-[minmax(0,0.7fr)_minmax(320px,0.3fr)]">
+              <div className="space-y-5">
+                <section className="grid gap-5 lg:grid-cols-2">
+                  <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
+                    <h4 className="text-lg font-semibold tracking-[-0.025em] text-textStrong">Application Overview</h4>
+                    <div className="mt-4 divide-y divide-borderSoft">
+                      {[
+                        ['Applicant', bondApplicationViewModel.applicant.fullName, UserCircle],
+                        ['Email', bondApplicationViewModel.applicant.email, AtSign],
+                        ['Phone', bondApplicationViewModel.applicant.phone, Bell],
+                        ['Employment', bondApplicationViewModel.applicant.employmentStatus, Building2],
+                        ['Gross Income', bondApplicationViewModel.financials.grossIncome.display, CircleDollarSign],
+                        ['Monthly Expenses', bondApplicationViewModel.financials.monthlyExpenses.display, CreditCard],
+                        ['Existing Debt', bondApplicationViewModel.financials.existingDebt.display, Landmark],
+                        ['Property / Unit', bondApplicationViewModel.property.label, Building2],
+                        ['Affordability / Risk', bondApplicationViewModel.risk.level, AlertTriangle],
+                        ['Consent Status', bondApplicationViewModel.readinessItems.find((item) => item.key === 'consent')?.complete ? 'Captured' : 'Not captured', FileCheck2],
+                      ].map(([label, value, Icon]) => (
+                        <div key={label} className="grid grid-cols-[22px_minmax(110px,0.45fr)_minmax(0,1fr)] items-center gap-3 py-2.5">
+                          {createElement(Icon, { size: 15, className: 'text-textMuted' })}
+                          <span className="text-xs font-semibold text-textMuted">{label}</span>
+                          <strong className="min-w-0 truncate text-right text-sm font-semibold text-textStrong">{value || 'Not captured'}</strong>
+                        </div>
+                      ))}
+                    </div>
+                    <button type="button" className="mt-4 flex w-full items-center justify-between border-t border-borderSoft pt-4 text-sm font-semibold text-success" onClick={() => openWorkspaceMenu('overview')}>
+                      View Full Details
+                      <ChevronRight size={16} />
+                    </button>
                   </article>
-                ))}
-                {!documentLibraryRows.length ? (
-                  <p className="rounded-[14px] border border-dashed border-borderDefault bg-white px-4 py-6 text-sm text-textMuted">
-                    No documents have been uploaded yet.
-                  </p>
-                ) : null}
+
+                  <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
+                    <h4 className="text-lg font-semibold tracking-[-0.025em] text-textStrong">Submission Readiness</h4>
+                    <div className="mt-5 grid gap-5 md:grid-cols-[160px_minmax(0,1fr)]">
+                      <div
+                        className="mx-auto grid h-36 w-36 place-items-center rounded-full"
+                        style={{ background: `conic-gradient(#2fb344 ${bondApplicationViewModel.application.readinessPercent}%, #edf2f7 0)` }}
+                      >
+                        <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center shadow-inner">
+                          <div>
+                            <strong className="block text-3xl font-semibold text-textStrong">{bondApplicationViewModel.application.readinessPercent}%</strong>
+                            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-success">{bondApplicationViewModel.application.readinessLabel}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-textMuted">Required before submission</span>
+                        {bondApplicationViewModel.readinessItems.map((item) => (
+                          <div key={item.key} className="flex items-center gap-2 text-sm">
+                            {item.complete ? <CheckCircle2 size={14} className="text-success" /> : <AlertTriangle size={14} className="text-warning" />}
+                            <span className={item.complete ? 'text-textBody' : 'font-semibold text-textStrong'}>{item.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className={`mt-5 flex items-center justify-between rounded-[14px] border px-4 py-3 ${bondApplicationOutstandingCount ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-success'}`}>
+                      <div className="flex items-center gap-3">
+                        {bondApplicationOutstandingCount ? <Clock3 size={18} /> : <CheckCircle2 size={18} />}
+                        <div>
+                          <strong className="block text-sm font-semibold">{bondApplicationViewModel.application.readinessLabel}</strong>
+                          <span className="text-xs">{bondApplicationOutstandingCount ? `${bondApplicationOutstandingCount} item${bondApplicationOutstandingCount === 1 ? '' : 's'} outstanding before submission` : 'No outstanding required items'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                </section>
+
+                <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-lg font-semibold tracking-[-0.025em] text-textStrong">Uploaded Documents</h4>
+                      <p className="mt-1 text-sm text-textMuted">Documents uploaded through onboarding and the transaction document centre.</p>
+                    </div>
+                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-success">
+                      {bondApplicationUploadedCount} uploaded
+                    </span>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {bondApplicationViewModel.documents.map((document) => (
+                      <article key={document.key} className="rounded-[14px] border border-borderSoft bg-white p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[12px] ${document.isUploaded ? 'bg-emerald-50 text-success' : 'bg-orange-50 text-warning'}`}>
+                            <FileText size={17} />
+                          </span>
+                          {document.isUploaded ? <CheckCircle2 size={15} className="text-success" /> : <AlertTriangle size={15} className="text-warning" />}
+                        </div>
+                        <strong className="mt-3 block truncate text-sm font-semibold text-textStrong">{document.label}</strong>
+                        <p className={`mt-2 text-xs font-semibold ${document.isUploaded ? 'text-success' : 'text-textMuted'}`}>{document.status}</p>
+                      </article>
+                    ))}
+                  </div>
+                  <button type="button" className="mt-4 flex w-full items-center justify-between border-t border-borderSoft pt-4 text-sm font-semibold text-success" onClick={() => openWorkspaceMenu('documents')}>
+                    View Document Centre
+                    <ChevronRight size={16} />
+                  </button>
+                </article>
               </div>
+
+              <aside className="space-y-5">
+                <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
+                  <h4 className="text-lg font-semibold tracking-[-0.025em] text-textStrong">Action Centre</h4>
+                  <div className="mt-4 space-y-3">
+                    {bondApplicationViewModel.actions.length ? bondApplicationViewModel.actions.map((action) => (
+                      <button
+                        key={action.id}
+                        type="button"
+                        className="flex w-full items-center justify-between gap-3 rounded-[14px] border border-borderSoft bg-white p-3 text-left transition hover:-translate-y-0.5 hover:shadow-surface"
+                        onClick={() => openWorkspaceMenu(action.target || 'tasks')}
+                      >
+                        <span className="flex min-w-0 items-center gap-3">
+                          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[12px] ${action.priority === 'High' ? 'bg-red-50 text-red-600' : action.priority === 'Medium' ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-textMuted'}`}>
+                            <FileText size={17} />
+                          </span>
+                          <span className="min-w-0">
+                            <strong className="block truncate text-sm font-semibold text-textStrong">{action.title}</strong>
+                            <span className="mt-0.5 block truncate text-xs text-textMuted">{action.description}</span>
+                          </span>
+                        </span>
+                        <span className={`shrink-0 rounded-full px-2 py-1 text-[0.68rem] font-semibold ${action.priority === 'High' ? 'bg-red-50 text-red-600' : action.priority === 'Medium' ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-textMuted'}`}>
+                          {action.priority}
+                        </span>
+                      </button>
+                    )) : (
+                      <div className="rounded-[14px] border border-emerald-200 bg-emerald-50 p-4 text-sm text-success">
+                        <strong className="block font-semibold">No outstanding actions</strong>
+                        <span>Application is ready for the next step.</span>
+                      </div>
+                    )}
+                  </div>
+                  <button type="button" className="mt-4 flex w-full items-center justify-between border-t border-borderSoft pt-4 text-sm font-semibold text-success" onClick={() => openWorkspaceMenu('tasks')}>
+                    View All Tasks ({bondApplicationViewModel.actions.length})
+                    <ChevronRight size={16} />
+                  </button>
+                </article>
+
+                <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
+                  <h4 className="text-lg font-semibold tracking-[-0.025em] text-textStrong">Recent Activity</h4>
+                  <div className="mt-4 space-y-4">
+                    {bondApplicationViewModel.activity.length ? bondApplicationViewModel.activity.map((entry, index) => (
+                      <div key={entry.id || index} className="flex gap-3">
+                        <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-emerald-50 text-success">
+                          <Activity size={16} />
+                        </span>
+                        <div className="min-w-0">
+                          <strong className="block truncate text-sm font-semibold text-textStrong">{entry.title}</strong>
+                          <span className="text-xs text-textMuted">{entry.displayDate}</span>
+                        </div>
+                      </div>
+                    )) : (
+                      <p className="rounded-[14px] border border-dashed border-borderDefault bg-slate-50 px-4 py-6 text-sm text-textMuted">No recent activity yet</p>
+                    )}
+                  </div>
+                  <button type="button" className="mt-4 flex w-full items-center justify-between border-t border-borderSoft pt-4 text-sm font-semibold text-success" onClick={() => openWorkspaceMenu('activity')}>
+                    View All Activity
+                    <ChevronRight size={16} />
+                  </button>
+                </article>
+
+                <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-lg font-semibold tracking-[-0.025em] text-textStrong">Risk Assessment</h4>
+                      <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-textMuted">{bondApplicationViewModel.risk.scoreLabel}</p>
+                    </div>
+                  </div>
+                  <div className="mt-5 grid gap-4 sm:grid-cols-[132px_minmax(0,1fr)] xl:grid-cols-1">
+                    <div
+                      className="grid h-32 w-32 place-items-center rounded-full"
+                      style={{
+                        background: `conic-gradient(${bondApplicationViewModel.risk.tone === 'success' ? '#2fb344' : bondApplicationViewModel.risk.tone === 'danger' ? '#e03131' : '#f59f00'} ${bondApplicationViewModel.risk.score}%, #e5f1e8 0)`,
+                      }}
+                    >
+                      <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center shadow-inner">
+                        <div>
+                          <strong className="block text-3xl font-semibold text-textStrong">{bondApplicationViewModel.risk.score}</strong>
+                          <span className="text-xs font-semibold text-textMuted">/100</span>
+                          <span className={`mt-1 block text-xs font-semibold uppercase tracking-[0.12em] ${bondApplicationViewModel.risk.tone === 'danger' ? 'text-red-600' : bondApplicationViewModel.risk.tone === 'success' ? 'text-success' : 'text-warning'}`}>
+                            {bondApplicationViewModel.risk.level}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-xs font-semibold text-textStrong">Key Risk Factors</span>
+                      <ul className="mt-2 space-y-1.5 text-sm text-textMuted">
+                        {bondApplicationViewModel.risk.factors.map((factor) => (
+                          <li key={factor} className="flex gap-2">
+                            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
+                            <span>{factor}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="mt-4 border-t border-borderSoft pt-3">
+                        <span className="text-xs font-semibold text-textStrong">Recommendation</span>
+                        <p className="mt-1 text-sm leading-5 text-textMuted">{bondApplicationViewModel.risk.recommendation}</p>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              </aside>
             </section>
           </section>
         ) : null}

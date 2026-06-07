@@ -23,6 +23,11 @@ import {
 } from 'lucide-react'
 import { createElement } from 'react'
 import { Link } from 'react-router-dom'
+import {
+  SOUTH_AFRICA_DISTRICT_PATHS,
+  SOUTH_AFRICA_MAP_VIEWBOX,
+  SOUTH_AFRICA_PROVINCE_LABELS,
+} from './southAfricaDistrictMap'
 
 function normalizeNumber(value, fallback = 0) {
   const parsed = Number(value)
@@ -495,11 +500,6 @@ export default function BondHqCommandCentre({ snapshot = {} }) {
       <BankRelationshipBreakdown bankPerformance={hq.bankPerformance || {}} bankDistribution={snapshot.buyerDemographics?.bankDistribution || []} />
       <RegionalHeatmapOverview rows={hq.regionalPerformance || hq.regionComparison || []} />
       <BuyerStatsVisualRow demographics={snapshot.buyerDemographics || {}} qualityDistribution={snapshot.buyerQualityDistribution || {}} />
-      <section className="grid gap-6 xl:grid-cols-[1.05fr_1fr_0.95fr]">
-        <TopRegions rows={hq.regionalPerformance || []} />
-        <TopConsultants rows={hq.topConsultants || hq.consultantPerformance || snapshot.teamPerformance || []} />
-        <TopBanks bankPerformance={hq.bankPerformance || {}} />
-      </section>
       <SystemFooter hq={hq} health={health} />
     </div>
   )
@@ -639,80 +639,12 @@ function BankStatusBar({ label, value, total, color }) {
   )
 }
 
-const SA_PROVINCE_SHAPES = [
-  {
-    key: 'northern-cape',
-    label: 'Northern Cape',
-    shortLabel: 'Northern Cape',
-    x: 240,
-    y: 210,
-    path: 'M92 238 L122 154 L245 102 L362 128 L438 188 L415 298 L326 334 L222 316 L126 282 Z',
-  },
-  {
-    key: 'western-cape',
-    label: 'Western Cape',
-    shortLabel: 'Western Cape',
-    x: 214,
-    y: 378,
-    path: 'M126 282 L222 316 L326 334 L348 398 L292 458 L174 438 L108 376 L82 310 Z',
-  },
-  {
-    key: 'eastern-cape',
-    label: 'Eastern Cape',
-    shortLabel: 'Eastern Cape',
-    x: 420,
-    y: 392,
-    path: 'M326 334 L415 298 L512 344 L562 404 L498 458 L362 478 L292 458 L348 398 Z',
-  },
-  {
-    key: 'free-state',
-    label: 'Free State',
-    shortLabel: 'Free State',
-    x: 458,
-    y: 272,
-    path: 'M415 298 L438 188 L548 226 L588 306 L512 344 Z',
-  },
-  {
-    key: 'north-west',
-    label: 'North West',
-    shortLabel: 'North West',
-    x: 488,
-    y: 164,
-    path: 'M362 128 L486 90 L574 126 L548 226 L438 188 Z',
-  },
-  {
-    key: 'gauteng',
-    label: 'Gauteng',
-    shortLabel: 'Gauteng',
-    x: 590,
-    y: 226,
-    path: 'M548 226 L600 202 L636 238 L606 286 L588 306 Z',
-  },
-  {
-    key: 'limpopo',
-    label: 'Limpopo',
-    shortLabel: 'Limpopo',
-    x: 590,
-    y: 92,
-    path: 'M486 90 L536 44 L650 58 L720 124 L690 204 L636 238 L600 202 L574 126 Z',
-  },
-  {
-    key: 'mpumalanga',
-    label: 'Mpumalanga',
-    shortLabel: 'Mpumalanga',
-    x: 664,
-    y: 250,
-    path: 'M636 238 L690 204 L720 124 L748 230 L706 310 L606 286 Z',
-  },
-  {
-    key: 'kwazulu-natal',
-    label: 'KwaZulu-Natal',
-    shortLabel: 'KZN',
-    x: 632,
-    y: 374,
-    path: 'M512 344 L588 306 L606 286 L706 310 L674 392 L562 480 L562 404 Z',
-  },
-]
+const SA_PROVINCE_SHAPES = Object.entries(SOUTH_AFRICA_PROVINCE_LABELS).map(([label, position]) => ({
+  key: normalizeProvinceKey(label),
+  label,
+  shortLabel: label === 'KwaZulu-Natal' ? 'KZN' : label,
+  ...position,
+}))
 
 const DEMO_BUYER_FINANCE_MIX = { bond: 8, cash: 2, hybrid: 3 }
 const DEMO_BUYER_PROFILE_MIX = { individual: 9, company: 2, trust: 1, foreign_buyer: 1 }
@@ -787,25 +719,27 @@ function RegionalHeatmapOverview({ rows = [] }) {
         </div>
 
         <div className="overflow-hidden rounded-[16px] bg-[#f6f9fc] px-4 py-5 ring-1 ring-[#e6eef6]">
-          <svg className="mx-auto h-[min(430px,54vw)] min-h-[310px] w-full max-w-[820px]" viewBox="50 20 730 480" preserveAspectRatio="xMidYMid meet" role="img" aria-label="South Africa regional heatmap">
-            <rect x="50" y="20" width="730" height="480" rx="18" fill="#f6f9fc" />
-            <path
-              d="M92 238 L122 154 L245 102 L362 128 L486 90 L536 44 L650 58 L720 124 L748 230 L706 310 L674 392 L562 480 L362 478 L174 438 L108 376 L82 310 Z"
-              fill="#e8eef5"
-              stroke="#dbe6f0"
-              strokeWidth="10"
-              strokeLinejoin="round"
-            />
+          <svg className="mx-auto h-[min(430px,54vw)] min-h-[310px] w-full max-w-[820px]" viewBox={SOUTH_AFRICA_MAP_VIEWBOX} preserveAspectRatio="xMidYMid meet" role="img" aria-label="South Africa regional heatmap">
+            <rect x="0" y="0" width="760" height="520" rx="18" fill="#f6f9fc" />
+            {SOUTH_AFRICA_DISTRICT_PATHS.map((district) => {
+              const province = provinceRows.find((row) => row.label === district.province)
+              const fill = getHeatColor(province?.health || 0)
+              return (
+                <path
+                  key={district.name}
+                  d={district.path}
+                  fill={fill}
+                  stroke="#ffffff"
+                  strokeWidth="1.15"
+                  strokeLinejoin="round"
+                  opacity={province?.applications ? 0.92 : 0.7}
+                >
+                  <title>{`${district.name} · ${district.province}`}</title>
+                </path>
+              )
+            })}
             {provinceRows.map((province) => (
               <g key={province.key}>
-                <path
-                  d={province.path}
-                  fill={getHeatColor(province.health)}
-                  stroke="#ffffff"
-                  strokeWidth="7"
-                  strokeLinejoin="round"
-                  opacity={province.applications ? 0.92 : 0.68}
-                />
                 <text x={province.x} y={province.y} textAnchor="middle" className="fill-white text-[14px] font-bold" style={{ paintOrder: 'stroke', stroke: 'rgba(15,23,42,0.34)', strokeWidth: 5 }}>
                   {province.shortLabel || province.label}
                 </text>

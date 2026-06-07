@@ -400,11 +400,10 @@ function makeSnapshot(overrides = {}) {
     assert.match(hqMarkup, /Buyer Finance Mix/)
     assert.match(hqMarkup, /Buyer Profile Mix/)
     assert.match(hqMarkup, /Buyer Readiness Quality/)
-    assert.match(hqMarkup, /Top Regions/)
-    assert.match(hqMarkup, /Top Consultants/)
-    assert.match(hqMarkup, /Top Banks/)
-    assert.match(hqMarkup, /Emma Roberts/)
-    assert.match(hqMarkup, /Nedbank/)
+    assert.doesNotMatch(hqMarkup, /Top Regions/)
+    assert.doesNotMatch(hqMarkup, /Top Consultants/)
+    assert.doesNotMatch(hqMarkup, /Top Banks/)
+    assert.doesNotMatch(hqMarkup, /Emma Roberts/)
     assert.doesNotMatch(hqMarkup, /Branches Requiring Attention/)
     assert.doesNotMatch(hqMarkup, /Partner Intelligence/)
     assert.doesNotMatch(hqMarkup, /Top Partner Performance/)
@@ -438,9 +437,6 @@ function makeSnapshot(overrides = {}) {
       'Bank Relationship Breakdown',
       'South Africa Regional Heatmap',
       'Buyer Finance Mix',
-      'Top Regions',
-      'Top Consultants',
-      'Top Banks',
       'Data freshness',
     ]
     let previousHqIndex = -1
