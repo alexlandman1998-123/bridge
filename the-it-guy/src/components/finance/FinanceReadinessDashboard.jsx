@@ -47,6 +47,11 @@ function getTone(tone = '') {
   return TONE_CLASSES[tone] || TONE_CLASSES.neutral
 }
 
+function getBreakdownProgress(items = [], key = '') {
+  const match = items.find((item) => item?.key === key)
+  return Math.max(0, Math.min(100, Math.round(Number(match?.progress || 0))))
+}
+
 function ScoreRing({ score = 0, label = 'Pending', color = '#f59e0b' }) {
   const value = Math.max(0, Math.min(100, Math.round(Number(score || 0))))
   return (
@@ -69,24 +74,24 @@ function ConfidenceGauge({ confidence = {} }) {
   const value = Math.max(0, Math.min(100, Math.round(Number(confidence.score || 0))))
   const color = value >= 68 ? '#16a34a' : value >= 45 ? '#f59e0b' : '#ef4444'
   return (
-    <article className="flex h-full min-h-[280px] flex-col rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+    <article className="flex h-full min-h-[320px] flex-col rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
       <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Estimated Approval Confidence</h3>
-      <div className="mt-4 flex flex-1 flex-col items-center justify-start pt-2">
+      <div className="mt-5 flex flex-1 flex-col items-center justify-center">
         <div
-          className="relative h-24 w-52 overflow-hidden"
+          className="relative h-32 w-full max-w-[320px] overflow-hidden"
           aria-label={`Estimated approval confidence ${value}%`}
         >
           <div
-            className="absolute inset-x-0 top-0 h-52 rounded-full"
+            className="absolute inset-x-0 top-0 h-[320px] rounded-full"
             style={{ background: `conic-gradient(from 270deg, ${color} ${value * 1.8}deg, #e9eef5 0deg 180deg, transparent 180deg)` }}
           />
-          <div className="absolute inset-x-8 top-8 h-36 rounded-full bg-white" />
+          <div className="absolute inset-x-10 top-10 h-[230px] rounded-full bg-white" />
           <div className="absolute inset-x-0 bottom-1 text-center">
-            <strong className="block text-[2rem] font-bold tracking-[-0.05em] text-textStrong">{value}%</strong>
+            <strong className="block text-[2.55rem] font-bold tracking-[-0.05em] text-textStrong">{value}%</strong>
             <span className="text-sm font-semibold" style={{ color }}>{confidence.label || 'Pending'}</span>
           </div>
         </div>
-        <p className="mt-2 max-w-[260px] text-center text-xs leading-5 text-textMuted">
+        <p className="mt-3 max-w-[280px] text-center text-xs leading-5 text-textMuted">
           {confidence.note || 'Based on information provided and current criteria.'}
         </p>
         <p className="mt-1 text-center text-xs font-semibold text-textMuted">{confidence.disclaimer || 'This is not a final approval guarantee.'}</p>
@@ -143,18 +148,48 @@ function CreditScoreGauge({ score = 620, riskBand = '' }) {
 function CreditScoreCard({ credit = {} }) {
   const band = getCreditRiskBand(credit.creditScore)
   const statusLabel = credit.creditRiskBand || band.label
+  const scorePosition = Math.max(0, Math.min(100, Math.round((Number(credit.creditScore || 0) / 950) * 100)))
+  const lastChecked = credit.creditLastUpdated || (credit.creditConsentProvided ? 'Awaiting bureau refresh' : 'Consent required')
 
   return (
-    <article className="flex h-full min-h-[280px] flex-col rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-      <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Credit Score</h3>
-      <div className="mt-4 flex flex-1 flex-col items-center justify-start pt-2">
+    <article className="flex h-full min-h-[320px] flex-col rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+      <div className="flex items-start justify-between gap-4">
+        <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Credit Score</h3>
+        <span className="rounded-full border border-borderSoft bg-surfaceAlt px-2.5 py-1 text-[0.68rem] font-semibold uppercase text-textMuted">
+          Demo
+        </span>
+      </div>
+      <div className="mt-4 flex flex-1 flex-col items-center">
         <CreditScoreGauge score={credit.creditScore} riskBand={statusLabel} />
-        <p className="mt-2 text-center text-sm text-textMuted">Credit score</p>
-        <div className="mt-7 flex items-center justify-center gap-3">
+        <div className="mt-4 w-full max-w-[300px]">
+          <div className="flex items-center justify-between text-[0.68rem] font-semibold uppercase text-textMuted">
+            <span>Higher risk</span>
+            <span>Lower risk</span>
+          </div>
+          <div className="relative mt-2 h-2 rounded-full bg-gradient-to-r from-danger via-warning to-success">
+            <span
+              className="absolute top-1/2 size-3 -translate-y-1/2 rounded-full border-2 border-white bg-textStrong shadow-[0_2px_8px_rgba(15,23,42,0.25)]"
+              style={{ left: `calc(${scorePosition}% - 6px)` }}
+            />
+          </div>
+        </div>
+        <div className="mt-4 grid w-full gap-2 rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-textMuted">Risk band</span>
+            <strong className="text-textStrong">{statusLabel}</strong>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-textMuted">Approval impact</span>
+            <strong className="text-primary">Positive signal</strong>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-textMuted">Last checked</span>
+            <strong className="text-right text-textStrong">{lastChecked}</strong>
+          </div>
+        </div>
+        <div className="mt-4 flex items-center justify-center gap-3">
           <span className="text-label font-semibold uppercase text-textMuted">Powered by</span>
-          <span className="rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-sm font-bold tracking-[-0.01em] text-[#233c8f]">
-            {credit.creditProvider || 'Experian'}
-          </span>
+          <span className="rounded-full border border-borderSoft bg-white px-3 py-1 text-sm font-bold tracking-[-0.01em] text-[#233c8f] shadow-[0_4px_12px_rgba(15,23,42,0.04)]">{credit.creditProvider || 'Experian'}</span>
         </div>
       </div>
     </article>
@@ -230,13 +265,13 @@ function WatchItems({ items = [], onViewIssues }) {
 
 function FinancialSnapshot({ snapshot = {} }) {
   const items = [
-    { label: 'Monthly Income', value: snapshot.monthlyIncome, icon: Wallet, tone: 'success' },
-    { label: 'Estimated Repayment', value: snapshot.estimatedRepayment, icon: BriefcaseBusiness, tone: 'info' },
-    { label: 'Affordable Amount', value: snapshot.affordableAmount, icon: Banknote, tone: 'info' },
-    { label: 'Deposit Available', value: snapshot.depositAvailable, icon: CircleDollarSign, tone: 'warning' },
+    { label: 'Monthly Income', value: snapshot.monthlyIncome, secondary: 'Captured income basis', icon: Wallet, tone: 'success' },
+    { label: 'Estimated Repayment', value: snapshot.estimatedRepayment, secondary: 'Indicative instalment', icon: BriefcaseBusiness, tone: 'info' },
+    { label: 'Affordable Amount', value: snapshot.affordableAmount, secondary: 'Pre-qualification range', icon: Banknote, tone: 'info' },
+    { label: 'Deposit Available', value: snapshot.depositAvailable, secondary: 'Deposit position', icon: CircleDollarSign, tone: 'warning' },
   ]
   return (
-    <article className="h-full min-h-[280px] rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+    <article className="h-full min-h-[320px] rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
       <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Key Financial Snapshot</h3>
       <div className="mt-5 grid overflow-hidden rounded-[16px] border border-borderSoft sm:grid-cols-2">
         {items.map((item, index) => {
@@ -250,12 +285,60 @@ function FinancialSnapshot({ snapshot = {} }) {
                 <Icon size={16} />
               </span>
               <span className="mt-2 block text-label font-semibold uppercase text-textMuted">{item.label}</span>
-              <strong className="mt-1.5 block text-base font-bold text-textStrong">{item.value}</strong>
+              <strong className="mt-1.5 block text-[1.05rem] font-bold leading-tight text-textStrong">{item.value}</strong>
+              <span className="mt-1 block text-xs leading-4 text-textMuted">{item.secondary}</span>
             </article>
           )
         })}
       </div>
     </article>
+  )
+}
+
+function BuyerReadinessSummary({ readiness = {}, credit = {} }) {
+  const documentsProgress = getBreakdownProgress(readiness.breakdown || [], 'documents')
+  const items = [
+    {
+      label: 'Approval Confidence',
+      value: `${Math.round(Number(readiness.approvalConfidence?.score || 0))}%`,
+      meta: readiness.approvalConfidence?.label || 'Pending',
+      tone: 'info',
+    },
+    {
+      label: 'Credit Score',
+      value: String(credit.creditScore || 620),
+      meta: credit.creditRiskBand || getCreditRiskBand(credit.creditScore).label,
+      tone: 'warning',
+    },
+    {
+      label: 'Estimated Affordability',
+      value: readiness.financialSnapshot?.affordableAmount || 'Pending',
+      meta: 'Pre-qualification range',
+      tone: 'success',
+    },
+    {
+      label: 'Document Completion',
+      value: `${documentsProgress}%`,
+      meta: documentsProgress >= 80 ? 'Ready' : 'Needs documents',
+      tone: documentsProgress >= 80 ? 'success' : 'warning',
+    },
+  ]
+
+  return (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      {items.map((item) => {
+        const tone = getTone(item.tone)
+        return (
+          <article key={item.label} className="rounded-[14px] border border-borderSoft bg-white px-4 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+            <span className="block text-label font-semibold uppercase text-textMuted">{item.label}</span>
+            <div className="mt-2 flex items-end justify-between gap-3">
+              <strong className="text-[1.45rem] font-bold leading-none tracking-[-0.04em] text-textStrong">{item.value}</strong>
+              <span className={`rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${tone.bg} ${tone.text}`}>{item.meta}</span>
+            </div>
+          </article>
+        )
+      })}
+    </div>
   )
 }
 
@@ -301,10 +384,20 @@ function FinanceReadinessDashboard({ readiness = null, onViewIssues }) {
         </div>
       </section>
 
-      <section className="grid items-stretch gap-6 lg:grid-cols-3">
-        <ConfidenceGauge confidence={readiness.approvalConfidence} />
-        <CreditScoreCard credit={creditScore} />
-        <FinancialSnapshot snapshot={readiness.financialSnapshot} />
+      <section className="rounded-[18px] border border-borderDefault bg-surfaceAlt/60 p-6 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+        <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-label font-semibold uppercase tracking-[0.14em] text-textMuted">Buyer Readiness Assessment</p>
+            <h2 className="mt-1 text-lg font-semibold tracking-[-0.025em] text-textStrong">Can this buyer obtain finance?</h2>
+          </div>
+          <span className="rounded-full border border-borderSoft bg-white px-3 py-1 text-xs font-semibold text-textMuted">Demo bureau-ready view</span>
+        </header>
+        <BuyerReadinessSummary readiness={readiness} credit={creditScore} />
+        <div className="mt-4 grid items-stretch gap-4 lg:grid-cols-3">
+          <ConfidenceGauge confidence={readiness.approvalConfidence} />
+          <CreditScoreCard credit={creditScore} />
+          <FinancialSnapshot snapshot={readiness.financialSnapshot} />
+        </div>
       </section>
     </section>
   )
