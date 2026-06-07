@@ -7,11 +7,8 @@ import {
   CircleDollarSign,
   FileText,
   ShieldCheck,
-  TrendingUp,
-  Upload,
   Wallet,
 } from 'lucide-react'
-import Button from '../ui/Button'
 
 const TONE_CLASSES = {
   success: {
@@ -72,9 +69,9 @@ function ConfidenceGauge({ confidence = {} }) {
   const value = Math.max(0, Math.min(100, Math.round(Number(confidence.score || 0))))
   const color = value >= 68 ? '#16a34a' : value >= 45 ? '#f59e0b' : '#ef4444'
   return (
-    <article className="rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+    <article className="flex h-full min-h-[330px] flex-col rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
       <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Estimated Approval Confidence</h3>
-      <div className="mt-5 flex flex-col items-center">
+      <div className="mt-5 flex flex-1 flex-col items-center justify-center">
         <div
           className="relative h-28 w-56 overflow-hidden"
           aria-label={`Estimated approval confidence ${value}%`}
@@ -98,6 +95,72 @@ function ConfidenceGauge({ confidence = {} }) {
   )
 }
 
+function getCreditRiskBand(score = 0) {
+  if (score >= 800) return { label: 'Excellent', color: '#166534', gradient: ['#16a34a', '#166534'] }
+  if (score >= 700) return { label: 'Strong', color: '#16a34a', gradient: ['#84cc16', '#16a34a'] }
+  if (score >= 600) return { label: 'Good', color: '#2563EB', gradient: ['#fb923c', '#facc15'] }
+  if (score >= 500) return { label: 'Watch', color: '#f97316', gradient: ['#ef4444', '#f97316'] }
+  return { label: 'High Risk', color: '#ef4444', gradient: ['#ef4444', '#dc2626'] }
+}
+
+function getCreditScoreModel(readiness = {}) {
+  return {
+    creditScore: Number(readiness.creditScore || 620),
+    creditProvider: readiness.creditProvider || 'Experian',
+    creditRiskBand: readiness.creditRiskBand || '',
+    creditLastUpdated: readiness.creditLastUpdated || null,
+    creditConsentProvided: readiness.creditConsentProvided ?? true,
+  }
+}
+
+function CreditScoreGauge({ score = 620, riskBand = '' }) {
+  const value = Math.max(0, Math.round(Number(score || 0)))
+  const progress = Math.max(0, Math.min(100, Math.round((value / 950) * 100)))
+  const fillDegrees = progress * 1.8
+  const band = riskBand ? { ...getCreditRiskBand(value), label: riskBand } : getCreditRiskBand(value)
+  const gradientStops = band.gradient.length === 3
+    ? `${band.gradient[0]} 0deg, ${band.gradient[1]} ${fillDegrees * 0.58}deg, ${band.gradient[2]} ${fillDegrees}deg`
+    : `${band.gradient[0]} 0deg, ${band.gradient[1]} ${fillDegrees}deg`
+
+  return (
+    <div
+      className="relative h-28 w-56 overflow-hidden"
+      aria-label={`Credit score ${value}`}
+    >
+      <div
+        className="absolute inset-x-0 top-0 h-56 rounded-full"
+        style={{ background: `conic-gradient(from 270deg, ${gradientStops}, #e9eef5 ${fillDegrees}deg 180deg, transparent 180deg)` }}
+      />
+      <div className="absolute inset-x-8 top-8 h-40 rounded-full bg-white" />
+      <div className="absolute inset-x-0 bottom-1 text-center">
+        <strong className="block text-[2rem] font-bold tracking-[-0.05em] text-textStrong">{value}</strong>
+        <span className="text-sm font-semibold" style={{ color: band.color }}>{band.label}</span>
+      </div>
+    </div>
+  )
+}
+
+function CreditScoreCard({ credit = {} }) {
+  const band = getCreditRiskBand(credit.creditScore)
+  const statusLabel = credit.creditRiskBand || band.label
+
+  return (
+    <article className="flex h-full min-h-[330px] flex-col rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+      <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Credit Score</h3>
+      <div className="mt-5 flex flex-1 flex-col items-center">
+        <CreditScoreGauge score={credit.creditScore} riskBand={statusLabel} />
+        <p className="mt-3 text-center text-sm text-textMuted">Credit score</p>
+        <div className="mt-auto flex items-center justify-center gap-3 pt-8">
+          <span className="text-label font-semibold uppercase text-textMuted">Powered by</span>
+          <span className="rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-sm font-bold tracking-[-0.01em] text-[#233c8f]">
+            {credit.creditProvider || 'Experian'}
+          </span>
+        </div>
+      </div>
+    </article>
+  )
+}
+
 function BreakdownRows({ items = [] }) {
   const iconByKey = {
     documents: FileText,
@@ -108,23 +171,25 @@ function BreakdownRows({ items = [] }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex h-full min-h-[260px] flex-col">
       <h4 className="text-sm font-semibold text-textStrong">Readiness Breakdown</h4>
-      {items.map((item) => {
-        const Icon = iconByKey[item.key] || CheckCircle2
-        return (
-          <div key={item.key} className="grid grid-cols-[150px_minmax(0,1fr)_44px] items-center gap-3 max-sm:grid-cols-1">
-            <span className="inline-flex items-center gap-2 text-sm font-semibold text-textStrong">
-              <Icon size={15} className="text-textMuted" />
-              {item.label}
-            </span>
-            <span className="h-2.5 overflow-hidden rounded-full bg-[#eef3f8]">
-              <span className="block h-full rounded-full" style={{ width: `${item.progress}%`, backgroundColor: item.color }} />
-            </span>
-            <strong className="text-sm text-textStrong max-sm:text-right">{item.progress}%</strong>
-          </div>
-        )
-      })}
+      <div className="flex flex-1 flex-col justify-between gap-4 pt-6">
+        {items.map((item) => {
+          const Icon = iconByKey[item.key] || CheckCircle2
+          return (
+            <div key={item.key} className="grid grid-cols-[150px_minmax(0,1fr)_44px] items-center gap-3 max-sm:grid-cols-1">
+              <span className="inline-flex items-center gap-2 text-sm font-semibold text-textStrong">
+                <Icon size={15} className="text-textMuted" />
+                {item.label}
+              </span>
+              <span className="h-2.5 overflow-hidden rounded-full bg-[#eef3f8]">
+                <span className="block h-full rounded-full" style={{ width: `${item.progress}%`, backgroundColor: item.color }} />
+              </span>
+              <strong className="text-sm text-textStrong max-sm:text-right">{item.progress}%</strong>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -171,13 +236,16 @@ function FinancialSnapshot({ snapshot = {} }) {
     { label: 'Deposit Available', value: snapshot.depositAvailable, icon: CircleDollarSign, tone: 'warning' },
   ]
   return (
-    <article className="rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+    <article className="h-full min-h-[330px] rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
       <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Key Financial Snapshot</h3>
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {items.map((item) => {
+      <div className="mt-6 grid overflow-hidden rounded-[16px] border border-borderSoft sm:grid-cols-2">
+        {items.map((item, index) => {
           const Icon = item.icon
           return (
-            <article key={item.label} className="min-w-0 text-center">
+            <article
+              key={item.label}
+              className={`min-w-0 border-borderSoft px-4 py-6 text-center ${index < items.length - 1 ? 'border-b' : ''} ${index % 2 === 0 ? 'sm:border-r' : ''} ${index === 1 ? 'sm:border-b' : ''} ${index === 2 ? 'sm:border-b-0' : ''}`}
+            >
               <span className={`mx-auto inline-flex size-12 items-center justify-center rounded-full ${getTone(item.tone).icon}`}>
                 <Icon size={18} />
               </span>
@@ -191,44 +259,11 @@ function FinancialSnapshot({ snapshot = {} }) {
   )
 }
 
-function NextBestActions({ actions = [], onViewActionPlan }) {
-  const iconFor = (label = '') => {
-    const normalized = label.toLowerCase()
-    if (normalized.includes('upload')) return Upload
-    if (normalized.includes('deposit')) return ShieldCheck
-    if (normalized.includes('affordability')) return Banknote
-    return FileText
-  }
-
-  return (
-    <article className="rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-      <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Next Best Actions</h3>
-      <div className="mt-5 space-y-2.5">
-        {actions.map((action) => {
-          const Icon = iconFor(action.label)
-          return (
-            <button key={action.label} type="button" className="flex w-full items-center justify-between gap-3 rounded-[12px] border border-borderSoft bg-white px-3 py-3 text-left transition hover:border-primary/25 hover:bg-primarySoft/50">
-              <span className="flex min-w-0 items-center gap-3">
-                <Icon size={15} className="shrink-0 text-primary" />
-                <span className="truncate text-sm font-semibold text-textStrong">{action.label}</span>
-              </span>
-              <ArrowRight size={15} className="shrink-0 text-textMuted" />
-            </button>
-          )
-        })}
-      </div>
-      <button type="button" onClick={onViewActionPlan} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:text-primaryDark">
-        View action plan
-        <ArrowRight size={14} />
-      </button>
-    </article>
-  )
-}
-
-function FinanceReadinessDashboard({ readiness = null, onViewIssues, onViewActionPlan }) {
+function FinanceReadinessDashboard({ readiness = null, onViewIssues }) {
   if (!readiness) return null
   const scoreTone = getTone(readiness.scoreState?.tone)
   const submissionTone = readiness.submissionStatus?.ready ? getTone('success') : getTone('danger')
+  const creditScore = getCreditScoreModel(readiness)
 
   return (
     <section className="space-y-7">
@@ -266,10 +301,10 @@ function FinanceReadinessDashboard({ readiness = null, onViewIssues, onViewActio
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)_360px] lg:grid-cols-2">
+      <section className="grid items-stretch gap-6 lg:grid-cols-3">
         <ConfidenceGauge confidence={readiness.approvalConfidence} />
+        <CreditScoreCard credit={creditScore} />
         <FinancialSnapshot snapshot={readiness.financialSnapshot} />
-        <NextBestActions actions={readiness.nextBestActions || []} onViewActionPlan={onViewActionPlan} />
       </section>
     </section>
   )
