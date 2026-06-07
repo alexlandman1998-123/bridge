@@ -137,7 +137,7 @@ function CreditScoreGauge({ score = 620, riskBand = '' }) {
         style={{ background: `conic-gradient(from 270deg, ${gradientStops}, #e9eef5 ${fillDegrees}deg 180deg, transparent 180deg)` }}
       />
       <div className="absolute inset-x-8 top-8 h-36 rounded-full bg-white" />
-      <div className="absolute inset-x-0 bottom-1 text-center">
+      <div className="absolute inset-x-0 bottom-[-10px] text-center">
         <strong className="block text-[2rem] font-bold tracking-[-0.05em] text-textStrong">{value}</strong>
         <span className="text-sm font-semibold" style={{ color: band.color }}>{band.label}</span>
       </div>
