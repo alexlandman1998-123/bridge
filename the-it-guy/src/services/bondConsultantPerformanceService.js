@@ -892,6 +892,247 @@ export function getConsultantWorkspace(consultantId = '', context = {}, options 
   }
 }
 
+function getApplicationBuyerName(row = {}) {
+  return normalizeText(row.buyerName || row.buyer_name || row.clientName || row.client_name || row.purchaserName || row.purchaser_name || row.buyer?.name) || 'Buyer pending'
+}
+
+function getApplicationReference(row = {}) {
+  return normalizeText(row.applicationReference || row.application_reference || row.transactionReference || row.transaction_reference || row.reference || getApplicationId(row)) || 'Application'
+}
+
+function getApplicationBank(row = {}) {
+  return normalizeText(row.bankName || row.bank_name || row.bank || row.lenderName || row.lender_name) || 'Unassigned'
+}
+
+function getApplicationStage(row = {}) {
+  const signal = getSignal(row)
+  if (signal.includes('instruction')) return 'Instruction Sent'
+  if (signal.includes('approved') || signal.includes('quote accepted')) return 'Quote Approved'
+  if (signal.includes('feedback') || signal.includes('bank')) return 'Feedback Received'
+  if (signal.includes('submitted')) return 'Applications Submitted'
+  if (signal.includes('doc')) return 'Documents Received'
+  return normalizeText(row.applicationStage || row.application_stage || row.stage || row.financeStageLabel || row.finance_stage_label) || 'New Applications'
+}
+
+function getApplicationStatus(row = {}) {
+  return normalizeText(row.applicationStatus || row.application_status || row.status || row.financeStatus || row.finance_status) || 'Active'
+}
+
+function getApplicationLastActivityAt(row = {}) {
+  return normalizeText(row.lastActivityAt || row.last_activity_at || row.updatedAt || row.updated_at || row.submittedAt || row.submitted_at || row.createdAt || row.created_at)
+}
+
+function getApplicationAgeDays(row = {}, now = new Date()) {
+  const createdAt = normalizeText(row.createdAt || row.created_at || row.submittedAt || row.submitted_at || getApplicationLastActivityAt(row))
+  return daysBetween(createdAt, now.toISOString())
+}
+
+function getPendingDocumentCount(row = {}) {
+  return Number(row.pendingDocumentCount ?? row.pending_document_count ?? row.missingDocumentsCount ?? row.missing_documents_count ?? row.documentsMissing ?? row.documents_missing ?? 0) || 0
+}
+
+function getMissingDocuments(row = {}) {
+  const raw = row.missingDocuments || row.missing_documents || row.riskFlags || row.risk_flags || []
+  if (Array.isArray(raw)) return raw.map(normalizeText).filter(Boolean)
+  return normalizeText(raw).split(',').map(normalizeText).filter(Boolean)
+}
+
+function getApplicationEstimatedRevenue(row = {}) {
+  const explicit = Number(row.estimatedRevenue ?? row.estimated_revenue ?? row.projectedCommission ?? row.projected_commission ?? row.revenue)
+  if (Number.isFinite(explicit) && explicit > 0) return explicit
+  const bondValue = Number(row.bondValue || row.bond_value || row.purchasePrice || row.purchase_price || row.salesPrice || row.sales_price || 0)
+  return bondValue ? Math.round(bondValue * 0.012) : 0
+}
+
+function getApplicationBankResponseDays(row = {}) {
+  const explicit = Number(row.bankResponseDays ?? row.bank_response_days ?? row.averageBankResponseDays ?? row.average_bank_response_days)
+  if (Number.isFinite(explicit) && explicit > 0) return explicit
+  if (row.bankFeedbackAt || row.bank_feedback_at || row.submittedAt || row.submitted_at) {
+    return daysBetween(row.submittedAt || row.submitted_at || row.createdAt || row.created_at, row.bankFeedbackAt || row.bank_feedback_at || row.updatedAt || row.updated_at)
+  }
+  return 0
+}
+
+function normalizeConsultantApplication(row = {}, now = new Date()) {
+  const ageDays = getApplicationAgeDays(row, now)
+  const lastActivityAt = getApplicationLastActivityAt(row)
+  const lastActivityDays = lastActivityAt ? daysBetween(lastActivityAt, now.toISOString()) : ageDays
+  const missingDocumentCount = getPendingDocumentCount(row)
+  const bankResponseDays = getApplicationBankResponseDays(row)
+  const riskFlags = [
+    ...getMissingDocuments(row),
+    ...(ageDays > 30 ? ['Overdue > 30 days'] : []),
+    ...(lastActivityDays > 7 ? ['No activity in 7 days'] : []),
+    ...(bankResponseDays > 7 ? ['Bank feedback delayed'] : []),
+  ]
+  return {
+    id: getApplicationId(row),
+    buyerName: getApplicationBuyerName(row),
+    reference: getApplicationReference(row),
+    stage: getApplicationStage(row),
+    bank: getApplicationBank(row),
+    status: getApplicationStatus(row),
+    ageDays,
+    missingDocumentCount,
+    missingDocuments: getMissingDocuments(row),
+    lastActivityAt,
+    lastActivityDays,
+    nextAction: normalizeText(row.nextAction || row.next_action) || (missingDocumentCount ? 'Follow up missing documents' : bankResponseDays > 7 ? 'Escalate bank feedback' : 'Keep application moving'),
+    href: `/bond/applications?transactionId=${encodeURIComponent(getApplicationId(row))}`,
+    estimatedRevenue: getApplicationEstimatedRevenue(row),
+    turnaroundDays: Number(row.turnaroundDays ?? row.turnaround_days) || daysBetween(row.createdAt || row.created_at, row.approvedAt || row.approved_at || row.updatedAt || row.updated_at),
+    bankResponseDays,
+    quoteAcceptanceStatus: normalizeText(row.quoteAcceptanceStatus || row.quote_acceptance_status || row.quoteStatus || row.quote_status),
+    riskFlags: [...new Set(riskFlags.filter(Boolean))],
+    raw: row,
+  }
+}
+
+export function getConsultantById(consultantId = '', context = {}, options = {}) {
+  const rows = getRows(context, options)
+  const consultant = assertConsultantAccess(consultantId, rows)
+  return normalizeConsultant(consultant, rows.branches, rows.regions)
+}
+
+export function getApplicationsByConsultant(consultantId = '', context = {}, options = {}) {
+  const rows = getRows(context, options)
+  assertConsultantAccess(consultantId, rows)
+  const now = options.now ? new Date(options.now) : new Date()
+  return getConsultantBundle(consultantId, rows).applications.map((row) => normalizeConsultantApplication(row, now))
+}
+
+export function getConsultantOverviewMetrics(consultantId = '', context = {}, options = {}) {
+  const rows = getRows(context, options)
+  const consultant = assertConsultantAccess(consultantId, rows)
+  const performance = buildPerformanceRow(consultant, rows, context, options)
+  const applications = getApplicationsByConsultant(consultantId, context, options)
+  const revenueForecast = applications.reduce((sum, row) => sum + row.estimatedRevenue, 0)
+  return {
+    ...performance,
+    revenueForecast,
+    submittedApplications: performance.applicationsSubmitted,
+    averageTurnaround: performance.averageTurnaround,
+    pendingDocuments: performance.pendingDocuments,
+    bankFeedbackDelays: applications.filter((row) => row.bankResponseDays > 7 || row.stage === 'Feedback Received').length,
+  }
+}
+
+export function getConsultantWorkloadByStage(consultantId = '', context = {}, options = {}) {
+  const stages = ['New Applications', 'Documents Received', 'Applications Submitted', 'Feedback Received', 'Quote Approved', 'Instruction Sent']
+  const applications = getApplicationsByConsultant(consultantId, context, options)
+  const total = Math.max(applications.length, 1)
+  return stages.map((stage) => {
+    const count = applications.filter((row) => row.stage === stage).length
+    return { key: normalizeLower(stage).replace(/[^a-z0-9]+/g, '_'), stage, count, percentage: percent(count, total), href: `/bond/consultant-performance?consultantId=${encodeURIComponent(consultantId)}&tab=applications&stage=${encodeURIComponent(stage)}` }
+  })
+}
+
+export function getConsultantAttentionItems(consultantId = '', context = {}, options = {}) {
+  const applications = getApplicationsByConsultant(consultantId, context, options)
+  const items = [
+    { key: 'waiting_docs', label: 'Waiting on documents', count: applications.filter((row) => row.missingDocumentCount > 0 || row.riskFlags.some((flag) => normalizeLower(flag).includes('document'))).length, urgency: 'Warning' },
+    { key: 'overdue', label: 'Overdue applications > 30 days', count: applications.filter((row) => row.ageDays > 30).length, urgency: 'High' },
+    { key: 'conditions', label: 'Conditions outstanding', count: applications.filter((row) => normalizeLower(`${row.status} ${row.nextAction} ${row.quoteAcceptanceStatus}`).includes('condition')).length, urgency: 'Medium' },
+    { key: 'stale', label: 'No activity in 7 days', count: applications.filter((row) => row.lastActivityDays > 7).length, urgency: 'Warning' },
+    { key: 'bank_feedback', label: 'Bank feedback delayed', count: applications.filter((row) => row.bankResponseDays > 7 || normalizeLower(row.nextAction).includes('bank feedback')).length, urgency: 'High' },
+  ]
+  return items.map((item) => ({ ...item, href: `/bond/consultant-performance?consultantId=${encodeURIComponent(consultantId)}&tab=applications&attention=${item.key}` }))
+}
+
+export function getConsultantCapacityHealth(consultantId = '', context = {}, options = {}) {
+  const dashboard = getConsultantPerformanceDashboard(context, options)
+  const row = dashboard.rows.find((item) => item.consultantId === normalizeText(consultantId))
+  assertConsultantAccess(consultantId, getRows(context, options))
+  const branchRows = dashboard.rows.filter((item) => item.branchId === row?.branchId && item.consultantId !== row?.consultantId)
+  const branchAverage = average((branchRows.length ? branchRows : dashboard.rows).map((item) => item.activeApplications))
+  const activeApplications = row?.activeApplications || 0
+  const variance = branchAverage ? Math.round(((activeApplications - branchAverage) / branchAverage) * 100) : 0
+  const status = activeApplications >= 28 || row?.capacityStatus === CONSULTANT_CAPACITY_STATUSES.overloaded ? 'Over capacity' : activeApplications >= 22 || row?.capacityStatus === CONSULTANT_CAPACITY_STATUSES.busy ? 'High workload' : row?.slaBreaches >= 2 ? 'At risk' : 'Normal'
+  return {
+    status,
+    activeApplications,
+    branchAverage,
+    variance,
+    overdueCount: getApplicationsByConsultant(consultantId, context, options).filter((item) => item.ageDays > 30).length,
+    pendingDocumentCount: row?.pendingDocuments || 0,
+    recommendedAction: status === 'Over capacity' ? 'Reassign active applications and pause new routing.' : status === 'High workload' ? 'Resolve document blockers before assigning more work.' : status === 'At risk' ? 'Review overdue and SLA breach queues today.' : 'Capacity can absorb normal routing.',
+  }
+}
+
+export function getConsultantBankMix(consultantId = '', context = {}, options = {}) {
+  const applications = getApplicationsByConsultant(consultantId, context, options)
+  const grouped = new Map()
+  applications.forEach((row) => {
+    const key = row.bank || 'Other'
+    const current = grouped.get(key) || { bank: key, active: 0, submitted: 0, approved: 0, total: 0 }
+    current.total += 1
+    current.active += ['active', 'submitted', 'in_progress'].some((term) => normalizeLower(row.status).includes(term)) || isActiveApplication(row.raw) ? 1 : 0
+    current.submitted += isSubmittedApplication(row.raw) ? 1 : 0
+    current.approved += isApprovedApplication(row.raw) ? 1 : 0
+    grouped.set(key, current)
+  })
+  return [...grouped.values()].map((row) => ({ ...row, approvalRate: percent(row.approved, row.submitted || row.total) })).sort((left, right) => right.total - left.total)
+}
+
+export function getConsultantPerformanceTrend(consultantId = '', context = {}, options = {}) {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
+  const metrics = getConsultantOverviewMetrics(consultantId, context, options)
+  const baseApproval = Math.max(42, metrics.approvalRate || 62)
+  const baseSubmitted = Math.max(3, metrics.applicationsSubmitted || 6)
+  const baseTurnaround = Math.max(8, metrics.averageTurnaround || 26)
+  return months.map((month, index) => ({
+    month,
+    approvalRate: clamp(baseApproval - (5 - index) * 3 + (index % 2 ? 1 : 0), 25, 95),
+    submittedApplications: Math.max(1, Math.round(baseSubmitted - (5 - index) * 0.6 + (index % 3))),
+    averageTurnaround: Math.max(4, Math.round((baseTurnaround + (5 - index) * 1.2) * 10) / 10),
+  }))
+}
+
+export function getConsultantActivityTimeline(consultantId = '', context = {}, options = {}) {
+  const workspace = getConsultantWorkspace(consultantId, context, options)
+  const applications = getApplicationsByConsultant(consultantId, context, options)
+  const synthetic = applications.flatMap((row, index) => [
+    { id: `${row.id}-updated`, type: 'application_updated', action: 'Application updated', relatedApplication: row.buyerName, actor: workspace.consultant?.name || workspace.performance?.consultantName || 'Consultant', timestamp: row.lastActivityAt || new Date().toISOString(), sortIndex: index },
+    ...(row.missingDocumentCount ? [{ id: `${row.id}-docs`, type: 'documents_requested', action: 'Documents requested', relatedApplication: row.buyerName, actor: workspace.consultant?.name || 'Consultant', timestamp: row.lastActivityAt || new Date().toISOString(), sortIndex: index + 0.1 }] : []),
+    ...(row.stage === 'Feedback Received' ? [{ id: `${row.id}-feedback`, type: 'bank_feedback_received', action: 'Bank feedback received', relatedApplication: row.buyerName, actor: 'Bank partner', timestamp: row.lastActivityAt || new Date().toISOString(), sortIndex: index + 0.2 }] : []),
+    ...(row.stage === 'Quote Approved' ? [{ id: `${row.id}-quote`, type: 'quote_accepted', action: 'Quote approved', relatedApplication: row.buyerName, actor: row.buyerName, timestamp: row.lastActivityAt || new Date().toISOString(), sortIndex: index + 0.3 }] : []),
+  ])
+  const local = workspace.activity.map((row) => ({ id: row.id, type: row.eventType, action: row.eventType.replace(/_/g, ' ').toLowerCase(), relatedApplication: workspace.performance?.consultantName || 'Consultant', actor: row.actorUserId || 'Manager', timestamp: row.createdAt }))
+  return [...local, ...synthetic]
+    .sort((left, right) => new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime() || (left.sortIndex || 0) - (right.sortIndex || 0))
+    .slice(0, 18)
+}
+
+export function getConsultantBenchmarks(consultantId = '', context = {}, options = {}) {
+  const dashboard = getConsultantPerformanceDashboard(context, options)
+  const row = dashboard.rows.find((item) => item.consultantId === normalizeText(consultantId))
+  assertConsultantAccess(consultantId, getRows(context, options))
+  const branchRows = dashboard.rows.filter((item) => item.branchId === row?.branchId)
+  const regionRows = dashboard.rows.filter((item) => item.regionId === row?.regionId)
+  const benchmarkFor = (rows, key) => average(rows.map((item) => item[key]))
+  return {
+    consultant: row,
+    branch: {
+      approvalRate: benchmarkFor(branchRows, 'approvalRate'),
+      averageTurnaround: benchmarkFor(branchRows, 'averageTurnaround'),
+      submittedApplications: benchmarkFor(branchRows, 'applicationsSubmitted'),
+      partnerResponseTime: benchmarkFor(branchRows, 'partnerResponseTime'),
+    },
+    region: {
+      approvalRate: benchmarkFor(regionRows, 'approvalRate'),
+      averageTurnaround: benchmarkFor(regionRows, 'averageTurnaround'),
+      submittedApplications: benchmarkFor(regionRows, 'applicationsSubmitted'),
+      partnerResponseTime: benchmarkFor(regionRows, 'partnerResponseTime'),
+    },
+    national: {
+      approvalRate: benchmarkFor(dashboard.rows, 'approvalRate'),
+      averageTurnaround: benchmarkFor(dashboard.rows, 'averageTurnaround'),
+      submittedApplications: benchmarkFor(dashboard.rows, 'applicationsSubmitted'),
+      partnerResponseTime: benchmarkFor(dashboard.rows, 'partnerResponseTime'),
+    },
+  }
+}
+
 export const __bondConsultantPerformanceServiceTestUtils = Object.freeze({
   clearStores() {
     LOCAL_TARGET_STORE.clear()

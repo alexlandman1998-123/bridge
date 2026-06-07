@@ -821,6 +821,7 @@ function mapOrganisation(row = {}) {
     legalName: normalizeText(row.legal_name || row.legalName),
     type: normalizeOrganisationType(row.type || row.workspace_type),
     logoUrl: normalizeText(row.logo_url || row.logoUrl),
+    logoIconUrl: normalizeText(row.logo_icon_url || row.logoIconUrl || settings.logoIconUrl || settings.logoIcon || settings.logo_icon_url),
     city: normalizeText(row.city || settings.city),
     province: normalizeText(row.province || settings.province),
     specialties: normalizeArray(row.specialties || settings.specialties),
@@ -1442,9 +1443,25 @@ export async function createPartnerInvitation({
   const fallbackType = resolveWorkspaceTypeFromId({ recipientOrganisationId: resolvedRecipientId, toWorkspaceType })
   const normalizedScopeType = normalizePartnerScopeType(scopeType)
   const normalizedScopeId = normalizeText(scopeId) || (normalizedScopeType === 'organisation' ? scopedOrganisationId : '')
+  const invitationMatchesRequest = (invitation = {}) => {
+    const mapped = mapInvitation(invitation)
+    const recipientMatches = resolvedRecipientId
+      ? normalizeText(mapped.toOrganisationId) === resolvedRecipientId
+      : normalizeLower(mapped.invitedEmail) === email
+    return (
+      normalizeText(mapped.fromOrganisationId) === scopedOrganisationId &&
+      recipientMatches &&
+      (normalizeLower(mapped.status) || 'pending') === 'pending' &&
+      normalizePartnerScopeType(mapped.scopeType) === normalizedScopeType &&
+      normalizeText(mapped.scopeId) === normalizedScopeId
+    )
+  }
 
   if (forceDemo || PARTNERS_DEMO_MODE || !isSupabaseConfigured || !supabase) {
     const state = getDemoState(scopedOrganisationId, workspaceType)
+    const existingInvitation = state.invitations.find(invitationMatchesRequest)
+    if (existingInvitation) return existingInvitation
+
     const invitation = {
       id: `demo-invite-${Date.now()}`,
       fromOrganisationId: scopedOrganisationId,
@@ -1471,6 +1488,26 @@ export async function createPartnerInvitation({
     writeDemoState(state)
     return invitation
   }
+
+  let existingQuery = supabase
+    .from('partner_invitations')
+    .select('id, sender_organisation_id, recipient_email, recipient_organisation_id, invited_email, from_organisation_name, to_organisation_name, from_workspace_type, to_workspace_type, partner_type, relationship_type, scope_type, scope_id, scope_name, preferred, status, message, created_at, expires_at, invited_by_user_id, responded_by_user_id, responded_at')
+    .eq('sender_organisation_id', scopedOrganisationId)
+    .eq('status', 'pending')
+    .eq('scope_type', normalizedScopeType)
+    .eq('scope_id', normalizedScopeId)
+
+  existingQuery = resolvedRecipientId
+    ? existingQuery.eq('recipient_organisation_id', resolvedRecipientId)
+    : existingQuery.eq('recipient_email', email)
+
+  const existingResult = await existingQuery
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (existingResult.data) return mapInvitation(existingResult.data)
+  if (existingResult.error && !isRecoverablePartnerSchemaError(existingResult.error)) throw existingResult.error
 
   const payload = buildInvitePayloadBase({
     scopedOrganisationId,

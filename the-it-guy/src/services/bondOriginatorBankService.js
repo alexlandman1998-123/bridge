@@ -107,6 +107,8 @@ function normalizeBank(row = {}) {
     short_name: shortName,
     logoUrl: normalizeText(row.logoUrl || row.logo_url),
     logo_url: normalizeText(row.logoUrl || row.logo_url),
+    logoIconUrl: normalizeText(row.logoIconUrl || row.logo_icon_url || row.iconUrl || row.icon_url),
+    logo_icon_url: normalizeText(row.logoIconUrl || row.logo_icon_url || row.iconUrl || row.icon_url),
     country: normalizeText(row.country || 'ZA'),
     bankType: normalizeText(row.bankType || row.bank_type || 'retail'),
     bank_type: normalizeText(row.bankType || row.bank_type || 'retail'),

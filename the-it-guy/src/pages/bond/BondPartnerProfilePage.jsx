@@ -1,5 +1,5 @@
 import { ArrowLeft, Building2, ChartNoAxesColumn, Eye, FileText, ImageIcon, LockKeyhole, Mail, Phone, Search, ShieldCheck, TrendingUp, X, Users } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { createElement, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useOrganisation } from '../../context/OrganisationContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -141,7 +141,7 @@ function SummaryCard({ label, value, description, icon: Icon = ChartNoAxesColumn
           <p className="mt-2 text-sm leading-6 text-[#60758d]">{description}</p>
         </div>
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-[#f3f7fb] text-[#2f5573]">
-          <Icon size={20} />
+          {createElement(Icon, { size: 20 })}
         </span>
       </div>
     </PageCard>
@@ -173,7 +173,7 @@ function ContactLine({ icon: Icon, children }) {
   if (!children) return null
   return (
     <span className="inline-flex items-center gap-2 text-sm text-[#60758d]">
-      <Icon size={15} /> {children}
+      {createElement(Icon, { size: 15 })} {children}
     </span>
   )
 }
@@ -1507,11 +1507,12 @@ export default function BondPartnerProfilePage() {
           currentMembership,
           currentWorkspace: workspace,
         })
+        const profileRelationshipId = normalizeText(overview?.relationship?.id) || relationshipId
         if (!cancelled) setProfile(overview)
         if (!cancelled) setLoading(false)
 
         try {
-          const nextPeople = await getBondPartnerPeople(relationshipId)
+          const nextPeople = await getBondPartnerPeople(profileRelationshipId)
           if (!cancelled) setPeople(nextPeople)
         } catch (peopleLoadError) {
           if (!cancelled) {
@@ -1523,7 +1524,7 @@ export default function BondPartnerProfilePage() {
         }
 
         try {
-          const nextListings = await getBondPartnerListings(relationshipId)
+          const nextListings = await getBondPartnerListings(profileRelationshipId)
           if (!cancelled) setListings(nextListings)
         } catch (listingsLoadError) {
           if (!cancelled) {
@@ -1535,7 +1536,7 @@ export default function BondPartnerProfilePage() {
         }
 
         try {
-          const nextApplications = await getBondPartnerApplications(relationshipId)
+          const nextApplications = await getBondPartnerApplications(profileRelationshipId)
           if (!cancelled) setApplications(nextApplications)
         } catch (applicationsLoadError) {
           if (!cancelled) {
@@ -1547,7 +1548,7 @@ export default function BondPartnerProfilePage() {
         }
 
         try {
-          const nextPerformance = await getBondPartnerPerformance(relationshipId)
+          const nextPerformance = await getBondPartnerPerformance(profileRelationshipId)
           if (!cancelled) setPerformance(nextPerformance)
         } catch (performanceLoadError) {
           if (!cancelled) {
@@ -1559,7 +1560,7 @@ export default function BondPartnerProfilePage() {
         }
 
         try {
-          const nextCampaigns = await getBondPartnerCampaignCentre(relationshipId)
+          const nextCampaigns = await getBondPartnerCampaignCentre(profileRelationshipId)
           if (!cancelled) setCampaigns(nextCampaigns)
         } catch (campaignsLoadError) {
           if (!cancelled) {
@@ -1572,9 +1573,9 @@ export default function BondPartnerProfilePage() {
 
         try {
           const [nextAttribution, nextCampaignPerformance, nextListingAttribution] = await Promise.all([
-            getPartnerAttributionSummary(relationshipId),
-            getCampaignPerformance(relationshipId),
-            getListingAttribution(relationshipId),
+            getPartnerAttributionSummary(profileRelationshipId),
+            getCampaignPerformance(profileRelationshipId),
+            getListingAttribution(profileRelationshipId),
           ])
           if (!cancelled) {
             setAttribution(nextAttribution)
@@ -1627,12 +1628,13 @@ export default function BondPartnerProfilePage() {
   }
 
   async function refreshCampaignCentre() {
+    const profileRelationshipId = normalizeText(profile?.relationship?.id) || relationshipId
     const [nextCampaigns, nextListings, nextAttribution, nextCampaignPerformance, nextListingAttribution] = await Promise.all([
-      getBondPartnerCampaignCentre(relationshipId),
-      getBondPartnerListings(relationshipId),
-      getPartnerAttributionSummary(relationshipId),
-      getCampaignPerformance(relationshipId),
-      getListingAttribution(relationshipId),
+      getBondPartnerCampaignCentre(profileRelationshipId),
+      getBondPartnerListings(profileRelationshipId),
+      getPartnerAttributionSummary(profileRelationshipId),
+      getCampaignPerformance(profileRelationshipId),
+      getListingAttribution(profileRelationshipId),
     ])
     setCampaigns(nextCampaigns)
     setListings(nextListings)
@@ -1642,10 +1644,11 @@ export default function BondPartnerProfilePage() {
   }
 
   async function refreshAttributionInsights() {
+    const profileRelationshipId = normalizeText(profile?.relationship?.id) || relationshipId
     const [nextAttribution, nextCampaignPerformance, nextListingAttribution] = await Promise.all([
-      getPartnerAttributionSummary(relationshipId),
-      getCampaignPerformance(relationshipId),
-      getListingAttribution(relationshipId),
+      getPartnerAttributionSummary(profileRelationshipId),
+      getCampaignPerformance(profileRelationshipId),
+      getListingAttribution(profileRelationshipId),
     ])
     setAttribution(nextAttribution)
     setCampaignPerformance(nextCampaignPerformance)
@@ -1657,7 +1660,8 @@ export default function BondPartnerProfilePage() {
     try {
       setCampaignCreatingListingId(listing.listingId)
       setCampaignMessage('')
-      const result = await createBondPartnerFinanceCampaign(relationshipId, listing.listingId, {
+      const profileRelationshipId = normalizeText(profile?.relationship?.id) || relationshipId
+      const result = await createBondPartnerFinanceCampaign(profileRelationshipId, listing.listingId, {
         ...options,
         campaignName: `${listing.title} Finance Campaign`,
       })
@@ -1681,9 +1685,10 @@ export default function BondPartnerProfilePage() {
 
   function handleTrackListingView(listing) {
     if (!listing?.listingId) return
+    const profileRelationshipId = normalizeText(profile?.relationship?.id) || relationshipId
 
     void trackAttributionEvent({
-      relationshipId,
+      relationshipId: profileRelationshipId,
       listingId: listing.listingId,
       eventType: 'listing_view',
     })

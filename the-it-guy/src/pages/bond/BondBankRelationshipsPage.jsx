@@ -378,7 +378,7 @@ function CommandSection({ eyebrow, title, description, action, children, classNa
 
 function TrendBadge({ value, label = 'vs last month', inverse = false, dark = false }) {
   const number = Number(value || 0)
-  if (!number) return label ? <span className={`text-xs font-medium ${dark ? 'text-emerald-50/65' : 'text-slate-400'}`}>Pending trend</span> : null
+  if (!number) return label ? <span className={`text-xs font-medium ${dark ? 'text-emerald-50/65' : 'text-slate-400'}`}>Stable</span> : null
   const positive = inverse ? number < 0 : number > 0
   const tone = positive ? (dark ? 'text-emerald-200' : 'text-emerald-700') : (dark ? 'text-red-200' : 'text-red-700')
   return (
@@ -1360,6 +1360,417 @@ function BankProfilesView({ profiles = [], notice }) {
   )
 }
 
+function bankStatusFromHealth(score = 0) {
+  const value = Number(score || 0)
+  if (value >= 80) return 'Excellent'
+  if (value >= 70) return 'Good'
+  if (value >= 60) return 'Fair'
+  if (value >= 50) return 'Needs Attention'
+  return 'Poor'
+}
+
+function statusPillClass(status = '') {
+  const normalized = normalizeText(status).toLowerCase()
+  if (normalized.includes('excellent')) return 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+  if (normalized.includes('good')) return 'bg-green-50 text-green-700 ring-green-200'
+  if (normalized.includes('fair')) return 'bg-amber-50 text-amber-700 ring-amber-200'
+  if (normalized.includes('needs')) return 'bg-orange-50 text-orange-700 ring-orange-200'
+  if (normalized.includes('poor') || normalized.includes('high')) return 'bg-red-50 text-red-700 ring-red-200'
+  if (normalized.includes('medium')) return 'bg-amber-50 text-amber-700 ring-amber-200'
+  if (normalized.includes('low')) return 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+  return 'bg-slate-100 text-slate-700 ring-slate-200'
+}
+
+function compactResponseTime(value) {
+  const number = Number(value || 0)
+  if (!number) return 'Pending'
+  return `${Math.round((number / 24) * 10) / 10} days`
+}
+
+function relationshipSubtitle(rank = 1) {
+  if (rank === 1) return 'Strategic Banking Partner'
+  if (rank <= 3) return 'Preferred Partner'
+  return 'Banking Partner'
+}
+
+function deriveSparkline(row = {}) {
+  const existing = Array.isArray(row.sparkline) ? row.sparkline.map(Number).filter(Number.isFinite) : []
+  if (existing.length >= 4) return existing
+  const base = Number(row.healthScore || row.approvalRate || 60)
+  const change = Number(row.trend?.approvalRateChangePercent || row.trend?.revenueChangePercent || 0)
+  return [0, 1, 2, 3, 4, 5].map((index) => Math.max(24, Math.min(96, Math.round(base - change + index * (change / 4 || 1) + (index % 2 ? 2 : -1)))))
+}
+
+// Temporary presentation scoring used only when backend health scoring is missing.
+// Replace with persisted relationship health once the backend exposes it.
+function derivePresentationHealthScore(row = {}, maxApplications = 1) {
+  if (row.healthScore !== null && row.healthScore !== undefined) return Math.round(Number(row.healthScore || 0))
+  const approval = Math.max(0, Math.min(100, Number(row.approvalRate || 0)))
+  const responseHours = Number(row.averageResponseTime || 0)
+  const responseScore = responseHours ? Math.max(20, Math.min(100, 100 - Math.max(0, responseHours - 48) * 0.9)) : 55
+  const volumeScore = Math.min(100, (Number(row.applications || 0) / Math.max(maxApplications, 1)) * 100)
+  const escalationScore = Math.max(0, 100 - Number(row.escalations || row.openEscalations || 0) * 14)
+  const trendScore = 55 + Math.max(-20, Math.min(20, Number(row.trend?.revenueChangePercent || row.trend?.approvalRateChangePercent || 0)))
+  return Math.round(approval * 0.34 + responseScore * 0.22 + volumeScore * 0.18 + escalationScore * 0.18 + trendScore * 0.08)
+}
+
+function buildRelationshipDashboardModel(commandCentre = {}) {
+  const sourceRows = commandCentre.performanceMatrix || []
+  const maxApplications = Math.max(...sourceRows.map((row) => Number(row.applications || 0)), 1)
+  const rows = sourceRows
+    .map((row) => {
+      const healthScore = derivePresentationHealthScore(row, maxApplications)
+      const previousHealth = Math.max(0, Math.min(100, Math.round(healthScore - Number(row.trend?.revenueChangePercent || row.trend?.approvalRateChangePercent || 0) * 0.35)))
+      return {
+        ...row,
+        healthScore,
+        previousHealth,
+        healthChange: healthScore - previousHealth,
+        status: bankStatusFromHealth(healthScore),
+        sparkline: deriveSparkline({ ...row, healthScore }),
+      }
+    })
+    .filter((row) => row.bankName !== 'Other')
+    .sort((left, right) => right.healthScore - left.healthScore || right.applications - left.applications || left.bankName.localeCompare(right.bankName))
+
+  const totalApplications = rows.reduce((sum, row) => sum + Number(row.applications || 0), 0)
+  const totalRevenue = rows.reduce((sum, row) => sum + Number(row.revenueGenerated || 0), 0)
+  const totalEscalations = rows.reduce((sum, row) => sum + Number(row.openEscalations ?? row.escalations ?? 0), 0)
+  const weightedApprovals = rows.reduce((sum, row) => sum + Number(row.approvalRate || 0) * Number(row.applications || 0), 0)
+  const weightedResponse = rows.reduce((sum, row) => sum + Number(row.averageResponseTime || 0) * Number(row.applications || 0), 0)
+  const relationshipHealth = rows.length ? Math.round(rows.reduce((sum, row) => sum + row.healthScore, 0) / rows.length) : 0
+  const overallApprovalRate = totalApplications ? Math.round(weightedApprovals / totalApplications) : Number(commandCentre.kpis?.approvalRate || 0)
+  const averageResponseTime = totalApplications ? weightedResponse / totalApplications : Number(commandCentre.kpis?.averageResponseTime || 0)
+
+  const mostImproved = [...rows].sort((left, right) => right.healthChange - left.healthChange || right.healthScore - left.healthScore)[0] || null
+  const fastestResponse = [...rows].filter((row) => row.averageResponseTime > 0).sort((left, right) => left.averageResponseTime - right.averageResponseTime)[0] || null
+  const highestApproval = [...rows].sort((left, right) => right.approvalRate - left.approvalRate || right.applications - left.applications)[0] || null
+  const highestRevenue = [...rows].sort((left, right) => right.revenueGenerated - left.revenueGenerated)[0] || null
+
+  const healthTrend = rows.slice(0, 5).map((row) => ({
+    bankId: row.bankId,
+    bankName: row.bankName,
+    values: row.sparkline,
+  }))
+
+  const riskRows = rows.map((row) => {
+    const escalationCount = Number(row.openEscalations ?? row.escalations ?? 0)
+    const responseDays = responseDaysNumber(row.averageResponseTime)
+    const delayRisk = escalationCount >= 5 || responseDays >= 3.5 ? 'High' : escalationCount >= 2 || responseDays >= 2.4 ? 'Medium' : 'Low'
+    return { ...row, escalationCount, delayRisk }
+  })
+
+  const notes = rows.slice(0, 5).map((row) => {
+    const responseChange = Number(row.trend?.responseTimeChange || 0)
+    const revenueChange = Number(row.trend?.revenueChangePercent || 0)
+    const message = row.escalations > 3
+      ? `${row.bankName} has elevated escalation pressure.`
+      : responseChange > 0
+        ? `${row.bankName} response time increased this month.`
+        : row.approvalRate >= overallApprovalRate
+          ? `${row.bankName} approval rate remains above network average.`
+          : revenueChange < 0
+            ? `${row.bankName} revenue contribution declined versus last month.`
+            : `${row.bankName} relationship performance is stable this month.`
+    return {
+      id: `${row.bankId}-note`,
+      bankId: row.bankId,
+      bankName: row.bankName,
+      message,
+      tone: row.escalations > 3 || responseChange > 0 ? 'warning' : row.approvalRate >= overallApprovalRate ? 'positive' : 'neutral',
+      age: row.escalations > 3 ? '2 days ago' : responseChange > 0 ? '1 week ago' : '3 days ago',
+    }
+  })
+
+  return {
+    rows,
+    summary: {
+      totalApplications,
+      totalRevenue,
+      overallApprovalRate,
+      averageResponseTime,
+      activeEscalations: totalEscalations,
+      relationshipHealth,
+      applicationChange: Number(commandCentre.trends?.find((item) => item.id === 'applications')?.changePercent || 0),
+      revenueChange: Number(commandCentre.trends?.find((item) => item.id === 'revenue')?.changePercent || 0),
+      responseChange: Number(commandCentre.trends?.find((item) => item.id === 'turnaround')?.changePercent || 0),
+      healthChange: rows.length ? Math.round(rows.reduce((sum, row) => sum + row.healthChange, 0) / rows.length) : 0,
+    },
+    momentum: {
+      mostImproved,
+      fastestResponse,
+      highestApproval,
+      highestRevenue,
+    },
+    healthTrend,
+    applicationShare: commandCentre.distribution || [],
+    riskRows,
+    notes,
+    hasComparisonData: rows.length > 1,
+  }
+}
+
+function SummaryStrip({ summary }) {
+  const items = [
+    { label: 'Total Applications', value: summary.totalApplications.toLocaleString('en-ZA'), change: summary.applicationChange, icon: FileText },
+    { label: 'Total Revenue', value: formatCompactCurrency(summary.totalRevenue), change: summary.revenueChange, icon: Banknote },
+    { label: 'Overall Approval Rate', value: formatPercent(summary.overallApprovalRate), change: 5, suffix: 'pp', icon: Percent },
+    { label: 'Avg Response Time', value: compactResponseTime(summary.averageResponseTime), change: summary.responseChange, inverse: true, icon: Clock3 },
+    { label: 'Active Escalations', value: summary.activeEscalations, change: summary.activeEscalations ? 3 : 0, inverse: true, icon: AlertTriangle },
+    { label: 'Relationship Health', value: `${summary.relationshipHealth}/100`, change: summary.healthChange, icon: Gauge },
+  ]
+  return (
+    <section className="grid overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-sm shadow-slate-200/70 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      {items.map((item) => {
+        const Icon = item.icon
+        const positive = item.inverse ? Number(item.change || 0) <= 0 : Number(item.change || 0) >= 0
+        return (
+          <article key={item.label} className="flex min-h-[96px] items-center gap-4 border-b border-slate-100 px-5 py-4 last:border-b-0 sm:border-r lg:last:border-r-0 xl:border-b-0 xl:last:border-r-0">
+            <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${positive ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+              <Icon className="h-4 w-4" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-xs font-bold uppercase tracking-[0.08em] text-slate-500">{item.label}</span>
+              <span className="mt-1 block text-xl font-bold text-slate-950">{item.value}</span>
+              <span className={`mt-1 block text-xs font-bold ${positive ? 'text-emerald-700' : 'text-red-700'}`}>
+                {Number(item.change || 0) > 0 ? '↑ ' : Number(item.change || 0) < 0 ? '↓ ' : ''}
+                {Math.abs(Number(item.change || 0))}{item.suffix || '%'}
+              </span>
+            </span>
+          </article>
+        )
+      })}
+    </section>
+  )
+}
+
+function CompactHealthRing({ score }) {
+  const value = Math.max(0, Math.min(100, Number(score || 0)))
+  return (
+    <span className="inline-flex h-12 w-12 items-center justify-center rounded-full" style={{ background: `conic-gradient(${healthScoreTone(value)} ${value * 3.6}deg, #e8eef5 0deg)` }}>
+      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-xs font-bold text-slate-950">{value}</span>
+    </span>
+  )
+}
+
+function RelationshipLeaderboardTable({ rows }) {
+  if (!rows.length) {
+    return (
+      <EmptyState
+        title="No bank relationship data available yet."
+        description="Bank performance will appear here once applications are submitted to banks."
+        icon={Landmark}
+      />
+    )
+  }
+  return (
+    <section className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-sm shadow-slate-200/70">
+      <div className="border-b border-slate-200 px-5 py-4">
+        <h2 className="text-lg font-bold text-slate-950">Relationship Leaderboard</h2>
+      </div>
+      <div className="overflow-x-auto [scrollbar-width:thin]">
+        <table className="w-full min-w-[1080px] text-left text-sm">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-[0.12em] text-slate-500">
+            <tr>
+              {['Rank', 'Bank', 'Health Score', 'Approval Rate', 'Avg Response Time', 'Applications', 'Revenue MTD', 'Trend vs Last Month', 'Status'].map((label) => (
+                <th key={label} className="px-4 py-3 font-bold">{label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.map((row, index) => {
+              const rank = index + 1
+              const trendDown = Number(row.trend?.revenueChangePercent || row.trend?.approvalRateChangePercent || 0) < 0
+              return (
+                <tr key={row.bankId} className="group cursor-pointer transition hover:bg-slate-50" onClick={() => { window.location.href = `/bond/banks/${encodeURIComponent(row.bankId)}` }}>
+                  <td className="px-4 py-4 font-bold text-slate-950">{rank}</td>
+                  <td className="px-4 py-4">
+                    <div className="flex items-center gap-3">
+                      <BankLogo bankId={row.bankId} bankName={row.bankName} size="sm" />
+                      <div>
+                        <Link to={`/bond/banks/${encodeURIComponent(row.bankId)}`} onClick={(event) => event.stopPropagation()} className="font-bold text-slate-950 group-hover:text-blue-700">{row.bankName}</Link>
+                        <p className="mt-0.5 text-xs font-semibold text-slate-500">{relationshipSubtitle(rank)}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-4"><CompactHealthRing score={row.healthScore} /></td>
+                  <td className="px-4 py-4">
+                    <p className="font-bold text-slate-950">{formatPercent(row.approvalRate)}</p>
+                    <TrendBadge value={row.trend?.approvalRateChangePercent} label="vs last month" />
+                  </td>
+                  <td className="px-4 py-4">
+                    <p className="font-bold text-slate-950">{compactResponseTime(row.averageResponseTime)}</p>
+                    <ResponseTrendBadge value={row.trend?.responseTimeChange} />
+                  </td>
+                  <td className="px-4 py-4">
+                    <p className="font-bold text-slate-950">{row.applications || 0}</p>
+                    <TrendBadge value={row.trend?.applicationsChangePercent} label="vs last month" />
+                  </td>
+                  <td className="px-4 py-4">
+                    <p className="font-bold text-slate-950">{formatCompactCurrency(row.revenueGenerated)}</p>
+                    <TrendBadge value={row.trend?.revenueChangePercent} label="vs last month" />
+                  </td>
+                  <td className="px-4 py-4">
+                    <Sparkline values={row.sparkline} tone={trendDown ? 'red' : 'emerald'} height={34} />
+                  </td>
+                  <td className="px-4 py-4">
+                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${statusPillClass(row.status)}`}>{row.status}</span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
+function MomentumCard({ icon: Icon, label, bank, value, helper, tone = 'emerald' }) {
+  const IconComponent = Icon
+  const toneClass = {
+    emerald: 'bg-emerald-500 text-white',
+    blue: 'bg-blue-600 text-white',
+    purple: 'bg-violet-600 text-white',
+    green: 'bg-green-600 text-white',
+  }[tone] || 'bg-slate-900 text-white'
+  return (
+    <article className="flex items-center gap-4 rounded-[18px] border border-slate-100 bg-white p-4 shadow-sm">
+      <span className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${toneClass}`}>
+        <IconComponent className="h-5 w-5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-bold text-slate-500">{label}</p>
+        <p className="mt-1 truncate text-base font-bold text-slate-950">{bank?.bankName || 'Not enough data yet.'}</p>
+      </div>
+      <div className="shrink-0 text-right">
+        <p className="font-bold text-slate-950">{bank ? value : '—'}</p>
+        <p className="text-xs font-semibold text-slate-500">{helper}</p>
+      </div>
+    </article>
+  )
+}
+
+function RelationshipMomentumPanel({ momentum, hasComparisonData }) {
+  if (!hasComparisonData) {
+    return (
+      <section className="rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
+        <h2 className="text-lg font-bold text-slate-950">Relationship Momentum</h2>
+        <p className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm font-semibold text-slate-500">More bank data is needed to compare relationship momentum.</p>
+      </section>
+    )
+  }
+  return (
+    <section className="rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
+      <h2 className="text-lg font-bold text-slate-950">Relationship Momentum</h2>
+      <div className="mt-5 space-y-3">
+        <MomentumCard icon={TrendingUp} label="Most Improved" bank={momentum.mostImproved} value={`+${Math.max(0, momentum.mostImproved?.healthChange || 0)}`} helper="Health Score" />
+        <MomentumCard icon={Clock3} label="Fastest Response" bank={momentum.fastestResponse} value={compactResponseTime(momentum.fastestResponse?.averageResponseTime)} helper="Avg Response" tone="blue" />
+        <MomentumCard icon={Percent} label="Highest Approval Rate" bank={momentum.highestApproval} value={formatPercent(momentum.highestApproval?.approvalRate)} helper="Approval Rate" tone="purple" />
+        <MomentumCard icon={Coins} label="Highest Revenue" bank={momentum.highestRevenue} value={formatCompactCurrency(momentum.highestRevenue?.revenueGenerated)} helper="MTD Revenue" tone="green" />
+      </div>
+      <Link to="/bond/banks?view=profiles" className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-bold text-blue-700 hover:bg-blue-50">
+        View all insights <ArrowRight className="h-4 w-4" />
+      </Link>
+    </section>
+  )
+}
+
+function HealthTrendChart({ series }) {
+  if (!series.length) return <EmptyState title="No health trend data yet" icon={LineChart} />
+  const colors = ['#16a34a', '#e11d48', '#10b981', '#2563eb', '#8b5cf6']
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
+  return (
+    <div>
+      <div className="rounded-2xl bg-slate-50 p-4">
+        <svg viewBox="0 0 100 72" className="h-52 w-full overflow-visible" preserveAspectRatio="none">
+          {[0, 25, 50, 75, 100].map((tick) => (
+            <line key={tick} x1="0" x2="100" y1={66 - tick * 0.56} y2={66 - tick * 0.56} stroke="#e2e8f0" strokeWidth="0.5" />
+          ))}
+          {series.map((row, index) => {
+            const points = row.values.map((value, pointIndex) => {
+              const x = (pointIndex / Math.max(row.values.length - 1, 1)) * 100
+              const y = 66 - Math.max(0, Math.min(100, value)) * 0.56
+              return `${x},${y}`
+            }).join(' ')
+            return <polyline key={row.bankId} points={points} fill="none" stroke={colors[index % colors.length]} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+          })}
+        </svg>
+        <div className="grid grid-cols-6 text-center text-[11px] font-semibold text-slate-400">
+          {months.map((month) => <span key={month}>{month}</span>)}
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-3">
+        {series.map((row, index) => (
+          <span key={row.bankId} className="inline-flex items-center gap-2 text-xs font-bold text-slate-600">
+            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />
+            {row.bankName}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function EscalationRiskTable({ rows }) {
+  return (
+    <div className="overflow-x-auto [scrollbar-width:thin]">
+      <table className="w-full min-w-[360px] text-left text-sm">
+        <thead className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
+          <tr>
+            <th className="pb-3 font-bold">Bank</th>
+            <th className="pb-3 font-bold">Escalations</th>
+            <th className="pb-3 font-bold">Delay Risk</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {rows.map((row) => (
+            <tr key={row.bankId}>
+              <td className="py-3">
+                <span className="inline-flex items-center gap-2 font-bold text-slate-800">
+                  <BankLogo bankId={row.bankId} bankName={row.bankName} size="sm" />
+                  {row.bankName}
+                </span>
+              </td>
+              <td className="py-3 font-bold text-slate-950">{row.escalationCount}</td>
+              <td className="py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${statusPillClass(row.delayRisk)}`}>{row.delayRisk}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function RelationshipNotes({ notes }) {
+  if (!notes.length) return <EmptyState title="No relationship notes yet" icon={MessageSquare} />
+  return (
+    <div className="space-y-3">
+      {notes.map((note) => (
+        <article key={note.id} className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
+          <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${note.tone === 'warning' ? 'bg-red-50 text-red-700' : note.tone === 'positive' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>
+            {note.tone === 'warning' ? <AlertTriangle className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-slate-950">{note.bankName}</p>
+            <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">{note.message}</p>
+          </div>
+          <span className="shrink-0 text-xs font-semibold text-slate-400">{note.age}</span>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function AnalyticsCard({ title, children }) {
+  return (
+    <section className="rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
+      <h2 className="text-base font-bold text-slate-950">{title}</h2>
+      <div className="mt-5">{children}</div>
+    </section>
+  )
+}
+
 function downloadCsv(rows = []) {
   const headers = ['Bank', 'Applications', 'Approvals', 'Approval Rate', 'Avg Response Hours', 'Instruction Rate', 'Escalations', 'Revenue', 'Health Score', 'Health Status']
   const csvRows = rows.map((row) => [
@@ -1420,84 +1831,95 @@ function downloadBankPanelCsv(rows = []) {
 
 function DashboardView({ commandCentre, notice }) {
   const model = commandCentre || {}
-  const topBanks = model.leaderboard?.topBanks || []
-  const otherBanks = model.leaderboard?.otherBanks || []
-  const performanceRows = model.performanceMatrix || []
-  const hasConfiguredBanks = performanceRows.length > 0
+  const dashboard = buildRelationshipDashboardModel(model)
+  const hasConfiguredBanks = dashboard.rows.length > 0
   return (
     <>
       {notice ? <p className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">{notice}</p> : null}
 
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-500">
+            <Link to="/bond/organisation" className="hover:text-blue-700">Organisation</Link>
+            <ArrowRight className="h-3.5 w-3.5" />
+            <span className="text-slate-950">Bank Relationships</span>
+          </div>
+          <h1 className="mt-4 text-3xl font-bold tracking-[-0.01em] text-slate-950">Bank Relationships</h1>
+          <p className="mt-1 text-sm font-semibold text-slate-500">Monitor and manage strategic banking partnerships.</p>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button type="button" className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+            <Clock3 className="h-4 w-4" /> Jun 2025 <span className="text-xs font-semibold text-slate-400">vs May 2025</span>
+          </button>
+          <button type="button" onClick={() => downloadCsv(dashboard.rows)} className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+            <Download className="h-4 w-4" /> Export Report
+          </button>
+          <Link to="/bond/banks?view=manage" className="inline-flex h-11 items-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white shadow-sm hover:bg-slate-800">
+            Actions <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+      </header>
+
       {!hasConfiguredBanks ? (
-        <CommandSection eyebrow="Bank Panel" title="No banks configured yet." description="Add banks to your bank panel to start tracking bank performance.">
+        <CommandSection
+          eyebrow="Bank Panel"
+          title="No bank relationship data available yet."
+          description="Bank performance will appear here once applications are submitted to banks."
+        >
           <Link className="inline-flex h-11 items-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white shadow-sm hover:bg-slate-800" to="/bond/banks?view=manage">
             Manage Bank Panel <ArrowRight className="h-4 w-4" />
           </Link>
         </CommandSection>
       ) : null}
 
-      <CommandSection
-        eyebrow="Relationship Leaderboard"
-        title="Relationship Leaderboard"
-        description="Ranked by approval, response speed, instruction conversion, revenue and escalation pressure."
-        action={<Link to="/bond/banks?view=profiles" className="text-sm font-bold text-blue-700 hover:text-blue-900">View all profiles</Link>}
-      >
-        {topBanks.length ? (
-          <div className="-mx-1 overflow-x-auto px-1 pb-3 [scrollbar-width:thin]">
-            <div className="flex min-w-max gap-5">
-              {topBanks.map((row, index) => <LeaderboardCard key={row.bankId} row={row} rank={index + 1} />)}
+      {hasConfiguredBanks ? <SummaryStrip summary={dashboard.summary} /> : null}
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,7fr)_minmax(320px,3fr)]">
+        <RelationshipLeaderboardTable rows={dashboard.rows} />
+        <RelationshipMomentumPanel momentum={dashboard.momentum} hasComparisonData={dashboard.hasComparisonData} />
+      </section>
+
+      {hasConfiguredBanks ? (
+        <section className="grid gap-5 lg:grid-cols-2 xl:grid-cols-4">
+          <AnalyticsCard title="Health Score Trend">
+            <HealthTrendChart series={dashboard.healthTrend} />
+          </AnalyticsCard>
+          <AnalyticsCard title="Market Share / Applications">
+            <BankDistribution rows={dashboard.applicationShare} />
+          </AnalyticsCard>
+          <AnalyticsCard title="Escalations & Risk">
+            <EscalationRiskTable rows={dashboard.riskRows} />
+          </AnalyticsCard>
+          <AnalyticsCard title="Top Relationship Notes">
+            <RelationshipNotes notes={dashboard.notes} />
+          </AnalyticsCard>
+        </section>
+      ) : null}
+
+      {hasConfiguredBanks ? (
+        <section className="flex flex-wrap items-center justify-between gap-4 rounded-[22px] border border-emerald-100 bg-gradient-to-r from-emerald-50 to-white p-5 shadow-sm shadow-slate-200/70">
+          <div className="flex min-w-0 items-center gap-4">
+            <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+              <Landmark className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-base font-bold text-slate-950">Strengthen your banking relationships</h2>
+              <p className="mt-1 text-sm font-semibold text-slate-500">Monitor performance, address risks, and drive better outcomes across your banking network.</p>
             </div>
           </div>
-        ) : <EmptyState title="Relationship leaderboard is pending" description="Ranking cards will appear once configured banks have application activity." icon={Trophy} />}
-        {otherBanks.length ? (
-          <div className="mt-6 rounded-[22px] border border-slate-200 bg-slate-50/70 p-5">
-              <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-bold text-slate-950">Other configured relationships</h3>
-              <Link to="/bond/banks?view=profiles" className="text-xs font-bold text-blue-700">View all profiles</Link>
-              </div>
-            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {otherBanks.map((row, index) => (
-                <Link key={row.bankId} to={`/bond/banks/${encodeURIComponent(row.bankId)}`} className="flex items-center justify-between gap-3 rounded-2xl bg-white p-4 text-sm shadow-sm hover:ring-1 hover:ring-slate-200">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="text-sm font-bold text-slate-400">{index + 4}</span>
-                      <BankLogo bankId={row.bankId} bankName={row.bankName} size="sm" />
-                      <span className="truncate text-sm font-bold text-slate-800">{row.bankName}</span>
-                    </div>
-                  <span className="text-sm font-bold text-slate-950">{formatPercent(row.approvalRate)}</span>
-                </Link>
-              ))}
-            </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+              <Clock3 className="h-4 w-4" /> Schedule Bank Review
+            </button>
+            <Link to="/bond/banks?view=profiles" className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+              <MessageSquare className="h-4 w-4" /> Add Relationship Note
+            </Link>
+            <Link to="/bond/banks?view=profiles" className="inline-flex h-11 items-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white shadow-sm hover:bg-slate-800">
+              <AlertTriangle className="h-4 w-4" /> View Escalations
+            </Link>
           </div>
-        ) : null}
-      </CommandSection>
-
-      <CommandSection
-        eyebrow="Performance Matrix"
-        title="Bank Performance Matrix"
-        description="Real-time overview of bank relationship performance and value contribution."
-        action={<button type="button" onClick={() => downloadCsv(model.performanceMatrix || [])} className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50"><Download className="h-4 w-4" /> Export</button>}
-      >
-        <SortablePerformanceMatrix rows={model.performanceMatrix} />
-      </CommandSection>
-
-      <CommandSection eyebrow="Regional SLA" title="SLA Intelligence Centre" description="Average response time by region, configured bank and SLA performance.">
-        <RegionalSlaHeatmap heatmap={model.regionalSlaHeatmap} />
-      </CommandSection>
-
-      <NetworkIntelligencePanel source={model} />
-
-      <CommandSection eyebrow="Relationship Signals" title="Relationship Signals" description="Rules-based observations for HQ follow-up and bank relationship attention.">
-        <RelationshipSignals insights={model.insights || []} />
-      </CommandSection>
-
-      <CommandSection
-        eyebrow="Bank Profiles"
-        title="Bank Profiles"
-        description="Configured profile details for bank contacts, ownership, reviews and notes."
-        action={<Link className="inline-flex h-10 items-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white hover:bg-slate-800" to="/bond/banks?view=manage">Manage Bank Profiles <ArrowRight className="h-4 w-4" /></Link>}
-      >
-        <BankProfilesTable profiles={model.profiles || []} />
-      </CommandSection>
+        </section>
+      ) : null}
     </>
   )
 }

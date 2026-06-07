@@ -1104,6 +1104,7 @@ function buildDefaultOrganisation(profile = null) {
     workspaceKind: 'agency',
     workspace_kind: 'agency',
     logoUrl: '',
+    logoIconUrl: '',
     companyEmail: profile?.email || '',
     companyPhone: profile?.phoneNumber || '',
     website: '',
@@ -1145,6 +1146,7 @@ function normalizeOrganisationRow(row, profile = null) {
     workspaceKind: normalizeText(row?.workspace_kind || row?.workspaceKind) || fallback.workspaceKind,
     workspace_kind: normalizeText(row?.workspace_kind || row?.workspaceKind) || fallback.workspace_kind,
     logoUrl: normalizeText(row?.logo_url),
+    logoIconUrl: normalizeText(row?.logo_icon_url || row?.logoIconUrl),
     companyEmail: normalizeText(row?.company_email) || fallback.companyEmail,
     companyPhone: normalizeText(row?.company_phone) || fallback.companyPhone,
     website: normalizeText(row?.website),
@@ -2339,6 +2341,11 @@ async function hydrateAgencyOnboardingBrandingUrls(client, onboarding = {}) {
     path: branding.logoLightPath,
     fallbackUrl: branding.logoLight,
   })
+  const iconUrl = await resolveBrandingAssetUrl(client, {
+    bucket: branding.logoIconBucket,
+    path: branding.logoIconPath,
+    fallbackUrl: branding.logoIcon || branding.logoIconUrl,
+  })
   const darkUrl = await resolveBrandingAssetUrl(client, {
     bucket: branding.logoDarkBucket,
     path: branding.logoDarkPath,
@@ -2350,6 +2357,7 @@ async function hydrateAgencyOnboardingBrandingUrls(client, onboarding = {}) {
     branding: {
       ...branding,
       logoLight: lightUrl || normalizeText(branding.logoLight),
+      logoIcon: iconUrl || normalizeText(branding.logoIcon || branding.logoIconUrl),
       logoDark: darkUrl || normalizeText(branding.logoDark),
     },
   }

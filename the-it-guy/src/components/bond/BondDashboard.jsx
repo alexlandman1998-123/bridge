@@ -9,6 +9,7 @@ import * as bondCommandCenterService from '../../services/bondCommandCenterServi
 import { FINANCE_INTELLIGENCE_DISCLAIMER } from '../../services/financeIntelligenceService'
 import { Link, useLocation } from 'react-router-dom'
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
+import OrganisationAvatar from '../organisation/OrganisationAvatar'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -1541,9 +1542,7 @@ function ConnectedPartnerCard({ partner = {} }) {
   return (
     <article className="min-w-[280px] rounded-[18px] border border-[#e0eaf5] bg-[#fbfdff] p-3">
       <div className="flex items-start gap-2">
-        <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#eaf1fa] text-xs font-semibold text-[#17324d]">
-          {(normalizeText(partner.name || '').slice(0, 2) || 'P').toUpperCase()}
-        </span>
+        <OrganisationAvatar organisation={partner} size="md" />
         <div className="min-w-0">
           <p className="text-sm font-semibold text-[#142132]">{name}</p>
           <p className="text-xs text-[#70879d]">{normalizeText(partner.type || 'Partner')}</p>

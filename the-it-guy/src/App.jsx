@@ -1812,7 +1812,9 @@ function AppRoutes() {
                 path="/bond/organisation/consultants/:consultantId"
                 element={
                   <RoleRoute allowedRoles={['bond_originator']}>
-                    <BondOrganisationPage />
+                    <AppErrorBoundary scope="bond-consultant-performance" title="Consultant performance failed to load">
+                      <BondConsultantPerformancePage />
+                    </AppErrorBoundary>
                   </RoleRoute>
                 }
               />

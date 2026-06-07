@@ -62,7 +62,9 @@ function makeApplication(consultantId, index, overrides = {}) {
     id: `${consultantId}-app-${index}`,
     partnerId: overrides.partnerId || (consultantId === 'consultant-lindi' ? 'partner-coast' : 'partner-gauteng'),
     partnerName: overrides.partnerName || (consultantId === 'consultant-lindi' ? 'Atlantic Realty' : 'Harcourts Bedfordview'),
+    buyerName: overrides.buyerName || `Buyer ${consultantId} ${index}`,
     applicationReference: `BO-2026-${consultantId}-${index}`,
+    bankName: overrides.bankName || ['FNB', 'ABSA', 'Nedbank', 'Standard Bank'][index % 4],
     assignedConsultantId: consultantId,
     assignedUserId: consultantId,
     assignedBranchId: branchId,
@@ -76,6 +78,10 @@ function makeApplication(consultantId, index, overrides = {}) {
     submittedAt: overrides.submittedAt || '2026-05-02T08:00:00.000Z',
     updatedAt: overrides.updatedAt || '2026-05-10T08:00:00.000Z',
     missingDocumentsCount: overrides.missingDocumentsCount || 0,
+    missingDocuments: overrides.missingDocuments || (overrides.missingDocumentsCount ? ['ID document', 'Bank statement'] : []),
+    nextAction: overrides.nextAction || (overrides.missingDocumentsCount ? 'Follow up missing documents' : 'Await bank feedback'),
+    purchasePrice: overrides.purchasePrice || 1800000 + index * 25000,
+    bankResponseDays: overrides.bankResponseDays || (index % 5 === 0 ? 9 : 4),
     reassignmentCount: overrides.reassignmentCount || 0,
   }
 }
@@ -315,6 +321,49 @@ try {
   assert.equal(workspace.performance.consultantName, 'Sarah Jacobs')
   assert.equal(workspace.targets.length, 1)
   assert.equal(workspace.forecast.length, 3)
+
+  const consultantProfile = performance.getConsultantById('consultant-sarah', hqContext, commonOptions)
+  assert.equal(consultantProfile.branchName, 'East Rand Branch')
+  assert.equal(consultantProfile.regionName, 'Gauteng')
+
+  const consultantApplications = performance.getApplicationsByConsultant('consultant-john', hqContext, commonOptions)
+  assert.equal(consultantApplications.length, 42)
+  assert.equal(consultantApplications[0].buyerName.startsWith('Buyer consultant-john'), true)
+  assert.equal(consultantApplications.some((row) => row.missingDocumentCount > 0), true)
+  assert.equal(consultantApplications.some((row) => row.riskFlags.includes('Bank feedback delayed')), true)
+
+  const overviewMetrics = performance.getConsultantOverviewMetrics('consultant-john', hqContext, commonOptions)
+  assert.equal(overviewMetrics.submittedApplications, 42)
+  assert.equal(overviewMetrics.revenueForecast > 0, true)
+  assert.equal(overviewMetrics.bankFeedbackDelays > 0, true)
+
+  const workload = performance.getConsultantWorkloadByStage('consultant-john', hqContext, commonOptions)
+  assert.deepEqual(workload.map((row) => row.stage), ['New Applications', 'Documents Received', 'Applications Submitted', 'Feedback Received', 'Quote Approved', 'Instruction Sent'])
+  assert.equal(workload.reduce((sum, row) => sum + row.count, 0), 42)
+
+  const attentionItems = performance.getConsultantAttentionItems('consultant-john', hqContext, commonOptions)
+  assert.equal(attentionItems.some((row) => row.key === 'waiting_docs' && row.count > 0), true)
+  assert.equal(attentionItems.some((row) => row.key === 'bank_feedback' && row.count > 0), true)
+
+  const capacityHealth = performance.getConsultantCapacityHealth('consultant-john', hqContext, commonOptions)
+  assert.equal(['Normal', 'High workload', 'At risk', 'Over capacity'].includes(capacityHealth.status), true)
+  assert.equal(capacityHealth.activeApplications, 42)
+
+  const bankMix = performance.getConsultantBankMix('consultant-john', hqContext, commonOptions)
+  assert.equal(bankMix.length >= 4, true)
+  assert.equal(bankMix.reduce((sum, row) => sum + row.total, 0), 42)
+
+  const trend = performance.getConsultantPerformanceTrend('consultant-john', hqContext, commonOptions)
+  assert.equal(trend.length, 6)
+  assert.equal(trend.every((row) => row.approvalRate >= 0 && row.submittedApplications >= 1), true)
+
+  const timeline = performance.getConsultantActivityTimeline('consultant-john', hqContext, commonOptions)
+  assert.equal(timeline.length > 0, true)
+  assert.equal(timeline.every((row) => row.id && row.type && row.action && row.timestamp), true)
+
+  const benchmarks = performance.getConsultantBenchmarks('consultant-john', hqContext, commonOptions)
+  assert.equal(benchmarks.consultant.consultantId, 'consultant-john')
+  assert.equal(benchmarks.branch.submittedApplications > 0, true)
 
   const activity = performance.__bondConsultantPerformanceServiceTestUtils.getActivity(workspaceId)
   assert.equal(activity.some((row) => row.eventType === performance.BOND_CONSULTANT_PERFORMANCE_EVENTS.consultantTargetSet), true)

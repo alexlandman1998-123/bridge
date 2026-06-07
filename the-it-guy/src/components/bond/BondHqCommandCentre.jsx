@@ -172,8 +172,8 @@ function getRegionalHref(row = {}, name = '') {
   const regionalHref = row.regionHref || row.regionDetailHref || row.regionalHref || ''
   if (regionalHref) return regionalHref
   const existingHref = row.href || ''
-  if (existingHref.includes('view=regions') || existingHref.includes('regional-operations')) return existingHref
-  return `/bond/organisation?view=regions&region=${encodeURIComponent(row.regionId || name)}`
+  if (existingHref.includes('/bond/organisation/regions/')) return existingHref
+  return `/bond/organisation/regions/${encodeURIComponent(row.regionId || row.id || name)}`
 }
 
 function getRegionalTone(score = 0) {
@@ -350,15 +350,6 @@ const hqKpis = [
     icon: Gauge,
     sparkline: [18, 19, 18, 23, 22, 24, 23, 26, 25, 27, 26, 29],
     statusIcon: AlertTriangle,
-  },
-  {
-    label: 'Pipeline Value',
-    value: 'R199.8k',
-    status: 'Active finance pipeline',
-    detail: 'Across 90 applications',
-    tone: 'purple',
-    icon: Banknote,
-    sparkline: [12, 14, 13, 22, 25, 24, 29, 40, 43, 42, 39, 52],
   },
   {
     label: 'Revenue Forecast',
@@ -616,9 +607,9 @@ function BankBreakdownCard({ row = {}, color = '#24518a' }) {
 
 function BankMiniStat({ label, value }) {
   return (
-    <div className="min-w-0 rounded-[12px] bg-[#f8fafc] px-3 py-2 text-center ring-1 ring-[#edf2f7]">
-      <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#71869d]">{label}</p>
-      <p className="mt-1 text-[12px] font-bold leading-4 text-[#17324d]">{value}</p>
+    <div className="min-w-0 rounded-[12px] bg-[#f8fafc] px-3 py-2.5 text-center ring-1 ring-[#edf2f7]">
+      <p className="text-[0.68rem] font-bold uppercase tracking-[0.08em] text-[#71869d]">{label}</p>
+      <p className="mt-1 text-sm font-bold leading-5 text-[#17324d]">{value}</p>
     </div>
   )
 }
@@ -627,11 +618,11 @@ function BankStatusBar({ label, value, total, color }) {
   const width = Math.max(4, Math.min(100, (normalizeNumber(value) / Math.max(normalizeNumber(total), 1)) * 100))
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-bold text-[#64748b]">
+      <div className="mb-1.5 flex items-center justify-between gap-2 text-xs font-bold text-[#64748b]">
         <span>{label}</span>
         <span>{formatNumber(value)}</span>
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-[#e7eef6]">
+      <div className="h-2 overflow-hidden rounded-full bg-[#e7eef6]">
         <span className="block h-full rounded-full" style={{ width: `${width}%`, backgroundColor: color }} />
       </div>
     </div>
@@ -755,12 +746,12 @@ function RegionalHeatmapOverview({ rows = [] }) {
       </div>
 
       <div className="mt-4 rounded-[16px] bg-[#f8fafc] p-4 ring-1 ring-[#e6eef6]">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="grid gap-3 xl:grid-cols-[minmax(220px,0.24fr)_minmax(0,0.76fr)] xl:items-stretch">
           <div>
             <CardLabel>Heatmap Key</CardLabel>
             <p className="mt-1 text-sm font-semibold text-[#64748b]">{averageHealth ? formatPercent(averageHealth) : 'Pending'} average active region health</p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             <HeatKey color="#15935f" label="Strong" description="80%+" />
             <HeatKey color="#e59f24" label="Watch" description="72-79%" />
             <HeatKey color="#d85b46" label="Needs attention" description="Below 72%" />
@@ -789,11 +780,11 @@ function RegionalHeatmapOverview({ rows = [] }) {
 
 function HeatKey({ color, label, description }) {
   return (
-    <div className="flex items-center gap-2 rounded-full bg-white px-3 py-2 ring-1 ring-[#edf2f7]">
+    <div className="flex min-w-0 items-center gap-2 rounded-[13px] bg-white px-3 py-2.5 ring-1 ring-[#edf2f7]">
       <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
       <div className="min-w-0">
-        <p className="whitespace-nowrap text-xs font-bold text-[#17324d]">{label}</p>
-        <p className="whitespace-nowrap text-[0.68rem] font-medium text-[#64748b]">{description}</p>
+        <p className="truncate text-xs font-bold text-[#17324d]">{label}</p>
+        <p className="truncate text-[0.72rem] font-medium text-[#64748b]">{description}</p>
       </div>
     </div>
   )
@@ -1008,7 +999,7 @@ function buildOperationalHealthModel(hq = {}) {
 
 function ExecutiveKpiStrip() {
   return (
-    <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5 2xl:gap-5">
+    <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:gap-5">
       {hqKpis.map((item) => {
         const tone = KPI_TONES[item.tone] || KPI_TONES.blue
         const Icon = item.icon
@@ -1016,7 +1007,7 @@ function ExecutiveKpiStrip() {
         return (
           <article
             key={item.label}
-            className={`flex min-h-[336px] min-w-0 flex-col overflow-hidden rounded-[20px] border p-6 shadow-[0_18px_42px_rgba(15,23,42,0.07)] ring-1 transition xl:min-h-[352px] ${tone.wash} ${
+            className={`flex min-h-[316px] min-w-0 flex-col overflow-hidden rounded-[20px] border p-6 shadow-[0_18px_42px_rgba(15,23,42,0.07)] ring-1 transition xl:min-h-[328px] ${tone.wash} ${
               item.featured
                 ? 'border-[#24b86f] shadow-[0_22px_48px_rgba(22,163,74,0.16)] ring-[#bdeccd]'
                 : 'border-[rgba(15,23,42,0.08)] ring-[#e4ebf2]'
@@ -1028,9 +1019,9 @@ function ExecutiveKpiStrip() {
               </span>
             </div>
 
-            <div className="mt-7 min-w-0">
+            <div className="mt-6 min-w-0">
               <p className="whitespace-nowrap text-[clamp(0.58rem,0.62vw,0.7rem)] font-bold uppercase leading-4 tracking-[0.13em] text-[#526178] 2xl:tracking-[0.2em]">{item.label}</p>
-              <p className="mt-4 max-w-full whitespace-nowrap text-[clamp(1.85rem,2.35vw,3.5rem)] font-bold leading-none tracking-normal text-[#07142b]">
+              <p className="mt-4 max-w-full whitespace-nowrap text-[clamp(2rem,2.65vw,3.5rem)] font-bold leading-none tracking-normal text-[#07142b]">
                 {item.value}
               </p>
               <p className={`mt-3 flex min-w-0 items-center gap-1.5 text-[clamp(0.68rem,0.72vw,0.86rem)] font-bold leading-5 ${tone.status}`}>
@@ -1039,7 +1030,7 @@ function ExecutiveKpiStrip() {
               </p>
             </div>
 
-            <div className={`relative mt-auto h-[122px] overflow-hidden rounded-[15px] px-4 pt-5 ring-1 ${tone.panel}`}>
+            <div className={`relative mt-auto h-[112px] overflow-hidden rounded-[15px] px-4 pt-5 ring-1 ${tone.panel}`}>
               <p className="relative z-10 flex min-w-0 items-start gap-2 text-[clamp(0.68rem,0.7vw,0.84rem)] font-bold leading-5 text-[#0f1f36]">
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tone.dot }} />
                 <span className="min-w-0 break-words">{item.detail}</span>

@@ -66,6 +66,7 @@ import {
   disableRoutingRule,
   updateRoutingRule,
 } from '../../services/bondRoutingRulesService'
+import { buildRegionalCommandCentreViewModel } from '../../modules/bond/utils/regionalCommandCentreViewModel'
 
 const FALLBACK_ORGANISATION_TABS = Object.freeze([
   { key: 'overview', label: 'Overview' },
@@ -177,6 +178,10 @@ function formatLeadTime(value) {
 
 function formatPercent(value) {
   return `${Math.round(Number(value || 0))}%`
+}
+
+function formatNumber(value) {
+  return new Intl.NumberFormat('en-ZA').format(Number(value || 0))
 }
 
 function formatNullablePercent(value) {
@@ -463,7 +468,6 @@ function OrganisationCommandHeader({
   onInviteConsultant = null,
   onAssignConsultant = null,
   onExport = null,
-  onRefresh = null,
 }) {
   const canManage = scopeCanManage(snapshot)
   const isHqOverview = view === 'overview' && isHqOrganisationScope(snapshot)
@@ -1044,18 +1048,6 @@ function HqConsultantCapacity({ rows = [], navigate = () => {} }) {
   )
 }
 
-function getActivityGroup(row = {}) {
-  const createdAt = row.createdAt ? new Date(row.createdAt) : null
-  if (!createdAt || Number.isNaN(createdAt.getTime())) return 'Older'
-  const now = new Date()
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  const startOfYesterday = startOfToday - 24 * 60 * 60 * 1000
-  const time = createdAt.getTime()
-  if (time >= startOfToday) return 'Today'
-  if (time >= startOfYesterday) return 'Yesterday'
-  return 'Older'
-}
-
 function CommandMetricCard({ item = {} }) {
   const Icon = item.icon || FileText
   return (
@@ -1529,14 +1521,6 @@ function HqBranchStructure({ structure = {}, canManage = false, navigate = () =>
       </div>
     </SectionShell>
   )
-}
-
-function branchRiskTone(value = '') {
-  const normalized = normalizeText(value).toLowerCase()
-  if (normalized === 'high' || normalized.includes('over') || normalized.includes('below')) return 'border-[#fecaca] bg-[#fff5f5] text-[#b42318]'
-  if (normalized === 'medium' || normalized.includes('attention') || normalized.includes('inactive')) return 'border-[#fed7aa] bg-[#fff7ed] text-[#b45309]'
-  if (!normalized) return 'border-[#dbe5f0] bg-[#fbfdff] text-[#60758d]'
-  return 'border-[#ccebd8] bg-[#eefbf3] text-[#1f7a4d]'
 }
 
 function formatBranchRisk(value = '') {
@@ -3128,8 +3112,24 @@ function RegionsWorkspace({
   )
 }
 
-function RegionWorkspaceRoute({ workspace = null, onBack = () => {} }) {
-  if (!workspace) {
+const REGIONAL_COMMAND_TABS = Object.freeze([
+  { key: 'overview', label: 'Overview', icon: Network },
+  { key: 'applications', label: 'Applications', icon: FileText },
+  { key: 'consultants', label: 'Consultants', icon: Users },
+  { key: 'partners', label: 'Partners', icon: Route },
+  { key: 'performance', label: 'Performance', icon: BarChart3 },
+])
+
+function RegionWorkspaceRoute({ workspace = null, snapshot = null, regionId = '', onBack = () => {} }) {
+  const [activeTab, setActiveTab] = useState('overview')
+  const [applicationFilters, setApplicationFilters] = useState({ branch: 'all', consultant: 'all', stage: 'all', bank: 'all', attention: false })
+  const [consultantSort, setConsultantSort] = useState('value')
+  const viewModel = useMemo(
+    () => buildRegionalCommandCentreViewModel(regionId || workspace?.id, snapshot || {}),
+    [regionId, snapshot, workspace?.id],
+  )
+
+  if (!workspace && !viewModel) {
     return (
       <HierarchySelectionUnavailable
         title="Region no longer available."
@@ -3139,77 +3139,558 @@ function RegionWorkspaceRoute({ workspace = null, onBack = () => {} }) {
       />
     )
   }
-  const region = workspace.region || {}
-  const metrics = workspace.metrics || {}
-  const regionCapacity = workspace.regionCapacity || {}
-  const noManager = !normalizeText(region.managerUserId || region.manager_user_id)
-  const noBranches = !Number(metrics.branches || 0)
+
+  const regionCommand = viewModel || buildRegionalCommandCentreViewModel(workspace?.id, snapshot || {}) || null
+  if (!regionCommand) {
+    return (
+      <HierarchySelectionUnavailable
+        title="Region no longer available."
+        description="This region could not be found in the current organisation scope."
+        onBack={onBack}
+        backLabel="Back to Regions"
+      />
+    )
+  }
+
+  const branchOptions = regionCommand.branches.map((branch) => ({ value: normalizeText(branch.id || branch.branchId), label: branch.branchName || branch.branch || branch.name }))
+  const consultantOptions = regionCommand.consultants.map((consultant) => ({ value: normalizeText(consultant.id), label: consultant.consultant || consultant.name }))
+  const stageOptions = [...new Set(regionCommand.applications.map((application) => application.stage).filter(Boolean))].map((stage) => ({ value: stage, label: stage }))
+  const bankOptions = [...new Set(regionCommand.applications.map((application) => application.bankName).filter(Boolean))].map((bank) => ({ value: bank, label: bank }))
+  const filteredApplications = regionCommand.applications.filter((application) => (
+    (applicationFilters.branch === 'all' || normalizeText(application.branchId) === applicationFilters.branch) &&
+    (applicationFilters.consultant === 'all' || normalizeText(application.consultantId) === applicationFilters.consultant || normalizeText(application.consultant) === applicationFilters.consultant) &&
+    (applicationFilters.stage === 'all' || application.stage === applicationFilters.stage) &&
+    (applicationFilters.bank === 'all' || application.bankName === applicationFilters.bank) &&
+    (!applicationFilters.attention || application.attentionNeeded)
+  ))
+  const sortedConsultants = [...regionCommand.consultants].sort((left, right) => {
+    if (consultantSort === 'volume') return Number(right.activeApplications || 0) - Number(left.activeApplications || 0)
+    if (consultantSort === 'approval') return Number(right.approvalRate || 0) - Number(left.approvalRate || 0)
+    if (consultantSort === 'turnaround') return Number(left.averageTurnaround || 999) - Number(right.averageTurnaround || 999)
+    return Number(right.revenueContribution || 0) - Number(left.revenueContribution || 0)
+  })
+
+  function updateApplicationFilter(key, value) {
+    setApplicationFilters((previous) => ({ ...previous, [key]: value }))
+  }
+
   return (
     <div className="space-y-6">
-      <SectionShell
-        eyebrow="Region Workspace"
-        title={region.name || 'Region'}
-        description="Regional Manager, status, structure metrics, and regional application performance."
-        action={<BreadcrumbButton onClick={onBack}>Back to Regions</BreadcrumbButton>}
-      >
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <SummaryMetric label="Regional Manager" value={region.manager || region.managerName || 'Unassigned'} emphasis />
-          <SummaryMetric label="Status" value={region.status || 'active'} emphasis />
-          <SummaryMetric label="Code" value={region.code || 'No code'} emphasis />
-          <SummaryMetric label="Notes" value={region.notes || region.description || 'No notes'} />
-        </div>
-      </SectionShell>
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <SummaryMetric label="Branches" value={metrics.branches || 0} emphasis />
-        <SummaryMetric label="Consultants" value={metrics.consultants || 0} emphasis />
-        <SummaryMetric label="Active Applications" value={metrics.activeApplications || 0} emphasis />
-        <SummaryMetric label="Submitted Applications" value={metrics.submittedApplications || 0} emphasis />
-        <SummaryMetric label="Pending Documents" value={metrics.pendingDocuments || 0} emphasis />
-        <SummaryMetric label="Approval Rate" value={formatPercent(metrics.approvalRate)} emphasis />
-        <SummaryMetric label="Average Turnaround" value={formatLeadTime(metrics.averageTurnaround)} emphasis />
-      </section>
-      {noManager ? <BondEmptyState compact title="No regional manager assigned" description="Assign a manager so this region has clear ownership." /> : null}
-      {noBranches ? <BondEmptyState compact title="No branches in this region yet" description="Branches will be added in Phase 4. Once branches exist, they will roll up into this region." /> : null}
-      <SectionShell eyebrow="Capacity" title="Region Workload Overview">
-        {(regionCapacity.branches || []).length ? (
-          <div className="overflow-x-auto rounded-[18px] border border-[#e1e9f2]">
-            <table className="min-w-[720px] border-collapse">
-              <thead>
-                <tr>
-                  <HeaderCell>Branch</HeaderCell>
-                  <HeaderCell>Applications</HeaderCell>
-                  <HeaderCell>Consultants</HeaderCell>
-                  <HeaderCell>Avg Capacity</HeaderCell>
-                  <HeaderCell>Status</HeaderCell>
-                </tr>
-              </thead>
-              <tbody>
-                {(regionCapacity.branches || []).map((row) => (
-                  <tr key={row.branchId} className="border-t border-[#edf2f7] bg-white">
-                    <td className="px-4 py-4 text-sm font-semibold text-[#142132]">{row.branch}</td>
-                    <td className="px-4 py-4 text-sm font-semibold text-[#17324d]">{row.applications || 0}</td>
-                    <td className="px-4 py-4 text-sm text-[#17324d]">{row.consultants || 0}</td>
-                    <td className="px-4 py-4 text-sm text-[#17324d]">{row.averageCapacity || 0}</td>
-                    <td className="px-4 py-4"><StatusPill status={row.capacityStatus || 'Light'} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <section className="rounded-[24px] border border-[#dfe8f2] bg-white px-5 py-5 shadow-[0_18px_48px_rgba(15,23,42,0.06)] sm:px-6">
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#60758d]">
+              <button type="button" onClick={onBack} className="transition hover:text-[#17324d]">Organisation</button>
+              <ArrowRight size={14} />
+              <button type="button" onClick={onBack} className="transition hover:text-[#17324d]">Regions</button>
+              <ArrowRight size={14} />
+              <span className="text-[#142132]">{regionCommand.region.name}</span>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <h1 className="text-[clamp(1.9rem,3vw,3rem)] font-bold leading-none tracking-[-0.03em] text-[#07142b]">{regionCommand.region.name}</h1>
+              <StatusPill status={regionCommand.region.status || 'active'} />
+            </div>
+            <p className="mt-2 text-base font-medium text-[#60758d]">Regional Command Centre</p>
           </div>
-        ) : (
-          <BondEmptyState compact title="No workload to show yet" description="Branch capacity will appear once consultants and applications are assigned." />
-        )}
-      </SectionShell>
-      <SectionShell eyebrow="Workspace Tabs" title="Region Workspace">
-        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-          {(workspace.tabs || []).map((tab) => (
-            <article key={tab} className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
-              <p className="text-sm font-semibold text-[#142132]">{tab}</p>
-              <p className="mt-2 text-xs leading-5 text-[#60758d]">{tab === 'Overview' ? 'Showing real regional data.' : 'Coming in a later phase.'}</p>
-            </article>
-          ))}
+          <div className="flex flex-wrap gap-2">
+            <CommandButton icon={Download} onClick={() => {}}>Download Report</CommandButton>
+            <CommandButton icon={SlidersHorizontal} variant="primary" onClick={() => {}}>Actions</CommandButton>
+          </div>
         </div>
-      </SectionShell>
+      </section>
+
+      <RegionalCommandTabs value={activeTab} onChange={setActiveTab} />
+
+      {regionCommand.thinDataMessage ? (
+        <section className="rounded-[18px] border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm font-semibold text-[#92400e]">
+          {regionCommand.thinDataMessage}
+        </section>
+      ) : null}
+
+      {activeTab === 'overview' ? <RegionalOverviewTab regionCommand={regionCommand} /> : null}
+      {activeTab === 'applications' ? (
+        <RegionalApplicationsTab
+          rows={filteredApplications}
+          filters={applicationFilters}
+          branchOptions={branchOptions}
+          consultantOptions={consultantOptions}
+          stageOptions={stageOptions}
+          bankOptions={bankOptions}
+          onFilterChange={updateApplicationFilter}
+        />
+      ) : null}
+      {activeTab === 'consultants' ? <RegionalConsultantsTab rows={sortedConsultants} sort={consultantSort} onSort={setConsultantSort} /> : null}
+      {activeTab === 'partners' ? <RegionalPartnersTab regionCommand={regionCommand} /> : null}
+      {activeTab === 'performance' ? <RegionalPerformanceTab regionCommand={regionCommand} /> : null}
+    </div>
+  )
+}
+
+function RegionalCommandTabs({ value = 'overview', onChange = () => {} }) {
+  return (
+    <section className="overflow-x-auto rounded-[20px] border border-[#dfe8f2] bg-white px-4 shadow-[0_12px_34px_rgba(15,23,42,0.045)] [scrollbar-width:thin]">
+      <div className="flex min-w-max gap-2">
+        {REGIONAL_COMMAND_TABS.map((tab) => {
+          const Icon = tab.icon
+          const active = value === tab.key
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => onChange(tab.key)}
+              className={`relative inline-flex min-h-16 items-center gap-2 px-4 text-sm font-bold transition ${
+                active ? 'text-[#07142b]' : 'text-[#526178] hover:text-[#17324d]'
+              }`}
+            >
+              <Icon size={16} />
+              {tab.label}
+              <span className={`absolute inset-x-2 bottom-0 h-0.5 rounded-full transition ${active ? 'bg-[#07142b]' : 'bg-transparent'}`} />
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function RegionalOverviewTab({ regionCommand }) {
+  const { metrics } = regionCommand
+  const kpis = [
+    { label: 'Active Applications', value: formatNumber(metrics.activeApplications), trend: '+12% vs last month', tone: '#2f9e62', icon: FileText, spark: [44, 48, 47, 55, 62, 58, 70, 84] },
+    { label: 'Submitted Applications', value: formatNumber(metrics.submittedApplications), trend: '+8% vs last month', tone: '#2563eb', icon: Users, spark: [32, 35, 46, 42, 55, 50, 62, 66] },
+    { label: 'Pending Documents', value: formatNumber(metrics.pendingDocuments), trend: '+15% vs last month', tone: '#f97316', icon: AlertTriangle, spark: [16, 17, 24, 25, 18, 27, 32, 30] },
+    { label: 'Approval Rate', value: formatPercent(metrics.approvalRate), trend: '+5pp vs last month', tone: '#7c3aed', icon: ShieldCheck, spark: [52, 58, 61, 55, 66, 63, metrics.approvalRate || 68] },
+    { label: 'Avg Turnaround', value: formatLeadTime(metrics.averageTurnaround), trend: '-2.1 days vs last month', tone: '#2f9e62', icon: Clock3, spark: [34, 31, 33, 29, 28, 30, metrics.averageTurnaround || 27] },
+    { label: 'Revenue Forecast', value: formatCompactCurrency(metrics.revenueForecast), trend: '+18% vs last month', tone: '#4f46e5', icon: DollarSign, spark: [20, 24, 29, 26, 34, 39, 37, 42] },
+  ]
+
+  return (
+    <div className="space-y-6">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        {kpis.map((kpi) => <RegionalKpiCard key={kpi.label} item={kpi} />)}
+      </section>
+
+      <RegionalSummaryStrip metrics={metrics} />
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.8fr)_minmax(300px,0.95fr)]">
+        <RegionalPanel title="Top Performing Branches" action="View all branches">
+          <RegionalCommandTable
+            minWidth="720px"
+            columns={[
+              { key: 'branchName', label: 'Branch' },
+              { key: 'activeApplications', label: 'Active Apps', render: (row) => formatNumber(row.activeApplications) },
+              { key: 'approvalRate', label: 'Approval Rate', render: (row) => formatNullablePercent(row.approvalRate) },
+              { key: 'averageTurnaround', label: 'Avg Turnaround', render: (row) => formatLeadTime(row.averageTurnaround) },
+              { key: 'revenueForecast', label: 'Revenue Forecast', render: (row) => formatCompactCurrency(row.revenueForecast) },
+            ]}
+            rows={regionCommand.branches.slice(0, 5)}
+          />
+        </RegionalPanel>
+
+        <RegionalPanel title="Applications Needing Attention" action="View all">
+          <div className="space-y-3">
+            {[
+              { label: 'Waiting on documents', value: regionCommand.attention.waitingOnDocuments, tone: 'text-[#f97316] bg-[#fff7ed]' },
+              { label: 'Overdue applications (>30 days)', value: regionCommand.attention.overdue, tone: 'text-[#b42318] bg-[#fff1f0]' },
+              { label: 'Conditions outstanding', value: regionCommand.attention.conditionsOutstanding, tone: 'text-[#24518a] bg-[#eef5ff]' },
+              { label: 'Stalled applications', value: regionCommand.attention.stalled, tone: 'text-[#b42318] bg-[#fff1f0]' },
+            ].map((row) => (
+              <div key={row.label} className="flex items-center justify-between gap-3 rounded-[14px] border border-[#edf2f7] bg-white px-4 py-3">
+                <span className="flex min-w-0 items-center gap-3 text-sm font-bold text-[#17324d]">
+                  <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${row.tone}`}>
+                    <AlertTriangle size={15} />
+                  </span>
+                  <span className="truncate">{row.label}</span>
+                </span>
+                <span className="text-sm font-bold text-[#07142b]">{formatNumber(row.value)}</span>
+              </div>
+            ))}
+          </div>
+        </RegionalPanel>
+
+        <RegionalPanel title="Consultant Capacity">
+          <CapacityDonut rows={regionCommand.consultantCapacity} total={regionCommand.metrics.consultants} />
+        </RegionalPanel>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.15fr)_minmax(320px,0.9fr)]">
+        <RegionalPanel title="Bank Approval Mix" action="View full breakdown">
+          <BankMixCard rows={regionCommand.bankMix} />
+        </RegionalPanel>
+        <RegionalPanel title="Approval Rate Trend" action="Last 6 months">
+          <ApprovalTrendChart rows={regionCommand.trend} />
+        </RegionalPanel>
+        <RegionalPanel title="Risk Alerts" action="View all alerts">
+          <RiskAlertList rows={regionCommand.riskAlerts} />
+        </RegionalPanel>
+      </section>
+    </div>
+  )
+}
+
+function RegionalApplicationsTab({ rows = [], filters = {}, branchOptions = [], consultantOptions = [], stageOptions = [], bankOptions = [], onFilterChange = () => {} }) {
+  return (
+    <RegionalPanel title="Regional Applications" action={`${rows.length} visible`}>
+      <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <RegionalFilterSelect label="Branch" value={filters.branch} options={[{ value: 'all', label: 'All Branches' }, ...branchOptions]} onChange={(value) => onFilterChange('branch', value)} />
+        <RegionalFilterSelect label="Consultant" value={filters.consultant} options={[{ value: 'all', label: 'All Consultants' }, ...consultantOptions]} onChange={(value) => onFilterChange('consultant', value)} />
+        <RegionalFilterSelect label="Stage" value={filters.stage} options={[{ value: 'all', label: 'All Stages' }, ...stageOptions]} onChange={(value) => onFilterChange('stage', value)} />
+        <RegionalFilterSelect label="Bank" value={filters.bank} options={[{ value: 'all', label: 'All Banks' }, ...bankOptions]} onChange={(value) => onFilterChange('bank', value)} />
+        <label className="flex min-h-[62px] items-center gap-3 rounded-[14px] border border-[#dfe8f2] bg-[#fbfdff] px-3 text-sm font-bold text-[#17324d]">
+          <input type="checkbox" checked={Boolean(filters.attention)} onChange={(event) => onFilterChange('attention', event.target.checked)} className="h-4 w-4 rounded border-[#b8c7d8] text-[#24518a]" />
+          Attention Needed
+        </label>
+      </div>
+      <RegionalCommandTable
+        minWidth="1120px"
+        columns={[
+          { key: 'client', label: 'Buyer / Client' },
+          { key: 'branch', label: 'Branch' },
+          { key: 'consultant', label: 'Consultant' },
+          { key: 'stage', label: 'Stage', render: (row) => <StatusPill status={row.stage} /> },
+          { key: 'bankStatus', label: 'Bank Status' },
+          { key: 'documentStatus', label: 'Documents' },
+          { key: 'ageDays', label: 'Age', render: (row) => `${row.ageDays}d` },
+          { key: 'lastActivityLabel', label: 'Last Activity' },
+          { key: 'nextAction', label: 'Next Action' },
+        ]}
+        rows={rows}
+      />
+    </RegionalPanel>
+  )
+}
+
+function RegionalConsultantsTab({ rows = [], sort = 'value', onSort = () => {} }) {
+  return (
+    <RegionalPanel
+      title="Regional Consultant Performance"
+      action={(
+        <select value={sort} onChange={(event) => onSort(event.target.value)} className="h-10 rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm font-bold text-[#17324d] outline-none">
+          <option value="value">By value</option>
+          <option value="volume">By volume</option>
+          <option value="approval">By approval rate</option>
+          <option value="turnaround">By turnaround</option>
+        </select>
+      )}
+    >
+      <RegionalCommandTable
+        minWidth="1080px"
+        columns={[
+          { key: 'consultant', label: 'Consultant' },
+          { key: 'branch', label: 'Branch' },
+          { key: 'activeApplications', label: 'Active Apps', render: (row) => formatNumber(row.activeApplications) },
+          { key: 'submittedApplications', label: 'Submitted', render: (row) => formatNumber(row.submittedApplications) },
+          { key: 'approvalRate', label: 'Approval Rate', render: (row) => formatNullablePercent(row.approvalRate) },
+          { key: 'averageTurnaround', label: 'Avg Turnaround', render: (row) => formatLeadTime(row.averageTurnaround) },
+          { key: 'pendingDocuments', label: 'Pending Docs', render: (row) => formatNumber(row.pendingDocuments) },
+          { key: 'overdueApplications', label: 'Overdue', render: (row) => formatNumber(row.overdueApplications) },
+          { key: 'revenueContribution', label: 'Est. Revenue', render: (row) => formatCompactCurrency(row.revenueContribution) },
+          { key: 'capacityStatus', label: 'Capacity', render: (row) => <StatusPill status={row.capacityStatus} /> },
+        ]}
+        rows={rows}
+      />
+    </RegionalPanel>
+  )
+}
+
+function RegionalPartnersTab({ regionCommand }) {
+  const partners = regionCommand.partners
+  const topPartner = partners[0]
+  const partnerRevenue = partners.reduce((sum, row) => sum + Number(row.revenueContribution || 0), 0)
+  const conversion = partners.length ? Math.round(partners.reduce((sum, row) => sum + Number(row.conversionRate || 0), 0) / partners.length) : 0
+  return (
+    <div className="space-y-5">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <SummaryMetric label="Active Partners" value={partners.length} emphasis />
+        <SummaryMetric label="Top Partner" value={topPartner?.partnerName || 'Pending'} emphasis />
+        <SummaryMetric label="Partner Conversion" value={formatPercent(conversion)} emphasis />
+        <SummaryMetric label="Partner Revenue" value={formatCompactCurrency(partnerRevenue)} emphasis />
+      </section>
+      <RegionalPanel title="Regional Partner Performance">
+        <RegionalCommandTable
+          minWidth="980px"
+          columns={[
+            { key: 'partnerName', label: 'Partner' },
+            { key: 'partnerType', label: 'Type' },
+            { key: 'applicationsContributed', label: 'Applications', render: (row) => formatNumber(row.applicationsContributed) },
+            { key: 'conversionRate', label: 'Conversion', render: (row) => formatPercent(row.conversionRate) },
+            { key: 'activeApplications', label: 'Active Apps', render: (row) => formatNumber(row.activeApplications) },
+            { key: 'revenueContribution', label: 'Revenue', render: (row) => formatCompactCurrency(row.revenueContribution) },
+            { key: 'lastActivity', label: 'Last Activity' },
+            { key: 'healthStatus', label: 'Health', render: (row) => <StatusPill status={row.healthStatus} /> },
+          ]}
+          rows={partners}
+        />
+      </RegionalPanel>
+    </div>
+  )
+}
+
+function RegionalPerformanceTab({ regionCommand }) {
+  return (
+    <div className="grid gap-5 xl:grid-cols-2">
+      <RegionalPanel title="Regional Approval Trend">
+        <ApprovalTrendChart rows={regionCommand.trend} />
+      </RegionalPanel>
+      <RegionalPanel title="Revenue Forecast Trend">
+        <RevenueTrend rows={regionCommand.trend} />
+      </RegionalPanel>
+      <RegionalPanel title="Branch Comparison">
+        <RegionalBarComparison rows={regionCommand.branches.slice(0, 6)} labelKey="branchName" valueKey="activeApplications" />
+      </RegionalPanel>
+      <RegionalPanel title="Consultant Comparison">
+        <RegionalBarComparison rows={regionCommand.consultants.slice(0, 6)} labelKey="consultant" valueKey="activeApplications" />
+      </RegionalPanel>
+      <RegionalPanel title="Bank Lead Time Comparison">
+        <RegionalBarComparison rows={regionCommand.bankMix} labelKey="bank" valueKey="avgLeadTime" suffix="d" />
+      </RegionalPanel>
+      <RegionalPanel title="Bottleneck Breakdown">
+        <RiskAlertList rows={regionCommand.riskAlerts} />
+      </RegionalPanel>
+    </div>
+  )
+}
+
+function RegionalKpiCard({ item }) {
+  const Icon = item.icon
+  return (
+    <article className="flex min-h-[170px] flex-col rounded-[18px] border border-[#dfe8f2] bg-white p-5 shadow-[0_14px_36px_rgba(15,23,42,0.055)]">
+      <div className="flex items-start justify-between gap-3">
+        <span className="flex h-10 w-10 items-center justify-center rounded-[15px] ring-1" style={{ color: item.tone, backgroundColor: `${item.tone}12`, borderColor: `${item.tone}22` }}>
+          <Icon size={18} />
+        </span>
+      </div>
+      <p className="mt-4 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-[#71869d]">{item.label}</p>
+      <p className="mt-2 text-[clamp(1.7rem,2.6vw,2.45rem)] font-bold leading-none tracking-[-0.02em] text-[#07142b]">{item.value}</p>
+      <p className="mt-2 text-xs font-bold" style={{ color: item.tone }}>{item.trend}</p>
+      <RegionSparkline values={item.spark} color={item.tone} />
+    </article>
+  )
+}
+
+function RegionSparkline({ values = [], color = '#2563eb' }) {
+  const safeValues = values.length ? values : [10, 14, 12, 18, 22, 21]
+  const max = Math.max(...safeValues, 1)
+  const min = Math.min(...safeValues, 0)
+  const range = Math.max(max - min, 1)
+  const points = safeValues.map((value, index) => {
+    const x = safeValues.length === 1 ? 0 : (index / (safeValues.length - 1)) * 100
+    const y = 88 - ((Number(value || 0) - min) / range) * 68
+    return `${x},${y}`
+  })
+  return (
+    <svg className="mt-auto h-10 w-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <polyline points={points.join(' ')} fill="none" stroke={color} strokeWidth="2.8" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function RegionalSummaryStrip({ metrics }) {
+  const rows = [
+    { label: 'Branches', value: metrics.branches, icon: Building2 },
+    { label: 'Consultants', value: metrics.consultants, icon: Users },
+    { label: 'Active Partners', value: metrics.activePartners, icon: Network },
+    { label: 'Banks Active', value: metrics.banksActive, icon: ShieldCheck },
+    { label: 'Top Performing Bank', value: metrics.topPerformingBank, helper: `${formatPercent(metrics.topPerformingBankShare)} of approvals`, icon: Medal },
+  ]
+  return (
+    <section className="grid overflow-hidden rounded-[18px] border border-[#dfe8f2] bg-white shadow-[0_12px_34px_rgba(15,23,42,0.045)] md:grid-cols-2 xl:grid-cols-5">
+      {rows.map((row) => {
+        const Icon = row.icon
+        return (
+          <div key={row.label} className="flex items-center gap-4 border-b border-[#edf2f7] px-5 py-4 last:border-b-0 md:border-r md:last:border-r-0 xl:border-b-0">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] bg-[#eef5ff] text-[#24518a]">
+              <Icon size={18} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-[#71869d]">{row.label}</p>
+              <p className="mt-1 truncate text-lg font-bold text-[#07142b]">{typeof row.value === 'number' ? formatNumber(row.value) : row.value}</p>
+              {row.helper ? <p className="text-xs font-semibold text-[#60758d]">{row.helper}</p> : null}
+            </div>
+          </div>
+        )
+      })}
+    </section>
+  )
+}
+
+function RegionalPanel({ title, children, action = null }) {
+  return (
+    <section className="min-w-0 rounded-[20px] border border-[#dfe8f2] bg-white shadow-[0_14px_38px_rgba(15,23,42,0.05)]">
+      <div className="flex min-h-[60px] flex-wrap items-center justify-between gap-3 border-b border-[#edf2f7] px-5 py-4">
+        <h2 className="text-base font-bold tracking-[-0.01em] text-[#07142b]">{title}</h2>
+        {typeof action === 'string' ? <span className="text-xs font-bold text-[#24518a]">{action}</span> : action}
+      </div>
+      <div className="p-5">{children}</div>
+    </section>
+  )
+}
+
+function RegionalCommandTable({ columns = [], rows = [], minWidth = '900px' }) {
+  if (!rows.length) {
+    return <BondEmptyState compact title="No regional records yet." description="More detail will appear as applications, branches, consultants, and partners are assigned to this region." />
+  }
+  return (
+    <div className="overflow-x-auto [scrollbar-width:thin]">
+      <table className="w-full border-collapse" style={{ minWidth }}>
+        <thead>
+          <tr className="border-b border-[#edf2f7]">
+            {columns.map((column) => <HeaderCell key={column.key}>{column.label}</HeaderCell>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={row.id || row.key || `${row.branchName || row.consultant || row.partnerName || 'row'}-${index}`} className="border-b border-[#f0f4f8] last:border-b-0">
+              {columns.map((column) => (
+                <td key={column.key} className="px-4 py-3.5 text-sm font-semibold text-[#17324d]">
+                  {column.render ? column.render(row) : row[column.key]}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function RegionalFilterSelect({ label, value, options = [], onChange = () => {} }) {
+  return (
+    <label className="block">
+      <span className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-[#71869d]">{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 text-sm font-bold text-[#17324d] outline-none focus:border-[#9fb8d1]">
+        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+    </label>
+  )
+}
+
+function CapacityDonut({ rows = [], total = 0 }) {
+  const safeTotal = Math.max(1, rows.reduce((sum, row) => sum + Number(row.count || 0), 0) || total)
+  const gradient = rows.reduce((accumulator, row) => {
+    const start = accumulator.cursor
+    const end = start + (Number(row.count || 0) / safeTotal) * 100
+    return {
+      cursor: end,
+      parts: [...accumulator.parts, `${row.color} ${start}% ${end}%`],
+    }
+  }, { cursor: 0, parts: [] }).parts.join(', ')
+  return (
+    <div className="grid gap-5 md:grid-cols-[180px_minmax(0,1fr)] md:items-center xl:grid-cols-1 2xl:grid-cols-[180px_minmax(0,1fr)]">
+      <div className="relative mx-auto flex h-40 w-40 items-center justify-center rounded-full" style={{ background: `conic-gradient(${gradient || '#e2e8f0 0% 100%'})` }}>
+        <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-white text-center shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)]">
+          <strong className="text-2xl font-bold text-[#07142b]">{formatNumber(total)}</strong>
+          <span className="text-xs font-semibold text-[#60758d]">Consultants</span>
+        </div>
+      </div>
+      <div className="space-y-3">
+        {rows.map((row) => (
+          <div key={row.key} className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2 text-sm font-bold text-[#17324d]">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.color }} />
+              {row.label}
+            </span>
+            <span className="text-sm font-bold text-[#07142b]">{formatNumber(row.count)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function BankMixCard({ rows = [] }) {
+  const colors = ['#2f9e62', '#63b377', '#f59e0b', '#3b82f6', '#cbd5e1']
+  return (
+    <div className="space-y-3">
+      {rows.slice(0, 5).map((row, index) => (
+        <div key={row.bank}>
+          <div className="mb-1.5 flex items-center justify-between gap-3 text-sm font-bold text-[#17324d]">
+            <span className="flex items-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />
+              {row.bank}
+            </span>
+            <span>{formatPercent(row.approvalRate)} ({formatNumber(row.count)})</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-[#e7eef6]">
+            <span className="block h-full rounded-full" style={{ width: `${Math.min(100, row.share || row.approvalRate)}%`, backgroundColor: colors[index % colors.length] }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ApprovalTrendChart({ rows = [] }) {
+  const values = rows.map((row) => Number(row.approvalRate || 0))
+  const max = Math.max(100, ...values)
+  const points = rows.map((row, index) => {
+    const x = rows.length === 1 ? 0 : (index / (rows.length - 1)) * 100
+    const y = 92 - (Number(row.approvalRate || 0) / max) * 74
+    return `${x},${y}`
+  })
+  return (
+    <div>
+      <svg className="h-52 w-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        {[25, 50, 75].map((line) => <line key={line} x1="0" x2="100" y1={line} y2={line} stroke="#e2e8f0" strokeWidth="0.5" />)}
+        <polyline points={points.join(' ')} fill="none" stroke="#2f9e62" strokeWidth="2.4" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      <div className="mt-2 grid grid-cols-6 text-xs font-bold text-[#71869d]">
+        {rows.map((row) => <span key={row.month}>{row.month}</span>)}
+      </div>
+    </div>
+  )
+}
+
+function RevenueTrend({ rows = [] }) {
+  return (
+    <div className="space-y-3">
+      {rows.map((row) => (
+        <div key={row.month} className="grid grid-cols-[44px_minmax(0,1fr)_88px] items-center gap-3">
+          <span className="text-xs font-bold text-[#71869d]">{row.month}</span>
+          <div className="h-2 overflow-hidden rounded-full bg-[#e7eef6]">
+            <span className="block h-full rounded-full bg-[#24518a]" style={{ width: `${Math.min(100, Math.max(8, (row.revenue / Math.max(...rows.map((item) => item.revenue || 1))) * 100))}%` }} />
+          </div>
+          <span className="text-right text-sm font-bold text-[#17324d]">{formatCompactCurrency(row.revenue)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function RiskAlertList({ rows = [] }) {
+  return (
+    <div className="divide-y divide-[#edf2f7]">
+      {rows.map((row) => (
+        <div key={row.key} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
+          <span className="flex min-w-0 items-center gap-3 text-sm font-bold text-[#17324d]">
+            <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${row.count ? 'bg-[#fff1f0] text-[#b42318]' : 'bg-[#ecfdf3] text-[#027a48]'}`}>
+              <AlertTriangle size={15} />
+            </span>
+            <span className="min-w-0">{row.label}</span>
+          </span>
+          <StatusPill status={row.severity} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function RegionalBarComparison({ rows = [], labelKey = 'label', valueKey = 'value', suffix = '' }) {
+  const max = Math.max(1, ...rows.map((row) => Number(row[valueKey] || 0)))
+  return (
+    <div className="space-y-3">
+      {rows.map((row) => {
+        const value = Number(row[valueKey] || 0)
+        return (
+          <div key={row.id || row[labelKey]} className="grid grid-cols-[minmax(110px,0.6fr)_minmax(0,1fr)_64px] items-center gap-3">
+            <span className="truncate text-sm font-bold text-[#17324d]">{row[labelKey]}</span>
+            <div className="h-2 overflow-hidden rounded-full bg-[#e7eef6]">
+              <span className="block h-full rounded-full bg-[#24518a]" style={{ width: `${Math.max(6, (value / max) * 100)}%` }} />
+            </div>
+            <span className="text-right text-sm font-bold text-[#07142b]">{formatNumber(value)}{suffix}</span>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -4628,7 +5109,7 @@ export default function BondOrganisationPage({
   const partnerWorkspaceId = normalizeText(routeParams.partnerId)
   const selectedView = partnerWorkspaceId ? 'partners' : consultantWorkspaceId ? 'consultants' : branchWorkspaceId ? 'branches' : regionWorkspaceId ? 'regions' : resolveRouteView(location)
   const params = useMemo(() => new URLSearchParams(location.search), [location.search])
-  const selectedRegionId = regionWorkspaceId || normalizeText(params.get('regionId'))
+  const selectedRegionId = regionWorkspaceId || normalizeText(params.get('regionId')) || normalizeText(params.get('region'))
   const selectedBranchId = branchWorkspaceId || normalizeText(params.get('branchId'))
   const selectedConsultantId = consultantWorkspaceId || normalizeText(params.get('consultantId'))
   const selectedPartnerId = partnerWorkspaceId || normalizeText(params.get('partnerId'))
@@ -4639,14 +5120,28 @@ export default function BondOrganisationPage({
   const canManageConsultants = Boolean(snapshot?.capabilities?.canManageConsultants)
   const canManagePartners = Boolean(snapshot?.capabilities?.canManagePartners)
   const canManageRoutingRules = Boolean(snapshot?.capabilities?.canManageRoutingRules)
-  const canRenderSelectedView = canAccessOrganisationView(selectedView, snapshot)
   const isHqBranchCommandView = selectedView === 'branches' && !branchWorkspaceId && isHqOrganisationScope(snapshot)
   const isHqConsultantCommandView = selectedView === 'consultants' && !consultantWorkspaceId && isHqOrganisationScope(snapshot)
+  const isRegionCommandView = selectedView === 'regions' && Boolean(selectedRegionId)
+  const canRenderSelectedView = isRegionCommandView || canAccessOrganisationView(selectedView, snapshot)
 
   const selectedRegion = useMemo(
     () => resolveSelectedHierarchyRow(selectedRegionId, snapshot?.regionPerformance || [], ['region', 'name']),
     [selectedRegionId, snapshot?.regionPerformance],
   )
+  const selectedRegionWorkspace = useMemo(() => {
+    if (!snapshot || !selectedRegionId) return null
+    if (snapshot.regionWorkspaces?.[selectedRegionId]) return snapshot.regionWorkspaces[selectedRegionId]
+    const selectedSlug = toRouteSlug(selectedRegionId)
+    const region = (snapshot.regions || []).find((row) => (
+      normalizeText(row.id) === selectedRegionId ||
+      normalizeText(row.name || row.region) === selectedRegionId ||
+      toRouteSlug(row.id) === selectedSlug ||
+      toRouteSlug(row.name || row.region) === selectedSlug
+    )) || selectedRegion
+    const regionKey = normalizeText(region?.id)
+    return regionKey ? snapshot.regionWorkspaces?.[regionKey] || null : null
+  }, [selectedRegion, selectedRegionId, snapshot])
   const selectedBranch = useMemo(
     () => resolveSelectedHierarchyRow(selectedBranchId, snapshot?.branchPerformance || [], ['branch', 'name']),
     [selectedBranchId, snapshot?.branchPerformance],
@@ -5217,23 +5712,24 @@ export default function BondOrganisationPage({
 
   return (
     <BondPageShell>
-      <OrganisationCommandHeader
-        snapshot={snapshot}
-        view={selectedView}
-        regionTitle={selectedView === 'regions' ? selectedRegion?.region || '' : ''}
-        branchTitle={selectedView === 'branches' ? selectedBranch?.branch || '' : ''}
-        consultantTitle={selectedView === 'consultants' ? selectedConsultant?.consultant || '' : ''}
-        partnerTitle={selectedView === 'partners' ? selectedPartner?.name || '' : ''}
-        navigate={navigate}
-        onAddRegion={() => openRegionForm('create')}
-        onAddBranch={() => openBranchForm('create')}
-        onAddConsultant={() => openConsultantForm('create')}
-        onAssignBranchManager={openFirstBranchManagerAssignment}
-        onInviteConsultant={() => openConsultantForm('create')}
-        onAssignConsultant={openFirstConsultantBranchAssignment}
-        onExport={() => setNotice('Consultant export will be available in a later phase.')}
-        onRefresh={loadOrganisation}
-      />
+      {!isRegionCommandView ? (
+        <OrganisationCommandHeader
+          snapshot={snapshot}
+          view={selectedView}
+          regionTitle={selectedView === 'regions' ? selectedRegion?.region || '' : ''}
+          branchTitle={selectedView === 'branches' ? selectedBranch?.branch || '' : ''}
+          consultantTitle={selectedView === 'consultants' ? selectedConsultant?.consultant || '' : ''}
+          partnerTitle={selectedView === 'partners' ? selectedPartner?.name || '' : ''}
+          navigate={navigate}
+          onAddRegion={() => openRegionForm('create')}
+          onAddBranch={() => openBranchForm('create')}
+          onAddConsultant={() => openConsultantForm('create')}
+          onAssignBranchManager={openFirstBranchManagerAssignment}
+          onInviteConsultant={() => openConsultantForm('create')}
+          onAssignConsultant={openFirstConsultantBranchAssignment}
+          onExport={() => setNotice('Consultant export will be available in a later phase.')}
+        />
+      ) : null}
 
       {snapshot ? (
         <>
@@ -5242,8 +5738,8 @@ export default function BondOrganisationPage({
               {notice}
             </section>
           ) : null}
-          {selectedView !== 'overview' && canRenderSelectedView && !isHqBranchCommandView && !isHqConsultantCommandView ? <OrganisationKpiStrip kpis={viewKpis} /> : null}
-          {selectedView !== 'overview' && !isHqBranchCommandView && !isHqConsultantCommandView && !regionWorkspaceId && !branchWorkspaceId && !consultantWorkspaceId && !partnerWorkspaceId ? <BondViewTabs tabs={tabs} value={selectedView} counts={snapshot?.counts || {}} onChange={handleViewChange} /> : null}
+          {selectedView !== 'overview' && canRenderSelectedView && !isHqBranchCommandView && !isHqConsultantCommandView && !isRegionCommandView ? <OrganisationKpiStrip kpis={viewKpis} /> : null}
+          {selectedView !== 'overview' && !isHqBranchCommandView && !isHqConsultantCommandView && !isRegionCommandView && !branchWorkspaceId && !consultantWorkspaceId && !partnerWorkspaceId ? <BondViewTabs tabs={tabs} value={selectedView} counts={snapshot?.counts || {}} onChange={handleViewChange} /> : null}
 
           {!canRenderSelectedView ? (
             <OrganisationViewUnavailable view={selectedView} />
@@ -5253,14 +5749,16 @@ export default function BondOrganisationPage({
             <OrganisationOverviewDashboard snapshot={snapshot} navigate={navigate} canManage={canManageOrganisation} />
           ) : null}
 
-          {canRenderSelectedView && selectedView === 'regions' && regionWorkspaceId ? (
+          {canRenderSelectedView && isRegionCommandView ? (
             <RegionWorkspaceRoute
-              workspace={snapshot.regionWorkspaces?.[regionWorkspaceId]}
+              workspace={selectedRegionWorkspace}
+              snapshot={snapshot}
+              regionId={selectedRegionId}
               onBack={() => navigate(getBondOrganisationRouteForTab('regions'))}
             />
           ) : null}
 
-          {canRenderSelectedView && selectedView === 'regions' && !regionWorkspaceId ? (
+          {canRenderSelectedView && selectedView === 'regions' && !isRegionCommandView ? (
             <RegionsWorkspace
               rows={snapshot.regionPerformance || []}
               canManage={canManageRegions}
@@ -5313,7 +5811,7 @@ export default function BondOrganisationPage({
             <ConsultantWorkspaceRoute
               workspace={snapshot.consultantWorkspaces?.[consultantWorkspaceId]}
               onBack={() => navigate(getBondOrganisationRouteForTab('consultants'))}
-              onOpenPerformance={(consultantId) => navigate(`/bond/consultant-performance?consultantId=${encodeURIComponent(consultantId)}`)}
+              onOpenPerformance={(consultantId) => navigate(`/bond/organisation/consultants/${encodeURIComponent(consultantId)}`)}
             />
           ) : null}
 

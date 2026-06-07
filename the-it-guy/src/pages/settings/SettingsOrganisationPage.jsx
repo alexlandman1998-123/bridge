@@ -243,16 +243,18 @@ export default function SettingsOrganisationPage() {
   async function handleLogoUpload(file, targetKey) {
     if (!file || !canEdit || !state) return
     try {
+      const isIconLogo = targetKey === 'logoIcon'
+      const isDarkLogo = targetKey === 'logoDark'
       setUploadingLogoTarget(targetKey)
       setError('')
-      setMessage(targetKey === 'logoDark' ? 'Uploading dark logo…' : 'Uploading light logo…')
+      setMessage(isIconLogo ? 'Uploading icon logo...' : isDarkLogo ? 'Uploading dark logo...' : 'Uploading primary logo...')
       const upload = await uploadOrganisationBrandingAsset({
         file,
-        variant: targetKey === 'logoDark' ? 'dark' : 'light',
+        variant: isIconLogo ? 'icon' : isDarkLogo ? 'dark' : 'primary',
       })
       const assetUrl = upload.resolvedUrl || upload.signedUrl || upload.publicUrl || ''
-      const brandingFieldBucket = targetKey === 'logoDark' ? 'logoDarkBucket' : 'logoLightBucket'
-      const brandingFieldPath = targetKey === 'logoDark' ? 'logoDarkPath' : 'logoLightPath'
+      const brandingFieldBucket = isIconLogo ? 'logoIconBucket' : isDarkLogo ? 'logoDarkBucket' : 'logoLightBucket'
+      const brandingFieldPath = isIconLogo ? 'logoIconPath' : isDarkLogo ? 'logoDarkPath' : 'logoLightPath'
 
       const nextState = {
         ...state,
@@ -287,7 +289,7 @@ export default function SettingsOrganisationPage() {
         window.dispatchEvent(new Event('itg:organisation-branding-updated'))
       }
 
-      setMessage(targetKey === 'logoDark' ? 'Dark logo uploaded and applied.' : 'Light logo uploaded and applied.')
+      setMessage(isIconLogo ? 'Icon logo uploaded and applied.' : isDarkLogo ? 'Dark logo uploaded and applied.' : 'Primary logo uploaded and applied.')
     } catch (uploadError) {
       setError(uploadError?.message || 'Unable to upload the selected logo. Please try again.')
     } finally {
@@ -629,7 +631,8 @@ export default function SettingsOrganisationPage() {
         <SettingsSectionCard title="Branding" description="Brand assets used for portal, reporting, and outbound communication surfaces.">
           <div className={settingsGridClass}>
             <article className="agency-brand-upload">
-              <strong>Light Contrast Logo</strong>
+              <strong>Primary Logo</strong>
+              <p className="mt-1 text-sm leading-5 text-[#60758d]">Used on profile pages, reports and organisation headers. Recommended: horizontal logo.</p>
               {canEdit ? (
                 <label className="agency-upload-trigger">
                   <input
@@ -637,21 +640,50 @@ export default function SettingsOrganisationPage() {
                     accept="image/png,image/svg+xml,image/jpeg,image/webp"
                     onChange={(event) => void handleLogoUpload(event.target.files?.[0], 'logoLight')}
                   />
-                  {uploadingLogoTarget === 'logoLight' ? 'Uploading…' : 'Upload Light Logo'}
+                  {uploadingLogoTarget === 'logoLight' ? 'Uploading...' : 'Upload Primary Logo'}
                 </label>
               ) : null}
               <p className="agency-upload-caption">
                 {onboarding.branding?.logoLightName
                   ? `Uploaded: ${onboarding.branding.logoLightName}`
                   : onboarding.branding?.logoLight
-                    ? `Uploaded: ${getLogoPreviewLabel(onboarding.branding.logoLight, 'Light logo')}`
-                    : 'No light logo uploaded yet (Bridge fallback is active)'}
+                    ? `Uploaded: ${getLogoPreviewLabel(onboarding.branding.logoLight, 'Primary logo')}`
+                    : 'No primary logo uploaded yet (Bridge fallback is active)'}
               </p>
               {onboarding.branding?.logoLight ? (
                 <img className="agency-logo-preview" src={onboarding.branding.logoLight} alt="Light logo preview" />
               ) : (
                 <div className="rounded-[12px] border border-dashed border-[#d9e4ef] bg-[#f8fbff] px-4 py-6 text-center text-sm text-[#6b7d93]">
-                  Bridge fallback branding will be used.
+                  Bridge fallback branding will be used for large brand surfaces.
+                </div>
+              )}
+            </article>
+
+            <article className="agency-brand-upload">
+              <strong>Icon Logo</strong>
+              <p className="mt-1 text-sm leading-5 text-[#60758d]">Used on cards, tables, lists and dashboards. Recommended: square logo mark.</p>
+              {canEdit ? (
+                <label className="agency-upload-trigger">
+                  <input
+                    type="file"
+                    accept="image/png,image/svg+xml,image/jpeg,image/webp"
+                    onChange={(event) => void handleLogoUpload(event.target.files?.[0], 'logoIcon')}
+                  />
+                  {uploadingLogoTarget === 'logoIcon' ? 'Uploading...' : 'Upload Icon Logo'}
+                </label>
+              ) : null}
+              <p className="agency-upload-caption">
+                {onboarding.branding?.logoIconName
+                  ? `Uploaded: ${onboarding.branding.logoIconName}`
+                  : onboarding.branding?.logoIcon
+                    ? `Uploaded: ${getLogoPreviewLabel(onboarding.branding.logoIcon, 'Icon logo')}`
+                    : 'No icon logo uploaded yet. Small surfaces will fall back to the primary logo or initials.'}
+              </p>
+              {onboarding.branding?.logoIcon ? (
+                <img className="agency-logo-preview" src={onboarding.branding.logoIcon} alt="Icon logo preview" />
+              ) : (
+                <div className="rounded-[12px] border border-dashed border-[#d9e4ef] bg-[#f8fbff] px-4 py-6 text-center text-sm text-[#6b7d93]">
+                  Initials will be used when no logo is available.
                 </div>
               )}
             </article>

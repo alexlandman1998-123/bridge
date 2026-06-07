@@ -9,7 +9,7 @@ import {
   X,
   UserPlus as InviteIcon,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -33,6 +33,7 @@ import {
   updatePartnerRelationshipStatus,
 } from '../lib/partnersRepository'
 import { recordWorkspaceAuditEvent } from '../services/auditLogService'
+import OrganisationAvatar from '../components/organisation/OrganisationAvatar'
 
 const TABS = [
   { key: 'connected', label: 'Connected Partners' },
@@ -79,15 +80,6 @@ function normalizeText(value = '') {
 
 function normalizeLower(value = '') {
   return normalizeText(value).toLowerCase()
-}
-
-function initials(value = '') {
-  return String(value || 'Bridge')
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('') || 'B9'
 }
 
 function isBridgeInternalToken(value = '') {
@@ -156,25 +148,11 @@ function MetricCard({ label, value, subtext }) {
   )
 }
 
-function PartnerLogo({ partner }) {
-  if (partner?.logoUrl) {
-    return (
-      <img
-        src={partner.logoUrl}
-        alt=""
-        className="h-12 w-12 rounded-[8px] border border-[#e2eaf4] object-cover"
-      />
-    )
-  }
-
-  return (
-    <div className="flex h-12 w-12 items-center justify-center rounded-[8px] border border-[#dfe8f3] bg-[#f6f9fc] text-sm font-semibold text-[#35546c]">
-      {initials(partner?.name || partner?.companyName)}
-    </div>
-  )
+function PartnerLogo({ partner, size = 'md' }) {
+  return <OrganisationAvatar organisation={partner} size={size} />
 }
 
-function PartnerCard({ partner, relationship, action, actionLabel, profileHref = '', muted = false }) {
+function PartnerCard({ partner, relationship, action, actionLabel, actionDisabled = false, profileHref = '', muted = false }) {
   const isPreferred = Boolean(relationship?.preferred || relationship?.relationshipType === 'preferred')
   const statusLabel = relationship?.relationshipStatus || 'Pending'
   const typeLabel = getPartnerTypeLabel(partner?.type)
@@ -228,7 +206,8 @@ function PartnerCard({ partner, relationship, action, actionLabel, profileHref =
         {action ? (
           <button
             type="button"
-            className="inline-flex h-9 items-center gap-2 rounded-[8px] bg-[#10243a] px-3 text-sm font-semibold text-white transition hover:bg-[#173a5e]"
+            disabled={actionDisabled}
+            className="inline-flex h-9 items-center gap-2 rounded-[8px] bg-[#10243a] px-3 text-sm font-semibold text-white transition hover:bg-[#173a5e] disabled:cursor-not-allowed disabled:bg-[#dbe5ef] disabled:text-[#52677f]"
             onClick={action}
           >
             {actionLabel}
@@ -475,10 +454,13 @@ function PartnerInviteModal({
                     type="button"
                     key={organisation.id}
                     onClick={() => selectInviteOrganisation(organisation.id)}
-                    className="rounded-[8px] border border-[#dbe5f0] bg-white p-2 text-left text-sm text-[#10243a] hover:bg-[#f6f9ff]"
+                    className="flex min-w-0 items-center gap-2 rounded-[8px] border border-[#dbe5f0] bg-white p-2 text-left text-sm text-[#10243a] hover:bg-[#f6f9ff]"
                   >
-                    <p className="font-semibold">{organisation.name}</p>
-                    <p className="text-xs text-[#60758d]">{getPartnerTypeLabel(organisation.type)} · {organisation.city || 'Unspecified city'}</p>
+                    <OrganisationAvatar organisation={organisation} size="sm" />
+                    <span className="min-w-0">
+                      <span className="block truncate font-semibold">{organisation.name}</span>
+                      <span className="block truncate text-xs text-[#60758d]">{getPartnerTypeLabel(organisation.type)} · {organisation.city || 'Unspecified city'}</span>
+                    </span>
                   </button>
                 ))}
               </div>
@@ -522,6 +504,9 @@ export default function PartnersPage() {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
   const [discoverDirectory, setDiscoverDirectory] = useState([])
   const [discoverDirectoryLoading, setDiscoverDirectoryLoading] = useState(false)
+  const [connectingPartnerIds, setConnectingPartnerIds] = useState(() => new Set())
+  const [sentConnectionPartnerIds, setSentConnectionPartnerIds] = useState(() => new Set())
+  const connectingPartnerIdsRef = useRef(new Set())
 
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteOrganisationQuery, setInviteOrganisationQuery] = useState('')
@@ -654,6 +639,19 @@ export default function PartnersPage() {
   )
 
   const invitations = useMemo(() => snapshot?.invitations || [], [snapshot?.invitations])
+  const pendingSentConnectionPartnerIds = useMemo(() => {
+    const currentOrganisationId = normalizeLower(organisationId)
+    return new Set(
+      invitations
+        .filter((invitation) => (
+          normalizeLower(invitation.fromOrganisationId) === currentOrganisationId &&
+          (normalizeLower(invitation.status) || 'pending') === 'pending' &&
+          normalizeText(invitation.toOrganisationId)
+        ))
+        .map((invitation) => normalizeText(invitation.toOrganisationId))
+        .filter(Boolean),
+    )
+  }, [invitations, organisationId])
   const filteredInvitations = useMemo(() => {
     const isReceived = (invitation) => normalizeLower(invitation.toOrganisationId) === normalizeLower(organisationId)
     const list = invitations.filter((invitation) => {
@@ -811,6 +809,15 @@ export default function PartnersPage() {
   }
 
   async function handleConnect(partner) {
+    const partnerKey = normalizeText(partner?.id)
+    if (
+      !partnerKey ||
+      connectingPartnerIdsRef.current.has(partnerKey) ||
+      sentConnectionPartnerIds.has(partnerKey) ||
+      pendingSentConnectionPartnerIds.has(partnerKey)
+    ) return
+    connectingPartnerIdsRef.current.add(partnerKey)
+    setConnectingPartnerIds((previous) => new Set(previous).add(partnerKey))
     try {
       setError('')
       setMessage('')
@@ -840,10 +847,18 @@ export default function PartnersPage() {
         targetId: partner.id,
         metadata: { partnerType: partner.type },
       })
-      setMessage(`Connection request sent to ${partner.name}.`)
+      setMessage(`Partner invitation sent to ${partner.name}.`)
+      setSentConnectionPartnerIds((previous) => new Set(previous).add(partnerKey))
       await loadSnapshot()
     } catch (connectError) {
       setError(connectError?.message || 'Unable to request partner connection.')
+    } finally {
+      setConnectingPartnerIds((previous) => {
+        const next = new Set(previous)
+        next.delete(partnerKey)
+        return next
+      })
+      connectingPartnerIdsRef.current.delete(partnerKey)
     }
   }
 
@@ -1206,7 +1221,19 @@ export default function PartnersPage() {
                 </div>
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
                   {discoverablePartners.map((partner) => (
-                    <PartnerCard key={partner.id} partner={partner} action={() => handleConnect(partner)} actionLabel="Connect" />
+                    <PartnerCard
+                      key={partner.id}
+                      partner={partner}
+                      action={() => handleConnect(partner)}
+                      actionDisabled={connectingPartnerIds.has(partner.id) || sentConnectionPartnerIds.has(partner.id) || pendingSentConnectionPartnerIds.has(partner.id)}
+                      actionLabel={
+                        connectingPartnerIds.has(partner.id)
+                          ? 'Sending...'
+                          : sentConnectionPartnerIds.has(partner.id) || pendingSentConnectionPartnerIds.has(partner.id)
+                            ? 'Invitation sent'
+                            : 'Connect'
+                      }
+                    />
                   ))}
                 </div>
                 {discoverDirectoryLoading && !snapshot?.directoryHydrated ? (

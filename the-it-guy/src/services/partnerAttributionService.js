@@ -2,6 +2,7 @@ import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import {
   PARTNER_PROFILE_ACCESS_DENIED_MESSAGE,
   PARTNER_PROFILE_NOT_ACCEPTED_MESSAGE,
+  resolveBondPartnerProfileRelationshipId,
 } from './bondPartnerProfileService'
 
 function normalizeText(value = '') {
@@ -28,11 +29,6 @@ async function getCurrentUser() {
 }
 
 async function assertRpcReady(relationshipId = '') {
-  const safeRelationshipId = normalizeNullableUuid(relationshipId)
-  if (!safeRelationshipId) {
-    throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_found')
-  }
-
   if (!isSupabaseConfigured || !supabase) {
     throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_configured')
   }
@@ -42,7 +38,7 @@ async function assertRpcReady(relationshipId = '') {
     throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_found')
   }
 
-  return safeRelationshipId
+  return resolveBondPartnerProfileRelationshipId(relationshipId)
 }
 
 function handleProfileRpcError(payload = {}) {

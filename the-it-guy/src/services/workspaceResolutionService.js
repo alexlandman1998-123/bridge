@@ -111,6 +111,7 @@ function normalizeOrganisationRow(row = null, fallback = {}) {
 function normalizeAttorneyFirmRow(row = null) {
   if (!row) return null
   const logoUrl = normalizeText(row.logo_url || row.logoUrl)
+  const logoIconUrl = normalizeText(row.logo_icon_url || row.logoIconUrl)
   return {
     id: row.id,
     type: WORKSPACE_TYPES.attorneyFirm,
@@ -120,6 +121,8 @@ function normalizeAttorneyFirmRow(row = null) {
     phone: normalizeText(row.phone),
     logoUrl,
     logo_url: logoUrl || null,
+    logoIconUrl,
+    logo_icon_url: logoIconUrl || null,
     primaryColour: normalizeText(row.primary_colour || row.primaryColour),
     secondaryColour: normalizeText(row.secondary_colour || row.secondaryColour),
     organisationId: normalizeText(row.organisation_id || row.organisationId),

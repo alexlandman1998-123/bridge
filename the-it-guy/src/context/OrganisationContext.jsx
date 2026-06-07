@@ -7,6 +7,7 @@ import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
 
 const EMPTY_ORGANISATION_BRANDING = Object.freeze({
   logoUrl: '',
+  logoIconUrl: '',
   organisationLabel: '',
   hasCustomLogo: false,
 })
@@ -19,10 +20,13 @@ function normalizeText(value) {
 
 function normalizeOrganisation(organisation = {}) {
   const logoUrl = normalizeText(organisation.logoUrl || organisation.logo_url)
+  const logoIconUrl = normalizeText(organisation.logoIconUrl || organisation.logo_icon_url || organisation.branding?.logoIcon)
   return {
     ...organisation,
     logoUrl,
     logo_url: logoUrl || null,
+    logoIconUrl,
+    logo_icon_url: logoIconUrl || null,
   }
 }
 
@@ -34,6 +38,7 @@ function resolveOrganisationBranding(snapshot) {
 
   const logoLightUrl = normalizeText(branding.logoLight)
   const logoDarkUrl = normalizeText(branding.logoDark)
+  const logoIconUrl = normalizeText(branding.logoIcon || branding.logoIconUrl || organisation.logoIconUrl)
   const organisationLogoUrl = normalizeText(organisation.logoUrl)
   const logoUrl = logoLightUrl || organisationLogoUrl || logoDarkUrl
   const organisationLabel =
@@ -45,6 +50,7 @@ function resolveOrganisationBranding(snapshot) {
 
   return {
     logoUrl,
+    logoIconUrl,
     logoLightUrl,
     logoDarkUrl,
     organisationLabel,
