@@ -116,10 +116,10 @@ try {
 
     const kpis = Object.fromEntries(getHqApplicationKpis(rows, NOW).map((item) => [item.key, item.value]))
     assert.equal(kpis.total, 4)
-    assert.equal(kpis.pipeline_value, 'R 6 650 000')
+    assert.equal(kpis.pipeline_value, undefined)
     assert.equal(kpis.awaiting_feedback, 1)
     assert.equal(kpis.instructions_issued, 1)
-    assert.equal(Object.keys(kpis).length, 6)
+    assert.equal(Object.keys(kpis).length, 5)
 
     const rowMarkup = renderToStaticMarkup(
       React.createElement(HqApplicationsTable, {

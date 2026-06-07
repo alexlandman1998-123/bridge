@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
-  Banknote,
   CheckCircle2,
   Clock3,
   FileCheck2,
@@ -534,13 +533,9 @@ export function getHqApplicationKpis(rows = [], now = Date.now()) {
     const previousValue = normalizedRows.filter((row) => predicate(row) && inPreviousPeriod(row)).length
     return calculateTrend(currentValue, previousValue)
   }
-  const valueForRows = (sourceRows = []) => sourceRows.reduce((sum, row) => sum + normalizeNumber(row.bondValue ?? getBondValue(row), 0), 0)
-  const currentValue = valueForRows(normalizedRows.filter(inCurrentPeriod))
-  const previousValue = valueForRows(normalizedRows.filter(inPreviousPeriod))
 
   return [
     { key: 'total', label: 'Total Applications', value: normalizedRows.length, trend: countTrend(), icon: FileText },
-    { key: 'pipeline_value', label: 'Active Pipeline Value', value: formatCurrency(valueForRows(normalizedRows.filter((row) => !['registered', 'declined'].includes(row.statusKey)))), trend: calculateTrend(currentValue, previousValue), icon: Banknote },
     { key: 'submitted_to_banks', label: 'Submitted to Banks', value: normalizedRows.filter((row) => row.statusKey === 'submitted_to_banks').length, trend: countTrend((row) => row.statusKey === 'submitted_to_banks'), icon: Send },
     { key: 'awaiting_feedback', label: 'Awaiting Feedback', value: normalizedRows.filter((row) => row.statusKey === 'bank_feedback').length, trend: countTrend((row) => row.statusKey === 'bank_feedback'), icon: Clock3 },
     { key: 'approved', label: 'Approved', value: normalizedRows.filter((row) => row.statusKey === 'approved').length, trend: countTrend((row) => row.statusKey === 'approved'), icon: CheckCircle2 },
@@ -978,19 +973,21 @@ export default function BondTransactionsPage({
 
     return (
       <BondPageShell className="space-y-5">
-        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          {hqKpis.map((item) => (
-            <div key={item.key} className="flex min-h-[118px] items-center gap-4 rounded-[18px] border border-[#dbe5f0] bg-white px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#eef5ff] text-[#24518a]">
-                <item.icon size={21} />
-              </span>
-              <div className="min-w-0">
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7890a8]">{item.label}</p>
-                <p className="mt-1 break-words text-[clamp(1.15rem,1.25vw,1.5rem)] font-semibold leading-tight text-[#142132]">{item.value}</p>
-                <p className="mt-1 text-xs font-semibold leading-4 text-[#14884d]">{item.trend}</p>
+        <section className="rounded-[22px] border border-[#dce6f2] bg-white p-2 shadow-[0_16px_38px_rgba(15,23,42,0.055)]">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            {hqKpis.map((item) => (
+              <div key={item.key} className="flex min-h-[104px] items-center gap-4 rounded-[18px] px-4 py-4 transition hover:bg-[#f7faff]">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eef5ff] text-[#24518a] ring-1 ring-[#dce8f6]">
+                  <item.icon size={21} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7890a8]">{item.label}</p>
+                  <p className="mt-1 break-words text-[clamp(1.35rem,1.7vw,1.7rem)] font-semibold leading-tight text-[#142132]">{item.value}</p>
+                  <p className="mt-1 text-xs font-medium leading-4 text-[#14884d]">{item.trend}</p>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </section>
 
         <section className="rounded-[18px] border border-[#dce6f2] bg-white px-4 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
