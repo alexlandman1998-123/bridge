@@ -69,24 +69,24 @@ function ConfidenceGauge({ confidence = {} }) {
   const value = Math.max(0, Math.min(100, Math.round(Number(confidence.score || 0))))
   const color = value >= 68 ? '#16a34a' : value >= 45 ? '#f59e0b' : '#ef4444'
   return (
-    <article className="flex h-full min-h-[330px] flex-col rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+    <article className="flex h-full min-h-[280px] flex-col rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
       <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Estimated Approval Confidence</h3>
-      <div className="mt-5 flex flex-1 flex-col items-center justify-center">
+      <div className="mt-4 flex flex-1 flex-col items-center justify-start pt-2">
         <div
-          className="relative h-28 w-56 overflow-hidden"
+          className="relative h-24 w-52 overflow-hidden"
           aria-label={`Estimated approval confidence ${value}%`}
         >
           <div
-            className="absolute inset-x-0 top-0 h-56 rounded-full"
+            className="absolute inset-x-0 top-0 h-52 rounded-full"
             style={{ background: `conic-gradient(from 270deg, ${color} ${value * 1.8}deg, #e9eef5 0deg 180deg, transparent 180deg)` }}
           />
-          <div className="absolute inset-x-8 top-8 h-40 rounded-full bg-white" />
+          <div className="absolute inset-x-8 top-8 h-36 rounded-full bg-white" />
           <div className="absolute inset-x-0 bottom-1 text-center">
             <strong className="block text-[2rem] font-bold tracking-[-0.05em] text-textStrong">{value}%</strong>
             <span className="text-sm font-semibold" style={{ color }}>{confidence.label || 'Pending'}</span>
           </div>
         </div>
-        <p className="mt-3 max-w-[260px] text-center text-xs leading-5 text-textMuted">
+        <p className="mt-2 max-w-[260px] text-center text-xs leading-5 text-textMuted">
           {confidence.note || 'Based on information provided and current criteria.'}
         </p>
         <p className="mt-1 text-center text-xs font-semibold text-textMuted">{confidence.disclaimer || 'This is not a final approval guarantee.'}</p>
@@ -124,14 +124,14 @@ function CreditScoreGauge({ score = 620, riskBand = '' }) {
 
   return (
     <div
-      className="relative h-28 w-56 overflow-hidden"
+      className="relative h-24 w-52 overflow-hidden"
       aria-label={`Credit score ${value}`}
     >
       <div
-        className="absolute inset-x-0 top-0 h-56 rounded-full"
+        className="absolute inset-x-0 top-0 h-52 rounded-full"
         style={{ background: `conic-gradient(from 270deg, ${gradientStops}, #e9eef5 ${fillDegrees}deg 180deg, transparent 180deg)` }}
       />
-      <div className="absolute inset-x-8 top-8 h-40 rounded-full bg-white" />
+      <div className="absolute inset-x-8 top-8 h-36 rounded-full bg-white" />
       <div className="absolute inset-x-0 bottom-1 text-center">
         <strong className="block text-[2rem] font-bold tracking-[-0.05em] text-textStrong">{value}</strong>
         <span className="text-sm font-semibold" style={{ color: band.color }}>{band.label}</span>
@@ -145,12 +145,12 @@ function CreditScoreCard({ credit = {} }) {
   const statusLabel = credit.creditRiskBand || band.label
 
   return (
-    <article className="flex h-full min-h-[330px] flex-col rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+    <article className="flex h-full min-h-[280px] flex-col rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
       <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Credit Score</h3>
-      <div className="mt-5 flex flex-1 flex-col items-center">
+      <div className="mt-4 flex flex-1 flex-col items-center justify-start pt-2">
         <CreditScoreGauge score={credit.creditScore} riskBand={statusLabel} />
-        <p className="mt-3 text-center text-sm text-textMuted">Credit score</p>
-        <div className="mt-auto flex items-center justify-center gap-3 pt-8">
+        <p className="mt-2 text-center text-sm text-textMuted">Credit score</p>
+        <div className="mt-7 flex items-center justify-center gap-3">
           <span className="text-label font-semibold uppercase text-textMuted">Powered by</span>
           <span className="rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-sm font-bold tracking-[-0.01em] text-[#233c8f]">
             {credit.creditProvider || 'Experian'}
@@ -236,21 +236,21 @@ function FinancialSnapshot({ snapshot = {} }) {
     { label: 'Deposit Available', value: snapshot.depositAvailable, icon: CircleDollarSign, tone: 'warning' },
   ]
   return (
-    <article className="h-full min-h-[330px] rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+    <article className="h-full min-h-[280px] rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
       <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Key Financial Snapshot</h3>
-      <div className="mt-6 grid overflow-hidden rounded-[16px] border border-borderSoft sm:grid-cols-2">
+      <div className="mt-5 grid overflow-hidden rounded-[16px] border border-borderSoft sm:grid-cols-2">
         {items.map((item, index) => {
           const Icon = item.icon
           return (
             <article
               key={item.label}
-              className={`min-w-0 border-borderSoft px-4 py-6 text-center ${index < items.length - 1 ? 'border-b' : ''} ${index % 2 === 0 ? 'sm:border-r' : ''} ${index === 1 ? 'sm:border-b' : ''} ${index === 2 ? 'sm:border-b-0' : ''}`}
+              className={`min-w-0 border-borderSoft px-4 py-4 text-center ${index < items.length - 1 ? 'border-b' : ''} ${index % 2 === 0 ? 'sm:border-r' : ''} ${index === 1 ? 'sm:border-b' : ''} ${index === 2 ? 'sm:border-b-0' : ''}`}
             >
-              <span className={`mx-auto inline-flex size-12 items-center justify-center rounded-full ${getTone(item.tone).icon}`}>
-                <Icon size={18} />
+              <span className={`mx-auto inline-flex size-10 items-center justify-center rounded-full ${getTone(item.tone).icon}`}>
+                <Icon size={16} />
               </span>
-              <span className="mt-3 block text-label font-semibold uppercase text-textMuted">{item.label}</span>
-              <strong className="mt-2 block text-base font-bold text-textStrong">{item.value}</strong>
+              <span className="mt-2 block text-label font-semibold uppercase text-textMuted">{item.label}</span>
+              <strong className="mt-1.5 block text-base font-bold text-textStrong">{item.value}</strong>
             </article>
           )
         })}
