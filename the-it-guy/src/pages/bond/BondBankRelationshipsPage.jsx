@@ -1516,16 +1516,15 @@ function SummaryStrip({ summary }) {
     { label: 'Total Revenue', value: formatCompactCurrency(summary.totalRevenue), change: summary.revenueChange, icon: Banknote },
     { label: 'Overall Approval Rate', value: formatPercent(summary.overallApprovalRate), change: 5, suffix: 'pp', icon: Percent },
     { label: 'Avg Response Time', value: compactResponseTime(summary.averageResponseTime), change: summary.responseChange, inverse: true, icon: Clock3 },
-    { label: 'Active Escalations', value: summary.activeEscalations, change: summary.activeEscalations ? 3 : 0, inverse: true, icon: AlertTriangle },
     { label: 'Relationship Health', value: `${summary.relationshipHealth}/100`, change: summary.healthChange, icon: Gauge },
   ]
   return (
-    <section className="grid overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-sm shadow-slate-200/70 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+    <section className="grid overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-sm shadow-slate-200/70 sm:grid-cols-2 lg:grid-cols-5">
       {items.map((item) => {
         const Icon = item.icon
         const positive = item.inverse ? Number(item.change || 0) <= 0 : Number(item.change || 0) >= 0
         return (
-          <article key={item.label} className="flex min-h-[96px] items-center gap-4 border-b border-slate-100 px-5 py-4 last:border-b-0 sm:border-r lg:last:border-r-0 xl:border-b-0 xl:last:border-r-0">
+          <article key={item.label} className="flex min-h-[96px] items-center gap-4 border-b border-r border-slate-100 px-5 py-4 last:border-r-0 lg:border-b-0">
             <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${positive ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
               <Icon className="h-4 w-4" />
             </span>
@@ -1837,16 +1836,7 @@ function DashboardView({ commandCentre, notice }) {
     <>
       {notice ? <p className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">{notice}</p> : null}
 
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-500">
-            <Link to="/bond/organisation" className="hover:text-blue-700">Organisation</Link>
-            <ArrowRight className="h-3.5 w-3.5" />
-            <span className="text-slate-950">Bank Relationships</span>
-          </div>
-          <h1 className="mt-4 text-3xl font-semibold tracking-[-0.01em] text-slate-950">Bank Relationships</h1>
-          <p className="mt-1 text-sm font-medium text-slate-500">Monitor and manage strategic banking partnerships.</p>
-        </div>
+      <header className="flex flex-wrap items-center justify-end gap-4">
         <div className="flex flex-wrap items-center justify-end gap-2">
           <button type="button" className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
             <Clock3 className="h-4 w-4" /> Jun 2025 <span className="text-xs font-semibold text-slate-400">vs May 2025</span>
