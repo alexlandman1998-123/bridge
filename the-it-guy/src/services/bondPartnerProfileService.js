@@ -134,6 +134,34 @@ async function resolveCurrentOrganisationId(options = {}, userId = '') {
   return normalizeNullableUuid(data?.[0]?.organisation_id)
 }
 
+function collectExplicitOrganisationIds(options = {}) {
+  return [
+    options.currentOrganisationId,
+    options.organisationId,
+    options.workspaceId,
+    options.currentMembership?.organisation_id,
+    options.currentMembership?.organisationId,
+    options.currentMembership?.workspaceId,
+    options.currentWorkspace?.organisation_id,
+    options.currentWorkspace?.organisationId,
+    options.currentWorkspace?.id,
+  ].map(normalizeNullableUuid).filter(Boolean)
+}
+
+async function getActiveOrganisationIds(userId = '') {
+  if (!userId) return []
+  const { data, error } = await supabase
+    .from('organisation_users')
+    .select('organisation_id, status, active_workspace_selected_at, updated_at')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .order('active_workspace_selected_at', { ascending: false, nullsFirst: false })
+    .order('updated_at', { ascending: false, nullsFirst: false })
+
+  if (error) throw error
+  return [...new Set((data || []).map((row) => normalizeNullableUuid(row.organisation_id)).filter(Boolean))]
+}
+
 async function fetchAcceptedInvitation(invitationId = '', currentOrganisationId = '') {
   const { data, error } = await supabase
     .from('partner_invitations')
@@ -158,6 +186,16 @@ async function fetchAcceptedInvitation(invitationId = '', currentOrganisationId 
   return data
 }
 
+async function resolveInvitationCurrentOrganisationId(invitation = {}, options = {}, userId = '') {
+  const senderId = normalizeNullableUuid(invitation.sender_organisation_id)
+  const recipientId = normalizeNullableUuid(invitation.recipient_organisation_id)
+  const activeIds = await getActiveOrganisationIds(userId)
+  const candidates = [...new Set([...collectExplicitOrganisationIds(options), ...activeIds])]
+  const matchedId = candidates.find((id) => id && (id === senderId || id === recipientId))
+  if (matchedId) return matchedId
+  throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_found')
+}
+
 async function findAcceptedRelationshipForInvitation(invitation = {}) {
   const senderId = normalizeText(invitation.sender_organisation_id)
   const recipientId = normalizeText(invitation.recipient_organisation_id)
@@ -174,17 +212,22 @@ async function findAcceptedRelationshipForInvitation(invitation = {}) {
   return (data || []).find((row) => relationshipMatchesInvitation(row, invitation)) || (data || []).find(isAcceptedRelationship) || null
 }
 
-async function repairAcceptedRelationshipFromInvitation(invitation = {}) {
+async function repairAcceptedRelationshipFromInvitation(invitation = {}, currentOrganisationId = '', userId = '') {
   const senderId = normalizeText(invitation.sender_organisation_id)
   const recipientId = normalizeText(invitation.recipient_organisation_id)
   if (!senderId || !recipientId) return null
 
-  const scopeType = normalizePartnerScopeType(invitation.scope_type)
-  const scopeId = normalizeText(invitation.scope_id) || (scopeType === 'organisation' ? senderId : '')
+  const ownerOrganisationId = currentOrganisationId === recipientId ? recipientId : senderId
+  const partnerOrganisationId = ownerOrganisationId === senderId ? recipientId : senderId
+  const invitationScopeType = normalizePartnerScopeType(invitation.scope_type)
+  const scopeType = ownerOrganisationId === senderId ? invitationScopeType : 'organisation'
+  const scopeId = ownerOrganisationId === senderId
+    ? normalizeText(invitation.scope_id) || (scopeType === 'organisation' ? ownerOrganisationId : '')
+    : ownerOrganisationId
   const now = new Date().toISOString()
   const payload = {
-    organisation_id: senderId,
-    partner_organisation_id: recipientId,
+    organisation_id: ownerOrganisationId,
+    partner_organisation_id: partnerOrganisationId,
     partner_type: normalizeText(invitation.partner_type || invitation.to_workspace_type) || null,
     relationship_status: 'accepted',
     status: 'accepted',
@@ -195,6 +238,7 @@ async function repairAcceptedRelationshipFromInvitation(invitation = {}) {
     scope_name: normalizeText(invitation.scope_name) || null,
     visibility_level: 'connected_partners_only',
     accepted_at: now,
+    created_by: normalizeNullableUuid(userId),
     updated_at: now,
   }
 
@@ -209,12 +253,13 @@ async function repairAcceptedRelationshipFromInvitation(invitation = {}) {
   const fallback = await supabase
     .from('organisation_partners')
     .insert({
-      organisation_id: senderId,
-      partner_organisation_id: recipientId,
+      organisation_id: ownerOrganisationId,
+      partner_organisation_id: partnerOrganisationId,
       relationship_status: 'accepted',
       relationship_type: normalizeText(invitation.relationship_type) || 'approved',
       visibility_level: 'connected_partners_only',
       accepted_at: now,
+      created_by: normalizeNullableUuid(userId),
     })
     .select('id')
     .single()
@@ -224,8 +269,18 @@ async function repairAcceptedRelationshipFromInvitation(invitation = {}) {
 }
 
 export async function resolveBondPartnerProfileRelationshipId(relationshipId = '', options = {}) {
+  const context = await resolveBondPartnerProfileRelationshipContext(relationshipId, options)
+  return context.relationshipId
+}
+
+export async function resolveBondPartnerProfileRelationshipContext(relationshipId = '', options = {}) {
   const directRelationshipId = normalizeNullableUuid(relationshipId)
-  if (directRelationshipId) return directRelationshipId
+  if (directRelationshipId) {
+    return {
+      relationshipId: directRelationshipId,
+      currentOrganisationId: await resolveCurrentOrganisationId(options, ''),
+    }
+  }
 
   const invitationId = getAcceptedInviteIdFromRelationshipId(relationshipId)
   if (!invitationId) {
@@ -241,17 +296,23 @@ export async function resolveBondPartnerProfileRelationshipId(relationshipId = '
     throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_found')
   }
 
-  const currentOrganisationId = await resolveCurrentOrganisationId(options, currentUser.id)
-  if (!currentOrganisationId) {
-    throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_found')
+  const invitation = await fetchAcceptedInvitation(invitationId)
+  const currentOrganisationId = await resolveInvitationCurrentOrganisationId(invitation, options, currentUser.id)
+  const existingRelationship = await findAcceptedRelationshipForInvitation(invitation)
+  if (existingRelationship?.id) {
+    return {
+      relationshipId: existingRelationship.id,
+      currentOrganisationId,
+    }
   }
 
-  const invitation = await fetchAcceptedInvitation(invitationId, currentOrganisationId)
-  const existingRelationship = await findAcceptedRelationshipForInvitation(invitation)
-  if (existingRelationship?.id) return existingRelationship.id
-
-  const repairedRelationship = await repairAcceptedRelationshipFromInvitation(invitation)
-  if (repairedRelationship?.id) return repairedRelationship.id
+  const repairedRelationship = await repairAcceptedRelationshipFromInvitation(invitation, currentOrganisationId, currentUser.id)
+  if (repairedRelationship?.id) {
+    return {
+      relationshipId: repairedRelationship.id,
+      currentOrganisationId,
+    }
+  }
 
   throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_found')
 }
@@ -543,15 +604,16 @@ export async function getBondPartnerProfileOverview(relationshipId = '', options
     throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_found')
   }
 
-  const currentOrganisationId = await resolveCurrentOrganisationId(options, currentUser.id)
+  const fallbackCurrentOrganisationId = await resolveCurrentOrganisationId(options, currentUser.id)
+  const relationshipContext = await resolveBondPartnerProfileRelationshipContext(relationshipId, {
+    ...options,
+    currentOrganisationId: fallbackCurrentOrganisationId,
+  })
+  const currentOrganisationId = relationshipContext.currentOrganisationId || fallbackCurrentOrganisationId
   if (!currentOrganisationId) {
     throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_found')
   }
-
-  const safeRelationshipId = await resolveBondPartnerProfileRelationshipId(relationshipId, {
-    ...options,
-    currentOrganisationId,
-  })
+  const safeRelationshipId = relationshipContext.relationshipId
 
   const { data, error } = await supabase.rpc('bridge_get_bond_partner_profile_overview', {
     p_relationship_id: safeRelationshipId,
