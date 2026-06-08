@@ -114,6 +114,7 @@ const DETAIL_TABS = [
 
 const SELLER_WORKSPACE_TABS = [
   { key: 'overview', label: 'Overview' },
+  { key: 'offers', label: 'Offers' },
   { key: 'seller', label: 'Seller' },
   { key: 'listing', label: 'Listing' },
   { key: 'documents', label: 'Documents' },
@@ -5194,6 +5195,7 @@ function AgentListingDetail() {
                         {[
                           OFFER_WORKFLOW_STATUS.SUBMITTED,
                           OFFER_WORKFLOW_STATUS.DRAFT,
+                          OFFER_WORKFLOW_STATUS.SENT_TO_BUYER,
                           OFFER_WORKFLOW_STATUS.BUYER_VIEWED,
                         ].includes(normalizeOfferWorkflowStatus(offer.status)) ? (
                           <Button
@@ -5214,23 +5216,14 @@ function AgentListingDetail() {
                           OFFER_WORKFLOW_STATUS.EXPIRED,
                         ].includes(normalizeOfferWorkflowStatus(offer.status)) ? (
                           <>
-                            {[
-                              OFFER_WORKFLOW_STATUS.SUBMITTED,
-                              OFFER_WORKFLOW_STATUS.AGENT_REVIEW,
-                              OFFER_WORKFLOW_STATUS.CHANGES_REQUESTED,
-                              OFFER_WORKFLOW_STATUS.COUNTERED,
-                              OFFER_WORKFLOW_STATUS.SELLER_REVIEW,
-                              OFFER_WORKFLOW_STATUS.SELLER_VIEWED,
-                            ].includes(normalizeOfferWorkflowStatus(offer.status)) ? (
-                              <Button
-                                size="sm"
-                                type="button"
-                                disabled={canonicalOfferActionId === `${offer.id}:sent_to_seller`}
-                                onClick={() => void handleCanonicalListingOfferSendToSeller(offer)}
-                              >
-                                {[OFFER_WORKFLOW_STATUS.SELLER_REVIEW, OFFER_WORKFLOW_STATUS.SELLER_VIEWED].includes(statusKey) ? 'Resend to Seller' : 'Send to Seller'}
-                              </Button>
-                            ) : null}
+                            <Button
+                              size="sm"
+                              type="button"
+                              disabled={canonicalOfferActionId === `${offer.id}:sent_to_seller`}
+                              onClick={() => void handleCanonicalListingOfferSendToSeller(offer)}
+                            >
+                              {[OFFER_WORKFLOW_STATUS.SELLER_REVIEW, OFFER_WORKFLOW_STATUS.SELLER_VIEWED].includes(statusKey) ? 'Resend to Seller' : 'Send Offer to Seller'}
+                            </Button>
                             <Button
                               size="sm"
                               type="button"
@@ -5324,7 +5317,7 @@ function AgentListingDetail() {
 
           <nav className="rounded-[22px] border border-[#dde4ee] bg-white p-2 shadow-[0_10px_24px_rgba(15,23,42,0.05)]" aria-label="Seller mandate workspace tabs">
             <div className="overflow-x-auto">
-              <div className="grid min-w-[760px] grid-cols-6 gap-1">
+              <div className="grid min-w-[880px] grid-cols-7 gap-1">
                 {SELLER_WORKSPACE_TABS.map((tab) => {
                   const active = sellerWorkspaceTab === tab.key
                   return (
@@ -5522,6 +5515,225 @@ function AgentListingDetail() {
                   </div>
                 </article>
               </section>
+            </section>
+          ) : null}
+
+          {sellerWorkspaceTab === 'offers' ? (
+            <section className="space-y-5">
+              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <h2 className="text-2xl font-semibold text-[#142132]">Offers</h2>
+                    <p className="mt-1 text-sm text-[#607387]">All offers made on this listing across the platform, buyer offer links, and seller review flow.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => setActiveTab('offers')}>
+                      Open Full Offer Workspace
+                    </Button>
+                    <Button size="sm" onClick={() => {
+                      setActiveTab('offers')
+                      setShowSendOfferLinkForm(true)
+                    }}>
+                      <Link2 size={15} />
+                      Send Offer Link
+                    </Button>
+                  </div>
+                </div>
+
+                {offerActionError ? (
+                  <div className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">{offerActionError}</div>
+                ) : null}
+                {offerActionMessage ? (
+                  <div className="mt-4 rounded-[14px] border border-[#d8eddf] bg-[#ecfaf1] px-3 py-2 text-sm text-[#1f7d44]">{offerActionMessage}</div>
+                ) : null}
+                {canonicalOffersError ? (
+                  <div className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">{canonicalOffersError}</div>
+                ) : null}
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                  <MetricCard label="Total Offers" value={offerSummary.total} meta="Canonical + legacy rows" />
+                  <MetricCard label="Highest Offer" value={offerSummary.highest ? formatCurrency(offerSummary.highest) : '—'} meta="Top buyer position" />
+                  <MetricCard label="Submitted" value={offerSummary.submitted} meta="Awaiting review" />
+                  <MetricCard label="Seller Review" value={offerSummary.sellerReview} meta="Sent to seller" />
+                  <MetricCard label="Accepted" value={offerSummary.accepted} meta="Ready to convert" />
+                </div>
+              </article>
+
+              <article className="overflow-hidden rounded-[24px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                <div className="flex flex-col gap-3 border-b border-[#e5edf6] px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold text-[#142132]">Offer Table</h3>
+                    <p className="mt-1 text-sm text-[#607387]">Review buyer offer values, status, finance route, review links, and conversion readiness.</p>
+                  </div>
+                  {canonicalOffersLoading ? (
+                    <span className="rounded-full border border-[#d8e6f6] bg-[#f3f8fd] px-3 py-1 text-xs font-semibold text-[#2c5a89]">Loading canonical offers</span>
+                  ) : (
+                    <span className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1 text-xs font-semibold text-[#35546c]">{offerRows.length} offer rows</span>
+                  )}
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1180px] table-fixed text-left text-sm">
+                    <thead className="bg-[#f8fbfd] text-[0.66rem] uppercase tracking-[0.1em] text-[#7b8ca2]">
+                      <tr className="border-b border-[#e5edf6]">
+                        <th className="w-[16%] px-5 py-3">Buyer</th>
+                        <th className="w-[12%] px-5 py-3">Offer</th>
+                        <th className="w-[12%] px-5 py-3">Status</th>
+                        <th className="w-[12%] px-5 py-3">Source</th>
+                        <th className="w-[12%] px-5 py-3">Submitted</th>
+                        <th className="w-[12%] px-5 py-3">Finance</th>
+                        <th className="w-[14%] px-5 py-3">Conditions</th>
+                        <th className="w-[10%] px-5 py-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#edf2f7]">
+                      {offerRows.length ? offerRows.map((offer) => {
+                        const statusKey = normalizeOfferWorkflowStatus(offer.status)
+                        const sellerReviewSession = offer.sellerReviewSession || {}
+                        const sellerReviewToken = String(sellerReviewSession.token || offer.conditionsJson?.sellerReviewSessionToken || '').trim()
+                        const sellerReviewLink = sellerReviewToken && typeof window !== 'undefined'
+                          ? `${window.location.origin}/seller/offers/review/${encodeURIComponent(sellerReviewToken)}`
+                          : ''
+                        const canSendToSeller = offer.sourceSystem === 'canonical_offer' && ![
+                          OFFER_WORKFLOW_STATUS.ACCEPTED,
+                          OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION,
+                          OFFER_WORKFLOW_STATUS.REJECTED,
+                          OFFER_WORKFLOW_STATUS.WITHDRAWN,
+                          OFFER_WORKFLOW_STATUS.EXPIRED,
+                        ].includes(statusKey)
+                        const canConvert = offer.sourceSystem === 'canonical_offer' && (
+                          statusKey === OFFER_WORKFLOW_STATUS.ACCEPTED ||
+                          (statusKey === OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION && offer.transactionId)
+                        )
+                        return (
+                          <tr key={offer.id} className="align-top text-[#425970] transition hover:bg-[#fbfdff]">
+                            <td className="px-5 py-4">
+                              <p className="truncate font-semibold text-[#243d56]" title={offer.buyerName || 'Buyer pending'}>{offer.buyerName || 'Buyer pending'}</p>
+                              {offer.buyerLeadId ? (
+                                <button type="button" onClick={() => navigate(`/pipeline/leads/${offer.buyerLeadId}`)} className="mt-1 text-xs font-semibold text-[#1f4f78] hover:text-[#163d5f]">
+                                  Open buyer lead
+                                </button>
+                              ) : (
+                                <p className="mt-1 text-xs text-[#74879d]">No buyer lead linked</p>
+                              )}
+                            </td>
+                            <td className="px-5 py-4">
+                              <p className="font-semibold text-[#142132]">{offer.offerPrice ? formatCurrency(offer.offerPrice) : '—'}</p>
+                              {offer.depositAmount ? <p className="mt-1 text-xs text-[#74879d]">Deposit {formatCurrency(offer.depositAmount)}</p> : null}
+                            </td>
+                            <td className="px-5 py-4">
+                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusClass(offer.status)}`}>
+                                {formatStatusLabel(offer.status)}
+                              </span>
+                            </td>
+                            <td className="px-5 py-4">
+                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${
+                                offer.sourceSystem === 'canonical_offer'
+                                  ? 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]'
+                                  : 'border-[#dbe6f2] bg-white text-[#35546c]'
+                              }`}>
+                                {offer.sourceSystem === 'canonical_offer' ? 'Platform offer' : 'Legacy listing offer'}
+                              </span>
+                            </td>
+                            <td className="px-5 py-4">
+                              <p>{formatDate(offer.offerDate)}</p>
+                              <p className="mt-1 text-xs text-[#74879d]">Expires {formatDate(offer.expiryDate)}</p>
+                            </td>
+                            <td className="px-5 py-4 capitalize">{offer.financeType || 'Unknown'}</td>
+                            <td className="px-5 py-4">
+                              <p className="line-clamp-2 text-sm text-[#607387]" title={offer.conditions || ''}>{offer.conditions || 'No conditions captured'}</p>
+                              {sellerReviewLink ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (typeof navigator !== 'undefined') void navigator.clipboard?.writeText(sellerReviewLink)
+                                    setOfferActionMessage('Seller review link copied.')
+                                  }}
+                                  className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]"
+                                >
+                                  <Copy size={12} />
+                                  Copy seller link
+                                </button>
+                              ) : null}
+                            </td>
+                            <td className="px-5 py-4">
+                              <div className="flex flex-col items-end gap-2">
+                                {canSendToSeller ? (
+                                  <Button
+                                    size="sm"
+                                    type="button"
+                                    disabled={canonicalOfferActionId === `${offer.id}:sent_to_seller`}
+                                    onClick={() => void handleCanonicalListingOfferSendToSeller(offer)}
+                                  >
+                                    {[OFFER_WORKFLOW_STATUS.SELLER_REVIEW, OFFER_WORKFLOW_STATUS.SELLER_VIEWED].includes(statusKey) ? 'Resend to Seller' : 'Send Offer to Seller'}
+                                  </Button>
+                                ) : null}
+                                {canConvert ? (
+                                  <Button
+                                    size="sm"
+                                    type="button"
+                                    variant="secondary"
+                                    disabled={canonicalOfferActionId === `${offer.id}:convert`}
+                                    onClick={() => void handleCanonicalListingOfferConversion(offer)}
+                                  >
+                                    Convert
+                                  </Button>
+                                ) : null}
+                                {offer.transactionId ? (
+                                  <Button size="sm" type="button" variant="secondary" onClick={() => navigate(`/transactions/${offer.transactionId}`)}>
+                                    Transaction
+                                  </Button>
+                                ) : null}
+                                {!canSendToSeller && !canConvert && !offer.transactionId ? (
+                                  <span className="text-xs text-[#9aa9b8]">—</span>
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      }) : (
+                        <tr>
+                          <td colSpan={8} className="px-5 py-10 text-center text-sm text-[#607387]">
+                            No offers captured for this listing yet. Send an offer link or wait for buyer submissions to appear here.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+
+              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold text-[#142132]">Secure Offer Links</h3>
+                    <p className="mt-1 text-sm text-[#607387]">Recently generated buyer offer links for this listing.</p>
+                  </div>
+                  <span className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1 text-xs font-semibold text-[#35546c]">{offerInviteRows.length} links</span>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  {offerInviteRows.length ? offerInviteRows.slice(0, 6).map((invite) => (
+                    <article key={invite.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-3">
+                      <div>
+                        <p className="text-sm font-semibold text-[#22374d]">{invite.buyerLeadName || 'Buyer lead'}</p>
+                        <p className="mt-1 text-xs text-[#607387]">Status: {formatStatusLabel(invite.status)} • Expires {formatDate(invite.expiresAt)}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyOfferLink(invite.token)}
+                        className="inline-flex items-center gap-1 rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]"
+                      >
+                        <Copy size={12} />
+                        {copiedOfferToken === invite.token ? 'Copied' : 'Copy Link'}
+                      </button>
+                    </article>
+                  )) : (
+                    <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-5 text-sm text-[#6b7d93] md:col-span-2">
+                      No secure offer links have been generated for this listing yet.
+                    </div>
+                  )}
+                </div>
+              </article>
             </section>
           ) : null}
 

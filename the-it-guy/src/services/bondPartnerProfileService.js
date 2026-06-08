@@ -101,6 +101,33 @@ function createProfileError(message, code) {
   return error
 }
 
+function mapRelationshipOverview(row = {}, partner = {}) {
+  return normalizeOverviewPayload({
+    relationship: {
+      id: row.id,
+      status: normalizeText(row.relationship_status || row.relationshipStatus || row.status) || 'accepted',
+      relationship_type: normalizeText(row.relationship_type || row.relationshipType) || 'approved',
+      connected_since: row.accepted_at || row.acceptedAt || row.created_at || row.createdAt,
+      organisation_id: row.organisation_id || row.organisationId,
+      partner_organisation_id: row.partner_organisation_id || row.partnerOrganisationId,
+      relationship_owner: null,
+    },
+    partnerOrganisation: {
+      id: partner.id,
+      name: normalizeText(partner.display_name || partner.displayName || partner.name) || 'Partner organisation',
+      type: normalizeText(partner.type),
+      location: [partner.city, partner.province].map(normalizeText).filter(Boolean).join(', '),
+      logo_url: normalizeText(partner.logo_url || partner.logoUrl),
+    },
+    summary: {
+      branch_count: 0,
+      linked_transaction_count: 0,
+      linked_application_count: 0,
+      relationship_health: 'Active',
+    },
+  })
+}
+
 async function getCurrentUser() {
   const { data, error } = await supabase.auth.getUser()
   if (error) throw error
@@ -160,6 +187,31 @@ async function getActiveOrganisationIds(userId = '') {
 
   if (error) throw error
   return [...new Set((data || []).map((row) => normalizeNullableUuid(row.organisation_id)).filter(Boolean))]
+}
+
+async function fetchRelationshipById(relationshipId = '') {
+  const safeRelationshipId = normalizeNullableUuid(relationshipId)
+  if (!safeRelationshipId) return null
+  const { data, error } = await supabase
+    .from('organisation_partners')
+    .select('id, organisation_id, partner_organisation_id, relationship_status, status, relationship_type, scope_type, scope_id, accepted_at, created_at')
+    .eq('id', safeRelationshipId)
+    .single()
+
+  if (error) throw error
+  return data || null
+}
+
+async function resolveRelationshipCurrentOrganisationId(relationship = {}, options = {}, userId = '') {
+  const ownerOrganisationId = normalizeNullableUuid(relationship.organisation_id || relationship.organisationId)
+  const partnerOrganisationId = normalizeNullableUuid(relationship.partner_organisation_id || relationship.partnerOrganisationId)
+  if (!ownerOrganisationId || !partnerOrganisationId) return resolveCurrentOrganisationId(options, userId)
+
+  const activeIds = await getActiveOrganisationIds(userId)
+  const candidates = [...new Set([...collectExplicitOrganisationIds(options), ...activeIds])]
+  const matchedId = candidates.find((id) => id === ownerOrganisationId || id === partnerOrganisationId)
+  if (matchedId) return matchedId
+  throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_found')
 }
 
 async function fetchAcceptedInvitation(invitationId = '', currentOrganisationId = '') {
@@ -274,25 +326,33 @@ export async function resolveBondPartnerProfileRelationshipId(relationshipId = '
 }
 
 export async function resolveBondPartnerProfileRelationshipContext(relationshipId = '', options = {}) {
-  const directRelationshipId = normalizeNullableUuid(relationshipId)
-  if (directRelationshipId) {
-    return {
-      relationshipId: directRelationshipId,
-      currentOrganisationId: await resolveCurrentOrganisationId(options, ''),
-    }
-  }
-
-  const invitationId = getAcceptedInviteIdFromRelationshipId(relationshipId)
-  if (!invitationId) {
-    throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_found')
-  }
-
   if (!isSupabaseConfigured || !supabase) {
     throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_configured')
   }
 
   const currentUser = await getCurrentUser()
   if (!currentUser?.id) {
+    throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_found')
+  }
+
+  const directRelationshipId = normalizeNullableUuid(relationshipId)
+  if (directRelationshipId) {
+    const relationship = await fetchRelationshipById(directRelationshipId)
+    if (!relationship?.id || !isAcceptedRelationship(relationship)) {
+      throw createProfileError(
+        relationship?.id ? PARTNER_PROFILE_NOT_ACCEPTED_MESSAGE : PARTNER_PROFILE_ACCESS_DENIED_MESSAGE,
+        relationship?.id ? 'not_accepted' : 'not_found',
+      )
+    }
+    return {
+      relationshipId: directRelationshipId,
+      currentOrganisationId: await resolveRelationshipCurrentOrganisationId(relationship, options, currentUser.id),
+      relationship,
+    }
+  }
+
+  const invitationId = getAcceptedInviteIdFromRelationshipId(relationshipId)
+  if (!invitationId) {
     throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_found')
   }
 
@@ -303,6 +363,7 @@ export async function resolveBondPartnerProfileRelationshipContext(relationshipI
     return {
       relationshipId: existingRelationship.id,
       currentOrganisationId,
+      relationship: existingRelationship,
     }
   }
 
@@ -311,6 +372,7 @@ export async function resolveBondPartnerProfileRelationshipContext(relationshipI
     return {
       relationshipId: repairedRelationship.id,
       currentOrganisationId,
+      relationship: repairedRelationship,
     }
   }
 
@@ -622,15 +684,39 @@ export async function getBondPartnerProfileOverview(relationshipId = '', options
 
   if (error) throw error
 
-  if (data?.error_code === 'not_accepted') {
+  if (data?.relationship && data?.partnerOrganisation) {
+    return normalizeOverviewPayload(data)
+  }
+
+  const relationship = relationshipContext.relationship || await fetchRelationshipById(safeRelationshipId)
+  if (!relationship?.id) {
+    throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_found')
+  }
+  if (!isAcceptedRelationship(relationship)) {
     throw createProfileError(PARTNER_PROFILE_NOT_ACCEPTED_MESSAGE, 'not_accepted')
   }
 
-  if (data?.error_code || !data?.relationship || !data?.partnerOrganisation) {
+  const ownerOrganisationId = normalizeText(relationship.organisation_id || relationship.organisationId)
+  const partnerOrganisationId = normalizeText(relationship.partner_organisation_id || relationship.partnerOrganisationId)
+  if (currentOrganisationId !== ownerOrganisationId && currentOrganisationId !== partnerOrganisationId) {
     throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_found')
   }
 
-  return normalizeOverviewPayload(data)
+  const visiblePartnerOrganisationId = currentOrganisationId === ownerOrganisationId ? partnerOrganisationId : ownerOrganisationId
+  const partnerResult = await supabase
+    .from('organisations')
+    .select('id, name, display_name, type, city, province, logo_url')
+    .eq('id', visiblePartnerOrganisationId)
+    .single()
+
+  if (partnerResult.error || !partnerResult.data?.id) {
+    if (data?.error_code === 'not_accepted') {
+      throw createProfileError(PARTNER_PROFILE_NOT_ACCEPTED_MESSAGE, 'not_accepted')
+    }
+    throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_found')
+  }
+
+  return mapRelationshipOverview(relationship, partnerResult.data)
 }
 
 export async function getBondPartnerPeople(relationshipId = '') {

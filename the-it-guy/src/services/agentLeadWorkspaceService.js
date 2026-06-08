@@ -444,19 +444,24 @@ async function safeReadLeadCommunicationPreferences(organisationId = '') {
 
 async function safeReadLeadOwnershipRows(organisationId = '') {
   if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) return []
-  let { data, error } = await supabase
-    .from('leads')
-    .select('lead_id, assigned_queue_id, assigned_at, first_contacted_at, sla_due_at, ownership_status')
-    .eq('organisation_id', organisationId)
-    .limit(2000)
-  if (error && isRecoverableReadError(error, 'leads')) {
-    const fallbackResult = await supabase
+  const selectVariants = [
+    'lead_id, assigned_queue_id, assigned_at, first_contacted_at, sla_due_at, ownership_status',
+    'lead_id, assigned_queue_id, assigned_at, first_contacted_at, sla_due_at',
+    'lead_id, assigned_queue_id, assigned_at, sla_due_at',
+    'lead_id, assigned_at',
+    'lead_id',
+  ]
+  let data = []
+  let error = null
+  for (const fields of selectVariants) {
+    const result = await supabase
       .from('leads')
-      .select('lead_id, assigned_queue_id, assigned_at, sla_due_at, ownership_status')
+      .select(fields)
       .eq('organisation_id', organisationId)
       .limit(2000)
-    data = fallbackResult.data
-    error = fallbackResult.error
+    data = result.data
+    error = result.error
+    if (!error || !isRecoverableReadError(error, 'leads')) break
   }
   if (error) {
     if (isRecoverableReadError(error, 'leads')) return []

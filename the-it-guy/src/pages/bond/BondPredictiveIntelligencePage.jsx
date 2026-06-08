@@ -8,8 +8,6 @@ const CHART_PADDING = 28
 const PANEL_CLASS = 'rounded-lg border border-[#d8dde5] bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.05)] lg:p-6'
 const SOFT_PANEL_CLASS = 'rounded-lg border border-[#d8dde5] bg-[#f8fafc] p-5 lg:p-6'
 const DARK_PANEL_CLASS = 'rounded-lg bg-[#111827] p-5 text-white shadow-[0_24px_70px_rgba(15,23,42,0.16)] lg:p-6'
-const METRIC_GRID_CLASS = 'mt-5 grid grid-cols-[repeat(auto-fit,minmax(126px,1fr))] gap-3 lg:mt-6'
-const COMPACT_METRIC_CARD_CLASS = 'min-w-0 rounded-lg bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.04)]'
 const LABEL_CLASS = 'text-[0.68rem] font-semibold uppercase leading-5 tracking-[0.14em] text-[#667085]'
 const VALUE_CLASS = 'mt-3 break-words text-[clamp(1.55rem,2.1vw,2.35rem)] font-semibold leading-none text-[#111827]'
 
@@ -1396,16 +1394,16 @@ function DigitalTwinVisual({ network }) {
 
 function SimulationControlPanel({ controls, selectedControls, onControlChange }) {
   return (
-    <section className={PANEL_CLASS}>
+    <section className={`${PANEL_CLASS} self-start`}>
       <SectionHeader title={controls.title} copy={controls.subtitle} />
-      <div className="mt-6 grid gap-5">
+      <div className="mt-5 grid gap-4">
         {controls.groups.map((group) => {
           const selectedValue = selectedControls[group.key] || group.defaultValue
           const selectedIndex = Math.max(0, group.options.findIndex((option) => option.value === selectedValue))
           return (
-            <div key={group.key} className="border-t border-[#eef1f4] pt-5">
+            <div key={group.key} className="border-t border-[#eef1f4] pt-4">
               <div className="flex items-center justify-between gap-4">
-                <h3 className="text-lg font-semibold text-[#111827]">{group.label}</h3>
+                <h3 className="text-base font-semibold text-[#111827]">{group.label}</h3>
                 <span className="rounded-md bg-[#111827] px-3 py-1 text-sm font-semibold text-white">{group.options[selectedIndex]?.label}</span>
               </div>
               <input
@@ -1415,10 +1413,10 @@ function SimulationControlPanel({ controls, selectedControls, onControlChange })
                 step="1"
                 value={selectedIndex}
                 onChange={(event) => onControlChange(group, group.options[Number(event.target.value)])}
-                className="mt-5 h-2 w-full accent-[#111827]"
+                className="mt-4 h-2 w-full accent-[#111827]"
                 aria-label={group.label}
               />
-              <div className="mt-3 grid gap-2 text-[0.72rem] font-semibold uppercase leading-5 tracking-[0.08em] text-[#667085]" style={{ gridTemplateColumns: `repeat(${group.options.length}, minmax(0, 1fr))` }}>
+              <div className="mt-2 grid gap-2 text-[0.7rem] font-semibold uppercase leading-5 tracking-[0.06em] text-[#667085]" style={{ gridTemplateColumns: `repeat(${group.options.length}, minmax(0, 1fr))` }}>
                 {group.options.map((option) => (
                   <span key={option.value} className="text-center">{option.label}</span>
                 ))}
@@ -1434,14 +1432,21 @@ function SimulationControlPanel({ controls, selectedControls, onControlChange })
 function ProjectedOutcome({ outputs, activeSimulationKey }) {
   const output = outputs.outputs[activeSimulationKey] || outputs.outputs[Object.keys(outputs.outputs)[0]]
   return (
-    <section className={SOFT_PANEL_CLASS}>
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#667085]">{output.label}</p>
-      <h2 className="mt-3 text-3xl font-semibold tracking-normal text-[#111827]">{outputs.title}</h2>
-      <div className={METRIC_GRID_CLASS}>
+    <section className={`${SOFT_PANEL_CLASS} self-start`}>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#667085]">{output.label}</p>
+          <h2 className="mt-2 text-[clamp(1.75rem,2.5vw,2.35rem)] font-semibold leading-tight tracking-normal text-[#111827]">{outputs.title}</h2>
+        </div>
+        <span className="w-fit rounded-full border border-[#d8dde5] bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#667085]">
+          Live scenario
+        </span>
+      </div>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {output.metrics.map((metric) => (
-          <article key={metric.label} className={COMPACT_METRIC_CARD_CLASS}>
-            <p className={LABEL_CLASS}>{metric.label}</p>
-            <p className={VALUE_CLASS}>{metric.value}</p>
+          <article key={metric.label} className="min-w-0 rounded-lg bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+            <p className="min-h-[2.35rem] text-[0.68rem] font-semibold uppercase leading-5 tracking-[0.12em] text-[#667085]">{metric.label}</p>
+            <p className="mt-3 whitespace-nowrap text-[clamp(1.65rem,2vw,2.2rem)] font-semibold leading-none text-[#111827]">{metric.value}</p>
           </article>
         ))}
       </div>
@@ -2168,13 +2173,13 @@ function ScenarioSimulatorContent({ data }) {
 
       <DigitalTwinVisual network={data.digitalTwinNetwork} />
 
-      <section className="grid gap-6 2xl:grid-cols-[500px_minmax(0,1fr)]">
+      <section className="grid items-start gap-6 2xl:grid-cols-[minmax(360px,0.42fr)_minmax(0,0.58fr)]">
         <SimulationControlPanel
           controls={data.simulationControls}
           selectedControls={selectedControls}
           onControlChange={handleControlChange}
         />
-        <div className="grid gap-6">
+        <div className="grid content-start gap-6">
           <ProjectedOutcome outputs={data.simulationOutputs} activeSimulationKey={activeSimulationKey} />
           <SimulationNarrative narratives={data.simulationNarratives} activeSimulationKey={activeSimulationKey} />
         </div>

@@ -50,6 +50,37 @@ function isMissingColumnError(error, columnName = '') {
     (normalizedColumn && message.includes(normalizedColumn))
 }
 
+function getMissingLeadAssignmentColumn(error) {
+  const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase()
+  return ['first_contacted_at', 'ownership_status', 'sla_due_at', 'assigned_queue_id', 'assigned_at']
+    .find((column) => message.includes(column)) || ''
+}
+
+async function updateLeadWithAssignmentCompatibility(client, { organisationId, leadId, payload, select = '*' } = {}) {
+  const updatePayload = { ...payload }
+  const removedColumns = new Set()
+  let lastResult = { data: null, error: null }
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    lastResult = await client
+      .from('leads')
+      .update(updatePayload)
+      .eq('organisation_id', organisationId)
+      .eq('lead_id', leadId)
+      .select(select)
+      .single()
+
+    if (!lastResult.error || !isMissingColumnError(lastResult.error)) return { ...lastResult, removedColumns }
+
+    const missingColumn = getMissingLeadAssignmentColumn(lastResult.error)
+    if (!missingColumn || !Object.prototype.hasOwnProperty.call(updatePayload, missingColumn)) return { ...lastResult, removedColumns }
+    delete updatePayload[missingColumn]
+    removedColumns.add(missingColumn)
+  }
+
+  return { ...lastResult, removedColumns }
+}
+
 function actorId(actor = null) {
   return nullableUuid(actor?.id || actor?.user_id || actor?.userId)
 }
@@ -294,26 +325,29 @@ async function updateLeadAssignment({ organisationId, leadId, patch, reason = ''
     ...patch,
     updated_at: new Date().toISOString(),
   }
-  const { data, error } = await client
-    .from('leads')
-    .update(updatePayload)
-    .eq('organisation_id', organisationId)
-    .eq('lead_id', leadId)
-    .select('*')
-    .single()
-  if (error) throw error
-  const lead = normalizeLeadAssignment(data)
-  const history = await recordAssignmentHistory({
+  const { data, error } = await updateLeadWithAssignmentCompatibility(client, {
     organisationId,
     leadId,
-    previousAgentId: previous.assignedAgentId,
-    newAgentId: lead.assignedAgentId,
-    previousQueueId: previous.assignedQueueId,
-    newQueueId: lead.assignedQueueId,
-    reason,
-    assignmentSource,
-    assignedBy: actorId(actor),
+    payload: updatePayload,
   })
+  if (error) throw error
+  const lead = normalizeLeadAssignment(data)
+  let history = null
+  try {
+    history = await recordAssignmentHistory({
+      organisationId,
+      leadId,
+      previousAgentId: previous.assignedAgentId,
+      newAgentId: lead.assignedAgentId,
+      previousQueueId: previous.assignedQueueId,
+      newQueueId: lead.assignedQueueId,
+      reason,
+      assignmentSource,
+      assignedBy: actorId(actor),
+    })
+  } catch (historyError) {
+    console.warn('[leadAssignmentService] assignment history skipped', historyError)
+  }
   const notificationType = previous.assignedAgentId || previous.assignedQueueId ? 'Lead reassigned' : 'New lead assigned'
   const notification = await notifyLeadAssignment({
     organisationId,
@@ -424,29 +458,15 @@ export async function markLeadFirstContacted({ organisationId = '', leadId = '',
   const updatePayload = {
     first_contacted_at: contactedAt,
     ownership_status: 'contacted',
+    status: 'Contacted',
+    stage: 'Contacted',
     updated_at: new Date().toISOString(),
   }
-  let { data, error } = await client
-    .from('leads')
-    .update(updatePayload)
-    .eq('organisation_id', normalizedOrgId)
-    .eq('lead_id', normalizedLeadId)
-    .select('*')
-    .single()
-  if (error && isMissingColumnError(error, 'first_contacted_at')) {
-    const fallbackResult = await client
-      .from('leads')
-      .update({
-        ownership_status: 'contacted',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('organisation_id', normalizedOrgId)
-      .eq('lead_id', normalizedLeadId)
-      .select('*')
-      .single()
-    data = fallbackResult.data
-    error = fallbackResult.error
-  }
+  const { data, error, removedColumns } = await updateLeadWithAssignmentCompatibility(client, {
+    organisationId: normalizedOrgId,
+    leadId: normalizedLeadId,
+    payload: updatePayload,
+  })
   if (error) throw error
   await notifyLeadAssignment({
     organisationId: normalizedOrgId,
@@ -455,7 +475,11 @@ export async function markLeadFirstContacted({ organisationId = '', leadId = '',
     reason: 'First contact recorded for SLA tracking.',
     actor,
   })
-  return normalizeLeadAssignment({ ...data, first_contacted_at: data?.first_contacted_at || contactedAt })
+  return normalizeLeadAssignment({
+    ...data,
+    first_contacted_at: data?.first_contacted_at || (removedColumns?.has('first_contacted_at') ? null : contactedAt),
+    ownership_status: data?.ownership_status || (removedColumns?.has('ownership_status') ? '' : 'contacted'),
+  })
 }
 
 export async function listLeadAssignmentHistory({ organisationId = '', leadId = '' } = {}) {
@@ -477,19 +501,24 @@ export async function listLeadAssignmentMetrics({ organisationId = '' } = {}) {
   const client = requireClient()
   const normalizedOrgId = nullableUuid(organisationId)
   if (!normalizedOrgId) return { unassigned: 0, assigned: 0, overdue: 0, escalated: 0, byAgent: [] }
-  let { data, error } = await client
-    .from('leads')
-    .select('lead_id, assigned_agent_id, assigned_queue_id, ownership_status, sla_due_at, first_contacted_at')
-    .eq('organisation_id', normalizedOrgId)
-    .limit(2000)
-  if (error && isMissingColumnError(error, 'first_contacted_at')) {
-    const fallbackResult = await client
+  const selectVariants = [
+    'lead_id, assigned_agent_id, assigned_queue_id, ownership_status, sla_due_at, first_contacted_at',
+    'lead_id, assigned_agent_id, assigned_queue_id, sla_due_at, first_contacted_at',
+    'lead_id, assigned_agent_id, assigned_queue_id, sla_due_at',
+    'lead_id, assigned_agent_id',
+    'lead_id',
+  ]
+  let data = []
+  let error = null
+  for (const fields of selectVariants) {
+    const result = await client
       .from('leads')
-      .select('lead_id, assigned_agent_id, assigned_queue_id, ownership_status, sla_due_at')
+      .select(fields)
       .eq('organisation_id', normalizedOrgId)
       .limit(2000)
-    data = fallbackResult.data
-    error = fallbackResult.error
+    data = result.data
+    error = result.error
+    if (!error || !isMissingColumnError(error)) break
   }
   if (error) throw error
   const rows = (data || []).map(normalizeLeadAssignment)
@@ -522,12 +551,22 @@ export async function identifyEscalatedLeads({ organisationId = '' } = {}) {
       .from('leads')
       .select('*')
       .eq('organisation_id', normalizedOrgId)
-      .neq('ownership_status', 'contacted')
       .lt('sla_due_at', new Date().toISOString())
       .limit(500)
     data = fallbackResult.data
     error = fallbackResult.error
   }
+  if (error && isMissingColumnError(error, 'ownership_status')) {
+    const fallbackResult = await client
+      .from('leads')
+      .select('*')
+      .eq('organisation_id', normalizedOrgId)
+      .lt('sla_due_at', new Date().toISOString())
+      .limit(500)
+    data = fallbackResult.data
+    error = fallbackResult.error
+  }
+  if (error && isMissingColumnError(error, 'sla_due_at')) return []
   if (error) throw error
   return (data || []).map(normalizeLeadAssignment)
 }
