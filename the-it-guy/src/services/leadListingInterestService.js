@@ -2,7 +2,7 @@ import { createAgencyCrmLeadActivity, listAgencyCrmLeadContacts } from '../lib/a
 import { createAppointmentAsync } from '../lib/agencyPipelineService'
 import { listCanonicalOffersForLead } from '../lib/buyerLifecycleService'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
-import { getOrganisationPrivateListings } from './privateListingService'
+import { getAgentPrivateListingSummaries } from './privateListingService'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -296,7 +296,10 @@ async function enrichInterests(organisationId = '', rows = []) {
 export async function listSearchablePrivateListings({ organisationId = '', search = '', status = 'all', minPrice = '', maxPrice = '' } = {}) {
   const normalizedOrgId = nullableUuid(organisationId)
   if (!normalizedOrgId) return []
-  const rows = await getOrganisationPrivateListings(normalizedOrgId, { includeRequirementsAndDocuments: false }).catch((error) => {
+  const rows = await getAgentPrivateListingSummaries('', {
+    organisationId: normalizedOrgId,
+    includeAllOrganisationListings: true,
+  }).catch((error) => {
     if (isRecoverableReadError(error, 'private_listings')) return []
     throw error
   })
@@ -368,17 +371,33 @@ export async function createLeadListingInterest(payload = {}, { actor = null } =
 export async function upsertLeadListingInterest(payload = {}, { actor = null } = {}) {
   const client = requireClient()
   const dbPayload = buildLeadListingInterestPayload(payload)
-  const { data, error } = await client
+  const existing = await client
     .from('lead_listing_interests')
-    .upsert(
-      {
-        ...dbPayload,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'lead_id,listing_id' },
-    )
-    .select('*')
-    .single()
+    .select('interest_id')
+    .eq('organisation_id', dbPayload.organisation_id)
+    .eq('lead_id', dbPayload.lead_id)
+    .eq('listing_id', dbPayload.listing_id)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+  if (existing.error) throw existing.error
+
+  const existingId = existing.data?.[0]?.interest_id
+  const writePayload = {
+    ...dbPayload,
+    updated_at: new Date().toISOString(),
+  }
+  const { data, error } = existingId
+    ? await client
+        .from('lead_listing_interests')
+        .update(writePayload)
+        .eq('interest_id', existingId)
+        .select('*')
+        .single()
+    : await client
+        .from('lead_listing_interests')
+        .insert(writePayload)
+        .select('*')
+        .single()
   if (error) throw error
   await logLeadInterestActivity(dbPayload.organisation_id, dbPayload.lead_id, dbPayload.status, { actor })
   return mapLeadListingInterest(data)

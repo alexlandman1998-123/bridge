@@ -444,11 +444,20 @@ async function safeReadLeadCommunicationPreferences(organisationId = '') {
 
 async function safeReadLeadOwnershipRows(organisationId = '') {
   if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) return []
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('leads')
     .select('lead_id, assigned_queue_id, assigned_at, first_contacted_at, sla_due_at, ownership_status')
     .eq('organisation_id', organisationId)
     .limit(2000)
+  if (error && isRecoverableReadError(error, 'leads')) {
+    const fallbackResult = await supabase
+      .from('leads')
+      .select('lead_id, assigned_queue_id, assigned_at, sla_due_at, ownership_status')
+      .eq('organisation_id', organisationId)
+      .limit(2000)
+    data = fallbackResult.data
+    error = fallbackResult.error
+  }
   if (error) {
     if (isRecoverableReadError(error, 'leads')) return []
     throw error

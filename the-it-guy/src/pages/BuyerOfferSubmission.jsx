@@ -121,6 +121,17 @@ function BuyerOfferSubmission() {
   const showHybridFinanceFields = financeType === 'hybrid'
   const showBondAssistance = ['bond', 'hybrid'].includes(financeType)
 
+  useEffect(() => {
+    if (!context?.ok) return
+    const conditions = context?.canonicalOffer?.conditions || {}
+    setForm((previous) => ({
+      ...previous,
+      fullName: previous.fullName || conditions.buyerName || invite?.buyerLeadName || '',
+      email: previous.email || conditions.buyerEmail || '',
+      phone: previous.phone || conditions.buyerPhone || '',
+    }))
+  }, [context?.canonicalOffer?.conditions, context?.ok, invite?.buyerLeadName])
+
   function updateForm(key, value) {
     setForm((previous) => ({ ...previous, [key]: value }))
   }

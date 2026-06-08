@@ -40,6 +40,16 @@ function requireClient() {
   return supabase
 }
 
+function isMissingColumnError(error, columnName = '') {
+  const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase()
+  const code = normalizeText(error?.code).toUpperCase()
+  const normalizedColumn = normalizeLower(columnName)
+  return code === '42703' ||
+    code === 'PGRST204' ||
+    message.includes('schema cache') ||
+    (normalizedColumn && message.includes(normalizedColumn))
+}
+
 function actorId(actor = null) {
   return nullableUuid(actor?.id || actor?.user_id || actor?.userId)
 }
@@ -54,6 +64,7 @@ export function calculateSlaDueAt(assignedAt = new Date().toISOString(), slaHour
 export function getLeadSlaStatus(lead = {}, now = new Date()) {
   const ownershipStatus = normalizeOwnershipStatus(lead.ownershipStatus || lead.ownership_status, 'awaiting_assignment')
   if (ownershipStatus === 'escalated') return 'escalated'
+  if (ownershipStatus === 'contacted') return 'contacted'
   if (lead.firstContactedAt || lead.first_contacted_at) return 'contacted'
   const dueAt = lead.slaDueAt || lead.sla_due_at
   if (!dueAt) return lead.assignedAgentId || lead.assigned_agent_id || lead.assignedQueueId || lead.assigned_queue_id ? 'on_track' : 'awaiting_assignment'
@@ -410,17 +421,32 @@ export async function markLeadFirstContacted({ organisationId = '', leadId = '',
   const normalizedOrgId = nullableUuid(organisationId)
   const normalizedLeadId = nullableUuid(leadId)
   if (!normalizedOrgId || !normalizedLeadId) throw new Error('Valid organisation and lead ids are required.')
-  const { data, error } = await client
+  const updatePayload = {
+    first_contacted_at: contactedAt,
+    ownership_status: 'contacted',
+    updated_at: new Date().toISOString(),
+  }
+  let { data, error } = await client
     .from('leads')
-    .update({
-      first_contacted_at: contactedAt,
-      ownership_status: 'contacted',
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq('organisation_id', normalizedOrgId)
     .eq('lead_id', normalizedLeadId)
     .select('*')
     .single()
+  if (error && isMissingColumnError(error, 'first_contacted_at')) {
+    const fallbackResult = await client
+      .from('leads')
+      .update({
+        ownership_status: 'contacted',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('organisation_id', normalizedOrgId)
+      .eq('lead_id', normalizedLeadId)
+      .select('*')
+      .single()
+    data = fallbackResult.data
+    error = fallbackResult.error
+  }
   if (error) throw error
   await notifyLeadAssignment({
     organisationId: normalizedOrgId,
@@ -429,7 +455,7 @@ export async function markLeadFirstContacted({ organisationId = '', leadId = '',
     reason: 'First contact recorded for SLA tracking.',
     actor,
   })
-  return normalizeLeadAssignment(data)
+  return normalizeLeadAssignment({ ...data, first_contacted_at: data?.first_contacted_at || contactedAt })
 }
 
 export async function listLeadAssignmentHistory({ organisationId = '', leadId = '' } = {}) {
@@ -451,11 +477,20 @@ export async function listLeadAssignmentMetrics({ organisationId = '' } = {}) {
   const client = requireClient()
   const normalizedOrgId = nullableUuid(organisationId)
   if (!normalizedOrgId) return { unassigned: 0, assigned: 0, overdue: 0, escalated: 0, byAgent: [] }
-  const { data, error } = await client
+  let { data, error } = await client
     .from('leads')
     .select('lead_id, assigned_agent_id, assigned_queue_id, ownership_status, sla_due_at, first_contacted_at')
     .eq('organisation_id', normalizedOrgId)
     .limit(2000)
+  if (error && isMissingColumnError(error, 'first_contacted_at')) {
+    const fallbackResult = await client
+      .from('leads')
+      .select('lead_id, assigned_agent_id, assigned_queue_id, ownership_status, sla_due_at')
+      .eq('organisation_id', normalizedOrgId)
+      .limit(2000)
+    data = fallbackResult.data
+    error = fallbackResult.error
+  }
   if (error) throw error
   const rows = (data || []).map(normalizeLeadAssignment)
   const byAgentMap = new Map()
@@ -475,13 +510,24 @@ export async function identifyEscalatedLeads({ organisationId = '' } = {}) {
   const client = requireClient()
   const normalizedOrgId = nullableUuid(organisationId)
   if (!normalizedOrgId) return []
-  const { data, error } = await client
+  let { data, error } = await client
     .from('leads')
     .select('*')
     .eq('organisation_id', normalizedOrgId)
     .is('first_contacted_at', null)
     .lt('sla_due_at', new Date().toISOString())
     .limit(500)
+  if (error && isMissingColumnError(error, 'first_contacted_at')) {
+    const fallbackResult = await client
+      .from('leads')
+      .select('*')
+      .eq('organisation_id', normalizedOrgId)
+      .neq('ownership_status', 'contacted')
+      .lt('sla_due_at', new Date().toISOString())
+      .limit(500)
+    data = fallbackResult.data
+    error = fallbackResult.error
+  }
   if (error) throw error
   return (data || []).map(normalizeLeadAssignment)
 }

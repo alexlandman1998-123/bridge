@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowUpRight, Bold, CalendarDays, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Filter, Home, ImageIcon, Italic, Link2, List, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Search, Smile, Table2, Trash2, TrendingUp, Upload, UserRound, X } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, CalendarDays, Car, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Eye, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
@@ -657,6 +657,71 @@ function formatCurrency(value) {
   const amount = Number(value || 0)
   if (!Number.isFinite(amount) || amount <= 0) return 'R 0'
   return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(amount)
+}
+
+function parseCurrencyAmount(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  const raw = normalizeText(value).toLowerCase()
+  if (!raw) return 0
+  const firstNumber = raw.match(/[\d]+(?:[.,]\d+)?/)
+  if (!firstNumber) return 0
+  const number = Number(firstNumber[0].replace(',', '.'))
+  if (!Number.isFinite(number)) return 0
+  if (raw.includes('million') || raw.includes('m')) return number * 1000000
+  if (raw.includes('k')) return number * 1000
+  return number
+}
+
+function formatCompactCurrency(value) {
+  const amount = Number(value || 0)
+  if (!Number.isFinite(amount) || amount <= 0) return 'Not captured'
+  if (amount >= 1000000) {
+    const compact = amount / 1000000
+    return `R${Number.isInteger(compact) ? compact.toFixed(0) : compact.toFixed(1)}m`
+  }
+  if (amount >= 1000) return `R${Math.round(amount / 1000)}k`
+  return formatCurrency(amount)
+}
+
+function buildBuyerBudgetRangeLabel({ lead = {}, financeSummary = {} } = {}) {
+  const rawBudget = normalizeText(lead?.budget)
+  const rawEstimated = normalizeText(lead?.estimatedValue)
+  if (rawBudget && /[a-z]|-|–|—/i.test(rawBudget) && parseCurrencyAmount(rawBudget) > 0) return rawBudget
+
+  const affordability = financeSummary?.affordabilityEstimate || {}
+  const min = Number(affordability.estimatedPurchaseRangeMin || 0) || 0
+  const max = Number(affordability.estimatedPurchaseRangeMax || 0) || 0
+  if (min > 0 && max > 0 && min !== max) return `${formatCompactCurrency(min)} - ${formatCompactCurrency(max)}`
+
+  const budget = parseCurrencyAmount(rawBudget)
+  const estimated = parseCurrencyAmount(rawEstimated)
+  if (budget > 0 && estimated > 0 && budget !== estimated) {
+    return `${formatCompactCurrency(Math.min(budget, estimated))} - ${formatCompactCurrency(Math.max(budget, estimated))}`
+  }
+  if (budget > 0) return formatCompactCurrency(budget)
+  if (estimated > 0) return formatCompactCurrency(estimated)
+  return 'Not captured'
+}
+
+function getBuyerUrgencyLabel({ lead = {}, openActions = {}, activityInsights = {} } = {}) {
+  const priority = normalizeText(lead?.priority || lead?.leadScore).toLowerCase()
+  if (priority.includes('high') || priority.includes('hot') || openActions?.overdueCount > 0) return 'High'
+  if (activityInsights?.temperature === 'Hot') return 'High'
+  if (priority.includes('low') || activityInsights?.temperature === 'Cool') return 'Low'
+  return 'Medium'
+}
+
+function getBuyerUrgencyClassName(label = '') {
+  const normalized = normalizeText(label).toLowerCase()
+  if (normalized === 'high') return 'border-[#ffd0d3] bg-[#fff2f2] text-[#c3263c]'
+  if (normalized === 'low') return 'border-[#dce8f2] bg-[#f6f9fc] text-[#60758b]'
+  return 'border-[#f2ddb4] bg-[#fff8e8] text-[#9a6416]'
+}
+
+function resolveBuyerWorkspaceTabKey(tabKey = '') {
+  const normalized = normalizeText(tabKey)
+  if (normalized === 'activities') return 'activity'
+  return normalized
 }
 
 function buildAppointmentListingLabel(listing = {}) {
@@ -1961,6 +2026,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [draggingPipelineCardId, setDraggingPipelineCardId] = useState('')
   const draggingPipelineCardRef = useRef('')
   const [leadWorkspaceTab, setLeadWorkspaceTab] = useState('overview')
+  const [buyerJourneyActionStage, setBuyerJourneyActionStage] = useState('qualification')
   const [leadFilter, setLeadFilter] = useState(DEFAULT_LEAD_FILTER)
   const [leadTablePage, setLeadTablePage] = useState(1)
   const [showLeadForm, setShowLeadForm] = useState(false)
@@ -2024,6 +2090,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     buyerPhone: '',
     note: '',
     lastOfferLink: '',
+  })
+  const [offerPropertySelectorOpen, setOfferPropertySelectorOpen] = useState(false)
+  const [offerPropertySearch, setOfferPropertySearch] = useState('')
+  const [offerLinkChannels, setOfferLinkChannels] = useState({
+    email: true,
+    sms: false,
+    whatsapp: false,
   })
   const [isOfferLinkSending, setIsOfferLinkSending] = useState(false)
   const [selectedLeadOffers, setSelectedLeadOffers] = useState([])
@@ -3348,7 +3421,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (selectedLeadIsSeller && ['appointments', 'offers', 'tasks'].includes(leadWorkspaceTab)) {
       setLeadWorkspaceTab('overview')
     }
-    if (!selectedLeadIsSeller && ['documents', 'listing_journey'].includes(leadWorkspaceTab)) {
+    if (!selectedLeadIsSeller && ['listing_journey'].includes(leadWorkspaceTab)) {
       setLeadWorkspaceTab('overview')
     }
   }, [leadWorkspaceTab, selectedLead, selectedLeadIsSeller])
@@ -4399,6 +4472,281 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     return Array.from(byId.values())
   }, [appointmentListingOptions, resolveAppointmentListingLabel, selectedLead, selectedLeadViewingAppointments])
+
+  const selectedLeadAcceptedOffer = useMemo(() => {
+    const rows = Array.isArray(selectedLeadOffers) ? selectedLeadOffers : []
+    return rows.find((offer) => ['accepted', 'converted_to_transaction'].includes(normalizeText(offer?.status).toLowerCase())) || null
+  }, [selectedLeadOffers])
+
+  const selectedLeadLastActiveAt = useMemo(
+    () =>
+      selectedLeadUnifiedTimeline[0]?.timestamp ||
+      selectedLeadActivities[0]?.activityDate ||
+      selectedLeadActivities[0]?.createdAt ||
+      selectedLead?.updatedAt ||
+      selectedLead?.createdAt ||
+      '',
+    [selectedLead, selectedLeadActivities, selectedLeadUnifiedTimeline],
+  )
+
+  const selectedLeadBuyerBudgetLabel = useMemo(
+    () => buildBuyerBudgetRangeLabel({ lead: selectedLead || {}, financeSummary: selectedLeadFinanceReadinessSummary }),
+    [selectedLead, selectedLeadFinanceReadinessSummary],
+  )
+
+  const selectedLeadBuyerUrgency = useMemo(
+    () => getBuyerUrgencyLabel({ lead: selectedLead || {}, openActions: selectedLeadOpenActions, activityInsights: selectedLeadActivityInsights }),
+    [selectedLead, selectedLeadActivityInsights, selectedLeadOpenActions],
+  )
+
+  const selectedLeadBuyerScore = useMemo(() => {
+    if (!selectedLead) return 0
+    const activityScore = Math.min(18, selectedLeadUnifiedTimeline.length * 3)
+    const viewingScore = Math.min(14, selectedLeadAppointments.length * 7)
+    const offerScore = Math.min(14, selectedLeadOfferSummary.total * 7)
+    const workflowScore = Math.round(selectedLeadWorkflowHealth.percent * 0.28)
+    const financeScore = selectedLeadShowFinanceReadiness ? Math.round((selectedLeadFinanceReadinessSummary.readinessScore?.score || 0) * 0.16) : 10
+    const urgencyBonus = selectedLeadBuyerUrgency === 'High' ? 8 : selectedLeadBuyerUrgency === 'Medium' ? 4 : 0
+    return Math.max(42, Math.min(98, 38 + activityScore + viewingScore + offerScore + workflowScore + financeScore + urgencyBonus))
+  }, [
+    selectedLead,
+    selectedLeadAppointments.length,
+    selectedLeadBuyerUrgency,
+    selectedLeadFinanceReadinessSummary.readinessScore?.score,
+    selectedLeadOfferSummary.total,
+    selectedLeadShowFinanceReadiness,
+    selectedLeadUnifiedTimeline.length,
+    selectedLeadWorkflowHealth.percent,
+  ])
+
+  const selectedLeadBuyerMatchScore = useMemo(() => {
+    const confidence = Number(selectedLeadTransactionConfidence || 0)
+    const derived = Math.round((selectedLeadBuyerScore * 0.55) + (selectedLeadWorkflowHealth.percent * 0.25) + (confidence * 0.2))
+    return Math.max(62, Math.min(96, derived || selectedLeadBuyerScore))
+  }, [selectedLeadBuyerScore, selectedLeadTransactionConfidence, selectedLeadWorkflowHealth.percent])
+
+  const selectedLeadBuyerRecommendations = useMemo(() => {
+    const fallbackImages = [
+      'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=80',
+      'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=900&q=80',
+      'https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=900&q=80',
+      'https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?auto=format&fit=crop&w=900&q=80',
+    ]
+    const options = leadAppointmentOfferListingOptions.length ? leadAppointmentOfferListingOptions : appointmentListingOptions.slice(0, 4)
+    return options.slice(0, 6).map((option, index) => {
+      const listing = appointmentListingById.get(normalizeText(option?.id)) || option || {}
+      const match = Math.max(72, Math.min(96, selectedLeadBuyerMatchScore - index * 2 + (option?.source === 'Viewed' ? 3 : 0)))
+      return {
+        id: normalizeText(option?.id || listing?.id) || `recommended-${index}`,
+        title: normalizeText(listing?.title || option?.label) || 'Recommended property',
+        area: normalizeText(listing?.suburb || selectedLead?.areaInterest || selectedLeadPropertyLabel) || 'Area pending',
+        price: Number(listing?.askingPrice || 0) > 0 ? formatCurrency(listing.askingPrice) : selectedLeadBuyerBudgetLabel,
+        bedrooms: Number(listing?.bedrooms || 0) || 3,
+        bathrooms: Number(listing?.bathrooms || 0) || 2,
+        parking: Number(listing?.parking || 0) || 2,
+        image: normalizeText(listing?.thumbnailUrl) || fallbackImages[index % fallbackImages.length],
+        match,
+        source: normalizeText(option?.source) || 'Recommended',
+      }
+    })
+  }, [
+    appointmentListingById,
+    appointmentListingOptions,
+    leadAppointmentOfferListingOptions,
+    selectedLead?.areaInterest,
+    selectedLeadBuyerBudgetLabel,
+    selectedLeadBuyerMatchScore,
+    selectedLeadPropertyLabel,
+  ])
+
+  const selectedLeadOfferPropertyOptions = useMemo(() => {
+    const fallbackImages = [
+      'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=80',
+      'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=900&q=80',
+      'https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=900&q=80',
+      'https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?auto=format&fit=crop&w=900&q=80',
+    ]
+    const byId = new Map()
+    const viewedListingIds = new Set(selectedLeadViewingAppointments.map((appointment) => normalizeText(appointment?.listingId)).filter(Boolean))
+    const addProperty = (raw = {}, source = 'Matched property', index = 0) => {
+      const id = normalizeText(raw?.id || raw?.listingId)
+      if (!id || byId.has(id)) return
+      const listing = appointmentListingById.get(id) || raw || {}
+      const recommendation = selectedLeadBuyerRecommendations.find((property) => normalizeText(property?.id) === id)
+      const isViewed = viewedListingIds.has(id) || normalizeText(raw?.source).toLowerCase().includes('view')
+      const sourceLabel = isViewed
+        ? 'Previously viewed'
+        : normalizeText(raw?.source).toLowerCase().includes('lead')
+          ? 'Saved property'
+          : source
+      const priceValue = Number(listing?.askingPrice || raw?.askingPrice || 0) || 0
+      byId.set(id, {
+        id,
+        label: normalizeText(listing?.label || raw?.label || recommendation?.title) || `Listing ${id}`,
+        title: normalizeText(listing?.title || recommendation?.title || raw?.title || raw?.label) || 'Recommended property',
+        address: normalizeText(listing?.address || raw?.address || recommendation?.area || selectedLeadPropertyLabel) || 'Address pending',
+        suburb: normalizeText(listing?.suburb || recommendation?.area || selectedLead?.areaInterest || selectedLeadPropertyLabel),
+        price: priceValue > 0 ? formatCurrency(priceValue) : (recommendation?.price || selectedLeadBuyerBudgetLabel),
+        bedrooms: Number(listing?.bedrooms || recommendation?.bedrooms || 0) || 0,
+        bathrooms: Number(listing?.bathrooms || recommendation?.bathrooms || 0) || 0,
+        parking: Number(listing?.parking || recommendation?.parking || 0) || 0,
+        sizeLabel: normalizeText(listing?.erfSize || listing?.floorSize || listing?.propertySize || raw?.erfSize || raw?.floorSize) || 'Size pending',
+        image: normalizeText(listing?.thumbnailUrl || recommendation?.image) || fallbackImages[index % fallbackImages.length],
+        match: Number(recommendation?.match || raw?.match || selectedLeadBuyerMatchScore || 0) || 0,
+        source: sourceLabel,
+        updatedAt: listing?.updatedAt || raw?.updatedAt || '',
+      })
+    }
+
+    leadAppointmentOfferListingOptions.forEach((option, index) => addProperty(option, 'Matched property', index))
+    selectedLeadBuyerRecommendations.forEach((property, index) => addProperty(property, 'Matched property', index))
+    appointmentListingOptions.forEach((listing, index) => addProperty(listing, 'Manual search', index))
+
+    const query = normalizeText(offerPropertySearch).toLowerCase()
+    const rows = Array.from(byId.values())
+    if (!query) return rows
+    return rows.filter((property) => [
+      property.title,
+      property.address,
+      property.suburb,
+      property.price,
+      property.source,
+    ].some((value) => normalizeText(value).toLowerCase().includes(query)))
+  }, [
+    appointmentListingById,
+    appointmentListingOptions,
+    leadAppointmentOfferListingOptions,
+    offerPropertySearch,
+    selectedLead?.areaInterest,
+    selectedLeadBuyerBudgetLabel,
+    selectedLeadBuyerMatchScore,
+    selectedLeadBuyerRecommendations,
+    selectedLeadPropertyLabel,
+    selectedLeadViewingAppointments,
+  ])
+
+  const selectedLeadOfferCentreProperty = useMemo(() => {
+    const selectedListingId = normalizeText(offerLinkForm.listingId || selectedLeadActiveViewing?.listingId || selectedLead?.listingId || selectedLeadOfferPropertyOptions[0]?.id)
+    const property = selectedLeadOfferPropertyOptions.find((item) => normalizeText(item?.id) === selectedListingId) || selectedLeadOfferPropertyOptions[0] || null
+    const completedViewing = selectedLeadViewingAppointments
+      .filter((appointment) => {
+        const status = normalizeText(appointment?.status).toLowerCase()
+        const sameListing = !property?.id || normalizeText(appointment?.listingId) === normalizeText(property.id)
+        return sameListing && (status === 'completed' || status === 'viewing_completed' || normalizeText(appointment?.outcomeSummary))
+      })
+      .sort((left, right) => new Date(right?.dateTime || right?.updatedAt || 0) - new Date(left?.dateTime || left?.updatedAt || 0))[0] || null
+    const updatedAt = property?.updatedAt ? new Date(property.updatedAt) : null
+    const daysOnMarket = updatedAt && !Number.isNaN(updatedAt.getTime())
+      ? `${Math.max(1, Math.round((Date.now() - updatedAt.getTime()) / 86400000))} days`
+      : 'Not tracked'
+    return property
+      ? {
+          ...property,
+          viewing: completedViewing,
+          viewingStatusLabel: completedViewing ? 'Viewing completed' : 'No completed viewing linked',
+          viewingOutcome: completedViewing?.outcomeSummary || completedViewing?.clientFeedback || completedViewing?.nextStep || 'Interested',
+          viewingDate: completedViewing?.dateTime || completedViewing?.updatedAt || '',
+          daysOnMarket,
+        }
+      : null
+  }, [
+    offerLinkForm.listingId,
+    selectedLead,
+    selectedLeadActiveViewing,
+    selectedLeadOfferPropertyOptions,
+    selectedLeadViewingAppointments,
+  ])
+
+  const selectedLeadOfferReasons = useMemo(() => {
+    if (!selectedLeadOfferCentreProperty) return []
+    const reasons = []
+    const priceAmount = parseCurrencyAmount(selectedLeadOfferCentreProperty.price)
+    const budgetAmount = parseCurrencyAmount(selectedLeadBuyerBudgetLabel)
+    const preferredArea = normalizeText(selectedLead?.areaInterest || selectedLeadPropertyLabel).toLowerCase()
+    const propertyArea = normalizeText(selectedLeadOfferCentreProperty.suburb || selectedLeadOfferCentreProperty.address).toLowerCase()
+    if (priceAmount > 0 && budgetAmount > 0 && priceAmount <= budgetAmount * 1.08) reasons.push('Within budget')
+    if (preferredArea && propertyArea.includes(preferredArea)) {
+      reasons.push('Preferred area')
+    }
+    if ((Number(selectedLeadOfferCentreProperty.bedrooms || 0) || 0) >= 3) reasons.push('Matches bedroom requirement')
+    if (selectedLeadOfferCentreProperty.source === 'Previously viewed') reasons.push('Similar to recently viewed homes')
+    if (selectedLeadOfferCentreProperty.source === 'Saved property') reasons.push('Saved by buyer')
+    if (!reasons.length && selectedLeadOfferCentreProperty.match) reasons.push(`${selectedLeadOfferCentreProperty.match}% match signal`)
+    return reasons.slice(0, 4)
+  }, [selectedLead, selectedLeadBuyerBudgetLabel, selectedLeadOfferCentreProperty, selectedLeadPropertyLabel])
+
+  const selectedLeadOfferHistoryStages = useMemo(() => {
+    const rows = Array.isArray(selectedLeadOffers) ? selectedLeadOffers : []
+    const latestOffer = rows
+      .slice()
+      .sort((left, right) => new Date(right?.updatedAt || right?.submittedAt || right?.createdAt || 0) - new Date(left?.updatedAt || left?.submittedAt || left?.createdAt || 0))[0] || null
+    const status = normalizeText(latestOffer?.status).toLowerCase()
+    const hasOffer = Boolean(latestOffer || offerLinkForm.lastOfferLink)
+    const buyerViewed = ['buyer_viewed', 'viewed', 'opened', 'submitted', 'agent_review', 'sent_to_seller', 'seller_viewed', 'accepted', 'converted_to_transaction'].some((item) => status.includes(item))
+    const considering = Boolean(hasOffer && !['draft', 'sent_to_buyer'].includes(status))
+    const accepted = ['accepted', 'converted_to_transaction'].includes(status) || Boolean(selectedLeadAcceptedOffer)
+    const transactionCreated = Boolean(latestOffer?.transactionId || selectedLeadLinkedTransactionId)
+    return [
+      { key: 'sent', label: 'Offer Sent', detail: latestOffer?.createdAt || latestOffer?.submittedAt || offerLinkForm.expiryDate, done: hasOffer, icon: Send },
+      { key: 'opened', label: 'Offer Opened', detail: buyerViewed ? (latestOffer?.updatedAt || latestOffer?.submittedAt) : '', done: buyerViewed, icon: Eye },
+      { key: 'viewed', label: 'Buyer Viewed Offer', detail: buyerViewed ? (latestOffer?.updatedAt || latestOffer?.submittedAt) : '', done: buyerViewed, icon: Eye },
+      { key: 'considering', label: 'Considering', detail: considering ? (latestOffer?.updatedAt || latestOffer?.submittedAt) : '', done: considering, icon: Clock3 },
+      { key: 'accepted', label: 'Offer Accepted', detail: accepted ? (selectedLeadAcceptedOffer?.updatedAt || latestOffer?.updatedAt) : '', done: accepted, icon: CheckCircle2 },
+      { key: 'transaction', label: 'Transaction Created', detail: transactionCreated ? (latestOffer?.updatedAt || selectedLeadLinkedTransaction?.updatedAt || selectedLeadLinkedTransaction?.createdAt) : '', done: transactionCreated, icon: Home },
+    ]
+  }, [
+    offerLinkForm.expiryDate,
+    offerLinkForm.lastOfferLink,
+    selectedLeadAcceptedOffer,
+    selectedLeadLinkedTransaction,
+    selectedLeadLinkedTransactionId,
+    selectedLeadOffers,
+  ])
+
+  const selectedLeadBuyerJourneyStages = useMemo(() => {
+    const stageKey = normalizeText(selectedLeadEffectiveLifecycleStage || selectedLead?.stage).toLowerCase()
+    const contacted = selectedLeadActivities.length > 0 || !['', 'new lead', 'lead', 'cold'].includes(stageKey)
+    const qualified = Boolean(
+      normalizeText(selectedLead?.budget || selectedLead?.estimatedValue || selectedLead?.areaInterest || selectedLead?.propertyInterest) ||
+        stageKey.includes('qualified') ||
+        stageKey.includes('viewing') ||
+        stageKey.includes('offer') ||
+        selectedLeadAppointments.length ||
+        selectedLeadOfferSummary.total,
+    )
+    const viewingStarted = selectedLeadAppointments.length > 0 || stageKey.includes('viewing')
+    const viewingCompleted = selectedLeadAppointments.some((appointment) => normalizeText(appointment?.status).toLowerCase() === 'completed') || stageKey.includes('viewing completed')
+    const offerStarted = selectedLeadOfferSummary.total > 0 || stageKey.includes('offer')
+    const offerComplete = Boolean(selectedLeadAcceptedOffer)
+    const transactionDone = Boolean(selectedLeadLinkedTransactionId)
+    const rawStages = [
+      { key: 'captured', label: 'Captured', detail: formatDateShort(selectedLead?.createdAt), done: Boolean(selectedLead) },
+      { key: 'contacted', label: 'Contacted', detail: contacted ? formatDateShort(selectedLeadLastActiveAt || selectedLead?.updatedAt) : 'Not reached', done: contacted },
+      { key: 'qualification', label: 'Qualification', detail: qualified ? 'In progress' : 'Pending', done: qualified },
+      { key: 'viewing', label: 'Viewing', detail: viewingCompleted ? 'Completed' : viewingStarted ? 'Upcoming' : 'Not booked', done: viewingCompleted, started: viewingStarted },
+      { key: 'offer', label: 'Offer', detail: offerComplete ? 'Accepted' : offerStarted ? 'Pending' : 'Not started', done: offerComplete, started: offerStarted },
+      { key: 'transaction', label: 'Transaction', detail: transactionDone ? 'Created' : 'Not started', done: transactionDone },
+    ]
+    const currentIndex = Math.max(0, rawStages.findIndex((stage) => !stage.done))
+    return rawStages.map((stage, index) => ({
+      ...stage,
+      state: stage.done ? 'completed' : index === currentIndex || stage.started ? 'current' : 'future',
+    }))
+  }, [
+    selectedLead,
+    selectedLeadAcceptedOffer,
+    selectedLeadActivities.length,
+    selectedLeadAppointments,
+    selectedLeadEffectiveLifecycleStage,
+    selectedLeadLastActiveAt,
+    selectedLeadLinkedTransactionId,
+    selectedLeadOfferSummary.total,
+  ])
+
+  useEffect(() => {
+    const currentStage = selectedLeadBuyerJourneyStages.find((stage) => stage.state === 'current') || selectedLeadBuyerJourneyStages[selectedLeadBuyerJourneyStages.length - 1]
+    if (currentStage?.key) setBuyerJourneyActionStage(currentStage.key)
+  }, [selectedLead?.leadId, selectedLeadBuyerJourneyStages])
 
   useEffect(() => {
     if (leadWorkspaceTab !== 'appointments' || !selectedLead) return
@@ -7524,6 +7872,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   async function handleSendOfferLinkFromAppointment(event) {
     event?.preventDefault?.()
     if (!organisationId || !selectedLead) return
+    const isDirectOfferCentreSubmission = event?.currentTarget?.dataset?.offerCentre === 'true'
     const selectedListingId = normalizeText(offerLinkForm.listingId)
     if (!selectedListingId) {
       setError('Select the property before sending the offer link.')
@@ -7539,7 +7888,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const persistedLead = await ensureBuyerLeadPersistedForLifecycle(selectedLead, selectedLeadContact)
       const canonicalBuyerLeadId = normalizeText(persistedLead?.leadId || selectedLead.leadId)
       const canonicalBuyerContactId = normalizeText(persistedLead?.contactId || selectedLead.contactId)
-      const viewingAppointmentId = normalizeText(offerLinkForm.appointmentId) || normalizeText(selectedLeadActiveViewing?.appointmentId)
+      const viewingAppointmentId = isDirectOfferCentreSubmission
+        ? ''
+        : normalizeText(offerLinkForm.appointmentId) || normalizeText(selectedLeadActiveViewing?.appointmentId)
       if (viewingAppointmentId) {
         let viewedProperties = await listAppointmentViewedListings({
           organisationId,
@@ -7590,6 +7941,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 : '',
               agentNoteToBuyer: normalizeText(offerLinkForm.note),
               selectedListingId,
+              offerCentreChannels: offerLinkChannels,
               viewedListingIds: viewedProperties.map((item) => item?.listingId).filter(Boolean),
             },
           },
@@ -7662,7 +8014,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           financeType: selectedLead.financeType || selectedLead.preferredFinanceType || '',
           expiryDate: normalizeText(offerLinkForm.expiryDate),
           conditionsJson: {
-            source: 'lead_appointment_tab',
+            source: isDirectOfferCentreSubmission ? 'lead_offer_centre' : 'lead_appointment_tab',
             buyerName: normalizeText(offerLinkForm.buyerName),
             buyerEmail: normalizeText(offerLinkForm.buyerEmail),
             buyerPhone: normalizeText(offerLinkForm.buyerPhone),
@@ -7672,6 +8024,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               ? `${window.location.origin}/pipeline/leads/${encodeURIComponent(canonicalBuyerLeadId)}`
               : '',
             agentNoteToBuyer: normalizeText(offerLinkForm.note),
+            offerCentreChannels: offerLinkChannels,
           },
         },
         {
@@ -8212,7 +8565,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         organisationId,
         buyerLeadId: normalizeText(persistedLead?.leadId || selectedLead.leadId),
         buyerContactId: normalizeText(persistedLead?.contactId || selectedLead.contactId),
-        listingId: selectedLead.listingId,
+        listingId: normalizeText(offerLinkForm.listingId || selectedLead.listingId),
         agentId: currentAgent.id,
         status: 'draft',
         offerAmount: Number(selectedLead.estimatedValue || selectedLead.budget || 0) || null,
@@ -8229,11 +8582,44 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       })
       setError('')
       setMessage('Offer draft created. Buyer lead stage updated to Offer Draft.')
-      setLeadWorkspaceTab('overview')
+      setLeadWorkspaceTab('offers')
       await reloadRecords(organisationId)
     } catch (offerError) {
       setError(offerError?.message || 'Unable to create offer draft.')
     }
+  }
+
+  function handleBuyerCommandSendListings() {
+    setLeadWorkspaceTab('properties')
+    const buyerEmail = normalizeText(selectedLeadContact?.email || selectedLead?.email)
+    if (buyerEmail && selectedLeadBuyerRecommendations.length && typeof window !== 'undefined') {
+      const recommendations = selectedLeadBuyerRecommendations
+        .slice(0, 3)
+        .map((property) => `${property.title} - ${property.price} - ${property.area}`)
+        .join('\n')
+      window.location.href = `mailto:${encodeURIComponent(buyerEmail)}?subject=${encodeURIComponent('Recommended properties')}&body=${encodeURIComponent(recommendations)}`
+      return
+    }
+    setMessage('Recommended listings are open in the Properties workspace.')
+  }
+
+  function handleBuyerCommandConvertToTransaction() {
+    if (selectedLeadAcceptedOffer) {
+      void handleLeadCanonicalOfferConversion(selectedLeadAcceptedOffer)
+      return
+    }
+    setLeadWorkspaceTab('offers')
+    setMessage('An accepted offer is required before converting this buyer to a transaction.')
+  }
+
+  function handleBuyerJourneyQuickActivity(activityType) {
+    setLeadWorkspaceTab('activity')
+    setActivityComposerMode('activity')
+    setActivityForm((previous) => ({
+      ...previous,
+      activityType,
+      activityNote: normalizeText(previous.activityNote) || `${activityType} with ${selectedLeadDisplayName}`,
+    }))
   }
 
   function openArchiveLeadModal(leadId) {
@@ -9484,6 +9870,173 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             {isLeadWorkspaceRoute ? (
             <article className="mx-auto w-full max-w-[1680px] space-y-6">
               <section className="overflow-hidden rounded-[30px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_18px_48px_rgba(31,54,78,0.07)]">
+                {selectedLead && !selectedLeadIsSeller ? (
+                  <div className="bg-white px-4 py-4 sm:px-6 sm:py-5">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <button
+                        type="button"
+                        className="inline-flex items-center text-sm font-semibold text-[#60758b] transition hover:text-[#163247]"
+                        onClick={() => navigate('/pipeline/leads')}
+                      >
+                        ← Back to Leads
+                      </button>
+                    </div>
+                    <div className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)] sm:p-6">
+                      <div className="grid gap-6 xl:grid-cols-[minmax(320px,0.9fr)_minmax(520px,1.25fr)] xl:items-center">
+                        <div className="flex min-w-0 items-center gap-5">
+                          <span className="grid h-20 w-20 shrink-0 place-items-center rounded-full bg-[#0b2b4c] text-[1.45rem] font-semibold text-white shadow-[0_12px_24px_rgba(11,43,76,0.18)]">
+                            {getInitials(selectedLeadDisplayName)}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h1 className="truncate text-[2rem] font-semibold leading-tight text-[#102033]" title={selectedLeadDisplayName}>
+                                {selectedLeadDisplayName}
+                              </h1>
+                              <Button type="button" variant="ghost" size="sm" className="h-8 w-8 px-0" title="Edit buyer details" onClick={() => setLeadWorkspaceTab('overview')}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-medium text-[#60758b]">
+                              <span>{selectedLead?.areaInterest || selectedLeadPropertyLabel || 'Area pending'}</span>
+                              <span className="h-1 w-1 rounded-full bg-[#c8d4e0]" />
+                              <span>Buyer Lead</span>
+                              <span className="h-1 w-1 rounded-full bg-[#c8d4e0]" />
+                              <span className="inline-flex items-center gap-1.5">
+                                <span className="h-2 w-2 rounded-full bg-[#14a06f]" />
+                                Last Active {formatRelativeTime(selectedLeadLastActiveAt)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                          {[
+                            ['Buyer Score', selectedLeadBuyerScore, selectedLeadBuyerScore >= 80 ? 'High Potential' : selectedLeadBuyerScore >= 62 ? 'Qualified' : 'Needs Nurture', Gauge],
+                            ['Budget Range', selectedLeadBuyerBudgetLabel, selectedLeadBuyerBudgetLabel === 'Not captured' ? 'Needs capture' : 'Active band', Home],
+                            ['Saved Searches', leadAppointmentOfferListingOptions.length || selectedLeadViewingAppointments.length || 0, 'Active signals', Bookmark],
+                            ['Match Score', `${selectedLeadBuyerMatchScore}%`, selectedLeadBuyerMatchScore >= 86 ? 'Strong fit' : 'Good fit', TrendingUp],
+                            ['Urgency', selectedLeadBuyerUrgency, selectedLeadBuyerUrgency === 'High' ? 'Act now' : 'Monitor', Zap],
+                          ].map(([label, value, descriptor, Icon]) => (
+                            <div key={label} className="min-h-[96px] rounded-[16px] border border-[#e6eef7] bg-[#fbfdff] p-4 shadow-[0_8px_18px_rgba(31,54,78,0.025)]">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="truncate text-[12px] font-semibold text-[#526b84]">{label}</p>
+                                {createElement(Icon, { className: 'h-4 w-4 text-[#2f6fb3]' })}
+                              </div>
+                              <p className="mt-3 truncate text-[24px] font-semibold leading-none text-[#102033]" title={String(value)}>{value}</p>
+                              <p className="mt-2 truncate text-[12px] font-medium text-[#6d839b]">{descriptor}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="mt-6 grid gap-4 border-t border-[#e5edf6] pt-5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                          {[
+                            ['Phone', selectedLeadContact?.phone || selectedLead?.phone || 'No phone', Phone],
+                            ['Email', selectedLeadContact?.email || selectedLead?.email || 'No email', Mail],
+                            ['Assigned Agent', selectedLeadAssignedAgentLabel, UserRound],
+                            ['Lead Source', selectedLead?.leadSource || 'Not captured', MessageCircle],
+                          ].map(([label, value, Icon]) => (
+                            <div key={label} className="flex min-w-0 items-center gap-3">
+                              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-[#f1f6fb] text-[#315b7a]">
+                                {createElement(Icon, { className: 'h-4 w-4' })}
+                              </span>
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-[#20364c]" title={String(value)}>{value}</p>
+                                <p className="mt-0.5 text-[12px] font-medium text-[#6d839b]">{label}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                          <a
+                            href={normalizeText(selectedLeadContact?.phone || selectedLead?.phone) ? `tel:${selectedLeadContact?.phone || selectedLead?.phone}` : undefined}
+                            className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border border-[#d2dfec] bg-white px-4 text-sm font-semibold text-[#20364c] shadow-sm transition hover:border-[#aebfd0] ${normalizeText(selectedLeadContact?.phone || selectedLead?.phone) ? '' : 'pointer-events-none opacity-50'}`}
+                          >
+                            <Phone className="h-4 w-4" />
+                            Schedule Call
+                          </a>
+                          <Button type="button" variant="secondary" size="sm" className="min-h-10 rounded-[12px]" onClick={() => handleOpenAppointmentModal()}>
+                            <CalendarDays className="h-4 w-4" />
+                            Schedule Viewing
+                          </Button>
+                          <Button type="button" variant="secondary" size="sm" className="min-h-10 rounded-[12px]" onClick={handleBuyerCommandSendListings}>
+                            <Send className="h-4 w-4" />
+                            Send Listings
+                          </Button>
+                          <div className="relative">
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              className="min-h-10 rounded-[12px]"
+                              onClick={() => setLeadActionsMenuOpen((value) => !value)}
+                              aria-haspopup="menu"
+                              aria-expanded={leadActionsMenuOpen}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                              More
+                            </Button>
+                            {leadActionsMenuOpen ? (
+                              <div className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-[18px] border border-[#dbe7f2] bg-white py-2 shadow-[0_18px_40px_rgba(18,44,68,0.16)]" role="menu">
+                                {[
+                                  {
+                                    label: selectedLeadBuyerOnboardingActionLabel,
+                                    Icon: Mail,
+                                    disabled: canonicalOfferActionId === `lead:${selectedLead?.leadId}:buyer-onboarding`,
+                                    onClick: () => {
+                                      setLeadActionsMenuOpen(false)
+                                      void handleSendBuyerOnboardingFromLead()
+                                    },
+                                  },
+                                  {
+                                    label: 'Copy Lead Link',
+                                    Icon: Link2,
+                                    onClick: handleCopySelectedLeadLink,
+                                  },
+                                  {
+                                    label: 'Archive Lead',
+                                    Icon: X,
+                                    onClick: () => {
+                                      setLeadActionsMenuOpen(false)
+                                      openArchiveLeadModal(selectedLead.leadId)
+                                    },
+                                  },
+                                  {
+                                    label: 'Delete Lead',
+                                    Icon: Trash2,
+                                    tone: 'text-[#b42318]',
+                                    onClick: () => {
+                                      setLeadActionsMenuOpen(false)
+                                      openDeleteLeadModal(selectedLead.leadId)
+                                    },
+                                  },
+                                ].map(({ label, Icon, onClick, disabled, tone = 'text-[#29435d]' }) => (
+                                  <button
+                                    key={label}
+                                    type="button"
+                                    className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold transition hover:bg-[#f5f9fc] disabled:cursor-not-allowed disabled:opacity-45 ${tone}`}
+                                    onClick={onClick}
+                                    disabled={disabled}
+                                    role="menuitem"
+                                  >
+                                    {createElement(Icon, { className: 'h-4 w-4' })}
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                          <Button type="button" size="sm" className="min-h-10 rounded-[12px] bg-[#0b2b4c] px-5 shadow-[0_12px_24px_rgba(11,43,76,0.18)] hover:bg-[#08243f]" onClick={handleBuyerCommandConvertToTransaction}>
+                            Convert To Transaction
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                <>
 	                <div className="px-5 py-5 sm:px-7 sm:py-6 lg:px-8">
 	                  <div className="space-y-5">
 	                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -9816,7 +10369,232 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     </div>
                   </div>
                 ) : null}
+                </>
+                )}
               </section>
+              {selectedLead && !selectedLeadIsSeller ? (
+                <>
+                  <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)] sm:p-6">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <h2 className="text-[18px] font-semibold uppercase tracking-[0.08em] text-[#102033]">Deal Journey</h2>
+                      <span className="rounded-full border border-[#d8e5f1] bg-[#fbfdff] px-3 py-1 text-[12px] font-semibold text-[#60758b]">
+                        {selectedLeadEffectiveLifecycleStage || 'Lead captured'}
+                      </span>
+                    </div>
+                    <div className="mt-6 overflow-x-auto pb-2">
+                      <div className="grid min-w-[820px] grid-cols-6 items-start">
+                        {selectedLeadBuyerJourneyStages.map((stage, index) => {
+                          const isSelected = buyerJourneyActionStage === stage.key
+                          const isCompleted = stage.state === 'completed'
+                          const isCurrent = stage.state === 'current'
+                          return (
+                            <button
+                              key={stage.key}
+                              type="button"
+                              className="group relative flex min-w-0 flex-col items-center gap-3 px-2 text-center"
+                              onClick={() => setBuyerJourneyActionStage(stage.key)}
+                            >
+                              {index > 0 ? <span className={`absolute right-1/2 top-[17px] h-0.5 w-full ${isCompleted ? 'bg-[#1f6feb]' : 'bg-[#d7e1ec]'}`} /> : null}
+                              <span className={`relative z-10 grid h-9 w-9 place-items-center rounded-full border-2 bg-white transition ${
+                                isCompleted
+                                  ? 'border-[#1f6feb] bg-[#1f6feb] text-white'
+                                  : isCurrent
+                                    ? 'border-[#1f6feb] text-[#1f6feb] ring-4 ring-[#e8f2ff]'
+                                    : 'border-[#cfd9e6] text-[#7d91a8]'
+                              } ${isSelected ? 'shadow-[0_0_0_5px_rgba(31,111,235,0.08)]' : ''}`}>
+                                {isCompleted ? <CheckSquare className="h-4 w-4" /> : stage.key === 'transaction' ? <ArrowUpRight className="h-4 w-4" /> : <span className="h-2.5 w-2.5 rounded-full bg-current" />}
+                              </span>
+                              <span className="min-w-0">
+                                <span className={`block truncate text-sm font-semibold ${isCurrent || isCompleted ? 'text-[#123955]' : 'text-[#60758b]'}`}>{stage.label}</span>
+                                <span className="mt-1 block truncate text-[12px] font-medium text-[#7d91a8]">{stage.detail}</span>
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                    <div className="mt-5 rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Stage Actions</p>
+                          <h3 className="mt-1 text-base font-semibold text-[#18324b]">
+                            {selectedLeadBuyerJourneyStages.find((stage) => stage.key === buyerJourneyActionStage)?.label || 'Qualification'}
+                          </h3>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {buyerJourneyActionStage === 'contacted' ? (
+                            <>
+                              <Button type="button" size="sm" onClick={() => void handleUpdateLeadStage(selectedLead.leadId, 'Contacted', { successMessage: 'Buyer marked as contacted.' })}>Mark Reached Out</Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={() => handleBuyerJourneyQuickActivity('Call')}>Log Call</Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={() => handleBuyerJourneyQuickActivity('WhatsApp')}>Log WhatsApp</Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={() => handleBuyerJourneyQuickActivity('Email')}>Log Email</Button>
+                            </>
+                          ) : buyerJourneyActionStage === 'viewing' ? (
+                            <>
+                              <Button type="button" size="sm" onClick={() => handleOpenAppointmentModal()}>Schedule Viewing</Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={() => setLeadWorkspaceTab('activity')}>Manage Viewings</Button>
+                            </>
+                          ) : buyerJourneyActionStage === 'offer' ? (
+                            <>
+                              <Button type="button" size="sm" onClick={() => void handleCreateBuyerOfferDraft()}>Create Offer</Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={() => setLeadWorkspaceTab('offers')}>View Offers</Button>
+                            </>
+                          ) : buyerJourneyActionStage === 'transaction' ? (
+                            <>
+                              <Button type="button" size="sm" onClick={handleBuyerCommandConvertToTransaction}>Convert To Transaction</Button>
+                              {selectedLeadLinkedTransactionId ? (
+                                <Button type="button" size="sm" variant="secondary" onClick={() => navigate(`/transactions/${selectedLeadLinkedTransactionId}`)}>Open Transaction</Button>
+                              ) : null}
+                            </>
+                          ) : buyerJourneyActionStage === 'qualification' ? (
+                            <>
+                              <Button type="button" size="sm" onClick={() => void handleUpdateLeadStage(selectedLead.leadId, 'Qualified', { successMessage: 'Buyer marked as qualified.' })}>Mark Qualified</Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={() => setLeadWorkspaceTab('overview')}>Update Brief</Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button type="button" size="sm" onClick={() => void handleUpdateLeadStage(selectedLead.leadId, 'Contacted', { successMessage: 'Buyer journey started.' })}>Start Outreach</Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={() => handleBuyerJourneyQuickActivity('Call')}>Log Call</Button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr_0.9fr]">
+                    <div className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)]">
+                      <div className="flex items-center justify-between gap-3">
+                        <h2 className="text-[18px] font-semibold text-[#102033]">Next Best Action</h2>
+                        <Zap className="h-4 w-4 text-[#1f6feb]" />
+                      </div>
+                      <div className="mt-4 rounded-[16px] border border-[#dceafe] bg-[#f8fbff] p-4">
+                        <p className="text-sm font-semibold text-[#18324b]">
+                          {selectedLeadOpenActions.nextDueAction?.label || selectedLeadFinanceReadinessSummary.nextRecommendedAction || 'Keep buyer momentum warm'}
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-[#60758b]">
+                          {selectedLeadOpenActions.nextDueAction?.meta ||
+                            selectedLeadFinanceInsights.recommendations?.[0] ||
+                            'Review the buyer brief, send matching listings, or schedule the next viewing.'}
+                        </p>
+                      </div>
+                      <div className="mt-4 grid gap-2">
+                        {[
+                          ['Call Buyer', Phone, () => {
+                            const phone = normalizeText(selectedLeadContact?.phone || selectedLead?.phone).replace(/[^\d+]/g, '')
+                            if (phone && typeof window !== 'undefined') window.location.href = `tel:${phone}`
+                          }],
+                          ['Schedule Viewing', CalendarDays, () => handleOpenAppointmentModal()],
+                          ['Send Listings', Send, handleBuyerCommandSendListings],
+                          ['Create Task', CheckSquare, () => {
+                            setLeadWorkspaceTab('activity')
+                            setActivityComposerMode('task')
+                          }],
+                        ].map(([label, Icon, onClick]) => (
+                          <button
+                            key={label}
+                            type="button"
+                            className="flex w-full items-center gap-3 rounded-[12px] border border-[#dbe6f2] bg-white px-3 py-2.5 text-left text-sm font-semibold text-[#20364c] transition hover:border-[#b9cade] hover:bg-[#fbfdff]"
+                            onClick={onClick}
+                          >
+                            {createElement(Icon, { className: 'h-4 w-4 text-[#315b7a]' })}
+                            <span className="min-w-0 flex-1">{label}</span>
+                            <ChevronRight className="h-4 w-4 text-[#9aacbf]" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)]">
+                      <h2 className="text-[18px] font-semibold text-[#102033]">Buyer Intelligence</h2>
+                      <div className="mt-4 grid overflow-hidden rounded-[16px] border border-[#e4edf6] sm:grid-cols-2">
+                        {[
+                          ['Budget', selectedLeadBuyerBudgetLabel, Home],
+                          ['Financing', selectedLeadFinanceReadinessSummary.confidenceLabel || selectedLead?.financeType || 'Not captured', CheckSquare],
+                          ['Property Type', selectedLead?.propertyInterest || 'House, Townhouse', Home],
+                          ['Bedrooms', selectedLead?.bedrooms || '3+', BedDouble],
+                          ['Preferred Areas', selectedLead?.areaInterest || selectedLeadPropertyLabel || 'Not captured', Columns3],
+                          ['Urgency', selectedLeadBuyerUrgency, Zap],
+                          ['Match Score', `${selectedLeadBuyerMatchScore}%`, TrendingUp],
+                        ].map(([label, value, Icon]) => (
+                          <div key={label} className="flex min-h-[74px] items-center gap-3 border-b border-[#e4edf6] px-4 py-3 even:sm:border-l last:border-b-0 sm:[&:nth-last-child(2)]:border-b-0">
+                            <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-[12px] ${label === 'Urgency' ? getBuyerUrgencyClassName(selectedLeadBuyerUrgency) : 'bg-[#eef5fb] text-[#315b7a]'}`}>
+                              {createElement(Icon, { className: 'h-4 w-4' })}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-[12px] font-semibold text-[#60758b]">{label}</p>
+                              <p className="mt-1 truncate text-sm font-semibold text-[#20364c]" title={String(value)}>{value}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)]">
+                      <div className="flex items-center justify-between gap-3">
+                        <h2 className="text-[18px] font-semibold text-[#102033]">Recent Activity</h2>
+                        <button type="button" className="text-xs font-semibold text-[#1f6feb]" onClick={() => setLeadWorkspaceTab('activity')}>View all</button>
+                      </div>
+                      <div className="mt-4 space-y-1">
+                        {selectedLeadUnifiedTimeline.slice(0, 4).length ? selectedLeadUnifiedTimeline.slice(0, 4).map((item) => {
+                          const presentation = getLeadActivityPresentation(`${item.sourceLabel} ${item.title} ${item.sourceType}`)
+                          const ActivityIcon = presentation.Icon
+                          return (
+                            <button key={item.id} type="button" className="flex w-full items-start gap-3 rounded-[14px] px-2 py-3 text-left transition hover:bg-[#f8fbff]" onClick={() => setLeadWorkspaceTab('activity')}>
+                              <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full ${presentation.rail}`}>
+                                <ActivityIcon className="h-4 w-4" />
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-semibold text-[#20364c]">{item.title}</span>
+                                <span className="mt-0.5 block truncate text-xs text-[#60758b]">{item.description || item.sourceLabel}</span>
+                              </span>
+                              <span className="shrink-0 text-xs font-medium text-[#7d91a8]">{formatRelativeTime(item.timestamp || item.dueDate)}</span>
+                            </button>
+                          )
+                        }) : (
+                          <div className="rounded-[14px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-5 text-sm text-[#6a8098]">
+                            No recent activity yet.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="overflow-x-auto rounded-[20px] border border-[#dce7f2] bg-white shadow-[0_10px_30px_rgba(31,54,78,0.045)]" role="tablist" aria-label="Buyer workspace sections">
+                    <div className="grid min-w-[880px] grid-cols-7">
+                      {[
+                        { key: 'overview', label: 'Overview', meta: '' },
+                        { key: 'properties', label: 'Properties', meta: selectedLeadBuyerRecommendations.length },
+                        { key: 'activity', label: 'Activities', meta: selectedLeadUnifiedTimeline.length },
+                        { key: 'documents', label: 'Documents', meta: '' },
+                        { key: 'offers', label: 'Offers', meta: selectedLeadOfferSummary.total },
+                        { key: 'insights', label: 'Insights', meta: '' },
+                        { key: 'mapping', label: 'Mapping', meta: '' },
+                      ].map((tab) => {
+                        const isActive = resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === tab.key
+                        return (
+                          <button
+                            key={tab.key}
+                            type="button"
+                            onClick={() => setLeadWorkspaceTab(tab.key)}
+                            role="tab"
+                            aria-selected={isActive}
+                            className={`relative flex min-h-[64px] items-center justify-center gap-2 whitespace-nowrap px-4 text-sm transition ${
+                              isActive ? 'font-semibold text-[#123955]' : 'font-medium text-[#60758b] hover:text-[#163247]'
+                            }`}
+                          >
+                            <span>{tab.label}</span>
+                            {tab.meta !== '' ? (
+                              <span className={`rounded-full px-2 py-0.5 text-[0.72rem] ${isActive ? 'bg-[#e8f2fb] text-[#1f5f8a]' : 'bg-[#f6f9fc] text-[#8aa0b7]'}`}>{tab.meta}</span>
+                            ) : null}
+                            <span className={`absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-[#2f7b9e] transition ${isActive ? 'opacity-100' : 'opacity-0'}`} />
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </section>
+                </>
+              ) : null}
               {selectedLeadHasSyncIssue ? (
                 <section className="flex flex-col gap-4 rounded-[24px] border border-[#f3d7a4] bg-[#fff8ea] px-5 py-4 text-[#5d4618] shadow-[0_1px_2px_rgba(15,23,42,0.03)] sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex min-w-0 items-start gap-3">
@@ -10268,6 +11046,138 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         )}
                       </div>
                     </div>
+                  </div>
+                  ) : null}
+
+                  {leadWorkspaceTab === 'properties' ? (
+                  <div className="space-y-6">
+                    <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)] sm:p-6">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <h2 className="text-[18px] font-semibold text-[#102033]">Recommended For {selectedLeadContactName}</h2>
+                          <p className="mt-1 text-sm text-[#60758b]">Property match and saved-search signals are presented together for fast buyer action.</p>
+                        </div>
+                        <Button type="button" size="sm" variant="secondary" onClick={handleBuyerCommandSendListings}>
+                          <Send className="h-4 w-4" />
+                          Send Listings
+                        </Button>
+                      </div>
+                      <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        {selectedLeadBuyerRecommendations.map((property) => (
+                          <article key={property.id} className="overflow-hidden rounded-[16px] border border-[#e0e8f2] bg-white shadow-[0_10px_22px_rgba(31,54,78,0.045)]">
+                            <div className="relative aspect-[4/3] overflow-hidden bg-[#edf4fb]">
+                              <img src={property.image} alt={property.title} className="h-full w-full object-cover" />
+                              <span className="absolute left-3 top-3 rounded-full bg-white/95 px-2.5 py-1 text-[12px] font-semibold text-[#17643a] shadow-sm">
+                                {property.match}% Match
+                              </span>
+                              <button type="button" className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-white/95 text-[#60758b] shadow-sm" title="Save property">
+                                <Bookmark className="h-4 w-4" />
+                              </button>
+                            </div>
+                            <div className="p-4">
+                              <p className="text-lg font-semibold text-[#102033]">{property.price}</p>
+                              <p className="mt-1 truncate text-sm font-medium text-[#60758b]" title={property.area}>{property.area}</p>
+                              <div className="mt-3 flex flex-wrap items-center gap-3 text-sm font-semibold text-[#29435d]">
+                                <span className="inline-flex items-center gap-1"><BedDouble className="h-4 w-4 text-[#7890a8]" />{property.bedrooms}</span>
+                                <span className="inline-flex items-center gap-1"><Bath className="h-4 w-4 text-[#7890a8]" />{property.bathrooms}</span>
+                                <span className="inline-flex items-center gap-1"><Home className="h-4 w-4 text-[#7890a8]" />{property.parking}</span>
+                              </div>
+                              <div className="mt-4 flex gap-2">
+                                <Button type="button" size="sm" variant="secondary" className="flex-1" onClick={() => handleOpenAppointmentModal()}>
+                                  View
+                                </Button>
+                                {property.id ? (
+                                  <Button type="button" size="sm" variant="ghost" className="h-9 px-2" onClick={() => navigate(`/listings/${property.id}`)} title="Open listing">
+                                    <ArrowUpRight className="h-4 w-4" />
+                                  </Button>
+                                ) : null}
+                              </div>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)] sm:p-6">
+                      <h2 className="text-[18px] font-semibold text-[#102033]">Saved Searches</h2>
+                      <div className="mt-4 grid gap-3 md:grid-cols-3">
+                        {(leadAppointmentOfferListingOptions.length ? leadAppointmentOfferListingOptions : selectedLeadBuyerRecommendations).slice(0, 6).map((item) => (
+                          <div key={`saved-${item.id}`} className="rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] p-4">
+                            <p className="truncate text-sm font-semibold text-[#20364c]" title={item.label || item.title}>{item.label || item.title}</p>
+                            <p className="mt-1 text-xs font-medium text-[#7d91a8]">{item.source || 'Recommended'} · {selectedLeadBuyerBudgetLabel}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  </div>
+                  ) : null}
+
+                  {leadWorkspaceTab === 'insights' ? (
+                  <div className="space-y-6">
+                    <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)] sm:p-6">
+                      <h2 className="text-[18px] font-semibold text-[#102033]">Behavioural Insights</h2>
+                      <div className="mt-5 grid gap-4 md:grid-cols-3">
+                        {[
+                          ['Highly engaged', `${selectedLeadActivityInsights.responseRate} response signal`, MessageCircle],
+                          ['Price range fit', `${selectedLeadBuyerMatchScore}% property fit`, TrendingUp],
+                          ['Best contact time', selectedLeadActivities.length ? 'Based on recent activity' : 'Weekdays 9am - 11am', Clock3],
+                        ].map(([title, detail, Icon]) => (
+                          <div key={title} className="rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] p-4">
+                            <span className="grid h-10 w-10 place-items-center rounded-[13px] bg-white text-[#315b7a] shadow-sm">
+                              {createElement(Icon, { className: 'h-4 w-4' })}
+                            </span>
+                            <p className="mt-4 text-sm font-semibold text-[#20364c]">{title}</p>
+                            <p className="mt-1 text-sm leading-6 text-[#60758b]">{detail}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                    <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)] sm:p-6">
+                      <h2 className="text-[18px] font-semibold text-[#102033]">Finance Signals</h2>
+                      <div className="mt-4 grid gap-3 md:grid-cols-2">
+                        {(selectedLeadFinanceInsights.recommendations?.length ? selectedLeadFinanceInsights.recommendations : ['Capture finance readiness details to sharpen buyer guidance.']).slice(0, 4).map((item) => (
+                          <div key={item} className="rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] p-4 text-sm font-medium leading-6 text-[#29435d]">{item}</div>
+                        ))}
+                      </div>
+                    </section>
+                  </div>
+                  ) : null}
+
+                  {leadWorkspaceTab === 'mapping' ? (
+                  <div className="space-y-6">
+                    <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)] sm:p-6">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h2 className="text-[18px] font-semibold text-[#102033]">Buyer Area Map</h2>
+                          <p className="mt-1 text-sm text-[#60758b]">Preferred areas, viewed listings, and recommended stock in one planning surface.</p>
+                        </div>
+                        <Button type="button" size="sm" variant="secondary" onClick={() => setLeadWorkspaceTab('properties')}>Open Properties</Button>
+                      </div>
+                      <div className="mt-5 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+                        <div className="relative min-h-[360px] overflow-hidden rounded-[18px] border border-[#dce7f2] bg-[#f5f9fc]">
+                          <div className="absolute inset-0 opacity-70" style={{ backgroundImage: 'linear-gradient(#dce7f2 1px, transparent 1px), linear-gradient(90deg, #dce7f2 1px, transparent 1px)', backgroundSize: '44px 44px' }} />
+                          {(selectedLeadBuyerRecommendations.length ? selectedLeadBuyerRecommendations : [{ id: 'area', area: selectedLeadPropertyLabel, match: selectedLeadBuyerMatchScore }]).slice(0, 5).map((property, index) => (
+                            <button
+                              key={`map-${property.id}-${index}`}
+                              type="button"
+                              className="absolute rounded-full border border-white bg-[#1f6feb] px-3 py-1 text-xs font-semibold text-white shadow-[0_10px_20px_rgba(31,111,235,0.2)]"
+                              style={{ left: `${18 + (index * 14) % 62}%`, top: `${22 + (index * 17) % 58}%` }}
+                              onClick={() => setLeadWorkspaceTab('properties')}
+                            >
+                              {property.match}% Match
+                            </button>
+                          ))}
+                        </div>
+                        <div className="space-y-3">
+                          {selectedLeadBuyerRecommendations.slice(0, 5).map((property) => (
+                            <div key={`map-list-${property.id}`} className="rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] p-4">
+                              <p className="truncate text-sm font-semibold text-[#20364c]">{property.area}</p>
+                              <p className="mt-1 text-xs text-[#60758b]">{property.price} · {property.match}% match</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </section>
                   </div>
                   ) : null}
 
@@ -10929,275 +11839,426 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   {leadWorkspaceTab === 'offers' ? (
-                  <div className="space-y-4">
-                    <section className="rounded-[18px] border border-[#e1eaf4] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-5">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <span className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-[#eef5ff] text-[#0b63f6]">
+                          <Tag className="h-5 w-5" />
+                        </span>
                         <div>
-                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Canonical Offers</p>
-                          <h4 className="mt-1 text-lg font-semibold text-[#18324b]">Buyer Offer History</h4>
-                          <p className="mt-1 text-sm text-[#6a8098]">Every offer submitted by this buyer lead across listings and viewing sessions.</p>
+                          <h3 className="text-2xl font-semibold text-[#0c2440]">Offer Centre</h3>
+                          <p className="mt-1 text-sm text-[#5f7690]">Send a secure offer link for any property to this buyer.</p>
                         </div>
-                        <Button type="button" size="sm" variant="secondary" onClick={() => setLeadWorkspaceTab('appointments')}>
-                          <Mail className="h-4 w-4" />
-                          Send Offer Link
-                        </Button>
                       </div>
+                      <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => setLeadWorkspaceTab('overview')}>
+                        <Settings className="h-4 w-4" />
+                        Offer Settings
+                      </Button>
+                    </div>
 
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                        {[
-                          ['Total Offers', selectedLeadOfferSummary.total, 'All canonical rows'],
-                          ['Active', selectedLeadOfferSummary.active, 'Not rejected/expired'],
-                          ['Submitted', selectedLeadOfferSummary.submitted, 'Buyer submitted'],
-                          ['Highest', formatCurrency(selectedLeadOfferSummary.highestOffer), 'Best current signal'],
-                        ].map(([label, value, helper]) => (
-                          <div key={label} className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-3">
-                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#8496aa]">{label}</p>
-                            <p className="mt-1 text-lg font-semibold text-[#203a54]">{value}</p>
-                            <p className="mt-0.5 text-xs text-[#7a8ea5]">{helper}</p>
-                          </div>
-                        ))}
-                      </div>
-
-                      {selectedLeadOffersError ? (
-                        <div className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">{selectedLeadOffersError}</div>
-                      ) : null}
-
-                      <div className="mt-4 rounded-[16px] border border-[#e1eaf4] bg-[#fbfdff] p-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Lifecycle Diagnostic</p>
-                            <h5 className="mt-1 text-base font-semibold text-[#18324b]">
-                              {selectedLeadLifecycleDiagnostic?.ok ? 'Offer handoff is complete' : 'Offer handoff needs verification'}
-                            </h5>
-                            <p className="mt-1 text-sm text-[#6a8098]">
-                              Checks the accepted offer, linked transaction, onboarding record, prefill data, and audit trail.
-                            </p>
-                          </div>
-                          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-                            selectedLeadLifecycleDiagnosticLoading
-                              ? 'border-[#dbe6f2] bg-white text-[#607891]'
-                              : selectedLeadLifecycleDiagnostic?.ok
-                                ? 'border-[#cfe8dc] bg-[#eefbf4] text-[#17643a]'
-                                : 'border-[#f1dfb8] bg-[#fff8e8] text-[#8a641d]'
-                          }`}>
-                            {selectedLeadLifecycleDiagnosticLoading ? 'Checking' : selectedLeadLifecycleDiagnostic?.ok ? 'Complete' : 'Needs review'}
-                          </span>
-                        </div>
-                        {selectedLeadLifecycleDiagnosticError ? (
-                          <div className="mt-3 rounded-[12px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">
-                            {selectedLeadLifecycleDiagnosticError}
-                          </div>
-                        ) : null}
-                        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                          {[
-                            ['Offer converted', selectedLeadLifecycleDiagnostic?.checks?.offerConverted],
-                            ['Transaction linked', selectedLeadLifecycleDiagnostic?.checks?.transactionLinked],
-                            ['Lead linked', selectedLeadLifecycleDiagnostic?.checks?.leadLinked],
-                            ['Onboarding ready', selectedLeadLifecycleDiagnostic?.checks?.onboardingReady],
-                            ['Prefill saved', selectedLeadLifecycleDiagnostic?.checks?.prefillReady],
-                            ['Event logged', selectedLeadLifecycleDiagnostic?.checks?.transactionEventLogged],
-                            ['Audit logged', selectedLeadLifecycleDiagnostic?.checks?.workflowAuditLogged],
-                          ].map(([label, isDone]) => (
-                            <div key={label} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e6eef7] bg-white px-3 py-2">
-                              <span className="text-xs font-semibold text-[#607891]">{label}</span>
-                              <span className={`rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${isDone ? 'bg-[#eaf7ef] text-[#1e7a46]' : 'bg-[#f3f6f9] text-[#7b8fa5]'}`}>
-                                {isDone ? 'OK' : 'Open'}
-                              </span>
+                    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_430px]">
+                      <div className="space-y-5">
+                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                              <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-[#edf5ff] text-sm font-semibold text-[#0b63f6]">1</span>
+                              <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Property Selected for Offer</h4>
                             </div>
-                          ))}
-                        </div>
-                        {selectedLeadLifecycleDiagnostic?.warnings?.length ? (
-                          <div className="mt-3 rounded-[12px] border border-[#f1dfb8] bg-[#fff8e8] px-3 py-2 text-sm text-[#8a641d]">
-                            {selectedLeadLifecycleDiagnostic.warnings.join(' ')}
+                            <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => setOfferPropertySelectorOpen(true)}>
+                              <Pencil className="h-4 w-4" />
+                              Change Property
+                            </Button>
                           </div>
-                        ) : null}
-                      </div>
 
-                      <div className="mt-4 space-y-3">
-                        {selectedLeadOffersLoading ? (
-                          <div className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] p-4 text-sm text-[#6a8098]">Loading offers...</div>
-                        ) : selectedLeadOffers.length ? (
-                          selectedLeadOffers.map((offer) => {
-                            const statusKey = normalizeText(offer.status).toLowerCase()
-                            const statusTone = statusKey === 'accepted' || statusKey === 'converted_to_transaction'
-                              ? 'border-[#cfe8dc] bg-[#eefbf4] text-[#17643a]'
-                              : statusKey === 'rejected' || statusKey === 'withdrawn' || statusKey === 'expired'
-                                ? 'border-[#f4d4d4] bg-[#fff5f5] text-[#b42318]'
-                                : ['submitted', 'agent_review', 'under_review', 'sent_to_seller', 'seller_viewed'].includes(statusKey)
-                                  ? 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]'
-                                  : statusKey === 'changes_requested' || statusKey === 'countered'
-                                    ? 'border-[#f1dfb8] bg-[#fff8e8] text-[#8a641d]'
-                                  : 'border-[#dbe6f2] bg-white text-[#35546c]'
-                            const offerToken = normalizeText(offer.offerToken || offer.id)
-                            const offerLink = offerToken && typeof window !== 'undefined' ? `${window.location.origin}/offers/${encodeURIComponent(offerToken)}` : ''
-                            const sellerReviewSession = offer.sellerReviewSession || {}
-                            const sellerReviewToken = normalizeText(sellerReviewSession.token || offer.conditions?.sellerReviewSessionToken)
-                            const sellerReviewLink = sellerReviewToken && typeof window !== 'undefined' ? `${window.location.origin}/seller/offers/review/${encodeURIComponent(sellerReviewToken)}` : ''
-                            const sellerReviewRecipient = normalizeText(
-                              offer.conditions?.sellerReviewRecipientEmail ||
-                                offer.conditions?.sellerEmail ||
-                                sellerReviewSession.metadata?.sellerEmail,
-                            )
-                            const sellerReviewSentAt = normalizeText(sellerReviewSession.sentAt || offer.sentToSellerAt || offer.conditions?.sellerReviewSentAt)
-                            const sellerReviewViewedAt = normalizeText(sellerReviewSession.viewedAt || offer.sellerViewedAt)
-                            const hasSellerReview = Boolean(sellerReviewToken || sellerReviewSentAt || ['sent_to_seller', 'seller_viewed'].includes(statusKey))
-                            return (
-                              <article key={offer.id} className="rounded-[16px] border border-[#dce6f2] bg-white p-4 shadow-[0_8px_18px_rgba(31,54,78,0.04)]">
-                                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          {selectedLeadOfferCentreProperty ? (
+                            <div className="mt-4 grid gap-5 lg:grid-cols-[minmax(280px,42%)_1fr]">
+                              <div className="relative overflow-hidden rounded-[18px] bg-[#f3f7fb]">
+                                <img
+                                  src={selectedLeadOfferCentreProperty.image}
+                                  alt={selectedLeadOfferCentreProperty.title}
+                                  className="h-full min-h-[260px] w-full object-cover"
+                                />
+                                <span className="absolute bottom-4 left-4 rounded-full border border-[#bfe7d0] bg-white/95 px-3 py-1 text-xs font-semibold text-[#13733e] shadow-[0_8px_20px_rgba(12,36,64,0.12)]">
+                                  {selectedLeadOfferCentreProperty.match || selectedLeadBuyerMatchScore}% Match
+                                </span>
+                              </div>
+                              <div className="flex min-w-0 flex-col justify-between gap-5">
+                                <div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="rounded-full bg-[#edf9f1] px-3 py-1 text-xs font-semibold text-[#17643a]">For Sale</span>
+                                    <span className="rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-xs font-semibold text-[#607891]">
+                                      {selectedLead?.propertyInterest || 'House'}
+                                    </span>
+                                  </div>
+                                  <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
+                                    <div className="min-w-0">
+                                      <h4 className="text-xl font-semibold text-[#102942]">{selectedLeadOfferCentreProperty.title}</h4>
+                                      <p className="mt-1 max-w-[520px] text-sm leading-6 text-[#607891]">{selectedLeadOfferCentreProperty.address}</p>
+                                      {selectedLeadOfferCentreProperty.suburb ? (
+                                        <p className="mt-0.5 text-sm text-[#607891]">{selectedLeadOfferCentreProperty.suburb}</p>
+                                      ) : null}
+                                    </div>
+                                    <div className="text-left sm:text-right">
+                                      <p className="text-2xl font-semibold text-[#0c2440]">{selectedLeadOfferCentreProperty.price}</p>
+                                      <p className="mt-1 text-xs font-medium text-[#7b8fa5]">Estimated Value</p>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="grid gap-3 sm:grid-cols-4">
+                                  {[
+                                    [BedDouble, selectedLeadOfferCentreProperty.bedrooms || '—', 'Beds'],
+                                    [Bath, selectedLeadOfferCentreProperty.bathrooms || '—', 'Baths'],
+                                    [Car, selectedLeadOfferCentreProperty.parking || '—', 'Garages'],
+                                    [Ruler, selectedLeadOfferCentreProperty.sizeLabel, 'Size'],
+                                  ].map(([Icon, value, label]) => (
+                                    <div key={label} className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-3">
+                                      {createElement(Icon, { className: 'h-4 w-4 text-[#5f7893]' })}
+                                      <p className="mt-2 text-sm font-semibold text-[#203a54]">{value}</p>
+                                      <p className="mt-0.5 text-xs text-[#7b8fa5]">{label}</p>
+                                    </div>
+                                  ))}
+                                </div>
+
+                                <div className="grid gap-3 border-t border-[#edf2f7] pt-4 sm:grid-cols-3">
                                   <div>
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <p className="text-base font-semibold text-[#203a54]">{formatCurrency(offer.offerAmount)}</p>
-                                      <span className={`rounded-full border px-2.5 py-0.5 text-[0.7rem] font-semibold ${statusTone}`}>
-                                        {statusKey.replaceAll('_', ' ') || 'draft'}
+                                    <p className="text-xs font-semibold text-[#7b8fa5]">Viewing context</p>
+                                    <p className="mt-1 text-sm font-semibold text-[#203a54]">{selectedLeadOfferCentreProperty.viewingStatusLabel}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs font-semibold text-[#7b8fa5]">Viewing outcome</p>
+                                    <p className="mt-1 text-sm font-semibold text-[#203a54]">{selectedLeadOfferCentreProperty.viewing ? selectedLeadOfferCentreProperty.viewingOutcome : 'Offer link still available'}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs font-semibold text-[#7b8fa5]">Days on market</p>
+                                    <p className="mt-1 text-sm font-semibold text-[#203a54]">{selectedLeadOfferCentreProperty.daysOnMarket}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mt-4 rounded-[16px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-5 text-sm text-[#6a8098]">
+                              Select a property to generate the buyer offer link.
+                            </div>
+                          )}
+
+                          <div className="mt-4 rounded-[16px] border border-[#cfe8dc] bg-[#f5fcf8] p-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#13733e]">Why this property?</p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {(selectedLeadOfferReasons.length ? selectedLeadOfferReasons : ['Recommended for buyer profile']).map((reason) => (
+                                <span key={reason} className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#2d6b4a] ring-1 ring-[#cfe8dc]">
+                                  <CheckCircle2 className="h-3.5 w-3.5" />
+                                  {reason}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </section>
+
+                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-[#edf5ff] text-sm font-semibold text-[#0b63f6]">2</span>
+                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Send Offer</h4>
+                          </div>
+                          <form className="mt-4 grid gap-4" data-offer-centre="true" onSubmit={handleSendOfferLinkFromAppointment}>
+                            <div className="grid gap-4 lg:grid-cols-[1fr_240px]">
+                              <label className="grid gap-1">
+                                <span className="text-xs font-semibold text-[#6f849b]">Recipient</span>
+                                <div className="flex items-center justify-between gap-3 rounded-[14px] border border-[#dfe9f4] bg-[#fbfdff] px-4 py-3">
+                                  <div className="flex min-w-0 items-center gap-3">
+                                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-[#eef5ff] text-[#0b63f6]">
+                                      <UserRound className="h-5 w-5" />
+                                    </span>
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm font-semibold text-[#18324b]">{offerLinkForm.buyerName || selectedLeadContactName}</p>
+                                      <p className="truncate text-xs text-[#6f849b]">{offerLinkForm.buyerEmail || selectedLeadContact?.email || selectedLead?.email || 'Email pending'}</p>
+                                    </div>
+                                  </div>
+                                  <ChevronDown className="h-4 w-4 text-[#8aa0b6]" />
+                                </div>
+                              </label>
+                              <label className="grid gap-1">
+                                <span className="text-xs font-semibold text-[#6f849b]">Offer Link Expiry</span>
+                                <Field type="date" value={offerLinkForm.expiryDate} onChange={(event) => setOfferLinkForm((previous) => ({ ...previous, expiryDate: event.target.value }))} />
+                                <span className="text-[0.68rem] text-[#7b8fa5]">Link will expire at 23:59 on this date</span>
+                              </label>
+                            </div>
+
+                            <div className="grid gap-4 lg:grid-cols-[1fr_240px]">
+                              <label className="grid gap-1">
+                                <span className="text-xs font-semibold text-[#6f849b]">Personal Message (Optional)</span>
+                                <Field
+                                  as="textarea"
+                                  rows={3}
+                                  placeholder="Add a personal message for the buyer..."
+                                  value={offerLinkForm.note}
+                                  onChange={(event) => setOfferLinkForm((previous) => ({ ...previous, note: event.target.value }))}
+                                />
+                              </label>
+                              <div className="rounded-[14px] border border-[#dfe9f4] bg-white p-4">
+                                <p className="text-xs font-semibold text-[#6f849b]">Send via</p>
+                                <div className="mt-3 grid gap-2">
+                                  {[
+                                    ['email', Mail, 'Email'],
+                                    ['sms', MessageCircle, 'SMS'],
+                                    ['whatsapp', Phone, 'WhatsApp'],
+                                  ].map(([key, Icon, label]) => (
+                                    <label key={key} className="flex items-center gap-2 text-sm font-medium text-[#203a54]">
+                                      <input
+                                        type="checkbox"
+                                        checked={offerLinkChannels[key] === true}
+                                        onChange={(event) => setOfferLinkChannels((previous) => ({ ...previous, [key]: event.target.checked }))}
+                                        className="h-4 w-4 rounded border-[#cbd8e6] text-[#0b63f6]"
+                                      />
+                                      {createElement(Icon, { className: 'h-4 w-4 text-[#5f7893]' })}
+                                      {label}
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+
+                            {offerLinkForm.lastOfferLink ? (
+                              <div className="rounded-[14px] border border-[#cde7d5] bg-[#f2fbf5] px-4 py-3 text-sm text-[#286b43]">
+                                Offer link ready: {offerLinkForm.lastOfferLink}
+                              </div>
+                            ) : null}
+
+                            <div className="flex flex-wrap items-center gap-3">
+                              <Button type="submit" disabled={isOfferLinkSending || !selectedLeadOfferCentreProperty} className="rounded-[12px] bg-[#061d3b] hover:bg-[#0a2a52]">
+                                <Send className="h-4 w-4" />
+                                {isOfferLinkSending ? 'Creating...' : 'Send Offer Link'}
+                              </Button>
+                              <button
+                                type="button"
+                                onClick={() => void handleCreateBuyerOfferDraft()}
+                                className="text-sm font-semibold text-[#0b63f6] hover:text-[#084fbf]"
+                              >
+                                Save as draft
+                              </button>
+                            </div>
+                          </form>
+                        </section>
+
+                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Offer History</h4>
+                            <button type="button" className="text-xs font-semibold text-[#0b63f6]" onClick={() => setLeadWorkspaceTab('activity')}>
+                              View full timeline
+                            </button>
+                          </div>
+                          <div className="mt-5 overflow-x-auto pb-2">
+                            <div className="grid min-w-[760px] grid-cols-6 gap-0">
+                              {selectedLeadOfferHistoryStages.map((stage, index) => {
+                                const Icon = stage.icon
+                                return (
+                                  <div key={stage.key} className="relative px-2">
+                                    {index < selectedLeadOfferHistoryStages.length - 1 ? (
+                                      <div className={`absolute left-[50%] right-[-50%] top-5 h-0.5 ${stage.done ? 'bg-[#0b63f6]' : 'bg-[#dce6f2]'}`} />
+                                    ) : null}
+                                    <div className="relative z-10 flex flex-col items-center text-center">
+                                      <span className={`flex h-10 w-10 items-center justify-center rounded-full border ${stage.done ? 'border-[#0b63f6] bg-[#0b63f6] text-white' : 'border-[#d5e1ee] bg-white text-[#8aa0b6]'}`}>
+                                        <Icon className="h-4 w-4" />
                                       </span>
-                                    </div>
-                                    <p className="mt-1 text-sm text-[#607891]">
-                                      {resolveAppointmentListingLabel(offer.listingId) || offer.listingId || 'Listing not linked'} · {offer.financeType || 'Finance type pending'}
-                                    </p>
-                                    <p className="mt-1 text-xs text-[#7b8ea4]">
-                                      Submitted {formatDate(offer.submittedAt)} · Expires {formatDate(offer.expiryDate)}
-                                    </p>
-                                  </div>
-                                  <div className="flex flex-wrap gap-2">
-                                    {offer.listingId ? (
-                                      <Button type="button" size="sm" variant="secondary" onClick={() => navigate(`/listings/${offer.listingId}`)}>
-                                        Open Listing
-                                      </Button>
-                                    ) : null}
-                                    {offerLink ? (
-                                      <Button type="button" size="sm" variant="secondary" onClick={() => {
-                                        if (typeof navigator !== 'undefined') void navigator.clipboard?.writeText(offerLink)
-                                        setMessage('Offer link copied.')
-                                      }}>
-                                        Copy Link
-                                      </Button>
-                                    ) : null}
-                                    {offer.transactionId ? (
-                                      <Button type="button" size="sm" onClick={() => navigate(`/transactions/${offer.transactionId}`)}>
-                                        Open Transaction
-                                      </Button>
-                                    ) : null}
-                                    {sellerReviewLink ? (
-                                      <Button type="button" size="sm" variant="secondary" onClick={() => {
-                                        if (typeof navigator !== 'undefined') void navigator.clipboard?.writeText(sellerReviewLink)
-                                        setMessage('Seller review link copied.')
-                                      }}>
-                                        Copy Seller Link
-                                      </Button>
-                                    ) : null}
-                                  </div>
-                                </div>
-                                <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                                  <div className="rounded-[12px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-2">
-                                    <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#8496aa]">Deposit</p>
-                                    <p className="mt-1 text-sm font-semibold text-[#253f59]">{formatCurrency(offer.depositAmount)}</p>
-                                  </div>
-                                  <div className="rounded-[12px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-2">
-                                    <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#8496aa]">Viewing</p>
-                                    <p className="mt-1 truncate text-sm font-semibold text-[#253f59]">{offer.viewingAppointmentId || 'Not linked'}</p>
-                                  </div>
-                                  <div className="rounded-[12px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-2">
-                                    <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#8496aa]">Transaction</p>
-                                    <p className="mt-1 truncate text-sm font-semibold text-[#253f59]">{offer.transactionId || 'Not converted'}</p>
-                                  </div>
-                                </div>
-                                {normalizeText(offer.conditions?.specialConditions || offer.conditions?.suspensiveConditions) ? (
-                                  <p className="mt-3 rounded-[12px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-2 text-sm text-[#607891]">
-                                    {offer.conditions?.specialConditions || offer.conditions?.suspensiveConditions}
-                                  </p>
-                                ) : null}
-                                {hasSellerReview ? (
-                                  <div className="mt-3 grid gap-2 rounded-[14px] border border-[#d8e6f6] bg-[#f6faff] p-3 text-sm text-[#35546c] md:grid-cols-3">
-                                    <div>
-                                      <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#7d91a8]">Seller review</p>
-                                      <p className="mt-1 font-semibold text-[#203a54]">{statusKey === 'seller_viewed' || sellerReviewViewedAt ? 'Viewed by seller' : 'Sent to seller'}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#7d91a8]">Recipient</p>
-                                      <p className="mt-1 truncate font-semibold text-[#203a54]">{sellerReviewRecipient || 'Seller email pending'}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#7d91a8]">{sellerReviewViewedAt ? 'Viewed' : 'Sent'}</p>
-                                      <p className="mt-1 font-semibold text-[#203a54]">{formatDate(sellerReviewViewedAt || sellerReviewSentAt)}</p>
+                                      <p className="mt-3 text-xs font-semibold text-[#203a54]">{stage.label}</p>
+                                      <p className="mt-1 text-[0.68rem] text-[#7b8fa5]">{stage.done ? formatDateShort(stage.detail) : '—'}</p>
                                     </div>
                                   </div>
-                                ) : null}
-                                <div className="mt-3 rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] p-3">
-                                  <label className="grid gap-1">
-                                    <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8496aa]">Agent action note</span>
-                                    <Field
-                                      value={canonicalOfferNotesById[offer.id] || ''}
-                                      onChange={(event) => setCanonicalOfferNotesById((previous) => ({ ...previous, [offer.id]: event.target.value }))}
-                                      placeholder="Optional note for the offer timeline"
-                                    />
-                                  </label>
-                                  <div className="mt-3 flex flex-wrap gap-2">
-                                    {['submitted', 'draft', 'buyer_viewed'].includes(statusKey) ? (
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        variant="secondary"
-                                        disabled={canonicalOfferActionId === `${offer.id}:agent_review`}
-                                        onClick={() => void handleLeadCanonicalOfferStatus(offer, 'agent_review', 'Agent review started')}
-                                      >
-                                        Start Agent Review
-                                      </Button>
-                                    ) : null}
-                                    {!['accepted', 'converted_to_transaction', 'rejected', 'withdrawn', 'expired'].includes(statusKey) ? (
-                                      <>
-                                        {['submitted', 'agent_review', 'changes_requested', 'countered', 'sent_to_seller', 'seller_viewed'].includes(statusKey) ? (
-                                          <Button
-                                            type="button"
-                                            size="sm"
-                                            disabled={canonicalOfferActionId === `${offer.id}:sent_to_seller`}
-                                            onClick={() => void handleLeadCanonicalOfferSendToSeller(offer)}
-                                          >
-                                            {['sent_to_seller', 'seller_viewed'].includes(statusKey) ? 'Resend to Seller' : 'Send to Seller'}
+                                )
+                              })}
+                            </div>
+                          </div>
+
+                          {selectedLeadOffersError ? (
+                            <div className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">{selectedLeadOffersError}</div>
+                          ) : null}
+
+                          <div className="mt-5 space-y-3">
+                            {selectedLeadOffersLoading ? (
+                              <div className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] p-4 text-sm text-[#6a8098]">Loading offers...</div>
+                            ) : selectedLeadOffers.length ? (
+                              selectedLeadOffers.map((offer) => {
+                                const statusKey = normalizeText(offer.status).toLowerCase()
+                                const statusTone = statusKey === 'accepted' || statusKey === 'converted_to_transaction'
+                                  ? 'border-[#cfe8dc] bg-[#eefbf4] text-[#17643a]'
+                                  : statusKey === 'rejected' || statusKey === 'withdrawn' || statusKey === 'expired'
+                                    ? 'border-[#f4d4d4] bg-[#fff5f5] text-[#b42318]'
+                                    : ['submitted', 'agent_review', 'under_review', 'sent_to_seller', 'seller_viewed', 'sent_to_buyer'].includes(statusKey)
+                                      ? 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]'
+                                      : statusKey === 'changes_requested' || statusKey === 'countered'
+                                        ? 'border-[#f1dfb8] bg-[#fff8e8] text-[#8a641d]'
+                                        : 'border-[#dbe6f2] bg-white text-[#35546c]'
+                                const offerToken = normalizeText(offer.offerToken || offer.id)
+                                const offerLink = offerToken && typeof window !== 'undefined' ? `${window.location.origin}/offers/${encodeURIComponent(offerToken)}` : ''
+                                return (
+                                  <article key={offer.id} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                      <div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <p className="text-base font-semibold text-[#203a54]">{formatCurrency(offer.offerAmount)}</p>
+                                          <span className={`rounded-full border px-2.5 py-0.5 text-[0.7rem] font-semibold capitalize ${statusTone}`}>
+                                            {statusKey.replaceAll('_', ' ') || 'draft'}
+                                          </span>
+                                        </div>
+                                        <p className="mt-1 text-sm text-[#607891]">
+                                          {resolveAppointmentListingLabel(offer.listingId) || offer.listingId || 'Listing not linked'} · {offer.financeType || 'Finance type pending'}
+                                        </p>
+                                        <p className="mt-1 text-xs text-[#7b8ea4]">
+                                          Submitted {formatDate(offer.submittedAt)} · Expires {formatDate(offer.expiryDate)}
+                                        </p>
+                                      </div>
+                                      <div className="flex flex-wrap gap-2">
+                                        {offer.listingId ? (
+                                          <Button type="button" size="sm" variant="secondary" onClick={() => navigate(`/listings/${offer.listingId}`)}>Open Listing</Button>
+                                        ) : null}
+                                        {offerLink ? (
+                                          <Button type="button" size="sm" variant="secondary" onClick={() => {
+                                            if (typeof navigator !== 'undefined') void navigator.clipboard?.writeText(offerLink)
+                                            setMessage('Offer link copied.')
+                                          }}>Copy Link</Button>
+                                        ) : null}
+                                        {offer.transactionId ? (
+                                          <Button type="button" size="sm" onClick={() => navigate(`/transactions/${offer.transactionId}`)}>Open Transaction</Button>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                    <div className="mt-3 grid gap-2 lg:grid-cols-[1fr_auto]">
+                                      <Field
+                                        value={canonicalOfferNotesById[offer.id] || ''}
+                                        onChange={(event) => setCanonicalOfferNotesById((previous) => ({ ...previous, [offer.id]: event.target.value }))}
+                                        placeholder="Optional note for the offer timeline"
+                                      />
+                                      <div className="flex flex-wrap gap-2">
+                                        {['submitted', 'draft', 'buyer_viewed', 'sent_to_buyer'].includes(statusKey) ? (
+                                          <Button type="button" size="sm" variant="secondary" disabled={canonicalOfferActionId === `${offer.id}:agent_review`} onClick={() => void handleLeadCanonicalOfferStatus(offer, 'agent_review', 'Agent review started')}>
+                                            Start Review
                                           </Button>
                                         ) : null}
-                                        <Button
-                                          type="button"
-                                          size="sm"
-                                          variant="secondary"
-                                          disabled={canonicalOfferActionId === `${offer.id}:changes_requested`}
-                                          onClick={() => void handleLeadCanonicalOfferStatus(offer, 'changes_requested', 'Buyer changes requested')}
-                                        >
-                                          Request Buyer Changes
-                                        </Button>
-                                        <Button
-                                          type="button"
-                                          size="sm"
-                                          variant="secondary"
-                                          className="border-[#f1d0ca] text-[#9f3a2f] hover:bg-[#fff6f4]"
-                                          disabled={canonicalOfferActionId === `${offer.id}:rejected`}
-                                          onClick={() => void handleLeadCanonicalOfferStatus(offer, 'rejected', 'Offer rejected')}
-                                        >
-                                          Reject
-                                        </Button>
-                                      </>
-                                    ) : null}
-                                    {statusKey === 'accepted' || (statusKey === 'converted_to_transaction' && offer.transactionId) ? (
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        disabled={canonicalOfferActionId === `${offer.id}:convert`}
-                                        onClick={() => void handleLeadCanonicalOfferConversion(offer)}
-                                      >
-                                        {statusKey === 'converted_to_transaction' ? 'Resend Buyer Onboarding' : 'Create Transaction & Send Onboarding'}
-                                      </Button>
-                                    ) : null}
-                                  </div>
-                                </div>
-                              </article>
-                            )
-                          })
-                        ) : (
-                          <div className="rounded-[16px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-5 text-sm text-[#6a8098]">
-                            No offers have been submitted by this lead yet. Send a post-viewing offer portal from the Appointments tab when the buyer is ready.
+                                        {!['accepted', 'converted_to_transaction', 'rejected', 'withdrawn', 'expired'].includes(statusKey) ? (
+                                          <>
+                                            {['submitted', 'agent_review', 'changes_requested', 'countered', 'sent_to_seller', 'seller_viewed'].includes(statusKey) ? (
+                                              <Button type="button" size="sm" disabled={canonicalOfferActionId === `${offer.id}:sent_to_seller`} onClick={() => void handleLeadCanonicalOfferSendToSeller(offer)}>
+                                                {['sent_to_seller', 'seller_viewed'].includes(statusKey) ? 'Resend to Seller' : 'Send to Seller'}
+                                              </Button>
+                                            ) : null}
+                                            <Button type="button" size="sm" variant="secondary" disabled={canonicalOfferActionId === `${offer.id}:changes_requested`} onClick={() => void handleLeadCanonicalOfferStatus(offer, 'changes_requested', 'Buyer changes requested')}>
+                                              Request Changes
+                                            </Button>
+                                          </>
+                                        ) : null}
+                                        {statusKey === 'accepted' || (statusKey === 'converted_to_transaction' && offer.transactionId) ? (
+                                          <Button type="button" size="sm" disabled={canonicalOfferActionId === `${offer.id}:convert`} onClick={() => void handleLeadCanonicalOfferConversion(offer)}>
+                                            {statusKey === 'converted_to_transaction' ? 'Resend Onboarding' : 'Create Transaction'}
+                                          </Button>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                  </article>
+                                )
+                              })
+                            ) : (
+                              <div className="rounded-[16px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-5 text-sm text-[#6a8098]">
+                                No offers have been sent yet. Select a property above and send a secure offer link when the buyer is ready.
+                              </div>
+                            )}
                           </div>
-                        )}
+                        </section>
                       </div>
-                    </section>
+
+                      <aside className="space-y-5">
+                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
+                          <div className="flex items-center gap-2">
+                            <Eye className="h-4 w-4 text-[#385977]" />
+                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Buyer Preview</h4>
+                          </div>
+                          <div className="mx-auto mt-5 max-w-[330px] rounded-[18px] border border-[#dfe9f4] bg-white p-4 shadow-[0_18px_40px_rgba(12,36,64,0.09)]">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-lg font-semibold text-[#0c2440]">{organisationName || 'Harcourts'}</p>
+                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#5f7690]">
+                                Secure Offer <ShieldCheck className="h-4 w-4 text-[#1c9f5c]" />
+                              </span>
+                            </div>
+                            {selectedLeadOfferCentreProperty ? (
+                              <>
+                                <img src={selectedLeadOfferCentreProperty.image} alt="" className="mt-4 h-40 w-full rounded-[12px] object-cover" />
+                                <h5 className="mt-4 text-lg font-semibold text-[#102942]">{selectedLeadOfferCentreProperty.title}</h5>
+                                <p className="mt-1 text-sm leading-5 text-[#607891]">{selectedLeadOfferCentreProperty.address}</p>
+                                <p className="mt-4 text-xl font-semibold text-[#0c2440]">{selectedLeadOfferCentreProperty.price}</p>
+                                <div className="mt-3 grid grid-cols-4 gap-2 text-center text-[0.68rem] font-semibold text-[#5f7893]">
+                                  <span>{selectedLeadOfferCentreProperty.bedrooms || '—'} Beds</span>
+                                  <span>{selectedLeadOfferCentreProperty.bathrooms || '—'} Baths</span>
+                                  <span>{selectedLeadOfferCentreProperty.parking || '—'} Garages</span>
+                                  <span>{selectedLeadOfferCentreProperty.sizeLabel}</span>
+                                </div>
+                              </>
+                            ) : null}
+                            <div className="mt-4 flex items-center gap-3 rounded-[14px] bg-[#f5f8fb] p-3">
+                              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#061d3b] text-sm font-semibold text-white">
+                                {getInitials(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email)}
+                              </span>
+                              <div>
+                                <p className="text-sm font-semibold text-[#203a54]">{selectedLead?.assignedAgentName || currentAgent.fullName || 'Assigned agent'}</p>
+                                <p className="text-xs text-[#6f849b]">Your Harcourts Agent</p>
+                              </div>
+                            </div>
+                            <button type="button" className="mt-4 w-full rounded-[12px] bg-[#061d3b] px-4 py-3 text-sm font-semibold text-white">View Offer</button>
+                            <div className="mt-3 grid grid-cols-2 gap-2">
+                              <button type="button" className="rounded-[12px] border border-[#dfe9f4] px-3 py-2 text-xs font-semibold text-[#385977]">Request Info</button>
+                              <button type="button" className="rounded-[12px] border border-[#dfe9f4] px-3 py-2 text-xs font-semibold text-[#385977]">Decline Offer</button>
+                            </div>
+                            <p className="mt-4 flex items-center justify-center gap-2 text-center text-[0.68rem] font-semibold text-[#8aa0b6]">
+                              <Lock className="h-3.5 w-3.5" />
+                              This link is unique to you and secure
+                            </p>
+                          </div>
+                        </section>
+
+                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
+                          <div className="flex items-center gap-2">
+                            <RefreshCw className="h-4 w-4 text-[#385977]" />
+                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Transaction Conversion</h4>
+                          </div>
+                          <div className={`mt-4 rounded-[16px] border p-4 ${selectedLeadAcceptedOffer ? 'border-[#cfe8dc] bg-[#f2fbf5]' : 'border-[#f1dfb8] bg-[#fff8e8]'}`}>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-xs font-semibold text-[#5f7690]">Status</span>
+                              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${selectedLeadAcceptedOffer ? 'bg-[#dff5e8] text-[#17643a]' : 'bg-[#ffe9bd] text-[#9a6416]'}`}>
+                                {selectedLeadAcceptedOffer ? 'Offer Accepted' : 'Awaiting Acceptance'}
+                              </span>
+                            </div>
+                            <p className="mt-3 text-sm leading-6 text-[#5f7690]">
+                              {selectedLeadAcceptedOffer ? 'Ready to create transaction.' : 'Once the buyer accepts the offer, you can create the transaction.'}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            disabled={!selectedLeadAcceptedOffer || canonicalOfferActionId === `${selectedLeadAcceptedOffer?.id}:convert`}
+                            className="mt-4 w-full rounded-[12px] bg-[#061d3b] hover:bg-[#0a2a52]"
+                            onClick={() => selectedLeadAcceptedOffer ? void handleLeadCanonicalOfferConversion(selectedLeadAcceptedOffer) : null}
+                          >
+                            Create Transaction
+                          </Button>
+                          {selectedLeadLifecycleDiagnosticError ? (
+                            <div className="mt-3 rounded-[12px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">
+                              {selectedLeadLifecycleDiagnosticError}
+                            </div>
+                          ) : null}
+                          <div className="mt-4 grid gap-2">
+                            {[
+                              ['Offer converted', selectedLeadLifecycleDiagnostic?.checks?.offerConverted],
+                              ['Transaction linked', selectedLeadLifecycleDiagnostic?.checks?.transactionLinked],
+                              ['Onboarding ready', selectedLeadLifecycleDiagnostic?.checks?.onboardingReady],
+                            ].map(([label, isDone]) => (
+                              <div key={label} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-2">
+                                <span className="text-xs font-semibold text-[#607891]">{label}</span>
+                                <span className={`rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${isDone ? 'bg-[#eaf7ef] text-[#1e7a46]' : 'bg-[#f3f6f9] text-[#7b8fa5]'}`}>
+                                  {selectedLeadLifecycleDiagnosticLoading ? 'Checking' : isDone ? 'OK' : 'Open'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </section>
+                      </aside>
+                    </div>
                   </div>
                   ) : null}
 
@@ -11206,18 +12267,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <section className="rounded-[18px] border border-[#e1eaf4] bg-white p-5 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Seller Documents</p>
+                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">{selectedLeadIsSeller ? 'Seller Documents' : 'Buyer Documents'}</p>
                           <h4 className="mt-1 text-lg font-semibold text-[#18324b]">Documents</h4>
                           <p className="mt-1 text-sm text-[#6a8098]">{selectedLeadDisplayName}</p>
                         </div>
                         <Upload className="h-4 w-4 text-[#7890a8]" />
                       </div>
                       <div className="mt-4 grid gap-3 md:grid-cols-3">
-                        {[
+                        {(selectedLeadIsSeller ? [
                           ['Mandate', selectedSellerJourney.kpis.find((item) => item.key === 'mandate')?.value || 'Not started'],
                           ['Onboarding status', normalizeText(selectedLead?.sellerOnboardingStatus || selectedLead?.seller_onboarding_status) || 'Not started'],
                           ['Listing', selectedSellerJourney.kpis.find((item) => item.key === 'listing')?.value || 'Not created'],
-                        ].map(([label, value]) => (
+                        ] : [
+                          ['Buyer uploads', selectedLeadBuyerOnboardingSubmitted ? 'Submitted' : 'Pending'],
+                          ['FICA', selectedLeadBuyerOnboardingSubmitted ? 'In review' : 'Not requested'],
+                          ['Pre-approval docs', selectedLeadShowBondReadinessCta ? 'Ready to request' : selectedLeadFinanceReadinessSummary.confidenceLabel || 'Not captured'],
+                        ]).map(([label, value]) => (
                           <div key={label} className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-3">
                             <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#8496aa]">{label}</p>
                             <p className="mt-1 break-all text-sm font-semibold text-[#203a54]">{value}</p>
@@ -11225,7 +12290,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         ))}
                       </div>
                       <div className="mt-4 grid gap-2" data-testid="seller-documents-list">
-                        {selectedSellerJourney.documents.map((document) => (
+                        {(selectedLeadIsSeller ? selectedSellerJourney.documents : [
+                          { id: 'buyer-upload', label: 'Buyer upload pack', status: selectedLeadBuyerOnboardingSubmitted ? 'Submitted' : 'Pending' },
+                          { id: 'fica', label: 'FICA documents', status: selectedLeadBuyerOnboardingSubmitted ? 'In review' : 'Not requested' },
+                          { id: 'otp', label: 'OTP / offer documents', status: selectedLeadOfferSummary.total ? `${selectedLeadOfferSummary.total} offer records` : 'No offer yet' },
+                          { id: 'preapproval', label: 'Pre-approval documents', status: selectedLeadFinanceReadinessSummary.confidenceLabel || 'Not captured' },
+                        ]).map((document) => (
                           <div key={document.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-4 py-3">
                             <div className="min-w-0">
                               <p className="truncate text-sm font-semibold text-[#203a54]">{document.label}</p>
@@ -11803,6 +12873,76 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={offerPropertySelectorOpen}
+        onClose={() => {
+          setOfferPropertySelectorOpen(false)
+          setOfferPropertySearch('')
+        }}
+        title="Change Property"
+        subtitle="Select the property this buyer should receive an offer link for."
+        className="max-w-[980px]"
+      >
+        <div className="grid gap-4">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8aa0b6]" />
+            <Field
+              value={offerPropertySearch}
+              onChange={(event) => setOfferPropertySearch(event.target.value)}
+              placeholder="Search matched, saved, viewed, or active properties..."
+              className="pl-9"
+            />
+          </div>
+
+          <div className="grid max-h-[62vh] gap-3 overflow-y-auto pr-1 md:grid-cols-2">
+            {selectedLeadOfferPropertyOptions.length ? (
+              selectedLeadOfferPropertyOptions.map((property) => {
+                const isSelected = normalizeText(property.id) === normalizeText(offerLinkForm.listingId)
+                return (
+                  <button
+                    key={property.id}
+                    type="button"
+                    onClick={() => {
+                      setOfferLinkForm((previous) => ({
+                        ...previous,
+                        listingId: property.id,
+                        appointmentId: '',
+                        lastOfferLink: '',
+                      }))
+                      setOfferPropertySelectorOpen(false)
+                      setOfferPropertySearch('')
+                    }}
+                    className={`grid grid-cols-[118px_1fr] gap-3 rounded-[18px] border bg-white p-3 text-left transition hover:border-[#9fb7d4] hover:shadow-[0_12px_28px_rgba(31,54,78,0.08)] ${
+                      isSelected ? 'border-[#0b63f6] ring-2 ring-[#d9e8ff]' : 'border-[#dfe9f4]'
+                    }`}
+                  >
+                    <img src={property.image} alt="" className="h-[104px] w-full rounded-[14px] object-cover" />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-[#eef5ff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#0b63f6]">{property.source}</span>
+                        <span className="rounded-full bg-[#edf9f1] px-2.5 py-1 text-[0.68rem] font-semibold text-[#17643a]">{property.match || selectedLeadBuyerMatchScore}% Match</span>
+                      </div>
+                      <h4 className="mt-2 truncate text-sm font-semibold text-[#18324b]">{property.title}</h4>
+                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#607891]">{property.address}</p>
+                      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs font-semibold text-[#5f7893]">
+                        <span>{property.price}</span>
+                        <span>{property.bedrooms || '—'} Bed</span>
+                        <span>{property.bathrooms || '—'} Bath</span>
+                        <span>{property.parking || '—'} Garage</span>
+                      </div>
+                    </div>
+                  </button>
+                )
+              })
+            ) : (
+              <div className="rounded-[18px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-6 text-sm text-[#6a8098] md:col-span-2">
+                No properties match this search. Active listing data will appear here when available.
+              </div>
+            )}
+          </div>
+        </div>
       </Modal>
 
       <Modal

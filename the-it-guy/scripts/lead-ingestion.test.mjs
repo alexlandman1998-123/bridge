@@ -81,13 +81,12 @@ for (const copy of [
   'SellerLeadWorkspaceLayout',
   'SellerWorkspaceHero',
   'SellerJourneyHeroPanel',
-  'SellerNextActionPanel',
+  'SellerActionsPanel',
   'SellerKpiRow',
   'SellerDocumentsSummaryCard',
   'SellerOwnershipSummaryCard',
   'SellerCommunicationCard',
   'SellerTimelinePanel',
-  'Next Best Action',
   'Documents Complete',
   'Lead Age',
   'Mandate Status',
@@ -99,7 +98,6 @@ for (const copy of [
 ]) {
   assert.match(pageSource, new RegExp(copy), `seller lead workspace consolidation should render ${copy}`)
 }
-assert.match(pageSource, /lg:grid-cols-\[minmax\(0,7fr\)_minmax\(280px,3fr\)\]/)
 assert.match(pageSource, /grid items-stretch gap-6 lg:grid-cols-2/)
 const sellerDetailsSource = pageSource.slice(pageSource.indexOf('function SellerDetailsCard'), pageSource.indexOf('function SellerDocumentsSummaryCard'))
 assert.doesNotMatch(sellerDetailsSource, /Legacy Budget|Area Interest|Property Interest|Property Alerts|Saved Searches/)
@@ -112,8 +110,8 @@ assert.match(pageSource, /sellerOnboardingIsSubmitted/)
 assert.match(pageSource, /\/pipeline\/leads\/\$\{row\.leadId\}\/legal\/mandate\?mode=generate/)
 assert.match(pageSource, /buildSellerJourney/)
 assert.match(pageSource, /buildSellerReadinessSummary/)
-assert.match(pageSource, /activeTab === 'requirements' && !isSellerLeadWorkspace/)
-assert.match(pageSource, /activeTab === 'offers' && !isSellerLeadWorkspace/)
+assert.match(pageSource, /activeTab === 'property_match'/)
+assert.match(pageSource, /activeTab === 'offers'/)
 assert.match(pageSource, /normalizeCanonicalLeadCategory\(createCategory, 'other'\)/)
 assert.match(pageSource, /leadCategory: category/)
 assert.match(pageSource, /sellerPropertyAddress: category === 'seller'/)

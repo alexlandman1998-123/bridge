@@ -784,6 +784,13 @@ function BuyerLeadStatusCard({ row, sourceInfo, lastActivity }) {
         <BuyerInfoRow label="Last Contact" value={lastActivity?.date ? formatDateTime(lastActivity.date) : '—'} />
         <BuyerInfoRow label="Next Follow-up" value={nextTask?.dueDate || nextTask?.due_date ? formatDate(nextTask.dueDate || nextTask.due_date) : '—'} />
       </dl>
+      <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">Enquiry History</p>
+        <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+          <BuyerInfoRow label="Original Source" value={formatCleanValue(sourceInfo?.originalSource || sourceInfo?.firstSource || row.source)} />
+          <BuyerInfoRow label="Latest Source" value={formatCleanValue(sourceInfo?.latestSource || row.source)} />
+        </dl>
+      </div>
     </section>
   )
 }
@@ -1058,6 +1065,9 @@ function getLeadAppointmentPropertyOptions(lead = {}) {
       price: listing?.price || listing?.askingPrice || listing?.asking_price || null,
       source,
       isOriginalEnquiry: Boolean(meta.isOriginalEnquiry),
+      sellerName: normalizeText(listing?.seller?.name || listing?.sellerName || listing?.seller_name || listing?.ownerName || listing?.owner_name),
+      sellerEmail: normalizeText(listing?.seller?.email || listing?.sellerEmail || listing?.seller_email || listing?.ownerEmail || listing?.owner_email).toLowerCase(),
+      sellerPhone: normalizeText(listing?.seller?.phone || listing?.sellerPhone || listing?.seller_phone || listing?.ownerPhone || listing?.owner_phone),
     })
   }
 
@@ -1356,26 +1366,32 @@ function buildAppointmentCreateMessage(result = {}, draft = {}, isViewing = fals
     ? 'Appointment saved to the shared calendar source.'
     : 'Appointment created; calendar id is pending.'
   const workflowMessage = isViewing
-    ? 'Viewing lifecycle and lead timeline update were requested.'
+    ? `${draft.listingIds?.length > 1 ? `${draft.listingIds.length} viewing properties were linked.` : 'Viewing lifecycle and lead timeline update were requested.'}`
     : 'Lead timeline update was requested.'
-  const inviteMessage = draft.sendInviteEmails
+  const sellerFirstMessage = isViewing && draft.appointmentStatus === 'requested'
+    ? draft.sellerRequestCount > 0
+      ? `Seller availability request${draft.sellerRequestCount === 1 ? '' : 's'} queued first; buyer approval stays pending until seller acceptance.`
+      : 'Seller contacts were not available, so the viewing request was saved internally for follow-up.'
+    : ''
+  const inviteMessage = sellerFirstMessage || (draft.sendInviteEmails
     ? result?.notificationsQueued
       ? 'Buyer invite and reminders were queued.'
       : 'Invite sending was requested, but the notification queue did not report as queued.'
-    : 'Buyer invite was skipped by agent choice.'
+    : 'Buyer invite was skipped by agent choice.')
   return [calendarMessage, workflowMessage, inviteMessage].join(' ')
 }
 
 function getBuyerOutreachSteps(row = {}) {
   const safeRow = row || {}
+  const ownershipStatus = normalizeText(safeRow.ownershipStatus || safeRow.ownership_status).toLowerCase()
   const appointments = (Array.isArray(safeRow.appointments) ? safeRow.appointments : []).filter(Boolean)
   const viewings = appointments.filter(isViewingAppointment)
   const scheduledViewings = viewings.filter((item) => !['cancelled', 'completed', 'no_show'].includes(String(item.status || '').toLowerCase()))
   const completedViewings = viewings.filter((item) => String(item.status || '').toLowerCase() === 'completed' || item.completedAt || item.completed_at)
   const timeline = (Array.isArray(safeRow.communicationTimeline) ? safeRow.communicationTimeline : []).filter(Boolean)
-  const outreachLogged = Boolean(safeRow.firstContactedAt || safeRow.first_contacted_at || timeline.some((item) => {
+  const outreachLogged = Boolean(safeRow.firstContactedAt || safeRow.first_contacted_at || ownershipStatus === 'contacted' || timeline.some((item) => {
     const haystack = `${item.activityType || item.activity_type || ''} ${item.communicationType || item.communication_type || ''} ${item.title || ''}`.toLowerCase()
-    return ['call', 'email', 'whatsapp', 'meeting', 'outreach'].some((token) => haystack.includes(token))
+    return ['call', 'email', 'whatsapp', 'meeting', 'outreach', 'contacted'].some((token) => haystack.includes(token))
   }))
   const offers = (Array.isArray(safeRow.offers) ? safeRow.offers : []).filter(Boolean)
   const transactions = (Array.isArray(safeRow.transactions) ? safeRow.transactions : []).filter(Boolean)
@@ -2279,6 +2295,7 @@ function AddListingToLeadPanel({
   async function addListing(listing) {
     try {
       setSavingId(listing.id)
+      setError('')
       await upsertLeadListingInterest(
         {
           organisationId,
@@ -2296,6 +2313,8 @@ function AddListingToLeadPanel({
       )
       await onSaved()
       setOpen(false)
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to link this listing to the lead.')
     } finally {
       setSavingId('')
     }
@@ -3834,11 +3853,10 @@ function LeadRecommendationsPanel({ recommendations = [], actor, onSaved, onShar
   )
 }
 
-function BuyerPropertyMatchPanel({ organisationId, row, workspace = {}, actor, onSaved, onShare, onShareRecommendation }) {
+function BuyerPropertyMatchPanel({ organisationId, row, workspace = {}, actor, onSaved, onShare }) {
   const requirements = workspace.requirements || row.requirements || []
   const listingInterests = workspace.listingInterests || row.listingInterests || []
   const suggestions = workspace.suggestions || row.suggestions || []
-  const recommendations = workspace.recommendations || row.recommendations || []
   return (
     <div className="section-stack">
       <PropertyMatchWorkflowPanel
@@ -3885,14 +3903,6 @@ function BuyerPropertyMatchPanel({ organisationId, row, workspace = {}, actor, o
         onShare={onShare}
         title="Shortlist / Interested Listings"
         description="All linked listings with operational controls: accepted suggestions, manual matches, enquiry listings, sent status, notes, and viewing scheduling."
-      />
-      <LeadRecommendationsPanel
-        recommendations={recommendations}
-        actor={actor}
-        onSaved={onSaved}
-        onShare={onShareRecommendation}
-        title="Recommended Actions"
-        description="Action recommendations generated from buyer activity, matching, viewings, offers, and inactivity."
       />
     </div>
   )
@@ -4121,9 +4131,10 @@ function LeadAppointmentForm({ organisationId, lead, actor, onSaved }) {
   const [draft, setDraft] = useState({
     appointmentType: 'viewing',
     title: `Viewing - ${contact.name || 'Buyer'}`,
-    listingId: propertyOptions[0]?.id || '',
+    listingIds: propertyOptions[0]?.id ? [propertyOptions[0].id] : [],
     appointmentStatus: 'requested',
-    sendInviteEmails: true,
+    sendSellerRequests: true,
+    sendInviteEmails: false,
     date: getTodayInputValue(),
     startTime: '',
     location: '',
@@ -4133,7 +4144,20 @@ function LeadAppointmentForm({ organisationId, lead, actor, onSaved }) {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const isViewing = draft.appointmentType === 'viewing'
-  const selectedProperty = propertyOptions.find((option) => option.id === draft.listingId) || null
+  const selectedListingIds = Array.isArray(draft.listingIds) ? draft.listingIds.filter(Boolean) : []
+  const selectedProperties = propertyOptions.filter((option) => selectedListingIds.includes(option.id))
+  const selectedProperty = selectedProperties[0] || null
+  const sellerParticipants = selectedProperties
+    .map((property) => ({
+      propertyId: property.id,
+      name: property.sellerName || `${property.label} seller`,
+      email: property.sellerEmail,
+      phone: property.sellerPhone,
+      participantRole: 'Seller',
+      rsvpStatus: 'Pending',
+    }))
+    .filter((participant, index, list) => participant.email && list.findIndex((item) => item.email === participant.email) === index)
+  const sellerFirstWorkflow = isViewing && draft.appointmentStatus === 'requested'
 
   useEffect(() => {
     setDraft((previous) => ({
@@ -4144,10 +4168,23 @@ function LeadAppointmentForm({ organisationId, lead, actor, onSaved }) {
 
   useEffect(() => {
     setDraft((previous) => {
-      if (previous.listingId || !propertyOptions[0]?.id) return previous
-      return { ...previous, listingId: propertyOptions[0].id }
+      const validIds = (Array.isArray(previous.listingIds) ? previous.listingIds : []).filter((id) => propertyOptions.some((option) => option.id === id))
+      if (validIds.length || !propertyOptions[0]?.id) return { ...previous, listingIds: validIds }
+      return { ...previous, listingIds: [propertyOptions[0].id] }
     })
   }, [propertyOptions])
+
+  function toggleListingSelection(listingId = '') {
+    const normalizedListingId = normalizeText(listingId)
+    if (!normalizedListingId) return
+    setDraft((previous) => {
+      const currentIds = Array.isArray(previous.listingIds) ? previous.listingIds : []
+      const listingIds = currentIds.includes(normalizedListingId)
+        ? currentIds.filter((id) => id !== normalizedListingId)
+        : [...currentIds, normalizedListingId]
+      return { ...previous, listingIds }
+    })
+  }
 
   async function submit(event) {
     event.preventDefault()
@@ -4159,8 +4196,8 @@ function LeadAppointmentForm({ organisationId, lead, actor, onSaved }) {
       setError('Choose a date and start time for the appointment.')
       return
     }
-    if (isViewing && !normalizeText(draft.listingId)) {
-      setError('Choose the property this viewing is for before creating the appointment.')
+    if (isViewing && !selectedListingIds.length) {
+      setError('Choose at least one property for this viewing request.')
       return
     }
 
@@ -4168,41 +4205,73 @@ function LeadAppointmentForm({ organisationId, lead, actor, onSaved }) {
       setSaving(true)
       setError('')
       setMessage('')
+      const buyerParticipant = {
+        name: contact.name || lead.name || 'Buyer',
+        email: contact.email,
+        phone: contact.phone,
+        contactId: contact.contactId || null,
+        participantRole: 'Buyer',
+        rsvpStatus: 'Pending',
+      }
+      const shouldNotifySellerRequests = sellerFirstWorkflow && draft.sendSellerRequests && sellerParticipants.length > 0
+      const participantRows = shouldNotifySellerRequests ? sellerParticipants : [buyerParticipant]
+      const selectedPropertySummary = selectedProperties
+        .map((property) => [property.label, property.price ? formatCurrency(property.price) : ''].filter(Boolean).join(' - '))
+        .join('; ')
+      const workflowNote = sellerFirstWorkflow
+        ? `Seller-first viewing request for ${selectedProperties.length || 1} propert${selectedProperties.length === 1 ? 'y' : 'ies'}. Buyer approval should be requested after seller acceptance.`
+        : ''
+      const notes = [draft.notes, selectedPropertySummary ? `Selected properties: ${selectedPropertySummary}` : '', workflowNote].map(normalizeText).filter(Boolean).join('\n')
+      const defaultViewingTitle = `Viewing - ${contact.name || 'Buyer'}`
+      const resolvedTitle = isViewing && selectedProperties.length > 1 && normalizeText(draft.title) === defaultViewingTitle
+        ? `Viewing route - ${contact.name || 'Buyer'}`
+        : normalizeText(draft.title)
       const result = await createAppointmentAsync(organisationId, {
         appointmentType: draft.appointmentType,
-        title: normalizeText(draft.title) || `${formatCleanValue(draft.appointmentType)} - ${contact.name || 'Buyer'}`,
+        title: resolvedTitle || `${isViewing && selectedProperties.length > 1 ? 'Viewing route' : formatCleanValue(draft.appointmentType)} - ${contact.name || 'Buyer'}`,
         date: draft.date,
         startTime: draft.startTime,
         location: normalizeText(draft.location) || selectedProperty?.description || '',
         locationType: normalizeText(draft.location || selectedProperty?.description) ? 'physical' : 'to_be_confirmed',
-        notes: draft.notes,
+        notes,
         status: draft.appointmentStatus,
         leadId: lead.leadId,
         contactId: contact.contactId || null,
-        listingId: normalizeText(draft.listingId) || null,
+        listingId: normalizeText(selectedProperty?.id) || null,
+        listingLabel: selectedProperties.length > 1 ? `${selectedProperties.length} selected properties` : selectedProperty?.label || '',
         relatedEntityType: 'lead',
         relatedEntityId: lead.leadId,
         assignedAgent: actor,
-        participants: [
-          {
-            name: contact.name || lead.name || 'Buyer',
-            email: contact.email,
-            phone: contact.phone,
-            contactId: contact.contactId || null,
-            participantRole: 'Buyer',
-            rsvpStatus: 'Pending',
-          },
-        ],
-        sendInviteEmails: draft.sendInviteEmails,
-        attachCalendarInvite: draft.sendInviteEmails,
+        participants: participantRows,
+        instructions: sellerFirstWorkflow
+          ? 'Request seller availability first. Send buyer confirmation only once sellers accept the viewing window.'
+          : '',
+        sendInviteEmails: sellerFirstWorkflow ? shouldNotifySellerRequests : draft.sendInviteEmails,
+        attachCalendarInvite: sellerFirstWorkflow ? shouldNotifySellerRequests : draft.sendInviteEmails,
       }, { actor })
-      setMessage(buildAppointmentCreateMessage(result, draft, isViewing))
+      const appointmentId = getAppointmentId(result)
+      if (appointmentId && isViewing && selectedListingIds.length) {
+        await upsertAppointmentViewedListings({
+          organisationId,
+          appointmentId,
+          leadId: lead.leadId,
+          agentId: actor?.id || actor?.userId,
+          viewedListings: selectedListingIds,
+          replaceExisting: true,
+        })
+      }
+      setMessage(buildAppointmentCreateMessage(result, {
+        ...draft,
+        listingIds: selectedListingIds,
+        sellerRequestCount: shouldNotifySellerRequests ? sellerParticipants.length : 0,
+      }, isViewing))
       setDraft({
         appointmentType: 'viewing',
         title: `Viewing - ${contact.name || 'Buyer'}`,
-        listingId: propertyOptions[0]?.id || '',
+        listingIds: propertyOptions[0]?.id ? [propertyOptions[0].id] : [],
         appointmentStatus: 'requested',
-        sendInviteEmails: true,
+        sendSellerRequests: true,
+        sendInviteEmails: false,
         date: getTodayInputValue(),
         startTime: '',
         location: '',
@@ -4245,47 +4314,96 @@ function LeadAppointmentForm({ organisationId, lead, actor, onSaved }) {
           <input type="time" value={draft.startTime} onChange={(event) => setDraft((previous) => ({ ...previous, startTime: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" />
         </label>
       </div>
-      <div className="grid gap-3 lg:grid-cols-[1.2fr_220px_220px]">
-        <label className="grid gap-1 text-sm font-semibold text-slate-700">
-          Property {isViewing ? <span className="text-xs font-medium text-slate-400">Required for viewings</span> : null}
-          <select value={draft.listingId} onChange={(event) => setDraft((previous) => ({ ...previous, listingId: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300">
-            <option value="">{propertyOptions.length ? 'No property link' : 'No linked properties yet'}</option>
-            {propertyOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {[option.isOriginalEnquiry ? 'Enquiry' : option.source, option.label, option.price ? formatCurrency(option.price) : ''].filter(Boolean).join(' - ')}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="grid gap-1 text-sm font-semibold text-slate-700">
-          Appointment status
-          <select value={draft.appointmentStatus} onChange={(event) => setDraft((previous) => ({ ...previous, appointmentStatus: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300">
-            <option value="requested">Request confirmation</option>
-            <option value="confirmed">Confirmed</option>
-          </select>
-        </label>
-        <label className="flex min-h-11 items-center gap-3 self-end rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
-          <input type="checkbox" checked={draft.sendInviteEmails} onChange={(event) => setDraft((previous) => ({ ...previous, sendInviteEmails: event.target.checked }))} />
-          Send invite to buyer
-        </label>
+      <div className="grid gap-3 lg:grid-cols-[1fr_220px]">
+        <div className="grid gap-2">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-700">Viewing properties</p>
+              <p className="text-xs font-medium text-slate-400">
+                {isViewing ? 'Select one or more properties. Seller availability is requested first, then the buyer confirms.' : 'Optional property context for this appointment.'}
+              </p>
+            </div>
+            <StatusPill tone={selectedListingIds.length ? 'blue' : 'slate'}>{selectedListingIds.length || 0} selected</StatusPill>
+          </div>
+          {propertyOptions.length ? (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {propertyOptions.map((option) => {
+                const selected = selectedListingIds.includes(option.id)
+                return (
+                  <button
+                    type="button"
+                    key={option.id}
+                    onClick={() => toggleListingSelection(option.id)}
+                    className={`min-h-[126px] rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:border-blue-200 hover:shadow-md ${selected ? 'border-blue-300 ring-2 ring-blue-100' : 'border-slate-200'}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <span className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl ${selected ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
+                        {selected ? <CheckCircle2 size={18} /> : <Home size={18} />}
+                      </span>
+                      <span className={`rounded-full px-2 py-1 text-[11px] font-bold ${option.isOriginalEnquiry ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                        {option.isOriginalEnquiry ? 'Enquiry' : option.source || 'Listing'}
+                      </span>
+                    </div>
+                    <p className="mt-3 line-clamp-1 text-sm font-semibold text-slate-950">{option.label}</p>
+                    <p className="mt-1 line-clamp-1 text-sm text-slate-500">{option.description}</p>
+                    <div className="mt-3 flex items-center justify-between gap-3 text-xs font-semibold">
+                      <span className="text-blue-700">{option.price ? formatCurrency(option.price) : 'Price pending'}</span>
+                      <span className={option.sellerEmail ? 'text-emerald-600' : 'text-amber-600'}>{option.sellerEmail ? 'Seller contact ready' : 'Seller contact missing'}</span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+              Link the enquiry property or a shortlisted listing in Property Match before booking a viewing.
+            </div>
+          )}
+        </div>
+        <div className="grid content-start gap-3">
+          <label className="grid gap-1 text-sm font-semibold text-slate-700">
+            Appointment status
+            <select value={draft.appointmentStatus} onChange={(event) => setDraft((previous) => ({ ...previous, appointmentStatus: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300">
+              <option value="requested">Seller availability requested</option>
+              <option value="confirmed">Confirmed viewing</option>
+            </select>
+          </label>
+          {sellerFirstWorkflow ? (
+            <label className="flex min-h-11 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
+              <input type="checkbox" checked={draft.sendSellerRequests} onChange={(event) => setDraft((previous) => ({ ...previous, sendSellerRequests: event.target.checked }))} />
+              Send seller requests first
+            </label>
+          ) : (
+            <label className="flex min-h-11 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
+              <input type="checkbox" checked={draft.sendInviteEmails} onChange={(event) => setDraft((previous) => ({ ...previous, sendInviteEmails: event.target.checked }))} />
+              Send invite to buyer
+            </label>
+          )}
+        </div>
       </div>
-      <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-800">
-        {draft.appointmentStatus === 'requested'
-          ? 'Request confirmation sends the buyer an appointment confirmation email with calendar details when invite sending is enabled.'
-          : 'Confirmed creates a booked appointment immediately and can still send the buyer a calendar invite.'}
-        {!contact.email && draft.sendInviteEmails ? ' Add a buyer email before relying on email delivery.' : null}
+      <div className="grid gap-3 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-800 lg:grid-cols-3">
+        <div className="flex items-start gap-2">
+          <span className="mt-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[11px] font-bold text-blue-700">1</span>
+          <span>Request availability from each selected property seller.</span>
+        </div>
+        <div className="flex items-start gap-2">
+          <span className="mt-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[11px] font-bold text-blue-700">2</span>
+          <span>Sellers accept or propose a new viewing window.</span>
+        </div>
+        <div className="flex items-start gap-2">
+          <span className="mt-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[11px] font-bold text-blue-700">3</span>
+          <span>Send the consolidated viewing plan to the buyer for approval.</span>
+        </div>
+        {!sellerParticipants.length && sellerFirstWorkflow && selectedListingIds.length ? (
+          <p className="lg:col-span-3 text-amber-700">No selected properties have seller email details yet, so this will be saved for manual seller follow-up.</p>
+        ) : null}
       </div>
-      {isViewing && !propertyOptions.length ? (
-        <p className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-          Link the enquiry property or a shortlisted listing in Property Match before booking a viewing.
-        </p>
-      ) : null}
       <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
         <input value={draft.location} onChange={(event) => setDraft((previous) => ({ ...previous, location: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" placeholder="Location or property address" />
         <input value={draft.notes} onChange={(event) => setDraft((previous) => ({ ...previous, notes: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" placeholder="Internal notes" />
-        <button type="submit" disabled={saving || !normalizeText(draft.date) || !normalizeText(draft.startTime) || (isViewing && !normalizeText(draft.listingId))} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
+        <button type="submit" disabled={saving || !normalizeText(draft.date) || !normalizeText(draft.startTime) || (isViewing && !selectedListingIds.length)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
           <Plus size={15} />
-          {draft.appointmentStatus === 'requested' ? 'Request Appointment' : 'Add Appointment'}
+          {sellerFirstWorkflow ? 'Request Seller Availability' : 'Add Appointment'}
         </button>
       </div>
       {error ? <p className="text-sm font-semibold text-red-600">{error}</p> : null}
@@ -4319,7 +4437,7 @@ function LeadOfferReadinessPanel({ organisationId, lead, actor, onSaved }) {
     contextKey: bestContext?.key || '',
     expiryDate: getFutureInputValue(7),
     note: '',
-    sendEmail: true,
+    emailBuyer: true,
   })
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
@@ -4336,11 +4454,11 @@ function LeadOfferReadinessPanel({ organisationId, lead, actor, onSaved }) {
 
   async function sendBuyerOfferLinkEmail(link = '', context = {}) {
     const recipientEmail = normalizeText(contact.email || lead.email).toLowerCase()
-    if (!draft.sendEmail || !recipientEmail || !link) {
+    if (!draft.emailBuyer || !recipientEmail || !link) {
       return {
         attempted: false,
         sent: false,
-        reason: !draft.sendEmail ? 'disabled' : recipientEmail ? 'missing_link' : 'missing_email',
+        reason: !draft.emailBuyer ? 'disabled' : recipientEmail ? 'missing_link' : 'missing_email',
       }
     }
 
@@ -4461,6 +4579,14 @@ function LeadOfferReadinessPanel({ organisationId, lead, actor, onSaved }) {
             source: 'lead_workspace_offers_tab',
             propertyLabel: selectedContext.label,
             readiness: selectedContext.readiness,
+            buyerName: contact.name || lead.name || 'Buyer',
+            buyerEmail: contact.email || lead.email || '',
+            buyerPhone: contact.phone || lead.phone || '',
+            agentName: actor?.fullName || actor?.name || actor?.email || '',
+            agentEmail: normalizeText(actor?.email || '').toLowerCase(),
+            agentReviewUrl: typeof window !== 'undefined'
+              ? `${window.location.origin}/pipeline/leads/${encodeURIComponent(buyerLeadId)}`
+              : '',
             agentNoteToBuyer: draft.note,
             offerWithoutCompletedViewing: !selectedContext.completed,
           },
@@ -4553,7 +4679,7 @@ function LeadOfferReadinessPanel({ organisationId, lead, actor, onSaved }) {
           <input type="date" value={draft.expiryDate} onChange={(event) => setDraft((previous) => ({ ...previous, expiryDate: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" />
         </label>
         <label className="flex min-h-11 items-center gap-3 self-end rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
-          <input type="checkbox" checked={draft.sendEmail} onChange={(event) => setDraft((previous) => ({ ...previous, sendEmail: event.target.checked }))} />
+          <input type="checkbox" checked={draft.emailBuyer} onChange={(event) => setDraft((previous) => ({ ...previous, emailBuyer: event.target.checked }))} />
           Email buyer
         </label>
       </div>
@@ -4564,7 +4690,7 @@ function LeadOfferReadinessPanel({ organisationId, lead, actor, onSaved }) {
           {sending ? 'Creating...' : 'Send Offer Link'}
         </button>
       </div>
-      {!contact.email && draft.sendEmail ? (
+      {!contact.email && draft.emailBuyer ? (
         <p className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-700">This buyer has no email, so the link will be created and copied but not emailed.</p>
       ) : null}
       {selectedContext && !selectedContext.completed ? (
@@ -5778,7 +5904,6 @@ function AgentLeadWorkspace() {
     : [
       { key: 'overview', label: 'Overview' },
       { key: 'property_match', label: 'Property Match' },
-      { key: 'saved_searches', label: 'Saved Searches' },
       { key: 'timeline', label: 'Timeline' },
       { key: 'tasks', label: 'Tasks' },
       { key: 'appointments', label: 'Appointments' },
@@ -5791,25 +5916,6 @@ function AgentLeadWorkspace() {
       setActiveTab(isSellerLeadWorkspace ? 'listing_journey' : 'overview')
     }
   }, [activeTab, isSellerLeadWorkspace, row, tabs])
-
-  const openShareFromRecommendation = useCallback((recommendation) => {
-    const metadata = recommendation?.metadata || {}
-    const targetListingId = metadata.listingId || metadata.listing_id || metadata.listingIds?.[0] || metadata.listing_ids?.[0]
-    const interest = (row?.listingInterests || data?.listingInterests || []).find((item) => item.listingId === targetListingId)
-    const suggestion = (row?.suggestions || data?.suggestions || []).find((item) => item.listingId === targetListingId)
-    const listing = interest?.listing || suggestion?.listing || null
-    if (!listing) {
-      setActiveTab('property_match')
-      return
-    }
-    setShareDraft({
-      listing,
-      requirementId: metadata.requirementId || metadata.requirement_id || interest?.requirementId || suggestion?.requirementId,
-      interestId: interest?.interestId,
-      suggestionId: suggestion?.suggestionId,
-      recommendationId: recommendation.recommendationId,
-    })
-  }, [data?.listingInterests, data?.suggestions, row?.listingInterests, row?.suggestions])
 
   const sendSellerOnboardingForLead = useCallback(async () => {
     if (!row || !isSellerLeadWorkspace || sendingSellerOnboarding) return
@@ -6011,19 +6117,6 @@ function AgentLeadWorkspace() {
                     actor={actor}
                     onSaved={loadWorkspace}
                     onShare={setShareDraft}
-                    onShareRecommendation={openShareFromRecommendation}
-                  />
-                ) : null}
-
-                {activeTab === 'saved_searches' ? (
-                  <SavedSearchesPanel
-                    organisationId={organisationId}
-                    lead={row}
-                    requirements={data?.requirements || row.requirements || []}
-                    savedSearches={data?.savedSearches || row.savedSearches || []}
-                    propertyShares={data?.propertyShares || row.propertyShares || []}
-                    actor={actor}
-                    onSaved={loadWorkspace}
                   />
                 ) : null}
 

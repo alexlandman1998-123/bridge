@@ -162,18 +162,17 @@ try {
   assert.deepEqual(buyerTabKeys, [
     'overview',
     'property_match',
-    'saved_searches',
     'timeline',
     'tasks',
     'appointments',
     'offers',
-  ], 'buyer lead workspace should expose exactly seven tabs')
-  for (const retiredTab of ['requirements', 'suggestions', 'listings', 'recommendations']) {
+  ], 'buyer lead workspace should expose exactly six buyer journey tabs')
+  for (const retiredTab of ['requirements', 'suggestions', 'listings', 'recommendations', 'saved_searches']) {
     assert.ok(!buyerTabKeys.includes(retiredTab), `${retiredTab} should be merged into Property Match`)
   }
   assert.ok(workspaceSource.includes('function PropertyMatchWorkflowPanel'), 'Property Match should explain the enquiry-to-suggestions workflow')
   assert.ok(workspaceSource.includes('function EnquiryPropertyPanel'), 'Property Match should surface the original enquiry property before alternatives')
-  for (const sectionTitle of ['Search Brief', 'Smart Suggestions', 'Shortlist / Interested Listings', 'Recommended Actions']) {
+  for (const sectionTitle of ['Search Brief', 'Smart Suggestions', 'Shortlist / Interested Listings']) {
     assert.ok(workspaceSource.includes(`title="${sectionTitle}"`), `Property Match should include ${sectionTitle}`)
   }
   assert.ok(workspaceSource.includes('buttonLabel="Add Enquired Listing"'), 'Property Match should support linking the listing the buyer enquired on')
@@ -208,12 +207,16 @@ try {
   assert.ok(workspaceSource.includes('const safeOffers = (Array.isArray(offers) ? offers : []).filter(Boolean)'), 'offers tab should ignore sparse/null offer relationship rows')
   assert.ok(workspaceSource.includes('const safeTransactions = (Array.isArray(transactions) ? transactions : []).filter(Boolean)'), 'offers tab should ignore sparse/null transaction relationship rows')
   assert.ok(workspaceSource.includes('getLeadAppointmentPropertyOptions'), 'lead appointments should select from linked/enquiry/shortlist properties')
-  assert.ok(workspaceSource.includes('Choose the property this viewing is for'), 'viewing appointments should require a property context')
+  assert.ok(workspaceSource.includes('Choose at least one property for this viewing request'), 'viewing appointments should require at least one property context')
+  assert.ok(workspaceSource.includes('toggleListingSelection'), 'viewing appointments should support multi-property card selection')
+  assert.ok(workspaceSource.includes('Send seller requests first'), 'viewing appointments should use seller-first request workflow copy')
   assert.ok(workspaceSource.includes('Choose the property viewed before marking this viewing complete'), 'completed viewing outcomes should require the viewed property')
-  assert.ok(workspaceSource.includes('sendInviteEmails: draft.sendInviteEmails'), 'lead appointment form should control buyer invite sending')
-  assert.ok(workspaceSource.includes('Request confirmation'), 'lead appointment form should support confirmation requests')
+  assert.ok(workspaceSource.includes('sendInviteEmails: sellerFirstWorkflow ? shouldNotifySellerRequests : draft.sendInviteEmails'), 'lead appointment form should avoid buyer invites during seller-first requests')
+  assert.ok(workspaceSource.includes('Seller availability requested'), 'lead appointment form should support seller availability requests')
   assert.ok(workspaceSource.includes('getAppointmentIntegrityBadges'), 'appointment cards should surface calendar/link/invite integrity badges')
   assert.ok(workspaceSource.includes('buildAppointmentCreateMessage'), 'lead appointment creation should explain calendar, workflow, and invite outcomes')
+  assert.ok(workspaceSource.includes('buyerName: contact.name || lead.name ||'), 'no-viewing offer links should carry buyer metadata into the canonical offer context')
+  assert.ok(workspaceSource.includes('agentReviewUrl'), 'no-viewing offer links should carry the agent review URL into the canonical offer context')
   for (const appointmentAction of ['Save Feedback', 'Mark Complete', 'No-show', 'Reschedule']) {
     assert.ok(workspaceSource.includes(appointmentAction), `viewing appointments should expose ${appointmentAction}`)
   }
@@ -228,6 +231,11 @@ try {
   assert.ok(appointmentServiceSource.includes("notificationSource.status) === 'confirmed'"), 'confirmed appointment creation should use confirmed notification path')
   assert.ok(appointmentServiceSource.includes("? 'appointment_confirmed'"), 'confirmed appointment creation should notify as confirmed')
   assert.ok(appointmentServiceSource.includes(": 'appointment_confirmation_required'"), 'requested appointment creation should ask for confirmation')
+
+  const buyerOfferSource = await readFile(new URL('../src/pages/BuyerOfferSubmission.jsx', import.meta.url), 'utf8')
+  assert.ok(buyerOfferSource.includes('conditions.buyerName || invite?.buyerLeadName'), 'buyer offer link should prefill the buyer name from offer context')
+  assert.ok(buyerOfferSource.includes('conditions.buyerEmail'), 'buyer offer link should prefill the buyer email from offer context')
+  assert.ok(buyerOfferSource.includes('conditions.buyerPhone'), 'buyer offer link should prefill the buyer phone from offer context')
 
   console.log('agent lead workspace smoke tests passed')
 } finally {
